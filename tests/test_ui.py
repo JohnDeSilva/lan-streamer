@@ -160,7 +160,7 @@ def test_mainwindow_force_scan_error(qtbot, mock_dependencies, monkeypatch):
 
 def test_scan_worker_logic(mock_dependencies, monkeypatch):
     import lan_streamer.ui as ui_mod
-    
+
     # Use the original class saved in the fixture
     ScanWorker = ui_mod.OriginalScanWorker
 
@@ -179,7 +179,9 @@ def test_scan_worker_logic(mock_dependencies, monkeypatch):
     worker.run()
 
     ui_mod.jellyfin_client.preload_library.assert_called_once()
-    ui_mod.scan_directories.assert_called_once_with(["/path1"], existing_library={"Old Data": {}})
+    ui_mod.scan_directories.assert_called_once_with(
+        ["/path1"], existing_library={"Old Data": {}}
+    )
     ui_mod.jellyfin_client.clear_cache.assert_called()
     mock_finished.assert_called_once_with({"New Data": {}})
     mock_error.assert_not_called()
@@ -187,6 +189,7 @@ def test_scan_worker_logic(mock_dependencies, monkeypatch):
 
 def test_scan_worker_error_logic(mock_dependencies, monkeypatch):
     import lan_streamer.ui as ui_mod
+
     ScanWorker = ui_mod.OriginalScanWorker
 
     ui_mod.scan_directories.side_effect = Exception("Logic Error")

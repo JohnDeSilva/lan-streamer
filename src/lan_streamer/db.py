@@ -33,7 +33,8 @@ def init_db():
                         jellyfin_id TEXT,
                         poster_path TEXT,
                         overview TEXT,
-                        is_manual_match BOOLEAN DEFAULT 0
+                        is_manual_match BOOLEAN DEFAULT 0,
+                        UNIQUE(library_name, name)
                     )
                 """)
 
@@ -44,7 +45,8 @@ def init_db():
                         name TEXT,
                         jellyfin_id TEXT,
                         poster_path TEXT,
-                        FOREIGN KEY(series_id) REFERENCES series(id) ON DELETE CASCADE
+                        FOREIGN KEY(series_id) REFERENCES series(id) ON DELETE CASCADE,
+                        UNIQUE(series_id, name)
                     )
                 """)
 
@@ -57,11 +59,91 @@ def init_db():
                         jellyfin_id TEXT,
                         watched BOOLEAN DEFAULT 0,
                         date_added INTEGER DEFAULT 0,
-                        FOREIGN KEY(season_id) REFERENCES seasons(id) ON DELETE CASCADE
+                        FOREIGN KEY(season_id) REFERENCES seasons(id) ON DELETE CASCADE,
+                        UNIQUE(season_id, name),
+                        UNIQUE(path)
                     )
                 """)
 
-                # Migrations for existing databases
+                # Migration for existing databases to add UNIQUE constraints
+                # SQLite doesn't support ADD UNIQUE, so we check if the constraint exists
+                # by attempting an insert that would conflict, or just checking PRAGMA index_list
+                for table, columns in [
+                    ("series", ["library_name", "name"]),
+                    ("seasons", ["series_id", "name"]),
+                    ("episodes", ["path"]),
+                ]:
+                    cursor.execute(f"PRAGMA index_list({table})")
+                    indices = cursor.fetchall()
+                    has_unique = any(idx["unique"] == 1 for idx in indices)
+
+                    if not has_unique:
+                        logger.info(
+                            f"Migrating table '{table}' to add UNIQUE constraints..."
+                        )
+                        # This is a simplified migration: recreate table with data
+                        # Note: This is safe because save_library was "nuke and pave" anyway,
+                        # but we try to preserve data here just in case.
+                        cursor.execute(f"ALTER TABLE {table} RENAME TO {table}_old")
+                        # Re-run the CREATE TABLE above (it will create the new one)
+                        # For simplicity, we just trigger init_db logic again or call specific creators
+                        # But since we're in init_db, the tables are already created above if they didn't exist.
+                        # Wait, if they ALREADY existed WITHOUT unique, CREATE TABLE IF NOT EXISTS did nothing.
+                        # So we need to actually create them now.
+
+                        if table == "series":
+                            cursor.execute("""
+                                CREATE TABLE series (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    library_name TEXT,
+                                    name TEXT,
+                                    jellyfin_id TEXT,
+                                    poster_path TEXT,
+                                    overview TEXT,
+                                    is_manual_match BOOLEAN DEFAULT 0,
+                                    UNIQUE(library_name, name)
+                                )
+                            """)
+                            cursor.execute(
+                                "INSERT OR IGNORE INTO series SELECT * FROM series_old"
+                            )
+                        elif table == "seasons":
+                            cursor.execute("""
+                                CREATE TABLE seasons (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    series_id INTEGER,
+                                    name TEXT,
+                                    jellyfin_id TEXT,
+                                    poster_path TEXT,
+                                    FOREIGN KEY(series_id) REFERENCES series(id) ON DELETE CASCADE,
+                                    UNIQUE(series_id, name)
+                                )
+                            """)
+                            cursor.execute(
+                                "INSERT OR IGNORE INTO seasons SELECT * FROM seasons_old"
+                            )
+                        elif table == "episodes":
+                            cursor.execute("""
+                                CREATE TABLE episodes (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    season_id INTEGER,
+                                    name TEXT,
+                                    path TEXT,
+                                    jellyfin_id TEXT,
+                                    watched BOOLEAN DEFAULT 0,
+                                    date_added INTEGER DEFAULT 0,
+                                    FOREIGN KEY(season_id) REFERENCES seasons(id) ON DELETE CASCADE,
+                                    UNIQUE(season_id, name),
+                                    UNIQUE(path)
+                                )
+                            """)
+                            cursor.execute(
+                                "INSERT OR IGNORE INTO episodes SELECT * FROM episodes_old"
+                            )
+
+                        cursor.execute(f"DROP TABLE {table}_old")
+
+                # Migrations for existing databases (older columns)
                 try:
                     cursor.execute(
                         "ALTER TABLE episodes ADD COLUMN date_added INTEGER DEFAULT 0"
@@ -155,21 +237,44 @@ def load_library(library_name: str) -> Dict[str, Any]:
 
 def save_library(library_name: str, library: Dict[str, Any]):
     """
-    Clears the database for the given library name and populates it.
+    Updates the database for the given library name using upserts.
+    Preserves existing data and only deletes what is no longer present.
     """
     try:
         with closing(get_connection()) as conn:
             with conn:
                 cursor = conn.cursor()
                 cursor.execute("PRAGMA foreign_keys = ON")
+
+                # Create temporary tables to track touched IDs
                 cursor.execute(
-                    "DELETE FROM series WHERE library_name = ?", (library_name,)
+                    "CREATE TEMP TABLE IF NOT EXISTS touched_series (id INTEGER)"
                 )
+                cursor.execute(
+                    "CREATE TEMP TABLE IF NOT EXISTS touched_seasons (id INTEGER)"
+                )
+                cursor.execute(
+                    "CREATE TEMP TABLE IF NOT EXISTS touched_episodes (id INTEGER)"
+                )
+
+                cursor.execute("DELETE FROM touched_series")
+                cursor.execute("DELETE FROM touched_seasons")
+                cursor.execute("DELETE FROM touched_episodes")
 
                 for series_name, series_data in library.items():
                     series_metadata = series_data.get("metadata", {})
+                    # Upsert Series
                     cursor.execute(
-                        "INSERT INTO series (library_name, name, jellyfin_id, poster_path, overview, is_manual_match) VALUES (?, ?, ?, ?, ?, ?)",
+                        """
+                        INSERT INTO series (library_name, name, jellyfin_id, poster_path, overview, is_manual_match)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(library_name, name) DO UPDATE SET
+                            jellyfin_id = excluded.jellyfin_id,
+                            poster_path = excluded.poster_path,
+                            overview = excluded.overview,
+                            is_manual_match = excluded.is_manual_match
+                        RETURNING id
+                    """,
                         (
                             library_name,
                             series_name,
@@ -179,14 +284,25 @@ def save_library(library_name: str, library: Dict[str, Any]):
                             1 if series_metadata.get("is_manual_match") else 0,
                         ),
                     )
-                    series_id = cursor.lastrowid
+                    series_id = cursor.fetchone()[0]
+                    cursor.execute(
+                        "INSERT INTO touched_series (id) VALUES (?)", (series_id,)
+                    )
 
                     for season_name, season_data in series_data.get(
                         "seasons", {}
                     ).items():
                         season_metadata = season_data.get("metadata", {})
+                        # Upsert Season
                         cursor.execute(
-                            "INSERT INTO seasons (series_id, name, jellyfin_id, poster_path) VALUES (?, ?, ?, ?)",
+                            """
+                            INSERT INTO seasons (series_id, name, jellyfin_id, poster_path)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(series_id, name) DO UPDATE SET
+                                jellyfin_id = excluded.jellyfin_id,
+                                poster_path = excluded.poster_path
+                            RETURNING id
+                        """,
                             (
                                 series_id,
                                 season_name,
@@ -194,11 +310,25 @@ def save_library(library_name: str, library: Dict[str, Any]):
                                 season_metadata.get("poster_path"),
                             ),
                         )
-                        season_id = cursor.lastrowid
+                        season_id = cursor.fetchone()[0]
+                        cursor.execute(
+                            "INSERT INTO touched_seasons (id) VALUES (?)", (season_id,)
+                        )
 
                         for episode in season_data.get("episodes", []):
+                            # Upsert Episode
                             cursor.execute(
-                                "INSERT INTO episodes (season_id, name, path, jellyfin_id, watched, date_added) VALUES (?, ?, ?, ?, ?, ?)",
+                                """
+                                INSERT INTO episodes (season_id, name, path, jellyfin_id, watched, date_added)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                                ON CONFLICT(path) DO UPDATE SET
+                                    season_id = excluded.season_id,
+                                    name = excluded.name,
+                                    jellyfin_id = excluded.jellyfin_id,
+                                    watched = excluded.watched,
+                                    date_added = excluded.date_added
+                                RETURNING id
+                            """,
                                 (
                                     season_id,
                                     episode["name"],
@@ -208,7 +338,53 @@ def save_library(library_name: str, library: Dict[str, Any]):
                                     episode.get("date_added", 0),
                                 ),
                             )
-                logger.info(f"Library '{library_name}' successfully saved to database.")
+                            episode_id = cursor.fetchone()[0]
+                            cursor.execute(
+                                "INSERT INTO touched_episodes (id) VALUES (?)",
+                                (episode_id,),
+                            )
+
+                # Cleanup stale entries
+                # Delete episodes not in current scan for this library
+                cursor.execute(
+                    """
+                    DELETE FROM episodes 
+                    WHERE id NOT IN (SELECT id FROM touched_episodes)
+                    AND season_id IN (
+                        SELECT id FROM seasons 
+                        WHERE series_id IN (
+                            SELECT id FROM series WHERE library_name = ?
+                        )
+                    )
+                """,
+                    (library_name,),
+                )
+
+                # Delete seasons not in current scan for this library
+                cursor.execute(
+                    """
+                    DELETE FROM seasons 
+                    WHERE id NOT IN (SELECT id FROM touched_seasons)
+                    AND series_id IN (
+                        SELECT id FROM series WHERE library_name = ?
+                    )
+                """,
+                    (library_name,),
+                )
+
+                # Delete series not in current scan for this library
+                cursor.execute(
+                    """
+                    DELETE FROM series 
+                    WHERE id NOT IN (SELECT id FROM touched_series)
+                    AND library_name = ?
+                """,
+                    (library_name,),
+                )
+
+                logger.info(
+                    f"Library '{library_name}' successfully updated in database."
+                )
     except Exception as e:
         logger.error(f"Error saving library '{library_name}' to database: {e}")
 
