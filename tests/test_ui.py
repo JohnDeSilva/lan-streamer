@@ -121,17 +121,41 @@ def test_mainwindow_play_video(qtbot, mock_dependencies):
     assert ep_item.text() == "[✓] Ep1"
 
 
-def test_mainwindow_force_scan(qtbot, mock_dependencies):
+def test_mainwindow_force_scan(qtbot, mock_dependencies, monkeypatch):
     window = MainWindow()
     qtbot.addWidget(window)
 
     ui.scan_directories.return_value = {}
+
+    # Run the worker synchronously for the test
+    monkeypatch.setattr(ui.ScanWorker, "start", lambda self: self.run())
+
     window.force_scan_library()
     # Use ANY for existing_library since it's populated from the fixture
     from unittest.mock import ANY
 
     ui.scan_directories.assert_called_once_with(["/path1"], existing_library=ANY)
     ui.db.save_library.assert_called_once_with("TestLib", {})
+
+
+def test_mainwindow_force_scan_error(qtbot, mock_dependencies, monkeypatch):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    # Force the worker to emit an error
+    def mock_start(self):
+        self.error.emit("Mocked scan error")
+
+    monkeypatch.setattr(ui.ScanWorker, "start", mock_start)
+
+    mock_crit = MagicMock()
+    monkeypatch.setattr(ui.QMessageBox, "critical", mock_crit)
+
+    window.force_scan_library()
+
+    mock_crit.assert_called_once()
+    assert window.refresh_action.isEnabled() is True
+    assert window.scan_worker is None
 
 
 def test_toggle_watched_status(qtbot, mock_dependencies):

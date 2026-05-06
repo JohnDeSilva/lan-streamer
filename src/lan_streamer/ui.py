@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
 )
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from pathlib import Path
 
 from .config import config
@@ -29,6 +29,25 @@ from .player import play_video
 from .jellyfin import jellyfin_client
 from . import db
 from .delegates import PosterDelegate
+
+
+class ScanWorker(QThread):
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, root_dirs, existing_library, parent=None):
+        super().__init__(parent)
+        self.root_dirs = root_dirs
+        self.existing_library = existing_library
+
+    def run(self):
+        try:
+            library = scan_directories(
+                self.root_dirs, existing_library=self.existing_library
+            )
+            self.finished.emit(library)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class SeriesMatchDialog(QDialog):
@@ -254,9 +273,9 @@ class MainWindow(QMainWindow):
         manage_jf_action.triggered.connect(self.open_jellyfin_settings)
         settings_menu.addAction(manage_jf_action)
 
-        refresh_action = QAction("Refresh Library (Scan Network)", self)
-        refresh_action.triggered.connect(self.force_scan_library)
-        settings_menu.addAction(refresh_action)
+        self.refresh_action = QAction("Refresh Library (Scan Network)", self)
+        self.refresh_action.triggered.connect(self.force_scan_library)
+        settings_menu.addAction(self.refresh_action)
 
     def _setup_ui(self):
         central_widget = QWidget()
@@ -435,9 +454,35 @@ class MainWindow(QMainWindow):
         if not root_dirs:
             return
 
-        self.library = scan_directories(root_dirs, existing_library=self.library)
+        # Disable UI elements that shouldn't be clicked during scan
+        self.statusBar().showMessage(
+            f"Scanning library '{library_name}'... Please wait."
+        )
+        self.refresh_action.setEnabled(False)
+
+        # Start the background worker
+        self.scan_worker = ScanWorker(root_dirs, self.library, self)
+        self.scan_worker.finished.connect(self.on_scan_finished)
+        self.scan_worker.error.connect(self.on_scan_error)
+        self.scan_worker.start()
+
+    def on_scan_finished(self, new_library_data):
+        library_name = self.main_library_combo.currentText()
+        self.library = new_library_data
         db.save_library(library_name, self.library)
         self.load_library_ui()
+
+        self.statusBar().showMessage(f"Scan complete for '{library_name}'.", 5000)
+        self.refresh_action.setEnabled(True)
+        self.scan_worker = None
+
+    def on_scan_error(self, error_msg):
+        self.statusBar().showMessage(f"Scan failed: {error_msg}", 5000)
+        self.refresh_action.setEnabled(True)
+        self.scan_worker = None
+        QMessageBox.critical(
+            self, "Scan Error", f"An error occurred during scanning:\n{error_msg}"
+        )
 
     def show_series_context_menu(self, position):
         index = self.series_view.indexAt(position)
