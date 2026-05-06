@@ -29,11 +29,14 @@ def clean_series_data(series_data: Dict[str, Any]) -> Dict[str, Any]:
     return None
 
 
-def scan_directories(root_dirs: List[str]) -> Dict[str, Any]:
+def scan_directories(
+    root_dirs: List[str], existing_library: Dict[str, Any] = None
+) -> Dict[str, Any]:
     """
     Scans root directories and matches with Jellyfin to pull metadata and watched status.
     """
     library = {}
+    existing_library = existing_library or {}
 
     logger.info(f"Starting directory scan. Root directories: {root_dirs}")
 
@@ -51,7 +54,26 @@ def scan_directories(root_dirs: List[str]) -> Dict[str, Any]:
 
             series_name = series_dir.name
             if series_name not in library:
-                data = scan_series(series_dir)
+                # Check if we have an existing manual match
+                existing_series = existing_library.get(series_name)
+                jellyfin_series = None
+                is_manual = False
+
+                if existing_series and existing_series.get("metadata", {}).get(
+                    "is_manual_match"
+                ):
+                    jellyfin_id = existing_series["metadata"].get("jellyfin_id")
+                    if jellyfin_id:
+                        logger.info(
+                            f"Using existing manual match for '{series_name}' (ID: {jellyfin_id})"
+                        )
+                        jellyfin_series = {"Id": jellyfin_id}
+                        is_manual = True
+
+                data = scan_series(series_dir, jellyfin_series=jellyfin_series)
+                if is_manual:
+                    data["metadata"]["is_manual_match"] = True
+
                 cleaned = clean_series_data(data)
                 if cleaned:
                     library[series_name] = cleaned
@@ -67,6 +89,13 @@ def scan_series(
     If jellyfin_series is provided, it uses that instead of searching.
     """
     series_name = series_dir.name
+    # If jellyfin_series only has an Id (from manual match), we need to fetch full metadata
+    if jellyfin_series and "Name" not in jellyfin_series:
+        # We only have the ID, let's get the full object if possible
+        # For now, search_series doesn't support searching by ID,
+        # but the scan_series logic below handles just having an ID.
+        pass
+
     if not jellyfin_series:
         jellyfin_series = jellyfin_client.search_series(series_name)
 

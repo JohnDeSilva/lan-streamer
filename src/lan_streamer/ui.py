@@ -435,7 +435,7 @@ class MainWindow(QMainWindow):
         if not root_dirs:
             return
 
-        self.library = scan_directories(root_dirs)
+        self.library = scan_directories(root_dirs, existing_library=self.library)
         db.save_library(library_name, self.library)
         self.load_library_ui()
 
@@ -484,6 +484,7 @@ class MainWindow(QMainWindow):
             cleaned_data = clean_series_data(new_data)
 
             if cleaned_data:
+                cleaned_data["metadata"]["is_manual_match"] = True
                 self.library[series_name] = cleaned_data
                 db.save_library(library_name, self.library)
                 self.update_series_view()

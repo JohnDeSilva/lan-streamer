@@ -127,7 +127,10 @@ def test_mainwindow_force_scan(qtbot, mock_dependencies):
 
     ui.scan_directories.return_value = {}
     window.force_scan_library()
-    ui.scan_directories.assert_called_once_with(["/path1"])
+    # Use ANY for existing_library since it's populated from the fixture
+    from unittest.mock import ANY
+
+    ui.scan_directories.assert_called_once_with(["/path1"], existing_library=ANY)
     ui.db.save_library.assert_called_once_with("TestLib", {})
 
 

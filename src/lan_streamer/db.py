@@ -32,7 +32,8 @@ def init_db():
                         name TEXT,
                         jellyfin_id TEXT,
                         poster_path TEXT,
-                        overview TEXT
+                        overview TEXT,
+                        is_manual_match BOOLEAN DEFAULT 0
                     )
                 """)
 
@@ -60,10 +61,17 @@ def init_db():
                     )
                 """)
 
-                # Migration for existing databases
+                # Migrations for existing databases
                 try:
                     cursor.execute(
                         "ALTER TABLE episodes ADD COLUMN date_added INTEGER DEFAULT 0"
+                    )
+                except sqlite3.OperationalError:
+                    pass
+
+                try:
+                    cursor.execute(
+                        "ALTER TABLE series ADD COLUMN is_manual_match BOOLEAN DEFAULT 0"
                     )
                 except sqlite3.OperationalError:
                     pass
@@ -92,6 +100,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
                         "jellyfin_id": series_row["jellyfin_id"],
                         "poster_path": series_row["poster_path"],
                         "overview": series_row["overview"],
+                        "is_manual_match": bool(series_row["is_manual_match"]),
                     },
                     "seasons": {},
                 }
@@ -160,13 +169,14 @@ def save_library(library_name: str, library: Dict[str, Any]):
                 for series_name, series_data in library.items():
                     series_metadata = series_data.get("metadata", {})
                     cursor.execute(
-                        "INSERT INTO series (library_name, name, jellyfin_id, poster_path, overview) VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO series (library_name, name, jellyfin_id, poster_path, overview, is_manual_match) VALUES (?, ?, ?, ?, ?, ?)",
                         (
                             library_name,
                             series_name,
                             series_metadata.get("jellyfin_id"),
                             series_metadata.get("poster_path"),
                             series_metadata.get("overview"),
+                            1 if series_metadata.get("is_manual_match") else 0,
                         ),
                     )
                     series_id = cursor.lastrowid

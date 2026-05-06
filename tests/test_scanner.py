@@ -155,3 +155,33 @@ def test_scan_series_manual_match(tmp_path):
 
         assert series_data["metadata"]["jellyfin_id"] == "real_id"
         mock_jf.search_series.assert_not_called()
+
+
+def test_scan_directories_respects_manual_match(tmp_path, monkeypatch):
+    from lan_streamer.scanner import scan_directories
+
+    series_dir = tmp_path / "Manual Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    (season_dir / "S01E01.mkv").touch()
+
+    existing_library = {
+        "Manual Show": {
+            "metadata": {"jellyfin_id": "manual_id", "is_manual_match": True},
+            "seasons": {"Season 1": {"episodes": []}},
+        }
+    }
+
+    # Mock jellyfin
+    mock_jf = MagicMock()
+    mock_jf.get_seasons.return_value = []
+    mock_jf.download_image.return_value = None
+    monkeypatch.setattr(scanner, "jellyfin_client", mock_jf)
+
+    # Scan with existing library
+    library = scan_directories([str(tmp_path)], existing_library=existing_library)
+
+    assert library["Manual Show"]["metadata"]["jellyfin_id"] == "manual_id"
+    assert library["Manual Show"]["metadata"]["is_manual_match"] is True
+    mock_jf.search_series.assert_not_called()
