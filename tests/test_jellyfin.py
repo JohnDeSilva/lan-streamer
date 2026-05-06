@@ -410,3 +410,72 @@ def test_preload_library(jf_client):
 
     jf_client.clear_cache()
     assert jf_client._cache is None
+
+
+def test_jellyfin_preload_full(jf_client, monkeypatch):
+    # Test lines 47-51, 58-62 of jellyfin.py
+    jf_client.get_current_user_id = MagicMock(return_value="user1")
+
+    mock_resp_series = MagicMock()
+    mock_resp_series.json.return_value = {"Items": [{"Id": "ser1", "Name": "Show"}]}
+    mock_resp_series.status_code = 200
+
+    mock_resp_seasons = MagicMock()
+    mock_resp_seasons.json.return_value = {
+        "Items": [{"Id": "sea1", "SeriesId": "ser1"}]
+    }
+    mock_resp_seasons.status_code = 200
+
+    mock_resp_episodes = MagicMock()
+    mock_resp_episodes.json.return_value = {
+        "Items": [{"Id": "ep1", "SeasonId": "sea1"}]
+    }
+    mock_resp_episodes.status_code = 200
+
+    jf_client.session.get = MagicMock(
+        side_effect=[mock_resp_series, mock_resp_seasons, mock_resp_episodes]
+    )
+
+    jf_client.preload_library()
+    assert jf_client._cache is not None
+    assert "ser1" in jf_client._cache["seasons"]
+    assert "sea1" in jf_client._cache["episodes"]
+
+
+def test_jellyfin_preload_not_configured(monkeypatch):
+    # Test line 32 of jellyfin.py
+    from lan_streamer.jellyfin import JellyfinClient
+
+    monkeypatch.setattr(config, "jellyfin_url", "")
+    client = JellyfinClient()
+    assert client.preload_library() is None
+
+
+def test_jellyfin_preload_no_user(jf_client):
+    # Test line 36 of jellyfin.py
+    jf_client.get_current_user_id = MagicMock(return_value=None)
+    assert jf_client.preload_library() is None
+
+
+def test_jellyfin_fetch_paginated_gap(jf_client):
+    # Test lines 101-106 of jellyfin.py (pagination and error)
+    jf_client.get_current_user_id = MagicMock(return_value="user1")
+
+    # Mock pagination: 1st call returns 5000 items, 2nd returns 1 item
+    mock_resp_full = MagicMock()
+    mock_resp_full.json.return_value = {"Items": [{"Id": i} for i in range(5000)]}
+    mock_resp_full.status_code = 200
+
+    mock_resp_last = MagicMock()
+    mock_resp_last.json.return_value = {"Items": [{"Id": 5000}]}
+    mock_resp_last.status_code = 200
+
+    jf_client.session.get = MagicMock(side_effect=[mock_resp_full, mock_resp_last])
+
+    items = jf_client._fetch_all_items_paginated("Series", "")
+    assert len(items) == 5001
+
+    # Test exception branch (line 103)
+    jf_client.session.get = MagicMock(side_effect=Exception("Fetch error"))
+    items = jf_client._fetch_all_items_paginated("Series", "")
+    assert items == []

@@ -82,3 +82,12 @@ def test_config_load_error(mock_config_file, monkeypatch):
     monkeypatch.setattr("builtins.open", mock_open)
     config = Config()
     assert config.libraries == {}
+
+
+def test_config_load_no_keys(mock_config_file):
+    # Test line 31 of config.py
+    with open(mock_config_file, "w") as f:
+        json.dump({"other": "data"}, f)
+
+    config = Config()
+    assert config.libraries == {}

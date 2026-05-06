@@ -8,7 +8,7 @@ lint:
 	uv run ruff check --fix .
 
 test:
-	PYTHONPATH=src uv run pytest --cov=lan_streamer --cov-report=term-missing tests/
+	PYTHONPATH=src uv run pytest tests/
 
 build-mac:
 	uv run pyinstaller --name "Lan Streamer" --windowed --noconfirm src/lan_streamer/main.py

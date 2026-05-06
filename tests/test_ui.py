@@ -531,3 +531,48 @@ def test_mainwindow_manual_match(qtbot, mock_dependencies, monkeypatch, tmp_path
 
     assert window.library[series_name]["metadata"]["jellyfin_id"] == "new_id"
     ui.db.save_library.assert_called()
+
+
+def test_poster_delegate_mouseover(qtbot):
+    # Test line 31-32 of delegates.py
+    from lan_streamer.delegates import PosterDelegate
+    from PySide6.QtWidgets import QListView, QStyleOptionViewItem, QStyle
+    from PySide6.QtGui import QPainter, QPixmap, QStandardItemModel, QStandardItem
+
+    view = QListView()
+    delegate = PosterDelegate(view)
+
+    option = QStyleOptionViewItem()
+    option.rect = view.rect()
+    # MouseOver ONLY (no Selected)
+    option.state = QStyle.StateFlag.State_MouseOver
+
+    model = QStandardItemModel()
+    item = QStandardItem("Test")
+    model.appendRow(item)
+    index = model.index(0, 0)
+
+    pixmap = QPixmap(100, 100)
+    painter = QPainter(pixmap)
+    delegate.paint(painter, option, index)
+    painter.end()
+
+
+def test_mainwindow_load_empty(qtbot, mock_dependencies):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    # Pre-set some data
+    window.library = {"Series A": {}}
+    # Trigger load with empty name
+    window.main_library_combo.clear()
+    window.load_library_ui()
+    assert window.library == {}
+
+
+def test_ui_on_sync_all_finished(qtbot, mock_dependencies):
+    # Test on_sync_all_finished branch in ui.py
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.on_sync_all_finished()
+    assert window.refresh_action.isEnabled()

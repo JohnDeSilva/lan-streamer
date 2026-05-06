@@ -63,3 +63,27 @@ def test_main_logging_setup(monkeypatch, tmp_path):
     handlers = root.handlers
     assert any(isinstance(h, logging.FileHandler) for h in handlers)
     assert any(isinstance(h, logging.StreamHandler) for h in handlers)
+
+
+def test_main_logging_failure(monkeypatch):
+    # Test lines 54-55 of main.py
+    import logging
+
+    def mock_file_handler(*args, **kwargs):
+        raise Exception("Log failure")
+
+    monkeypatch.setattr(logging, "FileHandler", mock_file_handler)
+    mock_error = MagicMock()
+    monkeypatch.setattr(logging, "error", mock_error)
+
+    # Mock other things to avoid execution
+    monkeypatch.setattr("lan_streamer.main.db.init_db", lambda: False)
+    monkeypatch.setattr("lan_streamer.main.QApplication", MagicMock())
+    monkeypatch.setattr("lan_streamer.main.MainWindow", MagicMock())
+
+    import sys
+
+    monkeypatch.setattr(sys, "exit", lambda x: None)
+
+    main.main()
+    mock_error.assert_called()

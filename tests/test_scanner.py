@@ -190,3 +190,37 @@ def test_scan_directories_respects_manual_match(tmp_path, monkeypatch):
     assert library["Manual Show"]["metadata"]["jellyfin_id"] == "manual_id"
     assert library["Manual Show"]["metadata"]["is_manual_match"] is True
     mock_jf.search_series.assert_not_called()
+
+
+def test_clean_series_data_none():
+    assert scanner.clean_series_data({"seasons": {}}) is None
+    assert scanner.clean_series_data({"seasons": {"S1": {"episodes": []}}}) is None
+
+
+def test_scan_directories_gaps(tmp_path, monkeypatch):
+    # Test lines 49, 53, 121 of scanner.py
+
+    # 49: root_path is not a dir
+    not_a_dir = tmp_path / "file.txt"
+    not_a_dir.write_text("not a dir")
+    assert scanner.scan_directories([str(not_a_dir)]) == {}
+
+    # 53: series_dir is not a dir or starts with .
+    root_dir = tmp_path / "root"
+    root_dir.mkdir()
+    (root_dir / ".hidden_series").mkdir()
+    (root_dir / "file_series").write_text("file")
+
+    # 121: season_dir is not a dir or starts with .
+    series_dir = root_dir / "Valid Series"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    (season_dir / "ep1.mkv").write_text("video")
+    (series_dir / ".hidden_season").mkdir()
+    (series_dir / "file_season").write_text("file")
+
+    monkeypatch.setattr(scanner.jellyfin_client, "search_series", lambda x: None)
+    res = scanner.scan_directories([str(root_dir)])
+    assert "Valid Series" in res
+    assert "Season 1" in res["Valid Series"]["seasons"]
