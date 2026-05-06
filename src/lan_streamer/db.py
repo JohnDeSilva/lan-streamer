@@ -16,14 +16,53 @@ def get_connection():
     return conn
 
 
-def init_db():
+DB_VERSION = "0.2.1"
+
+
+def init_db() -> bool:
+    """
+    Initializes the database.
+    Returns True if the database was recreated (triggering a need for sync).
+    """
+    recreated = False
     try:
         with closing(get_connection()) as conn:
             with conn:
                 cursor = conn.cursor()
 
-                # Drop old flat table if it exists
-                cursor.execute("DROP TABLE IF EXISTS library")
+                # Create metadata table if it doesn't exist
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS metadata (
+                        key TEXT PRIMARY KEY,
+                        value TEXT
+                    )
+                """)
+
+                # Get current DB version
+                cursor.execute("SELECT value FROM metadata WHERE key = 'version'")
+                row = cursor.fetchone()
+                db_version = row["value"] if row else "0.0.0"
+
+                # Check if we need to migrate/recreate
+                # If version is < 0.2.0, we drop and recreate
+                # Simplified version comparison:
+                def is_less_than_0_2_0(v):
+                    parts = [int(p) for p in v.split(".")]
+                    if parts[0] < 0:
+                        return True
+                    if parts[0] == 0 and parts[1] < 2:
+                        return True
+                    return False
+
+                if is_less_than_0_2_0(db_version):
+                    logger.info(
+                        f"Database version {db_version} is less than 0.2.0. Recreating database..."
+                    )
+                    cursor.execute("DROP TABLE IF EXISTS episodes")
+                    cursor.execute("DROP TABLE IF EXISTS seasons")
+                    cursor.execute("DROP TABLE IF EXISTS series")
+                    cursor.execute("DROP TABLE IF EXISTS library")
+                    recreated = True
 
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS series (
@@ -65,85 +104,13 @@ def init_db():
                     )
                 """)
 
-                # Migration for existing databases to add UNIQUE constraints
-                # SQLite doesn't support ADD UNIQUE, so we check if the constraint exists
-                # by attempting an insert that would conflict, or just checking PRAGMA index_list
-                for table, columns in [
-                    ("series", ["library_name", "name"]),
-                    ("seasons", ["series_id", "name"]),
-                    ("episodes", ["path"]),
-                ]:
-                    cursor.execute(f"PRAGMA index_list({table})")
-                    indices = cursor.fetchall()
-                    has_unique = any(idx["unique"] == 1 for idx in indices)
+                # Update version in database
+                cursor.execute(
+                    "INSERT OR REPLACE INTO metadata (key, value) VALUES ('version', ?)",
+                    (DB_VERSION,),
+                )
 
-                    if not has_unique:
-                        logger.info(
-                            f"Migrating table '{table}' to add UNIQUE constraints..."
-                        )
-                        # This is a simplified migration: recreate table with data
-                        # Note: This is safe because save_library was "nuke and pave" anyway,
-                        # but we try to preserve data here just in case.
-                        cursor.execute(f"ALTER TABLE {table} RENAME TO {table}_old")
-                        # Re-run the CREATE TABLE above (it will create the new one)
-                        # For simplicity, we just trigger init_db logic again or call specific creators
-                        # But since we're in init_db, the tables are already created above if they didn't exist.
-                        # Wait, if they ALREADY existed WITHOUT unique, CREATE TABLE IF NOT EXISTS did nothing.
-                        # So we need to actually create them now.
-
-                        if table == "series":
-                            cursor.execute("""
-                                CREATE TABLE series (
-                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                    library_name TEXT,
-                                    name TEXT,
-                                    jellyfin_id TEXT,
-                                    poster_path TEXT,
-                                    overview TEXT,
-                                    is_manual_match BOOLEAN DEFAULT 0,
-                                    UNIQUE(library_name, name)
-                                )
-                            """)
-                            cursor.execute(
-                                "INSERT OR IGNORE INTO series SELECT * FROM series_old"
-                            )
-                        elif table == "seasons":
-                            cursor.execute("""
-                                CREATE TABLE seasons (
-                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                    series_id INTEGER,
-                                    name TEXT,
-                                    jellyfin_id TEXT,
-                                    poster_path TEXT,
-                                    FOREIGN KEY(series_id) REFERENCES series(id) ON DELETE CASCADE,
-                                    UNIQUE(series_id, name)
-                                )
-                            """)
-                            cursor.execute(
-                                "INSERT OR IGNORE INTO seasons SELECT * FROM seasons_old"
-                            )
-                        elif table == "episodes":
-                            cursor.execute("""
-                                CREATE TABLE episodes (
-                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                    season_id INTEGER,
-                                    name TEXT,
-                                    path TEXT,
-                                    jellyfin_id TEXT,
-                                    watched BOOLEAN DEFAULT 0,
-                                    date_added INTEGER DEFAULT 0,
-                                    FOREIGN KEY(season_id) REFERENCES seasons(id) ON DELETE CASCADE,
-                                    UNIQUE(season_id, name),
-                                    UNIQUE(path)
-                                )
-                            """)
-                            cursor.execute(
-                                "INSERT OR IGNORE INTO episodes SELECT * FROM episodes_old"
-                            )
-
-                        cursor.execute(f"DROP TABLE {table}_old")
-
-                # Migrations for existing databases (older columns)
+                # Ensure date_added column exists (for very old DBs that might still exist)
                 try:
                     cursor.execute(
                         "ALTER TABLE episodes ADD COLUMN date_added INTEGER DEFAULT 0"
@@ -151,14 +118,10 @@ def init_db():
                 except sqlite3.OperationalError:
                     pass
 
-                try:
-                    cursor.execute(
-                        "ALTER TABLE series ADD COLUMN is_manual_match BOOLEAN DEFAULT 0"
-                    )
-                except sqlite3.OperationalError:
-                    pass
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
+
+    return recreated
 
 
 def load_library(library_name: str) -> Dict[str, Any]:

@@ -54,11 +54,11 @@ def main():
     except Exception as e:
         logging.error(f"Could not create log file: {e}")
 
-    db.init_db()
+    recreated = db.init_db()
     app = QApplication(sys.argv)
     setup_dark_theme(app)
 
-    window = MainWindow()
+    window = MainWindow(recreated_db=recreated)
     window.show()
 
     sys.exit(app.exec())

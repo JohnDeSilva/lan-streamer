@@ -53,6 +53,27 @@ class ScanWorker(QThread):
             self.error.emit(str(e))
 
 
+class SyncAllWorker(QThread):
+    finished = Signal()
+    progress = Signal(str)
+    error = Signal(str)
+
+    def run(self):
+        try:
+            jellyfin_client.preload_library()
+            for lib_name, root_dirs in config.libraries.items():
+                self.progress.emit(f"Scanning library '{lib_name}'...")
+                # Load existing data for this library to support incremental scan
+                existing_data = db.load_library(lib_name)
+                library = scan_directories(root_dirs, existing_library=existing_data)
+                db.save_library(lib_name, library)
+            jellyfin_client.clear_cache()
+            self.finished.emit()
+        except Exception as e:
+            jellyfin_client.clear_cache()
+            self.error.emit(str(e))
+
+
 class SeriesMatchDialog(QDialog):
     def __init__(self, series_name, parent=None):
         super().__init__(parent)
@@ -251,7 +272,7 @@ class LibrarySettingsDialog(QDialog):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, recreated_db=False):
         super().__init__()
         self.setWindowTitle("Lan Streamer")
         self.setMinimumSize(1000, 700)
@@ -261,6 +282,9 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_menu()
         self.refresh_libraries_combo()
+
+        if recreated_db:
+            self.sync_all_libraries()
 
     def _setup_menu(self):
         menubar = self.menuBar()
@@ -480,6 +504,23 @@ class MainWindow(QMainWindow):
         self.load_library_ui()
 
         self.statusBar().showMessage(f"Scan complete for '{library_name}'.", 5000)
+        self.refresh_action.setEnabled(True)
+
+    def sync_all_libraries(self):
+        self.statusBar().showMessage("Syncing all libraries... Please wait.")
+        self.refresh_action.setEnabled(False)
+
+        self.sync_worker = SyncAllWorker()
+        self.sync_worker.progress.connect(lambda msg: self.statusBar().showMessage(msg))
+        self.sync_worker.finished.connect(self.on_sync_all_finished)
+        self.sync_worker.error.connect(self.on_scan_error)
+        self.sync_worker.finished.connect(self.sync_worker.deleteLater)
+        self.sync_worker.error.connect(self.sync_worker.deleteLater)
+        self.sync_worker.start()
+
+    def on_sync_all_finished(self):
+        self.load_library_ui()
+        self.statusBar().showMessage("Global sync complete.", 5000)
         self.refresh_action.setEnabled(True)
 
     def on_scan_error(self, error_msg):
