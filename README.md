@@ -1,20 +1,33 @@
 # Lan Streamer
 
-**Lan Streamer** is a lightweight, desktop media library manager designed for users who store their media locally (e.g., on a NAS) and want a beautiful UI for browsing and playing their content via VLC, while keeping metadata and watched status in sync with **Jellyfin**.
+**Lan Streamer** is a premium, lightweight media library manager built for users who demand the best local playback experience while maintaining a modern, metadata-rich browsing interface.
 
-Unlike standard Jellyfin clients, Lan Streamer focuses on **local playback**, launching VLC directly to ensure bit-perfect streaming with zero transcoding and maximum compatibility.
+It bridges the gap between local file storage (e.g., NAS, External Drives) and **Jellyfin**, ensuring your library stays beautiful and synchronized without the overhead or quality loss of server-side transcoding.
+
+---
 
 ## 🚀 Key Features
 
-*   **📺 High-Fidelity Playback**: Launches VLC directly to play local files, ensuring original quality without server-side transcoding.
-*   **🔍 Robust Metadata Matching**: Implements a multi-stage search strategy (Exact, Colon-replaced, Fuzzy, and Word-based fallbacks) to reliably link local folders to Jellyfin series.
-*   **🛠️ Manual Correction**: If automated matching fails, use the "Match Series..." context menu to manually search and link the correct Jellyfin entry.
-*   **🔄 Bidirectional Sync**:
-    *   Pulls posters and overviews from Jellyfin.
-    *   Syncs "Watched" status back to your Jellyfin server.
-*   **📁 Multi-Library Support**: Organize your content into different libraries (e.g., "Current", "Archive") across multiple root directories.
-*   **🎨 Premium UI**: A modern, dark-themed interface built with PySide6 (Qt for Python).
-*   **🛡️ Battle-Tested**: Comprehensive test suite with ~95% code coverage.
+*   **📺 Local-First Playback**: Launches **VLC** directly for bit-perfect streaming. Support for HDR, high-bitrate 4K, and all advanced codecs with zero transcoding.
+*   **⚡ High-Performance Scanning**: Engineered with an incremental scanning engine using SQLite `UPSERT` logic. Minimize disk I/O while preserving manual corrections and user metadata.
+*   **🔍 Advanced Metadata Matching**: Implements a robust, multi-stage search strategy (Exact, Colon-aware, Fuzzy, and Word-based fallbacks) to reliably link local folders to Jellyfin entries.
+*   **📛 Official Naming**: Prioritizes official Jellyfin episode names (e.g., *"01 - Pilot"*) for a clean, professional library look, with filename fallbacks for unmatched content.
+*   **🔄 Bidirectional Sync**: 
+    *   Automatically downloads high-quality posters and overviews.
+    *   Syncs "Watched" status back to your Jellyfin server in real-time.
+*   **📁 Multi-Library Organization**: Group your content into logical libraries (e.g., "Main", "Archive", "Anime") with support for multiple root directories per library.
+*   **🛠️ Manual Corrections**: Effortlessly fix incorrect matches via the "Match Series..." context menu.
+*   **🎨 Premium Dark UI**: A sleek, high-contrast interface built with PySide6 (Qt) for a smooth and responsive desktop experience.
+
+---
+
+## 🏛️ Architecture & Stability
+
+*   **Versioned Schema**: Formal database versioning tracks application updates and handles complex migrations (or clean resets for legacy versions < 0.2.0) automatically.
+*   **Background Workers**: Library scanning and synchronization occur in dedicated background threads, keeping the UI fluid even during massive library updates.
+*   **🛡️ Quality Enforcement**: Maintains a strict **90% minimum code coverage** threshold. The CI pipeline and local test suite ensure regression-free development.
+
+---
 
 ## 🛠️ Requirements
 
@@ -22,50 +35,58 @@ Unlike standard Jellyfin clients, Lan Streamer focuses on **local playback**, la
 *   **VLC**: Must be installed and available in your system's PATH.
 *   **Jellyfin**: A running Jellyfin server and an API key.
 
+---
+
 ## 📦 Installation
 
-This project uses `uv` for fast, reliable package management.
+This project uses `uv` for ultra-fast, reliable package management.
 
 ```bash
 # Clone the repository
 git clone https://github.com/JohnDeSilva/lan-streamer.git
 cd lan-streamer
 
-# Install dependencies
+# Install dependencies and create virtual environment
 uv sync
 ```
 
+---
+
 ## 🖥️ Usage
 
-### Running Locally
+### Running the App
 ```bash
 make run
 ```
 
-### Configuration
-1.  Open the **Jellyfin Settings** from the gear icon.
-2.  Enter your Jellyfin URL and API Key.
-3.  Use **Library Settings** to add your local TV series folders.
-4.  Click **Force Scan** to sync metadata and posters.
+### Setup Guide
+1.  **Configure Jellyfin**: Click the gear icon to enter your Server URL and API Key. Use the "Test Connection" button to verify networking.
+2.  **Add Libraries**: Open "Library Settings" to define your media roots.
+3.  **Sync Data**: Click the refresh icon (Force Scan) to trigger the initial metadata and poster download.
+
+---
 
 ## 🧪 Development
 
-### Running Tests
+### Technical Stack
+*   **UI Framework**: [PySide6](https://doc.qt.io/qtforpython/) (Qt 6)
+*   **Database**: [SQLite 3](https://www.sqlite.org/) with UPSERT support
+*   **Package Manager**: [uv](https://github.com/astral-sh/uv)
+*   **Linting/Formatting**: [Ruff](https://github.com/astral-sh/ruff)
+
+### Testing
+We use `pytest` with `pytest-cov` and `pytest-qt` for comprehensive UI and logic testing.
 ```bash
 make test
 ```
 
-### Linting
+### Releases
+We follow [Conventional Commits](https://www.conventionalcommits.org/) for automated versioning and changelog generation.
 ```bash
-make lint
-```
-
-### Versioning & Releases
-We use **Commitizen** for conventional commits and automated changelogs.
-```bash
-# To create a new release (bumps version, updates CHANGELOG.md, tags and pushes)
 make release
 ```
 
+---
+
 ## 📜 License
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
