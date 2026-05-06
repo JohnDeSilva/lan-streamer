@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 from contextlib import closing
+from . import __version__ as DB_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +15,6 @@ def get_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
-
-
-DB_VERSION = "0.2.1"
 
 
 def init_db() -> bool:

@@ -23,7 +23,7 @@ It bridges the gap between local file storage (e.g., NAS, External Drives) and *
 
 ## 🏛️ Architecture & Stability
 
-*   **Versioned Schema**: Formal database versioning tracks application updates and handles complex migrations (or clean resets for legacy versions < 0.2.0) automatically.
+*   **Versioned Schema**: Formal database versioning tracks application updates and handles migrations automatically. The database version is strictly synchronized with the application version, ensuring metadata consistency across all releases.
 *   **Background Workers**: Library scanning and synchronization occur in dedicated background threads, keeping the UI fluid even during massive library updates.
 *   **🛡️ Quality Enforcement**: Maintains a strict **90% minimum code coverage** threshold. The CI pipeline and local test suite ensure regression-free development.
 

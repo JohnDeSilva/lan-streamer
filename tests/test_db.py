@@ -107,3 +107,9 @@ def test_db_error_handling(mock_db_file, monkeypatch):
     assert db.load_library("Lib") == {}
     db.save_library("Lib", {})
     db.update_episode_watched_status("path", True)
+
+
+def test_db_version_sync():
+    from lan_streamer import __version__
+
+    assert db.DB_VERSION == __version__
