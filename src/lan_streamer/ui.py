@@ -274,7 +274,7 @@ class LibrarySettingsDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self, recreated_db=False):
         super().__init__()
-        self.setWindowTitle("Lan Streamer")
+        self.setWindowTitle("LAN Streamer")
         self.setMinimumSize(1000, 700)
         self.library = {}
         self.current_series = None

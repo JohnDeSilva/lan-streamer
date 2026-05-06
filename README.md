@@ -1,6 +1,6 @@
-# Lan Streamer
+# LAN  Streamer
 
-**Lan Streamer** is a premium, lightweight media library manager built for users who demand the best local playback experience while maintaining a modern, metadata-rich browsing interface.
+**LAN Streamer** is a premium, lightweight media library manager built for users who demand the best local playback experience while maintaining a modern, metadata-rich browsing interface.
 
 It bridges the gap between local file storage (e.g., NAS, External Drives) and **Jellyfin**, ensuring your library stays beautiful and synchronized without the overhead or quality loss of server-side transcoding.
 
