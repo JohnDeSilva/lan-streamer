@@ -53,30 +53,91 @@ def scan_directories(
                 continue
 
             series_name = series_dir.name
-            if series_name not in library:
-                # Check if we have an existing manual match
-                existing_series = existing_library.get(series_name)
-                jellyfin_series = None
-                is_manual = False
 
-                if existing_series and existing_series.get("metadata", {}).get(
-                    "is_manual_match"
-                ):
-                    jellyfin_id = existing_series["metadata"].get("jellyfin_id")
-                    if jellyfin_id:
-                        logger.info(
-                            f"Using existing manual match for '{series_name}' (ID: {jellyfin_id})"
-                        )
-                        jellyfin_series = {"Id": jellyfin_id}
-                        is_manual = True
+            # Check if we have an existing manual match for THIS SPECIFIC folder name
+            existing_series = existing_library.get(series_name)
+            jellyfin_series = None
+            is_manual = False
 
-                data = scan_series(series_dir, jellyfin_series=jellyfin_series)
-                if is_manual:
-                    data["metadata"]["is_manual_match"] = True
+            if existing_series and existing_series.get("metadata", {}).get(
+                "is_manual_match"
+            ):
+                jellyfin_id = existing_series["metadata"].get("jellyfin_id")
+                if jellyfin_id:
+                    logger.info(
+                        f"Using existing manual match for '{series_name}' (ID: {jellyfin_id})"
+                    )
+                    jellyfin_series = {"Id": jellyfin_id}
+                    is_manual = True
 
-                cleaned = clean_series_data(data)
-                if cleaned:
-                    library[series_name] = cleaned
+            data = scan_series(series_dir, jellyfin_series=jellyfin_series)
+            if is_manual:
+                data["metadata"]["is_manual_match"] = True
+
+            cleaned = clean_series_data(data)
+            if not cleaned:
+                continue
+
+            # Identify if this series matches something already in our library
+            match_key = None
+            jellyfin_id = cleaned["metadata"].get("jellyfin_id")
+            tvdb_id = cleaned["metadata"].get("tvdb_id")
+
+            if jellyfin_id or tvdb_id:
+                for key, existing in library.items():
+                    if tvdb_id and existing["metadata"].get("tvdb_id") == tvdb_id:
+                        match_key = key
+                        break
+                    if (
+                        jellyfin_id
+                        and existing["metadata"].get("jellyfin_id") == jellyfin_id
+                    ):
+                        match_key = key
+                        break
+
+            if not match_key and series_name in library:
+                match_key = series_name
+
+            if match_key:
+                # Merge into existing entry
+                existing = library[match_key]
+                logger.info(
+                    f"Merging '{series_name}' into existing series entry '{match_key}'"
+                )
+
+                for season_name, season_data in cleaned["seasons"].items():
+                    if season_name in existing["seasons"]:
+                        # Merge episodes
+                        existing_episodes = existing["seasons"][season_name]["episodes"]
+                        new_episodes = season_data["episodes"]
+
+                        # Avoid duplicates by path or name within the same season
+                        ep_paths = {ep["path"] for ep in existing_episodes}
+                        ep_names = {ep["name"] for ep in existing_episodes}
+                        for ep in new_episodes:
+                            if (
+                                ep["path"] not in ep_paths
+                                and ep["name"] not in ep_names
+                            ):
+                                logger.debug(
+                                    f"Adding episode '{ep['name']}' from '{ep['path']}'"
+                                )
+                                existing_episodes.append(ep)
+                            elif ep["path"] not in ep_paths:
+                                logger.warning(
+                                    f"Skipping episode '{ep['name']}' from '{ep['path']}' because an episode with the same name already exists in this season."
+                                )
+                            else:
+                                logger.debug(
+                                    f"Skipping exact duplicate path: {ep['path']}"
+                                )
+
+                        # Re-sort episodes
+                        existing_episodes.sort(key=lambda x: x["name"])
+                    else:
+                        existing["seasons"][season_name] = season_data
+            else:
+                library[series_name] = cleaned
 
     return library
 
@@ -107,6 +168,12 @@ def scan_series(
         series_metadata["jellyfin_id"] = series_id
         series_metadata["overview"] = jellyfin_series.get("Overview", "")
         series_metadata["poster_path"] = jellyfin_client.download_image(series_id)
+
+        # Extract TVDB ID if present
+        provider_ids = jellyfin_series.get("ProviderIds", {})
+        if provider_ids and "TheTVDB" in provider_ids:
+            series_metadata["tvdb_id"] = provider_ids["TheTVDB"]
+
         jellyfin_seasons = jellyfin_client.get_seasons(series_id)
 
     series_data = {

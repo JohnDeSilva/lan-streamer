@@ -34,15 +34,29 @@ def test_scan_directories_with_mock(tmp_path, monkeypatch):
 
     # Mock Jellyfin responses
     mock_jf = MagicMock()
-    mock_jf.search_series.return_value = {"Id": "series123", "Overview": "Desc"}
+
+    def search_series(name):
+        if "Series A" in name:
+            return {"Id": "series_a_id", "Overview": "Desc A"}
+        return {"Id": "series_b_id", "Overview": "Desc B"}
+
+    mock_jf.search_series.side_effect = search_series
     mock_jf.download_image.return_value = "/fake/image.jpg"
     mock_jf.get_seasons.return_value = [
         {"Id": "season_1_id", "IndexNumber": 1},
         {"Id": "season_b_1_id", "Name": "Season 1"},
     ]
-    mock_jf.get_episodes.return_value = [
-        {"Id": "ep1_id", "Path": str(ep1_path.absolute()), "UserData": {"Played": True}}
-    ]
+    mock_jf.get_episodes.side_effect = lambda series_id, season_id: (
+        [
+            {
+                "Id": "ep1_id",
+                "Path": str(ep1_path.absolute()),
+                "UserData": {"Played": True},
+            }
+        ]
+        if series_id == "series_a_id"
+        else []
+    )
     monkeypatch.setattr(scanner, "jellyfin_client", mock_jf)
 
     library = scan_directories([str(tmp_path)])

@@ -288,6 +288,11 @@ def save_library(library_name: str, library: Dict[str, Any]):
                                     jellyfin_id = excluded.jellyfin_id,
                                     watched = excluded.watched,
                                     date_added = excluded.date_added
+                                ON CONFLICT(season_id, name) DO UPDATE SET
+                                    path = excluded.path,
+                                    jellyfin_id = excluded.jellyfin_id,
+                                    watched = excluded.watched,
+                                    date_added = excluded.date_added
                                 RETURNING id
                             """,
                                 (

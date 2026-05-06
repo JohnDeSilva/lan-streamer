@@ -38,7 +38,7 @@ class JellyfinClient:
         self._cache = {"series": [], "seasons": {}, "episodes": {}}
 
         # 1. Fetch Series
-        series_items = self._fetch_all_items_paginated("Series", fields="")
+        series_items = self._fetch_all_items_paginated("Series", fields="ProviderIds")
         self._cache["series"] = series_items
 
         # 2. Fetch Seasons
@@ -298,6 +298,7 @@ class JellyfinClient:
             "IncludeItemTypes": "Series",
             "Limit": 1,
             "Recursive": "true",
+            "Fields": "ProviderIds",
         }
         try:
             response = self.session.get(
@@ -357,8 +358,11 @@ class JellyfinClient:
                     return item
 
         url = f"{self._get_base_url()}/Users/{self.get_current_user_id()}/Items/{series_id}"
+        parameters = {"Fields": "ProviderIds"}
         try:
-            response = self.session.get(url, headers=self._get_headers(), timeout=5)
+            response = self.session.get(
+                url, headers=self._get_headers(), params=parameters, timeout=5
+            )
             response.raise_for_status()
             return response.json()
         except Exception as e:
