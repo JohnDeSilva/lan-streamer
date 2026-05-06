@@ -1,0 +1,32 @@
+[project]
+name = "lan-streamer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pyside6>=6.11.0",
+    "requests>=2.31.0",
+]
+
+[dependency-groups]
+dev = [
+    "commitizen>=4.15.1",
+    "pyinstaller>=6.20.0",
+    "pytest>=9.0.3",
+    "pytest-cov>=4.1.0",
+    "pytest-qt>=4.4.0",
+    "ruff>=0.15.12",
+]
+[project.scripts]
+lan-streamer = "lan_streamer.main:main"
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+version_files = [
+    "pyproject.toml:version",
+    "src/lan_streamer/__init__.py"
+]
