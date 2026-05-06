@@ -24,6 +24,13 @@ def mock_dependencies(monkeypatch):
     monkeypatch.setattr(ui, "play_video", MagicMock())
     monkeypatch.setattr(ui, "scan_directories", MagicMock())
 
+    # Globally mock ScanWorker to prevent thread issues in tests
+    ui.OriginalScanWorker = ui.ScanWorker
+    mock_worker_class = MagicMock()
+    mock_worker = MagicMock()
+    mock_worker_class.return_value = mock_worker
+    monkeypatch.setattr(ui, "ScanWorker", mock_worker_class)
+
     config.libraries = {"TestLib": ["/path1"]}
     config.jellyfin_url = ""
     config.jellyfin_api_key = ""
@@ -125,16 +132,12 @@ def test_mainwindow_force_scan(qtbot, mock_dependencies, monkeypatch):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    ui.scan_directories.return_value = {}
-
-    # Run the worker synchronously for the test
-    monkeypatch.setattr(ui.ScanWorker, "start", lambda self: self.run())
-
     window.force_scan_library()
-    # Use ANY for existing_library since it's populated from the fixture
-    from unittest.mock import ANY
+    ui.ScanWorker.return_value.start.assert_called_once()
 
-    ui.scan_directories.assert_called_once_with(["/path1"], existing_library=ANY)
+    # Manually trigger the slot to test UI updates
+    window.on_scan_finished({})
+
     ui.db.save_library.assert_called_once_with("TestLib", {})
 
 
@@ -142,20 +145,63 @@ def test_mainwindow_force_scan_error(qtbot, mock_dependencies, monkeypatch):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    # Force the worker to emit an error
-    def mock_start(self):
-        self.error.emit("Mocked scan error")
-
-    monkeypatch.setattr(ui.ScanWorker, "start", mock_start)
-
     mock_crit = MagicMock()
     monkeypatch.setattr(ui.QMessageBox, "critical", mock_crit)
 
     window.force_scan_library()
+    ui.ScanWorker.return_value.start.assert_called_once()
+
+    # Manually trigger error slot
+    window.on_scan_error("Mocked scan error")
 
     mock_crit.assert_called_once()
     assert window.refresh_action.isEnabled() is True
-    assert window.scan_worker is None
+
+
+def test_scan_worker_logic(mock_dependencies, monkeypatch):
+    import lan_streamer.ui as ui_mod
+    
+    # Use the original class saved in the fixture
+    ScanWorker = ui_mod.OriginalScanWorker
+
+    # Ensure scan_directories returns something
+    ui_mod.scan_directories.return_value = {"New Data": {}}
+
+    worker = ScanWorker(["/path1"], {"Old Data": {}})
+
+    mock_finished = MagicMock()
+    mock_error = MagicMock()
+    worker.finished.connect(mock_finished)
+    worker.error.connect(mock_error)
+
+    # Call run() directly (synchronous) to test the internal logic
+    # without spinning up a real C++ thread which causes instability in tests.
+    worker.run()
+
+    ui_mod.jellyfin_client.preload_library.assert_called_once()
+    ui_mod.scan_directories.assert_called_once_with(["/path1"], existing_library={"Old Data": {}})
+    ui_mod.jellyfin_client.clear_cache.assert_called()
+    mock_finished.assert_called_once_with({"New Data": {}})
+    mock_error.assert_not_called()
+
+
+def test_scan_worker_error_logic(mock_dependencies, monkeypatch):
+    import lan_streamer.ui as ui_mod
+    ScanWorker = ui_mod.OriginalScanWorker
+
+    ui_mod.scan_directories.side_effect = Exception("Logic Error")
+
+    worker = ScanWorker(["/path1"], {})
+    mock_finished = MagicMock()
+    mock_error = MagicMock()
+    worker.finished.connect(mock_finished)
+    worker.error.connect(mock_error)
+
+    worker.run()
+
+    mock_finished.assert_not_called()
+    mock_error.assert_called_once_with("Logic Error")
+    ui_mod.jellyfin_client.clear_cache.assert_called()
 
 
 def test_toggle_watched_status(qtbot, mock_dependencies):

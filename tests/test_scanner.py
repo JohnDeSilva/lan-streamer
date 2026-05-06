@@ -177,6 +177,11 @@ def test_scan_directories_respects_manual_match(tmp_path, monkeypatch):
     mock_jf = MagicMock()
     mock_jf.get_seasons.return_value = []
     mock_jf.download_image.return_value = None
+    mock_jf.get_series_by_id.return_value = {
+        "Id": "manual_id",
+        "Name": "Manual Show",
+        "Overview": "Mock",
+    }
     monkeypatch.setattr(scanner, "jellyfin_client", mock_jf)
 
     # Scan with existing library

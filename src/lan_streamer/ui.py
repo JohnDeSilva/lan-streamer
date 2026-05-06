@@ -464,10 +464,14 @@ class MainWindow(QMainWindow):
         self.refresh_action.setEnabled(False)
 
         # Start the background worker
-        self.scan_worker = ScanWorker(root_dirs, self.library, self)
-        self.scan_worker.finished.connect(self.on_scan_finished)
-        self.scan_worker.error.connect(self.on_scan_error)
-        self.scan_worker.start()
+        worker = ScanWorker(root_dirs, self.library)
+        worker.finished.connect(self.on_scan_finished)
+        worker.error.connect(self.on_scan_error)
+        # Ensure the worker is deleted when it's done
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        worker.start()
+        self.scan_worker = worker
 
     def on_scan_finished(self, new_library_data):
         library_name = self.main_library_combo.currentText()
@@ -477,16 +481,10 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage(f"Scan complete for '{library_name}'.", 5000)
         self.refresh_action.setEnabled(True)
-        if hasattr(self, "scan_worker") and self.scan_worker:
-            self.scan_worker.deleteLater()
-            self.scan_worker = None
 
     def on_scan_error(self, error_msg):
         self.statusBar().showMessage(f"Scan failed: {error_msg}", 5000)
         self.refresh_action.setEnabled(True)
-        if hasattr(self, "scan_worker") and self.scan_worker:
-            self.scan_worker.deleteLater()
-            self.scan_worker = None
         QMessageBox.critical(
             self, "Scan Error", f"An error occurred during scanning:\n{error_msg}"
         )

@@ -91,10 +91,11 @@ def scan_series(
     series_name = series_dir.name
     # If jellyfin_series only has an Id (from manual match), we need to fetch full metadata
     if jellyfin_series and "Name" not in jellyfin_series:
-        # We only have the ID, let's get the full object if possible
-        # For now, search_series doesn't support searching by ID,
-        # but the scan_series logic below handles just having an ID.
-        pass
+        series_id = jellyfin_series.get("Id")
+        if series_id:
+            full_series = jellyfin_client.get_series_by_id(series_id)
+            if full_series:
+                jellyfin_series = full_series
 
     if not jellyfin_series:
         jellyfin_series = jellyfin_client.search_series(series_name)

@@ -346,6 +346,25 @@ class JellyfinClient:
 
         return False
 
+    def get_series_by_id(self, series_id: str):
+        """Fetches full series metadata by ID, prioritizing cache."""
+        if not self.is_configured():
+            return None
+
+        if self._cache is not None:
+            for item in self._cache["series"]:
+                if item.get("Id") == series_id:
+                    return item
+
+        url = f"{self._get_base_url()}/Users/{self.get_current_user_id()}/Items/{series_id}"
+        try:
+            response = self.session.get(url, headers=self._get_headers(), timeout=5)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to get series by ID '{series_id}': {e}")
+            return None
+
     def search_series(self, name: str):
         if not self.is_configured():
             return None
