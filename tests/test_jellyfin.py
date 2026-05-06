@@ -371,3 +371,42 @@ def test_search_series_full_error(jf_client):
     jf_client.session.get = MagicMock(side_effect=Exception("Search failed"))
     results = jf_client.search_series_full("anything")
     assert results == []
+
+
+def test_preload_library(jf_client):
+    jf_client._cached_user_id = "user123"
+
+    mock_resp_series = MagicMock()
+    mock_resp_series.json.return_value = {
+        "Items": [{"Id": "series1", "Name": "Cached Show"}]
+    }
+    mock_resp_series.status_code = 200
+
+    mock_resp_empty = MagicMock()
+    mock_resp_empty.json.return_value = {"Items": []}
+    mock_resp_empty.status_code = 200
+
+    # _fetch_all_items_paginated will call session.get until it returns < 5000 items.
+    # It will make 1 call for Series, 1 for Season, 1 for Episode.
+    jf_client.session.get = MagicMock(
+        side_effect=[
+            mock_resp_series,  # Series items (1 item, < 5000, breaks loop)
+            mock_resp_empty,  # Season items (0 items, < 5000, breaks loop)
+            mock_resp_empty,  # Episode items (0 items, < 5000, breaks loop)
+        ]
+    )
+
+    jf_client.preload_library()
+
+    assert jf_client._cache is not None
+    assert len(jf_client._cache["series"]) == 1
+    assert jf_client._cache["series"][0]["Name"] == "Cached Show"
+
+    # Verify search uses cache
+    jf_client.session.get.reset_mock()
+    res = jf_client.search_series("Cached Show")
+    assert res["Id"] == "series1"
+    jf_client.session.get.assert_not_called()
+
+    jf_client.clear_cache()
+    assert jf_client._cache is None

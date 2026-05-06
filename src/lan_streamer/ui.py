@@ -42,11 +42,14 @@ class ScanWorker(QThread):
 
     def run(self):
         try:
+            jellyfin_client.preload_library()
             library = scan_directories(
                 self.root_dirs, existing_library=self.existing_library
             )
+            jellyfin_client.clear_cache()
             self.finished.emit(library)
         except Exception as e:
+            jellyfin_client.clear_cache()
             self.error.emit(str(e))
 
 
@@ -474,12 +477,16 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage(f"Scan complete for '{library_name}'.", 5000)
         self.refresh_action.setEnabled(True)
-        self.scan_worker = None
+        if hasattr(self, "scan_worker") and self.scan_worker:
+            self.scan_worker.deleteLater()
+            self.scan_worker = None
 
     def on_scan_error(self, error_msg):
         self.statusBar().showMessage(f"Scan failed: {error_msg}", 5000)
         self.refresh_action.setEnabled(True)
-        self.scan_worker = None
+        if hasattr(self, "scan_worker") and self.scan_worker:
+            self.scan_worker.deleteLater()
+            self.scan_worker = None
         QMessageBox.critical(
             self, "Scan Error", f"An error occurred during scanning:\n{error_msg}"
         )

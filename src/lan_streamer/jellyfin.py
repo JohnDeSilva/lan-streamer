@@ -24,6 +24,88 @@ class JellyfinClient:
         # Re-enable trust_env (default) because browsers often work BECAUSE of system proxies
         self.session.trust_env = True
         self._cached_user_id = None
+        self._cache = None
+
+    def preload_library(self):
+        """Preloads all Series, Seasons, and Episodes into memory with pagination."""
+        if not self.is_configured():
+            return
+
+        user_id = self.get_current_user_id()
+        if not user_id:
+            return
+
+        self._cache = {"series": [], "seasons": {}, "episodes": {}}
+
+        # 1. Fetch Series
+        series_items = self._fetch_all_items_paginated("Series", fields="")
+        self._cache["series"] = series_items
+
+        # 2. Fetch Seasons
+        season_items = self._fetch_all_items_paginated("Season", fields="")
+        for season in season_items:
+            series_id = season.get("SeriesId")
+            if series_id:
+                if series_id not in self._cache["seasons"]:
+                    self._cache["seasons"][series_id] = []
+                self._cache["seasons"][series_id].append(season)
+
+        # 3. Fetch Episodes with UserData
+        episode_items = self._fetch_all_items_paginated(
+            "Episode", fields="Path,Overview"
+        )
+        for ep in episode_items:
+            season_id = ep.get("SeasonId")
+            if season_id:
+                if season_id not in self._cache["episodes"]:
+                    self._cache["episodes"][season_id] = []
+                self._cache["episodes"][season_id].append(ep)
+
+        logger.info(
+            f"Preloaded library: {len(self._cache['series'])} series, {sum(len(s) for s in self._cache['seasons'].values())} seasons, {sum(len(e) for e in self._cache['episodes'].values())} episodes."
+        )
+
+    def clear_cache(self):
+        """Frees the preloaded memory cache."""
+        self._cache = None
+
+    def _fetch_all_items_paginated(self, item_type: str, fields: str) -> list:
+        user_id = self.get_current_user_id()
+        url = f"{self._get_base_url()}/Users/{user_id}/Items"
+
+        all_items = []
+        limit = 5000
+        start_index = 0
+
+        while True:
+            parameters = {
+                "IncludeItemTypes": item_type,
+                "Recursive": "true",
+                "Fields": fields,
+                "Limit": limit,
+                "StartIndex": start_index,
+            }
+            try:
+                response = self.session.get(
+                    url, headers=self._get_headers(), params=parameters, timeout=30
+                )
+                response.raise_for_status()
+                data = response.json()
+                items = data.get("Items", [])
+                all_items.extend(items)
+
+                # If we received fewer items than requested, we've reached the end
+                if len(items) < limit:
+                    break
+
+                start_index += limit
+            except Exception as e:
+                logger.error(
+                    f"Failed paginated fetch for {item_type} at offset {start_index}: {e}"
+                )
+                break
+
+        return all_items
 
     def validate_credentials(self, url: str, api_key: str):
         """Tests connection with specific credentials without saving them to config."""
@@ -195,7 +277,21 @@ class JellyfinClient:
         return name
 
     def _do_search(self, search_term: str):
-        """Internal helper to perform the actual Jellyfin search request."""
+        """Internal helper to perform the actual Jellyfin search request or cache lookup."""
+        if self._cache is not None:
+            search_term_lower = search_term.lower()
+            # First, try an exact case-insensitive match on the clean name
+            for item in self._cache["series"]:
+                if item.get("Name", "").lower() == search_term_lower:
+                    return item
+
+            # Next, try a substring match since jellyfin's SearchTerm does substring matching
+            for item in self._cache["series"]:
+                if search_term_lower in item.get("Name", "").lower():
+                    return item
+
+            return None
+
         url = f"{self._get_base_url()}/Items"
         parameters = {
             "SearchTerm": search_term,
@@ -360,6 +456,10 @@ class JellyfinClient:
     def get_seasons(self, series_id: str):
         if not self.is_configured():
             return []
+
+        if self._cache is not None:
+            return self._cache["seasons"].get(series_id, [])
+
         user_id = self.get_current_user_id()
         url = f"{self._get_base_url()}/Shows/{series_id}/Seasons"
         parameters = {}
@@ -379,6 +479,10 @@ class JellyfinClient:
     def get_episodes(self, series_id: str, season_id: str):
         if not self.is_configured():
             return []
+
+        if self._cache is not None:
+            return self._cache["episodes"].get(season_id, [])
+
         user_id = self.get_current_user_id()
         url = f"{self._get_base_url()}/Shows/{series_id}/Episodes"
         parameters = {"SeasonId": season_id, "Fields": "Path,Overview"}
