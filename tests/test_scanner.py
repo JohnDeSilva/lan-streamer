@@ -87,3 +87,71 @@ def test_scan_directories_oserror(tmp_path, monkeypatch):
     library = scan_directories([str(tmp_path)])
     episodes = library["Series A"]["seasons"]["Season 1"]["episodes"]
     assert episodes[0]["date_added"] == 0
+
+
+def test_scan_directories_nonexistent_path():
+    from lan_streamer.scanner import scan_directories
+
+    # Should not raise error
+    assert scan_directories(["/path/does/not/exist/at/all/123456789"]) == {}
+
+
+def test_scan_series(tmp_path):
+    from lan_streamer.scanner import scan_series
+    from unittest.mock import patch
+
+    series_dir = tmp_path / "Test Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    episode_file = season_dir / "Test Show S01E01.mkv"
+    episode_file.write_text("video content")
+
+    # Mock jellyfin
+    with patch("lan_streamer.scanner.jellyfin_client") as mock_jf:
+        mock_jf.search_series.return_value = {"Id": "series123", "Name": "Test Show"}
+        mock_jf.get_seasons.return_value = [
+            {"Id": "season123", "IndexNumber": 1, "Name": "Season 1"}
+        ]
+        mock_jf.get_episodes.return_value = [
+            {
+                "Id": "ep123",
+                "Name": "Episode 1",
+                "Path": str(episode_file),
+                "UserData": {"Played": True},
+            }
+        ]
+        mock_jf.download_image.return_value = "/path/to/poster.jpg"
+
+        series_data = scan_series(series_dir)
+
+        assert series_data["metadata"]["jellyfin_id"] == "series123"
+        assert "Season 1" in series_data["seasons"]
+        episodes = series_data["seasons"]["Season 1"]["episodes"]
+        assert len(episodes) == 1
+        assert episodes[0]["jellyfin_id"] == "ep123"
+        assert episodes[0]["watched"] is True
+
+
+def test_scan_series_manual_match(tmp_path):
+    from lan_streamer.scanner import scan_series
+    from unittest.mock import patch
+
+    series_dir = tmp_path / "Mismatched Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    episode_file = season_dir / "Show S01E01.mkv"
+    episode_file.write_text("video")
+
+    selected_series = {"Id": "real_id", "Name": "Correct Show"}
+
+    with patch("lan_streamer.scanner.jellyfin_client") as mock_jf:
+        mock_jf.get_seasons.return_value = []
+        mock_jf.download_image.return_value = None
+
+        # Call with explicit jellyfin_series
+        series_data = scan_series(series_dir, jellyfin_series=selected_series)
+
+        assert series_data["metadata"]["jellyfin_id"] == "real_id"
+        mock_jf.search_series.assert_not_called()

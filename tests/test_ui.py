@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
 from lan_streamer import ui
 from lan_streamer.config import config
 from lan_streamer.ui import MainWindow, LibrarySettingsDialog, JellyfinSettingsDialog
@@ -389,3 +390,68 @@ def test_poster_delegate(qtbot):
 
     size = delegate.sizeHint(option, index)
     assert size.width() > 0
+
+
+def test_series_match_dialog(qtbot, mock_dependencies, monkeypatch):
+    from lan_streamer.ui import SeriesMatchDialog
+
+    ui.jellyfin_client.search_series_full.return_value = [
+        {"Id": "match1", "Name": "Found Show", "ProductionYear": 2024}
+    ]
+
+    dialog = SeriesMatchDialog("Original Show")
+    qtbot.addWidget(dialog)
+
+    assert dialog.search_input.text() == "Original Show"
+    # Search is triggered on init
+    assert dialog.results_list.count() == 1
+    assert "Found Show (2024)" in dialog.results_list.item(0).text()
+
+    # Select result
+    dialog.results_list.setCurrentRow(0)
+    selected = dialog.get_selected_series()
+    assert selected["Id"] == "match1"
+
+    # Click match
+    monkeypatch.setattr(dialog, "accept", lambda: None)
+    qtbot.mouseClick(dialog.ok_button, Qt.MouseButton.LeftButton)
+
+
+def test_mainwindow_manual_match(qtbot, mock_dependencies, monkeypatch, tmp_path):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    series_name = "Series A"
+    # Setup local directory for matching
+    series_dir = tmp_path / series_name
+    series_dir.mkdir()
+    config.libraries["TestLib"] = [str(tmp_path)]
+
+    # Mock dialog success
+    mock_selected = {"Id": "new_id", "Name": "New Match"}
+
+    class MockDialog:
+        def __init__(self, *args):
+            pass
+
+        def exec(self):
+            return ui.QDialog.DialogCode.Accepted
+
+        def get_selected_series(self):
+            return mock_selected
+
+    monkeypatch.setattr(ui, "SeriesMatchDialog", MockDialog)
+
+    # Mock scanner and cleaner
+    mock_new_data = {"metadata": {"jellyfin_id": "new_id"}, "seasons": {}}
+    monkeypatch.setattr(ui, "scan_series", lambda *args, **kwargs: mock_new_data)
+    monkeypatch.setattr(ui, "clean_series_data", lambda d: d)
+
+    # Mock QMessageBox to prevent popups during tests
+    monkeypatch.setattr(ui, "QMessageBox", MagicMock())
+
+    # Trigger manual match
+    window.match_series_manually(series_name)
+
+    assert window.library[series_name]["metadata"]["jellyfin_id"] == "new_id"
+    ui.db.save_library.assert_called()

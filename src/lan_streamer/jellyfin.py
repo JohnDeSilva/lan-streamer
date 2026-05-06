@@ -158,12 +158,47 @@ class JellyfinClient:
             logger.error(f"Unexpected error getting current user: {e}", exc_info=True)
         return None
 
-    def search_series(self, name: str):
-        if not self.is_configured():
-            return None
+    def _clean_name(self, name: str) -> str:
+        """Cleans folder names by removing common release tags and technical specs."""
+        import re
+
+        # Replace dots and underscores with spaces (leave hyphens for now to match tags like web-dl)
+        name = name.replace(".", " ").replace("_", " ")
+
+        # Remove common year patterns (2024), [2024], or standalone years
+        name = re.sub(r"[\(\{\[]\d{4}[\)\}\]]", "", name)
+        name = re.sub(r"\b(19|20)\d{2}\b", "", name)
+
+        # Remove resolution and quality tags (now handles hyphens/spaces)
+        name = re.sub(
+            r"(?i)\b(720p|1080p|2160p|4k|bluray|hdtv|web[- ]dl|x264|x265|hevc|aac|dts|dd5\.1|dual[- ]audio|multi|sub|dub)\b",
+            "",
+            name,
+        )
+
+        # Remove Season patterns (S01, Season 1, etc.)
+        name = re.sub(r"(?i)\b(S\d+|Season\s*\d+)\b", "", name)
+
+        # Now replace hyphens with spaces
+        name = name.replace("-", " ")
+
+        # Remove trailing/leading whitespace and normalize spaces
+        name = re.sub(r"\s+", " ", name).strip()
+
+        # Remove empty parentheses/brackets that might be left over
+        name = re.sub(r"\(\s*\)", "", name)
+        name = re.sub(r"\[\s*\]", "", name)
+        name = re.sub(r"\{\s*\}", "", name)
+
+        # Final trim
+        name = re.sub(r"\s+", " ", name).strip()
+        return name
+
+    def _do_search(self, search_term: str):
+        """Internal helper to perform the actual Jellyfin search request."""
         url = f"{self._get_base_url()}/Items"
         parameters = {
-            "SearchTerm": name,
+            "SearchTerm": search_term,
             "IncludeItemTypes": "Series",
             "Limit": 1,
             "Recursive": "true",
@@ -178,8 +213,149 @@ class JellyfinClient:
             if items:
                 return items[0]
         except Exception as e:
-            logger.error(f"Error searching for series '{name}': {e}")
+            logger.error(f"Search request failed for '{search_term}': {e}")
         return None
+
+    def _is_similar(self, original: str, found: str, threshold: float = 0.7) -> bool:
+        """Checks if the found name is sufficiently similar to the original."""
+        from difflib import SequenceMatcher
+
+        # Clean both for comparison
+        a = self._clean_name(original).lower()
+        b = self._clean_name(found).lower()
+
+        if not a or not b:
+            return False
+
+        # Simple containment check is often enough for "looser" searches
+        if a in b or b in a:
+            return True
+
+        # Fuzzy ratio check
+        ratio = SequenceMatcher(None, a, b).ratio()
+        if ratio >= threshold:
+            return True
+
+        # Word-based check: at least one significant word (length > 3) must match
+        # and not be a common prefix
+        a_words = [
+            w
+            for w in a.split()
+            if len(w) > 3 and w not in ["marvel", "marvel's", "star", "the", "wars"]
+        ]
+        b_words = b.split()
+        for w in a_words:
+            if w in b_words:
+                return True
+
+        return False
+
+    def search_series(self, name: str):
+        if not self.is_configured():
+            return None
+
+        # Minimal cleaning for the "exact" search (dots/underscores to spaces)
+        exact_name = name.replace(".", " ").replace("_", " ").strip()
+
+        # Try replacing hyphens with colons (often used for subtitles in Jellyfin)
+        colon_name = exact_name.replace(" - ", ": ").replace("-", ":")
+
+        cleaned_name = self._clean_name(name)
+
+        logger.debug(
+            f"Searching Jellyfin for series. Strategies: Exact='{exact_name}', Colon='{colon_name}', Fuzzy='{cleaned_name}'"
+        )
+
+        # Strategy 1: Exact (minimal cleaning)
+        result = self._do_search(exact_name)
+        if result:
+            logger.info(
+                f"Found exact Jellyfin match for '{name}': {result.get('Name')} (ID: {result.get('Id')})"
+            )
+            return result
+
+        # Strategy 2: Colon-replacement
+        if colon_name != exact_name:
+            result = self._do_search(colon_name)
+            if result:
+                logger.info(
+                    f"Found colon-replaced Jellyfin match for '{name}': {result.get('Name')} (ID: {result.get('Id')})"
+                )
+                return result
+
+        # Strategy 3: Full cleaned name
+        if cleaned_name != exact_name:
+            result = self._do_search(cleaned_name)
+            if result:
+                # Still verify fuzzy match
+                if self._is_similar(cleaned_name, result.get("Name", "")):
+                    logger.info(
+                        f"Found fuzzy Jellyfin match for '{name}': {result.get('Name')} (ID: {result.get('Id')})"
+                    )
+                    return result
+
+        # Strategy 3: Try first two words
+        words = cleaned_name.split()
+        if len(words) > 2:
+            shorter_name = " ".join(words[:2])
+            logger.info(f"Fallback search: Trying first two words '{shorter_name}'")
+            result = self._do_search(shorter_name)
+            if result and self._is_similar(cleaned_name, result.get("Name", "")):
+                logger.info(
+                    f"Found Jellyfin match for '{name}' via fallback: {result.get('Name')} (ID: {result.get('Id')})"
+                )
+                return result
+
+        # Strategy 4: Try first word (more strict similarity check)
+        if len(words) > 1 and len(words[0]) > 3:
+            first_word = words[0]
+            # Skip common prefixes that lead to bad matches
+            if first_word.lower() not in [
+                "the",
+                "marvel",
+                "marvel's",
+                "star",
+                "a",
+                "an",
+            ]:
+                logger.info(f"Fallback search: Trying first word '{first_word}'")
+                result = self._do_search(first_word)
+                if result and self._is_similar(
+                    cleaned_name, result.get("Name", ""), threshold=0.8
+                ):
+                    logger.info(
+                        f"Found Jellyfin match for '{name}' via first-word fallback: {result.get('Name')} (ID: {result.get('Id')})"
+                    )
+                    return result
+
+        logger.warning(
+            f"No Jellyfin series found matching: '{exact_name}' or its variants."
+        )
+        return None
+
+    def search_series_full(self, name: str, limit: int = 10):
+        """Returns multiple results for manual matching."""
+        if not self.is_configured():
+            return []
+
+        cleaned_name = self._clean_name(name)
+        url = f"{self._get_base_url()}/Items"
+        parameters = {
+            "SearchTerm": cleaned_name,
+            "IncludeItemTypes": "Series",
+            "Limit": limit,
+            "Recursive": "true",
+            "Fields": "PrimaryImageAspectRatio,CanDelete,CanDownload,CustomRating,DateCreated,DateLastMediaAdded,DisplayPreferencesId,ExternalUrls,Genres,HomePageUrl,ItemCounts,MediaSourceCount,MediaSources,OriginalTitle,Overview,ParentId,Path,People,PlayAccess,ProductionYear,RemoteTrailers,ScreenshotImageCount,SortName,Status,Taglines,Tags,UserData,VoteCount,CumulativeRunTimeTicks,Metascore,AirDays,IsPosterViewer,ListOrder,LookupInfo,OfficialRating,Resolution,SeriesId,SeriesName,SeriesTimerId,Tagline",
+        }
+        try:
+            response = self.session.get(
+                url, headers=self._get_headers(), params=parameters, timeout=5
+            )
+            response.raise_for_status()
+            return response.json().get("Items", [])
+        except Exception as e:
+            logger.error(f"Full search failed for '{name}': {e}")
+        return []
 
     def get_seasons(self, series_id: str):
         if not self.is_configured():
@@ -231,7 +407,7 @@ class JellyfinClient:
 
         url = f"{self._get_base_url()}/Items/{item_id}/Images/Primary"
         try:
-            response = self.session.get(url, timeout=5)
+            response = self.session.get(url, headers=self._get_headers(), timeout=5)
             if response.status_code == 200:
                 with open(image_path, "wb") as f:
                     f.write(response.content)

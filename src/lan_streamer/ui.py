@@ -21,13 +21,74 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem
 from PySide6.QtCore import Qt
+from pathlib import Path
 
 from .config import config
-from .scanner import scan_directories
+from .scanner import scan_directories, scan_series, clean_series_data
 from .player import play_video
 from .jellyfin import jellyfin_client
 from . import db
 from .delegates import PosterDelegate
+
+
+class SeriesMatchDialog(QDialog):
+    def __init__(self, series_name, parent=None):
+        super().__init__(parent)
+        self.series_name = series_name
+        self.selected_series = None
+        self.setWindowTitle(f"Match Series: {series_name}")
+        self.setMinimumSize(500, 400)
+
+        layout = QVBoxLayout(self)
+
+        search_layout = QHBoxLayout()
+        self.search_input = QLineEdit(series_name)
+        self.search_button = QPushButton("Search Jellyfin")
+        self.search_button.clicked.connect(self.do_search)
+        search_layout.addWidget(self.search_input)
+        search_layout.addWidget(self.search_button)
+        layout.addLayout(search_layout)
+
+        self.results_list = QListWidget()
+        self.results_list.itemDoubleClicked.connect(self.accept)
+        layout.addWidget(self.results_list)
+
+        buttons = QHBoxLayout()
+        self.ok_button = QPushButton("Match Selected")
+        self.ok_button.clicked.connect(self.accept)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        buttons.addWidget(self.ok_button)
+        buttons.addWidget(self.cancel_button)
+        layout.addLayout(buttons)
+
+        # Initial search
+        self.do_search()
+
+    def do_search(self):
+        self.results_list.clear()
+        query = self.search_input.text().strip()
+        if not query:
+            return
+
+        results = jellyfin_client.search_series_full(query)
+        for item in results:
+            display_name = item.get("Name", "Unknown")
+            year = item.get("ProductionYear")
+            if year:
+                display_name += f" ({year})"
+
+            from PySide6.QtWidgets import QListWidgetItem
+
+            list_item = QListWidgetItem(display_name)
+            list_item.setData(Qt.ItemDataRole.UserRole, item)
+            self.results_list.addItem(list_item)
+
+    def get_selected_series(self):
+        current = self.results_list.currentItem()
+        if current:
+            return current.data(Qt.ItemDataRole.UserRole)
+        return None
 
 
 class JellyfinSettingsDialog(QDialog):
@@ -151,8 +212,6 @@ class LibrarySettingsDialog(QDialog):
             self, "Select Directory", "", QFileDialog.Option.ShowDirsOnly
         )
         if path:
-            from pathlib import Path
-
             p = Path(path)
             if not p.exists() or not p.is_dir():
                 QMessageBox.warning(self, "Error", f"Invalid directory:\n{path}")
@@ -241,6 +300,11 @@ class MainWindow(QMainWindow):
         self.series_view.setSpacing(20)
         self.series_view.setUniformItemSizes(True)
         self.series_view.setItemDelegate(PosterDelegate(self.series_view))
+
+        self.series_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.series_view.customContextMenuRequested.connect(
+            self.show_series_context_menu
+        )
 
         self.series_model = QStandardItemModel()
         self.series_view.setModel(self.series_model)
@@ -374,6 +438,60 @@ class MainWindow(QMainWindow):
         self.library = scan_directories(root_dirs)
         db.save_library(library_name, self.library)
         self.load_library_ui()
+
+    def show_series_context_menu(self, position):
+        index = self.series_view.indexAt(position)
+        if not index.isValid():
+            return
+        item = self.series_model.itemFromIndex(index)
+        series_name = item.data(Qt.ItemDataRole.UserRole)
+
+        menu = QMenu()
+        match_action = menu.addAction("Match Series...")
+
+        action = menu.exec(self.series_view.viewport().mapToGlobal(position))
+        if action == match_action:
+            self.match_series_manually(series_name)
+
+    def match_series_manually(self, series_name):
+        dialog = SeriesMatchDialog(series_name, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected = dialog.get_selected_series()
+            if not selected:
+                return
+
+            library_name = self.main_library_combo.currentText()
+            if not library_name:
+                return
+
+            # Find the path of the series directory
+            series_path = None
+            root_dirs = config.libraries.get(library_name, [])
+            for root in root_dirs:
+                potential_path = Path(root) / series_name
+                if potential_path.exists() and potential_path.is_dir():
+                    series_path = potential_path
+                    break
+
+            if not series_path:
+                QMessageBox.warning(
+                    self, "Error", f"Could not find local directory for '{series_name}'"
+                )
+                return
+
+            # Re-scan this series with the selected Jellyfin metadata
+            new_data = scan_series(series_path, jellyfin_series=selected)
+            cleaned_data = clean_series_data(new_data)
+
+            if cleaned_data:
+                self.library[series_name] = cleaned_data
+                db.save_library(library_name, self.library)
+                self.update_series_view()
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Series '{series_name}' successfully matched to '{selected.get('Name')}'",
+                )
 
     def go_back(self):
         self.stacked_widget.setCurrentIndex(0)
