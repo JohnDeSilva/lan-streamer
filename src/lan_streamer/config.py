@@ -10,6 +10,7 @@ class Config:
         self.libraries: Dict[str, List[str]] = {}
         self.jellyfin_url: str = ""
         self.jellyfin_api_key: str = ""
+        self.sync_on_start: bool = True
         self.load()
 
     def load(self):
@@ -20,6 +21,7 @@ class Config:
 
                     self.jellyfin_url = data.get("jellyfin_url", "")
                     self.jellyfin_api_key = data.get("jellyfin_api_key", "")
+                    self.sync_on_start = data.get("sync_on_start", True)
 
                     if "libraries" in data:
                         self.libraries = data["libraries"]
@@ -44,6 +46,7 @@ class Config:
                         "libraries": self.libraries,
                         "jellyfin_url": self.jellyfin_url,
                         "jellyfin_api_key": self.jellyfin_api_key,
+                        "sync_on_start": self.sync_on_start,
                     },
                     f,
                     indent=4,

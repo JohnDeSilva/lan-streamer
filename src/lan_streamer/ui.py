@@ -219,7 +219,16 @@ class LibrarySettingsDialog(QDialog):
         button_layout.addWidget(self.remove_button)
         layout.addLayout(button_layout)
 
+        self.sync_checkbox = QCheckBox("Sync all libraries on startup")
+        self.sync_checkbox.setChecked(config.sync_on_start)
+        self.sync_checkbox.stateChanged.connect(self.on_sync_on_start_changed)
+        layout.addWidget(self.sync_checkbox)
+
         self.on_library_changed(self.library_combo.currentText())
+
+    def on_sync_on_start_changed(self, state):
+        config.sync_on_start = self.sync_checkbox.isChecked()
+        config.save()
 
     def on_library_changed(self, library_name):
         self.list_widget.clear()
@@ -283,7 +292,7 @@ class MainWindow(QMainWindow):
         self._setup_menu()
         self.refresh_libraries_combo()
 
-        if recreated_db:
+        if recreated_db or config.sync_on_start:
             self.sync_all_libraries()
 
     def _setup_menu(self):

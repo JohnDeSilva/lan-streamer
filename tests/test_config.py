@@ -17,6 +17,7 @@ def test_config_initialization(mock_config_file):
     assert config.libraries == {}
     assert config.jellyfin_url == ""
     assert config.jellyfin_api_key == ""
+    assert config.sync_on_start is True
 
 
 def test_config_load_existing(mock_config_file):
@@ -27,6 +28,7 @@ def test_config_load_existing(mock_config_file):
                 "libraries": {"TestLib": ["/path/to/test"]},
                 "jellyfin_url": "http://test",
                 "jellyfin_api_key": "test_key",
+                "sync_on_start": False,
             },
             f,
         )
@@ -35,6 +37,7 @@ def test_config_load_existing(mock_config_file):
     assert config.libraries == {"TestLib": ["/path/to/test"]}
     assert config.jellyfin_url == "http://test"
     assert config.jellyfin_api_key == "test_key"
+    assert config.sync_on_start is False
 
 
 def test_config_migrate_old_format(mock_config_file):

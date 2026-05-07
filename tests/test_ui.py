@@ -31,6 +31,13 @@ def mock_dependencies(monkeypatch):
     mock_worker_class.return_value = mock_worker
     monkeypatch.setattr(ui, "ScanWorker", mock_worker_class)
 
+    # Globally mock SyncAllWorker
+    ui.OriginalSyncAllWorker = ui.SyncAllWorker
+    mock_sync_worker_class = MagicMock()
+    mock_sync_worker = MagicMock()
+    mock_sync_worker_class.return_value = mock_sync_worker
+    monkeypatch.setattr(ui, "SyncAllWorker", mock_sync_worker_class)
+
     config.libraries = {"TestLib": ["/path1"]}
     config.jellyfin_url = ""
     config.jellyfin_api_key = ""
@@ -90,6 +97,13 @@ def test_library_settings_dialog(qtbot, mock_dependencies, monkeypatch):
     )
     dialog.remove_library()
     assert "NewLib" not in config.libraries
+
+    # Test sync on start checkbox
+    assert dialog.sync_checkbox.isChecked() is True
+    dialog.sync_checkbox.setChecked(False)
+    assert config.sync_on_start is False
+    dialog.sync_checkbox.setChecked(True)
+    assert config.sync_on_start is True
 
 
 def test_mainwindow_load(qtbot, mock_dependencies):
