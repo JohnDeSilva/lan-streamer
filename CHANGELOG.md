@@ -1,3 +1,9 @@
+## 0.3.1 (2026-05-06)
+
+### Fix
+
+- **scanner**: fixes merging series sith multiple seasons spread across multiple directories
+
 ## 0.3.0 (2026-05-06)
 
 ### Feat
