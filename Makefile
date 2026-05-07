@@ -18,6 +18,10 @@ clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 
 release:
+	uv lock
 	uv run cz bump
+	uv lock
+	git add uv.lock
+	git commit -m "chore: update lockfile for $$(uv run cz version --project)"
 	git push origin main
 	git push origin --tags
