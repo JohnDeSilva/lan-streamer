@@ -11,6 +11,8 @@ class Config:
         self.jellyfin_url: str = ""
         self.jellyfin_api_key: str = ""
         self.sync_on_start: bool = True
+        self.filter_unwatched: bool = False
+        self.sort_mode: str = "Alphabetical"
         self.load()
 
     def load(self):
@@ -22,6 +24,8 @@ class Config:
                     self.jellyfin_url = data.get("jellyfin_url", "")
                     self.jellyfin_api_key = data.get("jellyfin_api_key", "")
                     self.sync_on_start = data.get("sync_on_start", True)
+                    self.filter_unwatched = data.get("filter_unwatched", False)
+                    self.sort_mode = data.get("sort_mode", "Alphabetical")
 
                     if "libraries" in data:
                         self.libraries = data["libraries"]
@@ -47,6 +51,8 @@ class Config:
                         "jellyfin_url": self.jellyfin_url,
                         "jellyfin_api_key": self.jellyfin_api_key,
                         "sync_on_start": self.sync_on_start,
+                        "filter_unwatched": self.filter_unwatched,
+                        "sort_mode": self.sort_mode,
                     },
                     f,
                     indent=4,

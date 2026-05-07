@@ -442,6 +442,25 @@ def test_mainwindow_sorting_and_filtering(qtbot, mock_dependencies, monkeypatch)
     assert window.series_model.item(2).text() == "B Series"  # 300
 
 
+def test_mainwindow_persistence(qtbot, mock_dependencies):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    # Change filter
+    window.unwatched_checkbox.setChecked(True)
+    assert config.filter_unwatched is True
+
+    # Change sort
+    window.sort_combo.setCurrentText("Date Added (Newest)")
+    assert config.sort_mode == "Date Added (Newest)"
+
+    # Change back
+    window.unwatched_checkbox.setChecked(False)
+    assert config.filter_unwatched is False
+    window.sort_combo.setCurrentText("Alphabetical")
+    assert config.sort_mode == "Alphabetical"
+
+
 def test_poster_delegate(qtbot):
     from lan_streamer.delegates import PosterDelegate
     from PySide6.QtWidgets import QListView, QStyleOptionViewItem, QStyle

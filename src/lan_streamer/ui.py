@@ -327,6 +327,7 @@ class MainWindow(QMainWindow):
         lib_selector_layout.addWidget(self.main_library_combo, 1)
 
         self.unwatched_checkbox = QCheckBox("Unwatched Only")
+        self.unwatched_checkbox.setChecked(config.filter_unwatched)
         self.unwatched_checkbox.stateChanged.connect(self.update_series_view)
         lib_selector_layout.addWidget(self.unwatched_checkbox)
 
@@ -335,6 +336,7 @@ class MainWindow(QMainWindow):
         self.sort_combo.addItems(
             ["Alphabetical", "Date Added (Newest)", "Date Added (Oldest)"]
         )
+        self.sort_combo.setCurrentText(config.sort_mode)
         self.sort_combo.currentTextChanged.connect(self.update_series_view)
         lib_selector_layout.addWidget(self.sort_combo)
 
@@ -439,6 +441,12 @@ class MainWindow(QMainWindow):
 
         filter_unwatched = self.unwatched_checkbox.isChecked()
         sort_mode = self.sort_combo.currentText()
+
+        # Update persistence
+        if config.filter_unwatched != filter_unwatched or config.sort_mode != sort_mode:
+            config.filter_unwatched = filter_unwatched
+            config.sort_mode = sort_mode
+            config.save()
 
         series_list = []
         for series_name, series_data in self.library.items():

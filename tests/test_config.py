@@ -18,6 +18,8 @@ def test_config_initialization(mock_config_file):
     assert config.jellyfin_url == ""
     assert config.jellyfin_api_key == ""
     assert config.sync_on_start is True
+    assert config.filter_unwatched is False
+    assert config.sort_mode == "Alphabetical"
 
 
 def test_config_load_existing(mock_config_file):
@@ -29,6 +31,8 @@ def test_config_load_existing(mock_config_file):
                 "jellyfin_url": "http://test",
                 "jellyfin_api_key": "test_key",
                 "sync_on_start": False,
+                "filter_unwatched": True,
+                "sort_mode": "Date Added (Newest)",
             },
             f,
         )
@@ -38,6 +42,8 @@ def test_config_load_existing(mock_config_file):
     assert config.jellyfin_url == "http://test"
     assert config.jellyfin_api_key == "test_key"
     assert config.sync_on_start is False
+    assert config.filter_unwatched is True
+    assert config.sort_mode == "Date Added (Newest)"
 
 
 def test_config_migrate_old_format(mock_config_file):
