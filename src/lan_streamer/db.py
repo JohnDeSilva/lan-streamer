@@ -549,6 +549,38 @@ def update_episode_watched_status(path: str, watched: bool):
         logger.error(f"Error updating watched status for {path}: {e}")
 
 
+def update_season_watched_status(
+    library_name: str, series_name: str, season_name: str, watched: bool
+):
+    """
+    Bulk updates the watched status for all episodes in a specific season.
+    """
+    try:
+        logger.info(
+            f"Updating watched status for {series_name} - {season_name} in {library_name} to {watched}"
+        )
+        with closing(get_connection()) as connection:
+            with connection:
+                cursor = connection.cursor()
+                cursor.execute(
+                    """
+                    UPDATE episodes 
+                    SET watched = ? 
+                    WHERE season_id IN (
+                        SELECT seasons.id 
+                        FROM seasons 
+                        JOIN series ON seasons.series_id = series.id 
+                        WHERE series.library_name = ? AND series.name = ? AND seasons.name = ?
+                    )
+                """,
+                    (1 if watched else 0, library_name, series_name, season_name),
+                )
+    except Exception as e:
+        logger.error(
+            f"Error updating watched status for {series_name} - {season_name}: {e}"
+        )
+
+
 def sync_watched_from_jellyfin_data(
     watched_ids: set, watched_paths: set, watched_names: set = None
 ) -> int:

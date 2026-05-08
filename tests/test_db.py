@@ -220,3 +220,55 @@ def test_get_all_episodes_with_jellyfin_id(mock_db_file):
     eps = get_all_episodes_with_jellyfin_id()
     assert len(eps) == 1
     assert eps[0]["jellyfin_id"] == "jf1"
+
+
+def test_update_season_watched_status(mock_db_file):
+    db.init_db()
+    test_lib = {
+        "Test Series": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Ep 1",
+                            "path": "/path1",
+                            "watched": False,
+                        },
+                        {
+                            "name": "Ep 2",
+                            "path": "/path2",
+                            "watched": False,
+                        },
+                    ],
+                },
+                "Season 2": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Ep 1",
+                            "path": "/path3",
+                            "watched": False,
+                        }
+                    ],
+                },
+            },
+        }
+    }
+    db.save_library("MyLib", test_lib)
+
+    db.update_season_watched_status("MyLib", "Test Series", "Season 1", True)
+
+    loaded = db.load_library("MyLib")
+    s1_eps = loaded["Test Series"]["seasons"]["Season 1"]["episodes"]
+    assert all(ep["watched"] is True for ep in s1_eps)
+
+    s2_eps = loaded["Test Series"]["seasons"]["Season 2"]["episodes"]
+    assert all(ep["watched"] is False for ep in s2_eps)
+
+    # Toggle back
+    db.update_season_watched_status("MyLib", "Test Series", "Season 1", False)
+    loaded = db.load_library("MyLib")
+    s1_eps = loaded["Test Series"]["seasons"]["Season 1"]["episodes"]
+    assert all(ep["watched"] is False for ep in s1_eps)

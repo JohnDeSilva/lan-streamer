@@ -549,6 +549,10 @@ class MainWindow(QMainWindow):
         self.season_model = QStandardItemModel()
         self.season_view.setModel(self.season_model)
         self.season_view.clicked.connect(self.on_season_selected)
+        self.season_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.season_view.customContextMenuRequested.connect(
+            self.show_season_context_menu
+        )
         column_layout.addWidget(self.season_view)
 
         # Episodes Column
@@ -908,6 +912,7 @@ class MainWindow(QMainWindow):
         for i, season_name in enumerate(sorted_season_names):
             season_item = QStandardItem(season_name)
             season_item.setEditable(False)
+            season_item.setData(seasons[season_name], Qt.ItemDataRole.UserRole)
             self.season_model.appendRow(season_item)
             if selected_season_name == season_name:
                 restore_index = self.season_model.index(i, 0)
@@ -926,6 +931,51 @@ class MainWindow(QMainWindow):
             first_index = self.season_model.index(0, 0)
             self.season_view.setCurrentIndex(first_index)
             self.on_season_selected(first_index)
+
+    def show_season_context_menu(self, position):
+        index = self.season_view.indexAt(position)
+        if not index.isValid():
+            return
+        item = self.season_model.itemFromIndex(index)
+        season_name = item.text()
+        season_data = item.data(Qt.ItemDataRole.UserRole)
+
+        # Check if all episodes are watched to determine the primary action
+        all_watched = all(
+            ep.get("watched", False) for ep in season_data.get("episodes", [])
+        )
+
+        menu = QMenu()
+        action_text = "Mark all as Unwatched" if all_watched else "Mark all as Watched"
+        toggle_action = menu.addAction(action_text)
+
+        action = menu.exec(self.season_view.viewport().mapToGlobal(position))
+        if action == toggle_action:
+            self.toggle_season_watched_status(season_name, not all_watched)
+
+    def toggle_season_watched_status(self, season_name, watched):
+        if not self.current_series:
+            return
+
+        library_name = self.main_library_combo.currentText()
+        if not library_name:
+            return
+
+        # Update database
+        db.update_season_watched_status(
+            library_name, self.current_series, season_name, watched
+        )
+
+        # Update Jellyfin if configured
+        series_data = self.library.get(self.current_series, {})
+        season_data = series_data.get("seasons", {}).get(season_name, {})
+        season_jellyfin_id = season_data.get("metadata", {}).get("jellyfin_id")
+
+        if season_jellyfin_id and jellyfin_client.is_configured():
+            jellyfin_client.set_watched_status(season_jellyfin_id, watched)
+
+        # Refresh local cache and UI
+        self.load_library_ui(stay_on_current=True)
 
     def on_season_selected(self, index):
         item = self.season_model.itemFromIndex(index)

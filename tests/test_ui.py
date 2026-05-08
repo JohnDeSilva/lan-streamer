@@ -758,3 +758,47 @@ def test_mainwindow_refresh_detail_view_restore(qtbot, mock_dependencies):
     # Check if Season 2 is still selected
     assert window.season_view.currentIndex().row() == 1
     assert window.season_model.item(1).text() == "Season 2"
+
+
+def test_mainwindow_season_watched_status(qtbot, mock_dependencies):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    # Navigate to Series A
+    window.on_series_selected(window.series_model.index(0, 0))
+
+    # Toggle Season 1 to watched
+    window.toggle_season_watched_status("Season 1", True)
+
+    # Verify DB call
+    ui.db.update_season_watched_status.assert_called_with(
+        "TestLib", "Series A", "Season 1", True
+    )
+
+    # Verify UI refresh
+    assert ui.db.load_library.call_count > 1
+
+
+def test_mainwindow_season_context_menu(qtbot, mock_dependencies, monkeypatch):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.on_series_selected(window.series_model.index(0, 0))
+
+    # Mock QMenu
+    mock_menu = MagicMock()
+    mock_action = MagicMock()
+    mock_menu.addAction.return_value = mock_action
+    mock_menu.exec.return_value = mock_action
+    monkeypatch.setattr(ui, "QMenu", lambda: mock_menu)
+
+    # Trigger context menu
+    season_index = window.season_model.index(0, 0)
+    window.season_view.indexAt = MagicMock(return_value=season_index)
+
+    # Mock toggle_season_watched_status to verify it's called
+    window.toggle_season_watched_status = MagicMock()
+
+    # Call the handler
+    window.show_season_context_menu(window.season_view.viewport().rect().center())
+
+    window.toggle_season_watched_status.assert_called_with("Season 1", True)
