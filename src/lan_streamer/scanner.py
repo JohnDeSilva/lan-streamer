@@ -246,6 +246,8 @@ def scan_series(series_dir: Path, tmdb_series: Dict[str, Any] = None) -> Dict[st
                 episode_name = episode_file.name
 
                 tmdb_episode_id = None
+                tmdb_name = None
+                tmdb_number = None
 
                 # Match TMDB episode by S01E02 pattern in filename
                 parsed = _parse_episode_num(episode_name)
@@ -256,6 +258,8 @@ def scan_series(series_dir: Path, tmdb_series: Dict[str, Any] = None) -> Dict[st
                     ]:
                         if tmdb_ep.get("episode_number") == ep_num:
                             tmdb_episode_id = str(tmdb_ep.get("id", ""))
+                            tmdb_name = tmdb_ep.get("name")
+                            tmdb_number = tmdb_ep.get("episode_number")
                             break
 
                 try:
@@ -269,6 +273,8 @@ def scan_series(series_dir: Path, tmdb_series: Dict[str, Any] = None) -> Dict[st
                         "path": episode_path,
                         "jellyfin_id": None,  # populated later by Jellyfin history sync
                         "tmdb_episode_id": tmdb_episode_id,
+                        "tmdb_name": tmdb_name,
+                        "tmdb_number": tmdb_number,
                         "watched": False,  # populated by Jellyfin history sync
                         "date_added": ctime,
                     }

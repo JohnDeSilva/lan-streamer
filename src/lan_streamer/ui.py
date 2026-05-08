@@ -781,11 +781,20 @@ class MainWindow(QMainWindow):
         episodes = season_data.get("episodes", [])
 
         for episode in episodes:
-            watched_indicator = "[✓] " if episode.get("watched") else "[ ] "
-            episode_item = QStandardItem(f"{watched_indicator}{episode['name']}")
+            display_text = self._format_episode_display(episode)
+            episode_item = QStandardItem(display_text)
             episode_item.setEditable(False)
             episode_item.setData(episode, Qt.ItemDataRole.UserRole)
             self.episode_model.appendRow(episode_item)
+
+    def _format_episode_display(self, episode_data: dict) -> str:
+        watched_indicator = "[✓] " if episode_data.get("watched") else "[ ] "
+        tmdb_num = episode_data.get("tmdb_number")
+        tmdb_name = episode_data.get("tmdb_name")
+
+        if tmdb_num is not None and tmdb_name:
+            return f"{watched_indicator}{tmdb_num}. {tmdb_name}"
+        return f"{watched_indicator}{episode_data['name']}"
 
     def on_episode_double_clicked(self, index):
         item = self.episode_model.itemFromIndex(index)
@@ -835,6 +844,6 @@ class MainWindow(QMainWindow):
         if episode_data.get("jellyfin_id"):
             jellyfin_client.set_watched_status(episode_data["jellyfin_id"], new_status)
 
-        watched_indicator = "[✓] " if new_status else "[ ] "
-        item.setText(f"{watched_indicator}{episode_data['name']}")
+        display_text = self._format_episode_display(episode_data)
+        item.setText(display_text)
         item.setData(episode_data, Qt.ItemDataRole.UserRole)

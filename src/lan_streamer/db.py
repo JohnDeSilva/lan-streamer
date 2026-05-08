@@ -96,6 +96,8 @@ def init_db() -> bool:
                         path TEXT,
                         jellyfin_id TEXT,
                         tmdb_episode_id TEXT,
+                        tmdb_name TEXT,
+                        tmdb_number INTEGER,
                         watched BOOLEAN DEFAULT 0,
                         date_added INTEGER DEFAULT 0,
                         FOREIGN KEY(season_id) REFERENCES seasons(id) ON DELETE CASCADE,
@@ -138,6 +140,16 @@ def init_db() -> bool:
                     )
                 except sqlite3.OperationalError:
                     pass
+                # Ensure tmdb_name and tmdb_number columns exist
+                try:
+                    cursor.execute("ALTER TABLE episodes ADD COLUMN tmdb_name TEXT")
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    cursor.execute("ALTER TABLE episodes ADD COLUMN tmdb_number INTEGER")
+                except sqlite3.OperationalError:
+                    pass
+
                 # Migrate old tvdb_episode_id data to tmdb_episode_id if old column exists
                 try:
                     cursor.execute(
@@ -216,6 +228,12 @@ def load_library(library_name: str) -> Dict[str, Any]:
                                 "jellyfin_id": episode_row["jellyfin_id"],
                                 "tmdb_episode_id": episode_row["tmdb_episode_id"]
                                 if "tmdb_episode_id" in keys
+                                else None,
+                                "tmdb_name": episode_row["tmdb_name"]
+                                if "tmdb_name" in keys
+                                else None,
+                                "tmdb_number": episode_row["tmdb_number"]
+                                if "tmdb_number" in keys
                                 else None,
                                 "watched": bool(episode_row["watched"]),
                                 "date_added": date_added,
@@ -318,19 +336,23 @@ def save_library(library_name: str, library: Dict[str, Any]):
                             # Upsert Episode — preserve existing watched=True when scan sets False
                             cursor.execute(
                                 """
-                                INSERT INTO episodes (season_id, name, path, jellyfin_id, tmdb_episode_id, watched, date_added)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                                INSERT INTO episodes (season_id, name, path, jellyfin_id, tmdb_episode_id, tmdb_name, tmdb_number, watched, date_added)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 ON CONFLICT(path) DO UPDATE SET
                                     season_id = excluded.season_id,
                                     name = excluded.name,
                                     jellyfin_id = excluded.jellyfin_id,
                                     tmdb_episode_id = excluded.tmdb_episode_id,
+                                    tmdb_name = excluded.tmdb_name,
+                                    tmdb_number = excluded.tmdb_number,
                                     watched = MAX(watched, excluded.watched),
                                     date_added = excluded.date_added
                                 ON CONFLICT(season_id, name) DO UPDATE SET
                                     path = excluded.path,
                                     jellyfin_id = excluded.jellyfin_id,
                                     tmdb_episode_id = excluded.tmdb_episode_id,
+                                    tmdb_name = excluded.tmdb_name,
+                                    tmdb_number = excluded.tmdb_number,
                                     watched = MAX(watched, excluded.watched),
                                     date_added = excluded.date_added
                                 RETURNING id
@@ -341,6 +363,8 @@ def save_library(library_name: str, library: Dict[str, Any]):
                                     episode["path"],
                                     episode.get("jellyfin_id"),
                                     episode.get("tmdb_episode_id"),
+                                    episode.get("tmdb_name"),
+                                    episode.get("tmdb_number"),
                                     1 if episode.get("watched") else 0,
                                     episode.get("date_added", 0),
                                 ),
