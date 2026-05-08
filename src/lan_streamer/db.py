@@ -604,9 +604,6 @@ def sync_watched_from_jellyfin_data(
             with connection:
                 cursor = connection.cursor()
 
-                # Reset all to unwatched first
-                cursor.execute("UPDATE episodes SET watched = 0")
-
                 # 1. Mark by Jellyfin ID (Most reliable)
                 if watched_ids:
                     id_list = list(watched_ids)
