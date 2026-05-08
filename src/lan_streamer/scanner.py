@@ -84,15 +84,17 @@ def scan_directories(
             if existing_series and existing_series.get("metadata", {}).get(
                 "locked_metadata"
             ):
-                tmdb_id = existing_series["metadata"].get("tmdb_id")
-                if tmdb_id:
+                tmdb_identifier = existing_series["metadata"].get("tmdb_identifier")
+                if tmdb_identifier:
                     logger.info(
-                        f"Using locked TMDB metadata for '{series_name}' (ID: {tmdb_id})"
+                        f"Using locked TMDB metadata for '{series_name}' (ID: {tmdb_identifier})"
                     )
                     # Use existing metadata exactly as is
                     tmdb_series = {
-                        "id": tmdb_id,
-                        "name": series_name,  # Avoid full metadata fetch in scan_series
+                        "id": tmdb_identifier,
+                        "name": existing_series["metadata"].get(
+                            "tmdb_name", series_name
+                        ),  # Use tmdb_name if available
                         "overview": existing_series["metadata"].get("overview", ""),
                         "poster_path": existing_series["metadata"].get(
                             "poster_path", ""
@@ -119,11 +121,11 @@ def scan_directories(
 
             # Identify if this series matches something already in our library
             match_key = None
-            tmdb_id = cleaned["metadata"].get("tmdb_id")
+            tmdb_identifier = cleaned["metadata"].get("tmdb_identifier")
 
-            if tmdb_id:
+            if tmdb_identifier:
                 for key, existing in library.items():
-                    if existing["metadata"].get("tmdb_id") == tmdb_id:
+                    if existing["metadata"].get("tmdb_identifier") == tmdb_identifier:
                         match_key = key
                         break
 
@@ -200,17 +202,19 @@ def scan_series(
         tmdb_series = tmdb_client.search_series(series_name)
 
     series_metadata: Dict[str, Any] = {
-        "tmdb_id": "",
+        "tmdb_identifier": "",
         "overview": "",
         "poster_path": "",
+        "tmdb_name": "",
         "jellyfin_id": "",
     }
     tmdb_seasons: list = []
 
     if tmdb_series:
-        tmdb_id = str(tmdb_series.get("id") or "")
-        series_metadata["tmdb_id"] = tmdb_id
+        tmdb_identifier = str(tmdb_series.get("id") or "")
+        series_metadata["tmdb_identifier"] = tmdb_identifier
         series_metadata["overview"] = tmdb_series.get("overview", "")
+        series_metadata["tmdb_name"] = tmdb_series.get("name", "")
         series_metadata["jellyfin_id"] = ""
 
         # Artwork — TMDB returns a poster_path fragment
@@ -221,19 +225,19 @@ def scan_series(
                 series_metadata["poster_path"] = poster_path
             else:
                 series_metadata["poster_path"] = tmdb_client.download_image(
-                    poster_path, f"tmdb_series_{tmdb_id}"
+                    poster_path, f"tmdb_series_{tmdb_identifier}"
                 )
         else:
             series_metadata["poster_path"] = ""
 
-        if tmdb_id:
-            tmdb_seasons = tmdb_client.get_seasons(tmdb_id)
+        if tmdb_identifier:
+            tmdb_seasons = tmdb_client.get_seasons(tmdb_identifier)
 
     series_data = {
         "metadata": series_metadata,
         "seasons": {},
         "_tmdb_seasons": tmdb_seasons,
-        "_tmdb_series_id": series_metadata.get("tmdb_id"),
+        "_tmdb_series_id": series_metadata.get("tmdb_identifier"),
         "_jellyfin_id": "",  # To be filled from first matched episode
     }
 
@@ -262,14 +266,16 @@ def scan_series(
                 break
 
         if matched_tmdb_season and series_data["_tmdb_series_id"]:
-            season_tmdb_id = matched_tmdb_season.get("id")
-            season_metadata["tmdb_id"] = str(season_tmdb_id) if season_tmdb_id else ""
+            season_tmdb_identifier = matched_tmdb_season.get("id")
+            season_metadata["tmdb_identifier"] = (
+                str(season_tmdb_identifier) if season_tmdb_identifier else ""
+            )
 
             # Fetch artwork for the season (TMDB: poster_path fragment)
             artwork = matched_tmdb_season.get("poster_path") or ""
-            if artwork and season_tmdb_id:
+            if artwork and season_tmdb_identifier:
                 season_metadata["poster_path"] = tmdb_client.download_image(
-                    artwork, f"tmdb_season_{season_tmdb_id}"
+                    artwork, f"tmdb_season_{season_tmdb_identifier}"
                 )
             else:
                 season_metadata["poster_path"] = ""
@@ -293,7 +299,7 @@ def scan_series(
                 episode_path = str(episode_file.absolute())
                 episode_name = episode_file.name
 
-                tmdb_episode_id = None
+                tmdb_episode_identifier = None
                 tmdb_name = None
                 tmdb_number = None
 
@@ -305,7 +311,7 @@ def scan_series(
                         "_tmdb_episodes"
                     ]:
                         if tmdb_ep.get("episode_number") == ep_num:
-                            tmdb_episode_id = str(tmdb_ep.get("id", ""))
+                            tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
                             tmdb_name = tmdb_ep.get("name")
                             tmdb_number = tmdb_ep.get("episode_number")
                             break
@@ -324,9 +330,9 @@ def scan_series(
                 jellyfin_id = jellyfin_info["id"] if jellyfin_info else ""
 
                 # Fallback correlation by TMDB Episode ID
-                if not jellyfin_id and tmdb_episode_id and jellyfin_data:
+                if not jellyfin_id and tmdb_episode_identifier and jellyfin_data:
                     jellyfin_id = jellyfin_data.get("tmdb_episode_map", {}).get(
-                        str(tmdb_episode_id), ""
+                        str(tmdb_episode_identifier), ""
                     )
 
                 # Fallback correlation by Series Name + Episode Name
@@ -368,7 +374,7 @@ def scan_series(
                     {
                         "name": episode_name,
                         "path": episode_path,
-                        "tmdb_id": tmdb_episode_id,
+                        "tmdb_identifier": tmdb_episode_identifier,
                         "tmdb_name": tmdb_name,
                         "tmdb_number": tmdb_number,
                         "jellyfin_id": jellyfin_id,

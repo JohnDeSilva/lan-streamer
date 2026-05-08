@@ -238,7 +238,7 @@ class JellyfinClient:
         Fetches all episodes, series, and seasons from Jellyfin to build correlation maps.
         Returns a dict containing:
           - path_map: {file_path: {id, series_id, season_id}}
-          - tmdb_episode_map: {tmdb_episode_id: jellyfin_id}
+          - tmdb_episode_map: {tmdb_episode_identifier: jellyfin_id}
           - tmdb_series_map: {tmdb_series_id: jellyfin_id}
           - name_map: {(series_name, episode_name): jellyfin_id}
         """
@@ -285,9 +285,9 @@ class JellyfinClient:
                         }
 
                     provider_ids = item.get("ProviderIds", {})
-                    tmdb_id = provider_ids.get("Tmdb")
-                    if tmdb_id and item_id:
-                        tmdb_episode_map[str(tmdb_id)] = item_id
+                    tmdb_identifier = provider_ids.get("Tmdb")
+                    if tmdb_identifier and item_id:
+                        tmdb_episode_map[str(tmdb_identifier)] = item_id
 
                     # Name-based mapping
                     series_name = item.get("SeriesName")
@@ -324,9 +324,9 @@ class JellyfinClient:
                 for item in items:
                     item_id = item.get("Id")
                     provider_ids = item.get("ProviderIds", {})
-                    tmdb_id = provider_ids.get("Tmdb")
-                    if tmdb_id and item_id:
-                        tmdb_series_map[str(tmdb_id)] = item_id
+                    tmdb_identifier = provider_ids.get("Tmdb")
+                    if tmdb_identifier and item_id:
+                        tmdb_series_map[str(tmdb_identifier)] = item_id
                 if len(items) < limit:
                     break
                 start_index += limit

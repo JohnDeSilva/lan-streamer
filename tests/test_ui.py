@@ -561,7 +561,7 @@ def test_mainwindow_manual_match(qtbot, mock_dependencies, monkeypatch, tmp_path
     config.libraries["TestLib"] = [str(tmp_path)]
 
     # Mock dialog success
-    mock_selected = {"id": "new_tmdb_id", "name": "New Match"}
+    mock_selected = {"id": "new_tmdb_identifier", "name": "New Match"}
 
     class MockDialog:
         def __init__(self, *args):
@@ -576,7 +576,10 @@ def test_mainwindow_manual_match(qtbot, mock_dependencies, monkeypatch, tmp_path
     monkeypatch.setattr(ui, "SeriesMatchDialog", MockDialog)
 
     # Mock scanner and cleaner
-    mock_new_data = {"metadata": {"tmdb_id": "new_tmdb_id"}, "seasons": {}}
+    mock_new_data = {
+        "metadata": {"tmdb_identifier": "new_tmdb_identifier"},
+        "seasons": {},
+    }
     monkeypatch.setattr(ui, "scan_series", lambda *args, **kwargs: mock_new_data)
     monkeypatch.setattr(ui, "clean_series_data", lambda d: d)
 
@@ -586,7 +589,10 @@ def test_mainwindow_manual_match(qtbot, mock_dependencies, monkeypatch, tmp_path
     # Trigger manual match
     window.match_series_manually(series_name)
 
-    assert window.library[series_name]["metadata"]["tmdb_id"] == "new_tmdb_id"
+    assert (
+        window.library[series_name]["metadata"]["tmdb_identifier"]
+        == "new_tmdb_identifier"
+    )
     ui.db.save_library.assert_called()
 
 

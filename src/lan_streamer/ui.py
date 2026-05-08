@@ -439,10 +439,10 @@ class MainWindow(QMainWindow):
         manage_tmdb_action.triggered.connect(self.open_tmdb_settings)
         external_menu.addAction(manage_tmdb_action)
 
-        manage_jf_action = QAction("Jellyfin Settings...", self)
-        manage_jf_action.setMenuRole(QAction.MenuRole.NoRole)
-        manage_jf_action.triggered.connect(self.open_jellyfin_settings)
-        external_menu.addAction(manage_jf_action)
+        manage_jellyfin_action = QAction("Jellyfin Settings...", self)
+        manage_jellyfin_action.setMenuRole(QAction.MenuRole.NoRole)
+        manage_jellyfin_action.triggered.connect(self.open_jellyfin_settings)
+        external_menu.addAction(manage_jellyfin_action)
 
         settings_menu.addSeparator()
 
@@ -649,7 +649,10 @@ class MainWindow(QMainWindow):
             series_list.sort(key=lambda x: x[2])
 
         for series_name, series_data, _ in series_list:
-            item = QStandardItem(series_name)
+            display_name = (
+                series_data.get("metadata", {}).get("tmdb_name") or series_name
+            )
+            item = QStandardItem(display_name)
             poster_path = series_data.get("metadata", {}).get("poster_path")
             if poster_path:
                 item.setData(poster_path, Qt.ItemDataRole.UserRole + 1)
@@ -852,7 +855,9 @@ class MainWindow(QMainWindow):
 
         series_name = item.data(Qt.ItemDataRole.UserRole)
         self.current_series = series_name
-        self.detail_title.setText(series_name)
+        series_data = self.library.get(series_name, {})
+        display_name = series_data.get("metadata", {}).get("tmdb_name") or series_name
+        self.detail_title.setText(display_name)
 
         self.season_model.clear()
         self.episode_model.clear()

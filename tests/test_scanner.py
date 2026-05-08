@@ -47,13 +47,13 @@ def test_scan_directories_with_mock(tmp_path, monkeypatch):
         if "Series A" in name:
             return {
                 "id": "series_a_id",
-                "tmdb_id": "111",
+                "tmdb_identifier": "111",
                 "overview": "Desc A",
                 "poster_path": "",
             }
         return {
             "id": "series_b_id",
-            "tmdb_id": "222",
+            "tmdb_identifier": "222",
             "overview": "Desc B",
             "poster_path": "",
         }
@@ -129,7 +129,7 @@ def test_scan_series(tmp_path, monkeypatch):
         mock_tmdb.is_configured.return_value = True
         mock_tmdb.search_series.return_value = {
             "id": "series123",
-            "tmdb_id": "series123",
+            "tmdb_identifier": "series123",
             "name": "Test Show",
             "overview": "A test show",
             "poster_path": "",
@@ -150,11 +150,11 @@ def test_scan_series(tmp_path, monkeypatch):
 
         series_data = scan_series(series_dir)
 
-        assert series_data["metadata"]["tmdb_id"] == "series123"
+        assert series_data["metadata"]["tmdb_identifier"] == "series123"
         assert "Season 1" in series_data["seasons"]
         episodes = series_data["seasons"]["Season 1"]["episodes"]
         assert len(episodes) == 1
-        assert episodes[0]["tmdb_id"] == "ep123"
+        assert episodes[0]["tmdb_identifier"] == "ep123"
         # watched defaults to False; history sync sets it later
         assert episodes[0]["watched"] is False
 
@@ -171,7 +171,7 @@ def test_scan_series_manual_match(tmp_path, monkeypatch):
 
     selected_series = {
         "id": "real_id",
-        "tmdb_id": "real_id",
+        "tmdb_identifier": "real_id",
         "name": "Correct Show",
         "poster_path": "",
     }
@@ -182,7 +182,7 @@ def test_scan_series_manual_match(tmp_path, monkeypatch):
 
         series_data = scan_series(series_dir, tmdb_series=selected_series)
 
-        assert series_data["metadata"]["tmdb_id"] == "real_id"
+        assert series_data["metadata"]["tmdb_identifier"] == "real_id"
         mock_tmdb.search_series.assert_not_called()
 
 
@@ -199,7 +199,7 @@ def test_scan_series_manual_match_fetch_by_id(tmp_path, monkeypatch):
     stub_only_id = {"id": "fetch_me"}
     full_record = {
         "id": "fetch_me",
-        "tmdb_id": "fetch_me",
+        "tmdb_identifier": "fetch_me",
         "name": "Some Show",
         "poster_path": "",
     }
@@ -211,7 +211,7 @@ def test_scan_series_manual_match_fetch_by_id(tmp_path, monkeypatch):
 
         series_data = scan_series(series_dir, tmdb_series=stub_only_id)
         mock_tmdb.get_series_by_id.assert_called_once_with("fetch_me")
-        assert series_data["metadata"]["tmdb_id"] == "fetch_me"
+        assert series_data["metadata"]["tmdb_identifier"] == "fetch_me"
 
 
 def test_scan_directories_respects_manual_match(tmp_path, monkeypatch):
@@ -223,15 +223,18 @@ def test_scan_directories_respects_manual_match(tmp_path, monkeypatch):
 
     existing_library = {
         "Manual Show": {
-            "metadata": {"tmdb_id": "manual_tmdb_id", "locked_metadata": True},
+            "metadata": {
+                "tmdb_identifier": "manual_tmdb_identifier",
+                "locked_metadata": True,
+            },
             "seasons": {"Season 1": {"episodes": []}},
         }
     }
 
     mock_tmdb = MagicMock()
     mock_tmdb.get_series_by_id.return_value = {
-        "id": "manual_tmdb_id",
-        "tmdb_id": "manual_tmdb_id",
+        "id": "manual_tmdb_identifier",
+        "tmdb_identifier": "manual_tmdb_identifier",
         "name": "Manual Show",
         "poster_path": "",
     }
@@ -241,7 +244,10 @@ def test_scan_directories_respects_manual_match(tmp_path, monkeypatch):
 
     library = scan_directories([str(tmp_path)], existing_library=existing_library)
 
-    assert library["Manual Show"]["metadata"]["tmdb_id"] == "manual_tmdb_id"
+    assert (
+        library["Manual Show"]["metadata"]["tmdb_identifier"]
+        == "manual_tmdb_identifier"
+    )
     assert library["Manual Show"]["metadata"]["locked_metadata"] is True
     mock_tmdb.search_series.assert_not_called()
 
@@ -289,7 +295,7 @@ def test_parse_episode_num():
     assert _parse_episode_num("no_episode.mkv") is None
 
 
-def test_scan_tmdb_merge_by_tmdb_id(tmp_path, monkeypatch):
+def test_scan_tmdb_merge_by_tmdb_identifier(tmp_path, monkeypatch):
     """Two differently-named folders with same TMDB ID should be merged."""
     folder_a = tmp_path / "Show Part 1"
     folder_b = tmp_path / "Show Part 2"
@@ -303,13 +309,13 @@ def test_scan_tmdb_merge_by_tmdb_id(tmp_path, monkeypatch):
     mock_tmdb = MagicMock()
     mock_tmdb.search_series.return_value = {
         "id": "shared_id",
-        "tmdb_id": "shared_id",
+        "tmdb_identifier": "shared_id",
         "name": "Show",
         "poster_path": "",
     }
     mock_tmdb.get_series_by_id.return_value = {
         "id": "shared_id",
-        "tmdb_id": "shared_id",
+        "tmdb_identifier": "shared_id",
         "name": "Show",
         "poster_path": "",
     }
@@ -376,7 +382,7 @@ def test_scan_directories_merge_branches(tmp_path, monkeypatch):
     # We can just manually construct the library and pass it to scan_directories
     existing_library = {
         "Show A": {
-            "metadata": {"tmdb_id": "id1"},
+            "metadata": {"tmdb_identifier": "id1"},
             "seasons": {
                 "Season 1": {
                     "episodes": [{"name": "S01E01.mkv", "path": "/other/path"}]

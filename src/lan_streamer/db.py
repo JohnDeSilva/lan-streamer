@@ -28,22 +28,22 @@ def version_to_tuple(version: str):
 def migrate_0_3_0(cursor):
     """TVDB to TMDB migration."""
     try:
-        cursor.execute("ALTER TABLE series ADD COLUMN tmdb_id TEXT")
+        cursor.execute("ALTER TABLE series ADD COLUMN tmdb_identifier TEXT")
     except sqlite3.OperationalError:
         pass
     try:
         cursor.execute(
-            "UPDATE series SET tmdb_id = tvdb_id WHERE tmdb_id IS NULL AND tvdb_id IS NOT NULL"
+            "UPDATE series SET tmdb_identifier = tvdb_id WHERE tmdb_identifier IS NULL AND tvdb_id IS NOT NULL"
         )
     except sqlite3.OperationalError:
         pass
     try:
-        cursor.execute("ALTER TABLE episodes ADD COLUMN tmdb_episode_id TEXT")
+        cursor.execute("ALTER TABLE episodes ADD COLUMN tmdb_episode_identifier TEXT")
     except sqlite3.OperationalError:
         pass
     try:
         cursor.execute(
-            "UPDATE episodes SET tmdb_episode_id = tvdb_episode_id WHERE tmdb_episode_id IS NULL AND tvdb_episode_id IS NOT NULL"
+            "UPDATE episodes SET tmdb_episode_identifier = tvdb_episode_id WHERE tmdb_episode_identifier IS NULL AND tvdb_episode_id IS NOT NULL"
         )
     except sqlite3.OperationalError:
         pass
@@ -68,6 +68,24 @@ def migrate_0_3_1(cursor):
     try:
         cursor.execute(
             "UPDATE series SET locked_metadata = is_manual_match WHERE is_manual_match IS NOT NULL"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
+def migrate_0_4_0(cursor):
+    """Added tmdb_name and renamed tmdb_id/tmdb_episode_id."""
+    try:
+        cursor.execute("ALTER TABLE series ADD COLUMN tmdb_name TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE series RENAME COLUMN tmdb_id TO tmdb_identifier")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute(
+            "ALTER TABLE episodes RENAME COLUMN tmdb_episode_id TO tmdb_episode_identifier"
         )
     except sqlite3.OperationalError:
         pass
@@ -119,9 +137,10 @@ def init_db() -> bool:
                         library_name TEXT,
                         name TEXT,
                         jellyfin_id TEXT,
-                        tmdb_id TEXT,
+                        tmdb_identifier TEXT,
                         poster_path TEXT,
                         overview TEXT,
+                        tmdb_name TEXT,
                         locked_metadata BOOLEAN DEFAULT 0,
                         UNIQUE(library_name, name)
                     )
@@ -146,7 +165,7 @@ def init_db() -> bool:
                         name TEXT,
                         path TEXT,
                         jellyfin_id TEXT,
-                        tmdb_episode_id TEXT,
+                        tmdb_episode_identifier TEXT,
                         tmdb_name TEXT,
                         tmdb_number INTEGER,
                         watched BOOLEAN DEFAULT 0,
@@ -162,6 +181,7 @@ def init_db() -> bool:
                 migrations = [
                     ("0.3.0", migrate_0_3_0),
                     ("0.3.1", migrate_0_3_1),
+                    ("0.4.0", migrate_0_4_0),
                 ]
 
                 current_version = version_to_tuple(database_version)
@@ -210,11 +230,14 @@ def load_library(library_name: str) -> Dict[str, Any]:
                 library_data[series_name] = {
                     "metadata": {
                         "jellyfin_id": series_row["jellyfin_id"],
-                        "tmdb_id": series_row["tmdb_id"]
-                        if "tmdb_id" in series_row.keys()
+                        "tmdb_identifier": series_row["tmdb_identifier"]
+                        if "tmdb_identifier" in series_row.keys()
                         else None,
                         "poster_path": series_row["poster_path"],
                         "overview": series_row["overview"],
+                        "tmdb_name": series_row["tmdb_name"]
+                        if "tmdb_name" in series_row.keys()
+                        else None,
                         "locked_metadata": bool(series_row["locked_metadata"])
                         if "locked_metadata" in series_row.keys()
                         else False,
@@ -259,8 +282,10 @@ def load_library(library_name: str) -> Dict[str, Any]:
                                 "name": episode_row["name"],
                                 "path": episode_row["path"],
                                 "jellyfin_id": episode_row["jellyfin_id"],
-                                "tmdb_episode_id": episode_row["tmdb_episode_id"]
-                                if "tmdb_episode_id" in keys
+                                "tmdb_episode_identifier": episode_row[
+                                    "tmdb_episode_identifier"
+                                ]
+                                if "tmdb_episode_identifier" in keys
                                 else None,
                                 "tmdb_name": episode_row["tmdb_name"]
                                 if "tmdb_name" in keys
@@ -321,13 +346,14 @@ def save_library(library_name: str, library: Dict[str, Any]):
                     # Upsert Series
                     cursor.execute(
                         """
-                        INSERT INTO series (library_name, name, jellyfin_id, tmdb_id, poster_path, overview, locked_metadata)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO series (library_name, name, jellyfin_id, tmdb_identifier, poster_path, overview, tmdb_name, locked_metadata)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(library_name, name) DO UPDATE SET
                             jellyfin_id = excluded.jellyfin_id,
-                            tmdb_id = excluded.tmdb_id,
+                            tmdb_identifier = excluded.tmdb_identifier,
                             poster_path = excluded.poster_path,
                             overview = excluded.overview,
+                            tmdb_name = excluded.tmdb_name,
                             locked_metadata = excluded.locked_metadata
                         RETURNING id
                     """,
@@ -335,9 +361,10 @@ def save_library(library_name: str, library: Dict[str, Any]):
                             library_name,
                             series_name,
                             series_metadata.get("jellyfin_id"),
-                            series_metadata.get("tmdb_id"),
+                            series_metadata.get("tmdb_identifier"),
                             series_metadata.get("poster_path"),
                             series_metadata.get("overview"),
+                            series_metadata.get("tmdb_name"),
                             1 if series_metadata.get("locked_metadata") else 0,
                         ),
                     )
@@ -378,13 +405,13 @@ def save_library(library_name: str, library: Dict[str, Any]):
                             # Upsert Episode — preserve existing watched=True when scan sets False
                             cursor.execute(
                                 """
-                                INSERT INTO episodes (season_id, name, path, jellyfin_id, tmdb_episode_id, tmdb_name, tmdb_number, watched, date_added)
+                                INSERT INTO episodes (season_id, name, path, jellyfin_id, tmdb_episode_identifier, tmdb_name, tmdb_number, watched, date_added)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 ON CONFLICT(path) DO UPDATE SET
                                     season_id = excluded.season_id,
                                     name = excluded.name,
                                     jellyfin_id = excluded.jellyfin_id,
-                                    tmdb_episode_id = excluded.tmdb_episode_id,
+                                    tmdb_episode_identifier = excluded.tmdb_episode_identifier,
                                     tmdb_name = excluded.tmdb_name,
                                     tmdb_number = excluded.tmdb_number,
                                     watched = MAX(watched, excluded.watched),
@@ -392,7 +419,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
                                 ON CONFLICT(season_id, name) DO UPDATE SET
                                     path = excluded.path,
                                     jellyfin_id = excluded.jellyfin_id,
-                                    tmdb_episode_id = excluded.tmdb_episode_id,
+                                    tmdb_episode_identifier = excluded.tmdb_episode_identifier,
                                     tmdb_name = excluded.tmdb_name,
                                     tmdb_number = excluded.tmdb_number,
                                     watched = MAX(watched, excluded.watched),
@@ -404,7 +431,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
                                     episode["name"],
                                     episode["path"],
                                     episode.get("jellyfin_id"),
-                                    episode.get("tmdb_episode_id"),
+                                    episode.get("tmdb_episode_identifier"),
                                     episode.get("tmdb_name"),
                                     episode.get("tmdb_number"),
                                     1 if episode.get("watched") else 0,
@@ -513,8 +540,8 @@ def sync_watched_from_jellyfin_data(
                 if watched_ids:
                     id_list = list(watched_ids)
                     chunk_size = 500
-                    for i in range(0, len(id_list), chunk_size):
-                        chunk = id_list[i : i + chunk_size]
+                    for index in range(0, len(id_list), chunk_size):
+                        chunk = id_list[index : index + chunk_size]
                         placeholders = ",".join("?" * len(chunk))
                         cursor.execute(
                             f"UPDATE episodes SET watched = 1 WHERE jellyfin_id IN ({placeholders})",
@@ -526,8 +553,8 @@ def sync_watched_from_jellyfin_data(
                 if watched_paths:
                     path_list = list(watched_paths)
                     chunk_size = 500
-                    for i in range(0, len(path_list), chunk_size):
-                        chunk = path_list[i : i + chunk_size]
+                    for index in range(0, len(path_list), chunk_size):
+                        chunk = path_list[index : index + chunk_size]
                         placeholders = ",".join("?" * len(chunk))
                         # Only update those not already marked by ID
                         cursor.execute(
@@ -541,7 +568,7 @@ def sync_watched_from_jellyfin_data(
                     # This is slightly more complex as we need to join with series table
                     # We'll do it by iterating over names or by a complex join
                     # Iterating over thousands of names might be slow, but let's try a bulk approach
-                    for series_n, episode_n in watched_names:
+                    for series_name, episode_name in watched_names:
                         cursor.execute(
                             """
                             UPDATE episodes 
@@ -549,12 +576,12 @@ def sync_watched_from_jellyfin_data(
                             WHERE watched = 0 
                             AND LOWER(name) = LOWER(?) 
                             AND season_id IN (
-                                SELECT s.id FROM seasons s
-                                JOIN series sr ON s.series_id = sr.id
-                                WHERE LOWER(sr.name) = LOWER(?)
+                                SELECT seasons.id FROM seasons
+                                JOIN series ON seasons.series_id = series.id
+                                WHERE LOWER(series.name) = LOWER(?)
                             )
                         """,
-                            (episode_n, series_n),
+                            (episode_name, series_name),
                         )
                         updated_count += cursor.rowcount
 

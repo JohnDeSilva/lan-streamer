@@ -189,23 +189,25 @@ class TMDBClient:
         results = self._do_search(query)
         return results[:limit]
 
-    def get_series_by_id(self, tmdb_id: str | int) -> dict | None:
+    def get_series_by_id(self, tmdb_identifierentifier: str | int) -> dict | None:
         """Fetches full series details from TMDB."""
         try:
             resp = self.session.get(
-                f"{TMDB_BASE_URL}/tv/{tmdb_id}",
+                f"{TMDB_BASE_URL}/tv/{tmdb_identifierentifier}",
                 params=self._params(),
                 timeout=10,
             )
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
-            logger.error(f"TMDB get_series_by_id({tmdb_id}) failed: {e}")
+            logger.error(
+                f"TMDB get_series_by_id({tmdb_identifierentifier}) failed: {e}"
+            )
             return None
 
-    def get_seasons(self, tmdb_id: str | int) -> list:
+    def get_seasons(self, tmdb_identifierentifier: str | int) -> list:
         """Returns season list for a series (from the series detail response)."""
-        data = self.get_series_by_id(tmdb_id)
+        data = self.get_series_by_id(tmdb_identifierentifier)
         if not data:
             return []
         seasons = data.get("seasons", [])
@@ -213,18 +215,20 @@ class TMDBClient:
         official = [s for s in seasons if s.get("season_number", 0) > 0]
         return official if official else seasons
 
-    def get_episodes(self, tmdb_id: str | int, season_num: int) -> list:
+    def get_episodes(self, tmdb_identifierentifier: str | int, season_num: int) -> list:
         """Returns episodes for a given season number."""
         try:
             resp = self.session.get(
-                f"{TMDB_BASE_URL}/tv/{tmdb_id}/season/{season_num}",
+                f"{TMDB_BASE_URL}/tv/{tmdb_identifierentifier}/season/{season_num}",
                 params=self._params(),
                 timeout=10,
             )
             resp.raise_for_status()
             return resp.json().get("episodes", [])
         except Exception as e:
-            logger.error(f"TMDB get_episodes({tmdb_id}, S{season_num}) failed: {e}")
+            logger.error(
+                f"TMDB get_episodes({tmdb_identifierentifier}, S{season_num}) failed: {e}"
+            )
             return []
 
     def download_image(self, poster_path: str, cache_key: str) -> str:

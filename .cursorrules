@@ -17,3 +17,5 @@ These rules apply to all AI coding assistants working on this repository.
 *   **Verification**: Always run `make test` and `make lint` after making any changes to the codebase.
 *   **Coverage**: Maintain a minimum of **90% code coverage**. If your changes drop the coverage, add the necessary tests.
 *   **Migrations**: If you modify the database schema, add a versioned migration in `src/lan_streamer/db.py`.
+    *   **Versioning**: Migration versions MUST be **equal to** the current application version (`__version__` in `src/lan_streamer/__init__.py`).
+    *   **No Version Bumping**: Do not bump the application version solely to trigger a migration.
