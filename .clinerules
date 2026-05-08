@@ -13,7 +13,23 @@ These rules apply to all AI coding assistants working on this repository.
     *   ❌ `db`, `conn`
     *   ✅ `database`, `connection`
 
+## Frameworks
+*   **UI**: PySide6 (Qt for Python) for the desktop interface.
+*   **Database**: SQLite (via `sqlite3` standard library) for local library storage.
+*   **Networking**: `requests` for Jellyfin and TMDB API communication.
+*   **Build/Env**: `uv` for dependency management and execution.
+
+## Core Principles
+*   **Efficiency**: Prioritize performance. Minimize database hits, optimize file I/O, and use efficient algorithms.
+*   **Responsiveness**: The UI must never freeze. Use background threads (`QThread`/`QWorker`) for all blocking operations (scanning, networking, DB writes).
+*   **Backwards Compatibility**: Ensure database migrations are robust. Always test migrations against older database versions to prevent data loss.
+
 ## Workflow Requirements
-*   **Verification**: Always run `make test` and `make lint` after making any changes to the codebase.
-*   **Coverage**: Maintain a minimum of **90% code coverage**. If your changes drop the coverage, add the necessary tests.
-*   **Migrations**: If you modify the database schema, add a versioned migration in `src/lan_streamer/db.py`.
+*   **Test-First Iteration**:
+    1.  **Define Goal**: Understand the requirement.
+    2.  **Create/Update Tests**: Write tests that capture the desired behavior (expect them to fail initially).
+    3.  **Implement/Iterate**: Modify application code until all tests pass.
+    4.  **Refine**: Optimize and ensure coverage remains above 90%.
+*   **Verification**: Always run `make test` after changes. Run `make lint` as the **FINAL** step after all updates are complete.
+*   **Coverage**: Maintain a minimum of **90% code coverage**.
+*   **Migrations**: If you modify the database schema, add a versioned migration in `src/lan_streamer/db.py`. **MANDATORY**: Add a test case for the migration to ensure it handles existing data correctly.
