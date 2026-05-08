@@ -1,3 +1,15 @@
+## 0.6.0 (2026-05-08)
+
+### Feat
+
+- adds library cleanup task to remove references to missing files from DB
+- **ui**: splits settings metadata and watch history into multiple dropdowns
+- **db**: moves db to sqlalchemy for ORM and Alembic for migrations
+
+### Fix
+
+- makes db and log location configurable
+
 ## 0.5.1 (2026-05-08)
 
 ### Fix
