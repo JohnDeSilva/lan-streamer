@@ -17,6 +17,49 @@ def get_connection():
     return conn
 
 
+def version_to_tuple(v: str):
+    try:
+        return tuple(map(int, (v or "0.0.0").split(".")))
+    except ValueError, AttributeError:
+        return (0, 0, 0)
+
+
+def migrate_0_3_0(cursor):
+    """TVDB to TMDB migration."""
+    try:
+        cursor.execute("ALTER TABLE series ADD COLUMN tmdb_id TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute(
+            "UPDATE series SET tmdb_id = tvdb_id WHERE tmdb_id IS NULL AND tvdb_id IS NOT NULL"
+        )
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE episodes ADD COLUMN tmdb_episode_id TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute(
+            "UPDATE episodes SET tmdb_episode_id = tvdb_episode_id WHERE tmdb_episode_id IS NULL AND tvdb_episode_id IS NOT NULL"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
+def migrate_0_3_1(cursor):
+    """Added tmdb_name and tmdb_number."""
+    try:
+        cursor.execute("ALTER TABLE episodes ADD COLUMN tmdb_name TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE episodes ADD COLUMN tmdb_number INTEGER")
+    except sqlite3.OperationalError:
+        pass
+
+
 def init_db() -> bool:
     """
     Initializes the database.
@@ -44,15 +87,8 @@ def init_db() -> bool:
                 # Check if we need to migrate/recreate
                 # If version is < 0.2.0, we drop and recreate
                 # Simplified version comparison:
-                def is_less_than_0_2_0(v):
-                    parts = [int(p) for p in v.split(".")]
-                    if parts[0] < 0:
-                        return True
-                    if parts[0] == 0 and parts[1] < 2:
-                        return True
-                    return False
 
-                if is_less_than_0_2_0(db_version):
+                if version_to_tuple(db_version) < version_to_tuple("0.2.0"):
                     logger.info(
                         f"Database version {db_version} is less than 0.2.0. Recreating database..."
                     )
@@ -107,56 +143,25 @@ def init_db() -> bool:
                 """)
 
                 # Update version in database
+                # Staged Migrations
+                migrations = [
+                    ("0.3.0", migrate_0_3_0),
+                    ("0.3.1", migrate_0_3_1),
+                ]
+
+                current_v = version_to_tuple(db_version)
+                for target_v_str, migrate_func in migrations:
+                    target_v = version_to_tuple(target_v_str)
+                    if current_v < target_v:
+                        logger.info(f"Migrating database to version {target_v_str}...")
+                        migrate_func(cursor)
+                        db_version = target_v_str  # Track progress
+
+                # Always ensure the version is set to the current app version
                 cursor.execute(
                     "INSERT OR REPLACE INTO metadata (key, value) VALUES ('version', ?)",
                     (DB_VERSION,),
                 )
-
-                # Ensure date_added column exists (for very old DBs that might still exist)
-                try:
-                    cursor.execute(
-                        "ALTER TABLE episodes ADD COLUMN date_added INTEGER DEFAULT 0"
-                    )
-                except sqlite3.OperationalError:
-                    pass
-
-                # Ensure tmdb_id column exists on series (migration: tvdb_id → tmdb_id)
-                try:
-                    cursor.execute("ALTER TABLE series ADD COLUMN tmdb_id TEXT")
-                except sqlite3.OperationalError:
-                    pass
-                # Migrate old tvdb_id data to tmdb_id if the old column exists
-                try:
-                    cursor.execute(
-                        "UPDATE series SET tmdb_id = tvdb_id WHERE tmdb_id IS NULL AND tvdb_id IS NOT NULL"
-                    )
-                except sqlite3.OperationalError:
-                    pass
-
-                # Ensure tmdb_episode_id column exists on episodes (migration: tvdb_episode_id → tmdb_episode_id)
-                try:
-                    cursor.execute(
-                        "ALTER TABLE episodes ADD COLUMN tmdb_episode_id TEXT"
-                    )
-                except sqlite3.OperationalError:
-                    pass
-                # Ensure tmdb_name and tmdb_number columns exist
-                try:
-                    cursor.execute("ALTER TABLE episodes ADD COLUMN tmdb_name TEXT")
-                except sqlite3.OperationalError:
-                    pass
-                try:
-                    cursor.execute("ALTER TABLE episodes ADD COLUMN tmdb_number INTEGER")
-                except sqlite3.OperationalError:
-                    pass
-
-                # Migrate old tvdb_episode_id data to tmdb_episode_id if old column exists
-                try:
-                    cursor.execute(
-                        "UPDATE episodes SET tmdb_episode_id = tvdb_episode_id WHERE tmdb_episode_id IS NULL AND tvdb_episode_id IS NOT NULL"
-                    )
-                except sqlite3.OperationalError:
-                    pass
 
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
