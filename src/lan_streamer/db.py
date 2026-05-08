@@ -15,6 +15,10 @@ def get_connection():
     DB_FILE.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_FILE)
     connection.row_factory = sqlite3.Row
+    # Enable WAL mode and busy timeout for better concurrency and responsiveness
+    connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute("PRAGMA synchronous = NORMAL")
+    connection.execute("PRAGMA busy_timeout = 5000")
     return connection
 
 
@@ -86,6 +90,28 @@ def migrate_0_4_0(cursor):
     try:
         cursor.execute(
             "ALTER TABLE episodes RENAME COLUMN tmdb_episode_id TO tmdb_episode_identifier"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
+def migrate_0_4_1(cursor):
+    """Added indexes for performance."""
+    try:
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_episodes_jellyfin_id ON episodes(jellyfin_id)"
+        )
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_seasons_series_id ON seasons(series_id)"
+        )
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_episodes_season_id ON episodes(season_id)"
         )
     except sqlite3.OperationalError:
         pass
@@ -182,6 +208,7 @@ def init_db() -> bool:
                     ("0.3.0", migrate_0_3_0),
                     ("0.3.1", migrate_0_3_1),
                     ("0.4.0", migrate_0_4_0),
+                    ("0.4.1", migrate_0_4_1),
                 ]
 
                 current_version = version_to_tuple(database_version)
@@ -211,6 +238,7 @@ def init_db() -> bool:
 def load_library(library_name: str) -> Dict[str, Any]:
     """
     Loads the library from the database and constructs a nested dictionary structure.
+    Uses a single JOIN query for maximum performance.
     """
     start_time = time.time()
     library_data = {}
@@ -219,88 +247,79 @@ def load_library(library_name: str) -> Dict[str, Any]:
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
 
+            # Single query to fetch everything
             cursor.execute(
-                "SELECT * FROM series WHERE library_name = ?", (library_name,)
+                """
+                SELECT 
+                    series.id as series_id, series.name as series_name, series.jellyfin_id as series_jellyfin_id,
+                    series.tmdb_identifier as series_tmdb_identifier, series.poster_path as series_poster_path,
+                    series.overview as series_overview, series.tmdb_name as series_tmdb_name,
+                    series.locked_metadata as series_locked_metadata,
+                    seasons.id as season_id, seasons.name as season_name, seasons.jellyfin_id as season_jellyfin_id,
+                    seasons.poster_path as season_poster_path,
+                    episodes.id as episode_id, episodes.name as episode_name, episodes.path as episode_path,
+                    episodes.jellyfin_id as episode_jellyfin_id, episodes.tmdb_episode_identifier,
+                    episodes.tmdb_name as episode_tmdb_name, episodes.tmdb_number as episode_tmdb_number,
+                    episodes.watched as episode_watched, episodes.date_added as episode_date_added
+                FROM series
+                LEFT JOIN seasons ON series.id = seasons.series_id
+                LEFT JOIN episodes ON seasons.id = episodes.season_id
+                WHERE series.library_name = ?
+                ORDER BY series.name, seasons.name, episodes.name
+            """,
+                (library_name,),
             )
-            series_rows = cursor.fetchall()
 
-            for series_row in series_rows:
-                series_name = series_row["name"]
-                stats["series"] += 1
-                library_data[series_name] = {
-                    "metadata": {
-                        "jellyfin_id": series_row["jellyfin_id"],
-                        "tmdb_identifier": series_row["tmdb_identifier"]
-                        if "tmdb_identifier" in series_row.keys()
-                        else None,
-                        "poster_path": series_row["poster_path"],
-                        "overview": series_row["overview"],
-                        "tmdb_name": series_row["tmdb_name"]
-                        if "tmdb_name" in series_row.keys()
-                        else None,
-                        "locked_metadata": bool(series_row["locked_metadata"])
-                        if "locked_metadata" in series_row.keys()
-                        else False,
-                    },
-                    "seasons": {},
-                }
+            rows = cursor.fetchall()
 
-                cursor.execute(
-                    "SELECT * FROM seasons WHERE series_id = ?", (series_row["id"],)
-                )
-                season_rows = cursor.fetchall()
+            # Process rows to build the nested structure
+            for row in rows:
+                series_name = row["series_name"]
+                if series_name not in library_data:
+                    stats["series"] += 1
+                    library_data[series_name] = {
+                        "metadata": {
+                            "jellyfin_id": row["series_jellyfin_id"],
+                            "tmdb_identifier": row["series_tmdb_identifier"],
+                            "poster_path": row["series_poster_path"],
+                            "overview": row["series_overview"],
+                            "tmdb_name": row["series_tmdb_name"],
+                            "locked_metadata": bool(row["series_locked_metadata"]),
+                        },
+                        "seasons": {},
+                    }
 
-                for season_row in season_rows:
-                    season_name = season_row["name"]
+                season_name = row["season_name"]
+                if season_name is None:
+                    continue
+
+                if season_name not in library_data[series_name]["seasons"]:
                     stats["seasons"] += 1
                     library_data[series_name]["seasons"][season_name] = {
                         "metadata": {
-                            "jellyfin_id": season_row["jellyfin_id"],
-                            "poster_path": season_row["poster_path"],
+                            "jellyfin_id": row["season_jellyfin_id"],
+                            "poster_path": row["season_poster_path"],
                         },
                         "episodes": [],
                     }
 
-                    cursor.execute(
-                        "SELECT * FROM episodes WHERE season_id = ?",
-                        (season_row["id"],),
-                    )
-                    episode_rows = cursor.fetchall()
+                episode_name = row["episode_name"]
+                if episode_name is None:
+                    continue
 
-                    for episode_row in episode_rows:
-                        stats["episodes"] += 1
-                        date_added = (
-                            episode_row["date_added"]
-                            if "date_added" in episode_row.keys()
-                            else 0
-                        )
-                        keys = episode_row.keys()
-                        library_data[series_name]["seasons"][season_name][
-                            "episodes"
-                        ].append(
-                            {
-                                "name": episode_row["name"],
-                                "path": episode_row["path"],
-                                "jellyfin_id": episode_row["jellyfin_id"],
-                                "tmdb_episode_identifier": episode_row[
-                                    "tmdb_episode_identifier"
-                                ]
-                                if "tmdb_episode_identifier" in keys
-                                else None,
-                                "tmdb_name": episode_row["tmdb_name"]
-                                if "tmdb_name" in keys
-                                else None,
-                                "tmdb_number": episode_row["tmdb_number"]
-                                if "tmdb_number" in keys
-                                else None,
-                                "watched": bool(episode_row["watched"]),
-                                "date_added": date_added,
-                            }
-                        )
-
-                    library_data[series_name]["seasons"][season_name]["episodes"].sort(
-                        key=lambda x: x["name"]
-                    )
+                stats["episodes"] += 1
+                library_data[series_name]["seasons"][season_name]["episodes"].append(
+                    {
+                        "name": episode_name,
+                        "path": row["episode_path"],
+                        "jellyfin_id": row["episode_jellyfin_id"],
+                        "tmdb_episode_identifier": row["tmdb_episode_identifier"],
+                        "tmdb_name": row["episode_tmdb_name"],
+                        "tmdb_number": row["episode_tmdb_number"],
+                        "watched": bool(row["episode_watched"]),
+                        "date_added": row["episode_date_added"] or 0,
+                    }
+                )
 
         duration = time.time() - start_time
         logger.info(
@@ -565,25 +584,27 @@ def sync_watched_from_jellyfin_data(
 
                 # 3. Mark by Name (Fallback for items with no ID yet)
                 if watched_names:
-                    # This is slightly more complex as we need to join with series table
-                    # We'll do it by iterating over names or by a complex join
-                    # Iterating over thousands of names might be slow, but let's try a bulk approach
-                    for series_name, episode_name in watched_names:
-                        cursor.execute(
-                            """
-                            UPDATE episodes 
-                            SET watched = 1 
-                            WHERE watched = 0 
-                            AND LOWER(name) = LOWER(?) 
-                            AND season_id IN (
-                                SELECT seasons.id FROM seasons
-                                JOIN series ON seasons.series_id = series.id
-                                WHERE LOWER(series.name) = LOWER(?)
-                            )
-                        """,
-                            (episode_name, series_name),
+                    cursor.execute(
+                        "CREATE TEMP TABLE IF NOT EXISTS sync_names (series_name TEXT, episode_name TEXT)"
+                    )
+                    cursor.execute("DELETE FROM sync_names")
+                    cursor.executemany(
+                        "INSERT INTO sync_names VALUES (?, ?)", list(watched_names)
+                    )
+
+                    cursor.execute("""
+                        UPDATE episodes 
+                        SET watched = 1 
+                        WHERE watched = 0 
+                        AND EXISTS (
+                            SELECT 1 FROM sync_names
+                            JOIN series ON LOWER(series.name) = LOWER(sync_names.series_name)
+                            JOIN seasons ON seasons.series_id = series.id
+                            WHERE seasons.id = episodes.season_id
+                            AND LOWER(episodes.name) = LOWER(sync_names.episode_name)
                         )
-                        updated_count += cursor.rowcount
+                    """)
+                    updated_count += cursor.rowcount
 
                 duration = time.time() - start_time
                 logger.info(

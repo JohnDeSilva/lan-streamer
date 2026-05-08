@@ -17,7 +17,8 @@ These rules apply to all AI coding assistants working on this repository.
 *   **UI**: PySide6 (Qt for Python) for the desktop interface.
 *   **Database**: SQLite (via `sqlite3` standard library) for local library storage.
 *   **Networking**: `requests` for Jellyfin and TMDB API communication.
-*   **Build/Env**: `uv` for dependency management and execution.
+*   **Build/Env**: `uv` for dependency management and execution. All tools (pytest, ruff, etc.) must be run via `uv run` or through `make` targets.
+*   **Package Management**: `uv` is the primary package manager. Use `uv add` to add dependencies and `uv lock` to update the lockfile.
 
 ## Core Principles
 *   **Efficiency**: Prioritize performance. Minimize database hits, optimize file I/O, and use efficient algorithms.
@@ -30,9 +31,10 @@ These rules apply to all AI coding assistants working on this repository.
     2.  **Create/Update Tests**: Write tests that capture the desired behavior (expect them to fail initially).
     3.  **Implement/Iterate**: Modify application code until all tests pass.
     4.  **Refine**: Optimize and ensure coverage remains above 90%.
-*   **Verification**: Always run `make test` after changes. Run `make lint` as the **FINAL** step after all updates are complete.
-*   **Coverage**: Maintain a minimum of **90% code coverage**.
+*   **Verification**: **MANDATORY**: Always run `make test` after any code changes.
+*   **Linting**: **MANDATORY**: Run `make lint` as the **FINAL** step after all updates are complete to ensure code style consistency.
+*   **Coverage**: Maintain a minimum of **90% code coverage**. If coverage falls below this, add tests to cover the new or modified logic.
 *   **Migrations**: If you modify the database schema, add a versioned migration in `src/lan_streamer/db.py`.
-    *   **Versioning**: Migration versions MUST be **equal to** the current application version (`__version__` in `src/lan_streamer/__init__.py`).
+    *   **Versioning**: **MANDATORY**: Migration versions MUST be **EXACTLY EQUAL** to the current application version (`__version__` in `src/lan_streamer/__init__.py`). NEVER create a migration with a future version number.
     *   **No Version Bumping**: Do not bump the application version solely to trigger a migration.
     *   **Testing**: **MANDATORY**: Add a test case for the migration to ensure it handles existing data correctly and maintains backwards compatibility.
