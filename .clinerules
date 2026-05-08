@@ -1,0 +1,19 @@
+# AI Agent Instructions
+
+These rules apply to all AI coding assistants working on this repository.
+
+## Variable Naming
+*   **No Abbreviations**: Do not use abbreviations in variable names. Use descriptive, full names.
+    *   ❌ `ep`, `ep_name`, `ep_num`
+    *   ✅ `episode`, `episode_name`, `episode_number`
+    *   ❌ `jf_id`, `jf_client`
+    *   ✅ `jellyfin_id`, `jellyfin_client`
+    *   ❌ `tmdb_id`
+    *   ✅ `tmdb_identifier`
+    *   ❌ `db`, `conn`
+    *   ✅ `database`, `connection`
+
+## Workflow Requirements
+*   **Verification**: Always run `make test` and `make lint` after making any changes to the codebase.
+*   **Coverage**: Maintain a minimum of **90% code coverage**. If your changes drop the coverage, add the necessary tests.
+*   **Migrations**: If you modify the database schema, add a versioned migration in `src/lan_streamer/db.py`.
