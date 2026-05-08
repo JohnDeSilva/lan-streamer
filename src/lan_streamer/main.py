@@ -45,12 +45,16 @@ def main():
     console_handler.setFormatter(log_formatter)
     root_logger.addHandler(console_handler)
 
-    # File handler in the current working directory
+    # Timed Rotating File handler (rotates daily at midnight, keeps 7 days)
     try:
-        file_handler = logging.FileHandler("lan-streamer.log")
+        from logging.handlers import TimedRotatingFileHandler
+
+        file_handler = TimedRotatingFileHandler(
+            "lan-streamer.log", when="midnight", interval=1, backupCount=7
+        )
         file_handler.setFormatter(log_formatter)
         root_logger.addHandler(file_handler)
-        logging.info("Logging to lan-streamer.log in current directory")
+        logging.info("Logging to lan-streamer.log (rotating daily)")
     except Exception as e:
         logging.error(f"Could not create log file: {e}")
 

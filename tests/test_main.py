@@ -61,7 +61,9 @@ def test_main_logging_setup(monkeypatch, tmp_path):
 
     # Verify handlers
     handlers = root.handlers
-    assert any(isinstance(h, logging.FileHandler) for h in handlers)
+    from logging.handlers import TimedRotatingFileHandler
+
+    assert any(isinstance(h, TimedRotatingFileHandler) for h in handlers)
     assert any(isinstance(h, logging.StreamHandler) for h in handlers)
 
 
@@ -69,10 +71,12 @@ def test_main_logging_failure(monkeypatch):
     # Test lines 54-55 of main.py
     import logging
 
+    import logging.handlers
+
     def mock_file_handler(*args, **kwargs):
         raise Exception("Log failure")
 
-    monkeypatch.setattr(logging, "FileHandler", mock_file_handler)
+    monkeypatch.setattr(logging.handlers, "TimedRotatingFileHandler", mock_file_handler)
     mock_error = MagicMock()
     monkeypatch.setattr(logging, "error", mock_error)
 

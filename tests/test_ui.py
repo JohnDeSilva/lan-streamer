@@ -669,24 +669,25 @@ def test_mainwindow_sync_all(qtbot, mock_dependencies, monkeypatch):
     window.on_sync_all_finished()
     assert window.refresh_action.isEnabled()
 
+
 def test_format_episode_display(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
-    
+
     # Case 1: TMDB match
     ep_data_match = {
         "name": "S01E01.mkv",
         "tmdb_number": 1,
         "tmdb_name": "Pilot",
-        "watched": False
+        "watched": False,
     }
     assert window._format_episode_display(ep_data_match) == "[ ] 1. Pilot"
-    
+
     # Case 2: No match fallback
     ep_data_no_match = {
         "name": "S01E01.mkv",
         "tmdb_number": None,
         "tmdb_name": None,
-        "watched": True
+        "watched": True,
     }
     assert window._format_episode_display(ep_data_no_match) == "[✓] S01E01.mkv"
