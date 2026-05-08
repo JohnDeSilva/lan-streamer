@@ -42,9 +42,14 @@ def mock_dependencies():
     mock_push_worker = MagicMock()
     mock_push_worker_class.return_value = mock_push_worker
 
+    mock_cleanup_worker_class = MagicMock()
+    mock_cleanup_worker = MagicMock()
+    mock_cleanup_worker_class.return_value = mock_cleanup_worker
+
     # Globally save original workers BEFORE patching them
     ui.OriginalScanWorker = ui.ScanWorker
     ui.OriginalSyncAllWorker = ui.SyncAllWorker
+    ui.OriginalCleanupWorker = ui.CleanupWorker
 
     with (
         patch.object(ui, "db", mock_db),
@@ -57,6 +62,7 @@ def mock_dependencies():
         patch.object(ui, "SyncAllWorker", mock_sync_worker_class),
         patch.object(ui, "JellyfinPullWorker", mock_pull_worker_class),
         patch.object(ui, "JellyfinPushWorker", mock_push_worker_class),
+        patch.object(ui, "CleanupWorker", mock_cleanup_worker_class),
     ):
         config.libraries = {"TestLib": ["/path1"]}
         config.jellyfin_url = ""
@@ -876,3 +882,83 @@ def test_mainwindow_match_jellyfin_manually(qtbot, mock_dependencies):
 
         ui.db.save_library.assert_called()
         window.load_library_ui.assert_called_once()
+
+
+def test_mainwindow_cleanup(qtbot, mock_dependencies):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    mock_msgbox = MagicMock()
+    mock_msgbox.StandardButton.Yes = ui.QMessageBox.StandardButton.Yes
+    mock_msgbox.StandardButton.No = ui.QMessageBox.StandardButton.No
+    mock_msgbox.question.return_value = ui.QMessageBox.StandardButton.Yes
+
+    with patch("lan_streamer.ui.QMessageBox", mock_msgbox):
+        window.cleanup_current_library()
+        ui.CleanupWorker.return_value.start.assert_called_once()
+
+        # Simulate finish
+        stats = {"series": 1, "seasons": 1, "episodes": 1}
+        with patch("lan_streamer.ui.QMessageBox.information"):
+            window.on_cleanup_finished(stats)
+            ui.db.load_library.assert_called()
+
+
+def test_mainwindow_cleanup_error(qtbot, mock_dependencies):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    mock_msgbox = MagicMock()
+    mock_msgbox.StandardButton.Yes = ui.QMessageBox.StandardButton.Yes
+    mock_msgbox.StandardButton.No = ui.QMessageBox.StandardButton.No
+    mock_msgbox.question.return_value = ui.QMessageBox.StandardButton.Yes
+
+    with patch("lan_streamer.ui.QMessageBox", mock_msgbox):
+        window.cleanup_current_library()
+
+        # Simulate error
+        mock_crit = MagicMock()
+        with patch("lan_streamer.ui.QMessageBox.critical", mock_crit):
+            window.on_cleanup_error("Mocked cleanup error")
+            mock_crit.assert_called_once()
+
+
+def test_cleanup_worker_logic(mock_dependencies):
+    import lan_streamer.ui as ui_mod
+
+    CleanupWorker = ui_mod.OriginalCleanupWorker
+
+    # Mock db.cleanup_library
+    ui_mod.db.cleanup_library.return_value = {"series": 1, "seasons": 0, "episodes": 0}
+
+    worker = CleanupWorker("TestLib", ["/path1"])
+
+    mock_finished = MagicMock()
+    mock_error = MagicMock()
+    worker.finished.connect(mock_finished)
+    worker.error.connect(mock_error)
+
+    worker.run()
+
+    ui_mod.db.cleanup_library.assert_called_once_with("TestLib", ["/path1"])
+    mock_finished.assert_called_once_with({"series": 1, "seasons": 0, "episodes": 0})
+    mock_error.assert_not_called()
+
+
+def test_cleanup_worker_error_logic(mock_dependencies):
+    import lan_streamer.ui as ui_mod
+
+    CleanupWorker = ui_mod.OriginalCleanupWorker
+
+    ui_mod.db.cleanup_library.side_effect = Exception("Cleanup Logic Error")
+
+    worker = CleanupWorker("TestLib", ["/path1"])
+    mock_finished = MagicMock()
+    mock_error = MagicMock()
+    worker.finished.connect(mock_finished)
+    worker.error.connect(mock_error)
+
+    worker.run()
+
+    mock_finished.assert_not_called()
+    mock_error.assert_called_once_with("Cleanup Logic Error")

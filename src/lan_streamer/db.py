@@ -3,7 +3,7 @@ import time
 import re
 import os
 from pathlib import Path
-from typing import Dict, Any, Set, Tuple
+from typing import Dict, Any, Set, Tuple, List
 from contextlib import contextmanager
 
 from sqlalchemy import (
@@ -399,3 +399,107 @@ def get_all_episodes_with_jellyfin_id() -> list:
     except Exception as e:
         logger.error(f"Error fetching episodes with Jellyfin ID: {e}")
     return episodes
+
+
+def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str, int]:
+    """
+    Removes series, seasons, and episodes that are no longer present on the file system.
+    Returns a dictionary with counts of deleted items.
+    """
+    start_time = time.time()
+    stats = {"series": 0, "seasons": 0, "episodes": 0}
+    try:
+        with get_session() as session:
+            # 1. Check all series in this library
+            series_list = (
+                session.query(Series).filter(Series.library_name == library_name).all()
+            )
+
+            for series in series_list:
+                series_path_exists = False
+                for root in root_directories:
+                    if (Path(root) / series.name).is_dir():
+                        series_path_exists = True
+                        break
+
+                if not series_path_exists:
+                    logger.info(f"Cleanup: Removing missing series '{series.name}'")
+                    # Count children before deletion for accurate stats
+                    stats["seasons"] += len(series.seasons)
+                    for season in series.seasons:
+                        stats["episodes"] += len(season.episodes)
+
+                    session.delete(series)
+                    stats["series"] += 1
+                    continue
+
+                # 2. Check seasons within existing series
+                for season in series.seasons:
+                    season_path_exists = False
+                    for root in root_directories:
+                        if (Path(root) / series.name / season.name).is_dir():
+                            season_path_exists = True
+                            break
+
+                    if not season_path_exists:
+                        logger.info(
+                            f"Cleanup: Removing missing season '{season.name}' from series '{series.name}'"
+                        )
+                        # Count episodes before deletion for accurate stats
+                        stats["episodes"] += len(season.episodes)
+                        session.delete(season)
+                        stats["seasons"] += 1
+                        continue
+
+                    # 3. Check episodes within existing seasons
+                    for episode in season.episodes:
+                        if not Path(episode.path).exists():
+                            logger.info(
+                                f"Cleanup: Removing missing episode '{episode.name}' at '{episode.path}'"
+                            )
+                            session.delete(episode)
+                            stats["episodes"] += 1
+
+            # 4. Clean up seasons/series that became empty after episode deletion
+            session.flush()
+            session.expire_all()
+
+            # Find seasons with no episodes
+            empty_seasons = (
+                session.query(Season)
+                .join(Series)
+                .filter(Series.library_name == library_name)
+                .filter(~Season.episodes.any())
+                .all()
+            )
+            for season in empty_seasons:
+                logger.info(
+                    f"Cleanup: Removing empty season '{season.name}' from series '{season.series.name}'"
+                )
+                session.delete(season)
+                stats["seasons"] += 1
+
+            session.flush()
+
+            # Find series with no seasons
+            empty_series = (
+                session.query(Series)
+                .filter(Series.library_name == library_name)
+                .filter(~Series.seasons.any())
+                .all()
+            )
+            for series in empty_series:
+                logger.info(f"Cleanup: Removing empty series '{series.name}'")
+                session.delete(series)
+                stats["series"] += 1
+
+        duration = time.time() - start_time
+        logger.info(
+            f"Cleanup for '{library_name}' completed in {duration:.3f}s: "
+            f"{stats['series']} series, {stats['seasons']} seasons, {stats['episodes']} episodes removed."
+        )
+    except Exception as e:
+        logger.error(f"Error during library cleanup for '{library_name}': {e}")
+        raise
+
+    return stats

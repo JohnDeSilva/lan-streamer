@@ -16,6 +16,7 @@ It bridges the gap between local file storage (e.g., NAS, External Drives) and o
     *   Automatically downloads high-quality posters and overviews.
     *   Syncs "Watched" status back to your Jellyfin server in real-time.
 *   **📁 Multi-Library Organization**: Group your content into logical libraries (e.g., "Main", "Archive", "Anime") with support for multiple root directories per library.
+*   **🧹 Library Cleanup**: Deep cleanup tool that removes missing files, seasons, and series from the database while maintaining metadata integrity.
 *   **🛠️ Manual Corrections**: Effortlessly fix incorrect matches via the "Match Series..." context menu.
 *   **🎨 Premium Dark UI**: A sleek, high-contrast interface built with PySide6 (Qt) for a smooth and responsive desktop experience.
 
@@ -24,8 +25,8 @@ It bridges the gap between local file storage (e.g., NAS, External Drives) and o
 ## 🏛️ Architecture & Stability
 
 *   **Versioned Schema**: Managed via **Alembic** migrations. Database schema updates are handled automatically through the `make migrate` target, ensuring metadata consistency across all releases.
-*   **Background Workers**: Library scanning and synchronization occur in dedicated background threads, keeping the UI fluid even during massive library updates.
-*   **🛡️ Quality Enforcement**: Maintains a strict **90% minimum code coverage** threshold. The CI pipeline and local test suite ensure regression-free development.
+*   **Background Workers**: Library scanning, cleanup, and synchronization occur in dedicated background threads, keeping the UI fluid even during massive updates.
+*   **🛡️ Quality Enforcement**: Maintains a strict **90% minimum code coverage** threshold and enforces a **zero-warning** policy. The local test suite treats all warnings as errors to ensure maximum reliability.
 
 ---
 
@@ -65,7 +66,8 @@ make run
 2.  **Configure Metadata**: Navigate to **Metadata > TMDB Settings...** to enter your TMDB API Key.
 3.  **Add Libraries**: Go to **Settings > Manage Libraries...** to define your media roots and library names.
 4.  **Fetch Metadata**: Go to **Metadata > Check for New Files and Fetch Metadata** to trigger the initial scanning and poster downloads.
-5.  **Sync Watch History**: Use the **Watch History** menu to Pull or Push your watched status.
+5.  **Cleanup Library**: If you move or delete files on your drive, use **Metadata > Cleanup Library (Remove Missing Files)** to prune stale entries.
+6.  **Sync Watch History**: Use the **Watch History** menu to Pull or Push your watched status.
 
 ---
 

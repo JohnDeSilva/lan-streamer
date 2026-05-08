@@ -29,7 +29,10 @@ class Series(Base):
     locked_metadata = Column(Boolean, default=False)
 
     seasons = relationship(
-        "Season", back_populates="series", cascade="all, delete-orphan"
+        "Season",
+        back_populates="series",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     __table_args__ = (
@@ -48,7 +51,10 @@ class Season(Base):
 
     series = relationship("Series", back_populates="seasons")
     episodes = relationship(
-        "Episode", back_populates="season", cascade="all, delete-orphan"
+        "Episode",
+        back_populates="season",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     __table_args__ = (

@@ -98,6 +98,25 @@ class SyncAllWorker(QThread):
             self.error.emit(str(e))
 
 
+class CleanupWorker(QThread):
+    """Removes missing series/seasons/episodes from the database."""
+
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, library_name, root_directories, parent=None):
+        super().__init__(parent)
+        self.library_name = library_name
+        self.root_directories = root_directories
+
+    def run(self):
+        try:
+            results = db.cleanup_library(self.library_name, self.root_directories)
+            self.finished.emit(results)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class JellyfinPullWorker(QThread):
     """Pulls watch history from Jellyfin and syncs it to the local DB."""
 
@@ -600,6 +619,10 @@ class MainWindow(QMainWindow):
         self.refresh_action.triggered.connect(self.force_scan_library)
         metadata_menu.addAction(self.refresh_action)
 
+        self.cleanup_action = QAction("Cleanup Library (Remove Missing Files)", self)
+        self.cleanup_action.triggered.connect(self.cleanup_current_library)
+        metadata_menu.addAction(self.cleanup_action)
+
         # ---- WATCH HISTORY MENU ----
         history_menu = menubar.addMenu("Watch History")
 
@@ -828,6 +851,46 @@ class MainWindow(QMainWindow):
                 item.setData(poster_path, Qt.ItemDataRole.UserRole + 1)
             item.setData(series_name, Qt.ItemDataRole.UserRole)
             self.series_model.appendRow(item)
+
+    def cleanup_current_library(self):
+        library_name = self.main_library_combo.currentText()
+        if not library_name or library_name not in config.libraries:
+            return
+
+        root_dirs = config.libraries[library_name]
+        dirs_str = "\n".join(root_dirs)
+        reply = QMessageBox.question(
+            self,
+            "Confirm Cleanup",
+            f"This will remove all series, seasons, and episodes from the database that are no longer present in:\n\n"
+            f"{dirs_str}\n\n"
+            "Are you sure you want to proceed?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.statusBar().showMessage("Cleaning up library...")
+            self.cleanup_worker = CleanupWorker(library_name, root_dirs, self)
+            self.cleanup_worker.finished.connect(self.on_cleanup_finished)
+            self.cleanup_worker.error.connect(self.on_cleanup_error)
+            self.cleanup_worker.start()
+
+    def on_cleanup_finished(self, stats):
+        self.statusBar().showMessage("Cleanup complete.", 5000)
+        self.load_library_ui(stay_on_current=True)
+
+        msg = "Cleanup complete!\n\n"
+        msg += f"Series removed: {stats['series']}\n"
+        msg += f"Seasons removed: {stats['seasons']}\n"
+        msg += f"Episodes removed: {stats['episodes']}\n"
+
+        QMessageBox.information(self, "Cleanup Results", msg)
+
+    def on_cleanup_error(self, error_msg):
+        self.statusBar().showMessage("Cleanup failed.", 5000)
+        QMessageBox.critical(
+            self, "Cleanup Error", f"An error occurred during cleanup:\n{error_msg}"
+        )
 
     def force_scan_library(self):
         library_name = self.main_library_combo.currentText()
