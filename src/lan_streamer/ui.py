@@ -572,43 +572,51 @@ class MainWindow(QMainWindow):
 
     def _setup_menu(self):
         menubar = self.menuBar()
-        settings_menu = menubar.addMenu("Settings")
 
-        manage_dirs_action = QAction("Manage Libraries...", self)
-        manage_dirs_action.setMenuRole(QAction.MenuRole.NoRole)
-        manage_dirs_action.triggered.connect(self.open_library_settings)
-        settings_menu.addAction(manage_dirs_action)
+        # ---- SETTINGS MENU ----
+        settings_menu = menubar.addMenu("Settings")
 
         general_settings_action = QAction("General Settings...", self)
         general_settings_action.setMenuRole(QAction.MenuRole.NoRole)
         general_settings_action.triggered.connect(self.open_general_settings)
         settings_menu.addAction(general_settings_action)
 
-        external_menu = settings_menu.addMenu("External Sources")
+        manage_dirs_action = QAction("Manage Libraries...", self)
+        manage_dirs_action.setMenuRole(QAction.MenuRole.NoRole)
+        manage_dirs_action.triggered.connect(self.open_library_settings)
+        settings_menu.addAction(manage_dirs_action)
+
+        # ---- METADATA MENU ----
+        metadata_menu = menubar.addMenu("Metadata")
 
         manage_tmdb_action = QAction("TMDB Settings...", self)
         manage_tmdb_action.setMenuRole(QAction.MenuRole.NoRole)
         manage_tmdb_action.triggered.connect(self.open_tmdb_settings)
-        external_menu.addAction(manage_tmdb_action)
+        metadata_menu.addAction(manage_tmdb_action)
+
+        metadata_menu.addSeparator()
+
+        self.refresh_action = QAction("Check for New Files and Fetch Metadata", self)
+        self.refresh_action.triggered.connect(self.force_scan_library)
+        metadata_menu.addAction(self.refresh_action)
+
+        # ---- WATCH HISTORY MENU ----
+        history_menu = menubar.addMenu("Watch History")
 
         manage_jellyfin_action = QAction("Jellyfin Settings...", self)
         manage_jellyfin_action.setMenuRole(QAction.MenuRole.NoRole)
         manage_jellyfin_action.triggered.connect(self.open_jellyfin_settings)
-        external_menu.addAction(manage_jellyfin_action)
+        history_menu.addAction(manage_jellyfin_action)
 
-        settings_menu.addSeparator()
-
-        self.refresh_action = QAction("Check for New Files and Fetch Metadata", self)
-        self.refresh_action.triggered.connect(self.force_scan_library)
-        settings_menu.addAction(self.refresh_action)
+        history_menu.addSeparator()
 
         self.pull_action = QAction("Pull Watch History from Jellyfin", self)
         self.pull_action.triggered.connect(self.pull_jellyfin_history)
-        settings_menu.addAction(self.pull_action)
+        history_menu.addAction(self.pull_action)
 
         self.push_action = QAction("Push Watch History to Jellyfin", self)
         self.push_action.triggered.connect(self.push_jellyfin_history)
-        settings_menu.addAction(self.push_action)
+        history_menu.addAction(self.push_action)
 
     def _setup_ui(self):
         central_widget = QWidget()
