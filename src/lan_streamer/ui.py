@@ -388,19 +388,21 @@ class MainWindow(QMainWindow):
         manage_dirs_action.triggered.connect(self.open_library_settings)
         settings_menu.addAction(manage_dirs_action)
 
+        external_menu = settings_menu.addMenu("External Sources")
+
         manage_tmdb_action = QAction("TMDB Settings...", self)
         manage_tmdb_action.setMenuRole(QAction.MenuRole.NoRole)
         manage_tmdb_action.triggered.connect(self.open_tmdb_settings)
-        settings_menu.addAction(manage_tmdb_action)
+        external_menu.addAction(manage_tmdb_action)
 
         manage_jf_action = QAction("Jellyfin Settings...", self)
         manage_jf_action.setMenuRole(QAction.MenuRole.NoRole)
         manage_jf_action.triggered.connect(self.open_jellyfin_settings)
-        settings_menu.addAction(manage_jf_action)
+        external_menu.addAction(manage_jf_action)
 
         settings_menu.addSeparator()
 
-        self.refresh_action = QAction("Scan Library (Fetch Metadata from TMDB)", self)
+        self.refresh_action = QAction("Check for New Files and Fetch Metadata", self)
         self.refresh_action.triggered.connect(self.force_scan_library)
         settings_menu.addAction(self.refresh_action)
 

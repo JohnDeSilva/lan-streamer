@@ -60,10 +60,18 @@ def scan_directories(
         if not root_path.is_dir():
             continue
 
-        for series_dir in root_path.iterdir():
-            if not series_dir.is_dir() or series_dir.name.startswith("."):
-                continue
+        # Sort series directories by mtime (newest first)
+        series_dirs = sorted(
+            [
+                d
+                for d in root_path.iterdir()
+                if d.is_dir() and not d.name.startswith(".")
+            ],
+            key=lambda d: d.stat().st_mtime,
+            reverse=True,
+        )
 
+        for series_dir in series_dirs:
             series_name = series_dir.name
 
             # Check if we have an existing manual match for THIS SPECIFIC folder name
