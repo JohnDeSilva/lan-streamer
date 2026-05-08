@@ -1,3 +1,10 @@
+## 0.4.1 (2026-05-07)
+
+### Fix
+
+- **ui**: uses TMDB Series name in the UI
+- **scanner,jellyfin**: fixes jellyfin watched sync
+
 ## 0.4.0 (2026-05-07)
 
 ### Feat
