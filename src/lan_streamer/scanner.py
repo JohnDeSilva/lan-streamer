@@ -14,7 +14,7 @@ VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm"}
 _EPISODE_REGEX = re.compile(r"[Ss](\d+)[Ee](\d+)")
 
 
-def _parse_episode_num(filename: str) -> tuple[int, int] | None:
+def _parse_episode_number(filename: str) -> tuple[int, int] | None:
     """Returns (season_num, episode_num) parsed from filename, or None."""
     match = _EPISODE_REGEX.search(filename)
     if match:
@@ -41,9 +41,10 @@ def clean_series_data(series_data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def scan_directories(
-    root_dirs: List[str],
+    root_directories: List[str],
     existing_library: Dict[str, Any] = None,
     jellyfin_data: Dict[str, Any] = None,
+    callback: Any = None,
 ) -> Dict[str, Any]:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -52,11 +53,11 @@ def scan_directories(
     library = {}
     existing_library = existing_library or {}
 
-    logger.info(f"Starting directory scan. Root directories: {root_dirs}")
+    logger.info(f"Starting directory scan. Root directories: {root_directories}")
 
-    for root_dir in root_dirs:
-        logger.info(f"Scanning root directory: {root_dir}")
-        root_path = Path(root_dir)
+    for root_directory in root_directories:
+        logger.info(f"Scanning root directory: {root_directory}")
+        root_path = Path(root_directory)
         if not root_path.exists():
             continue
         if not root_path.is_dir():
@@ -73,8 +74,8 @@ def scan_directories(
             reverse=True,
         )
 
-        for series_dir in series_dirs:
-            series_name = series_dir.name
+        for series_directory in series_dirs:
+            series_name = series_directory.name
 
             # Check if we have an existing manual match for THIS SPECIFIC folder name
             existing_series = existing_library.get(series_name)
@@ -108,7 +109,7 @@ def scan_directories(
                 is_locked = False
 
             series_data = scan_series(
-                series_dir,
+                series_directory,
                 tmdb_series=tmdb_series,
                 jellyfin_data=jellyfin_data,
             )
@@ -177,11 +178,14 @@ def scan_directories(
             else:
                 library[series_name] = cleaned
 
+            if callback:
+                callback(library)
+
     return library
 
 
 def scan_series(
-    series_dir: Path,
+    series_directory: Path,
     tmdb_series: Dict[str, Any] = None,
     jellyfin_data: Dict[str, dict] = None,
 ) -> Dict[str, Any]:
@@ -190,7 +194,7 @@ def scan_series(
     If tmdb_series is provided (e.g. from a manual match), it uses that ID
     instead of searching.
     """
-    series_name = series_dir.name
+    series_name = series_directory.name
 
     # If we only have an ID (from manual match), fetch full metadata
     if tmdb_series and "name" not in tmdb_series and "id" in tmdb_series:
@@ -241,11 +245,11 @@ def scan_series(
         "_jellyfin_id": "",  # To be filled from first matched episode
     }
 
-    for season_dir in series_dir.iterdir():
-        if not season_dir.is_dir() or season_dir.name.startswith("."):
+    for season_directory in series_directory.iterdir():
+        if not season_directory.is_dir() or season_directory.name.startswith("."):
             continue
 
-        season_name = season_dir.name
+        season_name = season_directory.name
         season_metadata: Dict[str, Any] = {
             "jellyfin_id": "",
         }
@@ -253,13 +257,13 @@ def scan_series(
 
         # Extract season number from directory name
         season_num_match = re.search(r"\d+", season_name)
-        season_idx = int(season_num_match.group()) if season_num_match else -1
+        season_index = int(season_num_match.group()) if season_num_match else -1
 
         # Try to find matching season in tmdb_seasons
         matched_tmdb_season = None
         for tmdb_season in series_data["_tmdb_seasons"]:
             if (
-                tmdb_season.get("season_number") == season_idx
+                tmdb_season.get("season_number") == season_index
                 or tmdb_season.get("name") == season_name
             ):
                 matched_tmdb_season = tmdb_season
@@ -282,7 +286,7 @@ def scan_series(
 
             # Fetch episodes for this season number
             tmdb_episodes = tmdb_client.get_episodes(
-                series_data["_tmdb_series_id"], season_idx
+                series_data["_tmdb_series_id"], season_index
             )
 
         series_data["seasons"][season_name] = {
@@ -291,7 +295,7 @@ def scan_series(
             "_tmdb_episodes": tmdb_episodes,
         }
 
-        for episode_file in season_dir.iterdir():
+        for episode_file in season_directory.iterdir():
             if (
                 episode_file.is_file()
                 and episode_file.suffix.lower() in VIDEO_EXTENSIONS
@@ -304,16 +308,16 @@ def scan_series(
                 tmdb_number = None
 
                 # Match TMDB episode by S01E02 pattern in filename
-                parsed = _parse_episode_num(episode_name)
+                parsed = _parse_episode_number(episode_name)
                 if parsed:
-                    _, ep_num = parsed
-                    for tmdb_ep in series_data["seasons"][season_name][
+                    _, episode_number = parsed
+                    for tmdb_episode in series_data["seasons"][season_name][
                         "_tmdb_episodes"
                     ]:
-                        if tmdb_ep.get("episode_number") == ep_num:
-                            tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
-                            tmdb_name = tmdb_ep.get("name")
-                            tmdb_number = tmdb_ep.get("episode_number")
+                        if tmdb_episode.get("episode_number") == episode_number:
+                            tmdb_episode_identifier = str(tmdb_episode.get("id", ""))
+                            tmdb_name = tmdb_episode.get("name")
+                            tmdb_number = tmdb_episode.get("episode_number")
                             break
 
                 try:
@@ -341,7 +345,9 @@ def scan_series(
                     # Try matching by (Series Name, Episode Name)
                     # We use the cleaned TMDB names if available, otherwise file names
                     lookup_series = (
-                        tmdb_series.get("name") if tmdb_series else series_dir.name
+                        tmdb_series.get("name")
+                        if tmdb_series
+                        else series_directory.name
                     ).lower()
                     lookup_episode = (
                         tmdb_name if tmdb_name else episode_file.stem

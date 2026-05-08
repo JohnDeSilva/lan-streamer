@@ -221,7 +221,7 @@ def test_scan_worker_logic(mock_dependencies, monkeypatch):
     from unittest.mock import ANY
 
     ui_mod.scan_directories.assert_called_once_with(
-        ["/path1"], existing_library={"Old Data": {}}, jellyfin_data=ANY
+        ["/path1"], existing_library={"Old Data": {}}, jellyfin_data=ANY, callback=ANY
     )
     mock_finished.assert_called_once_with({"New Data": {}})
     mock_error.assert_not_called()
@@ -708,3 +708,51 @@ def test_format_episode_display(qtbot):
         "watched": True,
     }
     assert window._format_episode_display(ep_data_no_match) == "[✓] S01E01.mkv"
+
+
+def test_mainwindow_partial_scan_update(qtbot, mock_dependencies):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    partial_data = {"New Series": {"metadata": {}, "seasons": {}}}
+    window.on_scan_partial_update(partial_data)
+
+    assert "New Series" in window.library
+    ui.db.save_library.assert_called()
+
+
+def test_mainwindow_refresh_detail_view_restore(qtbot, mock_dependencies):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    # Setup some data
+    window.library = {
+        "Series A": {
+            "metadata": {"tmdb_name": "Series A"},
+            "seasons": {
+                "Season 1": {"episodes": []},
+                "Season 2": {"episodes": []},
+            },
+        }
+    }
+    window.update_series_view()
+
+    # Select Series A
+    index = window.series_model.index(0, 0)
+    window.on_series_selected(index)
+
+    # Select Season 2
+    season2_index = window.season_model.index(1, 0)
+    window.season_view.setCurrentIndex(season2_index)
+    window.on_season_selected(season2_index)
+    assert window.season_view.currentIndex().row() == 1
+
+    # Update library data (e.g. from scan)
+    window.library["Series A"]["seasons"]["Season 3"] = {"episodes": []}
+
+    # Refresh detail view
+    window._refresh_detail_view()
+
+    # Check if Season 2 is still selected
+    assert window.season_view.currentIndex().row() == 1
+    assert window.season_model.item(1).text() == "Season 2"

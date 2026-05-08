@@ -287,12 +287,12 @@ def test_scan_directories_gaps(tmp_path, monkeypatch):
     assert "Season 1" in res["Valid Series"]["seasons"]
 
 
-def test_parse_episode_num():
-    from lan_streamer.scanner import _parse_episode_num
+def test_parse_episode_number():
+    from lan_streamer.scanner import _parse_episode_number
 
-    assert _parse_episode_num("Show.S01E05.mkv") == (1, 5)
-    assert _parse_episode_num("s02e10.mp4") == (2, 10)
-    assert _parse_episode_num("no_episode.mkv") is None
+    assert _parse_episode_number("Show.S01E05.mkv") == (1, 5)
+    assert _parse_episode_number("s02e10.mp4") == (2, 10)
+    assert _parse_episode_number("no_episode.mkv") is None
 
 
 def test_scan_tmdb_merge_by_tmdb_identifier(tmp_path, monkeypatch):
@@ -375,8 +375,8 @@ def test_scan_directories_merge_branches(tmp_path, monkeypatch):
     # Line 121: ep_names = {ep["name"] for ep in existing_episodes}
     # Filenames are unique usually.
 
-    # Let's mock _parse_episode_num to return same for different files
-    monkeypatch.setattr(scanner, "_parse_episode_num", lambda x: (1, 1))
+    # Let's mock _parse_episode_number to return same for different files
+    monkeypatch.setattr(scanner, "_parse_episode_number", lambda x: (1, 1))
 
     # To hit line 131-134, we need same name but different path.
     # We can just manually construct the library and pass it to scan_directories

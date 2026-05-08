@@ -38,11 +38,12 @@ class ScanWorker(QThread):
     """Scans a single library directory using TMDB for metadata."""
 
     finished = Signal(dict)
+    partial_result = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, root_dirs, existing_library, parent=None):
+    def __init__(self, root_directories, existing_library, parent=None):
         super().__init__(parent)
-        self.root_dirs = root_dirs
+        self.root_directories = root_directories
         self.existing_library = existing_library
 
     def run(self):
@@ -53,9 +54,10 @@ class ScanWorker(QThread):
                 jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
             library = scan_directories(
-                self.root_dirs,
+                self.root_directories,
                 existing_library=self.existing_library,
                 jellyfin_data=jellyfin_data,
+                callback=self.partial_result.emit,
             )
             self.finished.emit(library)
         except Exception as e:
@@ -589,9 +591,9 @@ class MainWindow(QMainWindow):
         dialog = JellyfinSettingsDialog(self)
         dialog.exec()
 
-    def load_library_ui(self):
-        self.series_model.clear()
-        self.go_back()
+    def load_library_ui(self, stay_on_current=False):
+        if not stay_on_current:
+            self.go_back()
 
         library_name = self.main_library_combo.currentText()
         if not library_name:
@@ -601,6 +603,8 @@ class MainWindow(QMainWindow):
         self.library = db.load_library(library_name)
 
         self.update_series_view()
+        if stay_on_current and self.current_series:
+            self._refresh_detail_view()
 
     def update_series_view(self):
 
@@ -664,8 +668,8 @@ class MainWindow(QMainWindow):
         if not library_name:
             return
 
-        root_dirs = config.libraries.get(library_name, [])
-        if not root_dirs:
+        root_directories = config.libraries.get(library_name, [])
+        if not root_directories:
             return
 
         # Disable UI elements that shouldn't be clicked during scan
@@ -675,7 +679,8 @@ class MainWindow(QMainWindow):
         self.refresh_action.setEnabled(False)
 
         # Start the background worker
-        worker = ScanWorker(root_dirs, self.library)
+        worker = ScanWorker(root_directories, self.library)
+        worker.partial_result.connect(self.on_scan_partial_update)
         worker.finished.connect(self.on_scan_finished)
         worker.error.connect(self.on_scan_error)
         # Ensure the worker is deleted when it's done
@@ -684,11 +689,25 @@ class MainWindow(QMainWindow):
         worker.start()
         self.scan_worker = worker
 
+    def on_scan_partial_update(self, partial_library_data):
+        library_name = self.main_library_combo.currentText()
+        if not library_name:
+            return
+
+        # Merge partial data into current library
+        self.library.update(partial_library_data)
+        db.save_library(library_name, self.library)
+
+        # Refresh UI but stay on current view
+        self.update_series_view()
+        if self.current_series:
+            self._refresh_detail_view()
+
     def on_scan_finished(self, new_library_data):
         library_name = self.main_library_combo.currentText()
         self.library = new_library_data
         db.save_library(library_name, self.library)
-        self.load_library_ui()
+        self.load_library_ui(stay_on_current=True)
 
         self.statusBar().showMessage(f"Scan complete for '{library_name}'.", 5000)
         self.refresh_action.setEnabled(True)
@@ -702,7 +721,9 @@ class MainWindow(QMainWindow):
                     f"History pull complete: {updated} updated.", 5000
                 )
             )
-            self.pull_worker.finished.connect(self.load_library_ui)
+            self.pull_worker.finished.connect(
+                lambda: self.load_library_ui(stay_on_current=True)
+            )
             self.pull_worker.finished.connect(self.pull_worker.deleteLater)
             self.pull_worker.start()
 
@@ -719,7 +740,7 @@ class MainWindow(QMainWindow):
         self.sync_worker.start()
 
     def on_sync_all_finished(self):
-        self.load_library_ui()
+        self.load_library_ui(stay_on_current=True)
         self.statusBar().showMessage("Library scan complete.", 5000)
         self.refresh_action.setEnabled(True)
 
@@ -732,7 +753,9 @@ class MainWindow(QMainWindow):
                     f"History pull complete: {updated} updated.", 5000
                 )
             )
-            self.pull_worker.finished.connect(self.load_library_ui)
+            self.pull_worker.finished.connect(
+                lambda: self.load_library_ui(stay_on_current=True)
+            )
             self.pull_worker.finished.connect(self.pull_worker.deleteLater)
             self.pull_worker.start()
 
@@ -750,7 +773,7 @@ class MainWindow(QMainWindow):
         self.pull_worker.start()
 
     def on_pull_finished(self, updated_count):
-        self.load_library_ui()
+        self.load_library_ui(stay_on_current=True)
         self.statusBar().showMessage(
             f"Jellyfin history pull complete. {updated_count} episodes updated.", 5000
         )
@@ -855,33 +878,54 @@ class MainWindow(QMainWindow):
 
         series_name = item.data(Qt.ItemDataRole.UserRole)
         self.current_series = series_name
+        self._refresh_detail_view()
+        self.stacked_widget.setCurrentIndex(1)
+
+    def _refresh_detail_view(self):
+        if not self.current_series:
+            return
+
+        series_name = self.current_series
         series_data = self.library.get(series_name, {})
         display_name = series_data.get("metadata", {}).get("tmdb_name") or series_name
         self.detail_title.setText(display_name)
 
+        # Store currently selected season to restore it if possible
+        selected_season_name = None
+        current_season_index = self.season_view.currentIndex()
+        if current_season_index.isValid():
+            selected_season_name = self.season_model.itemFromIndex(
+                current_season_index
+            ).text()
+
         self.season_model.clear()
         self.episode_model.clear()
 
-        seasons = self.library.get(series_name, {}).get("seasons", {})
-        for season_name in sorted(seasons.keys()):
+        seasons = series_data.get("seasons", {})
+        sorted_season_names = sorted(seasons.keys())
+
+        restore_index = None
+        for i, season_name in enumerate(sorted_season_names):
             season_item = QStandardItem(season_name)
             season_item.setEditable(False)
             self.season_model.appendRow(season_item)
-
-        # Automatically select first season if available
-        if self.season_model.rowCount() > 0:
-            first_index = self.season_model.index(0, 0)
-            self.season_view.setCurrentIndex(first_index)
-            self.on_season_selected(first_index)
+            if selected_season_name == season_name:
+                restore_index = self.season_model.index(i, 0)
 
         # Update locked metadata checkbox
-        series_data = self.library.get(series_name, {})
         series_metadata = series_data.get("metadata", {})
         self.locked_checkbox.blockSignals(True)
         self.locked_checkbox.setChecked(series_metadata.get("locked_metadata", False))
         self.locked_checkbox.blockSignals(False)
 
-        self.stacked_widget.setCurrentIndex(1)
+        # Restore season selection or select first
+        if restore_index:
+            self.season_view.setCurrentIndex(restore_index)
+            self.on_season_selected(restore_index)
+        elif self.season_model.rowCount() > 0:
+            first_index = self.season_model.index(0, 0)
+            self.season_view.setCurrentIndex(first_index)
+            self.on_season_selected(first_index)
 
     def on_season_selected(self, index):
         item = self.season_model.itemFromIndex(index)
