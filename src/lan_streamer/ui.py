@@ -902,7 +902,7 @@ class MainWindow(QMainWindow):
         self.episode_model.clear()
 
         seasons = series_data.get("seasons", {})
-        sorted_season_names = sorted(seasons.keys())
+        sorted_season_names = sorted(seasons.keys(), key=db.natural_sort_key)
 
         restore_index = None
         for i, season_name in enumerate(sorted_season_names):
@@ -937,7 +937,10 @@ class MainWindow(QMainWindow):
 
         seasons = self.library.get(self.current_series, {}).get("seasons", {})
         season_data = seasons.get(season_name, {})
-        episodes = season_data.get("episodes", [])
+        episodes = sorted(
+            season_data.get("episodes", []),
+            key=lambda x: db.natural_sort_key(x["name"]),
+        )
 
         for episode in episodes:
             display_text = self._format_episode_display(episode)

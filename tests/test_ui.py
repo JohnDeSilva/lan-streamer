@@ -22,7 +22,9 @@ def app(qtbot):
 
 @pytest.fixture
 def mock_dependencies(monkeypatch):
-    monkeypatch.setattr(ui, "db", MagicMock())
+    mock_db = MagicMock()
+    mock_db.natural_sort_key = ui.db.natural_sort_key
+    monkeypatch.setattr(ui, "db", mock_db)
     monkeypatch.setattr(ui, "config", config)
     monkeypatch.setattr(ui, "jellyfin_client", MagicMock())
     monkeypatch.setattr(ui, "tmdb_client", MagicMock())

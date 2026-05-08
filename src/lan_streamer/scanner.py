@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Any
 from .tmdb import tmdb_client
+from .db import natural_sort_key
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,8 @@ def clean_series_data(series_data: Dict[str, Any]) -> Dict[str, Any]:
     clean_seasons = {}
     for season, season_data in series_data.get("seasons", {}).items():
         if season_data["episodes"]:
-            # Sort episodes alphabetically
-            season_data["episodes"].sort(key=lambda x: x["name"])
+            # Sort episodes naturally
+            season_data["episodes"].sort(key=lambda x: natural_sort_key(x["name"]))
             season_data.pop("_tmdb_episodes", None)
             clean_seasons[season] = season_data
 
@@ -171,8 +172,10 @@ def scan_directories(
                                     f"Skipping exact duplicate path: {episode['path']}"
                                 )
 
-                        # Re-sort episodes
-                        existing_episodes.sort(key=lambda x: x["name"])
+                        # Re-sort episodes naturally
+                        existing_episodes.sort(
+                            key=lambda x: natural_sort_key(x["name"])
+                        )
                     else:
                         existing["seasons"][season_name] = season_data
             else:

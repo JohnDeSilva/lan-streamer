@@ -1,6 +1,7 @@
 import sqlite3
 import logging
 import time
+import re
 from pathlib import Path
 from typing import Dict, Any
 from contextlib import closing
@@ -9,6 +10,18 @@ from . import __version__ as DB_VERSION
 logger = logging.getLogger(__name__)
 
 DB_FILE = Path.home() / ".config" / "lan-streamer" / "library.db"
+
+
+def natural_sort_key(s):
+    """
+    Key function for natural sorting (e.g., "Season 2" < "Season 10").
+    """
+    if s is None:
+        return []
+    return [
+        int(text) if text.isdigit() else text.lower()
+        for text in re.split("([0-9]+)", str(s))
+    ]
 
 
 def get_connection():
@@ -320,6 +333,13 @@ def load_library(library_name: str) -> Dict[str, Any]:
                         "date_added": row["episode_date_added"] or 0,
                     }
                 )
+
+            # Ensure episodes within each season are naturally sorted
+            for s_name in library_data:
+                for sea_name in library_data[s_name]["seasons"]:
+                    library_data[s_name]["seasons"][sea_name]["episodes"].sort(
+                        key=lambda x: natural_sort_key(x["name"])
+                    )
 
         duration = time.time() - start_time
         logger.info(
