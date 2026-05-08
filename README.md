@@ -2,7 +2,7 @@
 
 **LAN Streamer** is a premium, lightweight media library manager built for users who demand the best local playback experience while maintaining a modern, metadata-rich browsing interface.
 
-It bridges the gap between local file storage (e.g., NAS, External Drives) and **Jellyfin**, ensuring your library stays beautiful and synchronized without the overhead or quality loss of server-side transcoding.
+It bridges the gap between local file storage (e.g., NAS, External Drives) and optional **Jellyfin** integration, ensuring your library stays beautiful and synchronized without the overhead or quality loss of server-side transcoding.
 
 ---
 
@@ -33,7 +33,8 @@ It bridges the gap between local file storage (e.g., NAS, External Drives) and *
 
 *   **Python**: 3.14+
 *   **VLC**: Must be installed and available in your system's PATH.
-*   **Jellyfin**: A running Jellyfin server and an API key.
+*   **TMDB**: A free API key from [The Movie Database](https://www.themoviedb.org/) (Required for metadata).
+*   **Jellyfin**: (Optional) A running Jellyfin server and an API key for watch history synchronization.
 
 ---
 
@@ -60,21 +61,34 @@ make run
 ```
 
 ### Setup Guide
-1.  **Configure Jellyfin**: Click the gear icon to enter your Server URL and API Key. Use the "Test Connection" button to verify networking.
-2.  **Add Libraries**: Open "Library Settings" to define your media roots.
-3.  **Sync Data**: Click the refresh icon (Force Scan) to trigger the initial metadata and poster download.
+1.  **Configure Connectivity**: Navigate to **Watch History > Jellyfin Settings** to enter your Server URL and API Key. Use "Test Connection" to verify.
+2.  **Configure Metadata**: Navigate to **Metadata > TMDB Settings...** to enter your TMDB API Key.
+3.  **Add Libraries**: Go to **Settings > Manage Libraries...** to define your media roots and library names.
+4.  **Fetch Metadata**: Go to **Metadata > Check for New Files and Fetch Metadata** to trigger the initial scanning and poster downloads.
+5.  **Sync Watch History**: Use the **Watch History** menu to Pull or Push your watched status.
 
 ---
 
 ## ⚙️ Configuration
 
-Lan Streamer configuration is stored in `~/.config/lan-streamer/config.json`. You can configure the following through the **Settings > General Settings** menu:
+Lan Streamer configuration is managed through the **Settings > General Settings** menu and persisted in `~/.config/lan-streamer/config.json`.
 
-- **Database Path**: The location of the SQLite database file (default: `~/.config/lan-streamer/library.db`).
-- **Log Directory**: The directory where logs are stored (default: `~/.config/lan-streamer/logs`).
-- **Sync on Startup**: Whether to automatically pull watch history from Jellyfin on application start.
+### Path Customization
+- **Database Path**: The location of the SQLite database file.
+- **Log Directory**: The directory where rotated logs are stored.
+- **Enable Global Log File**: Toggle generation of `lan-streamer.log`. (Default: Off, console only).
 
-You can also override the database path using the `LAN_STREAMER_DB` environment variable.
+### Environment Variables
+- `LAN_STREAMER_DB`: Override the database file location for portability or testing.
+
+### Logging System
+Logs are automatically organized and rotated daily within the configured log directory:
+- `db.log`: Database operations and migrations.
+- `ui.log`: Interface events and errors.
+- `scanner.log`: Library scanning and metadata matching details.
+- `jellyfin.log`: API interactions and history synchronization.
+- `tmdb.log`: Metadata fetching from TMDB.
+- `lan-streamer.log`: Global application log (if enabled).
 
 ---
 
