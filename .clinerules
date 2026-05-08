@@ -15,7 +15,7 @@ These rules apply to all AI coding assistants working on this repository.
 
 ## Frameworks
 *   **UI**: PySide6 (Qt for Python) for the desktop interface.
-*   **Database**: SQLite (via `sqlite3` standard library) for local library storage.
+*   **Database**: SQLite with SQLAlchemy ORM and Alembic for migrations.
 *   **Networking**: `requests` for Jellyfin and TMDB API communication.
 *   **Build/Env**: `uv` for dependency management and execution.
 
@@ -32,4 +32,4 @@ These rules apply to all AI coding assistants working on this repository.
     4.  **Refine**: Optimize and ensure coverage remains above 90%.
 *   **Verification**: Always run `make test` after changes. Run `make lint` as the **FINAL** step after all updates are complete.
 *   **Coverage**: Maintain a minimum of **90% code coverage**.
-*   **Migrations**: If you modify the database schema, add a versioned migration in `src/lan_streamer/db.py`. **MANDATORY**: Add a test case for the migration to ensure it handles existing data correctly.
+*   **Migrations**: If you modify the database schema, generate a new Alembic revision using `make revision name="description"`. **MANDATORY**: Ensure `make migrate` is run to apply changes.

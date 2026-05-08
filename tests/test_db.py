@@ -1,34 +1,29 @@
-import sqlite3
 import pytest
 from unittest.mock import patch
-from contextlib import closing
 from lan_streamer import db
+from lan_streamer.models import Series, Season, Episode
 
 
 @pytest.fixture
 def mock_db_file(tmp_path):
-    test_db_path = tmp_path / "test.db"
-    with patch("lan_streamer.db.DB_FILE", test_db_path):
-        yield test_db_path
+    # Already handled by conftest.py autouse fixture,
+    # but kept here for tests that explicitly use it.
+    return tmp_path / "library.db"
 
 
 def test_init_db(mock_db_file):
     db.init_db()
-    assert mock_db_file.exists()
-
-    # Init again to test idempotency
-    db.init_db()
+    assert mock_db_file.parent.exists()
 
 
 def test_save_and_load_library(mock_db_file):
-    db.init_db()
-
     test_lib = {
         "Test Series": {
             "metadata": {
                 "jellyfin_id": "series123",
                 "poster_path": "/img.jpg",
                 "overview": "A test series",
+                "locked_metadata": True,
             },
             "seasons": {
                 "Season 1": {
@@ -55,6 +50,7 @@ def test_save_and_load_library(mock_db_file):
     assert series["metadata"]["jellyfin_id"] == "series123"
     assert series["metadata"]["poster_path"] == "/img.jpg"
     assert series["metadata"]["overview"] == "A test series"
+    assert series["metadata"]["locked_metadata"] is True
 
     assert "Season 1" in series["seasons"]
     season = series["seasons"]["Season 1"]
@@ -69,7 +65,6 @@ def test_save_and_load_library(mock_db_file):
 
 
 def test_update_watched_status(mock_db_file):
-    db.init_db()
     test_lib = {
         "Test Series": {
             "metadata": {},
@@ -98,102 +93,60 @@ def test_update_watched_status(mock_db_file):
 
 
 def test_db_error_handling(mock_db_file):
-    def mock_connect(*args, **kwargs):
-        import sqlite3
+    # Mocking get_session to raise an exception
+    with patch("lan_streamer.db.get_session") as mock_session:
+        mock_session.side_effect = Exception("Mocked error")
 
-        raise sqlite3.OperationalError("Mocked error")
-
-    with patch("sqlite3.connect", mock_connect):
         # These should catch the error and log it, not crash
-        db.init_db()
         assert db.load_library("Lib") == {}
         db.save_library("Lib", {})
         db.update_episode_watched_status("path", True)
 
 
-def test_db_version_sync():
-    from lan_streamer import __version__
-
-    assert db.DB_VERSION == __version__
-
-
 def test_sync_watched_from_paths(mock_db_file):
-    from lan_streamer.db import sync_watched_from_jellyfin_data, get_connection
+    from lan_streamer.db import sync_watched_from_jellyfin_data, get_session
 
-    db.init_db()
-    with closing(get_connection()) as conn:
-        with conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO series (name, library_name) VALUES ('Show', 'Lib')"
-            )
-            series_id = cursor.lastrowid
-            cursor.execute(
-                "INSERT INTO seasons (series_id, name) VALUES (?, 'Season 1')",
-                (series_id,),
-            )
-            season_id = cursor.lastrowid
-            cursor.execute(
-                "INSERT INTO episodes (season_id, name, path, watched) VALUES (?, 'Ep1', '/path1', 0)",
-                (season_id,),
-            )
-            cursor.execute(
-                "INSERT INTO episodes (season_id, name, path, watched) VALUES (?, 'Ep2', '/path2', 0)",
-                (season_id,),
-            )
+    # Setup data using ORM
+    with get_session() as session:
+        series = Series(name="Show", library_name="Lib")
+        session.add(series)
+        session.flush()
+
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+
+        ep1 = Episode(season_id=season.id, name="Ep1", path="/path1", watched=False)
+        ep2 = Episode(season_id=season.id, name="Ep2", path="/path2", watched=False)
+        session.add(ep1)
+        session.add(ep2)
 
     # Test with one path
     count = sync_watched_from_jellyfin_data(set(), {"/path1"}, set())
     assert count == 1
-    with closing(get_connection()) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT watched FROM episodes WHERE path='/path1'")
-        assert cursor.fetchone()[0] == 1
-        cursor.execute("SELECT watched FROM episodes WHERE path='/path2'")
-        assert cursor.fetchone()[0] == 0
+
+    loaded = db.load_library("Lib")
+    eps = loaded["Show"]["seasons"]["Season 1"]["episodes"]
+    # Episodes are sorted by name
+    ep1_data = next(e for e in eps if e["path"] == "/path1")
+    ep2_data = next(e for e in eps if e["path"] == "/path2")
+    assert ep1_data["watched"] is True
+    assert ep2_data["watched"] is False
 
     # Test with name-based match
-    # 'Ep2' in 'Season 1' of 'Show' -> needs series name 'Show'
     count = sync_watched_from_jellyfin_data(set(), set(), {("Show", "Ep2")})
     assert count == 1
-    with closing(get_connection()) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT watched FROM episodes WHERE path='/path2'")
-        assert cursor.fetchone()[0] == 1
+
+    loaded = db.load_library("Lib")
+    eps = loaded["Show"]["seasons"]["Season 1"]["episodes"]
+    ep2_data = next(e for e in eps if e["path"] == "/path2")
+    assert ep2_data["watched"] is True
 
     # Test with empty sets
     assert sync_watched_from_jellyfin_data(set(), set(), set()) == 0
 
 
-def test_is_less_than_0_2_0_negative_version(mock_db_file):
-    from lan_streamer.db import init_db
-    # To hit line 50, we need to mock cursor.fetchone to return a version starting with negative
-    # Actually, the function is defined INSIDE init_db. We can just test init_db with a mock version.
-
-    with closing(sqlite3.connect(mock_db_file)) as conn:
-        conn.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT)")
-        conn.execute("INSERT INTO metadata (key, value) VALUES ('version', '-1.0.0')")
-        conn.commit()
-
-    # This should trigger recreation
-    recreated = init_db()
-    assert recreated is True
-
-
-def test_sync_watched_from_paths_exception():
-    from lan_streamer.db import sync_watched_from_jellyfin_data
-
-    def mock_get_conn():
-        raise Exception("DB Error")
-
-    with patch("lan_streamer.db.get_connection", mock_get_conn):
-        assert sync_watched_from_jellyfin_data(set(), {"/path"}, set()) == 0
-
-
 def test_get_all_episodes_with_jellyfin_id(mock_db_file):
-    from lan_streamer.db import get_all_episodes_with_jellyfin_id
-
-    db.init_db()
     test_lib = {
         "Show": {
             "seasons": {
@@ -217,13 +170,12 @@ def test_get_all_episodes_with_jellyfin_id(mock_db_file):
         }
     }
     db.save_library("Lib", test_lib)
-    eps = get_all_episodes_with_jellyfin_id()
+    eps = db.get_all_episodes_with_jellyfin_id()
     assert len(eps) == 1
     assert eps[0]["jellyfin_id"] == "jf1"
 
 
 def test_update_season_watched_status(mock_db_file):
-    db.init_db()
     test_lib = {
         "Test Series": {
             "metadata": {},

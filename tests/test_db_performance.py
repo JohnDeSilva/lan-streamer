@@ -1,23 +1,18 @@
 import pytest
-from unittest.mock import patch
-from contextlib import closing
 from lan_streamer import db
+from sqlalchemy import text
 
 
 @pytest.fixture
 def mock_db_file(tmp_path):
-    test_db_path = tmp_path / "test_perf.db"
-    with patch("lan_streamer.db.DB_FILE", test_db_path):
-        yield test_db_path
+    return tmp_path / "test_perf.db"
 
 
 def test_wal_mode_enabled(mock_db_file):
     db.init_db()
-    with closing(db.get_connection()) as conn:
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA journal_mode")
-        mode = cursor.fetchone()[0]
-        assert mode.lower() == "wal"
+    with db.get_session() as session:
+        result = session.execute(text("PRAGMA journal_mode")).fetchone()
+        assert result[0].lower() == "wal"
 
 
 def test_load_library_correctness_complex(mock_db_file):
@@ -93,6 +88,7 @@ def test_load_library_correctness_complex(mock_db_file):
 
     s1 = show_a["seasons"]["Season 1"]
     assert len(s1["episodes"]) == 2
+    # Episodes are sorted by name
     assert s1["episodes"][0]["name"] == "Ep 1"
     assert s1["episodes"][0]["watched"] is True
     assert s1["episodes"][0]["date_added"] == 100

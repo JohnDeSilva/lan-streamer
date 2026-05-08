@@ -23,7 +23,7 @@ It bridges the gap between local file storage (e.g., NAS, External Drives) and *
 
 ## 🏛️ Architecture & Stability
 
-*   **Versioned Schema**: Formal database versioning tracks application updates and handles migrations automatically. The database version is strictly synchronized with the application version, ensuring metadata consistency across all releases.
+*   **Versioned Schema**: Managed via **Alembic** migrations. Database schema updates are handled automatically through the `make migrate` target, ensuring metadata consistency across all releases.
 *   **Background Workers**: Library scanning and synchronization occur in dedicated background threads, keeping the UI fluid even during massive library updates.
 *   **🛡️ Quality Enforcement**: Maintains a strict **90% minimum code coverage** threshold. The CI pipeline and local test suite ensure regression-free development.
 
@@ -70,7 +70,7 @@ make run
 
 ### Technical Stack
 *   **UI Framework**: [PySide6](https://doc.qt.io/qtforpython/) (Qt 6)
-*   **Database**: [SQLite 3](https://www.sqlite.org/) with UPSERT support
+*   **Database**: [SQLite 3](https://www.sqlite.org/) with [SQLAlchemy](https://www.sqlalchemy.org/) ORM and [Alembic](https://alembic.sqlalchemy.org/) migrations
 *   **Package Manager**: [uv](https://github.com/astral-sh/uv)
 *   **Linting/Formatting**: [Ruff](https://github.com/astral-sh/ruff)
 

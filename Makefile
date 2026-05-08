@@ -1,4 +1,4 @@
-.PHONY: run lint test load-test build-mac clean
+.PHONY: run lint test load-test build-mac clean revision migrate
 
 UV := $(shell command -v uv 2> /dev/null)
 ifeq ($(UV),)
@@ -11,17 +11,17 @@ else
 	RUFF := uv run ruff
 endif
 
-run:
+run: migrate
 	PYTHONPATH=src $(PYTHON) -m lan_streamer.main
 
 lint:
 	$(RUFF) format .
 	$(RUFF) check --fix .
 
-test:
+test: migrate
 	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "not load" tests/
 
-load-test:
+load-test: migrate
 	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "load" -s --no-cov tests/
 
 build-mac:
@@ -30,6 +30,12 @@ build-mac:
 clean:
 	rm -rf build/ dist/ *.spec .pytest_cache .ruff_cache .venv *.log
 	find . -type d -name "__pycache__" -exec rm -rf {} +
+
+revision:
+	PYTHONPATH=src $(PYTHON) -m alembic revision --autogenerate -m "$(name)"
+
+migrate:
+	PYTHONPATH=src $(PYTHON) -m alembic upgrade head
 
 release:
 	uv lock
