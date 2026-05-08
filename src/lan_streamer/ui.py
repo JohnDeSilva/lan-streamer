@@ -24,7 +24,12 @@ from pathlib import Path
 import logging
 
 from .config import config
-from .scanner import scan_directories, scan_series, clean_series_data
+from .scanner import (
+    scan_directories,
+    scan_series,
+    clean_series_data,
+    _parse_episode_number,
+)
 from .player import play_video
 from .jellyfin import jellyfin_client
 from .tmdb import tmdb_client
@@ -181,6 +186,67 @@ class SeriesMatchDialog(QDialog):
                 display_name += f" ({year})"
 
             from PySide6.QtWidgets import QListWidgetItem
+
+            list_item = QListWidgetItem(display_name)
+            list_item.setData(Qt.ItemDataRole.UserRole, item)
+            self.results_list.addItem(list_item)
+
+    def get_selected_series(self):
+        current = self.results_list.currentItem()
+        if current:
+            return current.data(Qt.ItemDataRole.UserRole)
+        return None
+
+
+class JellyfinMatchDialog(QDialog):
+    """Manual match dialog for Jellyfin — searches Jellyfin."""
+
+    def __init__(self, series_name, parent=None):
+        super().__init__(parent)
+        self.series_name = series_name
+        self.selected_series = None
+        self.setWindowTitle(f"Match Jellyfin: {series_name}")
+        self.setMinimumSize(500, 400)
+
+        layout = QVBoxLayout(self)
+
+        search_layout = QHBoxLayout()
+        self.search_input = QLineEdit(series_name)
+        self.search_button = QPushButton("Search Jellyfin")
+        self.search_button.clicked.connect(self.do_search)
+        search_layout.addWidget(self.search_input)
+        search_layout.addWidget(self.search_button)
+        layout.addLayout(search_layout)
+
+        self.results_list = QListWidget()
+        self.results_list.itemDoubleClicked.connect(self.accept)
+        layout.addWidget(self.results_list)
+
+        buttons = QHBoxLayout()
+        self.ok_button = QPushButton("Match Selected")
+        self.ok_button.clicked.connect(self.accept)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        buttons.addWidget(self.ok_button)
+        buttons.addWidget(self.cancel_button)
+        layout.addLayout(buttons)
+
+        self.do_search()
+
+    def do_search(self):
+        self.results_list.clear()
+        query = self.search_input.text().strip()
+        if not query:
+            return
+
+        results = jellyfin_client.search_series(query)
+        from PySide6.QtWidgets import QListWidgetItem
+
+        for item in results:
+            display_name = item.get("Name", "Unknown")
+            year = item.get("ProductionYear", "")
+            if year:
+                display_name += f" ({year})"
 
             list_item = QListWidgetItem(display_name)
             list_item.setData(Qt.ItemDataRole.UserRole, item)
@@ -778,9 +844,9 @@ class MainWindow(QMainWindow):
 
     def on_pull_finished(self, updated_count):
         self.load_library_ui(stay_on_current=True)
-        self.statusBar().showMessage(
-            f"Jellyfin history pull complete. {updated_count} episodes updated.", 5000
-        )
+        msg = f"Jellyfin history pull complete. {updated_count} episodes updated."
+        self.statusBar().showMessage(msg, 5000)
+        logger.info(msg)
         if hasattr(self, "pull_action"):
             self.pull_action.setEnabled(True)
 
@@ -798,9 +864,9 @@ class MainWindow(QMainWindow):
         self.push_worker.start()
 
     def on_push_finished(self, count):
-        self.statusBar().showMessage(
-            f"Jellyfin history push complete. {count} items processed.", 5000
-        )
+        msg = f"Jellyfin history push complete. {count} items processed."
+        self.statusBar().showMessage(msg, 5000)
+        logger.info(msg)
         if hasattr(self, "push_action"):
             self.push_action.setEnabled(True)
 
@@ -824,11 +890,96 @@ class MainWindow(QMainWindow):
         series_name = item.data(Qt.ItemDataRole.UserRole)
 
         menu = QMenu()
-        match_action = menu.addAction("Match Series...")
+        match_action = menu.addAction("Match Series (TMDB)...")
+        jellyfin_action = menu.addAction("Match Jellyfin (Watch History)...")
 
         action = menu.exec(self.series_view.viewport().mapToGlobal(position))
         if action == match_action:
             self.match_series_manually(series_name)
+        elif action == jellyfin_action:
+            self.match_jellyfin_manually(series_name)
+
+    def match_jellyfin_manually(self, series_name):
+        dialog = JellyfinMatchDialog(series_name, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected = dialog.get_selected_series()
+            if not selected:
+                return
+
+            library_name = self.main_library_combo.currentText()
+            if not library_name:
+                return
+
+            jellyfin_id = selected.get("Id")
+            if not jellyfin_id:
+                return
+
+            # Update local library cache and database
+            if series_name in self.library:
+                self.library[series_name]["metadata"]["jellyfin_id"] = jellyfin_id
+
+                # Fetch episodes for this series from Jellyfin to sync watch history immediately
+                self.statusBar().showMessage(
+                    f"Syncing watch history for '{series_name}'..."
+                )
+                logger.info(
+                    f"Manual Jellyfin match for '{series_name}' (ID: {jellyfin_id}). Fetching episodes for correlation..."
+                )
+                jf_episodes = jellyfin_client.get_series_episodes(jellyfin_id)
+                logger.info(
+                    f"Fetched {len(jf_episodes)} episodes from Jellyfin for '{series_name}'."
+                )
+
+                # Build maps for correlation (Season/Episode and Name)
+                jf_map = {}
+                jf_name_map = {}
+                for item in jf_episodes:
+                    s_num = item.get("ParentIndexNumber")
+                    e_num = item.get("IndexNumber")
+                    if s_num is not None and e_num is not None:
+                        jf_map[(s_num, e_num)] = item
+
+                    name = item.get("Name", "").lower()
+                    if name:
+                        jf_name_map[name] = item
+
+                # Update episodes in local library
+                updated_count = 0
+                for season_name, season_data in (
+                    self.library[series_name].get("seasons", {}).items()
+                ):
+                    for episode in season_data.get("episodes", []):
+                        # Try to correlate
+                        parsed = _parse_episode_number(episode["name"])
+                        jf_item = None
+                        if parsed:
+                            jf_item = jf_map.get(parsed)
+
+                        if not jf_item:
+                            # Try by name (without extension)
+                            stem = Path(episode["name"]).stem.lower()
+                            jf_item = jf_name_map.get(stem)
+
+                        if jf_item:
+                            episode["jellyfin_id"] = jf_item.get("Id", "")
+                            # Sync watched status
+                            is_played = jf_item.get("UserData", {}).get("Played", False)
+                            logger.debug(
+                                f"Correlated '{episode['name']}' -> Jellyfin ID {episode['jellyfin_id']} (Watched: {is_played})"
+                            )
+                            if episode.get("watched") != is_played:
+                                episode["watched"] = is_played
+                                db.update_episode_watched_status(
+                                    episode["path"], is_played
+                                )
+                                updated_count += 1
+
+                db.save_library(library_name, self.library)
+                self.statusBar().showMessage(
+                    f"Series '{series_name}' linked. {updated_count} episodes updated.",
+                    5000,
+                )
+                self.load_library_ui(stay_on_current=True)
 
     def match_series_manually(self, series_name):
         dialog = SeriesMatchDialog(series_name, self)

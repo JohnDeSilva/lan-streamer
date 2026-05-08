@@ -521,3 +521,44 @@ def test_scan_series_name_correlation(tmp_path):
         # Check episode correlation
         ep = series_data["seasons"]["Season 1"]["episodes"][0]
         assert ep["jellyfin_id"] == "jf_ep_name_123"
+
+
+def test_scan_series_manual_jellyfin_correlation(tmp_path):
+    """Test that jellyfin_id is pulled via series_id_map when manual_jellyfin_id is provided."""
+    from lan_streamer.scanner import scan_series
+
+    series_dir = tmp_path / "Manual JF Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    episode_file = season_dir / "S01E01.mkv"
+    episode_file.touch()
+
+    jellyfin_data = {
+        "path_map": {},
+        "tmdb_episode_map": {},
+        "series_id_map": {
+            "jf_manual_id": {
+                "episodes": {(1, 1): "jf_ep_manual_123"},
+                "names": {"manual episode": "jf_ep_manual_456"},
+            }
+        },
+    }
+
+    with patch("lan_streamer.scanner.tmdb_client") as mock_tmdb:
+        mock_tmdb.search_series.return_value = {
+            "id": "tmdb123",
+            "name": "Manual JF Show",
+        }
+        mock_tmdb.get_seasons.return_value = [{"season_number": 1, "id": "tmdb_s1"}]
+        mock_tmdb.get_episodes.return_value = [{"episode_number": 1, "id": "tmdb_e1"}]
+        mock_tmdb.download_image.return_value = ""
+
+        series_data = scan_series(
+            series_dir, jellyfin_data=jellyfin_data, manual_jellyfin_id="jf_manual_id"
+        )
+
+        # Check episode correlation via SxxExx
+        ep = series_data["seasons"]["Season 1"]["episodes"][0]
+        assert ep["jellyfin_id"] == "jf_ep_manual_123"
+        assert series_data["metadata"]["jellyfin_id"] == "jf_manual_id"

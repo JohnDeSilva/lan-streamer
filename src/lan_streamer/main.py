@@ -46,17 +46,40 @@ def main():
     root_logger.addHandler(console_handler)
 
     # Timed Rotating File handler (rotates daily at midnight, keeps 7 days)
-    try:
-        from logging.handlers import TimedRotatingFileHandler
+    def add_file_handler(logger_obj, filename, formatter, info_msg=None):
+        try:
+            from logging.handlers import TimedRotatingFileHandler
 
-        file_handler = TimedRotatingFileHandler(
-            "lan-streamer.log", when="midnight", interval=1, backupCount=7
-        )
-        file_handler.setFormatter(log_formatter)
-        root_logger.addHandler(file_handler)
-        logging.info("Logging to lan-streamer.log (rotating daily)")
-    except Exception as e:
-        logging.error(f"Could not create log file: {e}")
+            handler = TimedRotatingFileHandler(
+                filename, when="midnight", interval=1, backupCount=7
+            )
+            handler.suffix = "%Y-%m-%d"
+            handler.namer = lambda name: name.replace(".log.", "_") + ".log"
+            handler.setFormatter(formatter)
+            logger_obj.addHandler(handler)
+            if info_msg:
+                logging.info(info_msg)
+        except Exception as e:
+            logging.error(f"Could not create log file {filename}: {e}")
+
+    # Global log
+    add_file_handler(
+        root_logger,
+        "lan-streamer.log",
+        log_formatter,
+        "Logging to lan-streamer.log (rotated as lan-streamer_YYYY-MM-DD.log)",
+    )
+
+    # Component-specific logs
+    add_file_handler(logging.getLogger("lan_streamer.db"), "db.log", log_formatter)
+    add_file_handler(logging.getLogger("lan_streamer.ui"), "ui.log", log_formatter)
+    add_file_handler(
+        logging.getLogger("lan_streamer.scanner"), "scanner.log", log_formatter
+    )
+    add_file_handler(
+        logging.getLogger("lan_streamer.jellyfin"), "jellyfin.log", log_formatter
+    )
+    add_file_handler(logging.getLogger("lan_streamer.tmdb"), "tmdb.log", log_formatter)
 
     recreated = db.init_db()
     app = QApplication(sys.argv)

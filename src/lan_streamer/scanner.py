@@ -82,37 +82,37 @@ def scan_directories(
             existing_series = existing_library.get(series_name)
             tmdb_series = None
             is_locked = False
+            existing_jellyfin_id = None
 
-            if existing_series and existing_series.get("metadata", {}).get(
-                "locked_metadata"
-            ):
-                tmdb_identifier = existing_series["metadata"].get("tmdb_identifier")
-                if tmdb_identifier:
-                    logger.info(
-                        f"Using locked TMDB metadata for '{series_name}' (ID: {tmdb_identifier})"
-                    )
-                    # Use existing metadata exactly as is
-                    tmdb_series = {
-                        "id": tmdb_identifier,
-                        "name": existing_series["metadata"].get(
-                            "tmdb_name", series_name
-                        ),  # Use tmdb_name if available
-                        "overview": existing_series["metadata"].get("overview", ""),
-                        "poster_path": existing_series["metadata"].get(
-                            "poster_path", ""
-                        ),
-                        "_is_prefetched": True,  # Signal to scan_series to not re-fetch
-                    }
-                    is_locked = True
-                else:
-                    is_locked = False
-            else:
-                is_locked = False
+            if existing_series:
+                existing_jellyfin_id = existing_series.get("metadata", {}).get(
+                    "jellyfin_id"
+                )
+                if existing_series.get("metadata", {}).get("locked_metadata"):
+                    tmdb_identifier = existing_series["metadata"].get("tmdb_identifier")
+                    if tmdb_identifier:
+                        logger.info(
+                            f"Using locked TMDB metadata for '{series_name}' (ID: {tmdb_identifier})"
+                        )
+                        # Use existing metadata exactly as is
+                        tmdb_series = {
+                            "id": tmdb_identifier,
+                            "name": existing_series["metadata"].get(
+                                "tmdb_name", series_name
+                            ),  # Use tmdb_name if available
+                            "overview": existing_series["metadata"].get("overview", ""),
+                            "poster_path": existing_series["metadata"].get(
+                                "poster_path", ""
+                            ),
+                            "_is_prefetched": True,  # Signal to scan_series to not re-fetch
+                        }
+                        is_locked = True
 
             series_data = scan_series(
                 series_directory,
                 tmdb_series=tmdb_series,
                 jellyfin_data=jellyfin_data,
+                manual_jellyfin_id=existing_jellyfin_id,
             )
             if is_locked:
                 series_data["metadata"]["locked_metadata"] = True
@@ -191,11 +191,13 @@ def scan_series(
     series_directory: Path,
     tmdb_series: Dict[str, Any] = None,
     jellyfin_data: Dict[str, dict] = None,
+    manual_jellyfin_id: str = None,
 ) -> Dict[str, Any]:
     """
     Scans a single series directory and fetches metadata from TMDB.
     If tmdb_series is provided (e.g. from a manual match), it uses that ID
     instead of searching.
+    If manual_jellyfin_id is provided, it links to that Jellyfin item for watch sync.
     """
     series_name = series_directory.name
 
@@ -213,7 +215,7 @@ def scan_series(
         "overview": "",
         "poster_path": "",
         "tmdb_name": "",
-        "jellyfin_id": "",
+        "jellyfin_id": manual_jellyfin_id or "",
     }
     tmdb_seasons: list = []
 
@@ -222,7 +224,6 @@ def scan_series(
         series_metadata["tmdb_identifier"] = tmdb_identifier
         series_metadata["overview"] = tmdb_series.get("overview", "")
         series_metadata["tmdb_name"] = tmdb_series.get("name", "")
-        series_metadata["jellyfin_id"] = ""
 
         # Artwork — TMDB returns a poster_path fragment
         poster_path = tmdb_series.get("poster_path") or ""
@@ -358,6 +359,34 @@ def scan_series(
 
                     jellyfin_id = name_map.get((lookup_series, lookup_episode), "")
 
+                # Fallback correlation by Series ID + (Season, Episode) or Name
+                if not jellyfin_id and series_metadata["jellyfin_id"] and jellyfin_data:
+                    series_map = jellyfin_data.get("series_id_map", {}).get(
+                        series_metadata["jellyfin_id"]
+                    )
+                    if series_map:
+                        parsed = _parse_episode_number(episode_name)
+                        if parsed:
+                            s_num, e_num = parsed
+                            jellyfin_id = series_map["episodes"].get((s_num, e_num), "")
+                            if jellyfin_id:
+                                logger.debug(
+                                    f"Matched '{episode_name}' via Series ID map (S{s_num:02}E{e_num:02})"
+                                )
+
+                        if not jellyfin_id:
+                            lookup_name = (tmdb_name or episode_file.stem).lower()
+                            jellyfin_id = series_map["names"].get(lookup_name, "")
+                            if jellyfin_id:
+                                logger.debug(
+                                    f"Matched '{episode_name}' via Series ID map name '{lookup_name}'"
+                                )
+
+                if jellyfin_id:
+                    logger.info(
+                        f"Matched Jellyfin ID for '{episode_name}': {jellyfin_id}"
+                    )
+
                 if jellyfin_info:
                     # Update series/season Jellyfin IDs from the episode's parent info
                     if not series_data["metadata"]["jellyfin_id"]:
@@ -371,11 +400,11 @@ def scan_series(
 
                 # Fallback correlation for series by TMDB Series ID
                 if (
-                    not series_data["metadata"]["jellyfin_id"]
+                    not series_metadata["jellyfin_id"]
                     and series_data["_tmdb_series_id"]
                     and jellyfin_data
                 ):
-                    series_data["metadata"]["jellyfin_id"] = jellyfin_data.get(
+                    series_metadata["jellyfin_id"] = jellyfin_data.get(
                         "tmdb_series_map", {}
                     ).get(str(series_data["_tmdb_series_id"]), "")
 

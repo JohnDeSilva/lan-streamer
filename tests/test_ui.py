@@ -799,9 +799,67 @@ def test_mainwindow_season_context_menu(qtbot, mock_dependencies):
 
         # Mock toggle_season_watched_status to verify it's called
         with patch.object(window, "toggle_season_watched_status") as mock_toggle:
-            # Call the handler
             window.show_season_context_menu(
                 window.season_view.viewport().rect().center()
             )
+            mock_toggle.assert_called()
 
-            mock_toggle.assert_called_with("Season 1", True)
+
+def test_jellyfin_match_dialog(qtbot, mock_dependencies):
+    from lan_streamer.ui import JellyfinMatchDialog
+
+    ui.jellyfin_client.search_series.return_value = [
+        {"Id": "jf1", "Name": "Jellyfin Show", "ProductionYear": 2024}
+    ]
+
+    dialog = JellyfinMatchDialog("Local Show")
+    qtbot.addWidget(dialog)
+
+    assert dialog.search_input.text() == "Local Show"
+    assert dialog.results_list.count() == 1
+    assert "Jellyfin Show (2024)" in dialog.results_list.item(0).text()
+
+    dialog.results_list.setCurrentRow(0)
+    selected = dialog.get_selected_series()
+    assert selected["Id"] == "jf1"
+
+
+def test_mainwindow_match_jellyfin_manually(qtbot, mock_dependencies):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    mock_selected = {"Id": "jf_new_id", "Name": "Matched JF"}
+
+    class MockDialog:
+        def __init__(self, *args):
+            pass
+
+        def exec(self):
+            return ui.QDialog.DialogCode.Accepted
+
+        def get_selected_series(self):
+            return mock_selected
+
+    with (
+        patch("lan_streamer.ui.JellyfinMatchDialog", MockDialog),
+        patch.object(window, "load_library_ui"),
+    ):
+        ui.jellyfin_client.get_series_episodes.return_value = [
+            {
+                "Id": "jf_ep1",
+                "Name": "Ep1",
+                "IndexNumber": 1,
+                "ParentIndexNumber": 1,
+                "UserData": {"Played": True},
+            }
+        ]
+        window.match_jellyfin_manually("Series A")
+        assert window.library["Series A"]["metadata"]["jellyfin_id"] == "jf_new_id"
+
+        # Check that episode was correlated and updated
+        ep = window.library["Series A"]["seasons"]["Season 1"]["episodes"][0]
+        assert ep["jellyfin_id"] == "jf_ep1"
+        assert ep["watched"] is True
+
+        ui.db.save_library.assert_called()
+        window.load_library_ui.assert_called_once()

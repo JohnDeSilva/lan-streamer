@@ -227,6 +227,12 @@ def test_get_current_user_id_https_retry(jf_client):
         assert jf_client.session.get.call_args_list[1][0][0].startswith("http://")
 
 
+def test_get_current_user_id_https_retry_failure(jf_client):
+    with patch.object(config, "jellyfin_url", "test.com"):
+        jf_client.session.get = MagicMock(side_effect=Exception("Both failed"))
+        assert jf_client.get_current_user_id() is None
+
+
 def test_get_headers(jf_client):
     headers = jf_client._get_headers()
     assert "Authorization" in headers
@@ -253,6 +259,7 @@ def test_get_jellyfin_correlation_data(jf_client):
     assert "/path1" in data["path_map"]
     assert "tmdb1" in data["tmdb_episode_map"]
     assert ("show", "ep1") in data["name_map"]
+    assert "series_id_map" in data
 
 
 def test_mark_as_played(jf_client):
@@ -265,3 +272,84 @@ def test_mark_as_played(jf_client):
     success = jf_client.mark_as_played("item123")
     assert success is True
     jf_client.session.post.assert_called_once()
+
+
+def test_unmark_as_played(jf_client):
+    jf_client._cached_user_id = "user123"
+    jf_client.session.delete = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status.return_value = None
+    jf_client.session.delete.return_value = mock_resp
+
+    success = jf_client.unmark_as_played("item123")
+    assert success is True
+    jf_client.session.delete.assert_called_once()
+
+
+def test_unmark_as_played_error(jf_client):
+    jf_client._cached_user_id = "user123"
+    jf_client.session.delete = MagicMock(side_effect=Exception("API Error"))
+    assert jf_client.unmark_as_played("item123") is False
+
+
+def test_search_series(jf_client):
+    jf_client._cached_user_id = "user123"
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"Items": [{"Id": "s1", "Name": "Series One"}]}
+    jf_client.session.get = MagicMock(return_value=mock_resp)
+
+    results = jf_client.search_series("Series One")
+    assert len(results) == 1
+    assert results[0]["Id"] == "s1"
+
+
+def test_search_series_not_configured(jf_client):
+    with patch.object(config, "jellyfin_url", ""):
+        assert jf_client.search_series("Test") == []
+
+
+def test_search_series_error(jf_client):
+    jf_client._cached_user_id = "user123"
+    jf_client.session.get = MagicMock(side_effect=Exception("API Error"))
+    assert jf_client.search_series("Test") == []
+
+
+def test_get_series_episodes(jf_client):
+    jf_client._cached_user_id = "user123"
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"Items": [{"Id": "e1", "Path": "/p1"}]}
+    jf_client.session.get = MagicMock(return_value=mock_resp)
+
+    results = jf_client.get_series_episodes("s1")
+    assert len(results) == 1
+    assert results[0]["Id"] == "e1"
+
+
+def test_get_series_episodes_error(jf_client):
+    jf_client._cached_user_id = "user123"
+    jf_client.session.get = MagicMock(side_effect=Exception("API Error"))
+    assert jf_client.get_series_episodes("s1") == []
+
+
+def test_get_jellyfin_correlation_data_series_id_map(jf_client):
+    jf_client._cached_user_id = "user123"
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "Items": [
+            {
+                "Id": "ep1",
+                "Path": "/path1",
+                "SeriesId": "s1",
+                "Name": "Episode 1",
+                "ParentIndexNumber": 1,
+                "IndexNumber": 1,
+            }
+        ]
+    }
+    jf_client.session.get = MagicMock(return_value=mock_resp)
+
+    data = jf_client.get_jellyfin_correlation_data()
+    assert "s1" in data["series_id_map"]
+    assert (1, 1) in data["series_id_map"]["s1"]["episodes"]
+    assert data["series_id_map"]["s1"]["episodes"][(1, 1)] == "ep1"
+    assert "episode 1" in data["series_id_map"]["s1"]["names"]

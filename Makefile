@@ -2,17 +2,17 @@
 
 UV := $(shell command -v uv 2> /dev/null)
 ifeq ($(UV),)
-	UV_RUN := .venv/bin/python -m
+	PYTHON := .venv/bin/python
 	PYTEST := .venv/bin/pytest
 	RUFF := .venv/bin/ruff
 else
-	UV_RUN := uv run
+	PYTHON := uv run python
 	PYTEST := uv run pytest
 	RUFF := uv run ruff
 endif
 
 run:
-	PYTHONPATH=src $(UV_RUN) lan_streamer.main
+	PYTHONPATH=src $(PYTHON) -m lan_streamer.main
 
 lint:
 	$(RUFF) format .

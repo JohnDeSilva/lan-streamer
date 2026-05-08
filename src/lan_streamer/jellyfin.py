@@ -253,6 +253,7 @@ class JellyfinClient:
         tmdb_episode_map = {}
         tmdb_series_map = {}
         name_map = {}
+        series_id_map = {}  # {series_id: { (season_num, ep_num): id, name: id }}
 
         # 1. Fetch Episodes for Path and TMDB mapping
         url = f"{self._get_base_url()}/Users/{user_id}/Items"
@@ -294,6 +295,27 @@ class JellyfinClient:
                     episode_name = item.get("Name")
                     if series_name and episode_name and item_id:
                         name_map[(series_name.lower(), episode_name.lower())] = item_id
+
+                    # Series ID based mapping for manual links
+                    series_id = item.get("SeriesId")
+                    if series_id and item_id:
+                        if series_id not in series_id_map:
+                            series_id_map[series_id] = {"episodes": {}, "names": {}}
+
+                        # Store by SxxExx if possible
+                        # Jellyfin doesn't always provide SxxExx in a clean way in this API,
+                        # but it has ParentIndexNumber (Season) and IndexNumber (Episode)
+                        season_num = item.get("ParentIndexNumber")
+                        ep_num = item.get("IndexNumber")
+                        if season_num is not None and ep_num is not None:
+                            series_id_map[series_id]["episodes"][
+                                (season_num, ep_num)
+                            ] = item_id
+
+                        if episode_name:
+                            series_id_map[series_id]["names"][episode_name.lower()] = (
+                                item_id
+                            )
 
                 if len(items) < limit:
                     break
@@ -340,13 +362,15 @@ class JellyfinClient:
             f"Jellyfin correlation data: {len(path_map)} paths, "
             f"{len(tmdb_episode_map)} episode TMDB IDs, "
             f"{len(name_map)} episode names, "
-            f"{len(tmdb_series_map)} series TMDB IDs."
+            f"{len(tmdb_series_map)} series TMDB IDs, "
+            f"{len(series_id_map)} manual series maps."
         )
         return {
             "path_map": path_map,
             "tmdb_episode_map": tmdb_episode_map,
             "tmdb_series_map": tmdb_series_map,
             "name_map": name_map,
+            "series_id_map": series_id_map,
         }
 
     def mark_as_played(self, item_id: str) -> bool:
@@ -384,6 +408,72 @@ class JellyfinClient:
         except Exception as e:
             logger.error(f"Failed to unmark item {item_id} as played: {e}")
             return False
+
+    # ------------------------------------------------------------------
+    # Series Matching — manual link support
+    # ------------------------------------------------------------------
+
+    def search_series(self, name: str) -> list:
+        """
+        Searches Jellyfin for series matching the given name.
+        Returns a list of series items.
+        """
+        if not self.is_configured():
+            return []
+
+        user_id = self.get_current_user_id()
+        if not user_id:
+            return []
+
+        url = f"{self._get_base_url()}/Users/{user_id}/Items"
+        parameters = {
+            "SearchTerm": name,
+            "IncludeItemTypes": "Series",
+            "Recursive": "true",
+            "Fields": "Path,ProviderIds,ProductionYear,Overview",
+        }
+        try:
+            response = self.session.get(
+                url, headers=self._get_headers(), params=parameters, timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("Items", [])
+        except Exception as exception:
+            logger.error(f"Failed to search Jellyfin for series '{name}': {exception}")
+            return []
+
+    def get_series_episodes(self, series_id: str) -> list:
+        """
+        Fetches all episodes belonging to a specific Jellyfin series ID.
+        Returns a list of episode items with Path and ProviderIds.
+        """
+        if not self.is_configured() or not series_id:
+            return []
+
+        user_id = self.get_current_user_id()
+        if not user_id:
+            return []
+
+        url = f"{self._get_base_url()}/Users/{user_id}/Items"
+        parameters = {
+            "ParentId": series_id,
+            "IncludeItemTypes": "Episode",
+            "Recursive": "true",
+            "Fields": "Path,ProviderIds,SeasonId,SeriesId,SeriesName,UserData",
+        }
+        try:
+            response = self.session.get(
+                url, headers=self._get_headers(), params=parameters, timeout=20
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("Items", [])
+        except Exception as exception:
+            logger.error(
+                f"Failed to fetch episodes for Jellyfin series {series_id}: {exception}"
+            )
+            return []
 
     # ------------------------------------------------------------------
     # Watch history — outbound (push local state → Jellyfin)
