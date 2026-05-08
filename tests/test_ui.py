@@ -136,12 +136,10 @@ def test_mainwindow_load(qtbot, mock_dependencies):
     # Select series
     index = window.series_model.index(0, 0)
     window.on_series_selected(index)
-    assert window.tree_model.rowCount() == 1
+    assert window.season_model.rowCount() == 1
+    assert window.episode_model.rowCount() == 1
 
-    season_item = window.tree_model.item(0, 0)
-    assert season_item.rowCount() == 1
-
-    ep_item = season_item.child(0, 0)
+    ep_item = window.episode_model.item(0, 0)
     assert ep_item.text() == "[ ] Ep1"
 
 
@@ -151,11 +149,10 @@ def test_mainwindow_play_video(qtbot, mock_dependencies):
 
     window.on_series_selected(window.series_model.index(0, 0))
 
-    season_item = window.tree_model.item(0, 0)
-    ep_item = season_item.child(0, 0)
-    index = window.tree_model.indexFromItem(ep_item)
+    ep_item = window.episode_model.item(0, 0)
+    index = window.episode_model.indexFromItem(ep_item)
 
-    window.on_tree_double_clicked(index)
+    window.on_episode_double_clicked(index)
 
     ui.play_video.assert_called_once_with("/path1")
     ui.db.update_episode_watched_status.assert_called_once_with("/path1", True)
@@ -245,8 +242,7 @@ def test_toggle_watched_status(qtbot, mock_dependencies):
 
     window.on_series_selected(window.series_model.index(0, 0))
 
-    season_item = window.tree_model.item(0, 0)
-    ep_item = season_item.child(0, 0)
+    ep_item = window.episode_model.item(0, 0)
     window.toggle_watched_status(ep_item, force_status=True)
 
     assert ep_item.text() == "[✓] Ep1"
@@ -337,7 +333,7 @@ def test_mainwindow_selection_errors(qtbot, mock_dependencies):
 
     # Invalid index
     window.on_series_selected(window.series_model.index(99, 99))
-    window.on_tree_double_clicked(window.tree_model.index(99, 99))
+    window.on_episode_double_clicked(window.episode_model.index(99, 99))
 
 
 def test_mainwindow_context_menu(qtbot, mock_dependencies, monkeypatch):
@@ -354,11 +350,10 @@ def test_mainwindow_context_menu(qtbot, mock_dependencies, monkeypatch):
     monkeypatch.setattr(ui, "QMenu", lambda: mock_menu)
     monkeypatch.setattr(mock_menu, "exec", mock_exec)
 
-    season_item = window.tree_model.item(0, 0)
-    ep_item = season_item.child(0, 0)
-    ep_index = window.tree_model.indexFromItem(ep_item)
+    ep_item = window.episode_model.item(0, 0)
+    ep_index = window.episode_model.indexFromItem(ep_item)
 
-    window.show_tree_context_menu(window.tree_view.visualRect(ep_index).center())
+    window.show_episode_context_menu(window.episode_view.visualRect(ep_index).center())
     # The action toggles watched status
     assert ep_item.text() == "[✓] Ep1"
 
@@ -368,15 +363,14 @@ def test_mainwindow_play_video_error(qtbot, mock_dependencies, monkeypatch):
     qtbot.addWidget(window)
 
     window.on_series_selected(window.series_model.index(0, 0))
-    season_item = window.tree_model.item(0, 0)
-    ep_item = season_item.child(0, 0)
-    index = window.tree_model.indexFromItem(ep_item)
+    ep_item = window.episode_model.item(0, 0)
+    index = window.episode_model.indexFromItem(ep_item)
 
     ui.play_video.side_effect = Exception("Mocked playback error")
     mock_crit = MagicMock()
     monkeypatch.setattr(ui.QMessageBox, "critical", mock_crit)
 
-    window.on_tree_double_clicked(index)
+    window.on_episode_double_clicked(index)
     mock_crit.assert_called_once()
 
 

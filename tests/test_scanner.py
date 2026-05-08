@@ -404,38 +404,42 @@ def test_scan_directories_merge_branches(tmp_path, monkeypatch):
     lib = scan_directories([str(root)], existing_library=existing_library)
     assert "Season 2" in lib["Show A"]["seasons"]
 
-def test_clean_series_data_none(tmp_path, monkeypatch):
+
+def test_scan_directories_clean_none(tmp_path, monkeypatch):
     # Hit scanner.py line 91
     from lan_streamer.scanner import scan_directories
-    
+
     root = tmp_path / "root_gap"
     root.mkdir()
     (root / "Show A").mkdir()
-    
+
     # Mock scan_series to return something that clean_series_data returns None for
     monkeypatch.setattr(scanner, "scan_series", lambda *args, **kwargs: {"seasons": {}})
     monkeypatch.setattr(scanner, "clean_series_data", lambda x: None)
-    
+
     res = scan_directories([str(root)])
     assert res == {}
+
 
 def test_scan_series_no_poster_branch(tmp_path, monkeypatch):
     # Hit scanner.py lines 178 and 223
     from lan_streamer.scanner import scan_series
-    
+
     series_dir = tmp_path / "ShowNoPoster"
     series_dir.mkdir()
     (series_dir / "Season 1").mkdir()
     (series_dir / "Season 1" / "S01E01.mkv").touch()
-    
+
     mock_tmdb = MagicMock()
     # No poster_path
-    mock_tmdb.search_series.return_value = {"id": 1, "name": "Show", "overview": "..."} 
-    mock_tmdb.get_seasons.return_value = [{"season_number": 1, "id": 101}] # No poster_path in season either
+    mock_tmdb.search_series.return_value = {"id": 1, "name": "Show", "overview": "..."}
+    mock_tmdb.get_seasons.return_value = [
+        {"season_number": 1, "id": 101}
+    ]  # No poster_path in season either
     mock_tmdb.get_episodes.return_value = []
-    
+
     monkeypatch.setattr(scanner, "tmdb_client", mock_tmdb)
-    
+
     data = scan_series(series_dir)
     assert data["metadata"]["poster_path"] == ""
     assert data["seasons"]["Season 1"]["metadata"]["poster_path"] == ""

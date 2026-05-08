@@ -404,27 +404,31 @@ def test_search_series_two_word_returns_match(tmdb, monkeypatch):
     assert result is not None
     assert result["id"] == 1
 
+
 def test_tmdb_is_similar_word_overlap(tmdb):
     # Hit tmdb.py line 111
     # Need words > 3 and not in common list
     # "Breaking Bad" vs "Bad Breaking" - should match via word overlap
-    assert tmdb._is_similar("Breaking Bad", "Bad Breaking") == True
+    assert tmdb._is_similar("Breaking Bad", "Bad Breaking")
+
 
 def test_tmdb_search_fallback_branches(tmdb, monkeypatch):
     # Hit tmdb.py lines 160-165 (two word fallback)
     call_count = {"n": 0}
+
     def mock_do_search(query):
         call_count["n"] += 1
-        if query == "Show Name": # The two-word fallback
+        if query == "Show Name":  # The two-word fallback
             return [{"id": 1, "name": "Show Name Extra"}]
         return []
-        
+
     monkeypatch.setattr(tmdb, "_do_search", mock_do_search)
     monkeypatch.setattr(tmdb, "_is_similar", lambda a, b: True)
-    
+
     res = tmdb.search_series("Show Name Long Title")
     assert res is not None
     assert res["id"] == 1
+
 
 def test_tmdb_search_first_word_fallback(tmdb, monkeypatch):
     # Hit tmdb.py lines 168-178
@@ -433,11 +437,11 @@ def test_tmdb_search_first_word_fallback(tmdb, monkeypatch):
         if query == "Breaking":
             return [{"id": 1, "name": "Breaking Bad"}]
         return []
-    
+
     monkeypatch.setattr(tmdb, "_do_search", mock_do_search)
     # Ensure similarity returns True for our fallback check
     monkeypatch.setattr(tmdb, "_is_similar", lambda a, b, threshold=0.7: True)
-    
+
     res = tmdb.search_series("Breaking Bad Show")
     assert res is not None
     assert res["id"] == 1

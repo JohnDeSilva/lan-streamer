@@ -155,23 +155,27 @@ def test_sync_watched_from_paths(mock_db_file, monkeypatch):
     # Test with empty set
     assert sync_watched_from_paths(set()) == 0
 
+
 def test_is_less_than_0_2_0_negative_version(mock_db_file, monkeypatch):
     from lan_streamer.db import init_db
     # To hit line 50, we need to mock cursor.fetchone to return a version starting with negative
     # Actually, the function is defined INSIDE init_db. We can just test init_db with a mock version.
-    
+
     with closing(sqlite3.connect(mock_db_file)) as conn:
         conn.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT)")
         conn.execute("INSERT INTO metadata (key, value) VALUES ('version', '-1.0.0')")
         conn.commit()
-    
+
     # This should trigger recreation
     recreated = init_db()
     assert recreated is True
 
+
 def test_sync_watched_from_paths_exception(monkeypatch):
     from lan_streamer.db import sync_watched_from_paths
+
     def mock_get_conn():
         raise Exception("DB Error")
+
     monkeypatch.setattr("lan_streamer.db.get_connection", mock_get_conn)
     assert sync_watched_from_paths({"/path"}) == 0

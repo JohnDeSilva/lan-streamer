@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QListView,
     QMenu,
     QStackedWidget,
-    QTreeView,
     QCheckBox,
     QFileDialog,
 )
@@ -481,17 +480,28 @@ class MainWindow(QMainWindow):
         top_bar.addWidget(self.detail_title, 1)
         detail_layout.addLayout(top_bar)
 
-        self.tree_view = QTreeView()
-        self.tree_view.setHeaderHidden(True)
-        self.tree_view.setAlternatingRowColors(True)
-        self.tree_model = QStandardItemModel()
-        self.tree_view.setModel(self.tree_model)
+        # Column View for Details
+        column_layout = QHBoxLayout()
+        detail_layout.addLayout(column_layout)
 
-        self.tree_view.doubleClicked.connect(self.on_tree_double_clicked)
-        self.tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tree_view.customContextMenuRequested.connect(self.show_tree_context_menu)
+        # Seasons Column
+        self.season_view = QListView()
+        self.season_view.setFixedWidth(200)
+        self.season_model = QStandardItemModel()
+        self.season_view.setModel(self.season_model)
+        self.season_view.clicked.connect(self.on_season_selected)
+        column_layout.addWidget(self.season_view)
 
-        detail_layout.addWidget(self.tree_view)
+        # Episodes Column
+        self.episode_view = QListView()
+        self.episode_model = QStandardItemModel()
+        self.episode_view.setModel(self.episode_model)
+        self.episode_view.doubleClicked.connect(self.on_episode_double_clicked)
+        self.episode_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.episode_view.customContextMenuRequested.connect(
+            self.show_episode_context_menu
+        )
+        column_layout.addWidget(self.episode_view)
         self.stacked_widget.addWidget(self.detail_view)
 
     def refresh_libraries_combo(self):
@@ -741,33 +751,44 @@ class MainWindow(QMainWindow):
         self.current_series = series_name
         self.detail_title.setText(series_name)
 
-        self.tree_model.clear()
+        self.season_model.clear()
+        self.episode_model.clear()
 
         seasons = self.library.get(series_name, {}).get("seasons", {})
-        for season_name, season_data in sorted(seasons.items()):
+        for season_name in sorted(seasons.keys()):
             season_item = QStandardItem(season_name)
             season_item.setEditable(False)
+            self.season_model.appendRow(season_item)
 
-            font = season_item.font()
-            font.setBold(True)
-            font.setPointSize(14)
-            season_item.setFont(font)
+        # Automatically select first season if available
+        if self.season_model.rowCount() > 0:
+            first_index = self.season_model.index(0, 0)
+            self.season_view.setCurrentIndex(first_index)
+            self.on_season_selected(first_index)
 
-            episodes = season_data.get("episodes", [])
-            for episode in episodes:
-                watched_indicator = "[✓] " if episode.get("watched") else "[ ] "
-                episode_item = QStandardItem(f"{watched_indicator}{episode['name']}")
-                episode_item.setEditable(False)
-                episode_item.setData(episode, Qt.ItemDataRole.UserRole)
-                season_item.appendRow(episode_item)
-
-            self.tree_model.appendRow(season_item)
-
-        self.tree_view.expandAll()
         self.stacked_widget.setCurrentIndex(1)
 
-    def on_tree_double_clicked(self, index):
-        item = self.tree_model.itemFromIndex(index)
+    def on_season_selected(self, index):
+        item = self.season_model.itemFromIndex(index)
+        if not item or not self.current_series:
+            return
+
+        season_name = item.text()
+        self.episode_model.clear()
+
+        seasons = self.library.get(self.current_series, {}).get("seasons", {})
+        season_data = seasons.get(season_name, {})
+        episodes = season_data.get("episodes", [])
+
+        for episode in episodes:
+            watched_indicator = "[✓] " if episode.get("watched") else "[ ] "
+            episode_item = QStandardItem(f"{watched_indicator}{episode['name']}")
+            episode_item.setEditable(False)
+            episode_item.setData(episode, Qt.ItemDataRole.UserRole)
+            self.episode_model.appendRow(episode_item)
+
+    def on_episode_double_clicked(self, index):
+        item = self.episode_model.itemFromIndex(index)
         if not item:
             return
         episode_data = item.data(Qt.ItemDataRole.UserRole)
@@ -778,22 +799,22 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not play video:\n{e}")
 
-    def show_tree_context_menu(self, position):
-        index = self.tree_view.indexAt(position)
+    def show_episode_context_menu(self, position):
+        index = self.episode_view.indexAt(position)
         if not index.isValid():
             return
-        item = self.tree_model.itemFromIndex(index)
+        item = self.episode_model.itemFromIndex(index)
 
         episode_data = item.data(Qt.ItemDataRole.UserRole)
         if not episode_data:
-            return  # Probably a season row
+            return
 
         is_watched = episode_data.get("watched", False)
         menu = QMenu()
         action_text = "Mark as Unwatched" if is_watched else "Mark as Watched"
         toggle_action = menu.addAction(action_text)
 
-        action = menu.exec(self.tree_view.viewport().mapToGlobal(position))
+        action = menu.exec(self.episode_view.viewport().mapToGlobal(position))
         if action == toggle_action:
             self.toggle_watched_status(item, force_status=not is_watched)
 
