@@ -1,21 +1,15 @@
-import pytest
 from lan_streamer import db
 from sqlalchemy import text
 
 
-@pytest.fixture
-def mock_db_file(tmp_path):
-    return tmp_path / "test_perf.db"
-
-
-def test_wal_mode_enabled(mock_db_file):
+def test_wal_mode_enabled():
     db.init_db()
     with db.get_session() as session:
         result = session.execute(text("PRAGMA journal_mode")).fetchone()
         assert result[0].lower() == "wal"
 
 
-def test_load_library_correctness_complex(mock_db_file):
+def test_load_library_correctness_complex():
     db.init_db()
 
     test_lib = {
@@ -97,7 +91,7 @@ def test_load_library_correctness_complex(mock_db_file):
     assert len(show_b["seasons"]) == 0
 
 
-def test_sync_watched_names_bulk(mock_db_file):
+def test_sync_watched_names_bulk():
     db.init_db()
     test_lib = {
         "Show": {
@@ -122,7 +116,7 @@ def test_sync_watched_names_bulk(mock_db_file):
     assert all(ep["watched"] for ep in eps)
 
 
-def test_sync_watched_ids_paths(mock_db_file):
+def test_sync_watched_ids_paths():
     db.init_db()
     test_lib = {
         "Show": {

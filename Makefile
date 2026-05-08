@@ -18,8 +18,10 @@ lint:
 	$(RUFF) format .
 	$(RUFF) check --fix .
 
-test: migrate
-	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "not load" tests/
+test:
+	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src $(PYTHON) -m alembic upgrade head
+	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "not load" tests/
+	rm -f ./test_library.db ./test_library.db-wal ./test_library.db-shm
 
 load-test: migrate
 	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "load" -s --no-cov tests/
@@ -28,7 +30,7 @@ build-mac:
 	uv run pyinstaller --name "Lan Streamer" --windowed --noconfirm src/lan_streamer/main.py
 
 clean:
-	rm -rf build/ dist/ *.spec .pytest_cache .ruff_cache .venv *.log
+	rm -rf build/ dist/ *.spec .pytest_cache .ruff_cache *.log *.db*
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 
 revision:
