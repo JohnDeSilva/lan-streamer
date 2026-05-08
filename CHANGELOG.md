@@ -1,3 +1,22 @@
+## 0.5.0 (2026-05-08)
+
+### Feat
+
+- **jellyfin**: adds match to jellyfin optino to sync watch history auto match does not work
+- **ui**: adds mark season as watched feature
+
+### Fix
+
+- **ui**: fix season sort to be numeric
+
+### Refactor
+
+- **ui,scanner**: improve ui updates during scan
+
+### Perf
+
+- **db**: db efficeincy updates
+
 ## 0.4.1 (2026-05-07)
 
 ### Fix
