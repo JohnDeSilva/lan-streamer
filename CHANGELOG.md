@@ -1,3 +1,20 @@
+## 0.4.0 (2026-05-07)
+
+### Feat
+
+- **ui**: adds lock metadata checkbox to series view to stop metadata overwrite
+- **logging**: update logging to rotate logs daily
+- **ui**: display tmdb names for episodes instead of file names
+- **ui**: changes Series view from tree to column style
+- **tmdb**: use TMDB directly to get metadata and posters instead of jellyfin
+- **ui**: makes sort and filter persist across application restarts
+- **scanner**: updates application to sync all libraries on startup
+
+### Fix
+
+- **ui**: cleans up settings drop down
+- **db**: update db migration pattern to versioned steps
+
 ## 0.3.1 (2026-05-06)
 
 ### Fix
