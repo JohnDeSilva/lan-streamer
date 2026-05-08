@@ -1,14 +1,25 @@
 .PHONY: run lint test build-mac clean
 
+UV := $(shell command -v uv 2> /dev/null)
+ifeq ($(UV),)
+	UV_RUN := .venv/bin/python -m
+	PYTEST := .venv/bin/pytest
+	RUFF := .venv/bin/ruff
+else
+	UV_RUN := uv run
+	PYTEST := uv run pytest
+	RUFF := uv run ruff
+endif
+
 run:
-	PYTHONPATH=src uv run python -m lan_streamer.main
+	PYTHONPATH=src $(UV_RUN) lan_streamer.main
 
 lint:
-	uv run ruff format .
-	uv run ruff check --fix .
+	$(RUFF) format .
+	$(RUFF) check --fix .
 
 test:
-	PYTHONPATH=src uv run pytest tests/
+	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) tests/
 
 build-mac:
 	uv run pyinstaller --name "Lan Streamer" --windowed --noconfirm src/lan_streamer/main.py

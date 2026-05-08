@@ -1,15 +1,14 @@
 import json
 import pytest
+from unittest.mock import patch
 from lan_streamer.config import Config
 
 
 @pytest.fixture
-def mock_config_file(tmp_path, monkeypatch):
+def mock_config_file(tmp_path):
     test_config_path = tmp_path / "config.json"
-    import lan_streamer.config
-
-    monkeypatch.setattr(lan_streamer.config, "CONFIG_FILE", test_config_path)
-    return test_config_path
+    with patch("lan_streamer.config.CONFIG_FILE", test_config_path):
+        yield test_config_path
 
 
 def test_config_initialization(mock_config_file):
@@ -84,26 +83,26 @@ def test_config_add_remove_library(mock_config_file):
     assert "NewLib" not in config.libraries
 
 
-def test_config_save_error(mock_config_file, monkeypatch):
+def test_config_save_error(mock_config_file):
     config = Config()
 
     def mock_open(*args, **kwargs):
         raise OSError("Permission denied")
 
-    monkeypatch.setattr("builtins.open", mock_open)
-    # Should not raise exception
-    config.save()
+    with patch("builtins.open", mock_open):
+        # Should not raise exception
+        config.save()
 
 
-def test_config_load_error(mock_config_file, monkeypatch):
+def test_config_load_error(mock_config_file):
     mock_config_file.touch()
 
     def mock_open(*args, **kwargs):
         raise OSError("Permission denied")
 
-    monkeypatch.setattr("builtins.open", mock_open)
-    config = Config()
-    assert config.libraries == {}
+    with patch("builtins.open", mock_open):
+        config = Config()
+        assert config.libraries == {}
 
 
 def test_config_load_no_keys(mock_config_file):

@@ -1,14 +1,15 @@
 import sqlite3
 import pytest
+from unittest.mock import patch
 from contextlib import closing
 from lan_streamer import db
 
 
 @pytest.fixture
-def mock_db_file(tmp_path, monkeypatch):
+def mock_db_file(tmp_path):
     test_db_path = tmp_path / "test.db"
-    monkeypatch.setattr(db, "DB_FILE", test_db_path)
-    return test_db_path
+    with patch("lan_streamer.db.DB_FILE", test_db_path):
+        yield test_db_path
 
 
 def test_init_db(mock_db_file):
@@ -96,19 +97,18 @@ def test_update_watched_status(mock_db_file):
     assert eps[0]["watched"] is True
 
 
-def test_db_error_handling(mock_db_file, monkeypatch):
+def test_db_error_handling(mock_db_file):
     def mock_connect(*args, **kwargs):
         import sqlite3
 
         raise sqlite3.OperationalError("Mocked error")
 
-    monkeypatch.setattr("sqlite3.connect", mock_connect)
-
-    # These should catch the error and log it, not crash
-    db.init_db()
-    assert db.load_library("Lib") == {}
-    db.save_library("Lib", {})
-    db.update_episode_watched_status("path", True)
+    with patch("sqlite3.connect", mock_connect):
+        # These should catch the error and log it, not crash
+        db.init_db()
+        assert db.load_library("Lib") == {}
+        db.save_library("Lib", {})
+        db.update_episode_watched_status("path", True)
 
 
 def test_db_version_sync():
@@ -117,7 +117,7 @@ def test_db_version_sync():
     assert db.DB_VERSION == __version__
 
 
-def test_sync_watched_from_paths(mock_db_file, monkeypatch):
+def test_sync_watched_from_paths(mock_db_file):
     from lan_streamer.db import sync_watched_from_jellyfin_data, get_connection
 
     db.init_db()
@@ -165,7 +165,7 @@ def test_sync_watched_from_paths(mock_db_file, monkeypatch):
     assert sync_watched_from_jellyfin_data(set(), set(), set()) == 0
 
 
-def test_is_less_than_0_2_0_negative_version(mock_db_file, monkeypatch):
+def test_is_less_than_0_2_0_negative_version(mock_db_file):
     from lan_streamer.db import init_db
     # To hit line 50, we need to mock cursor.fetchone to return a version starting with negative
     # Actually, the function is defined INSIDE init_db. We can just test init_db with a mock version.
@@ -180,14 +180,14 @@ def test_is_less_than_0_2_0_negative_version(mock_db_file, monkeypatch):
     assert recreated is True
 
 
-def test_sync_watched_from_paths_exception(monkeypatch):
+def test_sync_watched_from_paths_exception():
     from lan_streamer.db import sync_watched_from_jellyfin_data
 
     def mock_get_conn():
         raise Exception("DB Error")
 
-    monkeypatch.setattr("lan_streamer.db.get_connection", mock_get_conn)
-    assert sync_watched_from_jellyfin_data(set(), {"/path"}, set()) == 0
+    with patch("lan_streamer.db.get_connection", mock_get_conn):
+        assert sync_watched_from_jellyfin_data(set(), {"/path"}, set()) == 0
 
 
 def test_get_all_episodes_with_jellyfin_id(mock_db_file):

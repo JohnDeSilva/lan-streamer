@@ -1,13 +1,14 @@
 import pytest
+from unittest.mock import patch
 from contextlib import closing
 from lan_streamer import db
 
 
 @pytest.fixture
-def mock_db_file(tmp_path, monkeypatch):
+def mock_db_file(tmp_path):
     test_db_path = tmp_path / "test_perf.db"
-    monkeypatch.setattr(db, "DB_FILE", test_db_path)
-    return test_db_path
+    with patch("lan_streamer.db.DB_FILE", test_db_path):
+        yield test_db_path
 
 
 def test_wal_mode_enabled(mock_db_file):

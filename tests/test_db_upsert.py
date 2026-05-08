@@ -1,16 +1,17 @@
 import pytest
+from unittest.mock import patch
 from lan_streamer import db
 import os
 
 
 @pytest.fixture(autouse=True)
-def setup_test_db(tmp_path, monkeypatch):
+def setup_test_db(tmp_path):
     test_db = tmp_path / "test_library.db"
-    monkeypatch.setattr(db, "DB_FILE", test_db)
-    db.init_db()
-    yield
-    if test_db.exists():
-        os.remove(test_db)
+    with patch("lan_streamer.db.DB_FILE", test_db):
+        db.init_db()
+        yield
+        if test_db.exists():
+            os.remove(test_db)
 
 
 def test_save_library_upsert():

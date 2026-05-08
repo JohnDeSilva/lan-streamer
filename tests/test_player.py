@@ -17,22 +17,20 @@ def test_play_video_file_not_found():
         play_video("/nonexistent/file.mp4")
 
 
-def test_play_video_win32(tmp_path, monkeypatch):
+def test_play_video_win32(tmp_path):
     video_file = tmp_path / "test.mkv"
     video_file.touch()
-    monkeypatch.setattr("sys.platform", "win32")
 
-    with patch("subprocess.Popen") as mock_popen:
+    with patch("sys.platform", "win32"), patch("subprocess.Popen") as mock_popen:
         play_video(str(video_file))
         mock_popen.assert_called_once_with(["vlc", str(video_file)])
 
 
-def test_play_video_darwin(tmp_path, monkeypatch):
+def test_play_video_darwin(tmp_path):
     video_file = tmp_path / "test.mkv"
     video_file.touch()
-    monkeypatch.setattr("sys.platform", "darwin")
 
-    with patch("subprocess.Popen") as mock_popen:
+    with patch("sys.platform", "darwin"), patch("subprocess.Popen") as mock_popen:
         play_video(str(video_file))
         mock_popen.assert_called_once_with(["open", "-a", "VLC", str(video_file)])
 

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from PySide6.QtWidgets import QApplication, QPushButton
 from PySide6.QtCore import Qt
 from lan_streamer import ui
@@ -21,78 +21,74 @@ def app(qtbot):
 
 
 @pytest.fixture
-def mock_dependencies(monkeypatch):
+def mock_dependencies():
     mock_db = MagicMock()
     mock_db.natural_sort_key = ui.db.natural_sort_key
-    monkeypatch.setattr(ui, "db", mock_db)
-    monkeypatch.setattr(ui, "config", config)
-    monkeypatch.setattr(ui, "jellyfin_client", MagicMock())
-    monkeypatch.setattr(ui, "tmdb_client", MagicMock())
-    monkeypatch.setattr(ui, "play_video", MagicMock())
-    monkeypatch.setattr(ui, "scan_directories", MagicMock())
 
-    # Globally mock ScanWorker to prevent thread issues in tests
-    ui.OriginalScanWorker = ui.ScanWorker
     mock_worker_class = MagicMock()
     mock_worker = MagicMock()
     mock_worker_class.return_value = mock_worker
-    monkeypatch.setattr(ui, "ScanWorker", mock_worker_class)
 
-    # Globally mock SyncAllWorker
-    ui.OriginalSyncAllWorker = ui.SyncAllWorker
     mock_sync_worker_class = MagicMock()
     mock_sync_worker = MagicMock()
     mock_sync_worker_class.return_value = mock_sync_worker
-    monkeypatch.setattr(ui, "SyncAllWorker", mock_sync_worker_class)
 
-    # Globally mock JellyfinPullWorker
     mock_pull_worker_class = MagicMock()
     mock_pull_worker = MagicMock()
     mock_pull_worker_class.return_value = mock_pull_worker
-    monkeypatch.setattr(ui, "JellyfinPullWorker", mock_pull_worker_class)
 
-    # Globally mock JellyfinPushWorker
     mock_push_worker_class = MagicMock()
     mock_push_worker = MagicMock()
     mock_push_worker_class.return_value = mock_push_worker
-    monkeypatch.setattr(ui, "JellyfinPushWorker", mock_push_worker_class)
 
-    # Prevent dialog boxes from appearing during tests
-    monkeypatch.setattr(ui, "QMessageBox", MagicMock())
-    monkeypatch.setattr(ui, "QFileDialog", MagicMock())
-    monkeypatch.setattr(ui, "QInputDialog", MagicMock())
+    # Globally save original workers BEFORE patching them
+    ui.OriginalScanWorker = ui.ScanWorker
+    ui.OriginalSyncAllWorker = ui.SyncAllWorker
 
-    config.libraries = {"TestLib": ["/path1"]}
-    config.jellyfin_url = ""
-    config.jellyfin_api_key = ""
-    config.tmdb_api_key = ""
-    # Don't auto-run history pull on start in tests
-    config.sync_history_on_start = False
-    config.sort_mode = "Alphabetical"
-    config.filter_unwatched = False
+    with (
+        patch.object(ui, "db", mock_db),
+        patch.object(ui, "config", config),
+        patch.object(ui, "jellyfin_client", MagicMock()),
+        patch.object(ui, "tmdb_client", MagicMock()),
+        patch.object(ui, "play_video", MagicMock()),
+        patch.object(ui, "scan_directories", MagicMock()),
+        patch.object(ui, "ScanWorker", mock_worker_class),
+        patch.object(ui, "SyncAllWorker", mock_sync_worker_class),
+        patch.object(ui, "JellyfinPullWorker", mock_pull_worker_class),
+        patch.object(ui, "JellyfinPushWorker", mock_push_worker_class),
+    ):
+        config.libraries = {"TestLib": ["/path1"]}
+        config.jellyfin_url = ""
+        config.jellyfin_api_key = ""
+        config.tmdb_api_key = ""
+        # Don't auto-run history pull on start in tests
+        config.sync_history_on_start = False
+        config.sort_mode = "Alphabetical"
+        config.filter_unwatched = False
 
-    # Mock DB response
-    ui.db.load_library.return_value = {
-        "Series A": {
-            "metadata": {"jellyfin_id": "1", "poster_path": ""},
-            "seasons": {
-                "Season 1": {
-                    "metadata": {"jellyfin_id": "2", "poster_path": ""},
-                    "episodes": [
-                        {
-                            "name": "Ep1",
-                            "path": "/path1",
-                            "jellyfin_id": "3",
-                            "watched": False,
-                        }
-                    ],
-                }
-            },
+        # Mock DB response
+        ui.db.load_library.return_value = {
+            "Series A": {
+                "metadata": {"jellyfin_id": "1", "poster_path": ""},
+                "seasons": {
+                    "Season 1": {
+                        "metadata": {"jellyfin_id": "2", "poster_path": ""},
+                        "episodes": [
+                            {
+                                "name": "Ep1",
+                                "path": "/path1",
+                                "jellyfin_id": "3",
+                                "watched": False,
+                            }
+                        ],
+                    }
+                },
+            }
         }
-    }
+        yield
 
 
-def test_library_settings_dialog(qtbot, mock_dependencies, monkeypatch):
+def test_library_settings_dialog(qtbot, mock_dependencies):
     dialog = LibrarySettingsDialog()
     qtbot.addWidget(dialog)
 
@@ -100,19 +96,22 @@ def test_library_settings_dialog(qtbot, mock_dependencies, monkeypatch):
     assert dialog.library_combo.currentText() == "TestLib"
 
     # Add new library
-    monkeypatch.setattr(ui.QInputDialog, "getText", lambda *args: ("NewLib", True))
-    dialog.add_library()
+    with patch("lan_streamer.ui.QInputDialog.getText", return_value=("NewLib", True)):
+        dialog.add_library()
     assert dialog.library_combo.count() == 2
     assert "NewLib" in config.libraries
 
     # Try adding existing
     mock_warning = MagicMock()
-    monkeypatch.setattr(ui.QMessageBox, "warning", mock_warning)
-    dialog.add_library()
+    with (
+        patch("lan_streamer.ui.QInputDialog.getText", return_value=("TestLib", True)),
+        patch("lan_streamer.ui.QMessageBox.warning", mock_warning),
+    ):
+        dialog.add_library()
 
     # Add dir
-    monkeypatch.setattr(ui.QFileDialog, "getExistingDirectory", lambda *args: "/tmp")
-    dialog.add_dir()
+    with patch("lan_streamer.ui.QFileDialog.getExistingDirectory", return_value="/tmp"):
+        dialog.add_dir()
     assert "/tmp" in config.libraries["NewLib"]
 
     # Remove dir
@@ -121,10 +120,11 @@ def test_library_settings_dialog(qtbot, mock_dependencies, monkeypatch):
     assert "/tmp" not in config.libraries["NewLib"]
 
     # Remove library
-    monkeypatch.setattr(
-        ui.QMessageBox, "question", lambda *args: ui.QMessageBox.StandardButton.Yes
-    )
-    dialog.remove_library()
+    mock_msgbox = MagicMock()
+    mock_msgbox.StandardButton.Yes = ui.QMessageBox.StandardButton.Yes
+    mock_msgbox.question.return_value = ui.QMessageBox.StandardButton.Yes
+    with patch("lan_streamer.ui.QMessageBox", mock_msgbox):
+        dialog.remove_library()
     assert "NewLib" not in config.libraries
 
     # Test sync history on startup checkbox
@@ -171,7 +171,7 @@ def test_mainwindow_play_video(qtbot, mock_dependencies):
     assert ep_item.text() == "[✓] Ep1"
 
 
-def test_mainwindow_force_scan(qtbot, mock_dependencies, monkeypatch):
+def test_mainwindow_force_scan(qtbot, mock_dependencies):
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -184,24 +184,23 @@ def test_mainwindow_force_scan(qtbot, mock_dependencies, monkeypatch):
     ui.db.save_library.assert_called_once_with("TestLib", {})
 
 
-def test_mainwindow_force_scan_error(qtbot, mock_dependencies, monkeypatch):
+def test_mainwindow_force_scan_error(qtbot, mock_dependencies):
     window = MainWindow()
     qtbot.addWidget(window)
 
     mock_crit = MagicMock()
-    monkeypatch.setattr(ui.QMessageBox, "critical", mock_crit)
+    with patch("lan_streamer.ui.QMessageBox.critical", mock_crit):
+        window.force_scan_library()
+        ui.ScanWorker.return_value.start.assert_called_once()
 
-    window.force_scan_library()
-    ui.ScanWorker.return_value.start.assert_called_once()
+        # Manually trigger error slot
+        window.on_scan_error("Mocked scan error")
 
-    # Manually trigger error slot
-    window.on_scan_error("Mocked scan error")
-
-    mock_crit.assert_called_once()
+        mock_crit.assert_called_once()
     assert window.refresh_action.isEnabled() is True
 
 
-def test_scan_worker_logic(mock_dependencies, monkeypatch):
+def test_scan_worker_logic(mock_dependencies):
     import lan_streamer.ui as ui_mod
 
     # Use the original class saved in the fixture
@@ -229,7 +228,7 @@ def test_scan_worker_logic(mock_dependencies, monkeypatch):
     mock_error.assert_not_called()
 
 
-def test_scan_worker_error_logic(mock_dependencies, monkeypatch):
+def test_scan_worker_error_logic(mock_dependencies):
     import lan_streamer.ui as ui_mod
 
     ScanWorker = ui_mod.OriginalScanWorker
@@ -263,69 +262,71 @@ def test_toggle_watched_status(qtbot, mock_dependencies):
     ui.jellyfin_client.set_watched_status.assert_called_with("3", True)
 
 
-def test_ui_save_jellyfin_settings(qtbot, mock_dependencies, monkeypatch):
+def test_ui_save_jellyfin_settings(qtbot, mock_dependencies):
     dialog = JellyfinSettingsDialog()
     qtbot.addWidget(dialog)
     dialog.jellyfin_url_input.setText("http://new-url")
     dialog.jellyfin_api_key_input.setText("new-key")
 
     mock_info = MagicMock()
-    monkeypatch.setattr(ui.QMessageBox, "information", mock_info)
-    dialog.save_jellyfin_settings()
+    with patch("lan_streamer.ui.QMessageBox.information", mock_info):
+        dialog.save_jellyfin_settings()
 
     assert config.jellyfin_url == "http://new-url"
     assert config.jellyfin_api_key == "new-key"
 
 
-def test_ui_add_dir_errors(qtbot, mock_dependencies, monkeypatch):
+def test_ui_add_dir_errors(qtbot, mock_dependencies):
     dialog = LibrarySettingsDialog()
     qtbot.addWidget(dialog)
 
     # Empty library
     dialog.library_combo.clear()
     mock_warning = MagicMock()
-    monkeypatch.setattr(ui.QMessageBox, "warning", mock_warning)
-    monkeypatch.setattr(ui.QFileDialog, "getExistingDirectory", lambda *args: "")
-    dialog.add_dir()
+    with (
+        patch("lan_streamer.ui.QMessageBox.warning", mock_warning),
+        patch("lan_streamer.ui.QFileDialog.getExistingDirectory", return_value=""),
+    ):
+        dialog.add_dir()
     mock_warning.assert_called()
 
 
-def test_jellyfin_settings_dialog_full(qtbot, mock_dependencies, monkeypatch):
+def test_jellyfin_settings_dialog_full(qtbot, mock_dependencies):
     dialog = JellyfinSettingsDialog()
     qtbot.addWidget(dialog)
 
     # Mock QMessageBox
     mock_info = MagicMock()
-    monkeypatch.setattr(ui.QMessageBox, "information", mock_info)
-
-    # Jellyfin settings
-    dialog.jellyfin_url_input.setText("http://newurl")
-    dialog.jellyfin_api_key_input.setText("newkey")
-    dialog.save_jellyfin_settings()
+    with patch("lan_streamer.ui.QMessageBox.information", mock_info):
+        # Jellyfin settings
+        dialog.jellyfin_url_input.setText("http://newurl")
+        dialog.jellyfin_api_key_input.setText("newkey")
+        dialog.save_jellyfin_settings()
 
     assert config.jellyfin_url == "http://newurl"
     assert config.jellyfin_api_key == "newkey"
     mock_info.assert_called_once()
 
 
-def test_jellyfin_settings_test_connection(qtbot, mock_dependencies, monkeypatch):
+def test_jellyfin_settings_test_connection(qtbot, mock_dependencies):
     dialog = JellyfinSettingsDialog()
     qtbot.addWidget(dialog)
 
     # Mock QMessageBox
     mock_info = MagicMock()
     mock_warn = MagicMock()
-    monkeypatch.setattr(ui.QMessageBox, "information", mock_info)
-    monkeypatch.setattr(ui.QMessageBox, "warning", mock_warn)
+    with (
+        patch("lan_streamer.ui.QMessageBox.information", mock_info),
+        patch("lan_streamer.ui.QMessageBox.warning", mock_warn),
+    ):
+        # Mock validate_credentials
+        ui.jellyfin_client.validate_credentials.return_value = (True, "Success")
+        dialog.test_connection()
+        mock_info.assert_called_once_with(dialog, "Success", "Success")
 
-    # Mock validate_credentials
-    ui.jellyfin_client.validate_credentials.return_value = (True, "Success")
-    dialog.test_connection()
-    mock_info.assert_called_once_with(dialog, "Success", "Success")
-
-    ui.jellyfin_client.validate_credentials.return_value = (False, "Failed")
-    dialog.test_connection()
-    mock_warn.assert_called_once_with(dialog, "Connection Failed", "Failed")
+        ui.jellyfin_client.validate_credentials.return_value = (False, "Failed")
+        dialog.test_connection()
+        mock_warn.assert_called_once_with(dialog, "Connection Failed", "Failed")
 
 
 def test_mainwindow_force_scan_empty(qtbot, mock_dependencies):
@@ -349,7 +350,7 @@ def test_mainwindow_selection_errors(qtbot, mock_dependencies):
     window.on_episode_double_clicked(window.episode_model.index(99, 99))
 
 
-def test_mainwindow_context_menu(qtbot, mock_dependencies, monkeypatch):
+def test_mainwindow_context_menu(qtbot, mock_dependencies):
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -360,18 +361,21 @@ def test_mainwindow_context_menu(qtbot, mock_dependencies, monkeypatch):
         return mock_menu.actions()[0]
 
     mock_menu = ui.QMenu()
-    monkeypatch.setattr(ui, "QMenu", lambda: mock_menu)
-    monkeypatch.setattr(mock_menu, "exec", mock_exec)
+    with (
+        patch("lan_streamer.ui.QMenu", return_value=mock_menu),
+        patch.object(mock_menu, "exec", mock_exec),
+    ):
+        ep_item = window.episode_model.item(0, 0)
+        ep_index = window.episode_model.indexFromItem(ep_item)
 
-    ep_item = window.episode_model.item(0, 0)
-    ep_index = window.episode_model.indexFromItem(ep_item)
+        window.show_episode_context_menu(
+            window.episode_view.visualRect(ep_index).center()
+        )
+        # The action toggles watched status
+        assert ep_item.text() == "[✓] Ep1"
 
-    window.show_episode_context_menu(window.episode_view.visualRect(ep_index).center())
-    # The action toggles watched status
-    assert ep_item.text() == "[✓] Ep1"
 
-
-def test_mainwindow_play_video_error(qtbot, mock_dependencies, monkeypatch):
+def test_mainwindow_play_video_error(qtbot, mock_dependencies):
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -381,13 +385,12 @@ def test_mainwindow_play_video_error(qtbot, mock_dependencies, monkeypatch):
 
     ui.play_video.side_effect = Exception("Mocked playback error")
     mock_crit = MagicMock()
-    monkeypatch.setattr(ui.QMessageBox, "critical", mock_crit)
+    with patch("lan_streamer.ui.QMessageBox.critical", mock_crit):
+        window.on_episode_double_clicked(index)
+        mock_crit.assert_called_once()
 
-    window.on_episode_double_clicked(index)
-    mock_crit.assert_called_once()
 
-
-def test_mainwindow_sorting_and_filtering(qtbot, mock_dependencies, monkeypatch):
+def test_mainwindow_sorting_and_filtering(qtbot, mock_dependencies):
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -526,7 +529,7 @@ def test_poster_delegate(qtbot):
     assert size.width() > 0
 
 
-def test_series_match_dialog(qtbot, mock_dependencies, monkeypatch):
+def test_series_match_dialog(qtbot, mock_dependencies):
     from lan_streamer.ui import SeriesMatchDialog
 
     # TMDB search_series_full returns dicts with 'name'/'year'/'id' (not Jellyfin's Name/ProductionYear)
@@ -548,11 +551,11 @@ def test_series_match_dialog(qtbot, mock_dependencies, monkeypatch):
     assert selected["id"] == "match1"
 
     # Click match
-    monkeypatch.setattr(dialog, "accept", lambda: None)
-    qtbot.mouseClick(dialog.ok_button, Qt.MouseButton.LeftButton)
+    with patch.object(dialog, "accept"):
+        qtbot.mouseClick(dialog.ok_button, Qt.MouseButton.LeftButton)
 
 
-def test_mainwindow_manual_match(qtbot, mock_dependencies, monkeypatch, tmp_path):
+def test_mainwindow_manual_match(qtbot, mock_dependencies, tmp_path):
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -575,27 +578,26 @@ def test_mainwindow_manual_match(qtbot, mock_dependencies, monkeypatch, tmp_path
         def get_selected_series(self):
             return mock_selected
 
-    monkeypatch.setattr(ui, "SeriesMatchDialog", MockDialog)
-
     # Mock scanner and cleaner
     mock_new_data = {
         "metadata": {"tmdb_identifier": "new_tmdb_identifier"},
         "seasons": {},
     }
-    monkeypatch.setattr(ui, "scan_series", lambda *args, **kwargs: mock_new_data)
-    monkeypatch.setattr(ui, "clean_series_data", lambda d: d)
 
-    # Mock QMessageBox to prevent popups during tests
-    monkeypatch.setattr(ui, "QMessageBox", MagicMock())
+    with (
+        patch("lan_streamer.ui.SeriesMatchDialog", MockDialog),
+        patch("lan_streamer.ui.scan_series", return_value=mock_new_data),
+        patch("lan_streamer.ui.clean_series_data", side_effect=lambda d: d),
+        patch("lan_streamer.ui.QMessageBox", MagicMock()),
+    ):
+        # Trigger manual match
+        window.match_series_manually(series_name)
 
-    # Trigger manual match
-    window.match_series_manually(series_name)
-
-    assert (
-        window.library[series_name]["metadata"]["tmdb_identifier"]
-        == "new_tmdb_identifier"
-    )
-    ui.db.save_library.assert_called()
+        assert (
+            window.library[series_name]["metadata"]["tmdb_identifier"]
+            == "new_tmdb_identifier"
+        )
+        ui.db.save_library.assert_called()
 
 
 def test_poster_delegate_mouseover(qtbot):
@@ -643,7 +645,7 @@ def test_ui_on_sync_all_finished(qtbot, mock_dependencies):
     assert window.refresh_action.isEnabled()
 
 
-def test_tmdb_settings_dialog(qtbot, mock_dependencies, monkeypatch):
+def test_tmdb_settings_dialog(qtbot, mock_dependencies):
     from lan_streamer.ui import TMDBSettingsDialog
 
     # Mock validate_credentials
@@ -654,35 +656,35 @@ def test_tmdb_settings_dialog(qtbot, mock_dependencies, monkeypatch):
 
     dialog.api_key_input.setText("new-key")
 
-    # Test connection
-    qtbot.mouseClick(
-        dialog.findChild(QPushButton, ""), Qt.MouseButton.LeftButton
-    )  # There are two buttons, findChild might find the first one
-    # More robust: find by text
-    test_btn = [
-        b for b in dialog.findChildren(QPushButton) if b.text() == "Test Connection"
-    ][0]
-    qtbot.mouseClick(test_btn, Qt.MouseButton.LeftButton)
-    ui.tmdb_client.validate_credentials.assert_called_with("new-key")
+    # Mock QMessageBox
+    mock_info = MagicMock()
+    with patch("lan_streamer.ui.QMessageBox.information", mock_info):
+        # Test connection
+        test_btn = [
+            b for b in dialog.findChildren(QPushButton) if b.text() == "Test Connection"
+        ][0]
+        qtbot.mouseClick(test_btn, Qt.MouseButton.LeftButton)
+        ui.tmdb_client.validate_credentials.assert_called_with("new-key")
 
-    # Save
-    save_btn = [b for b in dialog.findChildren(QPushButton) if b.text() == "Save"][0]
-    qtbot.mouseClick(save_btn, Qt.MouseButton.LeftButton)
-    assert config.tmdb_api_key == "new-key"
+        # Save
+        save_btn = [b for b in dialog.findChildren(QPushButton) if b.text() == "Save"][
+            0
+        ]
+        qtbot.mouseClick(save_btn, Qt.MouseButton.LeftButton)
+        assert config.tmdb_api_key == "new-key"
 
 
-def test_mainwindow_sync_all(qtbot, mock_dependencies, monkeypatch):
+def test_mainwindow_sync_all(qtbot, mock_dependencies):
     window = MainWindow()
     qtbot.addWidget(window)
 
     # Mock SyncAllWorker
     mock_worker = MagicMock()
-    monkeypatch.setattr(ui, "SyncAllWorker", lambda: mock_worker)
-
-    window.sync_all_libraries()
-    assert window.sync_worker == mock_worker
-    mock_worker.start.assert_called_once()
-    assert not window.refresh_action.isEnabled()
+    with patch("lan_streamer.ui.SyncAllWorker", return_value=mock_worker):
+        window.sync_all_libraries()
+        assert window.sync_worker == mock_worker
+        mock_worker.start.assert_called_once()
+        assert not window.refresh_action.isEnabled()
 
     # Simulate finish
     window.on_sync_all_finished()
@@ -779,7 +781,7 @@ def test_mainwindow_season_watched_status(qtbot, mock_dependencies):
     assert ui.db.load_library.call_count > 1
 
 
-def test_mainwindow_season_context_menu(qtbot, mock_dependencies, monkeypatch):
+def test_mainwindow_season_context_menu(qtbot, mock_dependencies):
     window = MainWindow()
     qtbot.addWidget(window)
     window.on_series_selected(window.series_model.index(0, 0))
@@ -789,16 +791,17 @@ def test_mainwindow_season_context_menu(qtbot, mock_dependencies, monkeypatch):
     mock_action = MagicMock()
     mock_menu.addAction.return_value = mock_action
     mock_menu.exec.return_value = mock_action
-    monkeypatch.setattr(ui, "QMenu", lambda: mock_menu)
 
-    # Trigger context menu
-    season_index = window.season_model.index(0, 0)
-    window.season_view.indexAt = MagicMock(return_value=season_index)
+    with patch("lan_streamer.ui.QMenu", return_value=mock_menu):
+        # Trigger context menu
+        season_index = window.season_model.index(0, 0)
+        window.season_view.indexAt = MagicMock(return_value=season_index)
 
-    # Mock toggle_season_watched_status to verify it's called
-    window.toggle_season_watched_status = MagicMock()
+        # Mock toggle_season_watched_status to verify it's called
+        with patch.object(window, "toggle_season_watched_status") as mock_toggle:
+            # Call the handler
+            window.show_season_context_menu(
+                window.season_view.viewport().rect().center()
+            )
 
-    # Call the handler
-    window.show_season_context_menu(window.season_view.viewport().rect().center())
-
-    window.toggle_season_watched_status.assert_called_with("Season 1", True)
+            mock_toggle.assert_called_with("Season 1", True)

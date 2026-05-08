@@ -1,18 +1,18 @@
 import pytest
 import requests
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from lan_streamer.tmdb import TMDBClient
 from lan_streamer.config import config
 
 
 @pytest.fixture
-def tmdb(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "tmdb_api_key", "test-tmdb-key")
-    import lan_streamer.tmdb
-
-    monkeypatch.setattr(lan_streamer.tmdb, "CACHE_DIR", tmp_path)
-    client = TMDBClient()
-    return client
+def tmdb(tmp_path):
+    with (
+        patch.object(config, "tmdb_api_key", "test-tmdb-key"),
+        patch("lan_streamer.tmdb.CACHE_DIR", tmp_path),
+    ):
+        client = TMDBClient()
+        yield client
 
 
 # ------------------------------------------------------------------
@@ -48,12 +48,12 @@ def test_params_with_key(tmdb):
     assert params["query"] == "test"
 
 
-def test_params_without_key(monkeypatch):
-    monkeypatch.setattr(config, "tmdb_api_key", "")
-    client = TMDBClient()
-    params = client._params({"page": 1})
-    assert "api_key" not in params
-    assert params["page"] == 1
+def test_params_without_key():
+    with patch.object(config, "tmdb_api_key", ""):
+        client = TMDBClient()
+        params = client._params({"page": 1})
+        assert "api_key" not in params
+        assert params["page"] == 1
 
 
 # ------------------------------------------------------------------
@@ -154,10 +154,10 @@ def test_search_series_full(tmdb):
     assert len(results) == 2
 
 
-def test_search_series_full_not_configured(monkeypatch):
-    monkeypatch.setattr(config, "tmdb_api_key", "")
-    client = TMDBClient()
-    assert client.search_series_full("anything") == []
+def test_search_series_full_not_configured():
+    with patch.object(config, "tmdb_api_key", ""):
+        client = TMDBClient()
+        assert client.search_series_full("anything") == []
 
 
 # ------------------------------------------------------------------
@@ -271,46 +271,43 @@ def test_get_episodes_error(tmdb):
 # ------------------------------------------------------------------
 
 
-def test_download_image_full_url(tmdb, tmp_path, monkeypatch):
-    import lan_streamer.tmdb
+def test_download_image_full_url(tmdb, tmp_path):
 
-    monkeypatch.setattr(lan_streamer.tmdb, "CACHE_DIR", tmp_path)
+    with patch("lan_streamer.tmdb.CACHE_DIR", tmp_path):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"fake-image-data"
+        tmdb.session.get = MagicMock(return_value=mock_resp)
 
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.content = b"fake-image-data"
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+        path = tmdb.download_image(
+            "https://image.tmdb.org/t/p/w500/abc.jpg", "tmdb_series_123"
+        )
+        assert path == str(tmp_path / "tmdb_series_123.jpg")
+        assert (tmp_path / "tmdb_series_123.jpg").read_bytes() == b"fake-image-data"
 
-    path = tmdb.download_image(
-        "https://image.tmdb.org/t/p/w500/abc.jpg", "tmdb_series_123"
-    )
-    assert path == str(tmp_path / "tmdb_series_123.jpg")
-    assert (tmp_path / "tmdb_series_123.jpg").read_bytes() == b"fake-image-data"
-
-    # Second call should return cached path without re-downloading
-    tmdb.session.get.reset_mock()
-    path2 = tmdb.download_image(
-        "https://image.tmdb.org/t/p/w500/abc.jpg", "tmdb_series_123"
-    )
-    assert path2 == str(tmp_path / "tmdb_series_123.jpg")
-    tmdb.session.get.assert_not_called()
+        # Second call should return cached path without re-downloading
+        tmdb.session.get.reset_mock()
+        path2 = tmdb.download_image(
+            "https://image.tmdb.org/t/p/w500/abc.jpg", "tmdb_series_123"
+        )
+        assert path2 == str(tmp_path / "tmdb_series_123.jpg")
+        tmdb.session.get.assert_not_called()
 
 
-def test_download_image_bare_path(tmdb, tmp_path, monkeypatch):
+def test_download_image_bare_path(tmdb, tmp_path):
     """TMDB returns /abc.jpg — client should prepend the CDN base URL."""
-    import lan_streamer.tmdb
 
-    monkeypatch.setattr(lan_streamer.tmdb, "CACHE_DIR", tmp_path)
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.content = b"poster-bytes"
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    with patch("lan_streamer.tmdb.CACHE_DIR", tmp_path):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"poster-bytes"
+        tmdb.session.get = MagicMock(return_value=mock_resp)
 
-    path = tmdb.download_image("/abc.jpg", "poster_key")
-    assert path == str(tmp_path / "poster_key.jpg")
-    # Verify it used the CDN base URL
-    called_url = tmdb.session.get.call_args[0][0]
-    assert called_url.startswith("https://image.tmdb.org")
+        path = tmdb.download_image("/abc.jpg", "poster_key")
+        assert path == str(tmp_path / "poster_key.jpg")
+        # Verify it used the CDN base URL
+        called_url = tmdb.session.get.call_args[0][0]
+        assert called_url.startswith("https://image.tmdb.org")
 
 
 def test_download_image_empty(tmdb):
@@ -318,13 +315,12 @@ def test_download_image_empty(tmdb):
     assert tmdb.download_image("/abc.jpg", "") == ""
 
 
-def test_download_image_error(tmdb, tmp_path, monkeypatch):
-    import lan_streamer.tmdb
+def test_download_image_error(tmdb, tmp_path):
 
-    monkeypatch.setattr(lan_streamer.tmdb, "CACHE_DIR", tmp_path)
-    tmdb.session.get = MagicMock(side_effect=Exception("Download failed"))
-    path = tmdb.download_image("/abc.jpg", "error_key")
-    assert path == ""
+    with patch("lan_streamer.tmdb.CACHE_DIR", tmp_path):
+        tmdb.session.get = MagicMock(side_effect=Exception("Download failed"))
+        path = tmdb.download_image("/abc.jpg", "error_key")
+        assert path == ""
 
 
 # ------------------------------------------------------------------
@@ -332,45 +328,45 @@ def test_download_image_error(tmdb, tmp_path, monkeypatch):
 # ------------------------------------------------------------------
 
 
-def test_search_series_two_word_fallback(tmdb, monkeypatch):
-    monkeypatch.setattr(config, "tmdb_api_key", "test-key")
+def test_search_series_two_word_fallback(tmdb):
+    with patch.object(config, "tmdb_api_key", "test-key"):
+        match_result = [
+            {"id": 1, "name": "Show Runners", "first_air_date": "2020-01-01"}
+        ]
 
-    match_result = [{"id": 1, "name": "Show Runners", "first_air_date": "2020-01-01"}]
+        def mock_do_search(query):
+            if "Show Runners" in query:
+                return match_result
+            return []
 
-    def mock_do_search(query):
-        if "Show Runners" in query:
-            return match_result
-        return []
+        tmdb._do_search = MagicMock(side_effect=mock_do_search)
+        tmdb._is_similar = MagicMock(return_value=True)
 
-    tmdb._do_search = MagicMock(side_effect=mock_do_search)
-    tmdb._is_similar = MagicMock(return_value=True)
-
-    result = tmdb.search_series("Show Runners Extra Stuff")
-    assert result is not None
-
-
-def test_search_series_first_word_fallback(tmdb, monkeypatch):
-    monkeypatch.setattr(config, "tmdb_api_key", "test-key")
-
-    match_result = [{"id": 2, "name": "Fargo", "first_air_date": "2014-04-15"}]
-
-    def mock_do_search(query):
-        if query == "Fargo":
-            return match_result
-        return []
-
-    tmdb._do_search = MagicMock(side_effect=mock_do_search)
-    tmdb._is_similar = MagicMock(return_value=True)
-
-    result = tmdb.search_series("Fargo Criminal Cases 2025")
-    assert result is not None
+        result = tmdb.search_series("Show Runners Extra Stuff")
+        assert result is not None
 
 
-def test_search_series_all_fallbacks_fail(tmdb, monkeypatch):
-    monkeypatch.setattr(config, "tmdb_api_key", "test-key")
-    tmdb._do_search = MagicMock(return_value=[])
-    result = tmdb.search_series("Totally Unknown Show Name 2025")
-    assert result is None
+def test_search_series_first_word_fallback(tmdb):
+    with patch.object(config, "tmdb_api_key", "test-key"):
+        match_result = [{"id": 2, "name": "Fargo", "first_air_date": "2014-04-15"}]
+
+        def mock_do_search(query):
+            if query == "Fargo":
+                return match_result
+            return []
+
+        tmdb._do_search = MagicMock(side_effect=mock_do_search)
+        tmdb._is_similar = MagicMock(return_value=True)
+
+        result = tmdb.search_series("Fargo Criminal Cases 2025")
+        assert result is not None
+
+
+def test_search_series_all_fallbacks_fail(tmdb):
+    with patch.object(config, "tmdb_api_key", "test-key"):
+        tmdb._do_search = MagicMock(return_value=[])
+        result = tmdb.search_series("Totally Unknown Show Name 2025")
+        assert result is None
 
 
 def test_is_similar_ratio_branch(tmdb):
@@ -381,28 +377,29 @@ def test_is_similar_ratio_branch(tmdb):
     assert isinstance(result, bool)
 
 
-def test_search_series_two_word_returns_match(tmdb, monkeypatch):
+def test_search_series_two_word_returns_match(tmdb):
     """Hit lines 160-165: two-word fallback finds a match and returns it."""
-    monkeypatch.setattr(config, "tmdb_api_key", "test-key")
+    with patch.object(config, "tmdb_api_key", "test-key"):
+        match_result = [
+            {"id": 1, "name": "ShowName Extra", "first_air_date": "2020-01-01"}
+        ]
 
-    match_result = [{"id": 1, "name": "ShowName Extra", "first_air_date": "2020-01-01"}]
+        call_count = {"n": 0}
 
-    call_count = {"n": 0}
+        def mock_do_search(query):
+            call_count["n"] += 1
+            # First 2 calls (main term attempts) fail; 3rd (two-word) succeeds
+            if call_count["n"] >= 3:
+                return match_result
+            return []
 
-    def mock_do_search(query):
-        call_count["n"] += 1
-        # First 2 calls (main term attempts) fail; 3rd (two-word) succeeds
-        if call_count["n"] >= 3:
-            return match_result
-        return []
+        tmdb._do_search = MagicMock(side_effect=mock_do_search)
+        # Force _is_similar to return True so the two-word branch returns
+        tmdb._is_similar = MagicMock(return_value=True)
 
-    tmdb._do_search = MagicMock(side_effect=mock_do_search)
-    # Force _is_similar to return True so the two-word branch returns
-    tmdb._is_similar = MagicMock(return_value=True)
-
-    result = tmdb.search_series("ShowName Extra Words Here")
-    assert result is not None
-    assert result["id"] == 1
+        result = tmdb.search_series("ShowName Extra Words Here")
+        assert result is not None
+        assert result["id"] == 1
 
 
 def test_tmdb_is_similar_word_overlap(tmdb):
@@ -412,7 +409,7 @@ def test_tmdb_is_similar_word_overlap(tmdb):
     assert tmdb._is_similar("Breaking Bad", "Bad Breaking")
 
 
-def test_tmdb_search_fallback_branches(tmdb, monkeypatch):
+def test_tmdb_search_fallback_branches(tmdb):
     # Hit tmdb.py lines 160-165 (two word fallback)
     call_count = {"n": 0}
 
@@ -422,15 +419,16 @@ def test_tmdb_search_fallback_branches(tmdb, monkeypatch):
             return [{"id": 1, "name": "Show Name Extra"}]
         return []
 
-    monkeypatch.setattr(tmdb, "_do_search", mock_do_search)
-    monkeypatch.setattr(tmdb, "_is_similar", lambda a, b: True)
+    with (
+        patch.object(tmdb, "_do_search", mock_do_search),
+        patch.object(tmdb, "_is_similar", lambda a, b: True),
+    ):
+        res = tmdb.search_series("Show Name Long Title")
+        assert res is not None
+        assert res["id"] == 1
 
-    res = tmdb.search_series("Show Name Long Title")
-    assert res is not None
-    assert res["id"] == 1
 
-
-def test_tmdb_search_first_word_fallback(tmdb, monkeypatch):
+def test_tmdb_search_first_word_fallback(tmdb):
     # Hit tmdb.py lines 168-178
     def mock_do_search(query):
         # Return result only for the specific fallback term
@@ -438,10 +436,10 @@ def test_tmdb_search_first_word_fallback(tmdb, monkeypatch):
             return [{"id": 1, "name": "Breaking Bad"}]
         return []
 
-    monkeypatch.setattr(tmdb, "_do_search", mock_do_search)
-    # Ensure similarity returns True for our fallback check
-    monkeypatch.setattr(tmdb, "_is_similar", lambda a, b, threshold=0.7: True)
-
-    res = tmdb.search_series("Breaking Bad Show")
-    assert res is not None
-    assert res["id"] == 1
+    with (
+        patch.object(tmdb, "_do_search", mock_do_search),
+        patch.object(tmdb, "_is_similar", lambda a, b, threshold=0.7: True),
+    ):
+        res = tmdb.search_series("Breaking Bad Show")
+        assert res is not None
+        assert res["id"] == 1

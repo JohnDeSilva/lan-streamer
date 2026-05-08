@@ -6,11 +6,13 @@ from lan_streamer.config import config
 
 
 @pytest.fixture
-def jf_client(monkeypatch):
-    monkeypatch.setattr(config, "jellyfin_url", "http://test-jf")
-    monkeypatch.setattr(config, "jellyfin_api_key", "test-key")
-    client = JellyfinClient()
-    return client
+def jf_client():
+    with (
+        patch.object(config, "jellyfin_url", "http://test-jf"),
+        patch.object(config, "jellyfin_api_key", "test-key"),
+    ):
+        client = JellyfinClient()
+        yield client
 
 
 def test_jellyfin_is_configured(jf_client):
@@ -118,43 +120,44 @@ def test_jellyfin_error_handling(jf_client):
     jf_client.set_watched_status("1", True)
 
 
-def test_jellyfin_validate_credentials(jf_client, monkeypatch):
-    import socket
+def test_jellyfin_validate_credentials(jf_client):
 
-    monkeypatch.setattr(socket, "create_connection", MagicMock())
-    jf_client.session = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status.return_value = None
-    jf_client.session.get.return_value = mock_resp
-    success, msg = jf_client.validate_credentials("http://test", "key")
-    assert success is True
-    assert "successful" in msg
+    with patch("socket.create_connection", MagicMock()):
+        jf_client.session = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        jf_client.session.get.return_value = mock_resp
+        success, msg = jf_client.validate_credentials("http://test", "key")
+        assert success is True
+        assert "successful" in msg
 
-    # Empty inputs
-    assert jf_client.validate_credentials("", "key")[0] is False
-    assert jf_client.validate_credentials("http://test", "")[0] is False
+        # Empty inputs
+        assert jf_client.validate_credentials("", "key")[0] is False
+        assert jf_client.validate_credentials("http://test", "")[0] is False
 
-    # Connection Error
-    jf_client.session.get.side_effect = requests.exceptions.ConnectionError("Failed")
-    success, msg = jf_client.validate_credentials("http://test", "key")
-    assert success is False
-    assert "HTTP connection failed" in msg
+        # Connection Error
+        jf_client.session.get.side_effect = requests.exceptions.ConnectionError(
+            "Failed"
+        )
+        success, msg = jf_client.validate_credentials("http://test", "key")
+        assert success is False
+        assert "HTTP connection failed" in msg
 
-    # HTTP Error 401
-    mock_err_resp = MagicMock()
-    mock_err_resp.status_code = 401
-    jf_client.session.get.side_effect = requests.exceptions.HTTPError(
-        response=mock_err_resp
-    )
-    success, msg = jf_client.validate_credentials("http://test", "key")
-    assert success is False
-    assert "Unauthorized" in msg
+        # HTTP Error 401
+        mock_err_resp = MagicMock()
+        mock_err_resp.status_code = 401
+        jf_client.session.get.side_effect = requests.exceptions.HTTPError(
+            response=mock_err_resp
+        )
+        success, msg = jf_client.validate_credentials("http://test", "key")
+        assert success is False
+        assert "Unauthorized" in msg
 
-    # Unexpected Error
-    jf_client.session.get.side_effect = Exception("Boom")
-    success, msg = jf_client.validate_credentials("http://test", "key")
-    assert success is False
-    assert "Unexpected error" in msg
+        # Unexpected Error
+        jf_client.session.get.side_effect = Exception("Boom")
+        success, msg = jf_client.validate_credentials("http://test", "key")
+        assert success is False
+        assert "Unexpected error" in msg
 
 
 def test_validate_credentials_socket_failure(jf_client):
@@ -202,25 +205,26 @@ def test_get_base_url_logic(jf_client):
     assert jf_client._get_base_url() == ""
 
 
-def test_get_current_user_id_https_retry(jf_client, monkeypatch):
-    monkeypatch.setattr(config, "jellyfin_url", "test.com")
-    monkeypatch.setattr(config, "jellyfin_api_key", "key")
+def test_get_current_user_id_https_retry(jf_client):
+    with (
+        patch.object(config, "jellyfin_url", "test.com"),
+        patch.object(config, "jellyfin_api_key", "key"),
+    ):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = [{"Id": "u1"}]
 
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = [{"Id": "u1"}]
+        def side_effect(url, **kwargs):
+            if url.startswith("https://"):
+                raise requests.exceptions.ConnectionError("Force retry")
+            return mock_resp
 
-    def side_effect(url, **kwargs):
-        if url.startswith("https://"):
-            raise requests.exceptions.ConnectionError("Force retry")
-        return mock_resp
+        jf_client.session.get = MagicMock(side_effect=side_effect)
 
-    jf_client.session.get = MagicMock(side_effect=side_effect)
-
-    user_id = jf_client.get_current_user_id()
-    assert user_id == "u1"
-    assert jf_client.session.get.call_count == 2
-    assert jf_client.session.get.call_args_list[0][0][0].startswith("https://")
-    assert jf_client.session.get.call_args_list[1][0][0].startswith("http://")
+        user_id = jf_client.get_current_user_id()
+        assert user_id == "u1"
+        assert jf_client.session.get.call_count == 2
+        assert jf_client.session.get.call_args_list[0][0][0].startswith("https://")
+        assert jf_client.session.get.call_args_list[1][0][0].startswith("http://")
 
 
 def test_get_headers(jf_client):

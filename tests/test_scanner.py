@@ -3,19 +3,18 @@ import lan_streamer.scanner as scanner
 from unittest.mock import MagicMock, patch
 
 
-def _mock_tmdb(monkeypatch, search_return=None, seasons=None, episodes=None):
-    """Helper that patches scanner.tmdb_client with a preconfigured mock."""
+def _mock_tmdb(search_return=None, seasons=None, episodes=None):
+    """Helper that returns a preconfigured mock."""
     mock = MagicMock()
     mock.search_series.return_value = search_return
     mock.get_series_by_id.return_value = search_return
     mock.get_seasons.return_value = seasons or []
     mock.get_episodes.return_value = episodes or []
     mock.download_image.return_value = ""
-    monkeypatch.setattr(scanner, "tmdb_client", mock)
     return mock
 
 
-def test_scan_directories_with_mock(tmp_path, monkeypatch):
+def test_scan_directories_with_mock(tmp_path):
     """
     Test scanning using dynamically created mock directories and files.
     """
@@ -68,9 +67,8 @@ def test_scan_directories_with_mock(tmp_path, monkeypatch):
         {"id": "ep1", "episode_number": 1},
         {"id": "ep2", "episode_number": 2},
     ]
-    monkeypatch.setattr(scanner, "tmdb_client", mock_tmdb)
-
-    library = scan_directories([str(tmp_path)])
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        library = scan_directories([str(tmp_path)])
 
     assert "Series A" in library
     assert "Season 1" in library["Series A"]["seasons"]
@@ -91,8 +89,7 @@ def test_scan_directories_empty_list():
     assert scan_directories([]) == {}
 
 
-def test_scan_directories_oserror(tmp_path, monkeypatch):
-    import os
+def test_scan_directories_oserror(tmp_path):
 
     series_a = tmp_path / "Series A"
     season_1 = series_a / "Season 1"
@@ -103,19 +100,20 @@ def test_scan_directories_oserror(tmp_path, monkeypatch):
     def mock_getctime(*args):
         raise OSError("Permission denied")
 
-    monkeypatch.setattr(os.path, "getctime", mock_getctime)
-    _mock_tmdb(monkeypatch)
-
-    library = scan_directories([str(tmp_path)])
-    episodes = library["Series A"]["seasons"]["Season 1"]["episodes"]
-    assert episodes[0]["date_added"] == 0
+    with (
+        patch("os.path.getctime", mock_getctime),
+        patch("lan_streamer.scanner.tmdb_client", _mock_tmdb()),
+    ):
+        library = scan_directories([str(tmp_path)])
+        episodes = library["Series A"]["seasons"]["Season 1"]["episodes"]
+        assert episodes[0]["date_added"] == 0
 
 
 def test_scan_directories_nonexistent_path():
     assert scan_directories(["/path/does/not/exist/at/all/123456789"]) == {}
 
 
-def test_scan_series(tmp_path, monkeypatch):
+def test_scan_series(tmp_path):
     from lan_streamer.scanner import scan_series
 
     series_dir = tmp_path / "Test Show"
@@ -159,7 +157,7 @@ def test_scan_series(tmp_path, monkeypatch):
         assert episodes[0]["watched"] is False
 
 
-def test_scan_series_manual_match(tmp_path, monkeypatch):
+def test_scan_series_manual_match(tmp_path):
     from lan_streamer.scanner import scan_series
 
     series_dir = tmp_path / "Mismatched Show"
@@ -186,7 +184,7 @@ def test_scan_series_manual_match(tmp_path, monkeypatch):
         mock_tmdb.search_series.assert_not_called()
 
 
-def test_scan_series_manual_match_fetch_by_id(tmp_path, monkeypatch):
+def test_scan_series_manual_match_fetch_by_id(tmp_path):
     """When manual match only has 'id' (not 'name'), should fetch full record."""
     from lan_streamer.scanner import scan_series
 
@@ -214,7 +212,7 @@ def test_scan_series_manual_match_fetch_by_id(tmp_path, monkeypatch):
         assert series_data["metadata"]["tmdb_identifier"] == "fetch_me"
 
 
-def test_scan_directories_respects_manual_match(tmp_path, monkeypatch):
+def test_scan_directories_respects_manual_match(tmp_path):
     series_dir = tmp_path / "Manual Show"
     series_dir.mkdir()
     season_dir = series_dir / "Season 1"
@@ -240,9 +238,8 @@ def test_scan_directories_respects_manual_match(tmp_path, monkeypatch):
     }
     mock_tmdb.get_seasons.return_value = []
     mock_tmdb.download_image.return_value = ""
-    monkeypatch.setattr(scanner, "tmdb_client", mock_tmdb)
-
-    library = scan_directories([str(tmp_path)], existing_library=existing_library)
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        library = scan_directories([str(tmp_path)], existing_library=existing_library)
 
     assert (
         library["Manual Show"]["metadata"]["tmdb_identifier"]
@@ -257,7 +254,7 @@ def test_clean_series_data_none():
     assert scanner.clean_series_data({"seasons": {"S1": {"episodes": []}}}) is None
 
 
-def test_scan_directories_gaps(tmp_path, monkeypatch):
+def test_scan_directories_gaps(tmp_path):
     # root_path is not a dir
     not_a_dir = tmp_path / "file.txt"
     not_a_dir.write_text("not a dir")
@@ -280,9 +277,8 @@ def test_scan_directories_gaps(tmp_path, monkeypatch):
 
     mock_tmdb = MagicMock()
     mock_tmdb.search_series.return_value = None
-    monkeypatch.setattr(scanner, "tmdb_client", mock_tmdb)
-
-    res = scanner.scan_directories([str(root_dir)])
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        res = scanner.scan_directories([str(root_dir)])
     assert "Valid Series" in res
     assert "Season 1" in res["Valid Series"]["seasons"]
 
@@ -295,7 +291,7 @@ def test_parse_episode_number():
     assert _parse_episode_number("no_episode.mkv") is None
 
 
-def test_scan_tmdb_merge_by_tmdb_identifier(tmp_path, monkeypatch):
+def test_scan_tmdb_merge_by_tmdb_identifier(tmp_path):
     """Two differently-named folders with same TMDB ID should be merged."""
     folder_a = tmp_path / "Show Part 1"
     folder_b = tmp_path / "Show Part 2"
@@ -327,9 +323,8 @@ def test_scan_tmdb_merge_by_tmdb_identifier(tmp_path, monkeypatch):
         {"id": "e2", "episode_number": 2},
     ]
     mock_tmdb.download_image.return_value = ""
-    monkeypatch.setattr(scanner, "tmdb_client", mock_tmdb)
-
-    library = scan_directories([str(tmp_path)])
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        library = scan_directories([str(tmp_path)])
     # Both folders should be merged under one entry
     assert len(library) == 1
     merged = list(library.values())[0]
@@ -337,7 +332,7 @@ def test_scan_tmdb_merge_by_tmdb_identifier(tmp_path, monkeypatch):
     assert len(episodes) == 2
 
 
-def test_scan_directories_merge_branches(tmp_path, monkeypatch):
+def test_scan_directories_merge_branches(tmp_path):
     from lan_streamer.scanner import scan_directories
 
     # 1. Fallback to name match (line 104)
@@ -356,29 +351,7 @@ def test_scan_directories_merge_branches(tmp_path, monkeypatch):
     mock_tmdb.get_seasons.return_value = [{"season_number": 1, "id": "s1"}]
     mock_tmdb.get_episodes.return_value = [{"episode_number": 1, "id": "e1"}]
     mock_tmdb.download_image.return_value = ""
-    monkeypatch.setattr(scanner, "tmdb_client", mock_tmdb)
 
-    # Initial scan
-    lib = scan_directories([str(root)])
-    assert "Show A" in lib
-
-    # Now scan again with a new folder that has SAME NAME but DIFFERENT ID (if we were to mock it so)
-    # But here we'll just force the name match fallback by making search return NO result or different ID
-    mock_tmdb.search_series.return_value = None  # Force fallback to name
-
-    # Let's test the episode duplicate branch
-    (
-        show_dir / "Season 1" / "S01E01_alt.mkv"
-    ).touch()  # Same episode name "S01E01.mkv" if we don't parse?
-    # Wait, the name in lib is the filename.
-    # If filenames are different, they are different episodes unless parsed?
-    # Line 121: ep_names = {ep["name"] for ep in existing_episodes}
-    # Filenames are unique usually.
-
-    # Let's mock _parse_episode_number to return same for different files
-    monkeypatch.setattr(scanner, "_parse_episode_number", lambda x: (1, 1))
-
-    # To hit line 131-134, we need same name but different path.
     # We can just manually construct the library and pass it to scan_directories
     existing_library = {
         "Show A": {
@@ -391,27 +364,44 @@ def test_scan_directories_merge_branches(tmp_path, monkeypatch):
         }
     }
 
-    lib = scan_directories([str(root)], existing_library=existing_library)
-    # This should hit "Skipping episode because an episode with the same name already exists"
+    with (
+        patch("lan_streamer.scanner.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner._parse_episode_number", lambda x: (1, 1)),
+    ):
+        # Initial scan
+        lib = scan_directories([str(root)])
+        assert "Show A" in lib
 
-    # To hit line 143 (new season for existing series)
-    (show_dir / "Season 2").mkdir()
-    (show_dir / "Season 2" / "S02E01.mkv").touch()
-    mock_tmdb.get_seasons.return_value = [
-        {"season_number": 1, "id": "s1"},
-        {"season_number": 2, "id": "s2"},
-    ]
-    mock_tmdb.get_episodes.side_effect = lambda id, s: (
-        [{"episode_number": 1, "id": "e1"}]
-        if s == 1
-        else [{"episode_number": 1, "id": "e2"}]
-    )
+        # Now scan again with a new folder that has SAME NAME but DIFFERENT ID (if we were to mock it so)
+        # But here we'll just force the name match fallback by making search return NO result or different ID
+        mock_tmdb.search_series.return_value = None  # Force fallback to name
 
-    lib = scan_directories([str(root)], existing_library=existing_library)
-    assert "Season 2" in lib["Show A"]["seasons"]
+        # Let's test the episode duplicate branch
+        (
+            show_dir / "Season 1" / "S01E01_alt.mkv"
+        ).touch()  # Same episode name "S01E01.mkv" if we don't parse?
+
+        lib = scan_directories([str(root)], existing_library=existing_library)
+        # This should hit "Skipping episode because an episode with the same name already exists"
+
+        # To hit line 143 (new season for existing series)
+        (show_dir / "Season 2").mkdir()
+        (show_dir / "Season 2" / "S02E01.mkv").touch()
+        mock_tmdb.get_seasons.return_value = [
+            {"season_number": 1, "id": "s1"},
+            {"season_number": 2, "id": "s2"},
+        ]
+        mock_tmdb.get_episodes.side_effect = lambda id, s: (
+            [{"episode_number": 1, "id": "e1"}]
+            if s == 1
+            else [{"episode_number": 1, "id": "e2"}]
+        )
+
+        lib = scan_directories([str(root)], existing_library=existing_library)
+        assert "Season 2" in lib["Show A"]["seasons"]
 
 
-def test_scan_directories_clean_none(tmp_path, monkeypatch):
+def test_scan_directories_clean_none(tmp_path):
     # Hit scanner.py line 91
     from lan_streamer.scanner import scan_directories
 
@@ -420,14 +410,17 @@ def test_scan_directories_clean_none(tmp_path, monkeypatch):
     (root / "Show A").mkdir()
 
     # Mock scan_series to return something that clean_series_data returns None for
-    monkeypatch.setattr(scanner, "scan_series", lambda *args, **kwargs: {"seasons": {}})
-    monkeypatch.setattr(scanner, "clean_series_data", lambda x: None)
+    with (
+        patch(
+            "lan_streamer.scanner.scan_series", lambda *args, **kwargs: {"seasons": {}}
+        ),
+        patch("lan_streamer.scanner.clean_series_data", lambda x: None),
+    ):
+        res = scan_directories([str(root)])
+        assert res == {}
 
-    res = scan_directories([str(root)])
-    assert res == {}
 
-
-def test_scan_series_no_poster_branch(tmp_path, monkeypatch):
+def test_scan_series_no_poster_branch(tmp_path):
     # Hit scanner.py lines 178 and 223
     from lan_streamer.scanner import scan_series
 
@@ -444,14 +437,13 @@ def test_scan_series_no_poster_branch(tmp_path, monkeypatch):
     ]  # No poster_path in season either
     mock_tmdb.get_episodes.return_value = []
 
-    monkeypatch.setattr(scanner, "tmdb_client", mock_tmdb)
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        data = scan_series(series_dir)
+        assert data["metadata"]["poster_path"] == ""
+        assert data["seasons"]["Season 1"]["metadata"]["poster_path"] == ""
 
-    data = scan_series(series_dir)
-    assert data["metadata"]["poster_path"] == ""
-    assert data["seasons"]["Season 1"]["metadata"]["poster_path"] == ""
 
-
-def test_scan_series_tmdb_correlation(tmp_path, monkeypatch):
+def test_scan_series_tmdb_correlation(tmp_path):
     """Test that jellyfin_id is pulled via TMDB ID fallback if path doesn't match."""
     from lan_streamer.scanner import scan_series
 
@@ -494,7 +486,7 @@ def test_scan_series_tmdb_correlation(tmp_path, monkeypatch):
         assert series_data["metadata"]["jellyfin_id"] == "jf_series_456"
 
 
-def test_scan_series_name_correlation(tmp_path, monkeypatch):
+def test_scan_series_name_correlation(tmp_path):
     """Test that jellyfin_id is pulled via Name fallback if path/TMDB fail."""
     from lan_streamer.scanner import scan_series
 
