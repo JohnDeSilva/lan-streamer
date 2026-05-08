@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QCheckBox,
     QFileDialog,
+    QDialogButtonBox,
 )
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem
 from PySide6.QtCore import Qt, QThread, Signal
@@ -376,6 +377,93 @@ class JellyfinSettingsDialog(QDialog):
         QMessageBox.information(self, "Saved", "Jellyfin settings saved.")
 
 
+class GeneralSettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("General Settings")
+        self.setMinimumWidth(500)
+
+        layout = QVBoxLayout(self)
+
+        # Database Path
+        db_layout = QHBoxLayout()
+        self.db_edit = QLineEdit(config.database_path)
+        self.db_browse = QPushButton("Browse...")
+        self.db_browse.clicked.connect(self.browse_db)
+        db_layout.addWidget(QLabel("Database File:"))
+        db_layout.addWidget(self.db_edit, 1)
+        db_layout.addWidget(self.db_browse)
+        layout.addLayout(db_layout)
+
+        # Log Directory
+        log_layout = QHBoxLayout()
+        self.log_edit = QLineEdit(config.log_directory)
+        self.log_browse = QPushButton("Browse...")
+        self.log_browse.clicked.connect(self.browse_logs)
+        log_layout.addWidget(QLabel("Log Directory:"))
+        log_layout.addWidget(self.log_edit, 1)
+        log_layout.addWidget(self.log_browse)
+        layout.addLayout(log_layout)
+
+        # Sync on start
+        self.sync_checkbox = QCheckBox("Sync Jellyfin watch history on startup")
+        self.sync_checkbox.setChecked(config.sync_history_on_start)
+        layout.addWidget(self.sync_checkbox)
+
+        # Enable Global Log File
+        self.log_file_checkbox = QCheckBox("Enable Global Log File (lan-streamer.log)")
+        self.log_file_checkbox.setChecked(config.enable_global_file_logging)
+        layout.addWidget(self.log_file_checkbox)
+
+        layout.addStretch()
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def browse_db(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Select Database File", self.db_edit.text(), "SQLite Database (*.db)"
+        )
+        if path:
+            self.db_edit.setText(path)
+
+    def browse_logs(self):
+        path = QFileDialog.getExistingDirectory(
+            self, "Select Log Directory", self.log_edit.text()
+        )
+        if path:
+            self.log_edit.setText(path)
+
+    def accept(self):
+        db_path = self.db_edit.text()
+        log_path = self.log_edit.text()
+
+        restart_needed = (
+            db_path != config.database_path
+            or log_path != config.log_directory
+            or self.log_file_checkbox.isChecked() != config.enable_global_file_logging
+        )
+
+        config.database_path = db_path
+        config.log_directory = log_path
+        config.sync_history_on_start = self.sync_checkbox.isChecked()
+        config.enable_global_file_logging = self.log_file_checkbox.isChecked()
+        config.save()
+
+        if restart_needed:
+            QMessageBox.information(
+                self,
+                "Restart Required",
+                "Changes to database or log paths will take effect after restarting the application.",
+            )
+
+        super().accept()
+
+
 class LibrarySettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -414,16 +502,7 @@ class LibrarySettingsDialog(QDialog):
         button_layout.addWidget(self.remove_button)
         layout.addLayout(button_layout)
 
-        self.sync_checkbox = QCheckBox("Sync Jellyfin watch history on startup")
-        self.sync_checkbox.setChecked(config.sync_history_on_start)
-        self.sync_checkbox.stateChanged.connect(self.on_sync_on_start_changed)
-        layout.addWidget(self.sync_checkbox)
-
         self.on_library_changed(self.library_combo.currentText())
-
-    def on_sync_on_start_changed(self, state):
-        config.sync_history_on_start = self.sync_checkbox.isChecked()
-        config.save()
 
     def on_library_changed(self, library_name):
         self.list_widget.clear()
@@ -499,6 +578,11 @@ class MainWindow(QMainWindow):
         manage_dirs_action.setMenuRole(QAction.MenuRole.NoRole)
         manage_dirs_action.triggered.connect(self.open_library_settings)
         settings_menu.addAction(manage_dirs_action)
+
+        general_settings_action = QAction("General Settings...", self)
+        general_settings_action.setMenuRole(QAction.MenuRole.NoRole)
+        general_settings_action.triggered.connect(self.open_general_settings)
+        settings_menu.addAction(general_settings_action)
 
         external_menu = settings_menu.addMenu("External Sources")
 
@@ -659,6 +743,10 @@ class MainWindow(QMainWindow):
 
     def open_jellyfin_settings(self):
         dialog = JellyfinSettingsDialog(self)
+        dialog.exec()
+
+    def open_general_settings(self):
+        dialog = GeneralSettingsDialog(self)
         dialog.exec()
 
     def load_library_ui(self, stay_on_current=False):

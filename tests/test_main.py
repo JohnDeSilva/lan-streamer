@@ -46,10 +46,15 @@ def test_main_logging_setup(tmp_path):
             for h in root.handlers[:]:
                 root.removeHandler(h)
 
+            from lan_streamer.config import config
+
+            config.enable_global_file_logging = True
             main.main()
 
-            # Verify log file exists
-            assert os.path.exists("lan-streamer.log")
+            from lan_streamer.config import config
+
+            log_file = os.path.join(config.log_directory, "lan-streamer.log")
+            assert os.path.exists(log_file)
 
             # Verify handlers
             handlers = root.handlers

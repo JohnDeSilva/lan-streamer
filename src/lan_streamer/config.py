@@ -15,6 +15,11 @@ class Config:
         self.sync_history_on_start: bool = True
         self.filter_unwatched: bool = False
         self.sort_mode: str = "Alphabetical"
+        self.database_path: str = str(
+            Path.home() / ".config" / "lan-streamer" / "library.db"
+        )
+        self.log_directory: str = str(Path.home() / ".config" / "lan-streamer" / "logs")
+        self.enable_global_file_logging: bool = False
         self.load()
 
     def load(self):
@@ -36,6 +41,17 @@ class Config:
                     )
                     self.filter_unwatched = data.get("filter_unwatched", False)
                     self.sort_mode = data.get("sort_mode", "Alphabetical")
+                    self.database_path = data.get(
+                        "database_path",
+                        str(Path.home() / ".config" / "lan-streamer" / "library.db"),
+                    )
+                    self.log_directory = data.get(
+                        "log_directory",
+                        str(Path.home() / ".config" / "lan-streamer" / "logs"),
+                    )
+                    self.enable_global_file_logging = data.get(
+                        "enable_global_file_logging", False
+                    )
 
                     if "libraries" in data:
                         self.libraries = data["libraries"]
@@ -64,6 +80,9 @@ class Config:
                         "sync_history_on_start": self.sync_history_on_start,
                         "filter_unwatched": self.filter_unwatched,
                         "sort_mode": self.sort_mode,
+                        "database_path": self.database_path,
+                        "log_directory": self.log_directory,
+                        "enable_global_file_logging": self.enable_global_file_logging,
                     },
                     f,
                     indent=4,

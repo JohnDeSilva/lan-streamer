@@ -1,11 +1,13 @@
 import sys
 import logging
+from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPalette, QColor
 from PySide6.QtCore import Qt
 
 from .ui import MainWindow
 from . import db
+from .config import config
 
 
 def setup_dark_theme(app: QApplication):
@@ -57,29 +59,53 @@ def main():
             handler.namer = lambda name: name.replace(".log.", "_") + ".log"
             handler.setFormatter(formatter)
             logger_obj.addHandler(handler)
+            # Prevent propagation to root logger to keep console clean (only Global log in console)
+            if logger_obj != logging.getLogger():
+                logger_obj.propagate = False
             if info_msg:
                 logging.info(info_msg)
         except Exception as e:
             logging.error(f"Could not create log file {filename}: {e}")
 
-    # Global log
-    add_file_handler(
-        root_logger,
-        "lan-streamer.log",
-        log_formatter,
-        "Logging to lan-streamer.log (rotated as lan-streamer_YYYY-MM-DD.log)",
-    )
+    # Ensure log directory exists
+    log_dir = Path(config.log_directory)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Global log (Optional file logging, always to console)
+    if config.enable_global_file_logging:
+        add_file_handler(
+            root_logger,
+            str(log_dir / "lan-streamer.log"),
+            log_formatter,
+            f"Logging to {log_dir / 'lan-streamer.log'} (rotated daily)",
+        )
+    else:
+        logging.info(
+            "Global logging to console only (file logging disabled in settings)"
+        )
 
     # Component-specific logs
-    add_file_handler(logging.getLogger("lan_streamer.db"), "db.log", log_formatter)
-    add_file_handler(logging.getLogger("lan_streamer.ui"), "ui.log", log_formatter)
     add_file_handler(
-        logging.getLogger("lan_streamer.scanner"), "scanner.log", log_formatter
+        logging.getLogger("lan_streamer.db"), str(log_dir / "db.log"), log_formatter
     )
     add_file_handler(
-        logging.getLogger("lan_streamer.jellyfin"), "jellyfin.log", log_formatter
+        logging.getLogger("lan_streamer.ui"), str(log_dir / "ui.log"), log_formatter
     )
-    add_file_handler(logging.getLogger("lan_streamer.tmdb"), "tmdb.log", log_formatter)
+    add_file_handler(
+        logging.getLogger("lan_streamer.scanner"),
+        str(log_dir / "scanner.log"),
+        log_formatter,
+    )
+    add_file_handler(
+        logging.getLogger("lan_streamer.jellyfin"),
+        str(log_dir / "jellyfin.log"),
+        log_formatter,
+    )
+    add_file_handler(
+        logging.getLogger("lan_streamer.tmdb"),
+        str(log_dir / "tmdb.log"),
+        log_formatter,
+    )
 
     recreated = db.init_db()
     app = QApplication(sys.argv)

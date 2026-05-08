@@ -16,14 +16,11 @@ from sqlalchemy.orm import (
 )
 
 from .models import Base, Series, Season, Episode  # noqa: F401
+from .config import config
 
 logger = logging.getLogger(__name__)
 
-DB_FILE = Path(
-    os.getenv(
-        "LAN_STREAMER_DB", str(Path.home() / ".config" / "lan-streamer" / "library.db")
-    )
-)
+DB_FILE = Path(os.getenv("LAN_STREAMER_DB", config.database_path))
 
 
 # Database setup logic

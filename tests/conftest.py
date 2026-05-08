@@ -37,6 +37,9 @@ def protect_user_dirs(tmp_path):
         lan_streamer.config.config.jellyfin_url = ""
         lan_streamer.config.config.jellyfin_api_key = ""
         lan_streamer.config.config.tmdb_api_key = ""
+        lan_streamer.config.config.database_path = str(db_file)
+        lan_streamer.config.config.log_directory = str(tmp_path / "logs")
+        lan_streamer.config.config.enable_global_file_logging = False
 
         yield
 

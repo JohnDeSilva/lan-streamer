@@ -8,6 +8,7 @@ from lan_streamer.ui import (
     MainWindow,
     LibrarySettingsDialog,
     JellyfinSettingsDialog,
+    GeneralSettingsDialog,
 )
 
 
@@ -127,15 +128,27 @@ def test_library_settings_dialog(qtbot, mock_dependencies):
         dialog.remove_library()
     assert "NewLib" not in config.libraries
 
-    # Test sync history on startup checkbox
+    # Test sync history on startup checkbox in GeneralSettingsDialog
     config.sync_history_on_start = True
-    dialog2 = LibrarySettingsDialog()
-    qtbot.addWidget(dialog2)
-    assert dialog2.sync_checkbox.isChecked() is True
-    dialog2.sync_checkbox.setChecked(False)
-    assert config.sync_history_on_start is False
-    dialog2.sync_checkbox.setChecked(True)
-    assert config.sync_history_on_start is True
+    gen_dialog = GeneralSettingsDialog()
+    qtbot.addWidget(gen_dialog)
+    assert gen_dialog.sync_checkbox.isChecked() is True
+    gen_dialog.sync_checkbox.setChecked(False)
+
+    with patch("lan_streamer.ui.QMessageBox.information"):
+        # We need to call accept() or manually update config in test if we want to check persistence via dialog
+        gen_dialog.accept()
+        assert config.sync_history_on_start is False
+
+        gen_dialog.sync_checkbox.setChecked(True)
+        gen_dialog.accept()
+        assert config.sync_history_on_start is True
+
+        # Test global log file checkbox
+        assert gen_dialog.log_file_checkbox.isChecked() is False
+        gen_dialog.log_file_checkbox.setChecked(True)
+        gen_dialog.accept()
+        assert config.enable_global_file_logging is True
 
 
 def test_mainwindow_load(qtbot, mock_dependencies):

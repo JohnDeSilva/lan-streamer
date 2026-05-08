@@ -66,6 +66,18 @@ make run
 
 ---
 
+## ⚙️ Configuration
+
+Lan Streamer configuration is stored in `~/.config/lan-streamer/config.json`. You can configure the following through the **Settings > General Settings** menu:
+
+- **Database Path**: The location of the SQLite database file (default: `~/.config/lan-streamer/library.db`).
+- **Log Directory**: The directory where logs are stored (default: `~/.config/lan-streamer/logs`).
+- **Sync on Startup**: Whether to automatically pull watch history from Jellyfin on application start.
+
+You can also override the database path using the `LAN_STREAMER_DB` environment variable.
+
+---
+
 ## 🧪 Development
 
 ### Technical Stack
