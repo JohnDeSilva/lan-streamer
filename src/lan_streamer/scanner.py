@@ -77,22 +77,35 @@ def scan_directories(
             # Check if we have an existing manual match for THIS SPECIFIC folder name
             existing_series = existing_library.get(series_name)
             tmdb_series = None
-            is_manual = False
+            is_locked = False
 
             if existing_series and existing_series.get("metadata", {}).get(
-                "is_manual_match"
+                "locked_metadata"
             ):
                 tmdb_id = existing_series["metadata"].get("tmdb_id")
                 if tmdb_id:
                     logger.info(
-                        f"Using existing manual TMDB match for '{series_name}' (ID: {tmdb_id})"
+                        f"Using locked TMDB metadata for '{series_name}' (ID: {tmdb_id})"
                     )
-                    tmdb_series = {"id": tmdb_id}
-                    is_manual = True
+                    # Use existing metadata exactly as is
+                    tmdb_series = {
+                        "id": tmdb_id,
+                        "name": series_name,  # Avoid full metadata fetch in scan_series
+                        "overview": existing_series["metadata"].get("overview", ""),
+                        "poster_path": existing_series["metadata"].get(
+                            "poster_path", ""
+                        ),
+                        "_is_prefetched": True,  # Signal to scan_series to not re-fetch
+                    }
+                    is_locked = True
+                else:
+                    is_locked = False
+            else:
+                is_locked = False
 
             data = scan_series(series_dir, tmdb_series=tmdb_series)
-            if is_manual:
-                data["metadata"]["is_manual_match"] = True
+            if is_locked:
+                data["metadata"]["locked_metadata"] = True
 
             cleaned = clean_series_data(data)
             if not cleaned:
@@ -183,9 +196,13 @@ def scan_series(series_dir: Path, tmdb_series: Dict[str, Any] = None) -> Dict[st
         # Artwork — TMDB returns a poster_path fragment
         poster_path = tmdb_series.get("poster_path") or ""
         if poster_path:
-            series_metadata["poster_path"] = tmdb_client.download_image(
-                poster_path, f"tmdb_series_{tmdb_id}"
-            )
+            # If it's prefetched, poster_path might already be a local path
+            if tmdb_series.get("_is_prefetched") and not poster_path.startswith("/"):
+                series_metadata["poster_path"] = poster_path
+            else:
+                series_metadata["poster_path"] = tmdb_client.download_image(
+                    poster_path, f"tmdb_series_{tmdb_id}"
+                )
         else:
             series_metadata["poster_path"] = ""
 

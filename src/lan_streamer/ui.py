@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem
 from PySide6.QtCore import Qt, QThread, Signal
 from pathlib import Path
+import logging
 
 from .config import config
 from .scanner import scan_directories, scan_series, clean_series_data
@@ -29,6 +30,8 @@ from .jellyfin import jellyfin_client
 from .tmdb import tmdb_client
 from . import db
 from .delegates import PosterDelegate
+
+logger = logging.getLogger(__name__)
 
 
 class ScanWorker(QThread):
@@ -478,8 +481,15 @@ class MainWindow(QMainWindow):
         self.detail_title = QLabel("")
         self.detail_title.setStyleSheet("font-size: 24px; font-weight: bold;")
 
+        self.locked_checkbox = QCheckBox("Lock Metadata")
+        self.locked_checkbox.setToolTip(
+            "Prevent automatic metadata updates for this series"
+        )
+        self.locked_checkbox.stateChanged.connect(self.on_locked_metadata_changed)
+
         top_bar.addWidget(self.back_button)
         top_bar.addWidget(self.detail_title, 1)
+        top_bar.addWidget(self.locked_checkbox)
         detail_layout.addLayout(top_bar)
 
         # Column View for Details
@@ -768,6 +778,13 @@ class MainWindow(QMainWindow):
             self.season_view.setCurrentIndex(first_index)
             self.on_season_selected(first_index)
 
+        # Update locked metadata checkbox
+        series_data = self.library.get(series_name, {})
+        series_metadata = series_data.get("metadata", {})
+        self.locked_checkbox.blockSignals(True)
+        self.locked_checkbox.setChecked(series_metadata.get("locked_metadata", False))
+        self.locked_checkbox.blockSignals(False)
+
         self.stacked_widget.setCurrentIndex(1)
 
     def on_season_selected(self, index):
@@ -788,6 +805,22 @@ class MainWindow(QMainWindow):
             episode_item.setEditable(False)
             episode_item.setData(episode, Qt.ItemDataRole.UserRole)
             self.episode_model.appendRow(episode_item)
+
+    def on_locked_metadata_changed(self, state):
+        if not self.current_series:
+            return
+
+        is_locked = state == Qt.CheckState.Checked.value
+        library_name = self.main_library_combo.currentText()
+        if not library_name:
+            return
+
+        if self.current_series in self.library:
+            self.library[self.current_series]["metadata"]["locked_metadata"] = is_locked
+            db.save_library(library_name, self.library)
+            logger.info(
+                f"Updated locked_metadata for '{self.current_series}' to {is_locked}"
+            )
 
     def _format_episode_display(self, episode_data: dict) -> str:
         watched_indicator = "[✓] " if episode_data.get("watched") else "[ ] "

@@ -49,13 +49,25 @@ def migrate_0_3_0(cursor):
 
 
 def migrate_0_3_1(cursor):
-    """Added tmdb_name and tmdb_number."""
+    """Added tmdb_name, tmdb_number, and replaced is_manual_match with locked_metadata."""
     try:
         cursor.execute("ALTER TABLE episodes ADD COLUMN tmdb_name TEXT")
     except sqlite3.OperationalError:
         pass
     try:
         cursor.execute("ALTER TABLE episodes ADD COLUMN tmdb_number INTEGER")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute(
+            "ALTER TABLE series ADD COLUMN locked_metadata BOOLEAN DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute(
+            "UPDATE series SET locked_metadata = is_manual_match WHERE is_manual_match IS NOT NULL"
+        )
     except sqlite3.OperationalError:
         pass
 
@@ -107,7 +119,7 @@ def init_db() -> bool:
                         tmdb_id TEXT,
                         poster_path TEXT,
                         overview TEXT,
-                        is_manual_match BOOLEAN DEFAULT 0,
+                        locked_metadata BOOLEAN DEFAULT 0,
                         UNIQUE(library_name, name)
                     )
                 """)
@@ -152,10 +164,12 @@ def init_db() -> bool:
                 current_v = version_to_tuple(db_version)
                 for target_v_str, migrate_func in migrations:
                     target_v = version_to_tuple(target_v_str)
-                    if current_v < target_v:
-                        logger.info(f"Migrating database to version {target_v_str}...")
+                    # Run if DB is older, OR if it's the current version (to catch incremental updates)
+                    if current_v < target_v or (
+                        current_v == target_v and target_v_str == DB_VERSION
+                    ):
+                        logger.info(f"Checking/Applying migration {target_v_str}...")
                         migrate_func(cursor)
-                        db_version = target_v_str  # Track progress
 
                 # Always ensure the version is set to the current app version
                 cursor.execute(
@@ -193,7 +207,9 @@ def load_library(library_name: str) -> Dict[str, Any]:
                         else None,
                         "poster_path": series_row["poster_path"],
                         "overview": series_row["overview"],
-                        "is_manual_match": bool(series_row["is_manual_match"]),
+                        "locked_metadata": bool(series_row["locked_metadata"])
+                        if "locked_metadata" in series_row.keys()
+                        else False,
                     },
                     "seasons": {},
                 }
@@ -286,14 +302,14 @@ def save_library(library_name: str, library: Dict[str, Any]):
                     # Upsert Series
                     cursor.execute(
                         """
-                        INSERT INTO series (library_name, name, jellyfin_id, tmdb_id, poster_path, overview, is_manual_match)
+                        INSERT INTO series (library_name, name, jellyfin_id, tmdb_id, poster_path, overview, locked_metadata)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(library_name, name) DO UPDATE SET
                             jellyfin_id = excluded.jellyfin_id,
                             tmdb_id = excluded.tmdb_id,
                             poster_path = excluded.poster_path,
                             overview = excluded.overview,
-                            is_manual_match = excluded.is_manual_match
+                            locked_metadata = excluded.locked_metadata
                         RETURNING id
                     """,
                         (
@@ -303,7 +319,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
                             series_metadata.get("tmdb_id"),
                             series_metadata.get("poster_path"),
                             series_metadata.get("overview"),
-                            1 if series_metadata.get("is_manual_match") else 0,
+                            1 if series_metadata.get("locked_metadata") else 0,
                         ),
                     )
                     series_id = cursor.fetchone()[0]

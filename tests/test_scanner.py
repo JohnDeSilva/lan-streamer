@@ -223,7 +223,7 @@ def test_scan_directories_respects_manual_match(tmp_path, monkeypatch):
 
     existing_library = {
         "Manual Show": {
-            "metadata": {"tmdb_id": "manual_tmdb_id", "is_manual_match": True},
+            "metadata": {"tmdb_id": "manual_tmdb_id", "locked_metadata": True},
             "seasons": {"Season 1": {"episodes": []}},
         }
     }
@@ -242,7 +242,7 @@ def test_scan_directories_respects_manual_match(tmp_path, monkeypatch):
     library = scan_directories([str(tmp_path)], existing_library=existing_library)
 
     assert library["Manual Show"]["metadata"]["tmdb_id"] == "manual_tmdb_id"
-    assert library["Manual Show"]["metadata"]["is_manual_match"] is True
+    assert library["Manual Show"]["metadata"]["locked_metadata"] is True
     mock_tmdb.search_series.assert_not_called()
 
 
