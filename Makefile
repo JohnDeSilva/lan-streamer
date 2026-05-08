@@ -1,4 +1,4 @@
-.PHONY: run lint test build-mac clean
+.PHONY: run lint test load-test build-mac clean
 
 UV := $(shell command -v uv 2> /dev/null)
 ifeq ($(UV),)
@@ -19,7 +19,10 @@ lint:
 	$(RUFF) check --fix .
 
 test:
-	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) tests/
+	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "not load" tests/
+
+load-test:
+	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "load" -s --no-cov tests/
 
 build-mac:
 	uv run pyinstaller --name "Lan Streamer" --windowed --noconfirm src/lan_streamer/main.py
