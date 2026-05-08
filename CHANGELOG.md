@@ -1,3 +1,9 @@
+## 0.5.1 (2026-05-08)
+
+### Fix
+
+- **db**: persist watch status when set on lan streamer
+
 ## 0.5.0 (2026-05-08)
 
 ### Feat
