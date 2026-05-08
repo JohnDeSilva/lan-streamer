@@ -9,7 +9,7 @@ def protect_user_dirs(tmp_path, monkeypatch):
     """
     import lan_streamer.config
     import lan_streamer.db
-    import lan_streamer.jellyfin
+    import lan_streamer.tmdb
 
     config_file = tmp_path / "config.json"
     db_file = tmp_path / "library.db"
@@ -17,7 +17,7 @@ def protect_user_dirs(tmp_path, monkeypatch):
 
     monkeypatch.setattr(lan_streamer.config, "CONFIG_FILE", config_file)
     monkeypatch.setattr(lan_streamer.db, "DB_FILE", db_file)
-    monkeypatch.setattr(lan_streamer.jellyfin, "CACHE_DIR", cache_dir)
+    monkeypatch.setattr(lan_streamer.tmdb, "CACHE_DIR", cache_dir)
 
     # Reload config instance so it points to the new path
     # But note that the Config() instance in lan_streamer.config
@@ -26,3 +26,4 @@ def protect_user_dirs(tmp_path, monkeypatch):
     lan_streamer.config.config.libraries = {}
     lan_streamer.config.config.jellyfin_url = ""
     lan_streamer.config.config.jellyfin_api_key = ""
+    lan_streamer.config.config.tmdb_api_key = ""

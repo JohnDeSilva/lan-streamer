@@ -27,11 +27,14 @@ from .config import config
 from .scanner import scan_directories, scan_series, clean_series_data
 from .player import play_video
 from .jellyfin import jellyfin_client
+from .tmdb import tmdb_client
 from . import db
 from .delegates import PosterDelegate
 
 
 class ScanWorker(QThread):
+    """Scans a single library directory using TMDB for metadata."""
+
     finished = Signal(dict)
     error = Signal(str)
 
@@ -42,39 +45,51 @@ class ScanWorker(QThread):
 
     def run(self):
         try:
-            jellyfin_client.preload_library()
             library = scan_directories(
                 self.root_dirs, existing_library=self.existing_library
             )
-            jellyfin_client.clear_cache()
             self.finished.emit(library)
         except Exception as e:
-            jellyfin_client.clear_cache()
             self.error.emit(str(e))
 
 
 class SyncAllWorker(QThread):
+    """Rescans all libraries using TMDB for metadata (manual action only)."""
+
     finished = Signal()
     progress = Signal(str)
     error = Signal(str)
 
     def run(self):
         try:
-            jellyfin_client.preload_library()
             for lib_name, root_dirs in config.libraries.items():
                 self.progress.emit(f"Scanning library '{lib_name}'...")
-                # Load existing data for this library to support incremental scan
                 existing_data = db.load_library(lib_name)
                 library = scan_directories(root_dirs, existing_library=existing_data)
                 db.save_library(lib_name, library)
-            jellyfin_client.clear_cache()
             self.finished.emit()
         except Exception as e:
-            jellyfin_client.clear_cache()
+            self.error.emit(str(e))
+
+
+class JellyfinHistorySyncWorker(QThread):
+    """Pulls watch history from Jellyfin and syncs it to the local DB."""
+
+    finished = Signal(int)  # number of episodes updated
+    error = Signal(str)
+
+    def run(self):
+        try:
+            watched_paths = jellyfin_client.fetch_watched_episode_paths()
+            updated = db.sync_watched_from_paths(watched_paths)
+            self.finished.emit(updated)
+        except Exception as e:
             self.error.emit(str(e))
 
 
 class SeriesMatchDialog(QDialog):
+    """Manual match dialog — searches TMDB."""
+
     def __init__(self, series_name, parent=None):
         super().__init__(parent)
         self.series_name = series_name
@@ -86,7 +101,7 @@ class SeriesMatchDialog(QDialog):
 
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit(series_name)
-        self.search_button = QPushButton("Search Jellyfin")
+        self.search_button = QPushButton("Search TMDB")
         self.search_button.clicked.connect(self.do_search)
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(self.search_button)
@@ -105,7 +120,6 @@ class SeriesMatchDialog(QDialog):
         buttons.addWidget(self.cancel_button)
         layout.addLayout(buttons)
 
-        # Initial search
         self.do_search()
 
     def do_search(self):
@@ -114,10 +128,10 @@ class SeriesMatchDialog(QDialog):
         if not query:
             return
 
-        results = jellyfin_client.search_series_full(query)
+        results = tmdb_client.search_series_full(query)
         for item in results:
-            display_name = item.get("Name", "Unknown")
-            year = item.get("ProductionYear")
+            display_name = item.get("name", "Unknown")
+            year = item.get("first_air_date", "")[:4]  # TMDB uses first_air_date
             if year:
                 display_name += f" ({year})"
 
@@ -134,13 +148,84 @@ class SeriesMatchDialog(QDialog):
         return None
 
 
-class JellyfinSettingsDialog(QDialog):
+class TMDBSettingsDialog(QDialog):
+    """Settings dialog for TMDB API key."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Jellyfin Settings")
-        self.setMinimumWidth(400)
+        self.setWindowTitle("TMDB Settings")
+        self.setMinimumWidth(440)
 
         layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        # TMDB logo
+        from pathlib import Path as _Path
+
+        logo_path = _Path(__file__).parent / "assets" / "tmdb_logo.svg"
+        if logo_path.exists():
+            try:
+                from PySide6.QtSvgWidgets import QSvgWidget
+
+                logo = QSvgWidget(str(logo_path))
+                logo.setFixedSize(120, 42)
+                logo_row = QHBoxLayout()
+                logo_row.addStretch()
+                logo_row.addWidget(logo)
+                logo_row.addStretch()
+                layout.addLayout(logo_row)
+            except Exception:
+                pass  # SVG widget not available — skip logo silently
+
+        desc = QLabel(
+            'Get a free API key at <a href="https://www.themoviedb.org/settings/api">themoviedb.org/settings/api</a>'
+        )
+        desc.setOpenExternalLinks(True)
+        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(desc)
+
+        form = QFormLayout()
+        self.api_key_input = QLineEdit(config.tmdb_api_key)
+        self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.api_key_input.setPlaceholderText("Paste your TMDB API key here")
+        form.addRow("TMDB API Key:", self.api_key_input)
+        layout.addLayout(form)
+
+        button_row = QHBoxLayout()
+        test_btn = QPushButton("Test Connection")
+        test_btn.clicked.connect(self.test_connection)
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self.save_settings)
+        button_row.addWidget(test_btn)
+        button_row.addWidget(save_btn)
+        layout.addLayout(button_row)
+
+    def test_connection(self):
+        key = self.api_key_input.text().strip()
+        success, message = tmdb_client.validate_credentials(key)
+        if success:
+            QMessageBox.information(self, "Success", message)
+        else:
+            QMessageBox.warning(self, "Connection Failed", message)
+
+    def save_settings(self):
+        config.tmdb_api_key = self.api_key_input.text().strip()
+        config.save()
+        QMessageBox.information(self, "Saved", "TMDB settings saved.")
+
+
+class JellyfinSettingsDialog(QDialog):
+    """Settings dialog for Jellyfin watch-history sync credentials."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Jellyfin Settings (Watch History Sync)")
+        self.setMinimumWidth(420)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(
+            QLabel("Used only for syncing watch history — not for metadata.")
+        )
 
         jellyfin_layout = QFormLayout()
         self.jellyfin_url_input = QLineEdit(config.jellyfin_url)
@@ -176,7 +261,6 @@ class JellyfinSettingsDialog(QDialog):
         config.jellyfin_url = self.jellyfin_url_input.text().strip()
         config.jellyfin_api_key = self.jellyfin_api_key_input.text().strip()
         config.save()
-        # Reset cached user ID so it's re-fetched with new credentials
         jellyfin_client._cached_user_id = None
         QMessageBox.information(self, "Saved", "Jellyfin settings saved.")
 
@@ -219,15 +303,15 @@ class LibrarySettingsDialog(QDialog):
         button_layout.addWidget(self.remove_button)
         layout.addLayout(button_layout)
 
-        self.sync_checkbox = QCheckBox("Sync all libraries on startup")
-        self.sync_checkbox.setChecked(config.sync_on_start)
+        self.sync_checkbox = QCheckBox("Sync Jellyfin watch history on startup")
+        self.sync_checkbox.setChecked(config.sync_history_on_start)
         self.sync_checkbox.stateChanged.connect(self.on_sync_on_start_changed)
         layout.addWidget(self.sync_checkbox)
 
         self.on_library_changed(self.library_combo.currentText())
 
     def on_sync_on_start_changed(self, state):
-        config.sync_on_start = self.sync_checkbox.isChecked()
+        config.sync_history_on_start = self.sync_checkbox.isChecked()
         config.save()
 
     def on_library_changed(self, library_name):
@@ -292,8 +376,9 @@ class MainWindow(QMainWindow):
         self._setup_menu()
         self.refresh_libraries_combo()
 
-        if recreated_db or config.sync_on_start:
-            self.sync_all_libraries()
+        # Always sync Jellyfin watch history on startup (if configured)
+        if config.sync_history_on_start and jellyfin_client.is_configured():
+            self.sync_jellyfin_history()
 
     def _setup_menu(self):
         menubar = self.menuBar()
@@ -304,14 +389,25 @@ class MainWindow(QMainWindow):
         manage_dirs_action.triggered.connect(self.open_library_settings)
         settings_menu.addAction(manage_dirs_action)
 
+        manage_tmdb_action = QAction("TMDB Settings...", self)
+        manage_tmdb_action.setMenuRole(QAction.MenuRole.NoRole)
+        manage_tmdb_action.triggered.connect(self.open_tmdb_settings)
+        settings_menu.addAction(manage_tmdb_action)
+
         manage_jf_action = QAction("Jellyfin Settings...", self)
         manage_jf_action.setMenuRole(QAction.MenuRole.NoRole)
         manage_jf_action.triggered.connect(self.open_jellyfin_settings)
         settings_menu.addAction(manage_jf_action)
 
-        self.refresh_action = QAction("Refresh Library (Scan Network)", self)
+        settings_menu.addSeparator()
+
+        self.refresh_action = QAction("Scan Library (Fetch Metadata from TMDB)", self)
         self.refresh_action.triggered.connect(self.force_scan_library)
         settings_menu.addAction(self.refresh_action)
+
+        self.history_sync_action = QAction("Sync Watch History from Jellyfin", self)
+        self.history_sync_action.triggered.connect(self.sync_jellyfin_history)
+        settings_menu.addAction(self.history_sync_action)
 
     def _setup_ui(self):
         central_widget = QWidget()
@@ -417,6 +513,10 @@ class MainWindow(QMainWindow):
         dialog = LibrarySettingsDialog(self)
         dialog.exec()
         self.refresh_libraries_combo()
+
+    def open_tmdb_settings(self):
+        dialog = TMDBSettingsDialog(self)
+        dialog.exec()
 
     def open_jellyfin_settings(self):
         dialog = JellyfinSettingsDialog(self)
@@ -524,7 +624,7 @@ class MainWindow(QMainWindow):
         self.refresh_action.setEnabled(True)
 
     def sync_all_libraries(self):
-        self.statusBar().showMessage("Syncing all libraries... Please wait.")
+        self.statusBar().showMessage("Scanning all libraries (TMDB)... Please wait.")
         self.refresh_action.setEnabled(False)
 
         self.sync_worker = SyncAllWorker()
@@ -537,8 +637,34 @@ class MainWindow(QMainWindow):
 
     def on_sync_all_finished(self):
         self.load_library_ui()
-        self.statusBar().showMessage("Global sync complete.", 5000)
+        self.statusBar().showMessage("Library scan complete.", 5000)
         self.refresh_action.setEnabled(True)
+
+    def sync_jellyfin_history(self):
+        """Pulls Jellyfin watch history and updates local DB watched flags."""
+        self.statusBar().showMessage("Syncing watch history from Jellyfin...")
+        if hasattr(self, "history_sync_action"):
+            self.history_sync_action.setEnabled(False)
+
+        self.history_worker = JellyfinHistorySyncWorker()
+        self.history_worker.finished.connect(self.on_history_sync_finished)
+        self.history_worker.error.connect(self.on_history_sync_error)
+        self.history_worker.finished.connect(self.history_worker.deleteLater)
+        self.history_worker.error.connect(self.history_worker.deleteLater)
+        self.history_worker.start()
+
+    def on_history_sync_finished(self, updated_count: int):
+        self.load_library_ui()
+        self.statusBar().showMessage(
+            f"Watch history synced ({updated_count} episodes updated).", 5000
+        )
+        if hasattr(self, "history_sync_action"):
+            self.history_sync_action.setEnabled(True)
+
+    def on_history_sync_error(self, error_msg: str):
+        self.statusBar().showMessage(f"History sync failed: {error_msg}", 5000)
+        if hasattr(self, "history_sync_action"):
+            self.history_sync_action.setEnabled(True)
 
     def on_scan_error(self, error_msg):
         self.statusBar().showMessage(f"Scan failed: {error_msg}", 5000)
@@ -587,8 +713,8 @@ class MainWindow(QMainWindow):
                 )
                 return
 
-            # Re-scan this series with the selected Jellyfin metadata
-            new_data = scan_series(series_path, jellyfin_series=selected)
+            # Re-scan with the selected TMDB series
+            new_data = scan_series(series_path, tmdb_series=selected)
             cleaned_data = clean_series_data(new_data)
 
             if cleaned_data:
@@ -599,7 +725,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(
                     self,
                     "Success",
-                    f"Series '{series_name}' successfully matched to '{selected.get('Name')}'",
+                    f"Series '{series_name}' matched to '{selected.get('name')}'",
                 )
 
     def go_back(self):

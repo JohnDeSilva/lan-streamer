@@ -17,7 +17,8 @@ def test_config_initialization(mock_config_file):
     assert config.libraries == {}
     assert config.jellyfin_url == ""
     assert config.jellyfin_api_key == ""
-    assert config.sync_on_start is True
+    assert config.tmdb_api_key == ""
+    assert config.sync_history_on_start is True
     assert config.filter_unwatched is False
     assert config.sort_mode == "Alphabetical"
 
@@ -30,7 +31,8 @@ def test_config_load_existing(mock_config_file):
                 "libraries": {"TestLib": ["/path/to/test"]},
                 "jellyfin_url": "http://test",
                 "jellyfin_api_key": "test_key",
-                "sync_on_start": False,
+                "tmdb_api_key": "tmdb_key",
+                "sync_history_on_start": False,
                 "filter_unwatched": True,
                 "sort_mode": "Date Added (Newest)",
             },
@@ -41,7 +43,8 @@ def test_config_load_existing(mock_config_file):
     assert config.libraries == {"TestLib": ["/path/to/test"]}
     assert config.jellyfin_url == "http://test"
     assert config.jellyfin_api_key == "test_key"
-    assert config.sync_on_start is False
+    assert config.tmdb_api_key == "tmdb_key"
+    assert config.sync_history_on_start is False
     assert config.filter_unwatched is True
     assert config.sort_mode == "Date Added (Newest)"
 
@@ -54,6 +57,16 @@ def test_config_migrate_old_format(mock_config_file):
     config = Config()
     assert config.libraries == {"Default": ["/old/path"]}
     assert config.jellyfin_url == ""
+
+
+def test_config_backwards_compat_tvdb_api_key(mock_config_file):
+    """Old config files using tvdb_api_key should migrate to tmdb_api_key."""
+    mock_config_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(mock_config_file, "w") as f:
+        json.dump({"tvdb_api_key": "old_tvdb_key"}, f)
+
+    config = Config()
+    assert config.tmdb_api_key == "old_tvdb_key"
 
 
 def test_config_add_remove_library(mock_config_file):

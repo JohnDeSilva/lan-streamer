@@ -1,4 +1,6 @@
+import sqlite3
 import pytest
+from contextlib import closing
 from lan_streamer import db
 
 
@@ -113,3 +115,63 @@ def test_db_version_sync():
     from lan_streamer import __version__
 
     assert db.DB_VERSION == __version__
+
+
+def test_sync_watched_from_paths(mock_db_file, monkeypatch):
+    from lan_streamer.db import sync_watched_from_paths, get_connection
+
+    db.init_db()
+    with closing(get_connection()) as conn:
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO series (name, library_name) VALUES ('Show', 'Lib')"
+            )
+            series_id = cursor.lastrowid
+            cursor.execute(
+                "INSERT INTO seasons (series_id, name) VALUES (?, 'Season 1')",
+                (series_id,),
+            )
+            season_id = cursor.lastrowid
+            cursor.execute(
+                "INSERT INTO episodes (season_id, name, path, watched) VALUES (?, 'Ep1', '/path1', 0)",
+                (season_id,),
+            )
+            cursor.execute(
+                "INSERT INTO episodes (season_id, name, path, watched) VALUES (?, 'Ep2', '/path2', 0)",
+                (season_id,),
+            )
+
+    # Test with one path
+    count = sync_watched_from_paths({"/path1"})
+    assert count == 1
+    with closing(get_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT watched FROM episodes WHERE path='/path1'")
+        assert cursor.fetchone()[0] == 1
+        cursor.execute("SELECT watched FROM episodes WHERE path='/path2'")
+        assert cursor.fetchone()[0] == 0
+
+    # Test with empty set
+    assert sync_watched_from_paths(set()) == 0
+
+def test_is_less_than_0_2_0_negative_version(mock_db_file, monkeypatch):
+    from lan_streamer.db import init_db
+    # To hit line 50, we need to mock cursor.fetchone to return a version starting with negative
+    # Actually, the function is defined INSIDE init_db. We can just test init_db with a mock version.
+    
+    with closing(sqlite3.connect(mock_db_file)) as conn:
+        conn.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO metadata (key, value) VALUES ('version', '-1.0.0')")
+        conn.commit()
+    
+    # This should trigger recreation
+    recreated = init_db()
+    assert recreated is True
+
+def test_sync_watched_from_paths_exception(monkeypatch):
+    from lan_streamer.db import sync_watched_from_paths
+    def mock_get_conn():
+        raise Exception("DB Error")
+    monkeypatch.setattr("lan_streamer.db.get_connection", mock_get_conn)
+    assert sync_watched_from_paths({"/path"}) == 0

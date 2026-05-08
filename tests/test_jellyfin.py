@@ -1,4 +1,5 @@
 import pytest
+import requests
 from unittest.mock import MagicMock, patch
 from lan_streamer.jellyfin import JellyfinClient
 from lan_streamer.config import config
@@ -18,18 +19,14 @@ def test_jellyfin_is_configured(jf_client):
 
 def test_jellyfin_not_configured():
     client = JellyfinClient()
-    client.session = MagicMock()
-    # Assuming config is empty from other tests, if not let's set it
     config.jellyfin_url = ""
     config.jellyfin_api_key = ""
     assert client.is_configured() is False
-    assert client.search_series("Test") is None
-    assert client.get_seasons("1") == []
-    assert client.get_episodes("1", "1") == []
-    assert client.download_image("1") == ""
     assert client.get_current_user_id() is None
-    # set_watched_status should just return
+    # set_watched_status should just return silently
     client.set_watched_status("1", True)
+    # fetch_watched_episode_paths should return empty set
+    assert client.fetch_watched_episode_paths() == set()
 
 
 def test_get_current_user_id(jf_client):
@@ -45,62 +42,6 @@ def test_get_current_user_id(jf_client):
     jf_client.session.get.assert_not_called()
 
 
-def test_search_series(jf_client):
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"Items": [{"Id": "series123", "Name": "Test Show"}]}
-    jf_client.session.get = MagicMock(return_value=mock_resp)
-
-    res = jf_client.search_series("Test Show")
-    assert res["Id"] == "series123"
-
-
-def test_get_seasons(jf_client):
-    jf_client._cached_user_id = "user123"
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"Items": [{"Id": "s1", "Name": "Season 1"}]}
-    jf_client.session.get = MagicMock(return_value=mock_resp)
-
-    res = jf_client.get_seasons("series123")
-    assert len(res) == 1
-    assert res[0]["Id"] == "s1"
-
-
-def test_get_episodes(jf_client):
-    jf_client._cached_user_id = "user123"
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"Items": [{"Id": "ep1", "Name": "Episode 1"}]}
-    jf_client.session.get = MagicMock(return_value=mock_resp)
-
-    res = jf_client.get_episodes("series123", "s1")
-    assert len(res) == 1
-    assert res[0]["Id"] == "ep1"
-
-
-def test_download_image(jf_client, tmp_path, monkeypatch):
-    import lan_streamer.jellyfin
-
-    monkeypatch.setattr(lan_streamer.jellyfin, "CACHE_DIR", tmp_path)
-
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.content = b"fake-image-data"
-    jf_client.session.get = MagicMock(return_value=mock_resp)
-
-    path = jf_client.download_image("item123")
-    assert path == str(tmp_path / "item123.jpg")
-    assert (tmp_path / "item123.jpg").read_bytes() == b"fake-image-data"
-
-    # Verify headers were included
-    args, kwargs = jf_client.session.get.call_args
-    assert "Authorization" in kwargs.get("headers", {})
-
-    # Second call should return cached path without downloading
-    jf_client.session.get.reset_mock()
-    path2 = jf_client.download_image("item123")
-    assert path2 == str(tmp_path / "item123.jpg")
-    jf_client.session.get.assert_not_called()
-
-
 def test_set_watched_status(jf_client):
     jf_client._cached_user_id = "user123"
     jf_client.session.post = MagicMock()
@@ -113,24 +54,68 @@ def test_set_watched_status(jf_client):
     jf_client.session.delete.assert_called_once()
 
 
+def test_set_watched_status_error(jf_client):
+    jf_client._cached_user_id = "user123"
+    jf_client.session.post = MagicMock(side_effect=Exception("network error"))
+    # Should not raise
+    jf_client.set_watched_status("item123", True)
+
+
+def test_fetch_watched_episode_paths(jf_client):
+    jf_client._cached_user_id = "user123"
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "Items": [
+            {"Id": "ep1", "Path": "/movies/show/s01e01.mkv"},
+            {"Id": "ep2", "Path": "/movies/show/s01e02.mkv"},
+            {"Id": "ep3"},  # no Path — should be skipped
+        ]
+    }
+    jf_client.session.get = MagicMock(return_value=mock_resp)
+
+    paths = jf_client.fetch_watched_episode_paths()
+    assert paths == {"/movies/show/s01e01.mkv", "/movies/show/s01e02.mkv"}
+
+
+def test_fetch_watched_episode_paths_pagination(jf_client):
+    """Verify pagination: stops when fewer than limit items are returned."""
+    jf_client._cached_user_id = "user123"
+
+    # First page: 5000 items
+    page1 = MagicMock()
+    page1.json.return_value = {"Items": [{"Path": f"/ep{i}.mkv"} for i in range(5000)]}
+
+    # Second page: 3 items (< 5000 → last page)
+    page2 = MagicMock()
+    page2.json.return_value = {"Items": [{"Path": "/ep_last.mkv"}]}
+
+    jf_client.session.get = MagicMock(side_effect=[page1, page2])
+
+    paths = jf_client.fetch_watched_episode_paths()
+    assert len(paths) == 5001
+    assert jf_client.session.get.call_count == 2
+
+
+def test_fetch_watched_episode_paths_error(jf_client):
+    jf_client._cached_user_id = "user123"
+    jf_client.session.get = MagicMock(side_effect=Exception("network down"))
+
+    paths = jf_client.fetch_watched_episode_paths()
+    assert paths == set()
+
+
 def test_jellyfin_error_handling(jf_client):
     jf_client.session.get = MagicMock(side_effect=Exception("Mocked error"))
     jf_client.session.post = MagicMock(side_effect=Exception("Mocked error"))
 
     assert jf_client.get_current_user_id() is None
-    assert jf_client.search_series("Test") is None
-    assert jf_client.get_seasons("1") == []
-    assert jf_client.get_episodes("1", "1") == []
-    assert jf_client.download_image("1") == ""
     # Shouldn't raise
     jf_client._cached_user_id = "u1"
     jf_client.set_watched_status("1", True)
 
 
 def test_jellyfin_validate_credentials(jf_client, monkeypatch):
-    import requests
-
-    # Success
     import socket
 
     monkeypatch.setattr(socket, "create_connection", MagicMock())
@@ -169,6 +154,37 @@ def test_jellyfin_validate_credentials(jf_client, monkeypatch):
     assert "Unexpected error" in msg
 
 
+def test_validate_credentials_socket_failure(jf_client):
+    with patch("socket.create_connection", side_effect=Exception("Connection error")):
+        success, msg = jf_client.validate_credentials("http://bad", "key")
+        assert success is False
+        assert "System-level connection failed" in msg
+
+
+def test_validate_credentials_401(jf_client):
+    with patch("socket.create_connection"):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 401
+        from requests.exceptions import HTTPError
+
+        mock_resp.raise_for_status.side_effect = HTTPError(response=mock_resp)
+        jf_client.session.get = MagicMock(return_value=mock_resp)
+        success, msg = jf_client.validate_credentials("http://bad", "key")
+        assert success is False
+        assert "401" in msg or "Unauthorized" in msg
+
+
+def test_validate_credentials_ip(jf_client):
+    with patch("socket.create_connection"):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        jf_client.session.get = MagicMock(return_value=mock_resp)
+
+        success, _ = jf_client.validate_credentials("192.168.1.10:8096", "key")
+        assert success is True
+        assert jf_client.session.get.call_args[0][0] == "http://192.168.1.10:8096/Users"
+
+
 def test_get_base_url_logic(jf_client):
     config.jellyfin_url = "jellyfin.local"
     assert jf_client._get_base_url() == "https://jellyfin.local"
@@ -184,11 +200,7 @@ def test_get_base_url_logic(jf_client):
 
 
 def test_get_current_user_id_https_retry(jf_client, monkeypatch):
-    import requests
-
-    monkeypatch.setattr(
-        config, "jellyfin_url", "test.com"
-    )  # Will result in https://test.com
+    monkeypatch.setattr(config, "jellyfin_url", "test.com")
     monkeypatch.setattr(config, "jellyfin_api_key", "key")
 
     mock_resp = MagicMock()
@@ -208,274 +220,7 @@ def test_get_current_user_id_https_retry(jf_client, monkeypatch):
     assert jf_client.session.get.call_args_list[1][0][0].startswith("http://")
 
 
-def test_clean_name(jf_client):
-    assert jf_client._clean_name("The.Office.S01.720p") == "The Office"
-    assert jf_client._clean_name("Breaking Bad (2008)") == "Breaking Bad"
-    assert jf_client._clean_name("Show.Name.2024.1080p.HEVC") == "Show Name"
-    assert jf_client._clean_name("Anime_Show_Dual-Audio") == "Anime Show"
-    assert jf_client._clean_name("Test [2024] (4K)") == "Test"
-    assert jf_client._clean_name("Series Name Season 2") == "Series Name"
-
-
-def test_validate_credentials_failure(jf_client):
-    # Mock socket connection error
-    with patch("socket.create_connection", side_effect=Exception("Connection error")):
-        success, msg = jf_client.validate_credentials("http://bad", "key")
-        assert success is False
-        assert "System-level connection failed" in msg
-
-    # Mock 401
-    with patch("socket.create_connection"):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 401
-        from requests.exceptions import HTTPError
-
-        mock_resp.raise_for_status.side_effect = HTTPError(response=mock_resp)
-        jf_client.session.get = MagicMock(return_value=mock_resp)
-        success, msg = jf_client.validate_credentials("http://bad", "key")
-        assert success is False
-        assert "401" in msg or "Unauthorized" in msg
-
-
-def test_get_headers_no_config(jf_client):
-    from lan_streamer.config import config
-
-    old_key = config.jellyfin_api_key
-    config.jellyfin_api_key = ""
-    try:
-        headers = jf_client._get_headers()
-        assert "X-Emby-Token" not in headers
-    finally:
-        config.jellyfin_api_key = old_key
-
-
-def test_download_image_cached(jf_client, tmp_path):
-    # Mock cache dir
-    with patch("lan_streamer.jellyfin.CACHE_DIR", tmp_path):
-        image_file = tmp_path / "test_id.jpg"
-        image_file.write_text("dummy image data")
-
-        # Should return existing path without network call
-        jf_client.session.get = MagicMock()
-        path = jf_client.download_image("test_id")
-        assert path == str(image_file)
-        jf_client.session.get.assert_not_called()
-
-
-def test_search_series_strategies(jf_client):
-    mock_resp_empty = MagicMock()
-    mock_resp_empty.json.return_value = {"Items": []}
-    mock_resp_empty.status_code = 200
-
-    mock_resp_success = MagicMock()
-    mock_resp_success.json.return_value = {
-        "Items": [{"Id": "match123", "Name": "Star Trek: Discovery"}]
-    }
-    mock_resp_success.status_code = 200
-
-    # Test Colon Strategy
-    jf_client.session.get = MagicMock(side_effect=[mock_resp_empty, mock_resp_success])
-    res = jf_client.search_series("Star Trek - Discovery")
-    assert res["Id"] == "match123"
-    assert jf_client.session.get.call_count == 2
-
-    # Test Fuzzy Strategy
-    mock_resp_fuzzy = MagicMock()
-    mock_resp_fuzzy.json.return_value = {
-        "Items": [{"Id": "fuzzy123", "Name": "The Office"}]
-    }
-    mock_resp_fuzzy.status_code = 200
-
-    # The.Office.S01.720p has no hyphens, so Strategy 2 (Colon) is skipped.
-    jf_client.session.get = MagicMock(side_effect=[mock_resp_empty, mock_resp_fuzzy])
-    res = jf_client.search_series("The.Office.S01.720p")
-    assert res["Id"] == "fuzzy123"
-    assert jf_client.session.get.call_count == 2
-
-
-def test_search_series_full(jf_client):
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {
-        "Items": [{"Id": "1", "Name": "Show A"}, {"Id": "2", "Name": "Show B"}]
-    }
-    mock_resp.status_code = 200
-    jf_client.session.get = MagicMock(return_value=mock_resp)
-
-    results = jf_client.search_series_full("Show")
-    assert len(results) == 2
-    assert results[0]["Name"] == "Show A"
-
-
-def test_is_similar(jf_client):
-    assert jf_client._is_similar("Marvel's She-Hulk", "She-Hulk") is True
-    assert jf_client._is_similar("Marvel's She-Hulk", "Marvel's Daredevil") is False
-    assert jf_client._is_similar("The Office", "The Office (US)") is True
-    assert jf_client._is_similar("Breaking Bad", "Better Call Saul") is False
-
-
-def test_search_series_fallback_similarity(jf_client):
-    mock_resp_empty = MagicMock()
-    mock_resp_empty.json.return_value = {"Items": []}
-    mock_resp_empty.status_code = 200
-
-    # Bad match (low similarity)
-    mock_resp_bad = MagicMock()
-    mock_resp_bad.json.return_value = {
-        "Items": [{"Id": "bad", "Name": "Something Completely Different"}]
-    }
-    mock_resp_bad.status_code = 200
-
-    # Good match
-    mock_resp_good = MagicMock()
-    mock_resp_good.json.return_value = {
-        "Items": [{"Id": "good", "Name": "Matched Show"}]
-    }
-    mock_resp_good.status_code = 200
-
-    # Strategy 1-3 fail, Strategy 4 returns bad match (should be rejected), Strategy 5 returns good match
-    # Matched Show S01 Extra Noise has no hyphens, so Strategy 2 (Colon) is skipped.
-    # Strategies called: 1 (Exact), 3 (Fuzzy), 4 (Two words), 5 (First word)
-    jf_client.session.get = MagicMock(
-        side_effect=[
-            mock_resp_empty,
-            mock_resp_empty,
-            mock_resp_bad,
-            mock_resp_good,
-        ]
-    )
-
-    res = jf_client.search_series("Matched Show S01 Extra Noise")
-    assert res["Id"] == "good"
-
-
-def test_validate_credentials_ip(jf_client):
-    with patch("socket.create_connection"):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        jf_client.session.get = MagicMock(return_value=mock_resp)
-
-        # Test IP address
-        success, _ = jf_client.validate_credentials("192.168.1.10:8096", "key")
-        assert success is True
-        assert jf_client.session.get.call_args[0][0] == "http://192.168.1.10:8096/Users"
-
-
-def test_download_image_error(jf_client, tmp_path):
-    with patch("lan_streamer.jellyfin.CACHE_DIR", tmp_path):
-        jf_client.session.get = MagicMock(side_effect=Exception("Download failed"))
-        path = jf_client.download_image("error_id")
-        assert path == ""
-
-
-def test_search_series_full_error(jf_client):
-    jf_client.session.get = MagicMock(side_effect=Exception("Search failed"))
-    results = jf_client.search_series_full("anything")
-    assert results == []
-
-
-def test_preload_library(jf_client):
-    jf_client._cached_user_id = "user123"
-
-    mock_resp_series = MagicMock()
-    mock_resp_series.json.return_value = {
-        "Items": [{"Id": "series1", "Name": "Cached Show"}]
-    }
-    mock_resp_series.status_code = 200
-
-    mock_resp_empty = MagicMock()
-    mock_resp_empty.json.return_value = {"Items": []}
-    mock_resp_empty.status_code = 200
-
-    # _fetch_all_items_paginated will call session.get until it returns < 5000 items.
-    # It will make 1 call for Series, 1 for Season, 1 for Episode.
-    jf_client.session.get = MagicMock(
-        side_effect=[
-            mock_resp_series,  # Series items (1 item, < 5000, breaks loop)
-            mock_resp_empty,  # Season items (0 items, < 5000, breaks loop)
-            mock_resp_empty,  # Episode items (0 items, < 5000, breaks loop)
-        ]
-    )
-
-    jf_client.preload_library()
-
-    assert jf_client._cache is not None
-    assert len(jf_client._cache["series"]) == 1
-    assert jf_client._cache["series"][0]["Name"] == "Cached Show"
-
-    # Verify search uses cache
-    jf_client.session.get.reset_mock()
-    res = jf_client.search_series("Cached Show")
-    assert res["Id"] == "series1"
-    jf_client.session.get.assert_not_called()
-
-    jf_client.clear_cache()
-    assert jf_client._cache is None
-
-
-def test_jellyfin_preload_full(jf_client, monkeypatch):
-    # Test lines 47-51, 58-62 of jellyfin.py
-    jf_client.get_current_user_id = MagicMock(return_value="user1")
-
-    mock_resp_series = MagicMock()
-    mock_resp_series.json.return_value = {"Items": [{"Id": "ser1", "Name": "Show"}]}
-    mock_resp_series.status_code = 200
-
-    mock_resp_seasons = MagicMock()
-    mock_resp_seasons.json.return_value = {
-        "Items": [{"Id": "sea1", "SeriesId": "ser1"}]
-    }
-    mock_resp_seasons.status_code = 200
-
-    mock_resp_episodes = MagicMock()
-    mock_resp_episodes.json.return_value = {
-        "Items": [{"Id": "ep1", "SeasonId": "sea1"}]
-    }
-    mock_resp_episodes.status_code = 200
-
-    jf_client.session.get = MagicMock(
-        side_effect=[mock_resp_series, mock_resp_seasons, mock_resp_episodes]
-    )
-
-    jf_client.preload_library()
-    assert jf_client._cache is not None
-    assert "ser1" in jf_client._cache["seasons"]
-    assert "sea1" in jf_client._cache["episodes"]
-
-
-def test_jellyfin_preload_not_configured(monkeypatch):
-    # Test line 32 of jellyfin.py
-    from lan_streamer.jellyfin import JellyfinClient
-
-    monkeypatch.setattr(config, "jellyfin_url", "")
-    client = JellyfinClient()
-    assert client.preload_library() is None
-
-
-def test_jellyfin_preload_no_user(jf_client):
-    # Test line 36 of jellyfin.py
-    jf_client.get_current_user_id = MagicMock(return_value=None)
-    assert jf_client.preload_library() is None
-
-
-def test_jellyfin_fetch_paginated_gap(jf_client):
-    # Test lines 101-106 of jellyfin.py (pagination and error)
-    jf_client.get_current_user_id = MagicMock(return_value="user1")
-
-    # Mock pagination: 1st call returns 5000 items, 2nd returns 1 item
-    mock_resp_full = MagicMock()
-    mock_resp_full.json.return_value = {"Items": [{"Id": i} for i in range(5000)]}
-    mock_resp_full.status_code = 200
-
-    mock_resp_last = MagicMock()
-    mock_resp_last.json.return_value = {"Items": [{"Id": 5000}]}
-    mock_resp_last.status_code = 200
-
-    jf_client.session.get = MagicMock(side_effect=[mock_resp_full, mock_resp_last])
-
-    items = jf_client._fetch_all_items_paginated("Series", "")
-    assert len(items) == 5001
-
-    # Test exception branch (line 103)
-    jf_client.session.get = MagicMock(side_effect=Exception("Fetch error"))
-    items = jf_client._fetch_all_items_paginated("Series", "")
-    assert items == []
+def test_get_headers(jf_client):
+    headers = jf_client._get_headers()
+    assert "Authorization" in headers
+    assert "test-key" in headers["Authorization"]

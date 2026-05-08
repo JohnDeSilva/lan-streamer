@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton
 from PySide6.QtCore import Qt
 from lan_streamer import ui
 from lan_streamer.config import config
@@ -21,6 +21,7 @@ def mock_dependencies(monkeypatch):
     monkeypatch.setattr(ui, "db", MagicMock())
     monkeypatch.setattr(ui, "config", config)
     monkeypatch.setattr(ui, "jellyfin_client", MagicMock())
+    monkeypatch.setattr(ui, "tmdb_client", MagicMock())
     monkeypatch.setattr(ui, "play_video", MagicMock())
     monkeypatch.setattr(ui, "scan_directories", MagicMock())
 
@@ -38,9 +39,25 @@ def mock_dependencies(monkeypatch):
     mock_sync_worker_class.return_value = mock_sync_worker
     monkeypatch.setattr(ui, "SyncAllWorker", mock_sync_worker_class)
 
+    # Globally mock JellyfinHistorySyncWorker
+    mock_history_worker_class = MagicMock()
+    mock_history_worker = MagicMock()
+    mock_history_worker_class.return_value = mock_history_worker
+    monkeypatch.setattr(ui, "JellyfinHistorySyncWorker", mock_history_worker_class)
+
+    # Prevent dialog boxes from appearing during tests
+    monkeypatch.setattr(ui, "QMessageBox", MagicMock())
+    monkeypatch.setattr(ui, "QFileDialog", MagicMock())
+    monkeypatch.setattr(ui, "QInputDialog", MagicMock())
+
     config.libraries = {"TestLib": ["/path1"]}
     config.jellyfin_url = ""
     config.jellyfin_api_key = ""
+    config.tmdb_api_key = ""
+    # Don't auto-run history sync in tests
+    config.sync_history_on_start = False
+    config.sort_mode = "Alphabetical"
+    config.filter_unwatched = False
 
     # Mock DB response
     ui.db.load_library.return_value = {
@@ -98,12 +115,15 @@ def test_library_settings_dialog(qtbot, mock_dependencies, monkeypatch):
     dialog.remove_library()
     assert "NewLib" not in config.libraries
 
-    # Test sync on start checkbox
-    assert dialog.sync_checkbox.isChecked() is True
-    dialog.sync_checkbox.setChecked(False)
-    assert config.sync_on_start is False
-    dialog.sync_checkbox.setChecked(True)
-    assert config.sync_on_start is True
+    # Test sync history on startup checkbox
+    config.sync_history_on_start = True
+    dialog2 = LibrarySettingsDialog()
+    qtbot.addWidget(dialog2)
+    assert dialog2.sync_checkbox.isChecked() is True
+    dialog2.sync_checkbox.setChecked(False)
+    assert config.sync_history_on_start is False
+    dialog2.sync_checkbox.setChecked(True)
+    assert config.sync_history_on_start is True
 
 
 def test_mainwindow_load(qtbot, mock_dependencies):
@@ -188,15 +208,13 @@ def test_scan_worker_logic(mock_dependencies, monkeypatch):
     worker.finished.connect(mock_finished)
     worker.error.connect(mock_error)
 
-    # Call run() directly (synchronous) to test the internal logic
-    # without spinning up a real C++ thread which causes instability in tests.
+    # Call run() directly (synchronous)
     worker.run()
 
-    ui_mod.jellyfin_client.preload_library.assert_called_once()
+    # ScanWorker no longer calls jellyfin preload_library/clear_cache
     ui_mod.scan_directories.assert_called_once_with(
         ["/path1"], existing_library={"Old Data": {}}
     )
-    ui_mod.jellyfin_client.clear_cache.assert_called()
     mock_finished.assert_called_once_with({"New Data": {}})
     mock_error.assert_not_called()
 
@@ -218,7 +236,7 @@ def test_scan_worker_error_logic(mock_dependencies, monkeypatch):
 
     mock_finished.assert_not_called()
     mock_error.assert_called_once_with("Logic Error")
-    ui_mod.jellyfin_client.clear_cache.assert_called()
+    # ScanWorker no longer calls clear_cache
 
 
 def test_toggle_watched_status(qtbot, mock_dependencies):
@@ -504,8 +522,9 @@ def test_poster_delegate(qtbot):
 def test_series_match_dialog(qtbot, mock_dependencies, monkeypatch):
     from lan_streamer.ui import SeriesMatchDialog
 
-    ui.jellyfin_client.search_series_full.return_value = [
-        {"Id": "match1", "Name": "Found Show", "ProductionYear": 2024}
+    # TMDB search_series_full returns dicts with 'name'/'year'/'id' (not Jellyfin's Name/ProductionYear)
+    ui.tmdb_client.search_series_full.return_value = [
+        {"id": "match1", "name": "Found Show", "first_air_date": "2024-01-01"}
     ]
 
     dialog = SeriesMatchDialog("Original Show")
@@ -519,7 +538,7 @@ def test_series_match_dialog(qtbot, mock_dependencies, monkeypatch):
     # Select result
     dialog.results_list.setCurrentRow(0)
     selected = dialog.get_selected_series()
-    assert selected["Id"] == "match1"
+    assert selected["id"] == "match1"
 
     # Click match
     monkeypatch.setattr(dialog, "accept", lambda: None)
@@ -537,7 +556,7 @@ def test_mainwindow_manual_match(qtbot, mock_dependencies, monkeypatch, tmp_path
     config.libraries["TestLib"] = [str(tmp_path)]
 
     # Mock dialog success
-    mock_selected = {"Id": "new_id", "Name": "New Match"}
+    mock_selected = {"id": "new_tmdb_id", "name": "New Match"}
 
     class MockDialog:
         def __init__(self, *args):
@@ -552,7 +571,7 @@ def test_mainwindow_manual_match(qtbot, mock_dependencies, monkeypatch, tmp_path
     monkeypatch.setattr(ui, "SeriesMatchDialog", MockDialog)
 
     # Mock scanner and cleaner
-    mock_new_data = {"metadata": {"jellyfin_id": "new_id"}, "seasons": {}}
+    mock_new_data = {"metadata": {"tmdb_id": "new_tmdb_id"}, "seasons": {}}
     monkeypatch.setattr(ui, "scan_series", lambda *args, **kwargs: mock_new_data)
     monkeypatch.setattr(ui, "clean_series_data", lambda d: d)
 
@@ -562,7 +581,7 @@ def test_mainwindow_manual_match(qtbot, mock_dependencies, monkeypatch, tmp_path
     # Trigger manual match
     window.match_series_manually(series_name)
 
-    assert window.library[series_name]["metadata"]["jellyfin_id"] == "new_id"
+    assert window.library[series_name]["metadata"]["tmdb_id"] == "new_tmdb_id"
     ui.db.save_library.assert_called()
 
 
@@ -607,5 +626,51 @@ def test_ui_on_sync_all_finished(qtbot, mock_dependencies):
     # Test on_sync_all_finished branch in ui.py
     window = MainWindow()
     qtbot.addWidget(window)
+    window.on_sync_all_finished()
+    assert window.refresh_action.isEnabled()
+
+
+def test_tmdb_settings_dialog(qtbot, mock_dependencies, monkeypatch):
+    from lan_streamer.ui import TMDBSettingsDialog
+
+    # Mock validate_credentials
+    ui.tmdb_client.validate_credentials.return_value = (True, "Success")
+
+    dialog = TMDBSettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.api_key_input.setText("new-key")
+
+    # Test connection
+    qtbot.mouseClick(
+        dialog.findChild(QPushButton, ""), Qt.MouseButton.LeftButton
+    )  # There are two buttons, findChild might find the first one
+    # More robust: find by text
+    test_btn = [
+        b for b in dialog.findChildren(QPushButton) if b.text() == "Test Connection"
+    ][0]
+    qtbot.mouseClick(test_btn, Qt.MouseButton.LeftButton)
+    ui.tmdb_client.validate_credentials.assert_called_with("new-key")
+
+    # Save
+    save_btn = [b for b in dialog.findChildren(QPushButton) if b.text() == "Save"][0]
+    qtbot.mouseClick(save_btn, Qt.MouseButton.LeftButton)
+    assert config.tmdb_api_key == "new-key"
+
+
+def test_mainwindow_sync_all(qtbot, mock_dependencies, monkeypatch):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    # Mock SyncAllWorker
+    mock_worker = MagicMock()
+    monkeypatch.setattr(ui, "SyncAllWorker", lambda: mock_worker)
+
+    window.sync_all_libraries()
+    assert window.sync_worker == mock_worker
+    mock_worker.start.assert_called_once()
+    assert not window.refresh_action.isEnabled()
+
+    # Simulate finish
     window.on_sync_all_finished()
     assert window.refresh_action.isEnabled()

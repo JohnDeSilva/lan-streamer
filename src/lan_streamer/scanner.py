@@ -3,28 +3,39 @@ import logging
 import re
 from pathlib import Path
 from typing import Dict, List, Any
-from .jellyfin import jellyfin_client
+from .tmdb import tmdb_client
 
 logger = logging.getLogger(__name__)
 
 # Video file extensions we support
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm"}
 
+# Regex to extract S01E02 style episode numbers from filenames
+_EP_RE = re.compile(r"[Ss](\d+)[Ee](\d+)")
+
+
+def _parse_episode_num(filename: str) -> tuple[int, int] | None:
+    """Returns (season_num, episode_num) parsed from filename, or None."""
+    m = _EP_RE.search(filename)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return None
+
 
 def clean_series_data(series_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Cleans up temporary jellyfin variables from series data."""
+    """Cleans up temporary tmdb variables from series data."""
     clean_seasons = {}
     for season, season_data in series_data.get("seasons", {}).items():
         if season_data["episodes"]:
             # Sort episodes alphabetically
             season_data["episodes"].sort(key=lambda x: x["name"])
-            season_data.pop("_jellyfin_episodes", None)
+            season_data.pop("_tmdb_episodes", None)
             clean_seasons[season] = season_data
 
     if clean_seasons:
         series_data["seasons"] = clean_seasons
-        series_data.pop("_jellyfin_seasons", None)
-        series_data.pop("_jellyfin_series_id", None)
+        series_data.pop("_tmdb_seasons", None)
+        series_data.pop("_tmdb_series_id", None)
         return series_data
     return None
 
@@ -33,7 +44,8 @@ def scan_directories(
     root_dirs: List[str], existing_library: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """
-    Scans root directories and matches with Jellyfin to pull metadata and watched status.
+    Scans root directories and matches with TMDB to pull metadata.
+    Watch history (watched status) is handled separately via Jellyfin sync.
     """
     library = {}
     existing_library = existing_library or {}
@@ -56,21 +68,21 @@ def scan_directories(
 
             # Check if we have an existing manual match for THIS SPECIFIC folder name
             existing_series = existing_library.get(series_name)
-            jellyfin_series = None
+            tmdb_series = None
             is_manual = False
 
             if existing_series and existing_series.get("metadata", {}).get(
                 "is_manual_match"
             ):
-                jellyfin_id = existing_series["metadata"].get("jellyfin_id")
-                if jellyfin_id:
+                tmdb_id = existing_series["metadata"].get("tmdb_id")
+                if tmdb_id:
                     logger.info(
-                        f"Using existing manual match for '{series_name}' (ID: {jellyfin_id})"
+                        f"Using existing manual TMDB match for '{series_name}' (ID: {tmdb_id})"
                     )
-                    jellyfin_series = {"Id": jellyfin_id}
+                    tmdb_series = {"id": tmdb_id}
                     is_manual = True
 
-            data = scan_series(series_dir, jellyfin_series=jellyfin_series)
+            data = scan_series(series_dir, tmdb_series=tmdb_series)
             if is_manual:
                 data["metadata"]["is_manual_match"] = True
 
@@ -80,18 +92,11 @@ def scan_directories(
 
             # Identify if this series matches something already in our library
             match_key = None
-            jellyfin_id = cleaned["metadata"].get("jellyfin_id")
-            tvdb_id = cleaned["metadata"].get("tvdb_id")
+            tmdb_id = cleaned["metadata"].get("tmdb_id")
 
-            if jellyfin_id or tvdb_id:
+            if tmdb_id:
                 for key, existing in library.items():
-                    if tvdb_id and existing["metadata"].get("tvdb_id") == tvdb_id:
-                        match_key = key
-                        break
-                    if (
-                        jellyfin_id
-                        and existing["metadata"].get("jellyfin_id") == jellyfin_id
-                    ):
+                    if existing["metadata"].get("tmdb_id") == tmdb_id:
                         match_key = key
                         break
 
@@ -142,45 +147,48 @@ def scan_directories(
     return library
 
 
-def scan_series(
-    series_dir: Path, jellyfin_series: Dict[str, Any] = None
-) -> Dict[str, Any]:
+def scan_series(series_dir: Path, tmdb_series: Dict[str, Any] = None) -> Dict[str, Any]:
     """
-    Scans a single series directory and matches with Jellyfin.
-    If jellyfin_series is provided, it uses that instead of searching.
+    Scans a single series directory and fetches metadata from TMDB.
+    If tmdb_series is provided (e.g. from a manual match), it uses that ID
+    instead of searching.
     """
     series_name = series_dir.name
-    # If jellyfin_series only has an Id (from manual match), we need to fetch full metadata
-    if jellyfin_series and "Name" not in jellyfin_series:
-        series_id = jellyfin_series.get("Id")
-        if series_id:
-            full_series = jellyfin_client.get_series_by_id(series_id)
-            if full_series:
-                jellyfin_series = full_series
 
-    if not jellyfin_series:
-        jellyfin_series = jellyfin_client.search_series(series_name)
+    # If we only have an ID (from manual match), fetch full metadata
+    if tmdb_series and "name" not in tmdb_series and "id" in tmdb_series:
+        full = tmdb_client.get_series_by_id(tmdb_series["id"])
+        if full:
+            tmdb_series = full
 
-    series_metadata = {}
-    jellyfin_seasons = []
-    if jellyfin_series:
-        series_id = jellyfin_series.get("Id")
-        series_metadata["jellyfin_id"] = series_id
-        series_metadata["overview"] = jellyfin_series.get("Overview", "")
-        series_metadata["poster_path"] = jellyfin_client.download_image(series_id)
+    if not tmdb_series:
+        tmdb_series = tmdb_client.search_series(series_name)
 
-        # Extract TVDB ID if present
-        provider_ids = jellyfin_series.get("ProviderIds", {})
-        if provider_ids and "TheTVDB" in provider_ids:
-            series_metadata["tvdb_id"] = provider_ids["TheTVDB"]
+    series_metadata: Dict[str, Any] = {}
+    tmdb_seasons: list = []
 
-        jellyfin_seasons = jellyfin_client.get_seasons(series_id)
+    if tmdb_series:
+        tmdb_id = str(tmdb_series.get("id") or "")
+        series_metadata["tmdb_id"] = tmdb_id
+        series_metadata["overview"] = tmdb_series.get("overview", "")
+
+        # Artwork — TMDB returns a poster_path fragment
+        poster_path = tmdb_series.get("poster_path") or ""
+        if poster_path:
+            series_metadata["poster_path"] = tmdb_client.download_image(
+                poster_path, f"tmdb_series_{tmdb_id}"
+            )
+        else:
+            series_metadata["poster_path"] = ""
+
+        if tmdb_id:
+            tmdb_seasons = tmdb_client.get_seasons(tmdb_id)
 
     series_data = {
         "metadata": series_metadata,
         "seasons": {},
-        "_jellyfin_seasons": jellyfin_seasons,
-        "_jellyfin_series_id": series_metadata.get("jellyfin_id"),
+        "_tmdb_seasons": tmdb_seasons,
+        "_tmdb_series_id": series_metadata.get("tmdb_id"),
     }
 
     for season_dir in series_dir.iterdir():
@@ -188,34 +196,45 @@ def scan_series(
             continue
 
         season_name = season_dir.name
-        season_metadata = {}
-        jellyfin_episodes = []
+        season_metadata: Dict[str, Any] = {}
+        tmdb_episodes: list = []
 
-        # Try to find matching season in jellyfin
+        # Extract season number from directory name
         season_num_match = re.search(r"\d+", season_name)
         season_idx = int(season_num_match.group()) if season_num_match else -1
 
-        for jellyfin_season in series_data["_jellyfin_seasons"]:
+        # Try to find matching season in tmdb_seasons
+        matched_tmdb_season = None
+        for tmdb_season in series_data["_tmdb_seasons"]:
             if (
-                jellyfin_season.get("IndexNumber") == season_idx
-                or jellyfin_season.get("Name") == season_name
+                tmdb_season.get("season_number") == season_idx
+                or tmdb_season.get("name") == season_name
             ):
-                season_id = jellyfin_season.get("Id")
-                season_metadata["jellyfin_id"] = season_id
-                season_metadata["poster_path"] = jellyfin_client.download_image(
-                    season_id
-                )
-                if series_data["_jellyfin_series_id"]:
-                    jellyfin_episodes = jellyfin_client.get_episodes(
-                        series_data["_jellyfin_series_id"],
-                        season_id,
-                    )
+                matched_tmdb_season = tmdb_season
                 break
+
+        if matched_tmdb_season and series_data["_tmdb_series_id"]:
+            season_tmdb_id = matched_tmdb_season.get("id")
+            season_metadata["tmdb_id"] = str(season_tmdb_id) if season_tmdb_id else ""
+
+            # Fetch artwork for the season (TMDB: poster_path fragment)
+            artwork = matched_tmdb_season.get("poster_path") or ""
+            if artwork and season_tmdb_id:
+                season_metadata["poster_path"] = tmdb_client.download_image(
+                    artwork, f"tmdb_season_{season_tmdb_id}"
+                )
+            else:
+                season_metadata["poster_path"] = ""
+
+            # Fetch episodes for this season number
+            tmdb_episodes = tmdb_client.get_episodes(
+                series_data["_tmdb_series_id"], season_idx
+            )
 
         series_data["seasons"][season_name] = {
             "metadata": season_metadata,
             "episodes": [],
-            "_jellyfin_episodes": jellyfin_episodes,
+            "_tmdb_episodes": tmdb_episodes,
         }
 
         for episode_file in season_dir.iterdir():
@@ -226,25 +245,18 @@ def scan_series(
                 episode_path = str(episode_file.absolute())
                 episode_name = episode_file.name
 
-                jellyfin_episode_id = None
-                watched = False
+                tmdb_episode_id = None
 
-                matched_jellyfin_episode = None
-                for jellyfin_episode in series_data["seasons"][season_name][
-                    "_jellyfin_episodes"
-                ]:
-                    jellyfin_episode_path = jellyfin_episode.get("Path")
-                    if (
-                        jellyfin_episode_path
-                        and Path(jellyfin_episode_path).name == episode_name
-                    ):
-                        matched_jellyfin_episode = jellyfin_episode
-                        break
-
-                if matched_jellyfin_episode:
-                    jellyfin_episode_id = matched_jellyfin_episode.get("Id")
-                    user_data = matched_jellyfin_episode.get("UserData", {})
-                    watched = user_data.get("Played", False)
+                # Match TMDB episode by S01E02 pattern in filename
+                parsed = _parse_episode_num(episode_name)
+                if parsed:
+                    _, ep_num = parsed
+                    for tmdb_ep in series_data["seasons"][season_name][
+                        "_tmdb_episodes"
+                    ]:
+                        if tmdb_ep.get("episode_number") == ep_num:
+                            tmdb_episode_id = str(tmdb_ep.get("id", ""))
+                            break
 
                 try:
                     ctime = os.path.getctime(episode_path)
@@ -255,8 +267,9 @@ def scan_series(
                     {
                         "name": episode_name,
                         "path": episode_path,
-                        "jellyfin_id": jellyfin_episode_id,
-                        "watched": watched,
+                        "jellyfin_id": None,  # populated later by Jellyfin history sync
+                        "tmdb_episode_id": tmdb_episode_id,
+                        "watched": False,  # populated by Jellyfin history sync
                         "date_added": ctime,
                     }
                 )
