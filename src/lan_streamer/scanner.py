@@ -11,14 +11,14 @@ logger = logging.getLogger(__name__)
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm"}
 
 # Regex to extract S01E02 style episode numbers from filenames
-_EP_RE = re.compile(r"[Ss](\d+)[Ee](\d+)")
+_EPISODE_REGEX = re.compile(r"[Ss](\d+)[Ee](\d+)")
 
 
 def _parse_episode_num(filename: str) -> tuple[int, int] | None:
     """Returns (season_num, episode_num) parsed from filename, or None."""
-    m = _EP_RE.search(filename)
-    if m:
-        return int(m.group(1)), int(m.group(2))
+    match = _EPISODE_REGEX.search(filename)
+    if match:
+        return int(match.group(1)), int(match.group(2))
     return None
 
 
@@ -63,11 +63,11 @@ def scan_directories(
         # Sort series directories by mtime (newest first)
         series_dirs = sorted(
             [
-                d
-                for d in root_path.iterdir()
-                if d.is_dir() and not d.name.startswith(".")
+                directory
+                for directory in root_path.iterdir()
+                if directory.is_dir() and not directory.name.startswith(".")
             ],
-            key=lambda d: d.stat().st_mtime,
+            key=lambda directory: directory.stat().st_mtime,
             reverse=True,
         )
 
@@ -103,11 +103,11 @@ def scan_directories(
             else:
                 is_locked = False
 
-            data = scan_series(series_dir, tmdb_series=tmdb_series)
+            series_data = scan_series(series_dir, tmdb_series=tmdb_series)
             if is_locked:
-                data["metadata"]["locked_metadata"] = True
+                series_data["metadata"]["locked_metadata"] = True
 
-            cleaned = clean_series_data(data)
+            cleaned = clean_series_data(series_data)
             if not cleaned:
                 continue
 
@@ -138,24 +138,28 @@ def scan_directories(
                         new_episodes = season_data["episodes"]
 
                         # Avoid duplicates by path or name within the same season
-                        ep_paths = {ep["path"] for ep in existing_episodes}
-                        ep_names = {ep["name"] for ep in existing_episodes}
-                        for ep in new_episodes:
+                        episode_paths = {
+                            episode["path"] for episode in existing_episodes
+                        }
+                        episode_names = {
+                            episode["name"] for episode in existing_episodes
+                        }
+                        for episode in new_episodes:
                             if (
-                                ep["path"] not in ep_paths
-                                and ep["name"] not in ep_names
+                                episode["path"] not in episode_paths
+                                and episode["name"] not in episode_names
                             ):
                                 logger.debug(
-                                    f"Adding episode '{ep['name']}' from '{ep['path']}'"
+                                    f"Adding episode '{episode['name']}' from '{episode['path']}'"
                                 )
-                                existing_episodes.append(ep)
-                            elif ep["path"] not in ep_paths:
+                                existing_episodes.append(episode)
+                            elif episode["path"] not in episode_paths:
                                 logger.warning(
-                                    f"Skipping episode '{ep['name']}' from '{ep['path']}' because an episode with the same name already exists in this season."
+                                    f"Skipping episode '{episode['name']}' from '{episode['path']}' because an episode with the same name already exists in this season."
                                 )
                             else:
                                 logger.debug(
-                                    f"Skipping exact duplicate path: {ep['path']}"
+                                    f"Skipping exact duplicate path: {episode['path']}"
                                 )
 
                         # Re-sort episodes

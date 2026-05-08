@@ -37,12 +37,12 @@ class TMDBClient:
 
     def _params(self, extra: dict = None) -> dict:
         """Returns base query params (api_key) merged with any extras."""
-        p = {}
+        parameters = {}
         if config.tmdb_api_key:
-            p["api_key"] = config.tmdb_api_key.strip()
+            parameters["api_key"] = config.tmdb_api_key.strip()
         if extra:
-            p.update(extra)
-        return p
+            parameters.update(extra)
+        return parameters
 
     # ------------------------------------------------------------------
     # Credential validation
@@ -53,19 +53,19 @@ class TMDBClient:
         if not api_key:
             return False, "API Key is required."
         try:
-            resp = self.session.get(
+            response = self.session.get(
                 f"{TMDB_BASE_URL}/configuration",
                 params={"api_key": api_key.strip()},
                 timeout=10,
             )
-            resp.raise_for_status()
+            response.raise_for_status()
             return True, "Connection successful!"
-        except requests.exceptions.HTTPError as e:
-            if e.response is not None and e.response.status_code == 401:
+        except requests.exceptions.HTTPError as exception:
+            if exception.response is not None and exception.response.status_code == 401:
                 return False, "Invalid API Key (Unauthorized)."
-            return False, f"HTTP Error: {e}"
-        except Exception as e:
-            return False, f"Connection failed: {e}"
+            return False, f"HTTP Error: {exception}"
+        except Exception as exception:
+            return False, f"Connection failed: {exception}"
 
     # ------------------------------------------------------------------
     # Search helpers

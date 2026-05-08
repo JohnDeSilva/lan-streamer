@@ -48,8 +48,8 @@ class JellyfinClient:
         if not url.startswith("http"):
             import re
 
-            is_ip = re.match(r"^\d{1,3}(\.\d{1,3}){3}(:\d+)?$", url)
-            if "." in url and not url.startswith("localhost") and not is_ip:
+            is_ip_address = re.match(r"^\d{1,3}(\.\d{1,3}){3}(:\d+)?$", url)
+            if "." in url and not url.startswith("localhost") and not is_ip_address:
                 url = f"https://{url}"
             else:
                 url = f"http://{url}"
@@ -75,8 +75,10 @@ class JellyfinClient:
             if users and len(users) > 0:
                 self._cached_user_id = users[0].get("Id")
                 return self._cached_user_id
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"Connection error reaching Jellyfin at {base_url}: {e}")
+        except requests.exceptions.ConnectionError as exception:
+            logger.error(
+                f"Connection error reaching Jellyfin at {base_url}: {exception}"
+            )
             if base_url.startswith("https://") and not config.jellyfin_url.startswith(
                 "https://"
             ):
@@ -91,10 +93,12 @@ class JellyfinClient:
                     if users and len(users) > 0:
                         self._cached_user_id = users[0].get("Id")
                         return self._cached_user_id
-                except Exception as retry_e:
-                    logger.error(f"Retry with http failed: {retry_e}")
-        except Exception as e:
-            logger.error(f"Unexpected error getting Jellyfin user: {e}", exc_info=True)
+                except Exception as retry_exception:
+                    logger.error(f"Retry with http failed: {retry_exception}")
+        except Exception as exception:
+            logger.error(
+                f"Unexpected error getting Jellyfin user: {exception}", exc_info=True
+            )
         return None
 
     # ------------------------------------------------------------------

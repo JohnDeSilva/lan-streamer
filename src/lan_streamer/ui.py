@@ -64,11 +64,11 @@ class SyncAllWorker(QThread):
 
     def run(self):
         try:
-            for lib_name, root_dirs in config.libraries.items():
-                self.progress.emit(f"Scanning library '{lib_name}'...")
-                existing_data = db.load_library(lib_name)
+            for library_name, root_dirs in config.libraries.items():
+                self.progress.emit(f"Scanning library '{library_name}'...")
+                existing_data = db.load_library(library_name)
                 library = scan_directories(root_dirs, existing_library=existing_data)
-                db.save_library(lib_name, library)
+                db.save_library(library_name, library)
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))

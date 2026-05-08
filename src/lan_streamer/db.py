@@ -12,14 +12,14 @@ DB_FILE = Path.home() / ".config" / "lan-streamer" / "library.db"
 
 def get_connection():
     DB_FILE.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    return conn
+    connection = sqlite3.connect(DB_FILE)
+    connection.row_factory = sqlite3.Row
+    return connection
 
 
-def version_to_tuple(v: str):
+def version_to_tuple(version: str):
     try:
-        return tuple(map(int, (v or "0.0.0").split(".")))
+        return tuple(map(int, (version or "0.0.0").split(".")))
     except ValueError, AttributeError:
         return (0, 0, 0)
 
@@ -79,9 +79,9 @@ def init_db() -> bool:
     """
     recreated = False
     try:
-        with closing(get_connection()) as conn:
-            with conn:
-                cursor = conn.cursor()
+        with closing(get_connection()) as connection:
+            with connection:
+                cursor = connection.cursor()
 
                 # Create metadata table if it doesn't exist
                 cursor.execute("""
@@ -94,15 +94,15 @@ def init_db() -> bool:
                 # Get current DB version
                 cursor.execute("SELECT value FROM metadata WHERE key = 'version'")
                 row = cursor.fetchone()
-                db_version = row["value"] if row else "0.0.0"
+                database_version = row["value"] if row else "0.0.0"
 
                 # Check if we need to migrate/recreate
                 # If version is < 0.2.0, we drop and recreate
                 # Simplified version comparison:
 
-                if version_to_tuple(db_version) < version_to_tuple("0.2.0"):
+                if version_to_tuple(database_version) < version_to_tuple("0.2.0"):
                     logger.info(
-                        f"Database version {db_version} is less than 0.2.0. Recreating database..."
+                        f"Database version {database_version} is less than 0.2.0. Recreating database..."
                     )
                     cursor.execute("DROP TABLE IF EXISTS episodes")
                     cursor.execute("DROP TABLE IF EXISTS seasons")
@@ -161,12 +161,12 @@ def init_db() -> bool:
                     ("0.3.1", migrate_0_3_1),
                 ]
 
-                current_v = version_to_tuple(db_version)
+                current_version = version_to_tuple(database_version)
                 for target_v_str, migrate_func in migrations:
                     target_v = version_to_tuple(target_v_str)
                     # Run if DB is older, OR if it's the current version (to catch incremental updates)
-                    if current_v < target_v or (
-                        current_v == target_v and target_v_str == DB_VERSION
+                    if current_version < target_v or (
+                        current_version == target_v and target_v_str == DB_VERSION
                     ):
                         logger.info(f"Checking/Applying migration {target_v_str}...")
                         migrate_func(cursor)
@@ -187,10 +187,10 @@ def load_library(library_name: str) -> Dict[str, Any]:
     """
     Loads the library from the database and constructs a nested dictionary structure.
     """
-    library = {}
+    library_data = {}
     try:
-        with closing(get_connection()) as conn:
-            cursor = conn.cursor()
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
 
             cursor.execute(
                 "SELECT * FROM series WHERE library_name = ?", (library_name,)
@@ -199,7 +199,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
 
             for series_row in series_rows:
                 series_name = series_row["name"]
-                library[series_name] = {
+                library_data[series_name] = {
                     "metadata": {
                         "jellyfin_id": series_row["jellyfin_id"],
                         "tmdb_id": series_row["tmdb_id"]
@@ -221,7 +221,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
 
                 for season_row in season_rows:
                     season_name = season_row["name"]
-                    library[series_name]["seasons"][season_name] = {
+                    library_data[series_name]["seasons"][season_name] = {
                         "metadata": {
                             "jellyfin_id": season_row["jellyfin_id"],
                             "poster_path": season_row["poster_path"],
@@ -242,7 +242,9 @@ def load_library(library_name: str) -> Dict[str, Any]:
                             else 0
                         )
                         keys = episode_row.keys()
-                        library[series_name]["seasons"][season_name]["episodes"].append(
+                        library_data[series_name]["seasons"][season_name][
+                            "episodes"
+                        ].append(
                             {
                                 "name": episode_row["name"],
                                 "path": episode_row["path"],
@@ -261,14 +263,14 @@ def load_library(library_name: str) -> Dict[str, Any]:
                             }
                         )
 
-                    library[series_name]["seasons"][season_name]["episodes"].sort(
+                    library_data[series_name]["seasons"][season_name]["episodes"].sort(
                         key=lambda x: x["name"]
                     )
 
     except Exception as e:
         logger.error(f"Error loading library '{library_name}' from database: {e}")
 
-    return library
+    return library_data
 
 
 def save_library(library_name: str, library: Dict[str, Any]):
@@ -277,9 +279,9 @@ def save_library(library_name: str, library: Dict[str, Any]):
     Preserves existing data and only deletes what is no longer present.
     """
     try:
-        with closing(get_connection()) as conn:
-            with conn:
-                cursor = conn.cursor()
+        with closing(get_connection()) as connection:
+            with connection:
+                cursor = connection.cursor()
                 cursor.execute("PRAGMA foreign_keys = ON")
 
                 # Create temporary tables to track touched IDs
@@ -443,9 +445,9 @@ def save_library(library_name: str, library: Dict[str, Any]):
 
 def update_episode_watched_status(path: str, watched: bool):
     try:
-        with closing(get_connection()) as conn:
-            with conn:
-                cursor = conn.cursor()
+        with closing(get_connection()) as connection:
+            with connection:
+                cursor = connection.cursor()
                 cursor.execute(
                     "UPDATE episodes SET watched = ? WHERE path = ?",
                     (1 if watched else 0, path),
