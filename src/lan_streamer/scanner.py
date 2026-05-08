@@ -41,7 +41,9 @@ def clean_series_data(series_data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def scan_directories(
-    root_dirs: List[str], existing_library: Dict[str, Any] = None
+    root_dirs: List[str],
+    existing_library: Dict[str, Any] = None,
+    jellyfin_data: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -103,7 +105,11 @@ def scan_directories(
             else:
                 is_locked = False
 
-            series_data = scan_series(series_dir, tmdb_series=tmdb_series)
+            series_data = scan_series(
+                series_dir,
+                tmdb_series=tmdb_series,
+                jellyfin_data=jellyfin_data,
+            )
             if is_locked:
                 series_data["metadata"]["locked_metadata"] = True
 
@@ -172,7 +178,11 @@ def scan_directories(
     return library
 
 
-def scan_series(series_dir: Path, tmdb_series: Dict[str, Any] = None) -> Dict[str, Any]:
+def scan_series(
+    series_dir: Path,
+    tmdb_series: Dict[str, Any] = None,
+    jellyfin_data: Dict[str, dict] = None,
+) -> Dict[str, Any]:
     """
     Scans a single series directory and fetches metadata from TMDB.
     If tmdb_series is provided (e.g. from a manual match), it uses that ID
@@ -189,13 +199,19 @@ def scan_series(series_dir: Path, tmdb_series: Dict[str, Any] = None) -> Dict[st
     if not tmdb_series:
         tmdb_series = tmdb_client.search_series(series_name)
 
-    series_metadata: Dict[str, Any] = {}
+    series_metadata: Dict[str, Any] = {
+        "tmdb_id": "",
+        "overview": "",
+        "poster_path": "",
+        "jellyfin_id": "",
+    }
     tmdb_seasons: list = []
 
     if tmdb_series:
         tmdb_id = str(tmdb_series.get("id") or "")
         series_metadata["tmdb_id"] = tmdb_id
         series_metadata["overview"] = tmdb_series.get("overview", "")
+        series_metadata["jellyfin_id"] = ""
 
         # Artwork — TMDB returns a poster_path fragment
         poster_path = tmdb_series.get("poster_path") or ""
@@ -218,6 +234,7 @@ def scan_series(series_dir: Path, tmdb_series: Dict[str, Any] = None) -> Dict[st
         "seasons": {},
         "_tmdb_seasons": tmdb_seasons,
         "_tmdb_series_id": series_metadata.get("tmdb_id"),
+        "_jellyfin_id": "",  # To be filled from first matched episode
     }
 
     for season_dir in series_dir.iterdir():
@@ -225,7 +242,9 @@ def scan_series(series_dir: Path, tmdb_series: Dict[str, Any] = None) -> Dict[st
             continue
 
         season_name = season_dir.name
-        season_metadata: Dict[str, Any] = {}
+        season_metadata: Dict[str, Any] = {
+            "jellyfin_id": "",
+        }
         tmdb_episodes: list = []
 
         # Extract season number from directory name
@@ -296,15 +315,64 @@ def scan_series(series_dir: Path, tmdb_series: Dict[str, Any] = None) -> Dict[st
                 except OSError:
                     ctime = 0
 
+                jellyfin_path_map = (
+                    jellyfin_data.get("path_map") if jellyfin_data else None
+                )
+                jellyfin_info = (
+                    jellyfin_path_map.get(episode_path) if jellyfin_path_map else None
+                )
+                jellyfin_id = jellyfin_info["id"] if jellyfin_info else ""
+
+                # Fallback correlation by TMDB Episode ID
+                if not jellyfin_id and tmdb_episode_id and jellyfin_data:
+                    jellyfin_id = jellyfin_data.get("tmdb_episode_map", {}).get(
+                        str(tmdb_episode_id), ""
+                    )
+
+                # Fallback correlation by Series Name + Episode Name
+                if not jellyfin_id and jellyfin_data:
+                    name_map = jellyfin_data.get("name_map", {})
+                    # Try matching by (Series Name, Episode Name)
+                    # We use the cleaned TMDB names if available, otherwise file names
+                    lookup_series = (
+                        tmdb_series.get("name") if tmdb_series else series_dir.name
+                    ).lower()
+                    lookup_episode = (
+                        tmdb_name if tmdb_name else episode_file.stem
+                    ).lower()
+
+                    jellyfin_id = name_map.get((lookup_series, lookup_episode), "")
+
+                if jellyfin_info:
+                    # Update series/season Jellyfin IDs from the episode's parent info
+                    if not series_data["metadata"]["jellyfin_id"]:
+                        series_data["metadata"]["jellyfin_id"] = (
+                            jellyfin_info.get("series_id") or ""
+                        )
+                    if not season_metadata["jellyfin_id"]:
+                        season_metadata["jellyfin_id"] = (
+                            jellyfin_info.get("season_id") or ""
+                        )
+
+                # Fallback correlation for series by TMDB Series ID
+                if (
+                    not series_data["metadata"]["jellyfin_id"]
+                    and series_data["_tmdb_series_id"]
+                    and jellyfin_data
+                ):
+                    series_data["metadata"]["jellyfin_id"] = jellyfin_data.get(
+                        "tmdb_series_map", {}
+                    ).get(str(series_data["_tmdb_series_id"]), "")
+
                 series_data["seasons"][season_name]["episodes"].append(
                     {
                         "name": episode_name,
                         "path": episode_path,
-                        "jellyfin_id": None,  # populated later by Jellyfin history sync
-                        "tmdb_episode_id": tmdb_episode_id,
+                        "tmdb_id": tmdb_episode_id,
                         "tmdb_name": tmdb_name,
                         "tmdb_number": tmdb_number,
-                        "watched": False,  # populated by Jellyfin history sync
+                        "jellyfin_id": jellyfin_id,
+                        "watched": False,
                         "date_added": ctime,
                     }
                 )

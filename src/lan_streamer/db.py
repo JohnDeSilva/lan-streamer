@@ -1,5 +1,6 @@
 import sqlite3
 import logging
+import time
 from pathlib import Path
 from typing import Dict, Any
 from contextlib import closing
@@ -78,6 +79,8 @@ def init_db() -> bool:
     Returns True if the database was recreated (triggering a need for sync).
     """
     recreated = False
+    start_time = time.time()
+    logger.info(f"Initializing database at {DB_FILE}")
     try:
         with closing(get_connection()) as connection:
             with connection:
@@ -168,7 +171,7 @@ def init_db() -> bool:
                     if current_version < target_v or (
                         current_version == target_v and target_v_str == DB_VERSION
                     ):
-                        logger.info(f"Checking/Applying migration {target_v_str}...")
+                        logger.info(f"Applying migration {target_v_str}...")
                         migrate_func(cursor)
 
                 # Always ensure the version is set to the current app version
@@ -176,6 +179,8 @@ def init_db() -> bool:
                     "INSERT OR REPLACE INTO metadata (key, value) VALUES ('version', ?)",
                     (DB_VERSION,),
                 )
+        duration = time.time() - start_time
+        logger.info(f"Database initialization complete in {duration:.3f}s")
 
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
@@ -187,7 +192,9 @@ def load_library(library_name: str) -> Dict[str, Any]:
     """
     Loads the library from the database and constructs a nested dictionary structure.
     """
+    start_time = time.time()
     library_data = {}
+    stats = {"series": 0, "seasons": 0, "episodes": 0}
     try:
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
@@ -199,6 +206,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
 
             for series_row in series_rows:
                 series_name = series_row["name"]
+                stats["series"] += 1
                 library_data[series_name] = {
                     "metadata": {
                         "jellyfin_id": series_row["jellyfin_id"],
@@ -221,6 +229,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
 
                 for season_row in season_rows:
                     season_name = season_row["name"]
+                    stats["seasons"] += 1
                     library_data[series_name]["seasons"][season_name] = {
                         "metadata": {
                             "jellyfin_id": season_row["jellyfin_id"],
@@ -236,6 +245,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
                     episode_rows = cursor.fetchall()
 
                     for episode_row in episode_rows:
+                        stats["episodes"] += 1
                         date_added = (
                             episode_row["date_added"]
                             if "date_added" in episode_row.keys()
@@ -267,6 +277,11 @@ def load_library(library_name: str) -> Dict[str, Any]:
                         key=lambda x: x["name"]
                     )
 
+        duration = time.time() - start_time
+        logger.info(
+            f"Loaded library '{library_name}' in {duration:.3f}s: {stats['series']} series, {stats['seasons']} seasons, {stats['episodes']} episodes."
+        )
+
     except Exception as e:
         logger.error(f"Error loading library '{library_name}' from database: {e}")
 
@@ -278,6 +293,8 @@ def save_library(library_name: str, library: Dict[str, Any]):
     Updates the database for the given library name using upserts.
     Preserves existing data and only deletes what is no longer present.
     """
+    start_time = time.time()
+    stats = {"series": 0, "seasons": 0, "episodes": 0, "deleted": 0}
     try:
         with closing(get_connection()) as connection:
             with connection:
@@ -325,6 +342,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
                         ),
                     )
                     series_id = cursor.fetchone()[0]
+                    stats["series"] += 1
                     cursor.execute(
                         "INSERT INTO touched_series (id) VALUES (?)", (series_id,)
                     )
@@ -351,6 +369,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
                             ),
                         )
                         season_id = cursor.fetchone()[0]
+                        stats["seasons"] += 1
                         cursor.execute(
                             "INSERT INTO touched_seasons (id) VALUES (?)", (season_id,)
                         )
@@ -393,6 +412,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
                                 ),
                             )
                             episode_id = cursor.fetchone()[0]
+                            stats["episodes"] += 1
                             cursor.execute(
                                 "INSERT INTO touched_episodes (id) VALUES (?)",
                                 (episode_id,),
@@ -413,6 +433,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
                 """,
                     (library_name,),
                 )
+                stats["deleted"] += cursor.rowcount
 
                 # Delete seasons not in current scan for this library
                 cursor.execute(
@@ -425,6 +446,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
                 """,
                     (library_name,),
                 )
+                stats["deleted"] += cursor.rowcount
 
                 # Delete series not in current scan for this library
                 cursor.execute(
@@ -435,9 +457,13 @@ def save_library(library_name: str, library: Dict[str, Any]):
                 """,
                     (library_name,),
                 )
+                stats["deleted"] += cursor.rowcount
 
+                duration = time.time() - start_time
                 logger.info(
-                    f"Library '{library_name}' successfully updated in database."
+                    f"Library '{library_name}' updated in {duration:.3f}s: "
+                    f"{stats['series']} series, {stats['seasons']} seasons, {stats['episodes']} episodes saved. "
+                    f"{stats['deleted']} stale items removed."
                 )
     except Exception as e:
         logger.error(f"Error saving library '{library_name}' to database: {e}")
@@ -445,6 +471,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
 
 def update_episode_watched_status(path: str, watched: bool):
     try:
+        logger.info(f"Updating watched status for {path} to {watched}")
         with closing(get_connection()) as connection:
             with connection:
                 cursor = connection.cursor()
@@ -456,28 +483,103 @@ def update_episode_watched_status(path: str, watched: bool):
         logger.error(f"Error updating watched status for {path}: {e}")
 
 
-def sync_watched_from_paths(watched_paths: set) -> int:
+def sync_watched_from_jellyfin_data(
+    watched_ids: set, watched_paths: set, watched_names: set = None
+) -> int:
     """
-    Bulk-updates watched=True for all episodes whose file path is in watched_paths,
-    and watched=False for all others.
+    Bulk-updates watched=True for all episodes whose Jellyfin ID is in watched_ids
+    OR whose file path is in watched_paths
+    OR whose (series_name, episode_name) is in watched_names.
     Returns the total number of rows updated.
     """
-    if not watched_paths:
+    if not watched_ids and not watched_paths and not watched_names:
+        logger.info("No watched IDs, paths, or names provided for Jellyfin sync.")
         return 0
-    updated = 0
+
+    start_time = time.time()
+    logger.info(
+        f"Starting bulk watched status sync: {len(watched_ids)} IDs, {len(watched_paths)} paths, {len(watched_names or [])} names."
+    )
+    updated_count = 0
     try:
-        with closing(get_connection()) as conn:
-            with conn:
-                cursor = conn.cursor()
-                # Mark matching paths as watched
-                cursor.execute(
-                    f"UPDATE episodes SET watched = 1 WHERE path IN ({','.join('?' * len(watched_paths))})",
-                    tuple(watched_paths),
-                )
-                updated = cursor.rowcount
+        with closing(get_connection()) as connection:
+            with connection:
+                cursor = connection.cursor()
+
+                # Reset all to unwatched first
+                cursor.execute("UPDATE episodes SET watched = 0")
+
+                # 1. Mark by Jellyfin ID (Most reliable)
+                if watched_ids:
+                    id_list = list(watched_ids)
+                    chunk_size = 500
+                    for i in range(0, len(id_list), chunk_size):
+                        chunk = id_list[i : i + chunk_size]
+                        placeholders = ",".join("?" * len(chunk))
+                        cursor.execute(
+                            f"UPDATE episodes SET watched = 1 WHERE jellyfin_id IN ({placeholders})",
+                            tuple(chunk),
+                        )
+                        updated_count += cursor.rowcount
+
+                # 2. Mark by Path (Fallback for unlinked items)
+                if watched_paths:
+                    path_list = list(watched_paths)
+                    chunk_size = 500
+                    for i in range(0, len(path_list), chunk_size):
+                        chunk = path_list[i : i + chunk_size]
+                        placeholders = ",".join("?" * len(chunk))
+                        # Only update those not already marked by ID
+                        cursor.execute(
+                            f"UPDATE episodes SET watched = 1 WHERE watched = 0 AND path IN ({placeholders})",
+                            tuple(chunk),
+                        )
+                        updated_count += cursor.rowcount
+
+                # 3. Mark by Name (Fallback for items with no ID yet)
+                if watched_names:
+                    # This is slightly more complex as we need to join with series table
+                    # We'll do it by iterating over names or by a complex join
+                    # Iterating over thousands of names might be slow, but let's try a bulk approach
+                    for series_n, episode_n in watched_names:
+                        cursor.execute(
+                            """
+                            UPDATE episodes 
+                            SET watched = 1 
+                            WHERE watched = 0 
+                            AND LOWER(name) = LOWER(?) 
+                            AND season_id IN (
+                                SELECT s.id FROM seasons s
+                                JOIN series sr ON s.series_id = sr.id
+                                WHERE LOWER(sr.name) = LOWER(?)
+                            )
+                        """,
+                            (episode_n, series_n),
+                        )
+                        updated_count += cursor.rowcount
+
+                duration = time.time() - start_time
                 logger.info(
-                    f"sync_watched_from_paths: marked {updated} episodes as watched."
+                    f"sync_watched_from_jellyfin_data: marked {updated_count} episodes as watched in {duration:.3f}s."
                 )
+    except Exception as exception:
+        logger.error(f"Error in sync_watched_from_jellyfin_data: {exception}")
+
+    return updated_count
+
+
+def get_all_episodes_with_jellyfin_id() -> list:
+    """Returns a list of all episodes that have a Jellyfin ID associated."""
+    episodes = []
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                "SELECT name, path, jellyfin_id, watched FROM episodes WHERE jellyfin_id IS NOT NULL AND jellyfin_id != ''"
+            )
+            rows = cursor.fetchall()
+            for row in rows:
+                episodes.append(dict(row))
     except Exception as e:
-        logger.error(f"Error in sync_watched_from_paths: {e}")
-    return updated
+        logger.error(f"Error fetching episodes with Jellyfin ID: {e}")
+    return episodes

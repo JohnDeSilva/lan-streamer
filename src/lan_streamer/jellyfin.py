@@ -172,54 +172,218 @@ class JellyfinClient:
     # Watch history — inbound (pull from Jellyfin → local DB)
     # ------------------------------------------------------------------
 
-    def fetch_watched_episode_paths(self) -> set:
+    def fetch_watched_episodes(self) -> tuple:
         """
-        Returns a set of file paths for episodes Jellyfin considers played.
-        Used by the startup history sync to update local DB watched flags.
+        Fetches all watched episodes for the current user.
+        Returns (watched_ids, watched_paths, watched_names).
         """
         if not self.is_configured():
-            return set()
+            return set(), set(), set()
 
         user_id = self.get_current_user_id()
         if not user_id:
-            return set()
+            return set(), set(), set()
 
+        watched_ids = set()
         watched_paths = set()
+        watched_names = set()
         url = f"{self._get_base_url()}/Users/{user_id}/Items"
         limit = 5000
         start_index = 0
 
         while True:
-            params = {
+            parameters = {
                 "IncludeItemTypes": "Episode",
                 "Recursive": "true",
-                "Fields": "Path",
+                "Fields": "Path,SeriesName",
                 "Filters": "IsPlayed",
                 "Limit": limit,
                 "StartIndex": start_index,
             }
             try:
-                resp = self.session.get(
-                    url, headers=self._get_headers(), params=params, timeout=30
+                response = self.session.get(
+                    url, headers=self._get_headers(), params=parameters, timeout=30
                 )
-                resp.raise_for_status()
-                data = resp.json()
+                response.raise_for_status()
+                data = response.json()
                 items = data.get("Items", [])
                 for item in items:
+                    item_id = item.get("Id")
                     path = item.get("Path")
+                    if item_id:
+                        watched_ids.add(item_id)
                     if path:
                         watched_paths.add(path)
+
+                    series_name = item.get("SeriesName")
+                    episode_name = item.get("Name")
+                    if series_name and episode_name:
+                        watched_names.add((series_name.lower(), episode_name.lower()))
                 if len(items) < limit:
                     break
                 start_index += limit
-            except Exception as e:
-                logger.error(f"Failed to fetch watched episodes from Jellyfin: {e}")
+            except Exception as exception:
+                logger.error(
+                    f"Failed to fetch watched episodes from Jellyfin: {exception}"
+                )
                 break
 
         logger.info(
-            f"Fetched {len(watched_paths)} watched episode paths from Jellyfin."
+            f"Fetched {len(watched_ids)} watched IDs, {len(watched_paths)} paths, and {len(watched_names)} names from Jellyfin."
         )
-        return watched_paths
+        return watched_ids, watched_paths, watched_names
+
+    def get_jellyfin_correlation_data(self) -> dict:
+        """
+        Fetches all episodes, series, and seasons from Jellyfin to build correlation maps.
+        Returns a dict containing:
+          - path_map: {file_path: {id, series_id, season_id}}
+          - tmdb_episode_map: {tmdb_episode_id: jellyfin_id}
+          - tmdb_series_map: {tmdb_series_id: jellyfin_id}
+          - name_map: {(series_name, episode_name): jellyfin_id}
+        """
+        if not self.is_configured():
+            return {}
+
+        user_id = self.get_current_user_id()
+        if not user_id:
+            return {}
+
+        path_map = {}
+        tmdb_episode_map = {}
+        tmdb_series_map = {}
+        name_map = {}
+
+        # 1. Fetch Episodes for Path and TMDB mapping
+        url = f"{self._get_base_url()}/Users/{user_id}/Items"
+        limit = 5000
+        start_index = 0
+
+        while True:
+            parameters = {
+                "IncludeItemTypes": "Episode",
+                "Recursive": "true",
+                "Fields": "Path,SeriesId,SeasonId,ProviderIds,SeriesName",
+                "Limit": limit,
+                "StartIndex": start_index,
+            }
+            try:
+                response = self.session.get(
+                    url, headers=self._get_headers(), params=parameters, timeout=30
+                )
+                response.raise_for_status()
+                data = response.json()
+                items = data.get("Items", [])
+                for item in items:
+                    path = item.get("Path")
+                    item_id = item.get("Id")
+                    if path and item_id:
+                        path_map[path] = {
+                            "id": item_id,
+                            "series_id": item.get("SeriesId"),
+                            "season_id": item.get("SeasonId"),
+                        }
+
+                    provider_ids = item.get("ProviderIds", {})
+                    tmdb_id = provider_ids.get("Tmdb")
+                    if tmdb_id and item_id:
+                        tmdb_episode_map[str(tmdb_id)] = item_id
+
+                    # Name-based mapping
+                    series_name = item.get("SeriesName")
+                    episode_name = item.get("Name")
+                    if series_name and episode_name and item_id:
+                        name_map[(series_name.lower(), episode_name.lower())] = item_id
+
+                if len(items) < limit:
+                    break
+                start_index += limit
+            except Exception as exception:
+                logger.error(
+                    f"Failed to fetch episode mapping from Jellyfin: {exception}"
+                )
+                break
+
+        # 2. Fetch Series for TMDB mapping
+        start_index = 0
+        while True:
+            parameters = {
+                "IncludeItemTypes": "Series",
+                "Recursive": "true",
+                "Fields": "ProviderIds",
+                "Limit": limit,
+                "StartIndex": start_index,
+            }
+            try:
+                response = self.session.get(
+                    url, headers=self._get_headers(), params=parameters, timeout=30
+                )
+                response.raise_for_status()
+                data = response.json()
+                items = data.get("Items", [])
+                for item in items:
+                    item_id = item.get("Id")
+                    provider_ids = item.get("ProviderIds", {})
+                    tmdb_id = provider_ids.get("Tmdb")
+                    if tmdb_id and item_id:
+                        tmdb_series_map[str(tmdb_id)] = item_id
+                if len(items) < limit:
+                    break
+                start_index += limit
+            except Exception as exception:
+                logger.error(
+                    f"Failed to fetch series mapping from Jellyfin: {exception}"
+                )
+                break
+
+        logger.info(
+            f"Jellyfin correlation data: {len(path_map)} paths, "
+            f"{len(tmdb_episode_map)} episode TMDB IDs, "
+            f"{len(name_map)} episode names, "
+            f"{len(tmdb_series_map)} series TMDB IDs."
+        )
+        return {
+            "path_map": path_map,
+            "tmdb_episode_map": tmdb_episode_map,
+            "tmdb_series_map": tmdb_series_map,
+            "name_map": name_map,
+        }
+
+    def mark_as_played(self, item_id: str) -> bool:
+        """Marks an item as played in Jellyfin."""
+        if not self.is_configured() or not item_id:
+            return False
+
+        user_id = self.get_current_user_id()
+        if not user_id:
+            return False
+
+        url = f"{self._get_base_url()}/Users/{user_id}/PlayedItems/{item_id}"
+        try:
+            response = self.session.post(url, headers=self._get_headers(), timeout=10)
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to mark item {item_id} as played: {e}")
+            return False
+
+    def unmark_as_played(self, item_id: str) -> bool:
+        """Marks an item as unplayed in Jellyfin."""
+        if not self.is_configured() or not item_id:
+            return False
+
+        user_id = self.get_current_user_id()
+        if not user_id:
+            return False
+
+        url = f"{self._get_base_url()}/Users/{user_id}/PlayedItems/{item_id}"
+        try:
+            response = self.session.delete(url, headers=self._get_headers(), timeout=10)
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to unmark item {item_id} as played: {e}")
+            return False
 
     # ------------------------------------------------------------------
     # Watch history — outbound (push local state → Jellyfin)

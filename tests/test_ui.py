@@ -4,7 +4,11 @@ from PySide6.QtWidgets import QApplication, QPushButton
 from PySide6.QtCore import Qt
 from lan_streamer import ui
 from lan_streamer.config import config
-from lan_streamer.ui import MainWindow, LibrarySettingsDialog, JellyfinSettingsDialog
+from lan_streamer.ui import (
+    MainWindow,
+    LibrarySettingsDialog,
+    JellyfinSettingsDialog,
+)
 
 
 @pytest.fixture
@@ -39,11 +43,17 @@ def mock_dependencies(monkeypatch):
     mock_sync_worker_class.return_value = mock_sync_worker
     monkeypatch.setattr(ui, "SyncAllWorker", mock_sync_worker_class)
 
-    # Globally mock JellyfinHistorySyncWorker
-    mock_history_worker_class = MagicMock()
-    mock_history_worker = MagicMock()
-    mock_history_worker_class.return_value = mock_history_worker
-    monkeypatch.setattr(ui, "JellyfinHistorySyncWorker", mock_history_worker_class)
+    # Globally mock JellyfinPullWorker
+    mock_pull_worker_class = MagicMock()
+    mock_pull_worker = MagicMock()
+    mock_pull_worker_class.return_value = mock_pull_worker
+    monkeypatch.setattr(ui, "JellyfinPullWorker", mock_pull_worker_class)
+
+    # Globally mock JellyfinPushWorker
+    mock_push_worker_class = MagicMock()
+    mock_push_worker = MagicMock()
+    mock_push_worker_class.return_value = mock_push_worker
+    monkeypatch.setattr(ui, "JellyfinPushWorker", mock_push_worker_class)
 
     # Prevent dialog boxes from appearing during tests
     monkeypatch.setattr(ui, "QMessageBox", MagicMock())
@@ -54,7 +64,7 @@ def mock_dependencies(monkeypatch):
     config.jellyfin_url = ""
     config.jellyfin_api_key = ""
     config.tmdb_api_key = ""
-    # Don't auto-run history sync in tests
+    # Don't auto-run history pull on start in tests
     config.sync_history_on_start = False
     config.sort_mode = "Alphabetical"
     config.filter_unwatched = False
@@ -208,9 +218,10 @@ def test_scan_worker_logic(mock_dependencies, monkeypatch):
     # Call run() directly (synchronous)
     worker.run()
 
-    # ScanWorker no longer calls jellyfin preload_library/clear_cache
+    from unittest.mock import ANY
+
     ui_mod.scan_directories.assert_called_once_with(
-        ["/path1"], existing_library={"Old Data": {}}
+        ["/path1"], existing_library={"Old Data": {}}, jellyfin_data=ANY
     )
     mock_finished.assert_called_once_with({"New Data": {}})
     mock_error.assert_not_called()
@@ -242,10 +253,10 @@ def test_toggle_watched_status(qtbot, mock_dependencies):
 
     window.on_series_selected(window.series_model.index(0, 0))
 
-    ep_item = window.episode_model.item(0, 0)
-    window.toggle_watched_status(ep_item, force_status=True)
+    episode_item = window.episode_model.item(0, 0)
+    window.toggle_watched_status(episode_item, force_status=True)
 
-    assert ep_item.text() == "[✓] Ep1"
+    assert episode_item.text() == "[✓] Ep1"
     ui.db.update_episode_watched_status.assert_called_with("/path1", True)
     ui.jellyfin_client.set_watched_status.assert_called_with("3", True)
 

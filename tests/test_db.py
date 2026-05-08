@@ -118,7 +118,7 @@ def test_db_version_sync():
 
 
 def test_sync_watched_from_paths(mock_db_file, monkeypatch):
-    from lan_streamer.db import sync_watched_from_paths, get_connection
+    from lan_streamer.db import sync_watched_from_jellyfin_data, get_connection
 
     db.init_db()
     with closing(get_connection()) as conn:
@@ -143,7 +143,7 @@ def test_sync_watched_from_paths(mock_db_file, monkeypatch):
             )
 
     # Test with one path
-    count = sync_watched_from_paths({"/path1"})
+    count = sync_watched_from_jellyfin_data(set(), {"/path1"}, set())
     assert count == 1
     with closing(get_connection()) as conn:
         cursor = conn.cursor()
@@ -152,8 +152,17 @@ def test_sync_watched_from_paths(mock_db_file, monkeypatch):
         cursor.execute("SELECT watched FROM episodes WHERE path='/path2'")
         assert cursor.fetchone()[0] == 0
 
-    # Test with empty set
-    assert sync_watched_from_paths(set()) == 0
+    # Test with name-based match
+    # 'Ep2' in 'Season 1' of 'Show' -> needs series name 'Show'
+    count = sync_watched_from_jellyfin_data(set(), set(), {("Show", "Ep2")})
+    assert count == 1
+    with closing(get_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT watched FROM episodes WHERE path='/path2'")
+        assert cursor.fetchone()[0] == 1
+
+    # Test with empty sets
+    assert sync_watched_from_jellyfin_data(set(), set(), set()) == 0
 
 
 def test_is_less_than_0_2_0_negative_version(mock_db_file, monkeypatch):
@@ -172,10 +181,42 @@ def test_is_less_than_0_2_0_negative_version(mock_db_file, monkeypatch):
 
 
 def test_sync_watched_from_paths_exception(monkeypatch):
-    from lan_streamer.db import sync_watched_from_paths
+    from lan_streamer.db import sync_watched_from_jellyfin_data
 
     def mock_get_conn():
         raise Exception("DB Error")
 
     monkeypatch.setattr("lan_streamer.db.get_connection", mock_get_conn)
-    assert sync_watched_from_paths({"/path"}) == 0
+    assert sync_watched_from_jellyfin_data(set(), {"/path"}, set()) == 0
+
+
+def test_get_all_episodes_with_jellyfin_id(mock_db_file):
+    from lan_streamer.db import get_all_episodes_with_jellyfin_id
+
+    db.init_db()
+    test_lib = {
+        "Show": {
+            "seasons": {
+                "S1": {
+                    "episodes": [
+                        {
+                            "name": "E1",
+                            "path": "/p1",
+                            "jellyfin_id": "jf1",
+                            "watched": True,
+                        },
+                        {
+                            "name": "E2",
+                            "path": "/p2",
+                            "jellyfin_id": None,
+                            "watched": True,
+                        },
+                    ]
+                }
+            }
+        }
+    }
+    db.save_library("Lib", test_lib)
+    eps = get_all_episodes_with_jellyfin_id()
+    assert len(eps) == 1
+    assert eps[0]["jellyfin_id"] == "jf1"

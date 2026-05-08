@@ -25,8 +25,8 @@ def test_jellyfin_not_configured():
     assert client.get_current_user_id() is None
     # set_watched_status should just return silently
     client.set_watched_status("1", True)
-    # fetch_watched_episode_paths should return empty set
-    assert client.fetch_watched_episode_paths() == set()
+    # fetch_watched_episodes should return empty sets
+    assert client.fetch_watched_episodes() == (set(), set(), set())
 
 
 def test_get_current_user_id(jf_client):
@@ -61,7 +61,7 @@ def test_set_watched_status_error(jf_client):
     jf_client.set_watched_status("item123", True)
 
 
-def test_fetch_watched_episode_paths(jf_client):
+def test_fetch_watched_episodes(jf_client):
     jf_client._cached_user_id = "user123"
 
     mock_resp = MagicMock()
@@ -74,11 +74,12 @@ def test_fetch_watched_episode_paths(jf_client):
     }
     jf_client.session.get = MagicMock(return_value=mock_resp)
 
-    paths = jf_client.fetch_watched_episode_paths()
+    ids, paths, names = jf_client.fetch_watched_episodes()
     assert paths == {"/movies/show/s01e01.mkv", "/movies/show/s01e02.mkv"}
+    assert ids == {"ep1", "ep2", "ep3"}
 
 
-def test_fetch_watched_episode_paths_pagination(jf_client):
+def test_fetch_watched_episodes_pagination(jf_client):
     """Verify pagination: stops when fewer than limit items are returned."""
     jf_client._cached_user_id = "user123"
 
@@ -92,17 +93,19 @@ def test_fetch_watched_episode_paths_pagination(jf_client):
 
     jf_client.session.get = MagicMock(side_effect=[page1, page2])
 
-    paths = jf_client.fetch_watched_episode_paths()
+    ids, paths, names = jf_client.fetch_watched_episodes()
     assert len(paths) == 5001
     assert jf_client.session.get.call_count == 2
 
 
-def test_fetch_watched_episode_paths_error(jf_client):
+def test_fetch_watched_episodes_error(jf_client):
     jf_client._cached_user_id = "user123"
     jf_client.session.get = MagicMock(side_effect=Exception("network down"))
 
-    paths = jf_client.fetch_watched_episode_paths()
+    ids, paths, names = jf_client.fetch_watched_episodes()
     assert paths == set()
+    assert ids == set()
+    assert names == set()
 
 
 def test_jellyfin_error_handling(jf_client):
@@ -224,3 +227,37 @@ def test_get_headers(jf_client):
     headers = jf_client._get_headers()
     assert "Authorization" in headers
     assert "test-key" in headers["Authorization"]
+
+
+def test_get_jellyfin_correlation_data(jf_client):
+    jf_client._cached_user_id = "user123"
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "Items": [
+            {
+                "Id": "ep1",
+                "Path": "/path1",
+                "ProviderIds": {"Tmdb": "tmdb1"},
+                "Name": "Ep1",
+                "SeriesName": "Show",
+            }
+        ]
+    }
+    jf_client.session.get = MagicMock(return_value=mock_resp)
+
+    data = jf_client.get_jellyfin_correlation_data()
+    assert "/path1" in data["path_map"]
+    assert "tmdb1" in data["tmdb_episode_map"]
+    assert ("show", "ep1") in data["name_map"]
+
+
+def test_mark_as_played(jf_client):
+    jf_client._cached_user_id = "user123"
+    jf_client.session.post = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status.return_value = None
+    jf_client.session.post.return_value = mock_resp
+
+    success = jf_client.mark_as_played("item123")
+    assert success is True
+    jf_client.session.post.assert_called_once()

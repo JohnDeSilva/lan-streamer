@@ -47,8 +47,15 @@ class ScanWorker(QThread):
 
     def run(self):
         try:
+            # Fetch Jellyfin correlation data if configured
+            jellyfin_data = None
+            if jellyfin_client.is_configured():
+                jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
+
             library = scan_directories(
-                self.root_dirs, existing_library=self.existing_library
+                self.root_dirs,
+                existing_library=self.existing_library,
+                jellyfin_data=jellyfin_data,
             )
             self.finished.emit(library)
         except Exception as e:
@@ -64,17 +71,26 @@ class SyncAllWorker(QThread):
 
     def run(self):
         try:
+            # Fetch Jellyfin correlation data if configured
+            jellyfin_data = None
+            if jellyfin_client.is_configured():
+                jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
+
             for library_name, root_dirs in config.libraries.items():
                 self.progress.emit(f"Scanning library '{library_name}'...")
                 existing_data = db.load_library(library_name)
-                library = scan_directories(root_dirs, existing_library=existing_data)
+                library = scan_directories(
+                    root_dirs,
+                    existing_library=existing_data,
+                    jellyfin_data=jellyfin_data,
+                )
                 db.save_library(library_name, library)
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
 
 
-class JellyfinHistorySyncWorker(QThread):
+class JellyfinPullWorker(QThread):
     """Pulls watch history from Jellyfin and syncs it to the local DB."""
 
     finished = Signal(int)  # number of episodes updated
@@ -82,9 +98,34 @@ class JellyfinHistorySyncWorker(QThread):
 
     def run(self):
         try:
-            watched_paths = jellyfin_client.fetch_watched_episode_paths()
-            updated = db.sync_watched_from_paths(watched_paths)
+            watched_ids, watched_paths, watched_names = (
+                jellyfin_client.fetch_watched_episodes()
+            )
+            updated = db.sync_watched_from_jellyfin_data(
+                watched_ids, watched_paths, watched_names
+            )
             self.finished.emit(updated)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class JellyfinPushWorker(QThread):
+    """Pushes all local watched state to Jellyfin."""
+
+    finished = Signal(int)  # number of episodes pushed
+    error = Signal(str)
+
+    def run(self):
+        try:
+            episodes = db.get_all_episodes_with_jellyfin_id()
+            count = 0
+            for ep in episodes:
+                # We push whatever our local state is
+                jellyfin_client.set_watched_status(
+                    ep["jellyfin_id"], bool(ep["watched"])
+                )
+                count += 1
+            self.finished.emit(count)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -378,9 +419,9 @@ class MainWindow(QMainWindow):
         self._setup_menu()
         self.refresh_libraries_combo()
 
-        # Always sync Jellyfin watch history on startup (if configured)
+        # Always pull Jellyfin watch history on startup (if configured)
         if config.sync_history_on_start and jellyfin_client.is_configured():
-            self.sync_jellyfin_history()
+            self.pull_jellyfin_history()
 
     def _setup_menu(self):
         menubar = self.menuBar()
@@ -409,9 +450,13 @@ class MainWindow(QMainWindow):
         self.refresh_action.triggered.connect(self.force_scan_library)
         settings_menu.addAction(self.refresh_action)
 
-        self.history_sync_action = QAction("Sync Watch History from Jellyfin", self)
-        self.history_sync_action.triggered.connect(self.sync_jellyfin_history)
-        settings_menu.addAction(self.history_sync_action)
+        self.pull_action = QAction("Pull Watch History from Jellyfin", self)
+        self.pull_action.triggered.connect(self.pull_jellyfin_history)
+        settings_menu.addAction(self.pull_action)
+
+        self.push_action = QAction("Push Watch History to Jellyfin", self)
+        self.push_action.triggered.connect(self.push_jellyfin_history)
+        settings_menu.addAction(self.push_action)
 
     def _setup_ui(self):
         central_widget = QWidget()
@@ -645,6 +690,19 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Scan complete for '{library_name}'.", 5000)
         self.refresh_action.setEnabled(True)
 
+        # Trigger history pull after scan to catch new episodes
+        if jellyfin_client.is_configured():
+            self.statusBar().showMessage("Pulling watch history from Jellyfin...")
+            self.pull_worker = JellyfinPullWorker()
+            self.pull_worker.finished.connect(
+                lambda updated: self.statusBar().showMessage(
+                    f"History pull complete: {updated} updated.", 5000
+                )
+            )
+            self.pull_worker.finished.connect(self.load_library_ui)
+            self.pull_worker.finished.connect(self.pull_worker.deleteLater)
+            self.pull_worker.start()
+
     def sync_all_libraries(self):
         self.statusBar().showMessage("Scanning all libraries (TMDB)... Please wait.")
         self.refresh_action.setEnabled(False)
@@ -662,26 +720,59 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Library scan complete.", 5000)
         self.refresh_action.setEnabled(True)
 
-    def sync_jellyfin_history(self):
+        # Trigger history pull after scan to catch new episodes
+        if jellyfin_client.is_configured():
+            self.statusBar().showMessage("Pulling watch history from Jellyfin...")
+            self.pull_worker = JellyfinPullWorker()
+            self.pull_worker.finished.connect(
+                lambda updated: self.statusBar().showMessage(
+                    f"History pull complete: {updated} updated.", 5000
+                )
+            )
+            self.pull_worker.finished.connect(self.load_library_ui)
+            self.pull_worker.finished.connect(self.pull_worker.deleteLater)
+            self.pull_worker.start()
+
+    def pull_jellyfin_history(self):
         """Pulls Jellyfin watch history and updates local DB watched flags."""
-        self.statusBar().showMessage("Syncing watch history from Jellyfin...")
-        if hasattr(self, "history_sync_action"):
-            self.history_sync_action.setEnabled(False)
+        self.statusBar().showMessage("Pulling watch history from Jellyfin...")
+        if hasattr(self, "pull_action"):
+            self.pull_action.setEnabled(False)
 
-        self.history_worker = JellyfinHistorySyncWorker()
-        self.history_worker.finished.connect(self.on_history_sync_finished)
-        self.history_worker.error.connect(self.on_history_sync_error)
-        self.history_worker.finished.connect(self.history_worker.deleteLater)
-        self.history_worker.error.connect(self.history_worker.deleteLater)
-        self.history_worker.start()
+        self.pull_worker = JellyfinPullWorker()
+        self.pull_worker.finished.connect(self.on_pull_finished)
+        self.pull_worker.error.connect(self.on_scan_error)
+        self.pull_worker.finished.connect(self.pull_worker.deleteLater)
+        self.pull_worker.error.connect(self.pull_worker.deleteLater)
+        self.pull_worker.start()
 
-    def on_history_sync_finished(self, updated_count: int):
+    def on_pull_finished(self, updated_count):
         self.load_library_ui()
         self.statusBar().showMessage(
-            f"Watch history synced ({updated_count} episodes updated).", 5000
+            f"Jellyfin history pull complete. {updated_count} episodes updated.", 5000
         )
-        if hasattr(self, "history_sync_action"):
-            self.history_sync_action.setEnabled(True)
+        if hasattr(self, "pull_action"):
+            self.pull_action.setEnabled(True)
+
+    def push_jellyfin_history(self):
+        """Pushes local watched flags to Jellyfin."""
+        self.statusBar().showMessage("Pushing watch history to Jellyfin...")
+        if hasattr(self, "push_action"):
+            self.push_action.setEnabled(False)
+
+        self.push_worker = JellyfinPushWorker()
+        self.push_worker.finished.connect(self.on_push_finished)
+        self.push_worker.error.connect(self.on_scan_error)
+        self.push_worker.finished.connect(self.push_worker.deleteLater)
+        self.push_worker.error.connect(self.push_worker.deleteLater)
+        self.push_worker.start()
+
+    def on_push_finished(self, count):
+        self.statusBar().showMessage(
+            f"Jellyfin history push complete. {count} items processed.", 5000
+        )
+        if hasattr(self, "push_action"):
+            self.push_action.setEnabled(True)
 
     def on_history_sync_error(self, error_msg: str):
         self.statusBar().showMessage(f"History sync failed: {error_msg}", 5000)
