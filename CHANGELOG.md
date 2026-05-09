@@ -1,3 +1,9 @@
+## 0.7.1 (2026-05-08)
+
+### Fix
+
+- **player**: handle VLC errors due to architecture mismatch gracefully
+
 ## 0.7.0 (2026-05-08)
 
 ### Feat
