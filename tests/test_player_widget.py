@@ -184,3 +184,112 @@ def test_load_and_play_platforms(player_widget):
     with patch("sys.platform", "darwin"):
         player_widget._load_and_play("/path/to/video.mp4")
         player_widget.mediaplayer.set_nsobject.assert_called()
+
+
+def test_toggle_fullscreen(player_widget):
+    main_win = MagicMock()
+    # Mocking self.window()
+    with patch.object(player_widget, "window", return_value=main_win):
+        # Test go fullscreen
+        main_win.isFullScreen.return_value = False
+        player_widget.toggle_fullscreen()
+        main_win.showFullScreen.assert_called_once()
+        assert player_widget.controls_widget.isHidden()
+
+        # Test exit fullscreen
+        main_win.isFullScreen.return_value = True
+        player_widget.toggle_fullscreen()
+        main_win.showNormal.assert_called_once()
+        assert not player_widget.controls_widget.isHidden()
+
+
+def test_key_press_events(player_widget):
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtCore import Qt
+
+    with patch.object(player_widget, "toggle_fullscreen") as mock_toggle:
+        with patch.object(player_widget, "play_pause") as mock_play:
+            # F key
+            event_f = QKeyEvent(
+                QKeyEvent.Type.KeyPress, Qt.Key.Key_F, Qt.KeyboardModifier.NoModifier
+            )
+            player_widget.keyPressEvent(event_f)
+            mock_toggle.assert_called_once()
+            mock_toggle.reset_mock()
+
+            # Esc key when fullscreen
+            main_win = MagicMock()
+            main_win.isFullScreen.return_value = True
+            with patch.object(player_widget, "window", return_value=main_win):
+                event_esc = QKeyEvent(
+                    QKeyEvent.Type.KeyPress,
+                    Qt.Key.Key_Escape,
+                    Qt.KeyboardModifier.NoModifier,
+                )
+                player_widget.keyPressEvent(event_esc)
+                mock_toggle.assert_called_once()
+                mock_toggle.reset_mock()
+
+            # Space key
+            event_space = QKeyEvent(
+                QKeyEvent.Type.KeyPress,
+                Qt.Key.Key_Space,
+                Qt.KeyboardModifier.NoModifier,
+            )
+            player_widget.keyPressEvent(event_space)
+            mock_play.assert_called_once()
+
+
+def test_stop_exits_fullscreen(player_widget):
+    main_win = MagicMock()
+    main_win.isFullScreen.return_value = True
+    player_widget.mediaplayer = MagicMock()
+
+    with patch.object(player_widget, "window", return_value=main_win):
+        with patch.object(player_widget, "toggle_fullscreen") as mock_toggle:
+            player_widget.stop()
+            mock_toggle.assert_called_once()
+
+
+def test_event_filter_double_click(player_widget):
+    from PySide6.QtCore import QEvent
+
+    with patch.object(player_widget, "toggle_fullscreen") as mock_toggle:
+        event = QEvent(QEvent.Type.MouseButtonDblClick)
+        # Should return True if handled
+        assert player_widget.eventFilter(player_widget.video_frame, event) is True
+        mock_toggle.assert_called_once()
+
+        # Should return False for other events
+        event_other = QEvent(QEvent.Type.MouseButtonPress)
+        assert (
+            player_widget.eventFilter(player_widget.video_frame, event_other) is False
+        )
+
+
+def test_handle_playback_finished(player_widget, qtbot):
+    with patch.object(player_widget, "stop") as mock_stop:
+        with qtbot.waitSignal(player_widget.back_requested):
+            player_widget._handle_playback_finished()
+        mock_stop.assert_called_once()
+
+
+def test_ui_layout_completeness(player_widget):
+    """Verify that player controls are actually attached to the UI hierarchy."""
+    # Verify that controls are actually in the controls_widget
+    assert player_widget.play_button.parent() == player_widget.controls_widget
+    assert player_widget.stop_button.parent() == player_widget.controls_widget
+    assert player_widget.fullscreen_button.parent() == player_widget.controls_widget
+    assert player_widget.back_button.parent() == player_widget.controls_widget
+
+    # Verify the controls_widget is in the main_layout
+    found = False
+    for i in range(player_widget.main_layout.count()):
+        item = player_widget.main_layout.itemAt(i)
+        if item.widget() == player_widget.controls_widget:
+            found = True
+            break
+    assert found, "controls_widget not found in main_layout"
+
+    # Verify seek_slider is also there (it's in seek_layout, which is in controls_layout)
+    assert player_widget.seek_slider.parent() == player_widget.controls_widget

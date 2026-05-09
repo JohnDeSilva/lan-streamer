@@ -660,7 +660,8 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
 
         # Library Selector
-        lib_selector_layout = QHBoxLayout()
+        self.header_widget = QWidget()
+        lib_selector_layout = QHBoxLayout(self.header_widget)
         lib_selector_layout.addWidget(QLabel("Current Library:"))
         self.main_library_combo = QComboBox()
         self.main_library_combo.currentTextChanged.connect(self.on_main_library_changed)
@@ -680,7 +681,7 @@ class MainWindow(QMainWindow):
         self.sort_combo.currentTextChanged.connect(self.update_series_view)
         lib_selector_layout.addWidget(self.sort_combo)
 
-        main_layout.addLayout(lib_selector_layout)
+        main_layout.addWidget(self.header_widget)
 
         # ---- VIEW 0: Series Grid ----
         self.home_view = QWidget()
@@ -762,6 +763,7 @@ class MainWindow(QMainWindow):
         self.player_widget.watched_marked.connect(
             lambda path: self.load_library_ui(stay_on_current=True)
         )
+        self.player_widget.fullscreen_changed.connect(self.on_fullscreen_changed)
 
         # Stacked Widget
         self.stacked_widget = QStackedWidget()
@@ -1359,6 +1361,12 @@ class MainWindow(QMainWindow):
         if tmdb_num is not None and tmdb_name:
             return f"{watched_indicator}{tmdb_num}. {tmdb_name}"
         return f"{watched_indicator}{episode_data['name']}"
+
+    def on_fullscreen_changed(self, is_fullscreen):
+        if is_fullscreen:
+            self.header_widget.hide()
+        else:
+            self.header_widget.show()
 
     def on_episode_double_clicked(self, index):
         item = self.episode_model.itemFromIndex(index)

@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget,
+    QMainWindow,
     QVBoxLayout,
     QHBoxLayout,
     QPushButton,
@@ -14,7 +15,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QMessageBox,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, Slot
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, Slot, QEvent, QSize
 import sys
 from .config import config
 from . import db
@@ -41,6 +42,7 @@ class CacheWorker(QThread):
         self.dest_path = Path(dest_path)
 
     def run(self):
+        logger.info(f"Starting cache of {self.src_path} to {self.dest_path}")
         try:
             self.dest_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -60,7 +62,9 @@ class CacheWorker(QThread):
                         self.progress.emit(int((copied / total_size) * 100))
 
             self.finished.emit(str(self.dest_path))
+            logger.info(f"Caching finished: {self.dest_path}")
         except Exception as e:
+            logger.error(f"Caching failed: {e}")
             self.error.emit(str(e))
 
 
@@ -69,6 +73,7 @@ class VideoPlayerWidget(QWidget):
 
     back_requested = Signal()
     watched_marked = Signal(str)  # path
+    fullscreen_changed = Signal(bool)
     _playback_finished_signal = Signal()  # Internal for cross-thread VLC events
 
     def __init__(self, parent=None):
@@ -97,7 +102,7 @@ class VideoPlayerWidget(QWidget):
         self.current_media_path = None
         self.cached_file_path = None
         self.is_watched_marked = False
-
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._setup_ui()
 
         # Timer for updating UI (seek bar, time labels, watched threshold)
@@ -121,6 +126,7 @@ class VideoPlayerWidget(QWidget):
         self.video_frame.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
+        self.video_frame.installEventFilter(self)
         self.main_layout.addWidget(self.video_frame)
 
         # Progress Overlay (for caching)
@@ -138,8 +144,28 @@ class VideoPlayerWidget(QWidget):
         overlay_layout.addStretch()
         self.progress_overlay.hide()
 
-        # Controls Layout
-        controls_layout = QVBoxLayout()
+        # Fullscreen Overlay (minimal controls)
+        self.fullscreen_overlay = QFrame(self.video_frame)
+        self.fullscreen_overlay.setStyleSheet(
+            "background-color: rgba(0, 0, 0, 150); border-radius: 10px;"
+        )
+        fs_layout = QHBoxLayout(self.fullscreen_overlay)
+
+        self.fs_pause_button = QPushButton("Pause")
+        self.fs_pause_button.setFixedWidth(80)
+        self.fs_pause_button.clicked.connect(self.play_pause)
+
+        self.fs_exit_button = QPushButton("Exit Fullscreen")
+        self.fs_exit_button.setFixedWidth(120)
+        self.fs_exit_button.clicked.connect(self.toggle_fullscreen)
+
+        fs_layout.addWidget(self.fs_pause_button)
+        fs_layout.addWidget(self.fs_exit_button)
+        self.fullscreen_overlay.hide()
+
+        # Controls Widget (container for easy hiding in fullscreen)
+        self.controls_widget = QWidget()
+        controls_layout = QVBoxLayout(self.controls_widget)
 
         # Seek Bar
         seek_layout = QHBoxLayout()
@@ -181,6 +207,9 @@ class VideoPlayerWidget(QWidget):
         self.back_button = QPushButton("Back")
         self.back_button.clicked.connect(self.on_back_clicked)
 
+        self.fullscreen_button = QPushButton("Fullscreen")
+        self.fullscreen_button.clicked.connect(self.toggle_fullscreen)
+
         buttons_layout.addWidget(self.play_button)
         buttons_layout.addWidget(self.stop_button)
         buttons_layout.addStretch()
@@ -191,24 +220,82 @@ class VideoPlayerWidget(QWidget):
         buttons_layout.addSpacing(20)
         buttons_layout.addLayout(volume_layout)
         buttons_layout.addSpacing(20)
+        buttons_layout.addWidget(self.fullscreen_button)
         buttons_layout.addWidget(self.back_button)
 
         controls_layout.addLayout(buttons_layout)
-        self.main_layout.addLayout(controls_layout)
+        self.main_layout.addWidget(self.controls_widget)
+
+    def eventFilter(self, watched, event):
+        if (
+            watched == self.video_frame
+            and event.type() == QEvent.Type.MouseButtonDblClick
+        ):
+            self.toggle_fullscreen()
+            return True
+        return super().eventFilter(watched, event)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.window().isFullScreen():
+            self.toggle_fullscreen()
+        elif event.key() == Qt.Key.Key_F:
+            self.toggle_fullscreen()
+        elif event.key() == Qt.Key.Key_Space:
+            self.play_pause()
+        else:
+            super().keyPressEvent(event)
+
+    def toggle_fullscreen(self):
+        main_win = self.window()
+        if main_win.isFullScreen():
+            logger.info("Exiting fullscreen mode")
+            main_win.showNormal()
+            self.controls_widget.show()
+            self.fullscreen_overlay.hide()
+            self.fullscreen_changed.emit(False)
+            # Show menu bar and status bar if they exist
+            if isinstance(main_win, QMainWindow):
+                main_win.menuBar().show()
+                main_win.statusBar().show()
+        else:
+            logger.info("Entering fullscreen mode")
+            main_win.showFullScreen()
+            self.controls_widget.hide()
+            # Position overlay at bottom center
+            self.fullscreen_overlay.show()
+            self.fullscreen_changed.emit(True)
+            self._reposition_overlays()
+            if isinstance(main_win, QMainWindow):
+                main_win.menuBar().hide()
+                main_win.statusBar().hide()
+
+    def _reposition_overlays(self):
+        self.progress_overlay.resize(self.video_frame.size())
+
+        # Center the fullscreen overlay at the bottom
+        fs_size = QSize(220, 50)
+        self.fullscreen_overlay.resize(fs_size)
+        x = (self.video_frame.width() - fs_size.width()) // 2
+        y = self.video_frame.height() - fs_size.height() - 20
+        self.fullscreen_overlay.move(x, y)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.progress_overlay.resize(self.video_frame.size())
+        self._reposition_overlays()
 
     def play_video(self, file_path):
         """Starts the playback process (caching if enabled)."""
+        logger.info(f"Request to play video: {file_path}")
+        self.setFocus()
         self.stop()
         self.current_media_path = file_path
         self.is_watched_marked = False
 
         if config.enable_caching:
+            logger.info("Caching is enabled, starting cache process")
             self._start_caching(file_path)
         else:
+            logger.info("Caching is disabled, playing directly")
             self._load_and_play(file_path)
 
     def _start_caching(self, file_path):
@@ -254,6 +341,7 @@ class VideoPlayerWidget(QWidget):
             logger.error(error_msg)
             return
 
+        logger.info(f"Initializing VLC playback for: {file_path}")
         # Ensure the widget is realized before getting winId
         self.video_frame.show()
 
@@ -313,11 +401,13 @@ class VideoPlayerWidget(QWidget):
     def change_audio_track(self, index):
         track_id = self.audio_combo.itemData(index)
         if track_id is not None:
+            logger.info(f"Changing audio track to ID: {track_id}")
             self.mediaplayer.audio_set_track(track_id)
 
     def change_subtitle_track(self, index):
         track_id = self.subtitle_combo.itemData(index)
         if track_id is not None:
+            logger.info(f"Changing subtitle track to ID: {track_id}")
             self.mediaplayer.video_set_spu(track_id)
 
     def play_pause(self):
@@ -329,6 +419,9 @@ class VideoPlayerWidget(QWidget):
             self.play_button.setText("Pause")
 
     def stop(self):
+        logger.info("Stopping playback")
+        if self.window().isFullScreen():
+            self.toggle_fullscreen()
         if self.mediaplayer:
             self.mediaplayer.stop()
         self.timer.stop()

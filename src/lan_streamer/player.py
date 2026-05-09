@@ -1,6 +1,9 @@
 import subprocess
 from pathlib import Path
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def play_video(file_path: str):
@@ -8,8 +11,10 @@ def play_video(file_path: str):
     Launches VLC to play the given video file.
     Uses subprocess to pass the file path directly to VLC, ensuring no compression.
     """
+    logger.info(f"Launching external VLC for: {file_path}")
     path = Path(file_path)
     if not path.exists():
+        logger.error(f"Video file not found: {file_path}")
         raise FileNotFoundError(f"Video file not found: {file_path}")
 
     try:
@@ -21,4 +26,4 @@ def play_video(file_path: str):
         else:
             subprocess.Popen(["vlc", str(path)])
     except Exception as e:
-        print(f"Error launching VLC: {e}")
+        logger.error(f"Error launching VLC: {e}")

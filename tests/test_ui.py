@@ -15,6 +15,7 @@ from lan_streamer.ui import (
 class MockVideoPlayerWidget(QWidget):
     back_requested = Signal()
     watched_marked = Signal(str)
+    fullscreen_changed = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -971,3 +972,18 @@ def test_cleanup_worker_error_logic(mock_dependencies):
 
     mock_finished.assert_not_called()
     mock_error.assert_called_once_with("Cleanup Logic Error")
+
+
+def test_mainwindow_fullscreen_header_toggle(mock_dependencies, qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert not window.header_widget.isHidden()
+
+    # Go fullscreen
+    window.on_fullscreen_changed(True)
+    assert window.header_widget.isHidden()
+
+    # Exit fullscreen
+    window.on_fullscreen_changed(False)
+    assert not window.header_widget.isHidden()

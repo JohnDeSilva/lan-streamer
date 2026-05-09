@@ -8,7 +8,8 @@ It bridges the gap between local file storage (e.g., NAS, External Drives) and o
 
 ## 🚀 Key Features
 
-*   **📺 Embedded Playback**: Integrated **VLC** player for a seamless bit-perfect streaming experience directly within the app. Includes full support for **audio and subtitle track selection**, seeking, and volume control. Supports HDR, high-bitrate 4K, and all advanced codecs with zero transcoding.
+*   **📺 Embedded Playback**: Integrated **VLC** player for a seamless bit-perfect streaming experience directly within the app. Includes full support for **audio and subtitle track selection**, seeking, and volume control.
+*   **🎭 Theatre Mode (Fullscreen)**: Immersive, distraction-free viewing. Going fullscreen automatically hides the library, filters, status bars, and menus. A minimal, floating control bar provides essential playback actions without cluttering the screen.
 *   **💾 Local Caching**: Optional background caching of media files to local storage to eliminate network stutters on high-bitrate content.
 *   **🧠 Intelligent Progress Tracking**: Automatically marks episodes as watched only after reaching a **90% completion** threshold.
 *   **⚡ High-Performance Scanning**: Engineered with an incremental scanning engine using SQLite `UPSERT` logic. Minimize disk I/O while preserving manual corrections and user metadata.
@@ -79,6 +80,18 @@ make run
 4.  **Fetch Metadata**: Go to **Metadata > Check for New Files and Fetch Metadata** to trigger the initial scanning and poster downloads.
 5.  **Cleanup Library**: If you move or delete files on your drive, use **Metadata > Cleanup Library (Remove Missing Files)** to prune stale entries.
 6.  **Sync Watch History**: Use the **Watch History** menu to Pull or Push your watched status.
+
+---
+
+## ⌨️ Keyboard Shortcuts
+
+| Shortcut | Action |
+| :--- | :--- |
+| **`Space`** | Toggle Play/Pause |
+| **`F`** | Toggle Fullscreen |
+| **`Esc`** | Exit Fullscreen |
+| **`Double-Click`** | Toggle Fullscreen (Video area) |
+| **`←` (Back)** | Stop playback and return to series view |
 
 ---
 
