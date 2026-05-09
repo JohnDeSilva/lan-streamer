@@ -432,6 +432,11 @@ class GeneralSettingsDialog(QDialog):
         self.log_file_checkbox.setChecked(config.enable_global_file_logging)
         layout.addWidget(self.log_file_checkbox)
 
+        # Use Embedded Player
+        self.player_checkbox = QCheckBox("Use Embedded Video Player (recommended)")
+        self.player_checkbox.setChecked(config.use_embedded_player)
+        layout.addWidget(self.player_checkbox)
+
         # Enable Caching
         self.caching_checkbox = QCheckBox(
             "Enable Local Caching (Copies video to local disk before playback)"
@@ -476,6 +481,7 @@ class GeneralSettingsDialog(QDialog):
         config.log_directory = log_path
         config.sync_history_on_start = self.sync_checkbox.isChecked()
         config.enable_global_file_logging = self.log_file_checkbox.isChecked()
+        config.use_embedded_player = self.player_checkbox.isChecked()
         config.enable_caching = self.caching_checkbox.isChecked()
         config.save()
 
@@ -1361,8 +1367,13 @@ class MainWindow(QMainWindow):
         episode_data = item.data(Qt.ItemDataRole.UserRole)
         if episode_data and episode_data.get("path"):
             try:
-                self.player_widget.play_video(episode_data["path"])
-                self.stacked_widget.setCurrentIndex(2)
+                if config.use_embedded_player:
+                    self.player_widget.play_video(episode_data["path"])
+                    self.stacked_widget.setCurrentIndex(2)
+                else:
+                    from .player import play_video
+
+                    play_video(episode_data["path"])
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not play video:\n{e}")
 

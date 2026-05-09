@@ -25,6 +25,7 @@ class Config:
         self.cache_directory: str = str(
             Path.home() / ".config" / "lan-streamer" / "cache"
         )
+        self.use_embedded_player: bool = True
         self.load()
 
     def load(self):
@@ -63,6 +64,7 @@ class Config:
                         "cache_directory",
                         str(Path.home() / ".config" / "lan-streamer" / "cache"),
                     )
+                    self.use_embedded_player = data.get("use_embedded_player", True)
 
                     if "libraries" in data:
                         self.libraries = data["libraries"]
@@ -97,6 +99,7 @@ class Config:
                         "enable_caching": self.enable_caching,
                         "watched_threshold": self.watched_threshold,
                         "cache_directory": self.cache_directory,
+                        "use_embedded_player": self.use_embedded_player,
                     },
                     f,
                     indent=4,

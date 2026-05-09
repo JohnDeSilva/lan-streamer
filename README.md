@@ -91,6 +91,7 @@ Lan Streamer configuration is managed through the **Settings > General Settings*
 - **Log Directory**: The directory where rotated logs are stored.
 - **Enable Global Log File**: Toggle generation of `lan-streamer.log`. (Default: Off, console only).
 - **Enable Local Caching**: Toggle background copying of remote files to local disk before playback. (Default: Off).
+- **Use Embedded Video Player**: Toggle between the integrated player and launching an external VLC window. (Default: On).
 
 ### Environment Variables
 - `LAN_STREAMER_DB`: Override the database file location for portability or testing.
