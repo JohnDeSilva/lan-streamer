@@ -1,3 +1,11 @@
+## 0.7.2 (2026-05-08)
+
+### Fix
+
+- **player**: adds fullscreen
+- **player**: return to series page when playback is stopped
+- **player**: make playing videos in VLC vs in application a setting
+
 ## 0.7.1 (2026-05-08)
 
 ### Fix
