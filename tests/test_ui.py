@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from PySide6.QtWidgets import QApplication, QPushButton
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QPushButton, QWidget
+from PySide6.QtCore import Qt, Signal
 from lan_streamer import ui
 from lan_streamer.config import config
 from lan_streamer.ui import (
@@ -10,6 +10,15 @@ from lan_streamer.ui import (
     JellyfinSettingsDialog,
     GeneralSettingsDialog,
 )
+
+
+class MockVideoPlayerWidget(QWidget):
+    back_requested = Signal()
+    watched_marked = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.play_video = MagicMock()
 
 
 @pytest.fixture
@@ -56,13 +65,13 @@ def mock_dependencies():
         patch.object(ui, "config", config),
         patch.object(ui, "jellyfin_client", MagicMock()),
         patch.object(ui, "tmdb_client", MagicMock()),
-        patch.object(ui, "play_video", MagicMock()),
         patch.object(ui, "scan_directories", MagicMock()),
         patch.object(ui, "ScanWorker", mock_worker_class),
         patch.object(ui, "SyncAllWorker", mock_sync_worker_class),
         patch.object(ui, "JellyfinPullWorker", mock_pull_worker_class),
         patch.object(ui, "JellyfinPushWorker", mock_push_worker_class),
         patch.object(ui, "CleanupWorker", mock_cleanup_worker_class),
+        patch("lan_streamer.player_widget.VideoPlayerWidget", MockVideoPlayerWidget),
     ):
         config.libraries = {"TestLib": ["/path1"]}
         config.jellyfin_url = ""
@@ -185,9 +194,9 @@ def test_mainwindow_play_video(qtbot, mock_dependencies):
 
     window.on_episode_double_clicked(index)
 
-    ui.play_video.assert_called_once_with("/path1")
-    ui.db.update_episode_watched_status.assert_called_once_with("/path1", True)
-    assert ep_item.text() == "[✓] Ep1"
+    window.player_widget.play_video.assert_called_once_with("/path1")
+    ui.db.update_episode_watched_status.assert_not_called()
+    assert ep_item.text() == "[ ] Ep1"
 
 
 def test_mainwindow_force_scan(qtbot, mock_dependencies):
@@ -402,7 +411,7 @@ def test_mainwindow_play_video_error(qtbot, mock_dependencies):
     ep_item = window.episode_model.item(0, 0)
     index = window.episode_model.indexFromItem(ep_item)
 
-    ui.play_video.side_effect = Exception("Mocked playback error")
+    window.player_widget.play_video.side_effect = Exception("Mocked playback error")
     mock_crit = MagicMock()
     with patch("lan_streamer.ui.QMessageBox.critical", mock_crit):
         window.on_episode_double_clicked(index)

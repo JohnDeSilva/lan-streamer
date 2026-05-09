@@ -20,6 +20,11 @@ class Config:
         )
         self.log_directory: str = str(Path.home() / ".config" / "lan-streamer" / "logs")
         self.enable_global_file_logging: bool = False
+        self.enable_caching: bool = False
+        self.watched_threshold: float = 0.9
+        self.cache_directory: str = str(
+            Path.home() / ".config" / "lan-streamer" / "cache"
+        )
         self.load()
 
     def load(self):
@@ -52,6 +57,12 @@ class Config:
                     self.enable_global_file_logging = data.get(
                         "enable_global_file_logging", False
                     )
+                    self.enable_caching = data.get("enable_caching", False)
+                    self.watched_threshold = data.get("watched_threshold", 0.9)
+                    self.cache_directory = data.get(
+                        "cache_directory",
+                        str(Path.home() / ".config" / "lan-streamer" / "cache"),
+                    )
 
                     if "libraries" in data:
                         self.libraries = data["libraries"]
@@ -83,6 +94,9 @@ class Config:
                         "database_path": self.database_path,
                         "log_directory": self.log_directory,
                         "enable_global_file_logging": self.enable_global_file_logging,
+                        "enable_caching": self.enable_caching,
+                        "watched_threshold": self.watched_threshold,
+                        "cache_directory": self.cache_directory,
                     },
                     f,
                     indent=4,

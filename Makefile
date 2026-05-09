@@ -10,9 +10,15 @@ else
 	PYTEST := uv run pytest
 	RUFF := uv run ruff
 endif
+# Wayland detection for stable VLC embedding
+ifeq ($(XDG_SESSION_TYPE),wayland)
+    QT_PLATFORM := QT_QPA_PLATFORM=xcb
+else
+    QT_PLATFORM :=
+endif
 
 run: migrate
-	PYTHONPATH=src $(PYTHON) -m lan_streamer.main
+	PYTHONPATH=src $(QT_PLATFORM) $(PYTHON) -m lan_streamer.main
 
 lint:
 	$(RUFF) format .

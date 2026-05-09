@@ -8,7 +8,9 @@ It bridges the gap between local file storage (e.g., NAS, External Drives) and o
 
 ## 🚀 Key Features
 
-*   **📺 Local-First Playback**: Launches **VLC** directly for bit-perfect streaming. Support for HDR, high-bitrate 4K, and all advanced codecs with zero transcoding.
+*   **📺 Embedded Playback**: Integrated **VLC** player for a seamless bit-perfect streaming experience directly within the app. Includes full support for **audio and subtitle track selection**, seeking, and volume control. Supports HDR, high-bitrate 4K, and all advanced codecs with zero transcoding.
+*   **💾 Local Caching**: Optional background caching of media files to local storage to eliminate network stutters on high-bitrate content.
+*   **🧠 Intelligent Progress Tracking**: Automatically marks episodes as watched only after reaching a **90% completion** threshold.
 *   **⚡ High-Performance Scanning**: Engineered with an incremental scanning engine using SQLite `UPSERT` logic. Minimize disk I/O while preserving manual corrections and user metadata.
 *   **🔍 Advanced Metadata Matching**: Implements a robust, multi-stage search strategy (Exact, Colon-aware, Fuzzy, and Word-based fallbacks) to reliably link local folders to Jellyfin entries.
 *   **📛 Official Naming**: Prioritizes official Jellyfin episode names (e.g., *"01 - Pilot"*) for a clean, professional library look, with filename fallbacks for unmatched content.
@@ -33,7 +35,8 @@ It bridges the gap between local file storage (e.g., NAS, External Drives) and o
 ## 🛠️ Requirements
 
 *   **Python**: 3.14+
-*   **VLC**: Must be installed and available in your system's PATH.
+*   **VLC**: A VLC installation is required on the system.
+*   **python-vlc**: Python bindings for libvlc (included in project dependencies).
 *   **TMDB**: A free API key from [The Movie Database](https://www.themoviedb.org/) (Required for metadata).
 *   **Jellyfin**: (Optional) A running Jellyfin server and an API key for watch history synchronization.
 
@@ -61,6 +64,9 @@ uv sync
 make run
 ```
 
+> [!NOTE]
+> **Linux / Wayland Support**: On Wayland-based desktops (Fedora, Ubuntu, etc.), the application automatically detects the session and uses XWayland (`QT_QPA_PLATFORM=xcb`) to ensure stable VLC window embedding and prevent playback issues.
+
 ### Setup Guide
 1.  **Configure Connectivity**: Navigate to **Watch History > Jellyfin Settings** to enter your Server URL and API Key. Use "Test Connection" to verify.
 2.  **Configure Metadata**: Navigate to **Metadata > TMDB Settings...** to enter your TMDB API Key.
@@ -79,6 +85,7 @@ Lan Streamer configuration is managed through the **Settings > General Settings*
 - **Database Path**: The location of the SQLite database file.
 - **Log Directory**: The directory where rotated logs are stored.
 - **Enable Global Log File**: Toggle generation of `lan-streamer.log`. (Default: Off, console only).
+- **Enable Local Caching**: Toggle background copying of remote files to local disk before playback. (Default: Off).
 
 ### Environment Variables
 - `LAN_STREAMER_DB`: Override the database file location for portability or testing.

@@ -31,7 +31,6 @@ from .scanner import (
     clean_series_data,
     _parse_episode_number,
 )
-from .player import play_video
 from .jellyfin import jellyfin_client
 from .tmdb import tmdb_client
 from . import db
@@ -429,10 +428,16 @@ class GeneralSettingsDialog(QDialog):
         self.sync_checkbox.setChecked(config.sync_history_on_start)
         layout.addWidget(self.sync_checkbox)
 
-        # Enable Global Log File
         self.log_file_checkbox = QCheckBox("Enable Global Log File (lan-streamer.log)")
         self.log_file_checkbox.setChecked(config.enable_global_file_logging)
         layout.addWidget(self.log_file_checkbox)
+
+        # Enable Caching
+        self.caching_checkbox = QCheckBox(
+            "Enable Local Caching (Copies video to local disk before playback)"
+        )
+        self.caching_checkbox.setChecked(config.enable_caching)
+        layout.addWidget(self.caching_checkbox)
 
         layout.addStretch()
 
@@ -471,6 +476,7 @@ class GeneralSettingsDialog(QDialog):
         config.log_directory = log_path
         config.sync_history_on_start = self.sync_checkbox.isChecked()
         config.enable_global_file_logging = self.log_file_checkbox.isChecked()
+        config.enable_caching = self.caching_checkbox.isChecked()
         config.save()
 
         if restart_needed:
@@ -670,10 +676,6 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(lib_selector_layout)
 
-        # Stacked Widget
-        self.stacked_widget = QStackedWidget()
-        main_layout.addWidget(self.stacked_widget)
-
         # ---- VIEW 0: Series Grid ----
         self.home_view = QWidget()
         home_layout = QVBoxLayout(self.home_view)
@@ -696,7 +698,6 @@ class MainWindow(QMainWindow):
         self.series_view.clicked.connect(self.on_series_selected)
 
         home_layout.addWidget(self.series_view)
-        self.stacked_widget.addWidget(self.home_view)
 
         # ---- VIEW 1: Series Details ----
         self.detail_view = QWidget()
@@ -746,7 +747,22 @@ class MainWindow(QMainWindow):
             self.show_episode_context_menu
         )
         column_layout.addWidget(self.episode_view)
-        self.stacked_widget.addWidget(self.detail_view)
+
+        # ---- VIEW 2: Player Widget ----
+        from .player_widget import VideoPlayerWidget
+
+        self.player_widget = VideoPlayerWidget()
+        self.player_widget.back_requested.connect(self.go_back)
+        self.player_widget.watched_marked.connect(
+            lambda path: self.load_library_ui(stay_on_current=True)
+        )
+
+        # Stacked Widget
+        self.stacked_widget = QStackedWidget()
+        self.stacked_widget.addWidget(self.home_view)  # Index 0
+        self.stacked_widget.addWidget(self.detail_view)  # Index 1
+        self.stacked_widget.addWidget(self.player_widget)  # Index 2
+        main_layout.addWidget(self.stacked_widget)
 
     def refresh_libraries_combo(self):
         current = self.main_library_combo.currentText()
@@ -1182,8 +1198,12 @@ class MainWindow(QMainWindow):
                 )
 
     def go_back(self):
-        self.stacked_widget.setCurrentIndex(0)
-        self.current_series = None
+        if self.stacked_widget.currentIndex() == 2:
+            self.player_widget.stop()
+            self.stacked_widget.setCurrentIndex(1)
+        else:
+            self.stacked_widget.setCurrentIndex(0)
+            self.current_series = None
 
     def on_series_selected(self, index):
         item = self.series_model.itemFromIndex(index)
@@ -1341,8 +1361,8 @@ class MainWindow(QMainWindow):
         episode_data = item.data(Qt.ItemDataRole.UserRole)
         if episode_data and episode_data.get("path"):
             try:
-                play_video(episode_data["path"])
-                self.toggle_watched_status(item, force_status=True)
+                self.player_widget.play_video(episode_data["path"])
+                self.stacked_widget.setCurrentIndex(2)
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not play video:\n{e}")
 
