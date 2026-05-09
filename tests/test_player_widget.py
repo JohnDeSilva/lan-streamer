@@ -155,9 +155,47 @@ def test_set_volume_and_position(player_widget):
     player_widget.mediaplayer = MagicMock()
     player_widget.set_volume(50)
     player_widget.mediaplayer.audio_set_volume.assert_called_once_with(50)
+    assert player_widget.volume_slider.value() == 50
+    assert player_widget.fs_volume_slider.value() == 50
 
     player_widget.set_position(500)
     player_widget.mediaplayer.set_position.assert_called_once_with(0.5)
+
+
+def test_mute_functionality(player_widget):
+    player_widget.mediaplayer = MagicMock()
+    player_widget.volume_slider.setValue(80)
+
+    # Mute
+    player_widget.toggle_mute()
+    assert player_widget.is_muted is True
+    player_widget.mediaplayer.audio_set_volume.assert_called_with(0)
+    assert player_widget.mute_button.text() == "Unmute"
+    assert player_widget.fs_mute_button.text() == "Unmute"
+
+    # Unmute
+    player_widget.toggle_mute()
+    assert player_widget.is_muted is False
+    player_widget.mediaplayer.audio_set_volume.assert_called_with(80)
+    assert player_widget.mute_button.text() == "Mute"
+
+
+def test_volume_boost(player_widget):
+    player_widget.mediaplayer = MagicMock()
+    player_widget.set_volume(150)
+    player_widget.mediaplayer.audio_set_volume.assert_called_with(150)
+    assert player_widget.volume_slider.value() == 150
+    assert player_widget.fs_volume_slider.value() == 150
+
+
+def test_volume_osd(player_widget):
+    player_widget.mediaplayer = MagicMock()
+    player_widget._show_volume_osd(120)
+    assert not player_widget.osd_label.isHidden()
+    assert "120%" in player_widget.osd_label.text()
+
+    player_widget._show_volume_osd(0, muted=True)
+    assert "Muted" in player_widget.osd_label.text()
 
 
 def test_resize_event(player_widget):
@@ -239,6 +277,31 @@ def test_key_press_events(player_widget):
             player_widget.keyPressEvent(event_space)
             mock_play.assert_called_once()
 
+    # Volume shortcuts
+    player_widget.mediaplayer = MagicMock()
+    player_widget.volume_slider.setValue(100)
+
+    # Up arrow
+    event_up = QKeyEvent(
+        QKeyEvent.Type.KeyPress, Qt.Key.Key_Up, Qt.KeyboardModifier.NoModifier
+    )
+    player_widget.keyPressEvent(event_up)
+    assert player_widget.volume_slider.value() == 105
+
+    # Down arrow
+    event_down = QKeyEvent(
+        QKeyEvent.Type.KeyPress, Qt.Key.Key_Down, Qt.KeyboardModifier.NoModifier
+    )
+    player_widget.keyPressEvent(event_down)
+    assert player_widget.volume_slider.value() == 100
+
+    # M key
+    event_m = QKeyEvent(
+        QKeyEvent.Type.KeyPress, Qt.Key.Key_M, Qt.KeyboardModifier.NoModifier
+    )
+    player_widget.keyPressEvent(event_m)
+    assert player_widget.is_muted is True
+
 
 def test_stop_exits_fullscreen(player_widget):
     main_win = MagicMock()
@@ -293,3 +356,11 @@ def test_ui_layout_completeness(player_widget):
 
     # Verify seek_slider is also there (it's in seek_layout, which is in controls_layout)
     assert player_widget.seek_slider.parent() == player_widget.controls_widget
+
+    # Verify volume controls
+    assert player_widget.volume_slider.parent() == player_widget.controls_widget
+    assert player_widget.mute_button.parent() == player_widget.controls_widget
+
+    # Verify fullscreen volume controls
+    assert player_widget.fs_volume_slider.parent() == player_widget.fullscreen_overlay
+    assert player_widget.fs_mute_button.parent() == player_widget.fullscreen_overlay

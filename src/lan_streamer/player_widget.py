@@ -102,6 +102,8 @@ class VideoPlayerWidget(QWidget):
         self.current_media_path = None
         self.cached_file_path = None
         self.is_watched_marked = False
+        self.is_muted = False
+        self.previous_volume = 80
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._setup_ui()
 
@@ -152,16 +154,41 @@ class VideoPlayerWidget(QWidget):
         fs_layout = QHBoxLayout(self.fullscreen_overlay)
 
         self.fs_pause_button = QPushButton("Pause")
-        self.fs_pause_button.setFixedWidth(80)
+        self.fs_pause_button.setFixedWidth(70)
         self.fs_pause_button.clicked.connect(self.play_pause)
 
+        # Fullscreen Volume controls
+        self.fs_mute_button = QPushButton("Mute")
+        self.fs_mute_button.setFixedWidth(60)
+        self.fs_mute_button.clicked.connect(self.toggle_mute)
+
+        self.fs_volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.fs_volume_slider.setMaximum(200)
+        self.fs_volume_slider.setValue(80)
+        self.fs_volume_slider.setFixedWidth(100)
+        self.fs_volume_slider.valueChanged.connect(self.set_volume)
+
         self.fs_exit_button = QPushButton("Exit Fullscreen")
-        self.fs_exit_button.setFixedWidth(120)
+        self.fs_exit_button.setFixedWidth(110)
         self.fs_exit_button.clicked.connect(self.toggle_fullscreen)
 
         fs_layout.addWidget(self.fs_pause_button)
+        fs_layout.addWidget(self.fs_mute_button)
+        fs_layout.addWidget(self.fs_volume_slider)
         fs_layout.addWidget(self.fs_exit_button)
         self.fullscreen_overlay.hide()
+
+        # Volume OSD
+        self.osd_label = QLabel(self.video_frame)
+        self.osd_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.osd_label.setStyleSheet(
+            "color: white; font-size: 32px; font-weight: bold; background-color: rgba(0, 0, 0, 150); padding: 15px; border-radius: 10px;"
+        )
+        self.osd_label.hide()
+        self.osd_timer = QTimer(self)
+        self.osd_timer.setInterval(2000)
+        self.osd_timer.setSingleShot(True)
+        self.osd_timer.timeout.connect(self.osd_label.hide)
 
         # Controls Widget (container for easy hiding in fullscreen)
         self.controls_widget = QWidget()
@@ -196,9 +223,13 @@ class VideoPlayerWidget(QWidget):
         self.subtitle_combo.currentIndexChanged.connect(self.change_subtitle_track)
 
         volume_layout = QHBoxLayout()
-        volume_layout.addWidget(QLabel("Vol:"))
+        self.mute_button = QPushButton("Mute")
+        self.mute_button.setFixedWidth(60)
+        self.mute_button.clicked.connect(self.toggle_mute)
+        volume_layout.addWidget(self.mute_button)
+
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
-        self.volume_slider.setMaximum(100)
+        self.volume_slider.setMaximum(200)
         self.volume_slider.setValue(80)
         self.volume_slider.setFixedWidth(100)
         self.volume_slider.valueChanged.connect(self.set_volume)
@@ -242,6 +273,12 @@ class VideoPlayerWidget(QWidget):
             self.toggle_fullscreen()
         elif event.key() == Qt.Key.Key_Space:
             self.play_pause()
+        elif event.key() == Qt.Key.Key_Up:
+            self.increase_volume()
+        elif event.key() == Qt.Key.Key_Down:
+            self.decrease_volume()
+        elif event.key() == Qt.Key.Key_M:
+            self.toggle_mute()
         else:
             super().keyPressEvent(event)
 
@@ -268,16 +305,23 @@ class VideoPlayerWidget(QWidget):
             if isinstance(main_win, QMainWindow):
                 main_win.menuBar().hide()
                 main_win.statusBar().hide()
+        self._reposition_overlays()
 
     def _reposition_overlays(self):
         self.progress_overlay.resize(self.video_frame.size())
 
         # Center the fullscreen overlay at the bottom
-        fs_size = QSize(220, 50)
+        fs_size = QSize(350, 50)
         self.fullscreen_overlay.resize(fs_size)
         x = (self.video_frame.width() - fs_size.width()) // 2
         y = self.video_frame.height() - fs_size.height() - 20
         self.fullscreen_overlay.move(x, y)
+
+        # Center OSD label
+        self.osd_label.adjustSize()
+        osd_x = (self.video_frame.width() - self.osd_label.width()) // 2
+        osd_y = (self.video_frame.height() - self.osd_label.height()) // 2
+        self.osd_label.move(osd_x, osd_y)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -446,7 +490,59 @@ class VideoPlayerWidget(QWidget):
         self.back_requested.emit()
 
     def set_volume(self, volume):
-        self.mediaplayer.audio_set_volume(volume)
+        if self.mediaplayer:
+            self.mediaplayer.audio_set_volume(volume)
+
+        # Sync sliders
+        self.volume_slider.blockSignals(True)
+        self.volume_slider.setValue(volume)
+        self.volume_slider.blockSignals(False)
+
+        self.fs_volume_slider.blockSignals(True)
+        self.fs_volume_slider.setValue(volume)
+        self.fs_volume_slider.blockSignals(False)
+
+        if volume > 0 and self.is_muted:
+            self.is_muted = False
+            self._update_mute_ui()
+
+    def increase_volume(self):
+        new_vol = min(self.volume_slider.value() + 5, 200)
+        self.set_volume(new_vol)
+        self._show_volume_osd(new_vol)
+
+    def decrease_volume(self):
+        new_vol = max(self.volume_slider.value() - 5, 0)
+        self.set_volume(new_vol)
+        self._show_volume_osd(new_vol)
+
+    def toggle_mute(self):
+        if self.is_muted:
+            self.is_muted = False
+            self.set_volume(self.previous_volume)
+        else:
+            self.previous_volume = self.volume_slider.value()
+            self.is_muted = True
+            self.set_volume(0)
+        self._update_mute_ui()
+        self._show_volume_osd(
+            0 if self.is_muted else self.volume_slider.value(), muted=self.is_muted
+        )
+
+    def _update_mute_ui(self):
+        text = "Unmute" if self.is_muted else "Mute"
+        self.mute_button.setText(text)
+        self.fs_mute_button.setText(text)
+
+    def _show_volume_osd(self, volume, muted=False):
+        if muted:
+            self.osd_label.setText("Muted")
+        else:
+            self.osd_label.setText(f"Volume: {volume}%")
+
+        self._reposition_overlays()
+        self.osd_label.show()
+        self.osd_timer.start()
 
     def set_position(self, position):
         self.mediaplayer.set_position(position / 1000.0)

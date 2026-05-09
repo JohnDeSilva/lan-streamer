@@ -91,6 +91,9 @@ make run
 | **`F`** | Toggle Fullscreen |
 | **`Esc`** | Exit Fullscreen |
 | **`Double-Click`** | Toggle Fullscreen (Video area) |
+| **`Up`** | Increase volume (up to 200%) |
+| **`Down`** | Decrease volume |
+| **`M`** | Toggle Mute |
 | **`←` (Back)** | Stop playback and return to series view |
 
 ---
