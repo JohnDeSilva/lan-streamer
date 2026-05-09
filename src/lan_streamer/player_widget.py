@@ -69,6 +69,7 @@ class VideoPlayerWidget(QWidget):
 
     back_requested = Signal()
     watched_marked = Signal(str)  # path
+    _playback_finished_signal = Signal()  # Internal for cross-thread VLC events
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -84,6 +85,12 @@ class VideoPlayerWidget(QWidget):
                 args.append("--avcodec-hw=none")
             self.instance = vlc.Instance(args)
             self.mediaplayer = self.instance.media_player_new()
+
+            # Event manager for detecting end of playback
+            self.event_manager = self.mediaplayer.event_manager()
+            self.event_manager.event_attach(
+                vlc.EventType.MediaPlayerEndReached, self._on_playback_finished
+            )
         else:
             self.instance = None
             self.mediaplayer = None
@@ -151,7 +158,8 @@ class VideoPlayerWidget(QWidget):
         self.play_button.clicked.connect(self.play_pause)
 
         self.stop_button = QPushButton("Stop")
-        self.stop_button.clicked.connect(self.stop)
+        self.stop_button.clicked.connect(self._on_stop_clicked)
+        self._playback_finished_signal.connect(self._handle_playback_finished)
 
         self.audio_combo = QComboBox()
         self.audio_combo.setPlaceholderText("Audio Track")
@@ -321,12 +329,28 @@ class VideoPlayerWidget(QWidget):
             self.play_button.setText("Pause")
 
     def stop(self):
-        self.mediaplayer.stop()
+        if self.mediaplayer:
+            self.mediaplayer.stop()
         self.timer.stop()
         self.play_button.setText("Play")
         self.seek_slider.setValue(0)
         self.time_label.setText("00:00 / 00:00")
         self._cleanup_cache()
+
+    def _on_stop_clicked(self):
+        """Called when user clicks the stop button."""
+        self.stop()
+        self.back_requested.emit()
+
+    def _on_playback_finished(self, event):
+        """Called by VLC thread when video ends."""
+        self._playback_finished_signal.emit()
+
+    @Slot()
+    def _handle_playback_finished(self):
+        """Handles the end of playback on the UI thread."""
+        self.stop()
+        self.back_requested.emit()
 
     def set_volume(self, volume):
         self.mediaplayer.audio_set_volume(volume)
