@@ -106,6 +106,11 @@ def main():
         str(log_dir / "tmdb.log"),
         log_formatter,
     )
+    add_file_handler(
+        logging.getLogger("lan_streamer.player_widget"),
+        str(log_dir / "player.log"),
+        log_formatter,
+    )
 
     recreated = db.init_db()
     app = QApplication(sys.argv)

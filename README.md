@@ -67,6 +67,11 @@ make run
 > [!NOTE]
 > **Linux / Wayland Support**: On Wayland-based desktops (Fedora, Ubuntu, etc.), the application automatically detects the session and uses XWayland (`QT_QPA_PLATFORM=xcb`) to ensure stable VLC window embedding and prevent playback issues.
 
+> [!IMPORTANT]
+> **MacOS Compatibility (Apple Silicon)**: If you are on an M1/M2/M3 Mac, you **must** ensure you have the **Apple Silicon** version of VLC installed. 
+> 
+> If you see an `OSError` or "VLC library could not be loaded" message, it is likely because you have the Intel (x86_64) version of VLC, which cannot be loaded by a native ARM64 Python process. Download the correct version from [VideoLAN.org](https://www.videolan.org/vlc/download-macosx.html).
+
 ### Setup Guide
 1.  **Configure Connectivity**: Navigate to **Watch History > Jellyfin Settings** to enter your Server URL and API Key. Use "Test Connection" to verify.
 2.  **Configure Metadata**: Navigate to **Metadata > TMDB Settings...** to enter your TMDB API Key.
@@ -97,6 +102,7 @@ Logs are automatically organized and rotated daily within the configured log dir
 - `scanner.log`: Library scanning and metadata matching details.
 - `jellyfin.log`: API interactions and history synchronization.
 - `tmdb.log`: Metadata fetching from TMDB.
+- `player.log`: Video playback, caching, and VLC interaction details.
 - `lan-streamer.log`: Global application log (if enabled).
 
 ---

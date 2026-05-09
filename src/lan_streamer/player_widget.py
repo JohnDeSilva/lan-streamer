@@ -12,19 +12,20 @@ from PySide6.QtWidgets import (
     QComboBox,
     QSizePolicy,
     QProgressBar,
+    QMessageBox,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, Slot
-
-try:
-    import vlc
-except ImportError:
-    vlc = None
 import sys
-
 from .config import config
 from . import db
 
 logger = logging.getLogger(__name__)
+
+try:
+    import vlc
+except (ImportError, OSError) as e:
+    logger.warning(f"VLC library could not be loaded: {e}")
+    vlc = None
 
 
 class CacheWorker(QThread):
@@ -233,7 +234,16 @@ class VideoPlayerWidget(QWidget):
 
     def _load_and_play(self, file_path):
         if not vlc or not self.instance:
-            logger.error("VLC not initialized, cannot play video.")
+            error_msg = "VLC library could not be loaded."
+            if sys.platform == "darwin":
+                error_msg += (
+                    "\n\nCAUSE: Architecture Mismatch.\nYou are likely running the app on Apple Silicon (M1/M2/M3) "
+                    "using a native ARM64 Python, but you have an Intel (x86_64) version of VLC installed."
+                    "\n\nFIX: Download the 'Apple Silicon' version of VLC from the official VideoLAN website."
+                )
+
+            QMessageBox.critical(self, "VLC Error", error_msg)
+            logger.error(error_msg)
             return
 
         # Ensure the widget is realized before getting winId
