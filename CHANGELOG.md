@@ -1,3 +1,9 @@
+## 0.8.0 (2026-05-09)
+
+### Feat
+
+- **player**: adds volume controls
+
 ## 0.7.2 (2026-05-08)
 
 ### Fix
