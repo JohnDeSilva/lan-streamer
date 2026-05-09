@@ -1,3 +1,9 @@
+## 0.7.0 (2026-05-08)
+
+### Feat
+
+- moved video playback into embedded player rather than launching VLC
+
 ## 0.6.0 (2026-05-08)
 
 ### Feat
