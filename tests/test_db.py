@@ -224,3 +224,51 @@ def test_update_season_watched_status(mock_db_file):
     loaded = db.load_library("MyLib")
     s1_eps = loaded["Test Series"]["seasons"]["Season 1"]["episodes"]
     assert all(ep["watched"] is False for ep in s1_eps)
+
+
+def test_update_series_watched_status(mock_db_file):
+    test_lib = {
+        "Test Series": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [{"name": "Ep 1", "path": "/path1", "watched": False}],
+                },
+                "Season 2": {
+                    "metadata": {},
+                    "episodes": [{"name": "Ep 1", "path": "/path2", "watched": False}],
+                },
+            },
+        },
+        "Other Series": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [{"name": "Ep 1", "path": "/path3", "watched": False}],
+                }
+            },
+        },
+    }
+    db.save_library("MyLib", test_lib)
+
+    db.update_series_watched_status("MyLib", "Test Series", True)
+
+    loaded = db.load_library("MyLib")
+    # Check Test Series (both seasons should be watched)
+    for season in loaded["Test Series"]["seasons"].values():
+        for ep in season["episodes"]:
+            assert ep["watched"] is True
+
+    # Check Other Series (should be untouched)
+    for season in loaded["Other Series"]["seasons"].values():
+        for ep in season["episodes"]:
+            assert ep["watched"] is False
+
+    # Toggle back
+    db.update_series_watched_status("MyLib", "Test Series", False)
+    loaded = db.load_library("MyLib")
+    for season in loaded["Test Series"]["seasons"].values():
+        for ep in season["episodes"]:
+            assert ep["watched"] is False

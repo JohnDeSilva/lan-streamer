@@ -316,6 +316,28 @@ def update_season_watched_status(
         )
 
 
+def update_series_watched_status(library_name: str, series_name: str, watched: bool):
+    """
+    Bulk updates the watched status for all episodes in an entire series.
+    """
+    try:
+        logger.info(
+            f"Updating watched status for entire series {series_name} in {library_name} to {watched}"
+        )
+        with get_session() as session:
+            series = (
+                session.query(Series)
+                .filter(Series.library_name == library_name, Series.name == series_name)
+                .first()
+            )
+            if series:
+                for season in series.seasons:
+                    for episode in season.episodes:
+                        episode.watched = watched
+    except Exception as e:
+        logger.error(f"Error updating watched status for series {series_name}: {e}")
+
+
 def sync_watched_from_jellyfin_data(
     watched_ids: Set[str],
     watched_paths: Set[str],

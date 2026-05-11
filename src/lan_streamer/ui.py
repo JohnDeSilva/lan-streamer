@@ -1100,12 +1100,19 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         match_action = menu.addAction("Match Series (TMDB)...")
         jellyfin_action = menu.addAction("Match Jellyfin (Watch History)...")
+        menu.addSeparator()
+        mark_watched_action = menu.addAction("Mark Series as Watched")
+        mark_unwatched_action = menu.addAction("Mark Series as Unwatched")
 
         action = menu.exec(self.series_view.viewport().mapToGlobal(position))
         if action == match_action:
             self.match_series_manually(series_name)
         elif action == jellyfin_action:
             self.match_jellyfin_manually(series_name)
+        elif action == mark_watched_action:
+            self.toggle_series_watched_status(series_name, True)
+        elif action == mark_unwatched_action:
+            self.toggle_series_watched_status(series_name, False)
 
     def match_jellyfin_manually(self, series_name):
         dialog = JellyfinMatchDialog(series_name, self)
@@ -1336,6 +1343,24 @@ class MainWindow(QMainWindow):
 
         if season_jellyfin_id and jellyfin_client.is_configured():
             jellyfin_client.set_watched_status(season_jellyfin_id, watched)
+
+        # Refresh local cache and UI
+        self.load_library_ui(stay_on_current=True)
+
+    def toggle_series_watched_status(self, series_name, watched):
+        library_name = self.main_library_combo.currentText()
+        if not library_name:
+            return
+
+        # Update database
+        db.update_series_watched_status(library_name, series_name, watched)
+
+        # Update Jellyfin if configured
+        series_data = self.library.get(series_name, {})
+        series_jellyfin_id = series_data.get("metadata", {}).get("jellyfin_id")
+
+        if series_jellyfin_id and jellyfin_client.is_configured():
+            jellyfin_client.set_watched_status(series_jellyfin_id, watched)
 
         # Refresh local cache and UI
         self.load_library_ui(stay_on_current=True)

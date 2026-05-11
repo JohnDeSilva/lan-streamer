@@ -992,3 +992,20 @@ def test_mainwindow_fullscreen_header_toggle(mock_dependencies, qtbot):
     # Exit fullscreen
     window.on_fullscreen_changed(False)
     assert not window.header_widget.isHidden()
+
+
+def test_mainwindow_series_watched_status(qtbot, mock_dependencies):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    # Toggle Series A to watched
+    window.toggle_series_watched_status("Series A", True)
+
+    # Verify DB call
+    ui.db.update_series_watched_status.assert_called_with("TestLib", "Series A", True)
+
+    # Verify Jellyfin call (it should have '1' as ID from mock_dependencies)
+    ui.jellyfin_client.set_watched_status.assert_called_with("1", True)
+
+    # Verify UI refresh
+    assert ui.db.load_library.call_count > 1
