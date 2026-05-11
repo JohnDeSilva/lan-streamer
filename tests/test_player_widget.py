@@ -275,7 +275,6 @@ def test_mute_functionality(player_widget):
     assert player_widget.is_muted is True
     player_widget.mediaplayer.audio_set_volume.assert_called_with(0)
     assert player_widget.mute_button.text() == "Unmute"
-    assert player_widget.fs_mute_button.text() == "Unmute"
 
     # Unmute
     player_widget.toggle_mute()
@@ -485,6 +484,7 @@ def test_ui_layout_completeness(player_widget):
     assert player_widget.volume_slider.parent() == player_widget.controls_widget
     assert player_widget.mute_button.parent() == player_widget.controls_widget
 
-    # Verify fullscreen volume controls
+    # Verify fullscreen controls
     assert player_widget.fs_volume_slider.parent() == player_widget.fullscreen_overlay
-    assert player_widget.fs_mute_button.parent() == player_widget.fullscreen_overlay
+    assert player_widget.fs_seek_slider.parent() == player_widget.fullscreen_overlay
+    assert player_widget.fs_pause_button.parent() == player_widget.fullscreen_overlay

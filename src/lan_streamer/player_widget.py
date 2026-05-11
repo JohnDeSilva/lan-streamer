@@ -151,6 +151,33 @@ class VideoPlayerWidget(QWidget):
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.update_ui)
 
+    def _apply_fullscreen_styles(self):
+        """Applies styling to fullscreen overlay based on config."""
+        opacity = int(config.player_overlay_opacity * 255)
+        color_scheme = config.player_overlay_color.lower()
+
+        if color_scheme == "white":
+            bg_rgba = f"rgba(255, 255, 255, {opacity})"
+            text_color = "black"
+            border_rgba = "rgba(0, 0, 0, 50)"
+        else:
+            bg_rgba = f"rgba(0, 0, 0, {opacity})"
+            text_color = "white"
+            border_rgba = "rgba(255, 255, 255, 50)"
+
+        self.fullscreen_overlay.setStyleSheet(
+            f"background-color: {bg_rgba}; border-radius: 0px;"
+        )
+
+        btn_style = f"color: {text_color}; background-color: transparent; border: 1px solid {border_rgba};"
+        self.fs_pause_button.setStyleSheet(btn_style)
+        self.fs_skip_back_button.setStyleSheet(btn_style)
+        self.fs_skip_fwd_button.setStyleSheet(btn_style)
+
+        label_style = f"color: {text_color}; font-size: 12px;"
+        self.fs_time_label.setStyleSheet(label_style)
+        self.fs_vol_label.setStyleSheet(label_style)
+
     def _setup_ui(self):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -188,49 +215,57 @@ class VideoPlayerWidget(QWidget):
 
         # Fullscreen Overlay (minimal controls)
         self.fullscreen_overlay = QFrame(self)
-        self.fullscreen_overlay.setStyleSheet(
-            "background-color: rgba(0, 0, 0, 150); border-radius: 10px;"
-        )
-        fs_layout = QHBoxLayout(self.fullscreen_overlay)
+        self.fullscreen_overlay.setStyleSheet("border-radius: 0px;")
+        self.fullscreen_overlay.setFixedWidth(650)
 
+        # We'll define the buttons properly here first
         self.fs_pause_button = QPushButton("Pause")
-        self.fs_pause_button.setFixedWidth(60)
+        self.fs_pause_button.setFixedWidth(70)
+        self.fs_skip_back_button = QPushButton("<<")
+        self.fs_skip_back_button.setFixedWidth(50)
+        self.fs_skip_fwd_button = QPushButton(">>")
+        self.fs_skip_fwd_button.setFixedWidth(50)
+        fs_main_layout = QVBoxLayout(self.fullscreen_overlay)
+        fs_main_layout.setContentsMargins(15, 10, 15, 10)
+        fs_main_layout.setSpacing(5)
+
+        # Seek Slider Row
+        self.fs_seek_slider = QSlider(Qt.Orientation.Horizontal)
+        self.fs_seek_slider.setMaximum(1000)
+        self.fs_seek_slider.setStyleSheet("height: 20px;")
+        self.fs_seek_slider.sliderMoved.connect(self.set_position)
+        fs_main_layout.addWidget(self.fs_seek_slider)
+
+        # Controls Row
+        fs_controls_layout = QHBoxLayout()
+
         self.fs_pause_button.clicked.connect(self.play_pause)
 
-        self.fs_skip_back_button = QPushButton("<<")
-        self.fs_skip_back_button.setFixedWidth(40)
         self.fs_skip_back_button.clicked.connect(lambda: self.skip_backward(10))
 
-        self.fs_skip_fwd_button = QPushButton(">>")
-        self.fs_skip_fwd_button.setFixedWidth(40)
         self.fs_skip_fwd_button.clicked.connect(lambda: self.skip_forward(10))
 
-        self.fs_rate_button = QPushButton("1.0x")
-        self.fs_rate_button.setFixedWidth(50)
-        self.fs_rate_button.clicked.connect(self.toggle_fast_forward)
-
-        # Fullscreen Volume controls
-        self.fs_mute_button = QPushButton("Mute")
-        self.fs_mute_button.setFixedWidth(60)
-        self.fs_mute_button.clicked.connect(self.toggle_mute)
+        self.fs_time_label = QLabel("00:00 / 00:00")
 
         self.fs_volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.fs_volume_slider.setMaximum(200)
         self.fs_volume_slider.setValue(80)
-        self.fs_volume_slider.setFixedWidth(100)
+        self.fs_volume_slider.setFixedWidth(120)
         self.fs_volume_slider.valueChanged.connect(self.set_volume)
 
-        self.fs_exit_button = QPushButton("Exit Fullscreen")
-        self.fs_exit_button.setFixedWidth(110)
-        self.fs_exit_button.clicked.connect(self.toggle_fullscreen)
+        fs_controls_layout.addWidget(self.fs_pause_button)
+        fs_controls_layout.addWidget(self.fs_skip_back_button)
+        fs_controls_layout.addWidget(self.fs_skip_fwd_button)
+        fs_controls_layout.addStretch()
+        fs_controls_layout.addWidget(self.fs_time_label)
+        fs_controls_layout.addSpacing(15)
 
-        fs_layout.addWidget(self.fs_pause_button)
-        fs_layout.addWidget(self.fs_skip_back_button)
-        fs_layout.addWidget(self.fs_skip_fwd_button)
-        fs_layout.addWidget(self.fs_rate_button)
-        fs_layout.addWidget(self.fs_mute_button)
-        fs_layout.addWidget(self.fs_volume_slider)
-        fs_layout.addWidget(self.fs_exit_button)
+        self.fs_vol_label = QLabel("Volume:")
+        fs_controls_layout.addWidget(self.fs_vol_label)
+        fs_controls_layout.addWidget(self.fs_volume_slider)
+
+        fs_main_layout.addLayout(fs_controls_layout)
+        self._apply_fullscreen_styles()
         self.fullscreen_overlay.hide()
 
         # Volume OSD
@@ -424,7 +459,7 @@ class VideoPlayerWidget(QWidget):
         self.progress_overlay.resize(self.video_frame.size())
 
         # Center the fullscreen overlay at the bottom
-        fs_size = QSize(480, 50)
+        fs_size = QSize(650, 90)
         self.fullscreen_overlay.resize(fs_size)
 
         # Position relative to video_frame's geometry in case it's shifted
@@ -526,6 +561,7 @@ class VideoPlayerWidget(QWidget):
         self.wakelock.inhibit(f"Playing {os.path.basename(file_path)}")
         self.timer.start()
         self.play_button.setText("Pause")
+        self.fs_pause_button.setText("Pause")
 
         # Initial volume
         self.mediaplayer.audio_set_volume(self.volume_slider.value())
@@ -580,9 +616,11 @@ class VideoPlayerWidget(QWidget):
         if self.mediaplayer.is_playing():
             self.mediaplayer.pause()
             self.play_button.setText("Play")
+            self.fs_pause_button.setText("Play")
         else:
             self.mediaplayer.play()
             self.play_button.setText("Pause")
+            self.fs_pause_button.setText("Pause")
 
     def stop(self):
         logger.info("Stopping playback")
@@ -655,7 +693,6 @@ class VideoPlayerWidget(QWidget):
     def _update_mute_ui(self):
         text = "Unmute" if self.is_muted else "Mute"
         self.mute_button.setText(text)
-        self.fs_mute_button.setText(text)
 
     def _show_volume_osd(self, volume, muted=False):
         if muted:
@@ -694,7 +731,6 @@ class VideoPlayerWidget(QWidget):
         self.mediaplayer.set_rate(new_rate)
         text = f"{new_rate}x"
         self.rate_button.setText(text)
-        self.fs_rate_button.setText(text)
         self._show_osd(f"Playback Speed: {text}")
 
     def _show_osd(self, text):
@@ -759,6 +795,7 @@ class VideoPlayerWidget(QWidget):
         # Update seek bar
         pos = self.mediaplayer.get_position()
         self.seek_slider.setValue(int(pos * 1000))
+        self.fs_seek_slider.setValue(int(pos * 1000))
 
         # Update stats if visible
         self._update_stats()
@@ -768,9 +805,11 @@ class VideoPlayerWidget(QWidget):
         duration = self.mediaplayer.get_length() // 1000
 
         if duration > 0:
-            self.time_label.setText(
+            time_text = (
                 f"{self._format_time(curr_time)} / {self._format_time(duration)}"
             )
+            self.time_label.setText(time_text)
+            self.fs_time_label.setText(time_text)
 
             # Check 90% threshold
             if (

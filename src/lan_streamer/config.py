@@ -28,6 +28,8 @@ class Config:
         self.use_embedded_player: bool = True
         self.enable_hw_accel: bool = True
         self.vlc_extra_args: List[str] = []
+        self.player_overlay_opacity: float = 0.4
+        self.player_overlay_color: str = "white"
         self.load()
 
     def load(self):
@@ -69,6 +71,12 @@ class Config:
                     self.use_embedded_player = data.get("use_embedded_player", True)
                     self.enable_hw_accel = data.get("enable_hw_accel", True)
                     self.vlc_extra_args = data.get("vlc_extra_args", [])
+                    self.player_overlay_opacity = data.get(
+                        "player_overlay_opacity", 0.4
+                    )
+                    self.player_overlay_color = data.get(
+                        "player_overlay_color", "white"
+                    )
 
                     if "libraries" in data:
                         self.libraries = data["libraries"]
@@ -106,6 +114,8 @@ class Config:
                         "use_embedded_player": self.use_embedded_player,
                         "enable_hw_accel": self.enable_hw_accel,
                         "vlc_extra_args": self.vlc_extra_args,
+                        "player_overlay_opacity": self.player_overlay_opacity,
+                        "player_overlay_color": self.player_overlay_color,
                     },
                     f,
                     indent=4,
