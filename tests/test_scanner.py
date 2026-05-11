@@ -562,3 +562,82 @@ def test_scan_series_manual_jellyfin_correlation(tmp_path):
         ep = series_data["seasons"]["Season 1"]["episodes"][0]
         assert ep["jellyfin_id"] == "jf_ep_manual_123"
         assert series_data["metadata"]["jellyfin_id"] == "jf_manual_id"
+
+
+def test_parse_season_number():
+    from lan_streamer.scanner import _parse_season_number
+
+    assert _parse_season_number("Season 1") == 1
+    assert _parse_season_number("Season 02") == 2
+    assert _parse_season_number("S03") is None
+    assert _parse_season_number("Season1") == 1
+    assert _parse_season_number("season 5") == 5
+    assert _parse_season_number("Specials") is None
+
+
+def test_scan_series_tmdb_name_fallback(tmp_path):
+    """Test that TMDB episode is matched by name if SxxExx parsing fails."""
+    from lan_streamer.scanner import scan_series
+
+    series_dir = tmp_path / "Name Match Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    episode_file = season_dir / "Pilot Episode.mkv"  # No S01E01
+    episode_file.touch()
+
+    jellyfin_data = {
+        "tmdb_series_map": {"tmdb1": "jf_series1"},
+        "series_id_map": {
+            "jf_series1": {
+                "episodes": {(1, 1): "jf_ep1"},
+                "names": {},
+            }
+        },
+        "path_map": {},
+        "tmdb_episode_map": {},
+    }
+
+    with patch("lan_streamer.scanner.tmdb_client") as mock_tmdb:
+        mock_tmdb.search_series.return_value = {
+            "id": "tmdb1",
+            "name": "Name Match Show",
+        }
+        mock_tmdb.get_seasons.return_value = [{"season_number": 1, "id": "s1"}]
+        mock_tmdb.get_episodes.return_value = [
+            {"episode_number": 1, "id": "ep1", "name": "Pilot Episode"}
+        ]
+        mock_tmdb.download_image.return_value = ""
+
+        series_data = scan_series(series_dir, jellyfin_data=jellyfin_data)
+        ep = series_data["seasons"]["Season 1"]["episodes"][0]
+        assert ep["tmdb_identifier"] == "ep1"
+        assert ep["tmdb_name"] == "Pilot Episode"
+        assert ep["tmdb_number"] == 1
+        assert ep["jellyfin_id"] == "jf_ep1"
+
+
+def test_scan_series_initial_jellyfin_lookup(tmp_path):
+    """Test that series jellyfin_id is looked up via TMDB ID at the start."""
+    from lan_streamer.scanner import scan_series
+
+    series_dir = tmp_path / "Initial Lookup Show"
+    series_dir.mkdir()
+
+    jellyfin_data = {
+        "tmdb_series_map": {"tmdb_999": "jf_999"},
+        "series_id_map": {},
+        "path_map": {},
+        "tmdb_episode_map": {},
+    }
+
+    with patch("lan_streamer.scanner.tmdb_client") as mock_tmdb:
+        mock_tmdb.search_series.return_value = {
+            "id": "tmdb_999",
+            "name": "Initial Lookup Show",
+        }
+        mock_tmdb.get_seasons.return_value = []
+        mock_tmdb.download_image.return_value = ""
+
+        series_data = scan_series(series_dir, jellyfin_data=jellyfin_data)
+        assert series_data["metadata"]["jellyfin_id"] == "jf_999"

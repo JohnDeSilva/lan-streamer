@@ -13,6 +13,8 @@ VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm"}
 
 # Regex to extract S01E02 style episode numbers from filenames
 _EPISODE_REGEX = re.compile(r"[Ss](\d+)[Ee](\d+)")
+# Regex to extract season number from folder names (e.g. "Season 1")
+_SEASON_REGEX = re.compile(r"[Ss]eason\s*(\d+)", re.IGNORECASE)
 
 
 def _parse_episode_number(filename: str) -> tuple[int, int] | None:
@@ -20,6 +22,14 @@ def _parse_episode_number(filename: str) -> tuple[int, int] | None:
     match = _EPISODE_REGEX.search(filename)
     if match:
         return int(match.group(1)), int(match.group(2))
+    return None
+
+
+def _parse_season_number(season_name: str) -> int | None:
+    """Returns season number parsed from folder name (e.g. 'Season 1'), or None."""
+    match = _SEASON_REGEX.search(season_name)
+    if match:
+        return int(match.group(1))
     return None
 
 
@@ -241,6 +251,14 @@ def scan_series(
         if tmdb_identifier:
             tmdb_seasons = tmdb_client.get_seasons(tmdb_identifier)
 
+    # Initial Jellyfin ID lookup via TMDB ID
+    if not series_metadata["jellyfin_id"] and jellyfin_data and tmdb_series:
+        tmdb_id = str(tmdb_series.get("id") or "")
+        if tmdb_id:
+            series_metadata["jellyfin_id"] = jellyfin_data.get(
+                "tmdb_series_map", {}
+            ).get(tmdb_id, "")
+
     series_data = {
         "metadata": series_metadata,
         "seasons": {},
@@ -323,6 +341,18 @@ def scan_series(
                             tmdb_name = tmdb_episode.get("name")
                             tmdb_number = tmdb_episode.get("episode_number")
                             break
+                else:
+                    # Fallback: Try to match by name if we can't parse SxxExx
+                    lookup_name = episode_file.stem.lower()
+                    for tmdb_episode in series_data["seasons"][season_name][
+                        "_tmdb_episodes"
+                    ]:
+                        tmdb_ep_name = (tmdb_episode.get("name") or "").lower()
+                        if tmdb_ep_name and tmdb_ep_name in lookup_name:
+                            tmdb_episode_identifier = str(tmdb_episode.get("id", ""))
+                            tmdb_name = tmdb_episode.get("name")
+                            tmdb_number = tmdb_episode.get("episode_number")
+                            break
 
                 try:
                     ctime = os.path.getctime(episode_path)
@@ -366,8 +396,15 @@ def scan_series(
                     )
                     if series_map:
                         parsed = _parse_episode_number(episode_name)
+                        s_num, e_num = (None, None)
                         if parsed:
                             s_num, e_num = parsed
+                        elif tmdb_number is not None:
+                            # Use TMDB episode number and try to parse season number from directory
+                            e_num = tmdb_number
+                            s_num = _parse_season_number(season_name)
+
+                        if s_num is not None and e_num is not None:
                             jellyfin_id = series_map["episodes"].get((s_num, e_num), "")
                             if jellyfin_id:
                                 logger.debug(
@@ -398,7 +435,7 @@ def scan_series(
                             jellyfin_info.get("season_id") or ""
                         )
 
-                # Fallback correlation for series by TMDB Series ID
+                # Fallback correlation for series by TMDB Series ID (already done at start, but kept for safety)
                 if (
                     not series_metadata["jellyfin_id"]
                     and series_data["_tmdb_series_id"]
