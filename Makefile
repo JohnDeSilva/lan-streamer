@@ -1,4 +1,4 @@
-.PHONY: run lint test load-test build-mac clean revision migrate
+.PHONY: run lint check-lint reformat test load-test build-mac clean revision migrate release
 
 UV := $(shell command -v uv 2> /dev/null)
 ifeq ($(UV),)
@@ -24,6 +24,12 @@ lint:
 	$(RUFF) format .
 	$(RUFF) check --fix .
 
+reformat: lint
+
+check-lint:
+	$(RUFF) format --check .
+	$(RUFF) check .
+
 test:
 	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src $(PYTHON) -m alembic upgrade head
 	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "not load" tests/
@@ -45,7 +51,7 @@ revision:
 migrate:
 	PYTHONPATH=src $(PYTHON) -m alembic upgrade head
 
-release:
+release: check-lint test
 	uv lock
 	uv run cz bump
 	uv lock
