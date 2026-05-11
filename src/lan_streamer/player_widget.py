@@ -19,6 +19,7 @@ from PySide6.QtCore import Qt, QTimer, Signal, QThread, Slot, QEvent, QSize
 import sys
 from .config import config
 from . import db
+from .wakelock import WakeLock
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,7 @@ class VideoPlayerWidget(QWidget):
                 "--quiet",
                 "--no-video-title-show",
                 "--no-xlib",
+                "--disable-screensaver",
                 "--video-filter=deinterlace",
                 "--deinterlace=1",
                 "--deinterlace-mode=yadif",
@@ -123,6 +125,7 @@ class VideoPlayerWidget(QWidget):
         self.is_watched_marked = False
         self.is_muted = False
         self.previous_volume = 80
+        self.wakelock = WakeLock()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._setup_ui()
 
@@ -421,6 +424,7 @@ class VideoPlayerWidget(QWidget):
             self.mediaplayer.set_nsobject(win_id)
 
         self.mediaplayer.play()
+        self.wakelock.inhibit(f"Playing {os.path.basename(file_path)}")
         self.timer.start()
         self.play_button.setText("Pause")
 
@@ -487,6 +491,7 @@ class VideoPlayerWidget(QWidget):
             self.toggle_fullscreen()
         if self.mediaplayer:
             self.mediaplayer.stop()
+        self.wakelock.uninhibit()
         self.timer.stop()
         self.play_button.setText("Play")
         self.seek_slider.setValue(0)

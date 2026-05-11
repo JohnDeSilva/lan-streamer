@@ -162,6 +162,20 @@ def test_set_volume_and_position(player_widget):
     player_widget.mediaplayer.set_position.assert_called_once_with(0.5)
 
 
+def test_wakelock_integration(player_widget):
+    player_widget.instance = MagicMock()
+    player_widget.mediaplayer = MagicMock()
+    player_widget.wakelock = MagicMock()
+
+    # Test inhibit on play
+    player_widget._load_and_play("/path/to/video.mp4")
+    player_widget.wakelock.inhibit.assert_called_once()
+
+    # Test uninhibit on stop
+    player_widget.stop()
+    player_widget.wakelock.uninhibit.assert_called_once()
+
+
 def test_mute_functionality(player_widget):
     player_widget.mediaplayer = MagicMock()
     player_widget.volume_slider.setValue(80)
