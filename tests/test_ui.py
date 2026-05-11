@@ -208,9 +208,14 @@ def test_mainwindow_force_scan(qtbot, mock_dependencies):
     ui.ScanWorker.return_value.start.assert_called_once()
 
     # Manually trigger the slot to test UI updates
-    window.on_scan_finished({})
+    new_data = {"New Series": {"metadata": {}, "seasons": {}}}
+    window.on_scan_finished(new_data)
 
-    ui.db.save_library.assert_called_once_with("TestLib", {})
+    # Should contain BOTH Series A (original) and New Series (merged)
+    expected_library = window.library.copy()
+    ui.db.save_library.assert_called_once_with("TestLib", expected_library)
+    assert "Series A" in expected_library
+    assert "New Series" in expected_library
 
 
 def test_mainwindow_force_scan_error(qtbot, mock_dependencies):

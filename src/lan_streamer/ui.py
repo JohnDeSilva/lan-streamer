@@ -982,7 +982,8 @@ class MainWindow(QMainWindow):
 
     def on_scan_finished(self, new_library_data):
         library_name = self.main_library_combo.currentText()
-        self.library = new_library_data
+        # Merge new results into existing library instead of replacing
+        self.library.update(new_library_data)
         db.save_library(library_name, self.library)
         self.load_library_ui(stay_on_current=True)
 

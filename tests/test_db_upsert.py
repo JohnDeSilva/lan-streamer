@@ -88,9 +88,14 @@ def test_save_library_upsert():
 
     db.save_library(library_name, final_library)
     loaded = db.load_library(library_name)
-    assert len(loaded) == 1
-    assert "Series 1" not in loaded
+    assert len(loaded) == 2  # Non-destructive: Series 1 is still there
+    assert "Series 1" in loaded
     assert "Series 2" in loaded
+
+    # Now use explicit cleanup
+    db.cleanup_library(library_name, [])  # Empty root dirs -> removes everything
+    loaded = db.load_library(library_name)
+    assert len(loaded) == 0
 
 
 def test_upsert_preserves_ids_across_libraries():
@@ -104,8 +109,9 @@ def test_upsert_preserves_ids_across_libraries():
     assert "Series A" in loaded1
     assert "Series A" in loaded2
 
-    # Update Lib1
+    # Update Lib1 (Non-destructive)
     db.save_library("Lib1", {"Series B": {"metadata": {}, "seasons": {}}})
 
-    assert "Series A" not in db.load_library("Lib1")
+    assert "Series A" in db.load_library("Lib1")  # Preserved
+    assert "Series B" in db.load_library("Lib1")
     assert "Series A" in db.load_library("Lib2")

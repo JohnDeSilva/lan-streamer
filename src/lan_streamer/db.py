@@ -192,12 +192,21 @@ def save_library(library_name: str, library: Dict[str, Any]):
                     session.add(series)
                     stats["series"] += 1
 
-                series.jellyfin_id = series_metadata.get("jellyfin_id")
-                series.tmdb_identifier = series_metadata.get("tmdb_identifier")
-                series.poster_path = series_metadata.get("poster_path")
-                series.overview = series_metadata.get("overview")
-                series.tmdb_name = series_metadata.get("tmdb_name")
-                series.locked_metadata = bool(series_metadata.get("locked_metadata"))
+                series.jellyfin_id = (
+                    series_metadata.get("jellyfin_id") or series.jellyfin_id
+                )
+                series.tmdb_identifier = (
+                    series_metadata.get("tmdb_identifier") or series.tmdb_identifier
+                )
+                series.poster_path = (
+                    series_metadata.get("poster_path") or series.poster_path
+                )
+                series.overview = series_metadata.get("overview") or series.overview
+                series.tmdb_name = series_metadata.get("tmdb_name") or series.tmdb_name
+                series.locked_metadata = (
+                    bool(series_metadata.get("locked_metadata"))
+                    or series.locked_metadata
+                )
 
                 existing_seasons = {sea.name: sea for sea in series.seasons}
                 touched_season_names = set()
@@ -212,8 +221,12 @@ def save_library(library_name: str, library: Dict[str, Any]):
                         session.add(season)
                         stats["seasons"] += 1
 
-                    season.jellyfin_id = season_metadata.get("jellyfin_id")
-                    season.poster_path = season_metadata.get("poster_path")
+                    season.jellyfin_id = (
+                        season_metadata.get("jellyfin_id") or season.jellyfin_id
+                    )
+                    season.poster_path = (
+                        season_metadata.get("poster_path") or season.poster_path
+                    )
 
                     existing_episodes = {ep.path: ep for ep in season.episodes}
                     touched_episode_paths = set()
@@ -229,31 +242,28 @@ def save_library(library_name: str, library: Dict[str, Any]):
                             stats["episodes"] += 1
 
                         episode.name = ep_data["name"]
-                        episode.jellyfin_id = ep_data.get("jellyfin_id")
-                        episode.tmdb_episode_identifier = ep_data.get(
-                            "tmdb_episode_identifier"
+                        episode.jellyfin_id = (
+                            ep_data.get("jellyfin_id") or episode.jellyfin_id
                         )
-                        episode.tmdb_name = ep_data.get("tmdb_name")
-                        episode.tmdb_number = ep_data.get("tmdb_number")
+                        episode.tmdb_episode_identifier = (
+                            ep_data.get("tmdb_episode_identifier")
+                            or episode.tmdb_episode_identifier
+                        )
+                        episode.tmdb_name = (
+                            ep_data.get("tmdb_name") or episode.tmdb_name
+                        )
+                        episode.tmdb_number = (
+                            ep_data.get("tmdb_number") or episode.tmdb_number
+                        )
                         episode.watched = episode.watched or bool(
                             ep_data.get("watched")
                         )
-                        episode.date_added = ep_data.get("date_added", 0)
+                        episode.date_added = (
+                            ep_data.get("date_added") or episode.date_added or 0
+                        )
 
-                    for path, ep in existing_episodes.items():
-                        if path not in touched_episode_paths:
-                            session.delete(ep)
-                            stats["deleted"] += 1
-
-                for name, sea in existing_seasons.items():
-                    if name not in touched_season_names:
-                        session.delete(sea)
-                        stats["deleted"] += 1
-
-            for name, s in existing_series.items():
-                if name not in touched_series_names:
-                    session.delete(s)
-                    stats["deleted"] += 1
+    # Deletions are now handled exclusively by cleanup_library to prevent accidental data loss
+    # during temporary drive disconnection or partial scans.
     except Exception as e:
         logger.error(f"Error saving library '{library_name}' to database: {e}")
 
