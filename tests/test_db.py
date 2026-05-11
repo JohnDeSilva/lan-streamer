@@ -272,3 +272,32 @@ def test_update_series_watched_status(mock_db_file):
     for season in loaded["Test Series"]["seasons"].values():
         for ep in season["episodes"]:
             assert ep["watched"] is False
+
+
+def test_update_episode_path(mock_db_file):
+    test_lib = {
+        "Show": {
+            "seasons": {"S1": {"episodes": [{"name": "E1", "path": "/old/path.mkv"}]}}
+        }
+    }
+    db.save_library("Lib", test_lib)
+    db.update_episode_path("/old/path.mkv", "/new/path.mkv")
+
+    loaded = db.load_library("Lib")
+    ep = loaded["Show"]["seasons"]["S1"]["episodes"][0]
+    assert ep["path"] == "/new/path.mkv"
+
+
+def test_update_episode_path_missing(mock_db_file):
+    # Should not crash or error out
+    db.update_episode_path("/missing/path.mkv", "/new/path.mkv")
+
+
+def test_db_error_handling_extended(mock_db_file):
+    with patch("lan_streamer.db.get_session") as mock_session:
+        mock_session.side_effect = Exception("Mocked error")
+        # Test get_all_episodes_with_jellyfin_id error path
+        assert db.get_all_episodes_with_jellyfin_id() == []
+        # Test cleanup_library error path
+        with pytest.raises(Exception):
+            db.cleanup_library("Lib", [])

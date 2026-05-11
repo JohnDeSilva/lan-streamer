@@ -286,6 +286,18 @@ def update_episode_watched_status(path: str, watched: bool):
         logger.error(f"Error updating watched status for {path}: {e}")
 
 
+def update_episode_path(old_path: str, new_path: str):
+    """Updates the file path for an episode in the database."""
+    try:
+        logger.info(f"Updating episode path from {old_path} to {new_path}")
+        with get_session() as session:
+            episode = session.query(Episode).filter(Episode.path == old_path).first()
+            if episode:
+                episode.path = new_path
+    except Exception as e:
+        logger.error(f"Error updating episode path from {old_path} to {new_path}: {e}")
+
+
 def update_season_watched_status(
     library_name: str, series_name: str, season_name: str, watched: bool
 ):

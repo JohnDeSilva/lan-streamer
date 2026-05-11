@@ -19,11 +19,16 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QDialogButtonBox,
     QStyle,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QProgressBar,
 )
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem
 from PySide6.QtCore import Qt, QThread, Signal, QItemSelectionModel
 from pathlib import Path
 import logging
+from typing import Dict, Any, List
 
 from .config import config
 from .scanner import (
@@ -35,6 +40,7 @@ from .scanner import (
 from .jellyfin import jellyfin_client
 from .tmdb import tmdb_client
 from . import db
+from . import renamer
 from .delegates import PosterDelegate
 
 logger = logging.getLogger(__name__)
@@ -220,6 +226,174 @@ class SeriesMatchDialog(QDialog):
         if current:
             return current.data(Qt.ItemDataRole.UserRole)
         return None
+
+
+class RenameDialog(QDialog):
+    """
+    Dialog to preview and execute file renaming based on templates.
+    """
+
+    def __init__(self, series_name: str, series_data: Dict[str, Any], parent=None):
+        super().__init__(parent)
+        self.series_name = series_name
+        self.series_data = series_data
+        self.previews: List[Dict[str, Any]] = []
+
+        self.setWindowTitle(f"Rename Files - {series_name}")
+        self.setMinimumSize(950, 600)
+
+        layout = QVBoxLayout(self)
+
+        # Template section
+        template_group = QVBoxLayout()
+        template_form = QFormLayout()
+        self.template_input = QLineEdit()
+        self.template_input.setText(
+            "{SeriesTitle} - S{SeasonNumber:02}E{EpisodeNumber:02} - {EpisodeTitle}"
+        )
+        self.template_input.textChanged.connect(self.update_preview)
+        template_form.addRow("Filename Template:", self.template_input)
+
+        token_hint = QLabel(
+            "Tokens: {SeriesTitle}, {SeasonNumber}, {EpisodeNumber}, {EpisodeTitle}, {OriginalTitle}"
+        )
+        token_hint.setStyleSheet("font-size: 11px; color: #aaa; margin-left: 5px;")
+        template_form.addRow("", token_hint)
+        template_group.addLayout(template_form)
+        layout.addLayout(template_group)
+
+        # Preview Table
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(
+            ["Season/Episode", "Current Filename", "Proposed Filename", "Status"]
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Interactive
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Interactive
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.Stretch
+        )
+        self.table.setAlternatingRowColors(True)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        layout.addWidget(self.table)
+
+        # Progress Bar (hidden initially)
+        self.progress = QProgressBar()
+        self.progress.setVisible(False)
+        layout.addWidget(self.progress)
+
+        # Buttons
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.ok_button = self.button_box.button(QDialogButtonBox.StandardButton.Ok)
+        self.ok_button.setText("Rename Files")
+        self.button_box.accepted.connect(self.run_rename)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+        self.update_preview()
+
+    def update_preview(self):
+        template = self.template_input.text().strip()
+        if not template:
+            self.ok_button.setEnabled(False)
+            return
+
+        self.previews = renamer.get_rename_preview(self.series_data, template)
+        self.table.setRowCount(len(self.previews))
+
+        any_changes = False
+        any_unsafe = False
+        for i, item in enumerate(self.previews):
+            current_name = Path(item["old_path"]).name
+            self.table.setItem(
+                i, 0, QTableWidgetItem(f"{item['season']} - {item['episode']}")
+            )
+            self.table.setItem(i, 1, QTableWidgetItem(current_name))
+
+            new_item = QTableWidgetItem(item["new_name"])
+            status_item = QTableWidgetItem("Ready")
+
+            if not item.get("safe", True):
+                new_item.setForeground(Qt.GlobalColor.red)
+                status_item.setText(item.get("error", "Unsafe"))
+                status_item.setForeground(Qt.GlobalColor.red)
+                any_unsafe = True
+            elif item["old_path"] != item["new_path"]:
+                new_item.setForeground(Qt.GlobalColor.green)
+                status_item.setText("To be renamed")
+                status_item.setForeground(Qt.GlobalColor.green)
+                any_changes = True
+            else:
+                new_item.setForeground(Qt.GlobalColor.gray)
+                status_item.setText("No change")
+                status_item.setForeground(Qt.GlobalColor.gray)
+
+            self.table.setItem(i, 2, new_item)
+            self.table.setItem(i, 3, status_item)
+
+        self.ok_button.setEnabled(any_changes and not any_unsafe)
+
+    def run_rename(self):
+        if not self.previews:
+            self.accept()
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Rename",
+            f"Are you sure you want to rename {len(self.previews)} files?\n\n"
+            "This will modify files on disk and update the local database.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.No:
+            return
+
+        self.button_box.setEnabled(False)
+        self.template_input.setEnabled(False)
+        self.progress.setVisible(True)
+        self.progress.setMaximum(len(self.previews))
+        self.progress.setValue(0)
+
+        # In a real app, this should be in a QThread to avoid UI hang,
+        # but for now we'll do it synchronously.
+        results = renamer.perform_rename(
+            self.previews, db_callback=db.update_episode_path
+        )
+
+        success_count = sum(1 for r in results if r["success"])
+        fail_count = len(results) - success_count
+
+        if fail_count > 0:
+            error_details = "\n".join(
+                [
+                    f"- {Path(r['old_path']).name}: {r['error']}"
+                    for r in results
+                    if not r["success"]
+                ]
+            )
+            QMessageBox.warning(
+                self,
+                "Renaming Results",
+                f"Renaming complete with errors.\n\nSuccess: {success_count}\nFailed: {fail_count}\n\nErrors:\n{error_details}",
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Renaming Results",
+                f"Successfully renamed {success_count} files.",
+            )
+
+        self.accept()
 
 
 class JellyfinMatchDialog(QDialog):
@@ -1133,6 +1307,8 @@ class MainWindow(QMainWindow):
         match_action = menu.addAction("Match Series (TMDB)...")
         jellyfin_action = menu.addAction("Match Jellyfin (Watch History)...")
         menu.addSeparator()
+        rename_action = menu.addAction("Rename Files (Templated)...")
+        menu.addSeparator()
         mark_watched_action = menu.addAction("Mark Series as Watched")
         mark_unwatched_action = menu.addAction("Mark Series as Unwatched")
 
@@ -1141,10 +1317,22 @@ class MainWindow(QMainWindow):
             self.match_series_manually(series_name)
         elif action == jellyfin_action:
             self.match_jellyfin_manually(series_name)
+        elif action == rename_action:
+            self.rename_series_files(series_name)
         elif action == mark_watched_action:
             self.toggle_series_watched_status(series_name, True)
         elif action == mark_unwatched_action:
             self.toggle_series_watched_status(series_name, False)
+
+    def rename_series_files(self, series_name):
+        series_data = self.library.get(series_name)
+        if not series_data:
+            return
+
+        dialog = RenameDialog(series_name, series_data, self)
+        if dialog.exec():
+            # Refresh library from DB to show updated paths
+            self.load_library_ui()
 
     def match_jellyfin_manually(self, series_name):
         dialog = JellyfinMatchDialog(series_name, self)
@@ -1366,10 +1554,37 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         action_text = "Mark all as Unwatched" if all_watched else "Mark all as Watched"
         toggle_action = menu.addAction(action_text)
+        menu.addSeparator()
+        rename_action = menu.addAction("Rename Season Files...")
 
         action = menu.exec(self.season_view.viewport().mapToGlobal(position))
         if action == toggle_action:
             self.toggle_season_watched_status(season_name, not all_watched)
+        elif action == rename_action:
+            self.rename_season_files(season_name)
+
+    def rename_season_files(self, season_name):
+        if not self.current_series:
+            return
+        series_data = self.library.get(self.current_series)
+        if not series_data:
+            return
+
+        # Create a filtered version of series_data containing only the selected season
+        season_data = series_data.get("seasons", {}).get(season_name)
+        if not season_data:
+            return
+
+        filtered_data = {
+            "metadata": series_data["metadata"],
+            "seasons": {season_name: season_data},
+        }
+
+        dialog = RenameDialog(
+            f"{self.current_series} - {season_name}", filtered_data, self
+        )
+        if dialog.exec():
+            self.load_library_ui()
 
     def toggle_season_watched_status(self, season_name, watched):
         if not self.current_series:
