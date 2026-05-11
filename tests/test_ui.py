@@ -1013,3 +1013,63 @@ def test_mainwindow_series_watched_status(qtbot, mock_dependencies):
 
     # Verify UI refresh
     assert ui.db.load_library.call_count > 1
+
+
+def test_mainwindow_default_season_selection(qtbot, mock_dependencies):
+    """Test that the latest unplayed season is selected by default."""
+    # Setup mock data for the library
+    series_name = "Multi Season Show"
+    test_library = {
+        series_name: {
+            "metadata": {"tmdb_name": "Multi Season Show"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [{"name": "E1", "watched": True, "path": "p1"}],
+                },
+                "Season 2": {
+                    "metadata": {},
+                    "episodes": [{"name": "E1", "watched": False, "path": "p2"}],
+                },
+            },
+        }
+    }
+    ui.db.load_library.return_value = test_library
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    # Select the series
+    index = window.series_model.index(0, 0)
+    window.on_series_selected(index)
+
+    # Should default to Season 2 (latest unplayed)
+    assert window.season_model.rowCount() == 2
+    assert window.episode_model.rowCount() == 1
+    # Check if the episodes from Season 2 are loaded
+    assert window.episode_model.item(0).data(Qt.ItemDataRole.UserRole)["path"] == "p2"
+
+    # Now mark Season 2 as watched in our test library and refresh
+    # Note: _refresh_detail_view restores current selection if it still exists.
+    # To test defaulting logic again, we need to clear current selection or select a new series.
+    test_library[series_name]["seasons"]["Season 2"]["episodes"][0]["watched"] = True
+
+    # Selecting another series and coming back would also test it, but we can just clear
+    window.season_view.setCurrentIndex(window.season_model.index(-1, -1))
+    window._refresh_detail_view()
+
+    # Now all are watched. Should default to index 0 (Season 1)
+    current_season_index = window.season_view.currentIndex()
+    selected_season_name = window.season_model.itemFromIndex(
+        current_season_index
+    ).text()
+    assert selected_season_name == "Season 1"
+
+    # Now make S2 unwatched again, clear selection and refresh
+    test_library[series_name]["seasons"]["Season 2"]["episodes"][0]["watched"] = False
+    window.season_view.setCurrentIndex(window.season_model.index(-1, -1))
+    window._refresh_detail_view()
+    assert (
+        window.season_model.itemFromIndex(window.season_view.currentIndex()).text()
+        == "Season 2"
+    )

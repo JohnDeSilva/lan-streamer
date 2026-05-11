@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QStyle,
 )
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QItemSelectionModel
 from pathlib import Path
 import logging
 
@@ -1325,14 +1325,30 @@ class MainWindow(QMainWindow):
         self.locked_checkbox.setChecked(series_metadata.get("locked_metadata", False))
         self.locked_checkbox.blockSignals(False)
 
-        # Restore season selection or select first
+        # Restore season selection or select the latest unplayed one
         if restore_index:
             self.season_view.setCurrentIndex(restore_index)
             self.on_season_selected(restore_index)
         elif self.season_model.rowCount() > 0:
-            first_index = self.season_model.index(0, 0)
-            self.season_view.setCurrentIndex(first_index)
-            self.on_season_selected(first_index)
+            default_row = 0
+            # Search from latest to earliest for the first season with unplayed episodes
+            for i in range(self.season_model.rowCount() - 1, -1, -1):
+                idx = self.season_model.index(i, 0)
+                season_data = idx.data(Qt.ItemDataRole.UserRole)
+                if season_data and any(
+                    not ep.get("watched", False)
+                    for ep in season_data.get("episodes", [])
+                ):
+                    default_row = i
+                    break
+
+            default_index = self.season_model.index(default_row, 0)
+            self.season_view.setCurrentIndex(default_index)
+            # Ensure the selection model is also updated to avoid UI flickering/incorrect reporting
+            self.season_view.selectionModel().setCurrentIndex(
+                default_index, QItemSelectionModel.SelectionFlag.ClearAndSelect
+            )
+            self.on_season_selected(default_index)
 
     def show_season_context_menu(self, position):
         index = self.season_view.indexAt(position)
