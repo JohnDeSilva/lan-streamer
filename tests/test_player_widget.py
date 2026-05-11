@@ -176,6 +176,41 @@ def test_wakelock_integration(player_widget):
     player_widget.wakelock.uninhibit.assert_called_once()
 
 
+def test_skip_logic(player_widget):
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.get_time.return_value = 50000  # 50s
+
+    # Skip forward 10s
+    player_widget.skip_forward(10)
+    player_widget.mediaplayer.set_time.assert_called_with(60000)
+
+    # Skip backward 10s
+    player_widget.skip_backward(10)
+    player_widget.mediaplayer.set_time.assert_called_with(40000)
+
+
+def test_toggle_fast_forward(player_widget):
+    player_widget.mediaplayer = MagicMock()
+
+    # 1.0 -> 1.5
+    player_widget.mediaplayer.get_rate.return_value = 1.0
+    player_widget.toggle_fast_forward()
+    player_widget.mediaplayer.set_rate.assert_called_with(1.5)
+    assert player_widget.rate_button.text() == "1.5x"
+
+    # 1.5 -> 2.0
+    player_widget.mediaplayer.get_rate.return_value = 1.5
+    player_widget.toggle_fast_forward()
+    player_widget.mediaplayer.set_rate.assert_called_with(2.0)
+    assert player_widget.rate_button.text() == "2.0x"
+
+    # 2.0 -> 1.0
+    player_widget.mediaplayer.get_rate.return_value = 2.0
+    player_widget.toggle_fast_forward()
+    player_widget.mediaplayer.set_rate.assert_called_with(1.0)
+    assert player_widget.rate_button.text() == "1.0x"
+
+
 def test_mute_functionality(player_widget):
     player_widget.mediaplayer = MagicMock()
     player_widget.volume_slider.setValue(80)
@@ -225,22 +260,23 @@ def test_vlc_instance_args(qtbot):
     with patch("vlc.Instance") as mock_vlc:
         config.enable_hw_accel = True
         config.vlc_extra_args = ["--test-arg"]
-        
+
         VideoPlayerWidget()
-        
+
         args = mock_vlc.call_args[0][0]
         assert "--avcodec-hw=auto" in args
         assert "--test-arg" in args
         assert "--deinterlace=1" in args
         assert "--file-caching=3000" in args
 
+
 def test_vlc_instance_args_no_hw(qtbot):
     with patch("vlc.Instance") as mock_vlc:
         config.enable_hw_accel = False
         config.vlc_extra_args = []
-        
+
         VideoPlayerWidget()
-        
+
         args = mock_vlc.call_args[0][0]
         assert "--avcodec-hw=none" in args
         assert "--avcodec-hw=auto" not in args

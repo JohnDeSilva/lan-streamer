@@ -176,8 +176,20 @@ class VideoPlayerWidget(QWidget):
         fs_layout = QHBoxLayout(self.fullscreen_overlay)
 
         self.fs_pause_button = QPushButton("Pause")
-        self.fs_pause_button.setFixedWidth(70)
+        self.fs_pause_button.setFixedWidth(60)
         self.fs_pause_button.clicked.connect(self.play_pause)
+
+        self.fs_skip_back_button = QPushButton("<<")
+        self.fs_skip_back_button.setFixedWidth(40)
+        self.fs_skip_back_button.clicked.connect(lambda: self.skip_backward(10))
+
+        self.fs_skip_fwd_button = QPushButton(">>")
+        self.fs_skip_fwd_button.setFixedWidth(40)
+        self.fs_skip_fwd_button.clicked.connect(lambda: self.skip_forward(10))
+
+        self.fs_rate_button = QPushButton("1.0x")
+        self.fs_rate_button.setFixedWidth(50)
+        self.fs_rate_button.clicked.connect(self.toggle_fast_forward)
 
         # Fullscreen Volume controls
         self.fs_mute_button = QPushButton("Mute")
@@ -195,6 +207,9 @@ class VideoPlayerWidget(QWidget):
         self.fs_exit_button.clicked.connect(self.toggle_fullscreen)
 
         fs_layout.addWidget(self.fs_pause_button)
+        fs_layout.addWidget(self.fs_skip_back_button)
+        fs_layout.addWidget(self.fs_skip_fwd_button)
+        fs_layout.addWidget(self.fs_rate_button)
         fs_layout.addWidget(self.fs_mute_button)
         fs_layout.addWidget(self.fs_volume_slider)
         fs_layout.addWidget(self.fs_exit_button)
@@ -232,6 +247,16 @@ class VideoPlayerWidget(QWidget):
         self.play_button = QPushButton("Play")
         self.play_button.clicked.connect(self.play_pause)
 
+        self.skip_back_button = QPushButton("<< 10s")
+        self.skip_back_button.clicked.connect(lambda: self.skip_backward(10))
+
+        self.skip_fwd_button = QPushButton("10s >>")
+        self.skip_fwd_button.clicked.connect(lambda: self.skip_forward(10))
+
+        self.rate_button = QPushButton("1.0x")
+        self.rate_button.setFixedWidth(50)
+        self.rate_button.clicked.connect(self.toggle_fast_forward)
+
         self.stop_button = QPushButton("Stop")
         self.stop_button.clicked.connect(self._on_stop_clicked)
         self._playback_finished_signal.connect(self._handle_playback_finished)
@@ -265,6 +290,9 @@ class VideoPlayerWidget(QWidget):
 
         buttons_layout.addWidget(self.play_button)
         buttons_layout.addWidget(self.stop_button)
+        buttons_layout.addWidget(self.skip_back_button)
+        buttons_layout.addWidget(self.skip_fwd_button)
+        buttons_layout.addWidget(self.rate_button)
         buttons_layout.addStretch()
         buttons_layout.addWidget(QLabel("Audio:"))
         buttons_layout.addWidget(self.audio_combo)
@@ -299,6 +327,14 @@ class VideoPlayerWidget(QWidget):
             self.increase_volume()
         elif event.key() == Qt.Key.Key_Down:
             self.decrease_volume()
+        elif event.key() == Qt.Key.Key_Left or event.key() == Qt.Key.Key_J:
+            self.skip_backward(10)
+        elif event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_L:
+            self.skip_forward(10)
+        elif event.key() == Qt.Key.Key_K:
+            self.play_pause()
+        elif event.key() == Qt.Key.Key_S:
+            self.toggle_fast_forward()
         elif event.key() == Qt.Key.Key_M:
             self.toggle_mute()
         else:
@@ -333,7 +369,7 @@ class VideoPlayerWidget(QWidget):
         self.progress_overlay.resize(self.video_frame.size())
 
         # Center the fullscreen overlay at the bottom
-        fs_size = QSize(350, 50)
+        fs_size = QSize(480, 50)
         self.fullscreen_overlay.resize(fs_size)
         x = (self.video_frame.width() - fs_size.width()) // 2
         y = self.video_frame.height() - fs_size.height() - 20
@@ -564,6 +600,42 @@ class VideoPlayerWidget(QWidget):
         else:
             self.osd_label.setText(f"Volume: {volume}%")
 
+        self._reposition_overlays()
+        self.osd_label.show()
+        self.osd_timer.start()
+
+    def skip_forward(self, seconds):
+        if self.mediaplayer:
+            curr_time = self.mediaplayer.get_time()
+            self.mediaplayer.set_time(curr_time + (seconds * 1000))
+            self._show_osd(f"Skip Forward {seconds}s")
+
+    def skip_backward(self, seconds):
+        if self.mediaplayer:
+            curr_time = self.mediaplayer.get_time()
+            self.mediaplayer.set_time(max(0, curr_time - (seconds * 1000)))
+            self._show_osd(f"Skip Backward {seconds}s")
+
+    def toggle_fast_forward(self):
+        if not self.mediaplayer:
+            return
+
+        current_rate = self.mediaplayer.get_rate()
+        if current_rate < 1.4:
+            new_rate = 1.5
+        elif current_rate < 1.9:
+            new_rate = 2.0
+        else:
+            new_rate = 1.0
+
+        self.mediaplayer.set_rate(new_rate)
+        text = f"{new_rate}x"
+        self.rate_button.setText(text)
+        self.fs_rate_button.setText(text)
+        self._show_osd(f"Playback Speed: {text}")
+
+    def _show_osd(self, text):
+        self.osd_label.setText(text)
         self._reposition_overlays()
         self.osd_label.show()
         self.osd_timer.start()
