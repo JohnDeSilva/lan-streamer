@@ -96,6 +96,16 @@ class VideoPlayerWidget(QWidget):
                 # Timing and jitter improvements
                 "--clock-jitter=0",
                 "--clock-synchro=0",
+                # High quality scaling and decoding
+                "--swscale-mode=2",  # Lanczos
+                "--avcodec-skiploopfilter=0",
+                # Buffering
+                "--network-caching=5000",
+                "--live-caching=5000",
+                # Performance and completeness
+                "--avcodec-threads=0",  # Auto-detect cores
+                "--no-skip-frames",  # Don't skip frames to save CPU
+                "--no-drop-late-frames",  # Don't drop frames if slightly late
             ]
 
             if config.enable_hw_accel:
@@ -235,6 +245,19 @@ class VideoPlayerWidget(QWidget):
         self.osd_timer.setSingleShot(True)
         self.osd_timer.timeout.connect(self.osd_label.hide)
 
+        # Stats Overlay (for troubleshooting)
+        self.stats_overlay = QFrame(self)
+        self.stats_overlay.setStyleSheet(
+            "background-color: rgba(0, 0, 0, 220); color: white; border: 1px solid #555; border-radius: 5px;"
+        )
+        stats_layout = QVBoxLayout(self.stats_overlay)
+        self.stats_label = QLabel("Playback Information")
+        self.stats_label.setStyleSheet(
+            "font-family: monospace; font-size: 10px; color: white;"
+        )
+        stats_layout.addWidget(self.stats_label)
+        self.stats_overlay.hide()
+
         # Controls Widget (container for easy hiding in fullscreen)
         self.controls_widget = QWidget()
         controls_layout = QVBoxLayout(self.controls_widget)
@@ -364,6 +387,8 @@ class VideoPlayerWidget(QWidget):
             self.toggle_fast_forward()
         elif event.key() == Qt.Key.Key_M:
             self.toggle_mute()
+        elif event.key() == Qt.Key.Key_I:
+            self.toggle_stats()
         else:
             super().keyPressEvent(event)
 
@@ -414,6 +439,9 @@ class VideoPlayerWidget(QWidget):
         osd_x = v_geom.x() + (v_geom.width() - self.osd_label.width()) // 2
         osd_y = v_geom.y() + (v_geom.height() - self.osd_label.height()) // 2
         self.osd_label.move(osd_x, osd_y)
+
+        # Position Stats Overlay at top-left
+        self.stats_overlay.move(v_geom.x() + 20, v_geom.y() + 20)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -679,6 +707,51 @@ class VideoPlayerWidget(QWidget):
     def set_position(self, position):
         self.mediaplayer.set_position(position / 1000.0)
 
+    def toggle_stats(self):
+        if self.stats_overlay.isHidden():
+            self.stats_overlay.show()
+            self.stats_overlay.raise_()
+            self._update_stats()
+            self._show_osd("Playback Stats: ON")
+        else:
+            self.stats_overlay.hide()
+            self._show_osd("Playback Stats: OFF")
+
+    def _update_stats(self):
+        if not self.mediaplayer or self.stats_overlay.isHidden():
+            return
+
+        self.stats_overlay.raise_()
+        media = self.mediaplayer.get_media()
+        if not media:
+            return
+
+        stats = vlc.MediaStats()
+        if media.get_stats(stats):
+            # Resolution & FPS
+            size = self.mediaplayer.video_get_size(0)
+            width, height = size if size and len(size) == 2 else (0, 0)
+            fps = self.mediaplayer.get_fps()
+
+            # Calculate bitrates in Mbps
+            in_br = (stats.input_bitrate * 8) / 1024.0
+            demux_br = (stats.demux_bitrate * 8) / 1024.0
+
+            text = (
+                f"<b>Playback Information</b><br/>"
+                f"Resolution: {width}x{height}<br/>"
+                f"Frame Rate: {fps:.2f} fps<br/>"
+                f"Input Bitrate: {in_br:.2f} Mbps<br/>"
+                f"Demux Bitrate: {demux_br:.2f} Mbps<br/>"
+                f"Video Decoded: {stats.decoded_video}<br/>"
+                f"Frames Displayed: {stats.displayed_pictures}<br/>"
+                f"Frames Lost: <font color='{'red' if stats.lost_pictures > 0 else 'white'}'>{stats.lost_pictures}</font><br/>"
+                f"Audio Decoded: {stats.decoded_audio}<br/>"
+                f"Audio Buffers Lost: <font color='{'red' if stats.lost_abuffers > 0 else 'white'}'>{stats.lost_abuffers}</font>"
+            )
+            self.stats_label.setText(text)
+            self.stats_overlay.adjustSize()
+
     def update_ui(self):
         if not self.mediaplayer.get_media():
             return
@@ -686,6 +759,9 @@ class VideoPlayerWidget(QWidget):
         # Update seek bar
         pos = self.mediaplayer.get_position()
         self.seek_slider.setValue(int(pos * 1000))
+
+        # Update stats if visible
+        self._update_stats()
 
         # Update time label
         curr_time = self.mediaplayer.get_time() // 1000

@@ -211,6 +211,26 @@ def test_fullscreen_mouse_move(player_widget, qtbot):
         assert player_widget.fullscreen_overlay.isHidden()
 
 
+def test_toggle_stats(player_widget, qtbot):
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.video_get_size.return_value = (1920, 1080)
+    player_widget.mediaplayer.get_fps.return_value = 23.976
+    mock_media = MagicMock()
+    player_widget.mediaplayer.get_media.return_value = mock_media
+
+    # Initially hidden
+    assert player_widget.stats_overlay.isHidden()
+
+    # Toggle on
+    player_widget.toggle_stats()
+    assert not player_widget.stats_overlay.isHidden()
+    mock_media.get_stats.assert_called()
+
+    # Toggle off
+    player_widget.toggle_stats()
+    assert player_widget.stats_overlay.isHidden()
+
+
 def test_skip_logic(player_widget):
     player_widget.mediaplayer = MagicMock()
     player_widget.mediaplayer.get_time.return_value = 50000  # 50s
