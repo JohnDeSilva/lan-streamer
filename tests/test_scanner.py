@@ -641,3 +641,108 @@ def test_scan_series_initial_jellyfin_lookup(tmp_path):
 
         series_data = scan_series(series_dir, jellyfin_data=jellyfin_data)
         assert series_data["metadata"]["jellyfin_id"] == "jf_999"
+
+
+def test_scan_series_force_refresh_false(tmp_path):
+    """Test that existing metadata is reused when force_refresh=False."""
+    from lan_streamer.scanner import scan_series
+
+    series_dir = tmp_path / "Reuse Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    episode_file = season_dir / "S01E01.mkv"
+    episode_file.touch()
+
+    existing_series = {
+        "metadata": {
+            "tmdb_identifier": "tmdb_old",
+            "tmdb_name": "Old Name",
+            "overview": "Old Overview",
+            "poster_path": "old_poster.jpg",
+        },
+        "seasons": {
+            "Season 1": {
+                "metadata": {},
+                "episodes": [
+                    {
+                        "path": str(episode_file.absolute()),
+                        "tmdb_identifier": "ep_old",
+                        "tmdb_name": "Old Episode",
+                        "tmdb_number": 1,
+                        "jellyfin_id": "jf_old",
+                    }
+                ],
+            }
+        },
+    }
+
+    with patch("lan_streamer.scanner.tmdb_client") as mock_tmdb:
+        # If reuse works, tmdb_client should NOT be called for searching series or episodes
+        series_data = scan_series(
+            series_dir, existing_series_data=existing_series, force_refresh=False
+        )
+
+        assert series_data["metadata"]["tmdb_identifier"] == "tmdb_old"
+        assert series_data["metadata"]["tmdb_name"] == "Old Name"
+
+        ep = series_data["seasons"]["Season 1"]["episodes"][0]
+        assert ep["tmdb_identifier"] == "ep_old"
+        assert ep["tmdb_name"] == "Old Episode"
+        assert ep["jellyfin_id"] == "jf_old"
+
+        # Verify no TMDB search/episode calls
+        assert mock_tmdb.search_series.call_count == 0
+        assert mock_tmdb.get_episodes.call_count == 0
+
+
+def test_scan_series_preserves_watched_status(tmp_path):
+    """Test that watched status is preserved even during a force_refresh scan."""
+    from lan_streamer.scanner import scan_series
+
+    series_dir = tmp_path / "Watched Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    episode_file = season_dir / "S01E01.mkv"
+    episode_file.touch()
+
+    existing_series = {
+        "metadata": {
+            "tmdb_identifier": "tmdb_123",
+            "tmdb_name": "Watched Show",
+        },
+        "seasons": {
+            "Season 1": {
+                "metadata": {},
+                "episodes": [
+                    {
+                        "path": str(episode_file.absolute()),
+                        "watched": True,
+                        "tmdb_identifier": "ep_123",
+                    }
+                ],
+            }
+        },
+    }
+
+    # Mock TMDB to return some metadata so the scan succeeds
+    with patch("lan_streamer.scanner.tmdb_client") as mock_tmdb:
+        mock_tmdb.get_seasons.return_value = [
+            {"id": 1, "season_number": 1, "name": "Season 1"}
+        ]
+        mock_tmdb.get_episodes.return_value = [
+            {"id": "ep_123", "episode_number": 1, "name": "Pilot"}
+        ]
+
+        # Run scan with force_refresh=True
+        series_data = scan_series(
+            series_dir, existing_series_data=existing_series, force_refresh=True
+        )
+
+        ep = series_data["seasons"]["Season 1"]["episodes"][0]
+        # Should be True because it was True in existing_series
+        assert ep["watched"] is True
+
+        # Verify metadata WAS refreshed (to confirm it was indeed a full scan)
+        assert mock_tmdb.get_seasons.call_count == 1

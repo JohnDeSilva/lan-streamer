@@ -256,7 +256,11 @@ def test_scan_worker_logic(mock_dependencies):
     from unittest.mock import ANY
 
     ui_mod.scan_directories.assert_called_once_with(
-        ["/path1"], existing_library={"Old Data": {}}, jellyfin_data=ANY, callback=ANY
+        ["/path1"],
+        existing_library={"Old Data": {}},
+        jellyfin_data=ANY,
+        callback=ANY,
+        force_refresh=ANY,
     )
     mock_finished.assert_called_once_with({"New Data": {}})
     mock_error.assert_not_called()

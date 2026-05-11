@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
     QDialogButtonBox,
+    QStyle,
 )
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem
 from PySide6.QtCore import Qt, QThread, Signal
@@ -46,10 +47,13 @@ class ScanWorker(QThread):
     partial_result = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, root_directories, existing_library, parent=None):
+    def __init__(
+        self, root_directories, existing_library, parent=None, force_refresh=False
+    ):
         super().__init__(parent)
         self.root_directories = root_directories
         self.existing_library = existing_library
+        self.force_refresh = force_refresh
 
     def run(self):
         try:
@@ -63,6 +67,7 @@ class ScanWorker(QThread):
                 existing_library=self.existing_library,
                 jellyfin_data=jellyfin_data,
                 callback=self.partial_result.emit,
+                force_refresh=self.force_refresh,
             )
             self.finished.emit(library)
         except Exception as e:
@@ -651,9 +656,11 @@ class MainWindow(QMainWindow):
 
         metadata_menu.addSeparator()
 
-        self.refresh_action = QAction("Check for New Files and Fetch Metadata", self)
-        self.refresh_action.triggered.connect(self.force_scan_library)
-        metadata_menu.addAction(self.refresh_action)
+        self.full_refresh_action = QAction("Full Metadata Refresh (All Files)", self)
+        self.full_refresh_action.triggered.connect(
+            lambda: self.force_scan_library(force_refresh=True)
+        )
+        metadata_menu.addAction(self.full_refresh_action)
 
         self.cleanup_action = QAction("Cleanup Library (Remove Missing Files)", self)
         self.cleanup_action.triggered.connect(self.cleanup_current_library)
@@ -682,6 +689,23 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         main_layout = QVBoxLayout(central_widget)
+
+        # Toolbar
+        self.toolbar = self.addToolBar("Main")
+        self.toolbar.setMovable(False)
+        self.toolbar.setFloatable(False)
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+
+        self.quick_refresh_action = QAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload),
+            "Check for New Files",
+            self,
+        )
+        self.quick_refresh_action.triggered.connect(
+            lambda: self.force_scan_library(force_refresh=False)
+        )
+        self.toolbar.addAction(self.quick_refresh_action)
+        self.refresh_action = self.quick_refresh_action
 
         # Library Selector
         self.header_widget = QWidget()
@@ -940,7 +964,7 @@ class MainWindow(QMainWindow):
             self, "Cleanup Error", f"An error occurred during cleanup:\n{error_msg}"
         )
 
-    def force_scan_library(self):
+    def force_scan_library(self, force_refresh=False):
         library_name = self.main_library_combo.currentText()
         if not library_name:
             return
@@ -953,10 +977,13 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"Scanning library '{library_name}'... Please wait."
         )
-        self.refresh_action.setEnabled(False)
+        if hasattr(self, "full_refresh_action"):
+            self.full_refresh_action.setEnabled(False)
+        if hasattr(self, "quick_refresh_action"):
+            self.quick_refresh_action.setEnabled(False)
 
         # Start the background worker
-        worker = ScanWorker(root_directories, self.library)
+        worker = ScanWorker(root_directories, self.library, force_refresh=force_refresh)
         worker.partial_result.connect(self.on_scan_partial_update)
         worker.finished.connect(self.on_scan_finished)
         worker.error.connect(self.on_scan_error)
@@ -987,8 +1014,13 @@ class MainWindow(QMainWindow):
         db.save_library(library_name, self.library)
         self.load_library_ui(stay_on_current=True)
 
-        self.statusBar().showMessage(f"Scan complete for '{library_name}'.", 5000)
-        self.refresh_action.setEnabled(True)
+        self.statusBar().showMessage(
+            f"Scan finished. Found {len(new_library_data)} series."
+        )
+        if hasattr(self, "full_refresh_action"):
+            self.full_refresh_action.setEnabled(True)
+        if hasattr(self, "quick_refresh_action"):
+            self.quick_refresh_action.setEnabled(True)
 
         # Trigger history pull after scan to catch new episodes
         if jellyfin_client.is_configured():

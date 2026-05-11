@@ -56,6 +56,7 @@ def scan_directories(
     existing_library: Dict[str, Any] = None,
     jellyfin_data: Dict[str, Any] = None,
     callback: Any = None,
+    force_refresh: bool = False,
 ) -> Dict[str, Any]:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -123,6 +124,8 @@ def scan_directories(
                 tmdb_series=tmdb_series,
                 jellyfin_data=jellyfin_data,
                 manual_jellyfin_id=existing_jellyfin_id,
+                existing_series_data=existing_series,
+                force_refresh=force_refresh,
             )
             if is_locked:
                 series_data["metadata"]["locked_metadata"] = True
@@ -202,6 +205,8 @@ def scan_series(
     tmdb_series: Dict[str, Any] = None,
     jellyfin_data: Dict[str, dict] = None,
     manual_jellyfin_id: str = None,
+    existing_series_data: Dict[str, Any] = None,
+    force_refresh: bool = False,
 ) -> Dict[str, Any]:
     """
     Scans a single series directory and fetches metadata from TMDB.
@@ -211,15 +216,6 @@ def scan_series(
     """
     series_name = series_directory.name
 
-    # If we only have an ID (from manual match), fetch full metadata
-    if tmdb_series and "name" not in tmdb_series and "id" in tmdb_series:
-        full = tmdb_client.get_series_by_id(tmdb_series["id"])
-        if full:
-            tmdb_series = full
-
-    if not tmdb_series:
-        tmdb_series = tmdb_client.search_series(series_name)
-
     series_metadata: Dict[str, Any] = {
         "tmdb_identifier": "",
         "overview": "",
@@ -227,6 +223,40 @@ def scan_series(
         "tmdb_name": "",
         "jellyfin_id": manual_jellyfin_id or "",
     }
+
+    if not force_refresh and existing_series_data:
+        ext_metadata = existing_series_data.get("metadata", {})
+        for k, v in ext_metadata.items():
+            if v:
+                series_metadata[k] = v
+        # Ensure manual_jellyfin_id takes precedence if provided
+        if manual_jellyfin_id:
+            series_metadata["jellyfin_id"] = manual_jellyfin_id
+
+    # If we only have an ID (from manual match), fetch full metadata
+    if tmdb_series and "name" not in tmdb_series and "id" in tmdb_series:
+        full = tmdb_client.get_series_by_id(tmdb_series["id"])
+        if full:
+            tmdb_series = full
+
+    if not tmdb_series:
+        if series_metadata["tmdb_identifier"]:
+            tmdb_series = {
+                "id": series_metadata["tmdb_identifier"],
+                "name": series_metadata["tmdb_name"],
+                "overview": series_metadata["overview"],
+                "poster_path": series_metadata["poster_path"],
+            }
+        else:
+            tmdb_series = tmdb_client.search_series(series_name)
+
+    # Pre-index existing episodes for reuse (e.g. watched status, metadata)
+    existing_eps_by_path = {}
+    if existing_series_data:
+        for season in existing_series_data.get("seasons", {}).values():
+            for ep in season.get("episodes", []):
+                existing_eps_by_path[ep["path"]] = ep
+
     tmdb_seasons: list = []
 
     if tmdb_series:
@@ -328,31 +358,49 @@ def scan_series(
                 tmdb_episode_identifier = None
                 tmdb_name = None
                 tmdb_number = None
+                jellyfin_id = ""
 
-                # Match TMDB episode by S01E02 pattern in filename
-                parsed = _parse_episode_number(episode_name)
-                if parsed:
-                    _, episode_number = parsed
-                    for tmdb_episode in series_data["seasons"][season_name][
-                        "_tmdb_episodes"
-                    ]:
-                        if tmdb_episode.get("episode_number") == episode_number:
-                            tmdb_episode_identifier = str(tmdb_episode.get("id", ""))
-                            tmdb_name = tmdb_episode.get("name")
-                            tmdb_number = tmdb_episode.get("episode_number")
-                            break
+                # Try to reuse existing metadata
+                existing_ep = existing_eps_by_path.get(episode_path)
+                if (
+                    not force_refresh
+                    and existing_ep
+                    and existing_ep.get("tmdb_identifier")
+                ):
+                    tmdb_episode_identifier = existing_ep["tmdb_identifier"]
+                    tmdb_name = existing_ep["tmdb_name"]
+                    tmdb_number = existing_ep["tmdb_number"]
+                    jellyfin_id = existing_ep.get("jellyfin_id", "")
+                    logger.debug(f"Reusing existing metadata for '{episode_name}'")
                 else:
-                    # Fallback: Try to match by name if we can't parse SxxExx
-                    lookup_name = episode_file.stem.lower()
-                    for tmdb_episode in series_data["seasons"][season_name][
-                        "_tmdb_episodes"
-                    ]:
-                        tmdb_ep_name = (tmdb_episode.get("name") or "").lower()
-                        if tmdb_ep_name and tmdb_ep_name in lookup_name:
-                            tmdb_episode_identifier = str(tmdb_episode.get("id", ""))
-                            tmdb_name = tmdb_episode.get("name")
-                            tmdb_number = tmdb_episode.get("episode_number")
-                            break
+                    # Match TMDB episode by S01E02 pattern in filename
+                    parsed = _parse_episode_number(episode_name)
+                    if parsed:
+                        _, episode_number = parsed
+                        for tmdb_episode in series_data["seasons"][season_name][
+                            "_tmdb_episodes"
+                        ]:
+                            if tmdb_episode.get("episode_number") == episode_number:
+                                tmdb_episode_identifier = str(
+                                    tmdb_episode.get("id", "")
+                                )
+                                tmdb_name = tmdb_episode.get("name")
+                                tmdb_number = tmdb_episode.get("episode_number")
+                                break
+                    else:
+                        # Fallback: Try to match by name if we can't parse SxxExx
+                        lookup_name = episode_file.stem.lower()
+                        for tmdb_episode in series_data["seasons"][season_name][
+                            "_tmdb_episodes"
+                        ]:
+                            tmdb_ep_name = (tmdb_episode.get("name") or "").lower()
+                            if tmdb_ep_name and tmdb_ep_name in lookup_name:
+                                tmdb_episode_identifier = str(
+                                    tmdb_episode.get("id", "")
+                                )
+                                tmdb_name = tmdb_episode.get("name")
+                                tmdb_number = tmdb_episode.get("episode_number")
+                                break
 
                 try:
                     ctime = os.path.getctime(episode_path)
@@ -365,7 +413,8 @@ def scan_series(
                 jellyfin_info = (
                     jellyfin_path_map.get(episode_path) if jellyfin_path_map else None
                 )
-                jellyfin_id = jellyfin_info["id"] if jellyfin_info else ""
+                if not jellyfin_id and jellyfin_info:
+                    jellyfin_id = jellyfin_info["id"]
 
                 # Fallback correlation by TMDB Episode ID
                 if not jellyfin_id and tmdb_episode_identifier and jellyfin_data:
@@ -453,7 +502,9 @@ def scan_series(
                         "tmdb_name": tmdb_name,
                         "tmdb_number": tmdb_number,
                         "jellyfin_id": jellyfin_id,
-                        "watched": False,
+                        "watched": existing_ep.get("watched", False)
+                        if existing_ep
+                        else False,
                         "date_added": ctime,
                     }
                 )
