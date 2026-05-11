@@ -1,5 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
+from PySide6.QtCore import Qt
+
 from lan_streamer.player_widget import VideoPlayerWidget, CacheWorker
 from lan_streamer.config import config
 
@@ -174,6 +176,39 @@ def test_wakelock_integration(player_widget):
     # Test uninhibit on stop
     player_widget.stop()
     player_widget.wakelock.uninhibit.assert_called_once()
+
+
+def test_fullscreen_mouse_move(player_widget, qtbot):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QMouseEvent
+
+    main_win = MagicMock()
+    main_win.isFullScreen.return_value = True
+
+    with patch.object(player_widget, "window", return_value=main_win):
+        # Initial state: controls might be hidden
+        player_widget.fullscreen_overlay.hide()
+
+        # Simulate mouse move by calling eventFilter directly
+        event = QMouseEvent(
+            QMouseEvent.Type.MouseMove,
+            QPoint(100, 100),
+            QPoint(100, 100),  # global pos
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        player_widget.eventFilter(player_widget.video_frame, event)
+
+        assert not player_widget.fullscreen_overlay.isHidden()
+        assert player_widget.hide_controls_timer.isActive()
+
+        # Simulate timer timeout
+        player_widget.mediaplayer = MagicMock()
+        player_widget.mediaplayer.is_playing.return_value = True
+        player_widget._hide_fullscreen_controls()
+
+        assert player_widget.fullscreen_overlay.isHidden()
 
 
 def test_skip_logic(player_widget):

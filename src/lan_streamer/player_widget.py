@@ -127,6 +127,13 @@ class VideoPlayerWidget(QWidget):
         self.previous_volume = 80
         self.wakelock = WakeLock()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+        # Timer for auto-hiding fullscreen controls
+        self.hide_controls_timer = QTimer(self)
+        self.hide_controls_timer.setInterval(3000)  # 3 seconds
+        self.hide_controls_timer.setSingleShot(True)
+        self.hide_controls_timer.timeout.connect(self._hide_fullscreen_controls)
+
         self._setup_ui()
 
         # Timer for updating UI (seek bar, time labels, watched threshold)
@@ -150,11 +157,12 @@ class VideoPlayerWidget(QWidget):
         self.video_frame.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
+        self.video_frame.setMouseTracking(True)
         self.video_frame.installEventFilter(self)
         self.main_layout.addWidget(self.video_frame)
 
         # Progress Overlay (for caching)
-        self.progress_overlay = QWidget(self.video_frame)
+        self.progress_overlay = QWidget(self)
         self.progress_overlay.setStyleSheet("background-color: rgba(0, 0, 0, 150);")
         overlay_layout = QVBoxLayout(self.progress_overlay)
         self.progress_label = QLabel("Caching video... Please wait.")
@@ -169,7 +177,7 @@ class VideoPlayerWidget(QWidget):
         self.progress_overlay.hide()
 
         # Fullscreen Overlay (minimal controls)
-        self.fullscreen_overlay = QFrame(self.video_frame)
+        self.fullscreen_overlay = QFrame(self)
         self.fullscreen_overlay.setStyleSheet(
             "background-color: rgba(0, 0, 0, 150); border-radius: 10px;"
         )
@@ -216,7 +224,7 @@ class VideoPlayerWidget(QWidget):
         self.fullscreen_overlay.hide()
 
         # Volume OSD
-        self.osd_label = QLabel(self.video_frame)
+        self.osd_label = QLabel(self)
         self.osd_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.osd_label.setStyleSheet(
             "color: white; font-size: 32px; font-weight: bold; background-color: rgba(0, 0, 0, 150); padding: 15px; border-radius: 10px;"
@@ -308,13 +316,32 @@ class VideoPlayerWidget(QWidget):
         self.main_layout.addWidget(self.controls_widget)
 
     def eventFilter(self, watched, event):
-        if (
-            watched == self.video_frame
-            and event.type() == QEvent.Type.MouseButtonDblClick
-        ):
-            self.toggle_fullscreen()
-            return True
+        if watched == self.video_frame:
+            if event.type() == QEvent.Type.MouseButtonDblClick:
+                self.toggle_fullscreen()
+                return True
+            elif event.type() == QEvent.Type.MouseMove:
+                self._handle_mouse_move()
         return super().eventFilter(watched, event)
+
+    def _handle_mouse_move(self):
+        if self.window().isFullScreen():
+            self._show_fullscreen_controls()
+            self.hide_controls_timer.start()
+
+    def _show_fullscreen_controls(self):
+        self.fullscreen_overlay.show()
+        self.fullscreen_overlay.raise_()
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def _hide_fullscreen_controls(self):
+        if (
+            self.window().isFullScreen()
+            and self.mediaplayer
+            and self.mediaplayer.is_playing()
+        ):
+            self.fullscreen_overlay.hide()
+            self.setCursor(Qt.CursorShape.BlankCursor)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape and self.window().isFullScreen():
@@ -347,6 +374,8 @@ class VideoPlayerWidget(QWidget):
             main_win.showNormal()
             self.controls_widget.show()
             self.fullscreen_overlay.hide()
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.hide_controls_timer.stop()
             self.fullscreen_changed.emit(False)
             # Show menu bar and status bar if they exist
             if isinstance(main_win, QMainWindow):
@@ -357,7 +386,8 @@ class VideoPlayerWidget(QWidget):
             main_win.showFullScreen()
             self.controls_widget.hide()
             # Position overlay at bottom center
-            self.fullscreen_overlay.show()
+            self._show_fullscreen_controls()
+            self.hide_controls_timer.start()
             self.fullscreen_changed.emit(True)
             self._reposition_overlays()
             if isinstance(main_win, QMainWindow):
@@ -371,14 +401,18 @@ class VideoPlayerWidget(QWidget):
         # Center the fullscreen overlay at the bottom
         fs_size = QSize(480, 50)
         self.fullscreen_overlay.resize(fs_size)
-        x = (self.video_frame.width() - fs_size.width()) // 2
-        y = self.video_frame.height() - fs_size.height() - 20
+
+        # Position relative to video_frame's geometry in case it's shifted
+        v_geom = self.video_frame.geometry()
+        x = v_geom.x() + (v_geom.width() - fs_size.width()) // 2
+        y = v_geom.y() + v_geom.height() - fs_size.height() - 20
         self.fullscreen_overlay.move(x, y)
 
         # Center OSD label
         self.osd_label.adjustSize()
-        osd_x = (self.video_frame.width() - self.osd_label.width()) // 2
-        osd_y = (self.video_frame.height() - self.osd_label.height()) // 2
+        v_geom = self.video_frame.geometry()
+        osd_x = v_geom.x() + (v_geom.width() - self.osd_label.width()) // 2
+        osd_y = v_geom.y() + (v_geom.height() - self.osd_label.height()) // 2
         self.osd_label.move(osd_x, osd_y)
 
     def resizeEvent(self, event):
@@ -402,6 +436,7 @@ class VideoPlayerWidget(QWidget):
 
     def _start_caching(self, file_path):
         self.progress_overlay.show()
+        self.progress_overlay.raise_()
         self.progress_bar.setValue(0)
 
         # Create destination path in cache directory
@@ -638,6 +673,7 @@ class VideoPlayerWidget(QWidget):
         self.osd_label.setText(text)
         self._reposition_overlays()
         self.osd_label.show()
+        self.osd_label.raise_()
         self.osd_timer.start()
 
     def set_position(self, position):
