@@ -79,15 +79,34 @@ class VideoPlayerWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         if vlc:
+            # Base arguments for high quality and smooth playback
             args = [
                 "--quiet",
                 "--no-video-title-show",
                 "--no-xlib",
-                "--ignore-config",
+                "--video-filter=deinterlace",
+                "--deinterlace=1",
+                "--deinterlace-mode=yadif",
+                # Caching to prevent stuttering
+                "--file-caching=3000",
+                "--network-caching=3000",
+                "--live-caching=3000",
+                # Timing and jitter improvements
+                "--clock-jitter=0",
+                "--clock-synchro=0",
             ]
-            if sys.platform == "linux":
-                # Disable problematic hardware acceleration if it fails
+
+            if config.enable_hw_accel:
+                # 'auto' or 'any' lets VLC choose the best hardware decoder
+                args.append("--avcodec-hw=auto")
+            else:
                 args.append("--avcodec-hw=none")
+
+            # Add any user-defined extra arguments
+            if config.vlc_extra_args:
+                args.extend(config.vlc_extra_args)
+
+            logger.info(f"Initializing VLC Instance with args: {args}")
             self.instance = vlc.Instance(args)
             self.mediaplayer = self.instance.media_player_new()
 

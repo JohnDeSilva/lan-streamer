@@ -207,10 +207,29 @@ def test_resize_event(player_widget):
     assert player_widget.progress_overlay.size() == player_widget.video_frame.size()
 
 
-def test_vlc_instance_args(player_widget):
-    # This is mostly to cover the lines in __init__
-    if player_widget.instance:
-        assert player_widget.instance is not None
+def test_vlc_instance_args(qtbot):
+    with patch("vlc.Instance") as mock_vlc:
+        config.enable_hw_accel = True
+        config.vlc_extra_args = ["--test-arg"]
+        
+        VideoPlayerWidget()
+        
+        args = mock_vlc.call_args[0][0]
+        assert "--avcodec-hw=auto" in args
+        assert "--test-arg" in args
+        assert "--deinterlace=1" in args
+        assert "--file-caching=3000" in args
+
+def test_vlc_instance_args_no_hw(qtbot):
+    with patch("vlc.Instance") as mock_vlc:
+        config.enable_hw_accel = False
+        config.vlc_extra_args = []
+        
+        VideoPlayerWidget()
+        
+        args = mock_vlc.call_args[0][0]
+        assert "--avcodec-hw=none" in args
+        assert "--avcodec-hw=auto" not in args
 
 
 def test_load_and_play_platforms(player_widget):

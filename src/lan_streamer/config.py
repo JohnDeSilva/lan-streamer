@@ -26,6 +26,8 @@ class Config:
             Path.home() / ".config" / "lan-streamer" / "cache"
         )
         self.use_embedded_player: bool = True
+        self.enable_hw_accel: bool = True
+        self.vlc_extra_args: List[str] = []
         self.load()
 
     def load(self):
@@ -65,6 +67,8 @@ class Config:
                         str(Path.home() / ".config" / "lan-streamer" / "cache"),
                     )
                     self.use_embedded_player = data.get("use_embedded_player", True)
+                    self.enable_hw_accel = data.get("enable_hw_accel", True)
+                    self.vlc_extra_args = data.get("vlc_extra_args", [])
 
                     if "libraries" in data:
                         self.libraries = data["libraries"]
@@ -100,6 +104,8 @@ class Config:
                         "watched_threshold": self.watched_threshold,
                         "cache_directory": self.cache_directory,
                         "use_embedded_player": self.use_embedded_player,
+                        "enable_hw_accel": self.enable_hw_accel,
+                        "vlc_extra_args": self.vlc_extra_args,
                     },
                     f,
                     indent=4,

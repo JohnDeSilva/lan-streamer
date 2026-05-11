@@ -444,6 +444,19 @@ class GeneralSettingsDialog(QDialog):
         self.caching_checkbox.setChecked(config.enable_caching)
         layout.addWidget(self.caching_checkbox)
 
+        # Video Quality Settings
+        layout.addWidget(QLabel("<b>Video Player Quality:</b>"))
+        self.hw_accel_checkbox = QCheckBox("Enable Hardware Acceleration")
+        self.hw_accel_checkbox.setChecked(config.enable_hw_accel)
+        layout.addWidget(self.hw_accel_checkbox)
+
+        vlc_args_layout = QHBoxLayout()
+        self.vlc_args_edit = QLineEdit(", ".join(config.vlc_extra_args))
+        self.vlc_args_edit.setPlaceholderText("--flag1, --flag2=value")
+        vlc_args_layout.addWidget(QLabel("Extra VLC Args:"))
+        vlc_args_layout.addWidget(self.vlc_args_edit)
+        layout.addLayout(vlc_args_layout)
+
         layout.addStretch()
 
         buttons = QDialogButtonBox(
@@ -483,6 +496,15 @@ class GeneralSettingsDialog(QDialog):
         config.enable_global_file_logging = self.log_file_checkbox.isChecked()
         config.use_embedded_player = self.player_checkbox.isChecked()
         config.enable_caching = self.caching_checkbox.isChecked()
+        config.enable_hw_accel = self.hw_accel_checkbox.isChecked()
+        
+        # Parse extra args
+        args_str = self.vlc_args_edit.text().strip()
+        if args_str:
+            config.vlc_extra_args = [a.strip() for a in args_str.split(",") if a.strip()]
+        else:
+            config.vlc_extra_args = []
+            
         config.save()
 
         if restart_needed:
