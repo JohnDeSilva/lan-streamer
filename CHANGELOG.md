@@ -1,3 +1,24 @@
+## 0.9.0 (2026-05-11)
+
+### Feat
+
+- **renamer**: Adds file renamer
+
+### Fix
+
+- **build**: run lint and tests before cutting release
+- **ui**: updates UI to open to most recent unwatched season
+- **scanner,ui**: adds check for new files button to ui
+- **jellyfin**: improves logic around correlating episodes with jellyfin ID's for watch history sync
+- **ui**: adds mark series as watched dropdown
+- **scanner**: makes file sync non destructive to preserve watch history
+- **player**: cleanup and organize fullscreen player controls
+- **player**: improvements to quality and adds playback statistics
+- **player**: adds on screen controls when in fullscreen
+- **player**: adds additional commands to player to fast foward and skip forward and back
+- **player**: stops screen from sleeping or dimming while a video is playing
+- **player**: improves video quality and allows passing additional arguments via config
+
 ## 0.8.0 (2026-05-09)
 
 ### Feat
