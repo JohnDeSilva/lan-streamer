@@ -1,3 +1,14 @@
+## 0.10.0 (2026-05-12)
+
+### Feat
+
+- **ui**: updates UI to use QML
+
+### Fix
+
+- **ui**: resize window and buttons to avoid cutoffs
+- **ui**: adds missing settings for DB and log location
+
 ## 0.9.0 (2026-05-11)
 
 ### Feat
