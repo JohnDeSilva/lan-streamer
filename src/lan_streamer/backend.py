@@ -54,6 +54,7 @@ class BackendBridge(QObject):
     configMaxCacheSizeGb: float
     configDatabasePath: str
     configLogDirectory: str
+    configMaxLogRetentionDays: int
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -281,6 +282,17 @@ class BackendBridge(QObject):
     def configMaxCacheSizeGb(self, value: float) -> None:
         if config.max_cache_size_gb != value:
             config.max_cache_size_gb = value
+            config.save()
+            self.configChanged.emit()
+
+    @Property(int, notify=configChanged)
+    def configMaxLogRetentionDays(self) -> int:
+        return config.max_log_retention_days
+
+    @configMaxLogRetentionDays.setter
+    def configMaxLogRetentionDays(self, value: int) -> None:
+        if config.max_log_retention_days != value:
+            config.max_log_retention_days = value
             config.save()
             self.configChanged.emit()
 

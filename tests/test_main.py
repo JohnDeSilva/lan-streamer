@@ -122,3 +122,40 @@ def test_main_logging_failure() -> None:
     ):
         main.main()
         mock_error_target.assert_called()
+
+
+def test_main_proactive_log_cleanup(tmp_path) -> None:
+    import time
+    from lan_streamer.config import config
+
+    config.log_directory = str(tmp_path / "logs")
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create old log file and new log file
+    old_file = log_dir / "old_app.log.2026-05-01"
+    new_file = log_dir / "new_app.log"
+    old_file.touch()
+    new_file.touch()
+
+    # Backdate old_file modification time beyond max_log_retention_days (e.g. 10 days ago)
+    old_time = time.time() - (config.max_log_retention_days + 3) * 86400
+    import os
+
+    os.utime(old_file, (old_time, old_time))
+
+    with (
+        patch("lan_streamer.main.QApplication", MagicMock()),
+        patch("lan_streamer.main.QMainWindow", MagicMock()),
+        patch("lan_streamer.main.QWidget", MagicMock()),
+        patch("lan_streamer.main.QStackedLayout", MagicMock()),
+        patch("lan_streamer.main.QQuickWidget", MagicMock()),
+        patch("lan_streamer.main.BackendBridge", MagicMock()),
+        patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
+        patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("sys.exit", MagicMock()),
+    ):
+        main.main()
+
+    assert not old_file.exists()
+    assert new_file.exists()

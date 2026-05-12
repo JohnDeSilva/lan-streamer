@@ -115,3 +115,14 @@ def test_config_load_no_keys(mock_config_file) -> None:
 
     config = Config()
     assert config.libraries == {}
+
+
+def test_config_max_log_retention(mock_config_file) -> None:
+    config = Config()
+    assert config.max_log_retention_days == 7
+
+    config.max_log_retention_days = 30
+    config.save()
+
+    loaded = Config()
+    assert loaded.max_log_retention_days == 30

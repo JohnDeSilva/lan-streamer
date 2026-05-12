@@ -53,7 +53,7 @@ Rectangle {
                         spacing: 16
 
                         Text {
-                            Layout.preferredWidth: 160
+                            Layout.preferredWidth: 240
                             Layout.alignment: Qt.AlignVCenter
                             text: "Select Library:"
                             color: "#94A3B8"
@@ -112,7 +112,7 @@ Rectangle {
                         spacing: 16
 
                         Text {
-                            Layout.preferredWidth: 160
+                            Layout.preferredWidth: 240
                             Layout.alignment: Qt.AlignVCenter
                             text: "New Library Name:"
                             color: "#94A3B8"
@@ -165,7 +165,7 @@ Rectangle {
                         spacing: 16
 
                         Text {
-                            Layout.preferredWidth: 160
+                            Layout.preferredWidth: 240
                             Layout.alignment: Qt.AlignTop
                             text: "Root Directories:"
                             color: "#94A3B8"
@@ -245,7 +245,7 @@ Rectangle {
                         spacing: 16
 
                         Text {
-                            Layout.preferredWidth: 160
+                            Layout.preferredWidth: 240
                             Layout.alignment: Qt.AlignVCenter
                             text: "Add Directory Path:"
                             color: "#94A3B8"
@@ -323,7 +323,7 @@ Rectangle {
                         rowSpacing: 12
 
                         Text {
-                            Layout.preferredWidth: 160
+                            Layout.preferredWidth: 240
                             Layout.alignment: Qt.AlignVCenter
                             text: "Jellyfin Server URL:"
                             color: "#E2E8F0"
@@ -342,7 +342,7 @@ Rectangle {
                         Item { Layout.preferredWidth: 280 }
 
                         Text {
-                            Layout.preferredWidth: 160
+                            Layout.preferredWidth: 240
                             Layout.alignment: Qt.AlignVCenter
                             text: "Jellyfin API Token:"
                             color: "#E2E8F0"
@@ -362,7 +362,7 @@ Rectangle {
                         Item { Layout.preferredWidth: 280 }
 
                         Text {
-                            Layout.preferredWidth: 160
+                            Layout.preferredWidth: 240
                             Layout.alignment: Qt.AlignVCenter
                             text: "TMDB API Key:"
                             color: "#E2E8F0"
@@ -510,7 +510,7 @@ Rectangle {
                         rowSpacing: 12
 
                         Text {
-                            Layout.preferredWidth: 160
+                            Layout.preferredWidth: 240
                             Layout.alignment: Qt.AlignVCenter
                             text: "Database Path:"
                             color: "#E2E8F0"
@@ -529,7 +529,7 @@ Rectangle {
                         Item { Layout.preferredWidth: 280 }
 
                         Text {
-                            Layout.preferredWidth: 160
+                            Layout.preferredWidth: 240
                             Layout.alignment: Qt.AlignVCenter
                             text: "Log Directory:"
                             color: "#E2E8F0"
@@ -544,6 +544,32 @@ Rectangle {
                             color: "#FFFFFF"
                             background: Rectangle { color: "#0B0F19"; radius: 6; border.color: "#334155"; border.width: 1 }
                             onEditingFinished: if (backendBridge) backendBridge.configLogDirectory = text
+                        }
+                        Item { Layout.preferredWidth: 280 }
+
+                        Text {
+                            Layout.preferredWidth: 240
+                            Layout.alignment: Qt.AlignVCenter
+                            text: "Log Retention (Days):"
+                            color: "#E2E8F0"
+                            font.bold: true
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        TextField {
+                            Layout.fillWidth: true
+                            text: backendBridge ? backendBridge.configMaxLogRetentionDays.toString() : "7"
+                            placeholderText: "Retention period in days"
+                            color: "#FFFFFF"
+                            background: Rectangle { color: "#0B0F19"; radius: 6; border.color: "#334155"; border.width: 1 }
+                            onEditingFinished: {
+                                if (backendBridge) {
+                                    let parsed = parseInt(text);
+                                    if (!isNaN(parsed) && parsed > 0) {
+                                        backendBridge.configMaxLogRetentionDays = parsed;
+                                    }
+                                }
+                            }
                         }
                         Item { Layout.preferredWidth: 280 }
                     }

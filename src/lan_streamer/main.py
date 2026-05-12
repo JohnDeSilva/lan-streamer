@@ -58,7 +58,10 @@ def main() -> None:
             from logging.handlers import TimedRotatingFileHandler
 
             handler = TimedRotatingFileHandler(
-                filename, when="midnight", interval=1, backupCount=7
+                filename,
+                when="midnight",
+                interval=1,
+                backupCount=config.max_log_retention_days,
             )
             handler.suffix = "%Y-%m-%d"
             handler.namer = lambda name: name.replace(".log.", "_") + ".log"
@@ -76,6 +79,19 @@ def main() -> None:
         log_directory.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
         logging.warning(f"Could not create log directory {log_directory}: {exc}")
+
+    try:
+        import time
+
+        cutoff = time.time() - (config.max_log_retention_days * 86400)
+        for p in log_directory.glob("*.log*"):
+            if p.is_file() and p.stat().st_mtime < cutoff:
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
+    except Exception as exc:
+        logging.debug(f"Error cleaning old logs: {exc}")
 
     if config.enable_global_file_logging:
         add_file_handler(

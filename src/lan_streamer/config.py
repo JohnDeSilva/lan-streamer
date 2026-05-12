@@ -31,6 +31,7 @@ class Config:
         self.player_overlay_opacity: float = 0.4
         self.player_overlay_color: str = "white"
         self.max_cache_size_gb: float = 15.0
+        self.max_log_retention_days: int = 7
         self.load()
 
     def load(self) -> None:
@@ -82,6 +83,7 @@ class Config:
                         "player_overlay_color", "white"
                     )
                     self.max_cache_size_gb = data.get("max_cache_size_gb", 15.0)
+                    self.max_log_retention_days = data.get("max_log_retention_days", 7)
 
                     if "libraries" in data:
                         self.libraries = data["libraries"]
@@ -125,6 +127,7 @@ class Config:
                         "player_overlay_opacity": self.player_overlay_opacity,
                         "player_overlay_color": self.player_overlay_color,
                         "max_cache_size_gb": self.max_cache_size_gb,
+                        "max_log_retention_days": self.max_log_retention_days,
                     },
                     f,
                     indent=4,

@@ -602,6 +602,11 @@ def test_backend_bridge_configuration_properties(backend_environment) -> None:
     assert config.max_cache_size_gb == 20.0
     assert backend_bridge.configMaxCacheSizeGb == 20.0
 
+    # Test Max Log Retention Days
+    backend_bridge.configMaxLogRetentionDays = 14
+    assert config.max_log_retention_days == 14
+    assert backend_bridge.configMaxLogRetentionDays == 14
+
     # Test setting unchanged values (no-op branch coverage)
     backend_bridge.configJellyfinUrl = backend_bridge.configJellyfinUrl
 
