@@ -1,3 +1,15 @@
+## 0.11.0 (2026-05-12)
+
+### Feat
+
+- **player**: resume video playback
+
+### Fix
+
+- **player**: cleanup cached video files and set size limit to video cache
+- **player**: handle release exception from wakelock
+- **ui**: updates title bar
+
 ## 0.10.0 (2026-05-12)
 
 ### Feat
