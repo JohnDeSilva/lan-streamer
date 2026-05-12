@@ -316,6 +316,31 @@ def update_episode_path(old_path: str, new_path: str) -> None:
         logger.error(f"Error updating episode path from {old_path} to {new_path}: {e}")
 
 
+def update_episode_playback_position(path: str, position: int) -> bool:
+    """Saves the last played playback offset (in seconds) for a given episode."""
+    try:
+        with get_session() as session:
+            episode = session.query(Episode).filter(Episode.path == path).first()
+            if episode:
+                episode.last_played_position = position
+                return True
+    except Exception as e:
+        logger.error(f"Error updating playback position for {path}: {e}")
+    return False
+
+
+def get_episode_playback_position(path: str) -> int:
+    """Retrieves the stored last played playback offset (in seconds) for a given episode."""
+    try:
+        with get_session() as session:
+            episode = session.query(Episode).filter(Episode.path == path).first()
+            if episode and episode.last_played_position:
+                return int(episode.last_played_position)
+    except Exception as e:
+        logger.error(f"Error retrieving playback position for {path}: {e}")
+    return 0
+
+
 def update_season_watched_status(
     library_name: str, series_name: str, season_name: str, watched: bool
 ) -> None:

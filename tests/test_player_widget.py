@@ -488,3 +488,125 @@ def test_ui_layout_completeness(player_widget) -> None:
     assert player_widget.fs_volume_slider.parent() == player_widget.fullscreen_overlay
     assert player_widget.fs_seek_slider.parent() == player_widget.fullscreen_overlay
     assert player_widget.fs_pause_button.parent() == player_widget.fullscreen_overlay
+
+
+def test_stop_saves_playback_position_incomplete(player_widget) -> None:
+    from unittest.mock import MagicMock
+
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.get_media.return_value = MagicMock()
+    player_widget.current_media_path = "/path/to/ep.mkv"
+    player_widget.is_watched_marked = False
+
+    # Simulate stopping at 40% (400s / 1000s) -> > 60s
+    player_widget.mediaplayer.get_time.return_value = 400000
+    player_widget.mediaplayer.get_length.return_value = 1000000
+    config.watched_threshold = 0.9
+
+    with patch("lan_streamer.db.update_episode_playback_position") as mock_db:
+        player_widget.stop()
+        mock_db.assert_called_once_with("/path/to/ep.mkv", 400)
+
+
+def test_stop_clears_playback_position_under_one_minute(player_widget) -> None:
+    from unittest.mock import MagicMock
+
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.get_media.return_value = MagicMock()
+    player_widget.current_media_path = "/path/to/ep.mkv"
+    player_widget.is_watched_marked = False
+
+    # Simulate stopping at 45s -> <= 60s
+    player_widget.mediaplayer.get_time.return_value = 45000
+    player_widget.mediaplayer.get_length.return_value = 1000000
+    config.watched_threshold = 0.9
+
+    with patch("lan_streamer.db.update_episode_playback_position") as mock_db:
+        player_widget.stop()
+        mock_db.assert_called_once_with("/path/to/ep.mkv", 0)
+
+
+def test_stop_resets_playback_position_complete(player_widget) -> None:
+    from unittest.mock import MagicMock
+
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.get_media.return_value = MagicMock()
+    player_widget.current_media_path = "/path/to/ep.mkv"
+
+    # Simulate stopping at 95% (950s / 1000s)
+    player_widget.mediaplayer.get_time.return_value = 950000
+    player_widget.mediaplayer.get_length.return_value = 1000000
+    config.watched_threshold = 0.9
+    player_widget.is_watched_marked = False
+
+    with patch("lan_streamer.db.update_episode_playback_position") as mock_db:
+        player_widget.stop()
+        mock_db.assert_called_once_with("/path/to/ep.mkv", 0)
+
+
+def test_play_video_prompts_resume(player_widget) -> None:
+    with patch("lan_streamer.db.get_episode_playback_position", return_value=300):
+        with patch.object(
+            player_widget, "_ask_resume_playback", return_value=True
+        ) as mock_ask:
+            with patch.object(player_widget, "_load_and_play"):
+                config.enable_caching = False
+                player_widget.play_video("/path/to/resume.mkv")
+                mock_ask.assert_called_once_with("05:00")
+                assert player_widget.pending_resume_position == 300
+
+        # Simulate applying resume
+        player_widget.mediaplayer = MagicMock()
+        player_widget.mediaplayer.get_media.return_value = None
+        player_widget._apply_pending_resume()
+        player_widget.mediaplayer.set_time.assert_called_once_with(300000)
+        assert player_widget.pending_resume_position == 0
+
+        # Simulate clicking start from beginning
+        with patch.object(player_widget, "_ask_resume_playback", return_value=False):
+            with patch(
+                "lan_streamer.db.update_episode_playback_position"
+            ) as mock_update:
+                with patch.object(player_widget, "_load_and_play"):
+                    player_widget.play_video("/path/to/resume.mkv")
+                    mock_update.assert_called_once_with("/path/to/resume.mkv", 0)
+                    assert player_widget.pending_resume_position == 0
+
+
+def test_play_video_no_prompt_under_one_minute(player_widget) -> None:
+    with patch("lan_streamer.db.get_episode_playback_position", return_value=45):
+        with patch.object(player_widget, "_ask_resume_playback") as mock_ask:
+            with patch(
+                "lan_streamer.db.update_episode_playback_position"
+            ) as mock_update:
+                with patch.object(player_widget, "_load_and_play"):
+                    player_widget.play_video("/path/to/short.mkv")
+                    mock_ask.assert_not_called()
+                    mock_update.assert_called_once_with("/path/to/short.mkv", 0)
+                    assert player_widget.pending_resume_position == 0
+
+
+def test_ask_resume_playback(player_widget) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    with patch.object(QMessageBox, "exec") as mock_exec:
+        with patch.object(QMessageBox, "clickedButton") as mock_clicked:
+            added_buttons = []
+
+            def side_effect_add(*args, **kwargs):
+                text = args[0] if args else kwargs.get("text", "")
+                btn = MagicMock()
+                btn.text.return_value = text
+                added_buttons.append(btn)
+                return btn
+
+            with patch.object(QMessageBox, "addButton", side_effect=side_effect_add):
+                mock_clicked.side_effect = lambda: (
+                    added_buttons[0] if added_buttons else None
+                )
+                res = player_widget._ask_resume_playback("05:00")
+                assert res is True
+                mock_exec.assert_called_once()
+                assert len(added_buttons) == 2
+                assert added_buttons[0].text() == "Resume Playback"
+                assert added_buttons[1].text() == "Start from Beginning"

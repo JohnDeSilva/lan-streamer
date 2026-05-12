@@ -133,6 +133,7 @@ class VideoPlayerWidget(QWidget):
             self.mediaplayer = None
         self.current_media_path: str | None = None
         self.cached_file_path: str | None = None
+        self.pending_resume_position: int = 0
         self.is_watched_marked = False
         self.is_muted = False
         self.previous_volume = 80
@@ -490,6 +491,22 @@ class VideoPlayerWidget(QWidget):
         self.stop()
         self.current_media_path = file_path
         self.is_watched_marked = False
+        self.pending_resume_position = 0
+
+        saved_pos = db.get_episode_playback_position(file_path)
+        if saved_pos > 60:
+            formatted_time = self._format_time(saved_pos)
+            if self._ask_resume_playback(formatted_time):
+                logger.info(f"User chose to resume playback from {saved_pos}s")
+                self.pending_resume_position = saved_pos
+            else:
+                logger.info("User chose to start playback from the beginning")
+                db.update_episode_playback_position(file_path, 0)
+        elif saved_pos > 0:
+            logger.info(
+                f"Saved position {saved_pos}s is <= 60s, starting from beginning without prompt"
+            )
+            db.update_episode_playback_position(file_path, 0)
 
         if config.enable_caching:
             logger.info("Caching is enabled, starting cache process")
@@ -497,6 +514,20 @@ class VideoPlayerWidget(QWidget):
         else:
             logger.info("Caching is disabled, playing directly")
             self._load_and_play(file_path)
+
+    def _ask_resume_playback(self, formatted_time: str) -> bool:
+        """Prompts the user with custom buttons to resume or restart."""
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Resume Playback")
+        msg_box.setText(
+            f"Do you want to resume playback from {formatted_time} or start from the beginning?"
+        )
+        resume_btn = msg_box.addButton(
+            "Resume Playback", QMessageBox.ButtonRole.AcceptRole
+        )
+        msg_box.addButton("Start from Beginning", QMessageBox.ButtonRole.RejectRole)
+        msg_box.exec()
+        return msg_box.clickedButton() == resume_btn
 
     def _start_caching(self, file_path: str) -> None:
         self.progress_overlay.show()
@@ -568,8 +599,18 @@ class VideoPlayerWidget(QWidget):
         # Initial volume
         self.mediaplayer.audio_set_volume(self.volume_slider.value())
 
-        # Wait a bit for tracks to be available
+        # Schedule playback resumption seek and track refresh
+        QTimer.singleShot(500, self._apply_pending_resume)
         QTimer.singleShot(1000, self._refresh_tracks)
+
+    def _apply_pending_resume(self) -> None:
+        if self.pending_resume_position > 0 and self.mediaplayer:
+            logger.info(f"Seeking to resumed position: {self.pending_resume_position}s")
+            self.mediaplayer.set_time(self.pending_resume_position * 1000)
+            self._show_osd(
+                f"Resumed from {self._format_time(self.pending_resume_position)}"
+            )
+            self.pending_resume_position = 0
 
     def _refresh_tracks(self) -> None:
         # Audio tracks
@@ -629,6 +670,35 @@ class VideoPlayerWidget(QWidget):
         if self.window().isFullScreen():
             self.toggle_fullscreen()
         if self.mediaplayer:
+            media = self.mediaplayer.get_media()
+            if media and self.current_media_path:
+                curr_time = self.mediaplayer.get_time() // 1000
+                duration = self.mediaplayer.get_length() // 1000
+                if duration > 0:
+                    if (
+                        not self.is_watched_marked
+                        and (curr_time / duration) < config.watched_threshold
+                    ):
+                        if curr_time > 60:
+                            logger.info(
+                                f"Saving playback position for {self.current_media_path} at {curr_time}s"
+                            )
+                            db.update_episode_playback_position(
+                                self.current_media_path, curr_time
+                            )
+                        else:
+                            logger.info(
+                                f"Playback stopped before 1 minute ({curr_time}s), clearing saved position for {self.current_media_path}"
+                            )
+                            db.update_episode_playback_position(
+                                self.current_media_path, 0
+                            )
+                    else:
+                        logger.info(
+                            f"Playback completed or exceeded threshold, clearing saved position for {self.current_media_path}"
+                        )
+                        db.update_episode_playback_position(self.current_media_path, 0)
+
             self.mediaplayer.stop()
         self.wakelock.uninhibit()
         self.timer.stop()

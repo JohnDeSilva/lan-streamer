@@ -85,3 +85,67 @@ def test_air_date_migration_with_fake_data(tmp_path) -> None:
         )
 
     engine.dispose()
+
+
+def test_playback_position_migration_with_fake_data(tmp_path) -> None:
+    """
+    Robustly test Alembic migration 8dbcde9fc7de -> e5421f98bc12 and downgrade
+    verifying preservation of existing fields and default NULL availability.
+    """
+    db_path = tmp_path / "test_migration_fake_data_pos.db"
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    # 1. Upgrade to previous revision 8dbcde9fc7de
+    command.upgrade(alembic_cfg, "8dbcde9fc7de")
+
+    # 2. Insert fake data representing user records before migration
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO series (library_name, name) VALUES ('Lib', 'Fake Series')"
+            )
+        )
+        conn.execute(
+            sa.text("INSERT INTO seasons (series_id, name) VALUES (1, 'Season 1')")
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO episodes (season_id, name, path) VALUES (1, 'Ep 1', '/fake/path/pos')"
+            )
+        )
+
+    # 3. Upgrade to our target revision e5421f98bc12
+    command.upgrade(alembic_cfg, "e5421f98bc12")
+
+    # 4. Verify fake data preservation and confirm new column exists
+    with engine.connect() as conn:
+        ep_row = conn.execute(
+            sa.text("SELECT name, last_played_position FROM episodes WHERE id=1")
+        ).fetchone()
+        assert ep_row[0] == "Ep 1"
+        assert ep_row[1] is None
+
+        conn.execute(sa.text("UPDATE episodes SET last_played_position=120 WHERE id=1"))
+        conn.commit()
+
+        updated_pos = conn.execute(
+            sa.text("SELECT last_played_position FROM episodes WHERE id=1")
+        ).scalar()
+        assert updated_pos == 120
+
+    # 5. Verify downgrade functionality cleanly strips the column
+    command.downgrade(alembic_cfg, "8dbcde9fc7de")
+    with engine.connect() as conn:
+        with pytest.raises(sa.exc.OperationalError):
+            conn.execute(
+                sa.text("SELECT last_played_position FROM episodes")
+            ).fetchall()
+
+        assert (
+            conn.execute(sa.text("SELECT name FROM episodes WHERE id=1")).scalar()
+            == "Ep 1"
+        )
+
+    engine.dispose()

@@ -301,3 +301,30 @@ def test_db_error_handling_extended(mock_db_file) -> None:
         # Test cleanup_library error path
         with pytest.raises(Exception):
             db.cleanup_library("Lib", [])
+        # Test playback position error paths
+        assert db.update_episode_playback_position("path", 100) is False
+        assert db.get_episode_playback_position("path") == 0
+
+
+def test_update_and_get_playback_position(mock_db_file) -> None:
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        series = Series(name="ShowPos", library_name="LibPos")
+        session.add(series)
+        session.flush()
+
+        season = Season(series_id=series.id, name="S1")
+        session.add(season)
+        session.flush()
+
+        ep = Episode(
+            season_id=season.id, name="E1", path="/path/to/pos.mkv", watched=False
+        )
+        session.add(ep)
+        session.commit()
+
+    assert db.get_episode_playback_position("/path/to/pos.mkv") == 0
+    assert db.update_episode_playback_position("/path/to/pos.mkv", 350) is True
+    assert db.get_episode_playback_position("/path/to/pos.mkv") == 350
+    assert db.update_episode_playback_position("/nonexistent/path.mkv", 10) is False

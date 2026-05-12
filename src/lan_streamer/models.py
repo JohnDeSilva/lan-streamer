@@ -88,6 +88,7 @@ class Episode(Base):
     watched: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     date_added: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     air_date: Mapped[Optional[str]] = mapped_column(String)
+    last_played_position: Mapped[Optional[int]] = mapped_column(Integer, default=0)
 
     season: Mapped[Optional["Season"]] = relationship(
         "Season", back_populates="episodes"
