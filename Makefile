@@ -5,10 +5,12 @@ ifeq ($(UV),)
 	PYTHON := .venv/bin/python
 	PYTEST := .venv/bin/pytest
 	RUFF := .venv/bin/ruff
+	MYPY := .venv/bin/mypy
 else
 	PYTHON := uv run python
 	PYTEST := uv run pytest
 	RUFF := uv run ruff
+	MYPY := uv run mypy
 endif
 # Wayland detection for stable VLC embedding
 ifeq ($(XDG_SESSION_TYPE),wayland)
@@ -20,13 +22,16 @@ endif
 run: migrate
 	PYTHONPATH=src $(QT_PLATFORM) $(PYTHON) -m lan_streamer.main
 
-lint:
+typecheck:
+	$(MYPY) src/
+
+lint: typecheck
 	$(RUFF) format .
 	$(RUFF) check --fix .
 
 reformat: lint
 
-check-lint:
+check-lint: typecheck
 	$(RUFF) format --check .
 	$(RUFF) check .
 

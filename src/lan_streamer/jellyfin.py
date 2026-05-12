@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class JellyfinClient:
-    def __init__(self):
+    def __init__(self) -> None:
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -33,7 +33,7 @@ class JellyfinClient:
     def is_configured(self) -> bool:
         return bool(config.jellyfin_url and config.jellyfin_api_key)
 
-    def _get_headers(self):
+    def _get_headers(self) -> dict:
         token = config.jellyfin_api_key.strip()
         auth = f'MediaBrowser Client="LanStreamer", Device="Desktop", DeviceId="lan-streamer-1", Version="1.0.0", Token="{token}"'
         return {
@@ -41,7 +41,7 @@ class JellyfinClient:
             "Accept": "application/json",
         }
 
-    def _get_base_url(self):
+    def _get_base_url(self) -> str:
         url = config.jellyfin_url.strip().rstrip("/")
         if not url:
             return ""
@@ -59,7 +59,7 @@ class JellyfinClient:
     # User identity
     # ------------------------------------------------------------------
 
-    def get_current_user_id(self):
+    def get_current_user_id(self) -> str | None:
         if not self.is_configured():
             return None
         if self._cached_user_id:
@@ -105,7 +105,7 @@ class JellyfinClient:
     # Credential validation
     # ------------------------------------------------------------------
 
-    def validate_credentials(self, url: str, api_key: str):
+    def validate_credentials(self, url: str, api_key: str) -> tuple[bool, str]:
         """Tests connection with specific credentials without saving them."""
         url = url.strip().rstrip("/")
         if not url:
@@ -113,7 +113,7 @@ class JellyfinClient:
         if not api_key:
             return False, "API Key is required."
 
-        self.session.proxies = {"http": None, "https": None}
+        self.session.proxies = {"http": None, "https": None}  # type: ignore[dict-item]
 
         if not url.startswith("http"):
             import re
@@ -192,7 +192,7 @@ class JellyfinClient:
         start_index = 0
 
         while True:
-            parameters = {
+            parameters: dict[str, str | int] = {
                 "IncludeItemTypes": "Episode",
                 "Recursive": "true",
                 "Fields": "Path,SeriesName",
@@ -253,7 +253,9 @@ class JellyfinClient:
         tmdb_episode_map = {}
         tmdb_series_map = {}
         name_map = {}
-        series_id_map = {}  # {series_id: { (season_num, ep_num): id, name: id }}
+        series_id_map: dict[
+            str, dict[str, dict]
+        ] = {}  # {series_id: { episodes: {(season_num, ep_num): id}, names: {name: id} }}
 
         # 1. Fetch Episodes for Path and TMDB mapping
         url = f"{self._get_base_url()}/Users/{user_id}/Items"
@@ -261,7 +263,7 @@ class JellyfinClient:
         start_index = 0
 
         while True:
-            parameters = {
+            parameters: dict[str, str | int] = {
                 "IncludeItemTypes": "Episode",
                 "Recursive": "true",
                 "Fields": "Path,SeriesId,SeasonId,ProviderIds,SeriesName",
@@ -329,7 +331,7 @@ class JellyfinClient:
         # 2. Fetch Series for TMDB mapping
         start_index = 0
         while True:
-            parameters = {
+            search_params: dict[str, str | int] = {
                 "IncludeItemTypes": "Series",
                 "Recursive": "true",
                 "Fields": "ProviderIds",
@@ -338,7 +340,7 @@ class JellyfinClient:
             }
             try:
                 response = self.session.get(
-                    url, headers=self._get_headers(), params=parameters, timeout=30
+                    url, headers=self._get_headers(), params=search_params, timeout=30
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -479,7 +481,7 @@ class JellyfinClient:
     # Watch history — outbound (push local state → Jellyfin)
     # ------------------------------------------------------------------
 
-    def set_watched_status(self, item_id: str, watched: bool):
+    def set_watched_status(self, item_id: str, watched: bool) -> None:
         """Pushes a played/unplayed status for a single episode to Jellyfin."""
         if not self.is_configured():
             return

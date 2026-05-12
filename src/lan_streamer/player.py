@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def play_video(file_path: str):
+def play_video(file_path: str) -> None:
     """
     Launches VLC to play the given video file.
     Uses subprocess to pass the file path directly to VLC, ensuring no compression.

@@ -2,14 +2,14 @@ from lan_streamer import db
 from sqlalchemy import text
 
 
-def test_wal_mode_enabled():
+def test_wal_mode_enabled() -> None:
     db.init_db()
     with db.get_session() as session:
         result = session.execute(text("PRAGMA journal_mode")).fetchone()
         assert result[0].lower() == "wal"
 
 
-def test_load_library_correctness_complex():
+def test_load_library_correctness_complex() -> None:
     db.init_db()
 
     test_lib = {
@@ -91,7 +91,7 @@ def test_load_library_correctness_complex():
     assert len(show_b["seasons"]) == 0
 
 
-def test_sync_watched_names_bulk():
+def test_sync_watched_names_bulk() -> None:
     db.init_db()
     test_lib = {
         "Show": {
@@ -116,7 +116,7 @@ def test_sync_watched_names_bulk():
     assert all(ep["watched"] for ep in eps)
 
 
-def test_sync_watched_ids_paths():
+def test_sync_watched_ids_paths() -> None:
     db.init_db()
     test_lib = {
         "Show": {

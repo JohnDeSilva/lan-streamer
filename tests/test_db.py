@@ -5,18 +5,18 @@ from lan_streamer.models import Series, Season, Episode
 
 
 @pytest.fixture
-def mock_db_file(tmp_path):
+def mock_db_file(tmp_path) -> None:
     # Already handled by conftest.py autouse fixture,
     # but kept here for tests that explicitly use it.
     return tmp_path / "library.db"
 
 
-def test_init_db(mock_db_file):
+def test_init_db(mock_db_file) -> None:
     db.init_db()
     assert mock_db_file.parent.exists()
 
 
-def test_save_and_load_library(mock_db_file):
+def test_save_and_load_library(mock_db_file) -> None:
     test_lib = {
         "Test Series": {
             "metadata": {
@@ -64,7 +64,7 @@ def test_save_and_load_library(mock_db_file):
     assert eps[0]["watched"] is False
 
 
-def test_update_watched_status(mock_db_file):
+def test_update_watched_status(mock_db_file) -> None:
     test_lib = {
         "Test Series": {
             "metadata": {},
@@ -92,7 +92,7 @@ def test_update_watched_status(mock_db_file):
     assert eps[0]["watched"] is True
 
 
-def test_db_error_handling(mock_db_file):
+def test_db_error_handling(mock_db_file) -> None:
     # Mocking get_session to raise an exception
     with patch("lan_streamer.db.get_session") as mock_session:
         mock_session.side_effect = Exception("Mocked error")
@@ -103,7 +103,7 @@ def test_db_error_handling(mock_db_file):
         db.update_episode_watched_status("path", True)
 
 
-def test_sync_watched_from_paths(mock_db_file):
+def test_sync_watched_from_paths(mock_db_file) -> None:
     from lan_streamer.db import sync_watched_from_jellyfin_data, get_session
 
     # Setup data using ORM
@@ -146,7 +146,7 @@ def test_sync_watched_from_paths(mock_db_file):
     assert sync_watched_from_jellyfin_data(set(), set(), set()) == 0
 
 
-def test_get_all_episodes_with_jellyfin_id(mock_db_file):
+def test_get_all_episodes_with_jellyfin_id(mock_db_file) -> None:
     test_lib = {
         "Show": {
             "seasons": {
@@ -175,7 +175,7 @@ def test_get_all_episodes_with_jellyfin_id(mock_db_file):
     assert eps[0]["jellyfin_id"] == "jf1"
 
 
-def test_update_season_watched_status(mock_db_file):
+def test_update_season_watched_status(mock_db_file) -> None:
     test_lib = {
         "Test Series": {
             "metadata": {},
@@ -226,7 +226,7 @@ def test_update_season_watched_status(mock_db_file):
     assert all(ep["watched"] is False for ep in s1_eps)
 
 
-def test_update_series_watched_status(mock_db_file):
+def test_update_series_watched_status(mock_db_file) -> None:
     test_lib = {
         "Test Series": {
             "metadata": {},
@@ -274,7 +274,7 @@ def test_update_series_watched_status(mock_db_file):
             assert ep["watched"] is False
 
 
-def test_update_episode_path(mock_db_file):
+def test_update_episode_path(mock_db_file) -> None:
     test_lib = {
         "Show": {
             "seasons": {"S1": {"episodes": [{"name": "E1", "path": "/old/path.mkv"}]}}
@@ -288,12 +288,12 @@ def test_update_episode_path(mock_db_file):
     assert ep["path"] == "/new/path.mkv"
 
 
-def test_update_episode_path_missing(mock_db_file):
+def test_update_episode_path_missing(mock_db_file) -> None:
     # Should not crash or error out
     db.update_episode_path("/missing/path.mkv", "/new/path.mkv")
 
 
-def test_db_error_handling_extended(mock_db_file):
+def test_db_error_handling_extended(mock_db_file) -> None:
     with patch("lan_streamer.db.get_session") as mock_session:
         mock_session.side_effect = Exception("Mocked error")
         # Test get_all_episodes_with_jellyfin_id error path

@@ -1,5 +1,5 @@
+from typing import Optional, List
 from sqlalchemy import (
-    Column,
     Integer,
     String,
     Boolean,
@@ -8,28 +8,32 @@ from sqlalchemy import (
     Index,
 )
 from sqlalchemy.orm import (
-    declarative_base,
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
     relationship,
 )
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 class Series(Base):
     __tablename__ = "series"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    library_name = Column(String)
-    name = Column(String)
-    jellyfin_id = Column(String)
-    tmdb_identifier = Column(String)
-    poster_path = Column(String)
-    overview = Column(String)
-    tmdb_name = Column(String)
-    locked_metadata = Column(Boolean, default=False)
-    first_air_date = Column(String)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    library_name: Mapped[Optional[str]] = mapped_column(String)
+    name: Mapped[Optional[str]] = mapped_column(String)
+    jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_identifier: Mapped[Optional[str]] = mapped_column(String)
+    poster_path: Mapped[Optional[str]] = mapped_column(String)
+    overview: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_name: Mapped[Optional[str]] = mapped_column(String)
+    locked_metadata: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
+    first_air_date: Mapped[Optional[str]] = mapped_column(String)
 
-    seasons = relationship(
+    seasons: Mapped[List["Season"]] = relationship(
         "Season",
         back_populates="series",
         cascade="all, delete-orphan",
@@ -44,14 +48,18 @@ class Series(Base):
 class Season(Base):
     __tablename__ = "seasons"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    series_id = Column(Integer, ForeignKey("series.id", ondelete="CASCADE"))
-    name = Column(String)
-    jellyfin_id = Column(String)
-    poster_path = Column(String)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    series_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("series.id", ondelete="CASCADE")
+    )
+    name: Mapped[Optional[str]] = mapped_column(String)
+    jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
+    poster_path: Mapped[Optional[str]] = mapped_column(String)
 
-    series = relationship("Series", back_populates="seasons")
-    episodes = relationship(
+    series: Mapped[Optional["Series"]] = relationship(
+        "Series", back_populates="seasons"
+    )
+    episodes: Mapped[List["Episode"]] = relationship(
         "Episode",
         back_populates="season",
         cascade="all, delete-orphan",
@@ -67,19 +75,23 @@ class Season(Base):
 class Episode(Base):
     __tablename__ = "episodes"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    season_id = Column(Integer, ForeignKey("seasons.id", ondelete="CASCADE"))
-    name = Column(String)
-    path = Column(String, unique=True)
-    jellyfin_id = Column(String)
-    tmdb_episode_identifier = Column(String)
-    tmdb_name = Column(String)
-    tmdb_number = Column(Integer)
-    watched = Column(Boolean, default=False)
-    date_added = Column(Integer, default=0)
-    air_date = Column(String)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    season_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("seasons.id", ondelete="CASCADE")
+    )
+    name: Mapped[Optional[str]] = mapped_column(String)
+    path: Mapped[Optional[str]] = mapped_column(String, unique=True)
+    jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_episode_identifier: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_name: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_number: Mapped[Optional[int]] = mapped_column(Integer)
+    watched: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
+    date_added: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    air_date: Mapped[Optional[str]] = mapped_column(String)
 
-    season = relationship("Season", back_populates="episodes")
+    season: Mapped[Optional["Season"]] = relationship(
+        "Season", back_populates="episodes"
+    )
 
     __table_args__ = (
         UniqueConstraint("season_id", "name", name="uq_episodes_season_id_name"),

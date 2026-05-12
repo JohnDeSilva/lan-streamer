@@ -3,7 +3,7 @@ import lan_streamer.scanner as scanner
 from unittest.mock import MagicMock, patch
 
 
-def _mock_tmdb(search_return=None, seasons=None, episodes=None):
+def _mock_tmdb(search_return=None, seasons=None, episodes=None) -> None:
     """Helper that returns a preconfigured mock."""
     mock = MagicMock()
     mock.search_series.return_value = search_return
@@ -14,7 +14,7 @@ def _mock_tmdb(search_return=None, seasons=None, episodes=None):
     return mock
 
 
-def test_scan_directories_with_mock(tmp_path):
+def test_scan_directories_with_mock(tmp_path) -> None:
     """
     Test scanning using dynamically created mock directories and files.
     """
@@ -42,7 +42,7 @@ def test_scan_directories_with_mock(tmp_path):
     # Mock TMDB responses
     mock_tmdb = MagicMock()
 
-    def search_series(name):
+    def search_series(name) -> None:
         if "Series A" in name:
             return {
                 "id": "series_a_id",
@@ -85,11 +85,11 @@ def test_scan_directories_with_mock(tmp_path):
     assert sb_eps[0]["name"] == "S01E01.mkv"
 
 
-def test_scan_directories_empty_list():
+def test_scan_directories_empty_list() -> None:
     assert scan_directories([]) == {}
 
 
-def test_scan_directories_oserror(tmp_path):
+def test_scan_directories_oserror(tmp_path) -> None:
 
     series_a = tmp_path / "Series A"
     season_1 = series_a / "Season 1"
@@ -97,7 +97,7 @@ def test_scan_directories_oserror(tmp_path):
     ep = season_1 / "S01E01.mkv"
     ep.touch()
 
-    def mock_getctime(*args):
+    def mock_getctime(*args) -> None:
         raise OSError("Permission denied")
 
     with (
@@ -109,11 +109,11 @@ def test_scan_directories_oserror(tmp_path):
         assert episodes[0]["date_added"] == 0
 
 
-def test_scan_directories_nonexistent_path():
+def test_scan_directories_nonexistent_path() -> None:
     assert scan_directories(["/path/does/not/exist/at/all/123456789"]) == {}
 
 
-def test_scan_series(tmp_path):
+def test_scan_series(tmp_path) -> None:
     from lan_streamer.scanner import scan_series
 
     series_dir = tmp_path / "Test Show"
@@ -157,7 +157,7 @@ def test_scan_series(tmp_path):
         assert episodes[0]["watched"] is False
 
 
-def test_scan_series_manual_match(tmp_path):
+def test_scan_series_manual_match(tmp_path) -> None:
     from lan_streamer.scanner import scan_series
 
     series_dir = tmp_path / "Mismatched Show"
@@ -184,7 +184,7 @@ def test_scan_series_manual_match(tmp_path):
         mock_tmdb.search_series.assert_not_called()
 
 
-def test_scan_series_manual_match_fetch_by_id(tmp_path):
+def test_scan_series_manual_match_fetch_by_id(tmp_path) -> None:
     """When manual match only has 'id' (not 'name'), should fetch full record."""
     from lan_streamer.scanner import scan_series
 
@@ -212,7 +212,7 @@ def test_scan_series_manual_match_fetch_by_id(tmp_path):
         assert series_data["metadata"]["tmdb_identifier"] == "fetch_me"
 
 
-def test_scan_directories_respects_manual_match(tmp_path):
+def test_scan_directories_respects_manual_match(tmp_path) -> None:
     series_dir = tmp_path / "Manual Show"
     series_dir.mkdir()
     season_dir = series_dir / "Season 1"
@@ -249,12 +249,12 @@ def test_scan_directories_respects_manual_match(tmp_path):
     mock_tmdb.search_series.assert_not_called()
 
 
-def test_clean_series_data_none():
+def test_clean_series_data_none() -> None:
     assert scanner.clean_series_data({"seasons": {}}) is None
     assert scanner.clean_series_data({"seasons": {"S1": {"episodes": []}}}) is None
 
 
-def test_scan_directories_gaps(tmp_path):
+def test_scan_directories_gaps(tmp_path) -> None:
     # root_path is not a dir
     not_a_dir = tmp_path / "file.txt"
     not_a_dir.write_text("not a dir")
@@ -283,7 +283,7 @@ def test_scan_directories_gaps(tmp_path):
     assert "Season 1" in res["Valid Series"]["seasons"]
 
 
-def test_parse_episode_number():
+def test_parse_episode_number() -> None:
     from lan_streamer.scanner import _parse_episode_number
 
     assert _parse_episode_number("Show.S01E05.mkv") == (1, 5)
@@ -291,7 +291,7 @@ def test_parse_episode_number():
     assert _parse_episode_number("no_episode.mkv") is None
 
 
-def test_scan_tmdb_merge_by_tmdb_identifier(tmp_path):
+def test_scan_tmdb_merge_by_tmdb_identifier(tmp_path) -> None:
     """Two differently-named folders with same TMDB ID should be merged."""
     folder_a = tmp_path / "Show Part 1"
     folder_b = tmp_path / "Show Part 2"
@@ -332,7 +332,7 @@ def test_scan_tmdb_merge_by_tmdb_identifier(tmp_path):
     assert len(episodes) == 2
 
 
-def test_scan_directories_merge_branches(tmp_path):
+def test_scan_directories_merge_branches(tmp_path) -> None:
     from lan_streamer.scanner import scan_directories
 
     # 1. Fallback to name match (line 104)
@@ -401,7 +401,7 @@ def test_scan_directories_merge_branches(tmp_path):
         assert "Season 2" in lib["Show A"]["seasons"]
 
 
-def test_scan_directories_clean_none(tmp_path):
+def test_scan_directories_clean_none(tmp_path) -> None:
     # Hit scanner.py line 91
     from lan_streamer.scanner import scan_directories
 
@@ -420,7 +420,7 @@ def test_scan_directories_clean_none(tmp_path):
         assert res == {}
 
 
-def test_scan_series_no_poster_branch(tmp_path):
+def test_scan_series_no_poster_branch(tmp_path) -> None:
     # Hit scanner.py lines 178 and 223
     from lan_streamer.scanner import scan_series
 
@@ -443,7 +443,7 @@ def test_scan_series_no_poster_branch(tmp_path):
         assert data["seasons"]["Season 1"]["metadata"]["poster_path"] == ""
 
 
-def test_scan_series_tmdb_correlation(tmp_path):
+def test_scan_series_tmdb_correlation(tmp_path) -> None:
     """Test that jellyfin_id is pulled via TMDB ID fallback if path doesn't match."""
     from lan_streamer.scanner import scan_series
 
@@ -486,7 +486,7 @@ def test_scan_series_tmdb_correlation(tmp_path):
         assert series_data["metadata"]["jellyfin_id"] == "jf_series_456"
 
 
-def test_scan_series_name_correlation(tmp_path):
+def test_scan_series_name_correlation(tmp_path) -> None:
     """Test that jellyfin_id is pulled via Name fallback if path/TMDB fail."""
     from lan_streamer.scanner import scan_series
 
@@ -523,7 +523,7 @@ def test_scan_series_name_correlation(tmp_path):
         assert ep["jellyfin_id"] == "jf_ep_name_123"
 
 
-def test_scan_series_manual_jellyfin_correlation(tmp_path):
+def test_scan_series_manual_jellyfin_correlation(tmp_path) -> None:
     """Test that jellyfin_id is pulled via series_id_map when manual_jellyfin_id is provided."""
     from lan_streamer.scanner import scan_series
 
@@ -564,7 +564,7 @@ def test_scan_series_manual_jellyfin_correlation(tmp_path):
         assert series_data["metadata"]["jellyfin_id"] == "jf_manual_id"
 
 
-def test_parse_season_number():
+def test_parse_season_number() -> None:
     from lan_streamer.scanner import _parse_season_number
 
     assert _parse_season_number("Season 1") == 1
@@ -575,7 +575,7 @@ def test_parse_season_number():
     assert _parse_season_number("Specials") is None
 
 
-def test_scan_series_tmdb_name_fallback(tmp_path):
+def test_scan_series_tmdb_name_fallback(tmp_path) -> None:
     """Test that TMDB episode is matched by name if SxxExx parsing fails."""
     from lan_streamer.scanner import scan_series
 
@@ -617,7 +617,7 @@ def test_scan_series_tmdb_name_fallback(tmp_path):
         assert ep["jellyfin_id"] == "jf_ep1"
 
 
-def test_scan_series_initial_jellyfin_lookup(tmp_path):
+def test_scan_series_initial_jellyfin_lookup(tmp_path) -> None:
     """Test that series jellyfin_id is looked up via TMDB ID at the start."""
     from lan_streamer.scanner import scan_series
 
@@ -643,7 +643,7 @@ def test_scan_series_initial_jellyfin_lookup(tmp_path):
         assert series_data["metadata"]["jellyfin_id"] == "jf_999"
 
 
-def test_scan_series_force_refresh_false(tmp_path):
+def test_scan_series_force_refresh_false(tmp_path) -> None:
     """Test that existing metadata is reused when force_refresh=False."""
     from lan_streamer.scanner import scan_series
 
@@ -696,7 +696,7 @@ def test_scan_series_force_refresh_false(tmp_path):
         assert mock_tmdb.get_episodes.call_count == 0
 
 
-def test_scan_series_preserves_watched_status(tmp_path):
+def test_scan_series_preserves_watched_status(tmp_path) -> None:
     """Test that watched status is preserved even during a force_refresh scan."""
     from lan_streamer.scanner import scan_series
 
@@ -748,7 +748,7 @@ def test_scan_series_preserves_watched_status(tmp_path):
         assert mock_tmdb.get_seasons.call_count == 1
 
 
-def test_scan_directories_non_destructive_cleanup(tmp_path):
+def test_scan_directories_non_destructive_cleanup(tmp_path) -> None:
     """Test non-destructive preservation vs cleanup purging behavior."""
     from lan_streamer.scanner import scan_directories
 

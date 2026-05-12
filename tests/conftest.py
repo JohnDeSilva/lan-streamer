@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 
 @pytest.fixture(autouse=True)
-def protect_user_dirs(tmp_path):
+def protect_user_dirs(tmp_path) -> None:
     """
     Ensure no test can ever overwrite the user's actual config or DB.
     We patch all the paths to point to tmp_path.

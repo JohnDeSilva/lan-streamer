@@ -2,7 +2,7 @@ import shutil
 from lan_streamer import db
 
 
-def test_cleanup_library(tmp_path):
+def test_cleanup_library(tmp_path) -> None:
     library_name = "CleanupTest"
     root_dir = tmp_path / "TV"
     root_dir.mkdir()

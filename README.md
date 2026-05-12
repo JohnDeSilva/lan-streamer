@@ -31,7 +31,7 @@ It bridges the gap between local file storage (e.g., NAS, External Drives) and o
 
 *   **Versioned Schema**: Managed via **Alembic** migrations. Database schema updates are handled automatically through the `make migrate` target, ensuring metadata consistency across all releases.
 *   **Background Workers**: Library scanning, cleanup, and synchronization occur in dedicated background threads, keeping the UI fluid even during massive updates.
-*   **🛡️ Quality Enforcement**: Maintains a strict **90% minimum code coverage** threshold and enforces a **zero-warning** policy. The local test suite treats all warnings as errors to ensure maximum reliability.
+*   **🛡️ Quality Enforcement**: Maintains a strict **90% minimum code coverage** threshold and enforces a **zero-warning** policy. The local test suite treats all warnings as errors to ensure maximum reliability. Additionally, **100% strict static type checking** compliance is mandated across the package using `mypy` (`disallow_untyped_defs = true`).
 
 ---
 
@@ -133,6 +133,7 @@ Logs are automatically organized and rotated daily within the configured log dir
 *   **Database**: [SQLite 3](https://www.sqlite.org/) with [SQLAlchemy](https://www.sqlalchemy.org/) ORM and [Alembic](https://alembic.sqlalchemy.org/) migrations
 *   **Package Manager**: [uv](https://github.com/astral-sh/uv)
 *   **Linting/Formatting**: [Ruff](https://github.com/astral-sh/ruff)
+*   **Static Type Checking**: [mypy](https://mypy-lang.org/) (Strict enforcement via `make typecheck`)
 
 ### Testing
 We use `pytest` with `pytest-cov` and `pytest-qt` for comprehensive UI and logic testing.

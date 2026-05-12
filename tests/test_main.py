@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 from lan_streamer import main
 
 
-def test_setup_dark_theme(qtbot):
+def test_setup_dark_theme(qtbot) -> None:
     from PySide6.QtWidgets import QApplication
 
     application_instance = QApplication.instance() or QApplication([])
@@ -10,7 +10,7 @@ def test_setup_dark_theme(qtbot):
     assert application_instance.palette() is not None
 
 
-def test_main_execution():
+def test_main_execution() -> None:
     with (
         patch("sys.exit", MagicMock()),
         patch("lan_streamer.main.QApplication", MagicMock()) as mock_application_class,
@@ -32,7 +32,7 @@ def test_main_execution():
         mock_application_instance.exec.assert_called_once()
 
 
-def test_main_execution_empty_root_objects():
+def test_main_execution_empty_root_objects() -> None:
     with (
         patch("sys.exit", MagicMock()) as mock_exit,
         patch("lan_streamer.main.QApplication", MagicMock()),
@@ -57,7 +57,7 @@ def test_main_execution_empty_root_objects():
         mock_exit.assert_called_with(-1)
 
 
-def test_main_logging_setup(tmp_path):
+def test_main_logging_setup(tmp_path) -> None:
     import logging
     import os
 
@@ -101,8 +101,8 @@ def test_main_logging_setup(tmp_path):
         os.chdir(old_current_working_directory)
 
 
-def test_main_logging_failure():
-    def mock_file_handler(*args, **kwargs):
+def test_main_logging_failure() -> None:
+    def mock_file_handler(*args, **kwargs) -> None:
         raise Exception("Log failure")
 
     mock_error_target = MagicMock()

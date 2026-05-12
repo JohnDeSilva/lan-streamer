@@ -4,7 +4,7 @@ import random
 from lan_streamer import db
 
 
-def generate_large_library(num_series=500, eps_per_series=20):
+def generate_large_library(num_series=500, eps_per_series=20) -> None:
     """
     Generates a large library structure for testing.
     Default: 500 series * 20 episodes = 10,000 episodes.
@@ -56,7 +56,7 @@ def generate_large_library(num_series=500, eps_per_series=20):
 
 
 @pytest.mark.load
-def test_db_load_and_save_benchmark():
+def test_db_load_and_save_benchmark() -> None:
     """
     Benchmark saving and loading a large library.
     """
@@ -96,7 +96,7 @@ def test_db_load_and_save_benchmark():
 
 
 @pytest.mark.load
-def test_sync_performance_large_data():
+def test_sync_performance_large_data() -> None:
     """
     Benchmark the sync_watched_from_jellyfin_data function with large inputs.
     """

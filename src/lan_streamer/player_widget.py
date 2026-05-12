@@ -1,6 +1,7 @@
 import os
 import logging
 from pathlib import Path
+from typing import Any
 from PySide6.QtWidgets import (
     QWidget,
     QMainWindow,
@@ -37,12 +38,12 @@ class CacheWorker(QThread):
     finished = Signal(str)
     error = Signal(str)
 
-    def __init__(self, src_path, dest_path):
+    def __init__(self, src_path: str, dest_path: str) -> None:
         super().__init__()
         self.src_path = Path(src_path)
         self.dest_path = Path(dest_path)
 
-    def run(self):
+    def run(self) -> None:
         logger.info(f"Starting cache of {self.src_path} to {self.dest_path}")
         try:
             self.dest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -77,7 +78,7 @@ class VideoPlayerWidget(QWidget):
     fullscreen_changed = Signal(bool)
     _playback_finished_signal = Signal()  # Internal for cross-thread VLC events
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Any = None) -> None:
         super().__init__(parent)
         if vlc:
             # Base arguments for high quality and smooth playback
@@ -130,8 +131,8 @@ class VideoPlayerWidget(QWidget):
         else:
             self.instance = None
             self.mediaplayer = None
-        self.current_media_path = None
-        self.cached_file_path = None
+        self.current_media_path: str | None = None
+        self.cached_file_path: str | None = None
         self.is_watched_marked = False
         self.is_muted = False
         self.previous_volume = 80
@@ -151,7 +152,7 @@ class VideoPlayerWidget(QWidget):
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.update_ui)
 
-    def _apply_fullscreen_styles(self):
+    def _apply_fullscreen_styles(self) -> None:
         """Applies styling to fullscreen overlay based on config."""
         opacity = int(config.player_overlay_opacity * 255)
         color_scheme = config.player_overlay_color.lower()
@@ -178,7 +179,7 @@ class VideoPlayerWidget(QWidget):
         self.fs_time_label.setStyleSheet(label_style)
         self.fs_vol_label.setStyleSheet(label_style)
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -373,7 +374,7 @@ class VideoPlayerWidget(QWidget):
         controls_layout.addLayout(buttons_layout)
         self.main_layout.addWidget(self.controls_widget)
 
-    def eventFilter(self, watched, event):
+    def eventFilter(self, watched: Any, event: Any) -> bool:
         if watched == self.video_frame:
             if event.type() == QEvent.Type.MouseButtonDblClick:
                 self.toggle_fullscreen()
@@ -382,17 +383,17 @@ class VideoPlayerWidget(QWidget):
                 self._handle_mouse_move()
         return super().eventFilter(watched, event)
 
-    def _handle_mouse_move(self):
+    def _handle_mouse_move(self) -> None:
         if self.window().isFullScreen():
             self._show_fullscreen_controls()
             self.hide_controls_timer.start()
 
-    def _show_fullscreen_controls(self):
+    def _show_fullscreen_controls(self) -> None:
         self.fullscreen_overlay.show()
         self.fullscreen_overlay.raise_()
         self.setCursor(Qt.CursorShape.ArrowCursor)
 
-    def _hide_fullscreen_controls(self):
+    def _hide_fullscreen_controls(self) -> None:
         if (
             self.window().isFullScreen()
             and self.mediaplayer
@@ -401,7 +402,7 @@ class VideoPlayerWidget(QWidget):
             self.fullscreen_overlay.hide()
             self.setCursor(Qt.CursorShape.BlankCursor)
 
-    def keyPressEvent(self, event):
+    def keyPressEvent(self, event: Any) -> None:
         if event.key() == Qt.Key.Key_Escape and self.window().isFullScreen():
             self.toggle_fullscreen()
         elif event.key() == Qt.Key.Key_F:
@@ -427,7 +428,7 @@ class VideoPlayerWidget(QWidget):
         else:
             super().keyPressEvent(event)
 
-    def toggle_fullscreen(self):
+    def toggle_fullscreen(self) -> None:
         main_win = self.window()
         if main_win.isFullScreen():
             logger.info("Exiting fullscreen mode")
@@ -455,7 +456,7 @@ class VideoPlayerWidget(QWidget):
                 main_win.statusBar().hide()
         self._reposition_overlays()
 
-    def _reposition_overlays(self):
+    def _reposition_overlays(self) -> None:
         self.progress_overlay.resize(self.video_frame.size())
 
         # Center the fullscreen overlay at the bottom
@@ -478,11 +479,11 @@ class VideoPlayerWidget(QWidget):
         # Position Stats Overlay at top-left
         self.stats_overlay.move(v_geom.x() + 20, v_geom.y() + 20)
 
-    def resizeEvent(self, event):
+    def resizeEvent(self, event: Any) -> None:
         super().resizeEvent(event)
         self._reposition_overlays()
 
-    def play_video(self, file_path):
+    def play_video(self, file_path: str) -> None:
         """Starts the playback process (caching if enabled)."""
         logger.info(f"Request to play video: {file_path}")
         self.setFocus()
@@ -497,7 +498,7 @@ class VideoPlayerWidget(QWidget):
             logger.info("Caching is disabled, playing directly")
             self._load_and_play(file_path)
 
-    def _start_caching(self, file_path):
+    def _start_caching(self, file_path: str) -> None:
         self.progress_overlay.show()
         self.progress_overlay.raise_()
         self.progress_bar.setValue(0)
@@ -509,25 +510,26 @@ class VideoPlayerWidget(QWidget):
         dest_path = cache_dir / Path(file_path).name
         self.cached_file_path = str(dest_path)
 
-        self.cache_worker = CacheWorker(file_path, dest_path)
+        self.cache_worker = CacheWorker(file_path, str(dest_path))
         self.cache_worker.progress.connect(self.progress_bar.setValue)
         self.cache_worker.finished.connect(self._on_caching_finished)
         self.cache_worker.error.connect(self._on_caching_error)
         self.cache_worker.start()
 
     @Slot(str)
-    def _on_caching_finished(self, cached_path):
+    def _on_caching_finished(self, cached_path: str) -> None:
         self.progress_overlay.hide()
         self._load_and_play(cached_path)
 
     @Slot(str)
-    def _on_caching_error(self, error_msg):
+    def _on_caching_error(self, error_msg: str) -> None:
         self.progress_overlay.hide()
         logger.error(f"Caching error: {error_msg}")
         # Fallback to direct playback
-        self._load_and_play(self.current_media_path)
+        if self.current_media_path:
+            self._load_and_play(self.current_media_path)
 
-    def _load_and_play(self, file_path):
+    def _load_and_play(self, file_path: str) -> None:
         if not vlc or not self.instance:
             error_msg = "VLC library could not be loaded."
             if sys.platform == "darwin":
@@ -569,7 +571,7 @@ class VideoPlayerWidget(QWidget):
         # Wait a bit for tracks to be available
         QTimer.singleShot(1000, self._refresh_tracks)
 
-    def _refresh_tracks(self):
+    def _refresh_tracks(self) -> None:
         # Audio tracks
         self.audio_combo.blockSignals(True)
         self.audio_combo.clear()
@@ -600,19 +602,19 @@ class VideoPlayerWidget(QWidget):
             self.subtitle_combo.setCurrentIndex(idx)
         self.subtitle_combo.blockSignals(False)
 
-    def change_audio_track(self, index):
+    def change_audio_track(self, index: int) -> None:
         track_id = self.audio_combo.itemData(index)
         if track_id is not None:
             logger.info(f"Changing audio track to ID: {track_id}")
             self.mediaplayer.audio_set_track(track_id)
 
-    def change_subtitle_track(self, index):
+    def change_subtitle_track(self, index: int) -> None:
         track_id = self.subtitle_combo.itemData(index)
         if track_id is not None:
             logger.info(f"Changing subtitle track to ID: {track_id}")
             self.mediaplayer.video_set_spu(track_id)
 
-    def play_pause(self):
+    def play_pause(self) -> None:
         if self.mediaplayer.is_playing():
             self.mediaplayer.pause()
             self.play_button.setText("Play")
@@ -622,7 +624,7 @@ class VideoPlayerWidget(QWidget):
             self.play_button.setText("Pause")
             self.fs_pause_button.setText("Pause")
 
-    def stop(self):
+    def stop(self) -> None:
         logger.info("Stopping playback")
         if self.window().isFullScreen():
             self.toggle_fullscreen()
@@ -635,22 +637,22 @@ class VideoPlayerWidget(QWidget):
         self.time_label.setText("00:00 / 00:00")
         self._cleanup_cache()
 
-    def _on_stop_clicked(self):
+    def _on_stop_clicked(self) -> None:
         """Called when user clicks the stop button."""
         self.stop()
         self.back_requested.emit()
 
-    def _on_playback_finished(self, event):
+    def _on_playback_finished(self, event: Any) -> None:
         """Called by VLC thread when video ends."""
         self._playback_finished_signal.emit()
 
     @Slot()
-    def _handle_playback_finished(self):
+    def _handle_playback_finished(self) -> None:
         """Handles the end of playback on the UI thread."""
         self.stop()
         self.back_requested.emit()
 
-    def set_volume(self, volume):
+    def set_volume(self, volume: int) -> None:
         if self.mediaplayer:
             self.mediaplayer.audio_set_volume(volume)
 
@@ -667,17 +669,17 @@ class VideoPlayerWidget(QWidget):
             self.is_muted = False
             self._update_mute_ui()
 
-    def increase_volume(self):
+    def increase_volume(self) -> None:
         new_vol = min(self.volume_slider.value() + 5, 200)
         self.set_volume(new_vol)
         self._show_volume_osd(new_vol)
 
-    def decrease_volume(self):
+    def decrease_volume(self) -> None:
         new_vol = max(self.volume_slider.value() - 5, 0)
         self.set_volume(new_vol)
         self._show_volume_osd(new_vol)
 
-    def toggle_mute(self):
+    def toggle_mute(self) -> None:
         if self.is_muted:
             self.is_muted = False
             self.set_volume(self.previous_volume)
@@ -690,11 +692,11 @@ class VideoPlayerWidget(QWidget):
             0 if self.is_muted else self.volume_slider.value(), muted=self.is_muted
         )
 
-    def _update_mute_ui(self):
+    def _update_mute_ui(self) -> None:
         text = "Unmute" if self.is_muted else "Mute"
         self.mute_button.setText(text)
 
-    def _show_volume_osd(self, volume, muted=False):
+    def _show_volume_osd(self, volume: int, muted: bool = False) -> None:
         if muted:
             self.osd_label.setText("Muted")
         else:
@@ -704,19 +706,19 @@ class VideoPlayerWidget(QWidget):
         self.osd_label.show()
         self.osd_timer.start()
 
-    def skip_forward(self, seconds):
+    def skip_forward(self, seconds: int) -> None:
         if self.mediaplayer:
             curr_time = self.mediaplayer.get_time()
             self.mediaplayer.set_time(curr_time + (seconds * 1000))
             self._show_osd(f"Skip Forward {seconds}s")
 
-    def skip_backward(self, seconds):
+    def skip_backward(self, seconds: int) -> None:
         if self.mediaplayer:
             curr_time = self.mediaplayer.get_time()
             self.mediaplayer.set_time(max(0, curr_time - (seconds * 1000)))
             self._show_osd(f"Skip Backward {seconds}s")
 
-    def toggle_fast_forward(self):
+    def toggle_fast_forward(self) -> None:
         if not self.mediaplayer:
             return
 
@@ -733,17 +735,17 @@ class VideoPlayerWidget(QWidget):
         self.rate_button.setText(text)
         self._show_osd(f"Playback Speed: {text}")
 
-    def _show_osd(self, text):
+    def _show_osd(self, text: str) -> None:
         self.osd_label.setText(text)
         self._reposition_overlays()
         self.osd_label.show()
         self.osd_label.raise_()
         self.osd_timer.start()
 
-    def set_position(self, position):
+    def set_position(self, position: int) -> None:
         self.mediaplayer.set_position(position / 1000.0)
 
-    def toggle_stats(self):
+    def toggle_stats(self) -> None:
         if self.stats_overlay.isHidden():
             self.stats_overlay.show()
             self.stats_overlay.raise_()
@@ -753,7 +755,7 @@ class VideoPlayerWidget(QWidget):
             self.stats_overlay.hide()
             self._show_osd("Playback Stats: OFF")
 
-    def _update_stats(self):
+    def _update_stats(self) -> None:
         if not self.mediaplayer or self.stats_overlay.isHidden():
             return
 
@@ -788,7 +790,7 @@ class VideoPlayerWidget(QWidget):
             self.stats_label.setText(text)
             self.stats_overlay.adjustSize()
 
-    def update_ui(self):
+    def update_ui(self) -> None:
         if not self.mediaplayer.get_media():
             return
 
@@ -818,12 +820,14 @@ class VideoPlayerWidget(QWidget):
             ):
                 self._mark_as_watched()
 
-    def _format_time(self, seconds):
-        mins = seconds // 60
-        secs = seconds % 60
-        return f"{mins:02d}:{secs:02d}"
+    def _format_time(self, seconds: int) -> str:
+        m, s = divmod(seconds, 60)
+        h, m = divmod(m, 60)
+        if h > 0:
+            return f"{h:02d}:{m:02d}:{s:02d}"
+        return f"{m:02d}:{s:02d}"
 
-    def _mark_as_watched(self):
+    def _mark_as_watched(self) -> None:
         if self.current_media_path:
             logger.info(
                 f"Marking as watched (90% threshold reached): {self.current_media_path}"
@@ -832,7 +836,7 @@ class VideoPlayerWidget(QWidget):
             self.is_watched_marked = True
             self.watched_marked.emit(self.current_media_path)
 
-    def _cleanup_cache(self):
+    def _cleanup_cache(self) -> None:
         if self.cached_file_path and os.path.exists(self.cached_file_path):
             try:
                 os.remove(self.cached_file_path)
@@ -841,10 +845,10 @@ class VideoPlayerWidget(QWidget):
             except Exception as e:
                 logger.error(f"Error cleaning up cache: {e}")
 
-    def on_back_clicked(self):
+    def on_back_clicked(self) -> None:
         self.stop()
         self.back_requested.emit()
 
-    def closeEvent(self, event):
+    def closeEvent(self, event: Any) -> None:
         self.stop()
         super().closeEvent(event)

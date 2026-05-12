@@ -8,7 +8,7 @@ sys.modules["ctypes"] = mock_ctypes
 from lan_streamer.wakelock import WakeLock  # noqa: E402
 
 
-def test_wakelock_linux_gdbus():
+def test_wakelock_linux_gdbus() -> None:
     wakelock = WakeLock()
     with patch("sys.platform", "linux"):
         with patch("subprocess.check_output") as mock_check:
@@ -24,7 +24,7 @@ def test_wakelock_linux_gdbus():
                 mock_run.assert_called()
 
 
-def test_wakelock_windows():
+def test_wakelock_windows() -> None:
     wakelock = WakeLock()
     with patch("sys.platform", "win32"):
         # Reset mock to ensure a clean state
@@ -43,7 +43,7 @@ def test_wakelock_windows():
         )
 
 
-def test_wakelock_macos():
+def test_wakelock_macos() -> None:
     wakelock = WakeLock()
     with patch("sys.platform", "darwin"):
         with patch("subprocess.Popen") as mock_popen:

@@ -6,7 +6,7 @@ from lan_streamer.config import config
 
 
 @pytest.fixture
-def tmdb(tmp_path):
+def tmdb(tmp_path) -> None:
     with (
         patch.object(config, "tmdb_api_key", "test-tmdb-key"),
         patch("lan_streamer.tmdb.CACHE_DIR", tmp_path),
@@ -20,11 +20,11 @@ def tmdb(tmp_path):
 # ------------------------------------------------------------------
 
 
-def test_tmdb_is_configured(tmdb):
+def test_tmdb_is_configured(tmdb) -> None:
     assert tmdb.is_configured() is True
 
 
-def test_tmdb_not_configured():
+def test_tmdb_not_configured() -> None:
     client = TMDBClient()
     config.tmdb_api_key = ""
     assert client.is_configured() is False
@@ -42,13 +42,13 @@ def test_tmdb_not_configured():
 # ------------------------------------------------------------------
 
 
-def test_params_with_key(tmdb):
+def test_params_with_key(tmdb) -> None:
     params = tmdb._params({"query": "test"})
     assert params["api_key"] == "test-tmdb-key"
     assert params["query"] == "test"
 
 
-def test_params_without_key():
+def test_params_without_key() -> None:
     with patch.object(config, "tmdb_api_key", ""):
         client = TMDBClient()
         params = client._params({"page": 1})
@@ -61,7 +61,7 @@ def test_params_without_key():
 # ------------------------------------------------------------------
 
 
-def test_validate_credentials_success(tmdb):
+def test_validate_credentials_success(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.raise_for_status.return_value = None
     tmdb.session.get = MagicMock(return_value=mock_resp)
@@ -71,13 +71,13 @@ def test_validate_credentials_success(tmdb):
     assert "successful" in msg
 
 
-def test_validate_credentials_empty(tmdb):
+def test_validate_credentials_empty(tmdb) -> None:
     ok, msg = tmdb.validate_credentials("")
     assert ok is False
     assert "required" in msg
 
 
-def test_validate_credentials_401(tmdb):
+def test_validate_credentials_401(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.status_code = 401
     tmdb.session.get = MagicMock(
@@ -88,7 +88,7 @@ def test_validate_credentials_401(tmdb):
     assert "Unauthorized" in msg
 
 
-def test_validate_credentials_http_error(tmdb):
+def test_validate_credentials_http_error(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.status_code = 500
     tmdb.session.get = MagicMock(
@@ -99,7 +99,7 @@ def test_validate_credentials_http_error(tmdb):
     assert "HTTP Error" in msg
 
 
-def test_validate_credentials_generic_error(tmdb):
+def test_validate_credentials_generic_error(tmdb) -> None:
     tmdb.session.get = MagicMock(side_effect=Exception("Boom"))
     ok, msg = tmdb.validate_credentials("key")
     assert ok is False
@@ -111,7 +111,7 @@ def test_validate_credentials_generic_error(tmdb):
 # ------------------------------------------------------------------
 
 
-def test_do_search_success(tmdb):
+def test_do_search_success(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"results": [{"id": 1, "name": "The Office"}]}
     tmdb.session.get = MagicMock(return_value=mock_resp)
@@ -121,13 +121,13 @@ def test_do_search_success(tmdb):
     assert results[0]["id"] == 1
 
 
-def test_do_search_error(tmdb):
+def test_do_search_error(tmdb) -> None:
     tmdb.session.get = MagicMock(side_effect=Exception("network error"))
     results = tmdb._do_search("broken query")
     assert results == []
 
 
-def test_search_series_success(tmdb):
+def test_search_series_success(tmdb) -> None:
     tmdb._do_search = MagicMock(
         return_value=[
             {"id": 1234, "name": "The Office", "first_air_date": "2005-03-24"}
@@ -138,13 +138,13 @@ def test_search_series_success(tmdb):
     assert result["id"] == 1234
 
 
-def test_search_series_no_match(tmdb):
+def test_search_series_no_match(tmdb) -> None:
     tmdb._do_search = MagicMock(return_value=[])
     result = tmdb.search_series("NonExistentShowXYZ")
     assert result is None
 
 
-def test_search_series_full(tmdb):
+def test_search_series_full(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {
         "results": [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}]
@@ -154,7 +154,7 @@ def test_search_series_full(tmdb):
     assert len(results) == 2
 
 
-def test_search_series_full_not_configured():
+def test_search_series_full_not_configured() -> None:
     with patch.object(config, "tmdb_api_key", ""):
         client = TMDBClient()
         assert client.search_series_full("anything") == []
@@ -165,24 +165,24 @@ def test_search_series_full_not_configured():
 # ------------------------------------------------------------------
 
 
-def test_clean_name(tmdb):
+def test_clean_name(tmdb) -> None:
     assert tmdb._clean_name("The.Office.S01.720p") == "The Office"
     assert tmdb._clean_name("Breaking Bad (2008)") == "Breaking Bad"
     assert tmdb._clean_name("Show.Name.2024.1080p.HEVC") == "Show Name"
 
 
-def test_is_similar(tmdb):
+def test_is_similar(tmdb) -> None:
     assert tmdb._is_similar("The Office", "The Office (US)") is True
     assert tmdb._is_similar("Breaking Bad", "Better Call Saul") is False
     assert tmdb._is_similar("Marvel She-Hulk", "She-Hulk") is True
 
 
-def test_is_similar_empty_strings(tmdb):
+def test_is_similar_empty_strings(tmdb) -> None:
     assert tmdb._is_similar("", "anything") is False
     assert tmdb._is_similar("anything", "") is False
 
 
-def test_is_similar_word_overlap(tmdb):
+def test_is_similar_word_overlap(tmdb) -> None:
     assert tmdb._is_similar("Doctor Strange Adventures", "Strange") is True
 
 
@@ -191,7 +191,7 @@ def test_is_similar_word_overlap(tmdb):
 # ------------------------------------------------------------------
 
 
-def test_get_series_by_id(tmdb):
+def test_get_series_by_id(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"id": 1234, "name": "The Office", "seasons": []}
     tmdb.session.get = MagicMock(return_value=mock_resp)
@@ -200,7 +200,7 @@ def test_get_series_by_id(tmdb):
     assert result["id"] == 1234
 
 
-def test_get_series_by_id_error(tmdb):
+def test_get_series_by_id_error(tmdb) -> None:
     tmdb.session.get = MagicMock(side_effect=Exception("network error"))
     assert tmdb.get_series_by_id(1) is None
 
@@ -210,7 +210,7 @@ def test_get_series_by_id_error(tmdb):
 # ------------------------------------------------------------------
 
 
-def test_get_seasons(tmdb):
+def test_get_seasons(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {
         "id": 1234,
@@ -226,7 +226,7 @@ def test_get_seasons(tmdb):
     assert all(s["season_number"] > 0 for s in seasons)
 
 
-def test_get_seasons_only_specials(tmdb):
+def test_get_seasons_only_specials(tmdb) -> None:
     """Falls back to all seasons if only specials exist."""
     mock_resp = MagicMock()
     mock_resp.json.return_value = {
@@ -237,7 +237,7 @@ def test_get_seasons_only_specials(tmdb):
     assert len(seasons) == 1
 
 
-def test_get_seasons_error(tmdb):
+def test_get_seasons_error(tmdb) -> None:
     tmdb.session.get = MagicMock(side_effect=Exception("error"))
     assert tmdb.get_seasons(1) == []
 
@@ -247,7 +247,7 @@ def test_get_seasons_error(tmdb):
 # ------------------------------------------------------------------
 
 
-def test_get_episodes(tmdb):
+def test_get_episodes(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {
         "episodes": [
@@ -261,7 +261,7 @@ def test_get_episodes(tmdb):
     assert episodes[0]["episode_number"] == 1
 
 
-def test_get_episodes_error(tmdb):
+def test_get_episodes_error(tmdb) -> None:
     tmdb.session.get = MagicMock(side_effect=Exception("error"))
     assert tmdb.get_episodes(1, 1) == []
 
@@ -271,7 +271,7 @@ def test_get_episodes_error(tmdb):
 # ------------------------------------------------------------------
 
 
-def test_download_image_full_url(tmdb, tmp_path):
+def test_download_image_full_url(tmdb, tmp_path) -> None:
 
     with patch("lan_streamer.tmdb.CACHE_DIR", tmp_path):
         mock_resp = MagicMock()
@@ -294,7 +294,7 @@ def test_download_image_full_url(tmdb, tmp_path):
         tmdb.session.get.assert_not_called()
 
 
-def test_download_image_bare_path(tmdb, tmp_path):
+def test_download_image_bare_path(tmdb, tmp_path) -> None:
     """TMDB returns /abc.jpg — client should prepend the CDN base URL."""
 
     with patch("lan_streamer.tmdb.CACHE_DIR", tmp_path):
@@ -310,12 +310,12 @@ def test_download_image_bare_path(tmdb, tmp_path):
         assert called_url.startswith("https://image.tmdb.org")
 
 
-def test_download_image_empty(tmdb):
+def test_download_image_empty(tmdb) -> None:
     assert tmdb.download_image("", "key") == ""
     assert tmdb.download_image("/abc.jpg", "") == ""
 
 
-def test_download_image_error(tmdb, tmp_path):
+def test_download_image_error(tmdb, tmp_path) -> None:
 
     with patch("lan_streamer.tmdb.CACHE_DIR", tmp_path):
         tmdb.session.get = MagicMock(side_effect=Exception("Download failed"))
@@ -328,13 +328,13 @@ def test_download_image_error(tmdb, tmp_path):
 # ------------------------------------------------------------------
 
 
-def test_search_series_two_word_fallback(tmdb):
+def test_search_series_two_word_fallback(tmdb) -> None:
     with patch.object(config, "tmdb_api_key", "test-key"):
         match_result = [
             {"id": 1, "name": "Show Runners", "first_air_date": "2020-01-01"}
         ]
 
-        def mock_do_search(query):
+        def mock_do_search(query) -> None:
             if "Show Runners" in query:
                 return match_result
             return []
@@ -346,11 +346,11 @@ def test_search_series_two_word_fallback(tmdb):
         assert result is not None
 
 
-def test_search_series_first_word_fallback(tmdb):
+def test_search_series_first_word_fallback(tmdb) -> None:
     with patch.object(config, "tmdb_api_key", "test-key"):
         match_result = [{"id": 2, "name": "Fargo", "first_air_date": "2014-04-15"}]
 
-        def mock_do_search(query):
+        def mock_do_search(query) -> None:
             if query == "Fargo":
                 return match_result
             return []
@@ -362,14 +362,14 @@ def test_search_series_first_word_fallback(tmdb):
         assert result is not None
 
 
-def test_search_series_all_fallbacks_fail(tmdb):
+def test_search_series_all_fallbacks_fail(tmdb) -> None:
     with patch.object(config, "tmdb_api_key", "test-key"):
         tmdb._do_search = MagicMock(return_value=[])
         result = tmdb.search_series("Totally Unknown Show Name 2025")
         assert result is None
 
 
-def test_is_similar_ratio_branch(tmdb):
+def test_is_similar_ratio_branch(tmdb) -> None:
     """Test the SequenceMatcher ratio branch (not substring, not word-overlap)."""
     # "Breaking Bad" vs "Breking Bdd" — not substring, not word overlap, but ratio > 0.7
     result = tmdb._is_similar("Breaking Bad", "Breking Bdd")
@@ -377,7 +377,7 @@ def test_is_similar_ratio_branch(tmdb):
     assert isinstance(result, bool)
 
 
-def test_search_series_two_word_returns_match(tmdb):
+def test_search_series_two_word_returns_match(tmdb) -> None:
     """Hit lines 160-165: two-word fallback finds a match and returns it."""
     with patch.object(config, "tmdb_api_key", "test-key"):
         match_result = [
@@ -386,7 +386,7 @@ def test_search_series_two_word_returns_match(tmdb):
 
         call_count = {"n": 0}
 
-        def mock_do_search(query):
+        def mock_do_search(query) -> None:
             call_count["n"] += 1
             # First 2 calls (main term attempts) fail; 3rd (two-word) succeeds
             if call_count["n"] >= 3:
@@ -402,18 +402,18 @@ def test_search_series_two_word_returns_match(tmdb):
         assert result["id"] == 1
 
 
-def test_tmdb_is_similar_word_overlap(tmdb):
+def test_tmdb_is_similar_word_overlap(tmdb) -> None:
     # Hit tmdb.py line 111
     # Need words > 3 and not in common list
     # "Breaking Bad" vs "Bad Breaking" - should match via word overlap
     assert tmdb._is_similar("Breaking Bad", "Bad Breaking")
 
 
-def test_tmdb_search_fallback_branches(tmdb):
+def test_tmdb_search_fallback_branches(tmdb) -> None:
     # Hit tmdb.py lines 160-165 (two word fallback)
     call_count = {"n": 0}
 
-    def mock_do_search(query):
+    def mock_do_search(query) -> None:
         call_count["n"] += 1
         if query == "Show Name":  # The two-word fallback
             return [{"id": 1, "name": "Show Name Extra"}]
@@ -428,9 +428,9 @@ def test_tmdb_search_fallback_branches(tmdb):
         assert res["id"] == 1
 
 
-def test_tmdb_search_first_word_fallback(tmdb):
+def test_tmdb_search_first_word_fallback(tmdb) -> None:
     # Hit tmdb.py lines 168-178
-    def mock_do_search(query):
+    def mock_do_search(query) -> None:
         # Return result only for the specific fallback term
         if query == "Breaking":
             return [{"id": 1, "name": "Breaking Bad"}]

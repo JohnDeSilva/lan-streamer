@@ -6,7 +6,7 @@ CONFIG_FILE = Path.home() / ".config" / "lan-streamer" / "config.json"
 
 
 class Config:
-    def __init__(self):
+    def __init__(self) -> None:
         self.libraries: Dict[str, List[str]] = {}
         self.jellyfin_url: str = ""
         self.jellyfin_api_key: str = ""
@@ -32,7 +32,7 @@ class Config:
         self.player_overlay_color: str = "white"
         self.load()
 
-    def load(self):
+    def load(self) -> None:
         if CONFIG_FILE.exists():
             try:
                 with open(CONFIG_FILE, "r") as f:
@@ -95,7 +95,7 @@ class Config:
         else:
             self.libraries = {}
 
-    def save(self):
+    def save(self) -> None:
         try:
             CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
         except Exception as exc:
@@ -129,22 +129,22 @@ class Config:
         except Exception as e:
             print(f"Error saving config: {e}")
 
-    def add_library(self, name: str):
+    def add_library(self, name: str) -> None:
         if name not in self.libraries:
             self.libraries[name] = []
             self.save()
 
-    def remove_library(self, name: str):
+    def remove_library(self, name: str) -> None:
         if name in self.libraries:
             del self.libraries[name]
             self.save()
 
-    def add_root_dir(self, library_name: str, path: str):
+    def add_root_dir(self, library_name: str, path: str) -> None:
         if library_name in self.libraries and path not in self.libraries[library_name]:
             self.libraries[library_name].append(path)
             self.save()
 
-    def remove_root_dir(self, library_name: str, path: str):
+    def remove_root_dir(self, library_name: str, path: str) -> None:
         if library_name in self.libraries and path in self.libraries[library_name]:
             self.libraries[library_name].remove(path)
             self.save()

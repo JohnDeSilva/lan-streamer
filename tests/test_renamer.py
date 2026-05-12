@@ -7,7 +7,7 @@ from lan_streamer.renamer import (
 )
 
 
-def test_sanitize_filename():
+def test_sanitize_filename() -> None:
     assert sanitize_filename("Show: Special? Title*") == "Show Special Title"
     assert sanitize_filename("File/Path\\Illegal") == "FilePathIllegal"
     assert sanitize_filename("  Leading Trailing  ") == "Leading Trailing"
@@ -21,7 +21,7 @@ def test_sanitize_filename():
     assert sanitize_filename("Control\x00Chars") == "ControlChars"
 
 
-def test_is_safe_filename():
+def test_is_safe_filename() -> None:
     # Safe names
     assert is_safe_filename("Simple Name.mkv")[0] is True
     assert is_safe_filename("Show - S01E01.mp4")[0] is True
@@ -43,7 +43,7 @@ def test_is_safe_filename():
     assert is_safe_filename("File?Name.mkv")[0] is False
 
 
-def test_format_name():
+def test_format_name() -> None:
     data = {
         "SeriesTitle": "The Great Show",
         "SeasonNumber": 1,
@@ -65,7 +65,7 @@ def test_format_name():
     assert format_name(template, data) == "show.s01e05.hdtv [Fixed]"
 
 
-def test_get_rename_preview():
+def test_get_rename_preview() -> None:
     series_data = {
         "metadata": {"tmdb_name": "Breaking Bad"},
         "seasons": {
@@ -90,7 +90,7 @@ def test_get_rename_preview():
     assert previews[0]["new_path"].endswith("Breaking Bad - S01E01.mkv")
 
 
-def test_perform_rename(tmp_path):
+def test_perform_rename(tmp_path) -> None:
     # Setup mock file system
     video_file = tmp_path / "old.mkv"
     video_file.touch()
@@ -106,7 +106,7 @@ def test_perform_rename(tmp_path):
     # Test callback
     updated_paths = []
 
-    def db_callback(old, new):
+    def db_callback(old, new) -> None:
         updated_paths.append((old, new))
 
     results = perform_rename(previews, db_callback=db_callback)
@@ -118,7 +118,7 @@ def test_perform_rename(tmp_path):
     assert updated_paths[0] == (str(video_file), str(tmp_path / "new.mkv"))
 
 
-def test_perform_rename_errors(tmp_path):
+def test_perform_rename_errors(tmp_path) -> None:
     # Destination already exists
     old = tmp_path / "old.mkv"
     old.touch()
@@ -153,7 +153,7 @@ def test_perform_rename_errors(tmp_path):
     assert "Reserved name" in results[0]["error"]
 
 
-def test_format_name_errors():
+def test_format_name_errors() -> None:
     # Invalid token
     assert format_name("{InvalidToken}", {"SeriesTitle": "Title"}) == "{InvalidToken}"
     # Empty template
@@ -169,7 +169,7 @@ def test_format_name_errors():
     assert format_name("{UnknownToken}", {"SeriesTitle": "Title"}) == "{UnknownToken}"
 
 
-def test_get_rename_preview_missing_data():
+def test_get_rename_preview_missing_data() -> None:
     series_data = {
         "metadata": {},
         "seasons": {
@@ -190,7 +190,7 @@ def test_get_rename_preview_missing_data():
     assert "Unknown Episode" in previews[0]["new_name"]
 
 
-def test_perform_rename_db_callback_error(tmp_path):
+def test_perform_rename_db_callback_error(tmp_path) -> None:
     old = tmp_path / "old.mkv"
     old.touch()
     previews = [
@@ -201,14 +201,14 @@ def test_perform_rename_db_callback_error(tmp_path):
         }
     ]
 
-    def bad_callback(o, n):
+    def bad_callback(o, n) -> None:
         raise Exception("DB Error")
 
     results = perform_rename(previews, db_callback=bad_callback)
     assert results[0]["success"]  # Still success for file rename
 
 
-def test_perform_rename_same_path(tmp_path):
+def test_perform_rename_same_path(tmp_path) -> None:
     old = tmp_path / "old.mkv"
     old.touch()
     previews = [{"old_path": str(old), "new_name": "old.mkv", "new_path": str(old)}]
@@ -217,7 +217,7 @@ def test_perform_rename_same_path(tmp_path):
     assert results[0]["error"] == "No change"
 
 
-def test_perform_rename_exception(tmp_path, monkeypatch):
+def test_perform_rename_exception(tmp_path, monkeypatch) -> None:
     old = tmp_path / "old.mkv"
     old.touch()
     previews = [
@@ -228,7 +228,7 @@ def test_perform_rename_exception(tmp_path, monkeypatch):
         }
     ]
 
-    def mock_rename(*args):
+    def mock_rename(*args) -> None:
         raise OSError("Rename failed")
 
     import pathlib
@@ -240,7 +240,7 @@ def test_perform_rename_exception(tmp_path, monkeypatch):
     assert "Rename failed" in results[0]["error"]
 
 
-def test_get_rename_preview_with_subtitles(tmp_path):
+def test_get_rename_preview_with_subtitles(tmp_path) -> None:
     series_data = {
         "metadata": {"tmdb_name": "Show"},
         "seasons": {

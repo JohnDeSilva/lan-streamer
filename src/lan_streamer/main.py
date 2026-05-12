@@ -12,7 +12,7 @@ from .backend import BackendBridge
 from .player_widget import VideoPlayerWidget
 
 
-def setup_dark_theme(application_instance: QApplication):
+def setup_dark_theme(application_instance: QApplication) -> None:
     application_instance.setStyle("Fusion")
 
     dark_palette = QPalette()
@@ -37,7 +37,7 @@ def setup_dark_theme(application_instance: QApplication):
     )
 
 
-def main():
+def main() -> None:
     log_formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
@@ -48,7 +48,12 @@ def main():
     console_handler.setFormatter(log_formatter)
     root_logger.addHandler(console_handler)
 
-    def add_file_handler(logger_object, filename, formatter, info_message=None):
+    def add_file_handler(
+        logger_object: logging.Logger,
+        filename: str,
+        formatter: logging.Formatter,
+        info_message: str | None = None,
+    ) -> None:
         try:
             from logging.handlers import TimedRotatingFileHandler
 
@@ -143,13 +148,13 @@ def main():
     stacked_layout.addWidget(qml_view)
     stacked_layout.addWidget(player_view)
 
-    def on_playback_requested(file_path: str):
+    def on_playback_requested(file_path: str) -> None:
         player_view.play_video(file_path)
         stacked_layout.setCurrentIndex(1)
 
     backend_bridge.playbackRequested.connect(on_playback_requested)
 
-    def on_back_requested():
+    def on_back_requested() -> None:
         stacked_layout.setCurrentIndex(0)
 
     player_view.back_requested.connect(on_back_requested)

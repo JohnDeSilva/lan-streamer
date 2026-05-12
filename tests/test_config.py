@@ -5,13 +5,13 @@ from lan_streamer.config import Config
 
 
 @pytest.fixture
-def mock_config_file(tmp_path):
+def mock_config_file(tmp_path) -> None:
     test_config_path = tmp_path / "config.json"
     with patch("lan_streamer.config.CONFIG_FILE", test_config_path):
         yield test_config_path
 
 
-def test_config_initialization(mock_config_file):
+def test_config_initialization(mock_config_file) -> None:
     config = Config()
     assert config.libraries == {}
     assert config.jellyfin_url == ""
@@ -22,7 +22,7 @@ def test_config_initialization(mock_config_file):
     assert config.sort_mode == "Alphabetical"
 
 
-def test_config_load_existing(mock_config_file):
+def test_config_load_existing(mock_config_file) -> None:
     mock_config_file.parent.mkdir(parents=True, exist_ok=True)
     with open(mock_config_file, "w") as f:
         json.dump(
@@ -48,7 +48,7 @@ def test_config_load_existing(mock_config_file):
     assert config.sort_mode == "Date Added (Newest)"
 
 
-def test_config_migrate_old_format(mock_config_file):
+def test_config_migrate_old_format(mock_config_file) -> None:
     mock_config_file.parent.mkdir(parents=True, exist_ok=True)
     with open(mock_config_file, "w") as f:
         json.dump({"root_dirs": ["/old/path"]}, f)
@@ -58,7 +58,7 @@ def test_config_migrate_old_format(mock_config_file):
     assert config.jellyfin_url == ""
 
 
-def test_config_backwards_compat_tvdb_api_key(mock_config_file):
+def test_config_backwards_compat_tvdb_api_key(mock_config_file) -> None:
     """Old config files using tvdb_api_key should migrate to tmdb_api_key."""
     mock_config_file.parent.mkdir(parents=True, exist_ok=True)
     with open(mock_config_file, "w") as f:
@@ -68,7 +68,7 @@ def test_config_backwards_compat_tvdb_api_key(mock_config_file):
     assert config.tmdb_api_key == "old_tvdb_key"
 
 
-def test_config_add_remove_library(mock_config_file):
+def test_config_add_remove_library(mock_config_file) -> None:
     config = Config()
     config.add_library("NewLib")
     assert "NewLib" in config.libraries
@@ -83,10 +83,10 @@ def test_config_add_remove_library(mock_config_file):
     assert "NewLib" not in config.libraries
 
 
-def test_config_save_error(mock_config_file):
+def test_config_save_error(mock_config_file) -> None:
     config = Config()
 
-    def mock_open(*args, **kwargs):
+    def mock_open(*args, **kwargs) -> None:
         raise OSError("Permission denied")
 
     with patch("builtins.open", mock_open):
@@ -94,10 +94,10 @@ def test_config_save_error(mock_config_file):
         config.save()
 
 
-def test_config_load_error(mock_config_file):
+def test_config_load_error(mock_config_file) -> None:
     mock_config_file.touch()
 
-    def mock_open(*args, **kwargs):
+    def mock_open(*args, **kwargs) -> None:
         raise OSError("Permission denied")
 
     with patch("builtins.open", mock_open):
@@ -105,7 +105,7 @@ def test_config_load_error(mock_config_file):
         assert config.libraries == {}
 
 
-def test_config_load_no_keys(mock_config_file):
+def test_config_load_no_keys(mock_config_file) -> None:
     # Test line 31 of config.py
     with open(mock_config_file, "w") as f:
         json.dump({"other": "data"}, f)

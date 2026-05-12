@@ -33,7 +33,7 @@ def _parse_season_number(season_name: str) -> int | None:
     return None
 
 
-def clean_series_data(series_data: Dict[str, Any]) -> Dict[str, Any]:
+def clean_series_data(series_data: Dict[str, Any]) -> Dict[str, Any] | None:
     """Cleans up temporary tmdb variables from series data."""
     clean_seasons = {}
     for season, season_data in series_data.get("seasons", {}).items():
@@ -53,8 +53,8 @@ def clean_series_data(series_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def scan_directories(
     root_directories: List[str],
-    existing_library: Dict[str, Any] = None,
-    jellyfin_data: Dict[str, Any] = None,
+    existing_library: Dict[str, Any] | None = None,
+    jellyfin_data: Dict[str, Any] | None = None,
     callback: Any = None,
     force_refresh: bool = False,
     cleanup: bool = False,
@@ -63,7 +63,7 @@ def scan_directories(
     Scans root directories and matches with TMDB to pull metadata.
     Watch history (watched status) is handled separately via Jellyfin sync.
     """
-    library = {}
+    library: Dict[str, Any] = {}
     existing_library = existing_library or {}
 
     logger.info(f"Starting directory scan. Root directories: {root_directories}")
@@ -215,10 +215,10 @@ def scan_directories(
 
 def scan_series(
     series_directory: Path,
-    tmdb_series: Dict[str, Any] = None,
-    jellyfin_data: Dict[str, dict] = None,
-    manual_jellyfin_id: str = None,
-    existing_series_data: Dict[str, Any] = None,
+    tmdb_series: Dict[str, Any] | None = None,
+    jellyfin_data: Dict[str, dict] | None = None,
+    manual_jellyfin_id: str | None = None,
+    existing_series_data: Dict[str, Any] | None = None,
     force_refresh: bool = False,
     cleanup: bool = False,
 ) -> Dict[str, Any]:
@@ -306,7 +306,7 @@ def scan_series(
                 "tmdb_series_map", {}
             ).get(tmdb_id, "")
 
-    series_data = {
+    series_data: Dict[str, Any] = {
         "metadata": series_metadata,
         "seasons": {},
         "_tmdb_seasons": tmdb_seasons,
@@ -415,7 +415,7 @@ def scan_series(
                         for tmdb_episode in series_data["seasons"][season_name][
                             "_tmdb_episodes"
                         ]:
-                            tmdb_ep_name = (tmdb_episode.get("name") or "").lower()
+                            tmdb_ep_name = str(tmdb_episode.get("name") or "").lower()
                             if tmdb_ep_name and tmdb_ep_name in lookup_name:
                                 tmdb_episode_identifier = str(
                                     tmdb_episode.get("id", "")
@@ -450,12 +450,12 @@ def scan_series(
                     name_map = jellyfin_data.get("name_map", {})
                     # Try matching by (Series Name, Episode Name)
                     # We use the cleaned TMDB names if available, otherwise file names
-                    lookup_series = (
+                    lookup_series = str(
                         tmdb_series.get("name")
-                        if tmdb_series
+                        if tmdb_series and tmdb_series.get("name")
                         else series_directory.name
                     ).lower()
-                    lookup_episode = (
+                    lookup_episode = str(
                         tmdb_name if tmdb_name else episode_file.stem
                     ).lower()
 

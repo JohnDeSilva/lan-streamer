@@ -4,7 +4,7 @@ from alembic.config import Config
 from alembic import command
 
 
-def test_air_date_migration_with_fake_data(tmp_path):
+def test_air_date_migration_with_fake_data(tmp_path) -> None:
     """
     Robustly test Alembic migration cd94beb4248b -> 8dbcde9fc7de and downgrade
     using simulated real database rows to ensure complete schema compatibility.

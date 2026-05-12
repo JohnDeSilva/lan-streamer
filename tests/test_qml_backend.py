@@ -6,7 +6,7 @@ from lan_streamer.config import config
 
 
 @pytest.fixture
-def backend_environment():
+def backend_environment() -> None:
     mock_database_module = MagicMock()
 
     # Mock loaded library data structure
@@ -48,7 +48,7 @@ def backend_environment():
         yield mock_database_module
 
 
-def test_backend_bridge_initialization(qtbot, backend_environment):
+def test_backend_bridge_initialization(qtbot, backend_environment) -> None:
     backend_bridge = BackendBridge()
 
     assert backend_bridge.statusMessage is not None
@@ -58,7 +58,7 @@ def test_backend_bridge_initialization(qtbot, backend_environment):
     assert backend_bridge.episodeModel is not None
 
 
-def test_status_message_property(qtbot, backend_environment):
+def test_status_message_property(qtbot, backend_environment) -> None:
     backend_bridge = BackendBridge()
 
     with qtbot.waitSignal(backend_bridge.statusMessageChanged, timeout=1000):
@@ -70,7 +70,7 @@ def test_status_message_property(qtbot, backend_environment):
     backend_bridge.statusMessage = "Loading user streams"
 
 
-def test_library_selection_workflow(qtbot, backend_environment):
+def test_library_selection_workflow(qtbot, backend_environment) -> None:
     backend_bridge = BackendBridge()
 
     with qtbot.waitSignal(backend_bridge.seriesModelChanged, timeout=1000):
@@ -81,7 +81,7 @@ def test_library_selection_workflow(qtbot, backend_environment):
     assert series_item.text() == "Cosmos"
 
 
-def test_series_and_season_selection(qtbot, backend_environment):
+def test_series_and_season_selection(qtbot, backend_environment) -> None:
     backend_bridge = BackendBridge()
     backend_bridge.selectLibrary("Main Media")
 
@@ -113,7 +113,7 @@ def test_series_and_season_selection(qtbot, backend_environment):
     assert jellyfin_value == "jellyfin_target_abc"
 
 
-def test_invalid_selection_bounds(backend_environment):
+def test_invalid_selection_bounds(backend_environment) -> None:
     backend_bridge = BackendBridge()
     backend_bridge.selectLibrary("Main Media")
 
@@ -122,7 +122,7 @@ def test_invalid_selection_bounds(backend_environment):
     backend_bridge.selectSeason(99)
 
 
-def test_bulk_mark_episodes_watched(qtbot, backend_environment):
+def test_bulk_mark_episodes_watched(qtbot, backend_environment) -> None:
     backend_bridge = BackendBridge()
     backend_bridge.selectLibrary("Main Media")
     backend_bridge.selectSeries(0)
@@ -143,7 +143,7 @@ def test_bulk_mark_episodes_watched(qtbot, backend_environment):
     assert episode_item_zero.data(backend_bridge.watched_role) is True
 
 
-def test_bulk_mark_episodes_unwatched(qtbot, backend_environment):
+def test_bulk_mark_episodes_unwatched(qtbot, backend_environment) -> None:
     backend_bridge = BackendBridge()
     backend_bridge.selectLibrary("Main Media")
     backend_bridge.selectSeries(0)
@@ -158,7 +158,7 @@ def test_bulk_mark_episodes_unwatched(qtbot, backend_environment):
     assert episode_item_zero.data(backend_bridge.watched_role) is False
 
 
-def test_match_metadata_slot(backend_environment):
+def test_match_metadata_slot(backend_environment) -> None:
     backend_bridge = BackendBridge()
     backend_bridge.selectLibrary("Main Media")
 
@@ -166,7 +166,7 @@ def test_match_metadata_slot(backend_environment):
     assert "Matching metadata for" in backend_bridge.statusMessage
 
 
-def test_play_episode_slot(qtbot, backend_environment):
+def test_play_episode_slot(qtbot, backend_environment) -> None:
     backend_bridge = BackendBridge()
     backend_bridge.selectLibrary("Main Media")
     backend_bridge.selectSeries(0)
@@ -180,7 +180,7 @@ def test_play_episode_slot(qtbot, backend_environment):
     mock_signal_target.assert_called_once_with("/videos/cosmos_s01e01.mkv")
 
 
-def test_scan_worker_execution(backend_environment):
+def test_scan_worker_execution(backend_environment) -> None:
     from lan_streamer.backend import ScanWorker, jellyfin_client
 
     jellyfin_client.is_configured.return_value = True
@@ -201,7 +201,7 @@ def test_scan_worker_execution(backend_environment):
         mock_finished_target.assert_called_once_with({"Scanned Content": {}})
 
 
-def test_scan_worker_error_handling(backend_environment):
+def test_scan_worker_error_handling(backend_environment) -> None:
     from lan_streamer.backend import ScanWorker
 
     with patch(
@@ -217,7 +217,7 @@ def test_scan_worker_error_handling(backend_environment):
         mock_error_target.assert_called_once_with("Scan processing fault")
 
 
-def test_sync_all_worker_execution(backend_environment):
+def test_sync_all_worker_execution(backend_environment) -> None:
     from lan_streamer.backend import SyncAllWorker
 
     with patch("lan_streamer.backend.scan_directories", return_value={}) as mock_scan:
@@ -231,7 +231,7 @@ def test_sync_all_worker_execution(backend_environment):
         mock_finished_target.assert_called_once()
 
 
-def test_sync_all_worker_error_handling(backend_environment):
+def test_sync_all_worker_error_handling(backend_environment) -> None:
     from lan_streamer.backend import SyncAllWorker
 
     with patch(
@@ -247,7 +247,7 @@ def test_sync_all_worker_error_handling(backend_environment):
         mock_error_target.assert_called_once_with("Global sync failed")
 
 
-def test_cleanup_worker_execution(backend_environment):
+def test_cleanup_worker_execution(backend_environment) -> None:
     from lan_streamer.backend import CleanupWorker
 
     backend_environment.cleanup_library.return_value = {"pruned_count": 5}
@@ -263,7 +263,7 @@ def test_cleanup_worker_execution(backend_environment):
     mock_finished_target.assert_called_once_with({"pruned_count": 5})
 
 
-def test_cleanup_worker_error_handling(backend_environment):
+def test_cleanup_worker_error_handling(backend_environment) -> None:
     from lan_streamer.backend import CleanupWorker
 
     backend_environment.cleanup_library.side_effect = Exception("Prune database fault")
@@ -276,7 +276,7 @@ def test_cleanup_worker_error_handling(backend_environment):
     mock_error_target.assert_called_once_with("Prune database fault")
 
 
-def test_jellyfin_pull_worker_execution(backend_environment):
+def test_jellyfin_pull_worker_execution(backend_environment) -> None:
     from lan_streamer.backend import JellyfinPullWorker, jellyfin_client
 
     jellyfin_client.fetch_watched_episodes.return_value = (
@@ -295,7 +295,7 @@ def test_jellyfin_pull_worker_execution(backend_environment):
     mock_finished_target.assert_called_once_with(1)
 
 
-def test_jellyfin_pull_worker_error_handling(backend_environment):
+def test_jellyfin_pull_worker_error_handling(backend_environment) -> None:
     from lan_streamer.backend import JellyfinPullWorker, jellyfin_client
 
     jellyfin_client.fetch_watched_episodes.side_effect = Exception("Network timeout")
@@ -308,7 +308,7 @@ def test_jellyfin_pull_worker_error_handling(backend_environment):
     mock_error_target.assert_called_once_with("Network timeout")
 
 
-def test_jellyfin_push_worker_execution(backend_environment):
+def test_jellyfin_push_worker_execution(backend_environment) -> None:
     from lan_streamer.backend import JellyfinPushWorker, jellyfin_client
 
     backend_environment.get_all_episodes_with_jellyfin_id.return_value = [
@@ -325,7 +325,7 @@ def test_jellyfin_push_worker_execution(backend_environment):
     mock_finished_target.assert_called_once_with(1)
 
 
-def test_jellyfin_push_worker_error_handling(backend_environment):
+def test_jellyfin_push_worker_error_handling(backend_environment) -> None:
     from lan_streamer.backend import JellyfinPushWorker
 
     backend_environment.get_all_episodes_with_jellyfin_id.side_effect = Exception(
@@ -340,7 +340,7 @@ def test_jellyfin_push_worker_error_handling(backend_environment):
     mock_error_target.assert_called_once_with("Database lock error")
 
 
-def test_qml_syntax_and_compilation_safety(qtbot):
+def test_qml_syntax_and_compilation_safety(qtbot) -> None:
     """Verify that main.qml parses and compiles cleanly without duplicate or overridden final properties."""
     from PySide6.QtCore import QUrl
     from PySide6.QtQml import QQmlComponent, QQmlEngine
@@ -359,7 +359,7 @@ def test_qml_syntax_and_compilation_safety(qtbot):
     assert component.isReady(), f"QML compilation failures detected: {errors_list}"
 
 
-def test_backend_bridge_scan_for_new_files(qtbot, backend_environment):
+def test_backend_bridge_scan_for_new_files(qtbot, backend_environment) -> None:
     from lan_streamer.backend import BackendBridge
     from unittest.mock import MagicMock, patch
 
@@ -428,7 +428,9 @@ def test_backend_bridge_scan_for_new_files(qtbot, backend_environment):
         assert "removed 1 series, 2 seasons, 3 episodes" in backend_bridge.statusMessage
 
 
-def test_backend_bridge_persistent_sorting_and_filtering(qtbot, backend_environment):
+def test_backend_bridge_persistent_sorting_and_filtering(
+    qtbot, backend_environment
+) -> None:
     from lan_streamer.backend import BackendBridge
     from lan_streamer.config import config
 
@@ -487,7 +489,7 @@ def test_backend_bridge_persistent_sorting_and_filtering(qtbot, backend_environm
     assert backend_bridge.seriesModel.item(0).text() == "Show B"
 
 
-def test_backend_bridge_jellyfin_enabled_property(backend_environment):
+def test_backend_bridge_jellyfin_enabled_property(backend_environment) -> None:
     from lan_streamer.backend import BackendBridge, jellyfin_client
 
     jellyfin_client.is_configured.return_value = True
@@ -498,7 +500,7 @@ def test_backend_bridge_jellyfin_enabled_property(backend_environment):
     assert backend_bridge.jellyfinEnabled is False
 
 
-def test_backend_bridge_pull_watch_history_slots(backend_environment):
+def test_backend_bridge_pull_watch_history_slots(backend_environment) -> None:
     from lan_streamer.backend import BackendBridge, jellyfin_client
     from unittest.mock import MagicMock, patch
 
@@ -524,7 +526,7 @@ def test_backend_bridge_pull_watch_history_slots(backend_environment):
         assert "updated 5 episodes" in backend_bridge.statusMessage
 
 
-def test_backend_bridge_push_watch_history_slots(backend_environment):
+def test_backend_bridge_push_watch_history_slots(backend_environment) -> None:
     from lan_streamer.backend import BackendBridge, jellyfin_client
     from unittest.mock import MagicMock, patch
 
@@ -548,7 +550,7 @@ def test_backend_bridge_push_watch_history_slots(backend_environment):
         assert "synced 10 episodes" in backend_bridge.statusMessage
 
 
-def test_backend_bridge_configuration_properties(backend_environment):
+def test_backend_bridge_configuration_properties(backend_environment) -> None:
     from lan_streamer.backend import BackendBridge
     from lan_streamer.config import config
 
@@ -594,7 +596,7 @@ def test_backend_bridge_configuration_properties(backend_environment):
     backend_bridge.configJellyfinUrl = backend_bridge.configJellyfinUrl
 
 
-def test_backend_bridge_library_management_slots(backend_environment):
+def test_backend_bridge_library_management_slots(backend_environment) -> None:
     from lan_streamer.backend import BackendBridge
     from lan_streamer.config import config
 
@@ -633,7 +635,7 @@ def test_backend_bridge_library_management_slots(backend_environment):
     assert len(backend_bridge.availableLibraries) == 0
 
 
-def test_backend_bridge_metadata_match_slots(backend_environment):
+def test_backend_bridge_metadata_match_slots(backend_environment) -> None:
     from lan_streamer.backend import BackendBridge
 
     backend_bridge = BackendBridge()
@@ -693,7 +695,7 @@ def test_backend_bridge_metadata_match_slots(backend_environment):
     # Verify signal emission when slot is triggered
     signal_emitted_names = []
 
-    def on_dialog_signal(series_target_name: str):
+    def on_dialog_signal(series_target_name: str) -> None:
         signal_emitted_names.append(series_target_name)
 
     backend_bridge.openMetadataMatchDialog.connect(on_dialog_signal)
@@ -706,7 +708,7 @@ def test_backend_bridge_metadata_match_slots(backend_environment):
     assert "TestSeries" in signal_emitted_names
 
 
-def test_rename_slots_integration(backend_environment):
+def test_rename_slots_integration(backend_environment) -> None:
     backend_bridge = BackendBridge()
     backend_bridge.selectLibrary("Main Media")
 
@@ -749,7 +751,7 @@ def test_rename_slots_integration(backend_environment):
     assert "old_path" in rename_results_list[0]
 
 
-def test_qml_ui_workflow_interactions(qtbot, backend_environment):
+def test_qml_ui_workflow_interactions(qtbot, backend_environment) -> None:
     """
     Tests the interaction between the loaded QML engine and the Python backend
     for user workflows like button clicks (simulated via slot invocation).
@@ -776,7 +778,7 @@ def test_qml_ui_workflow_interactions(qtbot, backend_environment):
     assert len(root_objects) > 0
 
     # Helper to find objects in the QML tree
-    def find_object_by_name(parent, name):
+    def find_object_by_name(parent, name) -> None:
         if parent.objectName() == name:
             return parent
         for child in parent.children():
@@ -804,7 +806,7 @@ def test_qml_ui_workflow_interactions(qtbot, backend_environment):
     # Simulate opening metadata match workflow
     signal_emitted = False
 
-    def on_metadata_dialog(series_name):
+    def on_metadata_dialog(series_name) -> None:
         nonlocal signal_emitted
         signal_emitted = True
 

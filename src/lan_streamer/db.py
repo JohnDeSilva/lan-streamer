@@ -3,7 +3,7 @@ import time
 import re
 import os
 from pathlib import Path
-from typing import Dict, Any, Set, Tuple, List
+from typing import Dict, Any, Set, Tuple, List, Generator, Optional
 from contextlib import contextmanager
 
 from sqlalchemy import (
@@ -13,7 +13,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import (
     sessionmaker,
+    Session,
 )
+from sqlalchemy.engine import Engine
 
 from .models import Base, Series, Season, Episode  # noqa: F401
 from .config import config
@@ -28,7 +30,7 @@ _engine = None
 _SessionLocal = None
 
 
-def get_engine():
+def get_engine() -> Engine:
     global _engine
     if _engine is None:
         _engine = create_engine(
@@ -37,7 +39,7 @@ def get_engine():
         )
 
         @event.listens_for(_engine, "connect")
-        def set_sqlite_pragma(dbapi_connection, connection_record):
+        def set_sqlite_pragma(dbapi_connection: Any, connection_record: Any) -> None:
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA journal_mode = WAL")
             cursor.execute("PRAGMA synchronous = NORMAL")
@@ -48,7 +50,7 @@ def get_engine():
     return _engine
 
 
-def get_session_factory():
+def get_session_factory() -> sessionmaker[Session]:
     global _SessionLocal
     if _SessionLocal is None:
         _SessionLocal = sessionmaker(
@@ -58,7 +60,7 @@ def get_session_factory():
 
 
 @contextmanager
-def get_session():
+def get_session() -> Generator[Session, None, None]:
     session_factory = get_session_factory()
     session = session_factory()
     try:
@@ -71,7 +73,7 @@ def get_session():
         session.close()
 
 
-def natural_sort_key(s):
+def natural_sort_key(s: Optional[str]) -> List[Any]:
     """
     Key function for natural sorting (e.g., "Season 2" < "Season 10").
     """
@@ -115,7 +117,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
 
             for series in series_list:
                 stats["series"] += 1
-                series_dict = {
+                series_dict: Dict[str, Any] = {
                     "metadata": {
                         "jellyfin_id": series.jellyfin_id,
                         "tmdb_identifier": series.tmdb_identifier,
@@ -130,7 +132,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
 
                 for season in series.seasons:
                     stats["seasons"] += 1
-                    season_dict = {
+                    season_dict: Dict[str, Any] = {
                         "metadata": {
                             "jellyfin_id": season.jellyfin_id,
                             "poster_path": season.poster_path,
@@ -156,9 +158,11 @@ def load_library(library_name: str) -> Dict[str, Any]:
                     season_dict["episodes"].sort(
                         key=lambda x: natural_sort_key(x["name"])
                     )
-                    series_dict["seasons"][season.name] = season_dict
+                    if season.name is not None:
+                        series_dict["seasons"][season.name] = season_dict
 
-                library_data[series.name] = series_dict
+                if series.name is not None:
+                    library_data[series.name] = series_dict
     except Exception as e:
         logger.error(f"Error loading library '{library_name}' from database: {e}")
         return {}
@@ -170,7 +174,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
     return library_data
 
 
-def save_library(library_name: str, library: Dict[str, Any]):
+def save_library(library_name: str, library: Dict[str, Any]) -> None:
     """
     Updates the database for the given library name using SQLAlchemy ORM.
     """
@@ -184,6 +188,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
                 for s in session.query(Series)
                 .filter(Series.library_name == library_name)
                 .all()
+                if s.name is not None
             }
             touched_series_names = set()
 
@@ -216,7 +221,9 @@ def save_library(library_name: str, library: Dict[str, Any]):
                     series_metadata.get("first_air_date") or series.first_air_date
                 )
 
-                existing_seasons = {sea.name: sea for sea in series.seasons}
+                existing_seasons = {
+                    sea.name: sea for sea in series.seasons if sea.name is not None
+                }
                 touched_season_names = set()
 
                 for season_name, season_data in series_data.get("seasons", {}).items():
@@ -236,7 +243,9 @@ def save_library(library_name: str, library: Dict[str, Any]):
                         season_metadata.get("poster_path") or season.poster_path
                     )
 
-                    existing_episodes = {ep.path: ep for ep in season.episodes}
+                    existing_episodes = {
+                        ep.path: ep for ep in season.episodes if ep.path is not None
+                    }
                     touched_episode_paths = set()
 
                     for ep_data in season_data.get("episodes", []):
@@ -284,7 +293,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
     )
 
 
-def update_episode_watched_status(path: str, watched: bool):
+def update_episode_watched_status(path: str, watched: bool) -> None:
     try:
         logger.info(f"Updating watched status for {path} to {watched}")
         with get_session() as session:
@@ -295,7 +304,7 @@ def update_episode_watched_status(path: str, watched: bool):
         logger.error(f"Error updating watched status for {path}: {e}")
 
 
-def update_episode_path(old_path: str, new_path: str):
+def update_episode_path(old_path: str, new_path: str) -> None:
     """Updates the file path for an episode in the database."""
     try:
         logger.info(f"Updating episode path from {old_path} to {new_path}")
@@ -309,7 +318,7 @@ def update_episode_path(old_path: str, new_path: str):
 
 def update_season_watched_status(
     library_name: str, series_name: str, season_name: str, watched: bool
-):
+) -> None:
     """
     Bulk updates the watched status for all episodes in a specific season.
     """
@@ -337,7 +346,9 @@ def update_season_watched_status(
         )
 
 
-def update_series_watched_status(library_name: str, series_name: str, watched: bool):
+def update_series_watched_status(
+    library_name: str, series_name: str, watched: bool
+) -> None:
     """
     Bulk updates the watched status for all episodes in an entire series.
     """
@@ -362,7 +373,7 @@ def update_series_watched_status(library_name: str, series_name: str, watched: b
 def sync_watched_from_jellyfin_data(
     watched_ids: Set[str],
     watched_paths: Set[str],
-    watched_names: Set[Tuple[str, str]] = None,
+    watched_names: Set[Tuple[str, str]] | None = None,
 ) -> int:
     """
     Bulk-updates watched=True for all episodes whose Jellyfin ID is in watched_ids
@@ -471,7 +482,7 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
             for series in series_list:
                 series_path_exists = False
                 for root in root_directories:
-                    if (Path(root) / series.name).is_dir():
+                    if series.name and (Path(root) / series.name).is_dir():
                         series_path_exists = True
                         break
 
@@ -490,7 +501,11 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
                 for season in series.seasons:
                     season_path_exists = False
                     for root in root_directories:
-                        if (Path(root) / series.name / season.name).is_dir():
+                        if (
+                            series.name
+                            and season.name
+                            and (Path(root) / series.name / season.name).is_dir()
+                        ):
                             season_path_exists = True
                             break
 
@@ -506,7 +521,7 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
 
                     # 3. Check episodes within existing seasons
                     for episode in season.episodes:
-                        if not Path(episode.path).exists():
+                        if episode.path and not Path(episode.path).exists():
                             logger.info(
                                 f"Cleanup: Removing missing episode '{episode.name}' at '{episode.path}'"
                             )
@@ -526,8 +541,13 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
                 .all()
             )
             for season in empty_seasons:
+                series_name = (
+                    season.series.name
+                    if season.series and season.series.name
+                    else "Unknown"
+                )
                 logger.info(
-                    f"Cleanup: Removing empty season '{season.name}' from series '{season.series.name}'"
+                    f"Cleanup: Removing empty season '{season.name}' from series '{series_name}'"
                 )
                 session.delete(season)
                 stats["seasons"] += 1

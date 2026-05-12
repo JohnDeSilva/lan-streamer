@@ -2,6 +2,8 @@ import sys
 import subprocess
 import logging
 import threading
+import os
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -9,15 +11,13 @@ logger = logging.getLogger(__name__)
 class WakeLock:
     """Prevents the system from sleeping or starting the screensaver."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.active = False
         self._lock = threading.Lock()
-        self._process = (
-            None  # Used for commands that need to keep running (like caffeinate)
-        )
-        self._cookie = None  # Used for dbus inhibit
+        self._process: Any = None
+        self._cookie: Any = None  # Used for dbus inhibit
 
-    def inhibit(self, reason="Video playback"):
+    def inhibit(self, reason: str = "Video playback") -> None:
         with self._lock:
             if self.active:
                 return
@@ -34,7 +34,7 @@ class WakeLock:
             except Exception as e:
                 logger.error(f"Failed to inhibit sleep: {e}")
 
-    def uninhibit(self):
+    def uninhibit(self) -> None:
         with self._lock:
             if not self.active:
                 return
@@ -51,7 +51,7 @@ class WakeLock:
             except Exception as e:
                 logger.error(f"Failed to release sleep inhibition: {e}")
 
-    def _inhibit_linux(self, reason):
+    def _inhibit_linux(self, reason: str) -> None:
         # Try gdbus first (standard for GNOME/KDE)
         try:
             cmd = [
@@ -88,7 +88,7 @@ class WakeLock:
         except Exception as e:
             logger.debug(f"xdg-screensaver failed: {e}")
 
-    def _uninhibit_linux(self):
+    def _uninhibit_linux(self) -> None:
         if self._cookie:
             try:
                 cmd = [
@@ -114,35 +114,35 @@ class WakeLock:
         except Exception:
             pass
 
-    def _inhibit_windows(self):
+    def _inhibit_windows(self) -> None:
         import ctypes
 
         # ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
         # 0x80000000 | 0x00000001 | 0x00000002 = 0x80000003
         try:
-            ctypes.windll.kernel32.SetThreadExecutionState(0x80000003)
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000003)  # type: ignore[attr-defined]
         except Exception as e:
             logger.error(f"Windows SetThreadExecutionState failed: {e}")
 
-    def _uninhibit_windows(self):
+    def _uninhibit_windows(self) -> None:
         import ctypes
 
         # ES_CONTINUOUS = 0x80000000
         try:
-            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)  # type: ignore[attr-defined]
         except Exception:
             pass
 
-    def _inhibit_macos(self, reason):
+    def _inhibit_macos(self, reason: str) -> None:
         try:
             # caffeinate -d inhibits display sleep
             self._process = subprocess.Popen(
-                ["caffeinate", "-d", "-i", "-s", "-w", str(subprocess.os.getpid())]
+                ["caffeinate", "-d", "-i", "-s", "-w", str(os.getpid())]
             )
         except Exception as e:
             logger.error(f"macOS caffeinate failed: {e}")
 
-    def _uninhibit_macos(self):
+    def _uninhibit_macos(self) -> None:
         if self._process:
             try:
                 self._process.terminate()

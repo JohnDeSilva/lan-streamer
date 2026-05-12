@@ -7,19 +7,19 @@ from lan_streamer.config import config
 
 
 @pytest.fixture
-def player_widget(qtbot):
+def player_widget(qtbot) -> None:
     widget = VideoPlayerWidget()
     qtbot.addWidget(widget)
     return widget
 
 
-def test_format_time(player_widget):
+def test_format_time(player_widget) -> None:
     assert player_widget._format_time(0) == "00:00"
     assert player_widget._format_time(61) == "01:01"
-    assert player_widget._format_time(3600) == "60:00"
+    assert player_widget._format_time(3600) == "01:00:00"
 
 
-def test_cache_worker_logic(tmp_path):
+def test_cache_worker_logic(tmp_path) -> None:
     src = tmp_path / "src.mp4"
     src.write_bytes(b"hello world" * 100)
     dest = tmp_path / "cache" / "src.mp4"
@@ -36,14 +36,14 @@ def test_cache_worker_logic(tmp_path):
     assert finished_msg == [str(dest)]
 
 
-def test_play_video_no_cache(player_widget):
+def test_play_video_no_cache(player_widget) -> None:
     config.enable_caching = False
     with patch.object(player_widget, "_load_and_play") as mock_load:
         player_widget.play_video("/path/to/video.mp4")
         mock_load.assert_called_once_with("/path/to/video.mp4")
 
 
-def test_play_video_with_cache(player_widget, tmp_path):
+def test_play_video_with_cache(player_widget, tmp_path) -> None:
     config.enable_caching = True
     config.cache_directory = str(tmp_path / "cache")
 
@@ -52,7 +52,7 @@ def test_play_video_with_cache(player_widget, tmp_path):
         mock_cache.assert_called_once_with("/path/to/video.mp4")
 
 
-def test_mark_as_watched(player_widget):
+def test_mark_as_watched(player_widget) -> None:
     player_widget.current_media_path = "/path/to/video.mp4"
     with patch("lan_streamer.db.update_episode_watched_status") as mock_db:
         player_widget._mark_as_watched()
@@ -60,7 +60,7 @@ def test_mark_as_watched(player_widget):
         assert player_widget.is_watched_marked is True
 
 
-def test_cleanup_cache(player_widget, tmp_path):
+def test_cleanup_cache(player_widget, tmp_path) -> None:
     cache_file = tmp_path / "cached.mp4"
     cache_file.write_text("test")
     player_widget.cached_file_path = str(cache_file)
@@ -70,14 +70,14 @@ def test_cleanup_cache(player_widget, tmp_path):
     assert player_widget.cached_file_path is None
 
 
-def test_on_back_clicked(player_widget, qtbot):
+def test_on_back_clicked(player_widget, qtbot) -> None:
     with patch.object(player_widget, "stop") as mock_stop:
         with qtbot.waitSignal(player_widget.back_requested):
             player_widget.on_back_clicked()
         mock_stop.assert_called_once()
 
 
-def test_refresh_tracks(player_widget):
+def test_refresh_tracks(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget.mediaplayer.audio_get_track_description.return_value = [
         (1, b"Track 1")
@@ -92,7 +92,7 @@ def test_refresh_tracks(player_widget):
     assert player_widget.subtitle_combo.count() == 1
 
 
-def test_update_ui(player_widget):
+def test_update_ui(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget.mediaplayer.get_media.return_value = MagicMock()
     player_widget.mediaplayer.get_position.return_value = 0.5
@@ -106,7 +106,7 @@ def test_update_ui(player_widget):
     assert "00:50 / 01:40" in player_widget.time_label.text()
 
 
-def test_update_ui_watched_threshold(player_widget):
+def test_update_ui_watched_threshold(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget.mediaplayer.get_media.return_value = MagicMock()
     player_widget.mediaplayer.get_position.return_value = 0.95
@@ -119,14 +119,14 @@ def test_update_ui_watched_threshold(player_widget):
         mock_mark.assert_called_once()
 
 
-def test_on_caching_error(player_widget):
+def test_on_caching_error(player_widget) -> None:
     player_widget.current_media_path = "/path/to/video.mp4"
     with patch.object(player_widget, "_load_and_play") as mock_load:
         player_widget._on_caching_error("Some error")
         mock_load.assert_called_once_with("/path/to/video.mp4")
 
 
-def test_change_tracks(player_widget):
+def test_change_tracks(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget.audio_combo.addItem("Track 1", 1)
     player_widget.subtitle_combo.addItem("Sub 1", 2)
@@ -138,7 +138,7 @@ def test_change_tracks(player_widget):
     player_widget.mediaplayer.video_set_spu.assert_called_once_with(2)
 
 
-def test_play_pause_stop(player_widget):
+def test_play_pause_stop(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
 
     player_widget.mediaplayer.is_playing.return_value = True
@@ -153,7 +153,7 @@ def test_play_pause_stop(player_widget):
     player_widget.mediaplayer.stop.assert_called_once()
 
 
-def test_set_volume_and_position(player_widget):
+def test_set_volume_and_position(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget.set_volume(50)
     player_widget.mediaplayer.audio_set_volume.assert_called_once_with(50)
@@ -164,7 +164,7 @@ def test_set_volume_and_position(player_widget):
     player_widget.mediaplayer.set_position.assert_called_once_with(0.5)
 
 
-def test_wakelock_integration(player_widget):
+def test_wakelock_integration(player_widget) -> None:
     player_widget.instance = MagicMock()
     player_widget.mediaplayer = MagicMock()
     player_widget.wakelock = MagicMock()
@@ -178,7 +178,7 @@ def test_wakelock_integration(player_widget):
     player_widget.wakelock.uninhibit.assert_called_once()
 
 
-def test_fullscreen_mouse_move(player_widget, qtbot):
+def test_fullscreen_mouse_move(player_widget, qtbot) -> None:
     from PySide6.QtCore import QPoint
     from PySide6.QtGui import QMouseEvent
 
@@ -211,7 +211,7 @@ def test_fullscreen_mouse_move(player_widget, qtbot):
         assert player_widget.fullscreen_overlay.isHidden()
 
 
-def test_toggle_stats(player_widget, qtbot):
+def test_toggle_stats(player_widget, qtbot) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget.mediaplayer.video_get_size.return_value = (1920, 1080)
     player_widget.mediaplayer.get_fps.return_value = 23.976
@@ -231,7 +231,7 @@ def test_toggle_stats(player_widget, qtbot):
     assert player_widget.stats_overlay.isHidden()
 
 
-def test_skip_logic(player_widget):
+def test_skip_logic(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget.mediaplayer.get_time.return_value = 50000  # 50s
 
@@ -244,7 +244,7 @@ def test_skip_logic(player_widget):
     player_widget.mediaplayer.set_time.assert_called_with(40000)
 
 
-def test_toggle_fast_forward(player_widget):
+def test_toggle_fast_forward(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
 
     # 1.0 -> 1.5
@@ -266,7 +266,7 @@ def test_toggle_fast_forward(player_widget):
     assert player_widget.rate_button.text() == "1.0x"
 
 
-def test_mute_functionality(player_widget):
+def test_mute_functionality(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget.volume_slider.setValue(80)
 
@@ -283,7 +283,7 @@ def test_mute_functionality(player_widget):
     assert player_widget.mute_button.text() == "Mute"
 
 
-def test_volume_boost(player_widget):
+def test_volume_boost(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget.set_volume(150)
     player_widget.mediaplayer.audio_set_volume.assert_called_with(150)
@@ -291,7 +291,7 @@ def test_volume_boost(player_widget):
     assert player_widget.fs_volume_slider.value() == 150
 
 
-def test_volume_osd(player_widget):
+def test_volume_osd(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget._show_volume_osd(120)
     assert not player_widget.osd_label.isHidden()
@@ -301,7 +301,7 @@ def test_volume_osd(player_widget):
     assert "Muted" in player_widget.osd_label.text()
 
 
-def test_resize_event(player_widget):
+def test_resize_event(player_widget) -> None:
     from PySide6.QtGui import QResizeEvent
     from PySide6.QtCore import QSize
 
@@ -310,7 +310,7 @@ def test_resize_event(player_widget):
     assert player_widget.progress_overlay.size() == player_widget.video_frame.size()
 
 
-def test_vlc_instance_args(qtbot):
+def test_vlc_instance_args(qtbot) -> None:
     with patch("vlc.Instance") as mock_vlc:
         config.enable_hw_accel = True
         config.vlc_extra_args = ["--test-arg"]
@@ -324,7 +324,7 @@ def test_vlc_instance_args(qtbot):
         assert "--file-caching=3000" in args
 
 
-def test_vlc_instance_args_no_hw(qtbot):
+def test_vlc_instance_args_no_hw(qtbot) -> None:
     with patch("vlc.Instance") as mock_vlc:
         config.enable_hw_accel = False
         config.vlc_extra_args = []
@@ -336,7 +336,7 @@ def test_vlc_instance_args_no_hw(qtbot):
         assert "--avcodec-hw=auto" not in args
 
 
-def test_load_and_play_platforms(player_widget):
+def test_load_and_play_platforms(player_widget) -> None:
     player_widget.instance = MagicMock()
     player_widget.mediaplayer = MagicMock()
     with patch("sys.platform", "win32"):
@@ -347,7 +347,7 @@ def test_load_and_play_platforms(player_widget):
         player_widget.mediaplayer.set_nsobject.assert_called()
 
 
-def test_toggle_fullscreen(player_widget):
+def test_toggle_fullscreen(player_widget) -> None:
     main_win = MagicMock()
     # Mocking self.window()
     with patch.object(player_widget, "window", return_value=main_win):
@@ -364,7 +364,7 @@ def test_toggle_fullscreen(player_widget):
         assert not player_widget.controls_widget.isHidden()
 
 
-def test_key_press_events(player_widget):
+def test_key_press_events(player_widget) -> None:
     from PySide6.QtGui import QKeyEvent
     from PySide6.QtCore import Qt
 
@@ -426,7 +426,7 @@ def test_key_press_events(player_widget):
     assert player_widget.is_muted is True
 
 
-def test_stop_exits_fullscreen(player_widget):
+def test_stop_exits_fullscreen(player_widget) -> None:
     main_win = MagicMock()
     main_win.isFullScreen.return_value = True
     player_widget.mediaplayer = MagicMock()
@@ -437,7 +437,7 @@ def test_stop_exits_fullscreen(player_widget):
             mock_toggle.assert_called_once()
 
 
-def test_event_filter_double_click(player_widget):
+def test_event_filter_double_click(player_widget) -> None:
     from PySide6.QtCore import QEvent
 
     with patch.object(player_widget, "toggle_fullscreen") as mock_toggle:
@@ -453,14 +453,14 @@ def test_event_filter_double_click(player_widget):
         )
 
 
-def test_handle_playback_finished(player_widget, qtbot):
+def test_handle_playback_finished(player_widget, qtbot) -> None:
     with patch.object(player_widget, "stop") as mock_stop:
         with qtbot.waitSignal(player_widget.back_requested):
             player_widget._handle_playback_finished()
         mock_stop.assert_called_once()
 
 
-def test_ui_layout_completeness(player_widget):
+def test_ui_layout_completeness(player_widget) -> None:
     """Verify that player controls are actually attached to the UI hierarchy."""
     # Verify that controls are actually in the controls_widget
     assert player_widget.play_button.parent() == player_widget.controls_widget

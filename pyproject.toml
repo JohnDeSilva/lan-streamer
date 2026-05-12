@@ -20,6 +20,8 @@ dev = [
     "pytest-cov>=4.1.0",
     "pytest-qt>=4.4.0",
     "ruff>=0.15.12",
+    "mypy>=1.9.0",
+    "types-requests>=2.31.0",
 ]
 [project.scripts]
 lan-streamer = "lan_streamer.main:main"
@@ -39,3 +41,22 @@ version_files = [
     "pyproject.toml:version",
     "src/lan_streamer/__init__.py"
 ]
+
+[tool.mypy]
+ignore_missing_imports = true
+warn_unused_ignores = true
+strict_optional = true
+check_untyped_defs = true
+disable_error_code = ["method-assign", "return-value", "var-annotated"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "lan_streamer.*"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true

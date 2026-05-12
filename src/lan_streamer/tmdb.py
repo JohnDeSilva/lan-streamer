@@ -19,7 +19,7 @@ CACHE_DIR = Path.home() / ".config" / "lan-streamer" / "cache" / "images"
 
 
 class TMDBClient:
-    def __init__(self):
+    def __init__(self) -> None:
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -35,7 +35,7 @@ class TMDBClient:
     def is_configured(self) -> bool:
         return bool(config.tmdb_api_key)
 
-    def _params(self, extra: dict = None) -> dict:
+    def _params(self, extra: dict | None = None) -> dict:
         """Returns base query params (api_key) merged with any extras."""
         parameters = {}
         if config.tmdb_api_key:

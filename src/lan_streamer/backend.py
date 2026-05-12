@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
-from typing import List
-from PySide6.QtCore import QObject, Property, Signal, Slot, Qt, QThread
+from typing import List, Any
+from PySide6.QtCore import QObject, Property, Signal, Slot, Qt, QThread, QByteArray
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 from .config import config
@@ -34,7 +34,7 @@ class BackendBridge(QObject):
     openMetadataMatchDialog = Signal(str)
     selectedSeriesOverviewChanged = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._status_message = "Ready"
         self._available_libraries: List[str] = list(config.libraries.keys())
@@ -54,18 +54,18 @@ class BackendBridge(QObject):
         self.poster_role = Qt.ItemDataRole.UserRole + 4
 
         # Configure custom QML role names mapping across all models
-        unified_role_names = {
-            Qt.ItemDataRole.DisplayRole: b"modelDisplay",
-            self.watched_role: b"watched",
-            self.path_role: b"path",
-            self.jellyfin_identifier_role: b"jellyfinIdentifier",
-            self.poster_role: b"posterPath",
+        unified_role_names: dict[int, QByteArray] = {
+            Qt.ItemDataRole.DisplayRole: QByteArray(b"modelDisplay"),
+            self.watched_role: QByteArray(b"watched"),
+            self.path_role: QByteArray(b"path"),
+            self.jellyfin_identifier_role: QByteArray(b"jellyfinIdentifier"),
+            self.poster_role: QByteArray(b"posterPath"),
         }
         self._series_model.setItemRoleNames(unified_role_names)
         self._season_model.setItemRoleNames(unified_role_names)
         self._episode_model.setItemRoleNames(unified_role_names)
 
-        self._cached_library_data = {}
+        self._cached_library_data: dict[str, Any] = {}
         self._selected_series_name: str = ""
         self._selected_series_overview: str = ""
         self._selected_season_name: str = ""
@@ -87,8 +87,8 @@ class BackendBridge(QObject):
     def statusMessage(self) -> str:
         return self._status_message
 
-    @statusMessage.setter
-    def statusMessage(self, value: str):
+    @statusMessage.setter  # type: ignore
+    def statusMessage(self, value: str) -> None:
         if self._status_message != value:
             self._status_message = value
             self.statusMessageChanged.emit()
@@ -109,8 +109,8 @@ class BackendBridge(QObject):
     def seriesSortOption(self) -> str:
         return self._series_sort_option
 
-    @seriesSortOption.setter
-    def seriesSortOption(self, value: str):
+    @seriesSortOption.setter  # type: ignore
+    def seriesSortOption(self, value: str) -> None:
         if self._series_sort_option != value:
             self._series_sort_option = value
             config.sort_mode = value
@@ -122,8 +122,8 @@ class BackendBridge(QObject):
     def filterOutWatched(self) -> bool:
         return self._filter_out_watched
 
-    @filterOutWatched.setter
-    def filterOutWatched(self, value: bool):
+    @filterOutWatched.setter  # type: ignore
+    def filterOutWatched(self, value: bool) -> None:
         if self._filter_out_watched != value:
             self._filter_out_watched = value
             config.filter_out_watched = value
@@ -139,8 +139,8 @@ class BackendBridge(QObject):
     def configJellyfinUrl(self) -> str:
         return config.jellyfin_url
 
-    @configJellyfinUrl.setter
-    def configJellyfinUrl(self, value: str):
+    @configJellyfinUrl.setter  # type: ignore
+    def configJellyfinUrl(self, value: str) -> None:
         val = value.strip()
         if config.jellyfin_url != val:
             config.jellyfin_url = val
@@ -152,8 +152,8 @@ class BackendBridge(QObject):
     def configJellyfinApiKey(self) -> str:
         return config.jellyfin_api_key
 
-    @configJellyfinApiKey.setter
-    def configJellyfinApiKey(self, value: str):
+    @configJellyfinApiKey.setter  # type: ignore
+    def configJellyfinApiKey(self, value: str) -> None:
         val = value.strip()
         if config.jellyfin_api_key != val:
             config.jellyfin_api_key = val
@@ -165,8 +165,8 @@ class BackendBridge(QObject):
     def configTmdbApiKey(self) -> str:
         return config.tmdb_api_key
 
-    @configTmdbApiKey.setter
-    def configTmdbApiKey(self, value: str):
+    @configTmdbApiKey.setter  # type: ignore
+    def configTmdbApiKey(self, value: str) -> None:
         val = value.strip()
         if config.tmdb_api_key != val:
             config.tmdb_api_key = val
@@ -177,8 +177,8 @@ class BackendBridge(QObject):
     def configSyncHistoryOnStart(self) -> bool:
         return config.sync_history_on_start
 
-    @configSyncHistoryOnStart.setter
-    def configSyncHistoryOnStart(self, value: bool):
+    @configSyncHistoryOnStart.setter  # type: ignore
+    def configSyncHistoryOnStart(self, value: bool) -> None:
         if config.sync_history_on_start != value:
             config.sync_history_on_start = value
             config.save()
@@ -188,8 +188,8 @@ class BackendBridge(QObject):
     def configUseEmbeddedPlayer(self) -> bool:
         return config.use_embedded_player
 
-    @configUseEmbeddedPlayer.setter
-    def configUseEmbeddedPlayer(self, value: bool):
+    @configUseEmbeddedPlayer.setter  # type: ignore
+    def configUseEmbeddedPlayer(self, value: bool) -> None:
         if config.use_embedded_player != value:
             config.use_embedded_player = value
             config.save()
@@ -199,8 +199,8 @@ class BackendBridge(QObject):
     def configEnableHardwareAcceleration(self) -> bool:
         return config.enable_hw_accel
 
-    @configEnableHardwareAcceleration.setter
-    def configEnableHardwareAcceleration(self, value: bool):
+    @configEnableHardwareAcceleration.setter  # type: ignore
+    def configEnableHardwareAcceleration(self, value: bool) -> None:
         if config.enable_hw_accel != value:
             config.enable_hw_accel = value
             config.save()
@@ -210,8 +210,8 @@ class BackendBridge(QObject):
     def configEnableGlobalFileLogging(self) -> bool:
         return config.enable_global_file_logging
 
-    @configEnableGlobalFileLogging.setter
-    def configEnableGlobalFileLogging(self, value: bool):
+    @configEnableGlobalFileLogging.setter  # type: ignore
+    def configEnableGlobalFileLogging(self, value: bool) -> None:
         if config.enable_global_file_logging != value:
             config.enable_global_file_logging = value
             config.save()
@@ -221,8 +221,8 @@ class BackendBridge(QObject):
     def configDatabasePath(self) -> str:
         return config.database_path
 
-    @configDatabasePath.setter
-    def configDatabasePath(self, value: str):
+    @configDatabasePath.setter  # type: ignore
+    def configDatabasePath(self, value: str) -> None:
         val = value.strip()
         if config.database_path != val:
             config.database_path = val
@@ -233,8 +233,8 @@ class BackendBridge(QObject):
     def configLogDirectory(self) -> str:
         return config.log_directory
 
-    @configLogDirectory.setter
-    def configLogDirectory(self, value: str):
+    @configLogDirectory.setter  # type: ignore
+    def configLogDirectory(self, value: str) -> None:
         val = value.strip()
         if config.log_directory != val:
             config.log_directory = val
@@ -244,7 +244,7 @@ class BackendBridge(QObject):
     # --- Action Slots Invoked from QML ---
 
     @Slot(str)
-    def selectLibrary(self, library_name: str):
+    def selectLibrary(self, library_name: str) -> None:
         logger.info(f"Loading library into QML backend: {library_name}")
         self._current_library_name = library_name
         self.statusMessage = f"Loading library: {library_name}"
@@ -257,7 +257,7 @@ class BackendBridge(QObject):
         self._refresh_series_model()
         self.statusMessage = "Loaded library series successfully"
 
-    def _cache_series_metrics(self):
+    def _cache_series_metrics(self) -> None:
         if not getattr(self, "_cached_library_data", None):
             return
 
@@ -285,7 +285,7 @@ class BackendBridge(QObject):
                 "max_air_date": max_air_date,
             }
 
-    def _refresh_series_model(self):
+    def _refresh_series_model(self) -> None:
         if not getattr(self, "_cached_library_data", None):
             return
 
@@ -338,7 +338,7 @@ class BackendBridge(QObject):
         self.seriesModelChanged.emit()
 
     @Slot(int)
-    def selectSeries(self, index: int):
+    def selectSeries(self, index: int) -> None:
         self._season_model.clear()
         self._episode_model.clear()
         self._selected_series_name = ""
@@ -376,7 +376,7 @@ class BackendBridge(QObject):
         self.seasonModelChanged.emit()
 
     @Slot(int)
-    def selectSeason(self, index: int):
+    def selectSeason(self, index: int) -> None:
         self._episode_model.clear()
         self._selected_season_name = ""
 
@@ -415,7 +415,7 @@ class BackendBridge(QObject):
         self.episodeModelChanged.emit()
 
     @Slot(list)
-    def markEpisodesWatched(self, selected_rows: List[int]):
+    def markEpisodesWatched(self, selected_rows: List[int]) -> None:
         """Bulk update selected episode indexes to watched status."""
         logger.info(f"Bulk marking rows as watched: {selected_rows}")
         updated_count = 0
@@ -440,7 +440,7 @@ class BackendBridge(QObject):
         self.statusMessage = f"Marked {updated_count} episodes as watched"
 
     @Slot(list)
-    def markEpisodesUnwatched(self, selected_rows: List[int]):
+    def markEpisodesUnwatched(self, selected_rows: List[int]) -> None:
         """Bulk update selected episode indexes to unwatched status."""
         logger.info(f"Bulk marking rows as unwatched: {selected_rows}")
         updated_count = 0
@@ -461,7 +461,9 @@ class BackendBridge(QObject):
         self._refresh_cached_episode_watched_state(selected_rows, False)
         self.statusMessage = f"Marked {updated_count} episodes as unwatched"
 
-    def _refresh_cached_episode_watched_state(self, rows: List[int], state: bool):
+    def _refresh_cached_episode_watched_state(
+        self, rows: List[int], state: bool
+    ) -> None:
         """Helper to ensure in-memory cached structure stays synced with local database updates."""
         series_content = self._cached_library_data.get(self._selected_series_name, {})
         seasons = series_content.get("seasons", {})
@@ -478,7 +480,7 @@ class BackendBridge(QObject):
                         )
 
     @Slot(int)
-    def matchMetadataForSeries(self, index: int):
+    def matchMetadataForSeries(self, index: int) -> None:
         item = self._series_model.item(index)
         if item:
             series_target_name = item.text()
@@ -530,7 +532,7 @@ class BackendBridge(QObject):
         return formatted_results
 
     @Slot(str, "QVariantMap")
-    def applySeriesMetadataMatch(self, series_name: str, match_data: dict):
+    def applySeriesMetadataMatch(self, series_name: str, match_data: dict) -> None:
         if not getattr(self, "_cached_library_data", None):
             return
         if series_name in self._cached_library_data:
@@ -591,7 +593,7 @@ class BackendBridge(QObject):
     def applyRenames(self, preview_items: list) -> list:
         from .renamer import perform_rename
 
-        def on_rename_success(old_path_string: str, new_path_string: str):
+        def on_rename_success(old_path_string: str, new_path_string: str) -> None:
             db.update_episode_path(old_path_string, new_path_string)
             # Update cached library in memory by removing old references and adding new ones/updating existing
             for series_dictionary in self._cached_library_data.values():
@@ -623,7 +625,7 @@ class BackendBridge(QObject):
         return rename_results
 
     @Slot(int)
-    def playEpisode(self, index: int):
+    def playEpisode(self, index: int) -> None:
         item = self._episode_model.item(index)
         if item:
             target_path = item.data(self.path_role)
@@ -635,7 +637,7 @@ class BackendBridge(QObject):
                 self.playbackRequested.emit(target_path)
 
     @Slot()
-    def scanForNewFiles(self):
+    def scanForNewFiles(self) -> None:
         """Searches root directories for new files and retrieves metadata only for new files found."""
         if not getattr(self, "_current_library_name", ""):
             self.statusMessage = "Select a library first"
@@ -660,7 +662,7 @@ class BackendBridge(QObject):
         self._scan_worker.start()
 
     @Slot()
-    def refreshEntireLibrary(self):
+    def refreshEntireLibrary(self) -> None:
         """Searches all files in library folders and updates/fetches metadata for all of them."""
         if not getattr(self, "_current_library_name", ""):
             self.statusMessage = "Select a library first"
@@ -685,7 +687,7 @@ class BackendBridge(QObject):
         self._scan_worker.start()
 
     @Slot()
-    def cleanupLibrary(self):
+    def cleanupLibrary(self) -> None:
         """Removes series and episodes that are no longer present in the library folders."""
         if not getattr(self, "_current_library_name", ""):
             self.statusMessage = "Select a library first"
@@ -711,7 +713,7 @@ class BackendBridge(QObject):
             logger.error(f"Library cleanup failed: {exc}")
 
     @Slot()
-    def pullWatchHistoryFromJellyfin(self):
+    def pullWatchHistoryFromJellyfin(self) -> None:
         if not jellyfin_client.is_configured():
             self.statusMessage = "Jellyfin is not configured"
             return
@@ -723,7 +725,7 @@ class BackendBridge(QObject):
         self._jellyfin_pull_worker.start()
 
     @Slot()
-    def pushWatchHistoryToJellyfin(self):
+    def pushWatchHistoryToJellyfin(self) -> None:
         if not jellyfin_client.is_configured():
             self.statusMessage = "Jellyfin is not configured"
             return
@@ -734,15 +736,15 @@ class BackendBridge(QObject):
         self._jellyfin_push_worker.error.connect(self._on_worker_error)
         self._jellyfin_push_worker.start()
 
-    def _on_jellyfin_pull_finished(self, updated_count: int):
+    def _on_jellyfin_pull_finished(self, updated_count: int) -> None:
         if getattr(self, "_current_library_name", ""):
             self.selectLibrary(self._current_library_name)
         self.statusMessage = f"Pulled watch history: updated {updated_count} episodes"
 
-    def _on_jellyfin_push_finished(self, pushed_count: int):
+    def _on_jellyfin_push_finished(self, pushed_count: int) -> None:
         self.statusMessage = f"Pushed watch history: synced {pushed_count} episodes"
 
-    def _on_scan_worker_finished(self, updated_library: dict):
+    def _on_scan_worker_finished(self, updated_library: dict) -> None:
         if getattr(self, "_current_library_name", ""):
             db.save_library(self._current_library_name, updated_library)
             self._cached_library_data = updated_library
@@ -750,12 +752,12 @@ class BackendBridge(QObject):
             self.selectLibrary(self._current_library_name)
             self.statusMessage = "New files scanned successfully"
 
-    def _on_worker_error(self, error_text: str):
+    def _on_worker_error(self, error_text: str) -> None:
         self.statusMessage = f"Scan error: {error_text}"
         logger.error(f"Background scan worker failed: {error_text}")
 
     @Slot(str)
-    def addNewLibrary(self, library_name: str):
+    def addNewLibrary(self, library_name: str) -> None:
         library_name = library_name.strip()
         if library_name and library_name not in config.libraries:
             config.add_library(library_name)
@@ -766,7 +768,7 @@ class BackendBridge(QObject):
                 self.selectLibrary(library_name)
 
     @Slot(str)
-    def removeSelectedLibrary(self, library_name: str):
+    def removeSelectedLibrary(self, library_name: str) -> None:
         if library_name in config.libraries:
             config.remove_library(library_name)
             self._available_libraries = list(config.libraries.keys())
@@ -783,7 +785,7 @@ class BackendBridge(QObject):
                     self._episode_model.clear()
 
     @Slot(str, str)
-    def addRootDirectoryToLibrary(self, library_name: str, directory_path: str):
+    def addRootDirectoryToLibrary(self, library_name: str, directory_path: str) -> None:
         directory_path = directory_path.strip()
         if library_name in config.libraries and directory_path:
             config.add_root_dir(library_name, directory_path)
@@ -791,7 +793,9 @@ class BackendBridge(QObject):
             self.availableLibrariesChanged.emit()
 
     @Slot(str, str)
-    def removeRootDirectoryFromLibrary(self, library_name: str, directory_path: str):
+    def removeRootDirectoryFromLibrary(
+        self, library_name: str, directory_path: str
+    ) -> None:
         if library_name in config.libraries:
             config.remove_root_dir(library_name, directory_path)
             self.statusMessage = f"Removed path from {library_name}"
@@ -811,19 +815,19 @@ class ScanWorker(QThread):
 
     def __init__(
         self,
-        root_directories,
-        existing_library,
-        parent=None,
-        force_refresh=False,
-        cleanup=False,
-    ):
+        root_directories: List[str],
+        existing_library: dict,
+        force_refresh: bool = False,
+        cleanup: bool = False,
+        parent: QObject | None = None,
+    ) -> None:
         super().__init__(parent)
         self.root_directories = root_directories
         self.existing_library = existing_library
         self.force_refresh = force_refresh
         self.cleanup = cleanup
 
-    def run(self):
+    def run(self) -> None:
         try:
             # Fetch Jellyfin correlation data if configured
             jellyfin_data = None
@@ -850,7 +854,7 @@ class SyncAllWorker(QThread):
     progress = Signal(str)
     error = Signal(str)
 
-    def run(self):
+    def run(self) -> None:
         try:
             jellyfin_data = None
             if jellyfin_client.is_configured():
@@ -876,12 +880,17 @@ class CleanupWorker(QThread):
     finished = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, library_name, root_directories, parent=None):
+    def __init__(
+        self,
+        library_name: str,
+        root_directories: List[str],
+        parent: QObject | None = None,
+    ) -> None:
         super().__init__(parent)
         self.library_name = library_name
         self.root_directories = root_directories
 
-    def run(self):
+    def run(self) -> None:
         try:
             results = db.cleanup_library(self.library_name, self.root_directories)
             self.finished.emit(results)
@@ -895,7 +904,7 @@ class JellyfinPullWorker(QThread):
     finished = Signal(int)  # number of episodes updated
     error = Signal(str)
 
-    def run(self):
+    def run(self) -> None:
         try:
             watched_identifiers, watched_paths, watched_names = (
                 jellyfin_client.fetch_watched_episodes()
@@ -914,7 +923,7 @@ class JellyfinPushWorker(QThread):
     finished = Signal(int)  # number of episodes pushed
     error = Signal(str)
 
-    def run(self):
+    def run(self) -> None:
         try:
             episodes_list = db.get_all_episodes_with_jellyfin_id()
             pushed_count = 0

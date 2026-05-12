@@ -1,7 +1,7 @@
 from lan_streamer import db
 
 
-def test_save_library_upsert():
+def test_save_library_upsert() -> None:
     library_name = "TestLib"
 
     # Initial data
@@ -98,7 +98,7 @@ def test_save_library_upsert():
     assert len(loaded) == 0
 
 
-def test_upsert_preserves_ids_across_libraries():
+def test_upsert_preserves_ids_across_libraries() -> None:
     # Verify that upserting one library doesn't affect another
     db.save_library("Lib1", {"Series A": {"metadata": {}, "seasons": {}}})
     db.save_library("Lib2", {"Series A": {"metadata": {}, "seasons": {}}})
