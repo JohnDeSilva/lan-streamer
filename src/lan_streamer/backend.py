@@ -50,6 +50,8 @@ class BackendBridge(QObject):
     configUseEmbeddedPlayer: bool
     configEnableHardwareAcceleration: bool
     configEnableGlobalFileLogging: bool
+    configEnableCaching: bool
+    configMaxCacheSizeGb: float
     configDatabasePath: str
     configLogDirectory: str
 
@@ -257,6 +259,28 @@ class BackendBridge(QObject):
         val = value.strip()
         if config.log_directory != val:
             config.log_directory = val
+            config.save()
+            self.configChanged.emit()
+
+    @Property(bool, notify=configChanged)
+    def configEnableCaching(self) -> bool:
+        return config.enable_caching
+
+    @configEnableCaching.setter
+    def configEnableCaching(self, value: bool) -> None:
+        if config.enable_caching != value:
+            config.enable_caching = value
+            config.save()
+            self.configChanged.emit()
+
+    @Property(float, notify=configChanged)
+    def configMaxCacheSizeGb(self) -> float:
+        return config.max_cache_size_gb
+
+    @configMaxCacheSizeGb.setter
+    def configMaxCacheSizeGb(self, value: float) -> None:
+        if config.max_cache_size_gb != value:
+            config.max_cache_size_gb = value
             config.save()
             self.configChanged.emit()
 

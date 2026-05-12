@@ -54,10 +54,12 @@ Rectangle {
 
                         Text {
                             Layout.preferredWidth: 160
+                            Layout.alignment: Qt.AlignVCenter
                             text: "Select Library:"
                             color: "#94A3B8"
                             font.bold: true
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
                         }
 
                         ComboBox {
@@ -111,10 +113,12 @@ Rectangle {
 
                         Text {
                             Layout.preferredWidth: 160
+                            Layout.alignment: Qt.AlignVCenter
                             text: "New Library Name:"
                             color: "#94A3B8"
                             font.bold: true
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
                         }
 
                         TextField {
@@ -166,7 +170,7 @@ Rectangle {
                             text: "Root Directories:"
                             color: "#94A3B8"
                             font.bold: true
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
                         }
 
                         ListView {
@@ -242,10 +246,12 @@ Rectangle {
 
                         Text {
                             Layout.preferredWidth: 160
+                            Layout.alignment: Qt.AlignVCenter
                             text: "Add Directory Path:"
                             color: "#94A3B8"
                             font.bold: true
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
                         }
 
                         TextField {
@@ -312,16 +318,18 @@ Rectangle {
 
                     GridLayout {
                         Layout.fillWidth: true
-                        columns: 2
+                        columns: 3
                         columnSpacing: 16
                         rowSpacing: 12
 
                         Text {
                             Layout.preferredWidth: 160
+                            Layout.alignment: Qt.AlignVCenter
                             text: "Jellyfin Server URL:"
                             color: "#E2E8F0"
                             font.bold: true
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
                         }
                         TextField {
                             Layout.fillWidth: true
@@ -331,13 +339,16 @@ Rectangle {
                             background: Rectangle { color: "#0B0F19"; radius: 6; border.color: "#334155"; border.width: 1 }
                             onEditingFinished: if (backendBridge) backendBridge.configJellyfinUrl = text
                         }
+                        Item { Layout.preferredWidth: 280 }
 
                         Text {
                             Layout.preferredWidth: 160
+                            Layout.alignment: Qt.AlignVCenter
                             text: "Jellyfin API Token:"
                             color: "#E2E8F0"
                             font.bold: true
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
                         }
                         TextField {
                             Layout.fillWidth: true
@@ -348,13 +359,16 @@ Rectangle {
                             background: Rectangle { color: "#0B0F19"; radius: 6; border.color: "#334155"; border.width: 1 }
                             onEditingFinished: if (backendBridge) backendBridge.configJellyfinApiKey = text
                         }
+                        Item { Layout.preferredWidth: 280 }
 
                         Text {
                             Layout.preferredWidth: 160
+                            Layout.alignment: Qt.AlignVCenter
                             text: "TMDB API Key:"
                             color: "#E2E8F0"
                             font.bold: true
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
                         }
                         TextField {
                             Layout.fillWidth: true
@@ -365,6 +379,7 @@ Rectangle {
                             background: Rectangle { color: "#0B0F19"; radius: 6; border.color: "#334155"; border.width: 1 }
                             onEditingFinished: if (backendBridge) backendBridge.configTmdbApiKey = text
                         }
+                        Item { Layout.preferredWidth: 280 }
                     }
 
                     CheckBox {
@@ -423,6 +438,46 @@ Rectangle {
                         contentItem: Text { text: parent.text; color: "#E2E8F0"; verticalAlignment: Text.AlignVCenter; leftPadding: parent.indicator.width + 8 }
                         onCheckedChanged: if (backendBridge) backendBridge.configEnableGlobalFileLogging = checked
                     }
+
+                    CheckBox {
+                        text: "Enable Local Video File Caching"
+                        checked: backendBridge ? backendBridge.configEnableCaching : false
+                        contentItem: Text { text: parent.text; color: "#E2E8F0"; verticalAlignment: Text.AlignVCenter; leftPadding: parent.indicator.width + 8 }
+                        onCheckedChanged: if (backendBridge) backendBridge.configEnableCaching = checked
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 32
+                        spacing: 12
+                        visible: backendBridge ? backendBridge.configEnableCaching : false
+
+                        Text {
+                            text: "Maximum Cache Size (GB):"
+                            color: "#94A3B8"
+                            font.bold: true
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        TextField {
+                            Layout.preferredWidth: 100
+                            text: backendBridge ? backendBridge.configMaxCacheSizeGb.toString() : "15"
+                            color: "#FFFFFF"
+                            background: Rectangle { color: "#0B0F19"; radius: 6; border.color: "#334155"; border.width: 1 }
+                            onEditingFinished: {
+                                if (backendBridge) {
+                                    let parsedValue = parseFloat(text);
+                                    if (!isNaN(parsedValue) && parsedValue > 0) {
+                                        backendBridge.configMaxCacheSizeGb = parsedValue;
+                                    }
+                                }
+                            }
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                        }
+                    }
                 }
             }
 
@@ -450,16 +505,18 @@ Rectangle {
 
                     GridLayout {
                         Layout.fillWidth: true
-                        columns: 2
+                        columns: 3
                         columnSpacing: 16
                         rowSpacing: 12
 
                         Text {
                             Layout.preferredWidth: 160
+                            Layout.alignment: Qt.AlignVCenter
                             text: "Database Path:"
                             color: "#E2E8F0"
                             font.bold: true
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
                         }
                         TextField {
                             Layout.fillWidth: true
@@ -469,13 +526,16 @@ Rectangle {
                             background: Rectangle { color: "#0B0F19"; radius: 6; border.color: "#334155"; border.width: 1 }
                             onEditingFinished: if (backendBridge) backendBridge.configDatabasePath = text
                         }
+                        Item { Layout.preferredWidth: 280 }
 
                         Text {
                             Layout.preferredWidth: 160
+                            Layout.alignment: Qt.AlignVCenter
                             text: "Log Directory:"
                             color: "#E2E8F0"
                             font.bold: true
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
                         }
                         TextField {
                             Layout.fillWidth: true
@@ -485,6 +545,7 @@ Rectangle {
                             background: Rectangle { color: "#0B0F19"; radius: 6; border.color: "#334155"; border.width: 1 }
                             onEditingFinished: if (backendBridge) backendBridge.configLogDirectory = text
                         }
+                        Item { Layout.preferredWidth: 280 }
                     }
                 }
             }

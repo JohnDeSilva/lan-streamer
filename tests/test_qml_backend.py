@@ -592,6 +592,16 @@ def test_backend_bridge_configuration_properties(backend_environment) -> None:
     assert config.enable_global_file_logging is False
     assert backend_bridge.configEnableGlobalFileLogging is False
 
+    # Test Enable Caching
+    backend_bridge.configEnableCaching = True
+    assert config.enable_caching is True
+    assert backend_bridge.configEnableCaching is True
+
+    # Test Max Cache Size
+    backend_bridge.configMaxCacheSizeGb = 20.0
+    assert config.max_cache_size_gb == 20.0
+    assert backend_bridge.configMaxCacheSizeGb == 20.0
+
     # Test setting unchanged values (no-op branch coverage)
     backend_bridge.configJellyfinUrl = backend_bridge.configJellyfinUrl
 

@@ -1,5 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
+import os
+import time
 from PySide6.QtCore import Qt
 
 from lan_streamer.player_widget import VideoPlayerWidget, CacheWorker
@@ -60,14 +62,71 @@ def test_mark_as_watched(player_widget) -> None:
         assert player_widget.is_watched_marked is True
 
 
-def test_cleanup_cache(player_widget, tmp_path) -> None:
-    cache_file = tmp_path / "cached.mp4"
-    cache_file.write_text("test")
-    player_widget.cached_file_path = str(cache_file)
+def test_cleanup_cache_older_than_24h(player_widget, tmp_path) -> None:
+    cache_directory = tmp_path / "cache"
+    cache_directory.mkdir()
+    config.cache_directory = str(cache_directory)
+    config.max_cache_size_gb = 15.0
+
+    old_file = cache_directory / "old.mp4"
+    old_file.write_text("old content")
+    twenty_five_hours_ago = time.time() - (25 * 3600)
+    os.utime(old_file, (twenty_five_hours_ago, twenty_five_hours_ago))
+
+    new_file = cache_directory / "new.mp4"
+    new_file.write_text("new content")
+
+    player_widget.cached_file_path = str(old_file)
+    player_widget._cleanup_cache()
+
+    assert not old_file.exists()
+    assert new_file.exists()
+    assert player_widget.cached_file_path is None
+
+
+def test_cleanup_cache_size_limit(player_widget, tmp_path) -> None:
+    cache_directory = tmp_path / "cache"
+    cache_directory.mkdir()
+    config.cache_directory = str(cache_directory)
+    config.max_cache_size_gb = 1000 / (1024 * 1024 * 1024)
+
+    file_one = cache_directory / "file1.mp4"
+    file_one.write_bytes(b"a" * 600)
+    time_one = time.time() - 3600
+    os.utime(file_one, (time_one, time_one))
+
+    file_two = cache_directory / "file2.mp4"
+    file_two.write_bytes(b"b" * 600)
+    time_two = time.time() - 1800
+    os.utime(file_two, (time_two, time_two))
+
+    file_three = cache_directory / "file3.mp4"
+    file_three.write_bytes(b"c" * 200)
 
     player_widget._cleanup_cache()
-    assert not cache_file.exists()
-    assert player_widget.cached_file_path is None
+
+    assert not file_one.exists()
+    assert file_two.exists()
+    assert file_three.exists()
+
+
+def test_play_video_already_cached(player_widget, tmp_path) -> None:
+    config.enable_caching = True
+    cache_directory = tmp_path / "cache"
+    cache_directory.mkdir()
+    config.cache_directory = str(cache_directory)
+
+    src_file = tmp_path / "video.mp4"
+    src_file.write_text("content")
+
+    dest_file = cache_directory / "video.mp4"
+    dest_file.write_text("content")
+
+    with patch.object(player_widget, "_load_and_play") as mock_load:
+        with patch("lan_streamer.player_widget.CacheWorker") as mock_worker:
+            player_widget.play_video(str(src_file))
+            mock_worker.assert_not_called()
+            mock_load.assert_called_once_with(str(dest_file))
 
 
 def test_on_back_clicked(player_widget, qtbot) -> None:

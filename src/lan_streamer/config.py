@@ -30,6 +30,7 @@ class Config:
         self.vlc_extra_args: List[str] = []
         self.player_overlay_opacity: float = 0.4
         self.player_overlay_color: str = "white"
+        self.max_cache_size_gb: float = 15.0
         self.load()
 
     def load(self) -> None:
@@ -80,6 +81,7 @@ class Config:
                     self.player_overlay_color = data.get(
                         "player_overlay_color", "white"
                     )
+                    self.max_cache_size_gb = data.get("max_cache_size_gb", 15.0)
 
                     if "libraries" in data:
                         self.libraries = data["libraries"]
@@ -122,6 +124,7 @@ class Config:
                         "vlc_extra_args": self.vlc_extra_args,
                         "player_overlay_opacity": self.player_overlay_opacity,
                         "player_overlay_color": self.player_overlay_color,
+                        "max_cache_size_gb": self.max_cache_size_gb,
                     },
                     f,
                     indent=4,

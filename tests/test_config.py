@@ -20,6 +20,7 @@ def test_config_initialization(mock_config_file) -> None:
     assert config.sync_history_on_start is True
     assert config.filter_out_watched is False
     assert config.sort_mode == "Alphabetical"
+    assert config.max_cache_size_gb == 15.0
 
 
 def test_config_load_existing(mock_config_file) -> None:
@@ -34,6 +35,7 @@ def test_config_load_existing(mock_config_file) -> None:
                 "sync_history_on_start": False,
                 "filter_out_watched": True,
                 "sort_mode": "Date Added (Newest)",
+                "max_cache_size_gb": 20.5,
             },
             f,
         )
@@ -46,6 +48,7 @@ def test_config_load_existing(mock_config_file) -> None:
     assert config.sync_history_on_start is False
     assert config.filter_out_watched is True
     assert config.sort_mode == "Date Added (Newest)"
+    assert config.max_cache_size_gb == 20.5
 
 
 def test_config_migrate_old_format(mock_config_file) -> None:

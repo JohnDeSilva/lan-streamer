@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from pathlib import Path
 from typing import Any
@@ -541,6 +542,23 @@ class VideoPlayerWidget(QWidget):
         dest_path = cache_dir / Path(file_path).name
         self.cached_file_path = str(dest_path)
 
+        try:
+            source_path = Path(file_path)
+            if (
+                dest_path.exists()
+                and source_path.exists()
+                and dest_path.stat().st_size == source_path.stat().st_size
+            ):
+                logger.info(f"File already cached: {dest_path}, playing directly")
+                dest_path.touch()
+                self.progress_overlay.hide()
+                self._load_and_play(str(dest_path))
+                return
+        except Exception as error:
+            logger.warning(f"Could not verify existing cache file size: {error}")
+
+        self._cleanup_cache()
+
         self.cache_worker = CacheWorker(file_path, str(dest_path))
         self.cache_worker.progress.connect(self.progress_bar.setValue)
         self.cache_worker.finished.connect(self._on_caching_finished)
@@ -907,13 +925,63 @@ class VideoPlayerWidget(QWidget):
             self.watched_marked.emit(self.current_media_path)
 
     def _cleanup_cache(self) -> None:
-        if self.cached_file_path and os.path.exists(self.cached_file_path):
-            try:
-                os.remove(self.cached_file_path)
-                logger.info(f"Cleaned up cached file: {self.cached_file_path}")
-                self.cached_file_path = None
-            except Exception as e:
-                logger.error(f"Error cleaning up cache: {e}")
+        cache_dir = Path(config.cache_directory)
+        if not cache_dir.exists():
+            return
+
+        try:
+            current_time = time.time()
+            # 1. Delete files older than 24 hours
+            for file_path in cache_dir.iterdir():
+                if file_path.is_file():
+                    try:
+                        if current_time - file_path.stat().st_mtime > 86400:
+                            logger.info(
+                                f"Deleting cached file older than 24 hours: {file_path}"
+                            )
+                            file_path.unlink()
+                            if self.cached_file_path == str(file_path):
+                                self.cached_file_path = None
+                    except Exception as error:
+                        logger.error(
+                            f"Error checking or deleting old cache file {file_path}: {error}"
+                        )
+
+            # 2. Enforce maximum cache size
+            max_size_bytes = config.max_cache_size_gb * 1024 * 1024 * 1024
+            cached_files = []
+            total_size_bytes = 0
+            for file_path in cache_dir.iterdir():
+                if file_path.is_file():
+                    try:
+                        file_status = file_path.stat()
+                        cached_files.append(
+                            (file_status.st_mtime, file_status.st_size, file_path)
+                        )
+                        total_size_bytes += file_status.st_size
+                    except Exception as error:
+                        logger.error(f"Error stating cache file {file_path}: {error}")
+
+            if total_size_bytes > max_size_bytes:
+                cached_files.sort(key=lambda item: item[0])
+                for modification_time, file_size, file_path in cached_files:
+                    if total_size_bytes <= max_size_bytes:
+                        break
+                    try:
+                        logger.info(
+                            f"Deleting cached file to free space (cache exceeds max size): {file_path}"
+                        )
+                        file_path.unlink()
+                        total_size_bytes -= file_size
+                        if self.cached_file_path == str(file_path):
+                            self.cached_file_path = None
+                    except Exception as error:
+                        logger.error(
+                            f"Error deleting cache file {file_path} for size enforcement: {error}"
+                        )
+
+        except Exception as error:
+            logger.error(f"Error during cache cleanup: {error}")
 
     def on_back_clicked(self) -> None:
         self.stop()
