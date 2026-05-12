@@ -217,6 +217,30 @@ class BackendBridge(QObject):
             config.save()
             self.configChanged.emit()
 
+    @Property(str, notify=configChanged)
+    def configDatabasePath(self) -> str:
+        return config.database_path
+
+    @configDatabasePath.setter
+    def configDatabasePath(self, value: str):
+        val = value.strip()
+        if config.database_path != val:
+            config.database_path = val
+            config.save()
+            self.configChanged.emit()
+
+    @Property(str, notify=configChanged)
+    def configLogDirectory(self) -> str:
+        return config.log_directory
+
+    @configLogDirectory.setter
+    def configLogDirectory(self, value: str):
+        val = value.strip()
+        if config.log_directory != val:
+            config.log_directory = val
+            config.save()
+            self.configChanged.emit()
+
     # --- Action Slots Invoked from QML ---
 
     @Slot(str)

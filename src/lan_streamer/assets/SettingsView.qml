@@ -425,6 +425,69 @@ Rectangle {
                     }
                 }
             }
+
+            // Section 4: Advanced System Configuration
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: advancedConfigLayout.implicitHeight + 32
+                color: "#1E293B"
+                radius: 8
+                border.color: "#334155"
+                border.width: 1
+
+                ColumnLayout {
+                    id: advancedConfigLayout
+                    anchors.fill: parent
+                    anchors.margins: 16
+                    spacing: 16
+
+                    Text {
+                        text: "⚙️ Advanced System Configuration (Requires Restart)"
+                        color: "#38BDF8"
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: 2
+                        columnSpacing: 16
+                        rowSpacing: 12
+
+                        Text {
+                            Layout.preferredWidth: 160
+                            text: "Database Path:"
+                            color: "#E2E8F0"
+                            font.bold: true
+                            horizontalAlignment: Text.AlignRight
+                        }
+                        TextField {
+                            Layout.fillWidth: true
+                            text: backendBridge ? backendBridge.configDatabasePath : ""
+                            placeholderText: "Absolute path to SQLite DB"
+                            color: "#FFFFFF"
+                            background: Rectangle { color: "#0B0F19"; radius: 6; border.color: "#334155"; border.width: 1 }
+                            onEditingFinished: if (backendBridge) backendBridge.configDatabasePath = text
+                        }
+
+                        Text {
+                            Layout.preferredWidth: 160
+                            text: "Log Directory:"
+                            color: "#E2E8F0"
+                            font.bold: true
+                            horizontalAlignment: Text.AlignRight
+                        }
+                        TextField {
+                            Layout.fillWidth: true
+                            text: backendBridge ? backendBridge.configLogDirectory : ""
+                            placeholderText: "Directory for application logs"
+                            color: "#FFFFFF"
+                            background: Rectangle { color: "#0B0F19"; radius: 6; border.color: "#334155"; border.width: 1 }
+                            onEditingFinished: if (backendBridge) backendBridge.configLogDirectory = text
+                        }
+                    }
+                }
+            }
         }
     }
 }
