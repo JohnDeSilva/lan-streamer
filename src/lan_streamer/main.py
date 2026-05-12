@@ -128,7 +128,8 @@ def main() -> None:
 
     main_window = QMainWindow()
     main_window.setWindowTitle("LAN Streamer - Premium Edition")
-    main_window.resize(1200, 800)
+    main_window.resize(1600, 1000)
+    main_window.setMinimumSize(1200, 800)
 
     central_widget = QWidget()
     stacked_layout = QStackedLayout(central_widget)

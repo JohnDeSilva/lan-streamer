@@ -4,8 +4,8 @@ import QtQuick.Layouts
 
 Popup {
     id: metadataMatchPopupRoot
-    width: 600
-    height: 500
+    width: 750
+    height: 600
     x: Math.round((parent.width - width) / 2)
     y: Math.round((parent.height - height) / 2)
     modal: true
@@ -52,7 +52,7 @@ Popup {
 
             ComboBox {
                 id: metadataSearchProviderComboBox
-                Layout.preferredWidth: 120
+                Layout.preferredWidth: 160
                 model: ["TMDB", "Jellyfin"]
                 background: Rectangle {
                     color: "#0B0F19"

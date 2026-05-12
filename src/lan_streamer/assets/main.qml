@@ -38,7 +38,7 @@ Rectangle {
             ComboBox {
                 id: librarySelector
                 objectName: "librarySelector"
-                Layout.preferredWidth: 200
+                Layout.preferredWidth: 280
                 model: backendBridge ? backendBridge.availableLibraries : ["Main Library"]
                 
                 background: Rectangle {
@@ -88,8 +88,8 @@ Rectangle {
                 id: settingsButton
                 objectName: "settingsButton"
                 Layout.preferredHeight: 36
-                Layout.preferredWidth: 140
-                text: rootWindow.isSettingsMode ? "🎬 Media Library" : "⚙️ Settings"
+                Layout.preferredWidth: 160
+                text: rootWindow.isSettingsMode ? "🎬 Media Library" : (!rootWindow.isOverviewMode ? "← Grid View" : "⚙️ Settings")
                 font.bold: true
                 font.pixelSize: 13
                 
@@ -108,7 +108,13 @@ Rectangle {
                     verticalAlignment: Text.AlignVCenter
                 }
                 onClicked: {
-                    rootWindow.isSettingsMode = !rootWindow.isSettingsMode
+                    if (rootWindow.isSettingsMode) {
+                        rootWindow.isSettingsMode = false
+                    } else if (!rootWindow.isOverviewMode) {
+                        rootWindow.isOverviewMode = true
+                    } else {
+                        rootWindow.isSettingsMode = true
+                    }
                 }
             }
         }

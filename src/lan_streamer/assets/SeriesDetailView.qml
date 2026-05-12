@@ -13,7 +13,7 @@ SplitView {
 
     // Left Column: Hero Poster Area & Contextual Actions
     Rectangle {
-        SplitView.preferredWidth: 260
+        SplitView.preferredWidth: 320
         SplitView.minimumWidth: 200
         color: "#0F172A"
         radius: 8
@@ -25,31 +25,7 @@ SplitView {
             anchors.margins: 16
             spacing: 16
 
-            // Back Navigation Button as topmost button
-            Button {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 40
-                text: "← Back to Series Grid"
-                font.bold: true
-                
-                background: Rectangle {
-                    radius: 6
-                    color: parent.hovered ? "#334155" : "#1E293B"
-                    border.color: parent.hovered ? "#38BDF8" : "#475569"
-                    border.width: 1
-                    Behavior on color { ColorAnimation { duration: 100 } }
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: "#38BDF8"
-                    font: parent.font
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                onClicked: {
-                    rootWindow.isOverviewMode = true
-                }
-            }
+
 
             // Hero Poster presentation
             Rectangle {
@@ -159,7 +135,7 @@ SplitView {
 
     // Middle Column: Seasons List View
     Rectangle {
-        SplitView.preferredWidth: 200
+        SplitView.preferredWidth: 240
         SplitView.minimumWidth: 140
         color: "#0F172A"
         radius: 8
@@ -254,7 +230,7 @@ SplitView {
                     enabled: episodesListView.selectedRows && episodesListView.selectedRows.length > 0
                     
                     background: Rectangle {
-                        implicitWidth: 130
+                        implicitWidth: 160
                         implicitHeight: 32
                         radius: 6
                         color: parent.enabled ? (parent.hovered ? "#059669" : "#10B981") : "#334155"
@@ -285,7 +261,7 @@ SplitView {
                     enabled: episodesListView.selectedRows && episodesListView.selectedRows.length > 0
                     
                     background: Rectangle {
-                        implicitWidth: 140
+                        implicitWidth: 180
                         implicitHeight: 32
                         radius: 6
                         color: parent.enabled ? (parent.hovered ? "#D97706" : "#F59E0B") : "#334155"

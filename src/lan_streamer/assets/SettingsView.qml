@@ -82,7 +82,7 @@ Rectangle {
                         }
 
                         Button {
-                            Layout.preferredWidth: 220
+                            Layout.preferredWidth: 280
                             text: "❌ Remove Selected Library"
                             background: Rectangle {
                                 color: parent.hovered ? "#DC2626" : "#EF4444"
@@ -132,7 +132,7 @@ Rectangle {
                         }
 
                         Button {
-                            Layout.preferredWidth: 220
+                            Layout.preferredWidth: 280
                             text: "➕ Add New Library"
                             background: Rectangle {
                                 color: parent.hovered ? "#059669" : "#10B981"
@@ -231,7 +231,7 @@ Rectangle {
                         }
 
                         Item {
-                            Layout.preferredWidth: 220
+                            Layout.preferredWidth: 280
                         }
                     }
 
@@ -263,7 +263,7 @@ Rectangle {
                         }
 
                         Button {
-                            Layout.preferredWidth: 220
+                            Layout.preferredWidth: 280
                             text: "➕ Add Directory Path"
                             background: Rectangle {
                                 color: parent.hovered ? "#0284C7" : "#0369A1"

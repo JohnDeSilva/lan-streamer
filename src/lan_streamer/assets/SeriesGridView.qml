@@ -51,7 +51,7 @@ Rectangle {
             }
 
             ComboBox {
-                implicitWidth: 140
+                implicitWidth: 165
                 model: ["Alphabetical", "Recently Added", "Recently Aired"]
                 currentIndex: {
                     if (!backendBridge) return 0;
@@ -82,7 +82,7 @@ Rectangle {
             }
 
             ComboBox {
-                implicitWidth: 180
+                implicitWidth: 240
                 model: ["⚡ Library Actions ▼", "🔄 Search for New Files", "⚡ Full Library Refresh", "🧹 Library Cleanup"]
                 currentIndex: 0
                 
@@ -113,7 +113,7 @@ Rectangle {
             }
 
             ComboBox {
-                implicitWidth: 180
+                implicitWidth: 220
                 visible: backendBridge ? backendBridge.jellyfinEnabled : false
                 model: ["🎬 Watch History ▼", "⬇️ Pull from Jellyfin", "⬆️ Push to Jellyfin"]
                 currentIndex: 0
