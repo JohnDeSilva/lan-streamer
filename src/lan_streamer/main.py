@@ -6,7 +6,7 @@ from PySide6.QtGui import QPalette, QColor, QFont
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtQuickWidgets import QQuickWidget
 
-from . import db
+from . import db, __version__
 from .config import config
 from .backend import BackendBridge
 from .player_widget import VideoPlayerWidget
@@ -127,7 +127,7 @@ def main() -> None:
     application_instance.setFont(QFont("Inter", 14))
 
     main_window = QMainWindow()
-    main_window.setWindowTitle("LAN Streamer - Premium Edition")
+    main_window.setWindowTitle(f"LAN Streamer v{__version__}")
     main_window.resize(1600, 1000)
     main_window.setMinimumSize(1200, 800)
 
