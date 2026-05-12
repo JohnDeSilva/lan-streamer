@@ -104,9 +104,12 @@ class WakeLock:
                     self._cookie,
                 ]
                 subprocess.run(cmd, check=True, capture_output=True)
-                self._cookie = None
             except Exception as e:
-                logger.error(f"gdbus uninhibit failed: {e}")
+                logger.debug(
+                    f"gdbus uninhibit failed (lock likely auto-released by session): {e}"
+                )
+            finally:
+                self._cookie = None
 
         # Always try to resume xdg-screensaver just in case
         try:
