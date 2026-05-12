@@ -1,5 +1,9 @@
+import os
 import pytest
 from unittest.mock import patch
+
+# Force offscreen rendering so individual tests run seamlessly in GUI-less IDE test explorers
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 
 @pytest.fixture(autouse=True)

@@ -37,7 +37,7 @@ check-lint: typecheck
 
 test:
 	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src $(PYTHON) -m alembic upgrade head
-	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "not load" tests/
+	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) --cov-fail-under=90 -m "not load" tests/
 	rm -f ./test_library.db ./test_library.db-wal ./test_library.db-shm
 
 load-test: migrate

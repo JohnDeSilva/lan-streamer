@@ -27,7 +27,7 @@ dev = [
 lan-streamer = "lan_streamer.main:main"
 [tool.pytest.ini_options]
 pythonpath = ["src"]
-addopts = "--cov=lan_streamer --cov-report=term-missing --cov-fail-under=90"
+addopts = "--cov=lan_streamer --cov-report=term-missing"
 filterwarnings = ["error"]
 markers = [
     "load: marks tests as load/performance tests (skipped by default)"
@@ -47,7 +47,7 @@ ignore_missing_imports = true
 warn_unused_ignores = true
 strict_optional = true
 check_untyped_defs = true
-disable_error_code = ["method-assign", "return-value", "var-annotated"]
+disable_error_code = ["method-assign", "return-value", "var-annotated", "no-redef"]
 
 [[tool.mypy.overrides]]
 module = "tests.*"

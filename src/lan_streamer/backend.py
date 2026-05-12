@@ -33,6 +33,25 @@ class BackendBridge(QObject):
     )  # Emits target file path to trigger embedded video surface
     openMetadataMatchDialog = Signal(str)
     selectedSeriesOverviewChanged = Signal()
+    # Explicit class-level annotations enabling IDEs (Pylance, PyCharm) to display typehints perfectly
+    selectedSeriesOverview: str
+    availableLibraries: List[str]
+    statusMessage: str
+    seriesModel: QStandardItemModel
+    seasonModel: QStandardItemModel
+    episodeModel: QStandardItemModel
+    seriesSortOption: str
+    filterOutWatched: bool
+    jellyfinEnabled: bool
+    configJellyfinUrl: str
+    configJellyfinApiKey: str
+    configTmdbApiKey: str
+    configSyncHistoryOnStart: bool
+    configUseEmbeddedPlayer: bool
+    configEnableHardwareAcceleration: bool
+    configEnableGlobalFileLogging: bool
+    configDatabasePath: str
+    configLogDirectory: str
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -87,7 +106,7 @@ class BackendBridge(QObject):
     def statusMessage(self) -> str:
         return self._status_message
 
-    @statusMessage.setter  # type: ignore
+    @statusMessage.setter
     def statusMessage(self, value: str) -> None:
         if self._status_message != value:
             self._status_message = value
@@ -109,7 +128,7 @@ class BackendBridge(QObject):
     def seriesSortOption(self) -> str:
         return self._series_sort_option
 
-    @seriesSortOption.setter  # type: ignore
+    @seriesSortOption.setter
     def seriesSortOption(self, value: str) -> None:
         if self._series_sort_option != value:
             self._series_sort_option = value
@@ -122,7 +141,7 @@ class BackendBridge(QObject):
     def filterOutWatched(self) -> bool:
         return self._filter_out_watched
 
-    @filterOutWatched.setter  # type: ignore
+    @filterOutWatched.setter
     def filterOutWatched(self, value: bool) -> None:
         if self._filter_out_watched != value:
             self._filter_out_watched = value
@@ -139,7 +158,7 @@ class BackendBridge(QObject):
     def configJellyfinUrl(self) -> str:
         return config.jellyfin_url
 
-    @configJellyfinUrl.setter  # type: ignore
+    @configJellyfinUrl.setter
     def configJellyfinUrl(self, value: str) -> None:
         val = value.strip()
         if config.jellyfin_url != val:
@@ -152,7 +171,7 @@ class BackendBridge(QObject):
     def configJellyfinApiKey(self) -> str:
         return config.jellyfin_api_key
 
-    @configJellyfinApiKey.setter  # type: ignore
+    @configJellyfinApiKey.setter
     def configJellyfinApiKey(self, value: str) -> None:
         val = value.strip()
         if config.jellyfin_api_key != val:
@@ -165,7 +184,7 @@ class BackendBridge(QObject):
     def configTmdbApiKey(self) -> str:
         return config.tmdb_api_key
 
-    @configTmdbApiKey.setter  # type: ignore
+    @configTmdbApiKey.setter
     def configTmdbApiKey(self, value: str) -> None:
         val = value.strip()
         if config.tmdb_api_key != val:
@@ -177,7 +196,7 @@ class BackendBridge(QObject):
     def configSyncHistoryOnStart(self) -> bool:
         return config.sync_history_on_start
 
-    @configSyncHistoryOnStart.setter  # type: ignore
+    @configSyncHistoryOnStart.setter
     def configSyncHistoryOnStart(self, value: bool) -> None:
         if config.sync_history_on_start != value:
             config.sync_history_on_start = value
@@ -188,7 +207,7 @@ class BackendBridge(QObject):
     def configUseEmbeddedPlayer(self) -> bool:
         return config.use_embedded_player
 
-    @configUseEmbeddedPlayer.setter  # type: ignore
+    @configUseEmbeddedPlayer.setter
     def configUseEmbeddedPlayer(self, value: bool) -> None:
         if config.use_embedded_player != value:
             config.use_embedded_player = value
@@ -199,7 +218,7 @@ class BackendBridge(QObject):
     def configEnableHardwareAcceleration(self) -> bool:
         return config.enable_hw_accel
 
-    @configEnableHardwareAcceleration.setter  # type: ignore
+    @configEnableHardwareAcceleration.setter
     def configEnableHardwareAcceleration(self, value: bool) -> None:
         if config.enable_hw_accel != value:
             config.enable_hw_accel = value
@@ -210,7 +229,7 @@ class BackendBridge(QObject):
     def configEnableGlobalFileLogging(self) -> bool:
         return config.enable_global_file_logging
 
-    @configEnableGlobalFileLogging.setter  # type: ignore
+    @configEnableGlobalFileLogging.setter
     def configEnableGlobalFileLogging(self, value: bool) -> None:
         if config.enable_global_file_logging != value:
             config.enable_global_file_logging = value
@@ -221,7 +240,7 @@ class BackendBridge(QObject):
     def configDatabasePath(self) -> str:
         return config.database_path
 
-    @configDatabasePath.setter  # type: ignore
+    @configDatabasePath.setter
     def configDatabasePath(self, value: str) -> None:
         val = value.strip()
         if config.database_path != val:
@@ -233,7 +252,7 @@ class BackendBridge(QObject):
     def configLogDirectory(self) -> str:
         return config.log_directory
 
-    @configLogDirectory.setter  # type: ignore
+    @configLogDirectory.setter
     def configLogDirectory(self, value: str) -> None:
         val = value.strip()
         if config.log_directory != val:
