@@ -1,36 +1,38 @@
 import sys
 import logging
 from pathlib import Path
-from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QPalette, QColor
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedLayout
+from PySide6.QtGui import QPalette, QColor, QFont
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtQuickWidgets import QQuickWidget
 
-from .ui import MainWindow
 from . import db
 from .config import config
+from .backend import BackendBridge
+from .player_widget import VideoPlayerWidget
 
 
-def setup_dark_theme(app: QApplication):
-    app.setStyle("Fusion")
+def setup_dark_theme(application_instance: QApplication):
+    application_instance.setStyle("Fusion")
 
     dark_palette = QPalette()
-    dark_palette.setColor(QPalette.Window, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.WindowText, Qt.white)
-    dark_palette.setColor(QPalette.Base, QColor(25, 25, 25))
-    dark_palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.ToolTipBase, Qt.white)
-    dark_palette.setColor(QPalette.ToolTipText, Qt.white)
-    dark_palette.setColor(QPalette.Text, Qt.white)
-    dark_palette.setColor(QPalette.Button, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.ButtonText, Qt.white)
-    dark_palette.setColor(QPalette.BrightText, Qt.red)
-    dark_palette.setColor(QPalette.Link, QColor(42, 130, 218))
-    dark_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
-    dark_palette.setColor(QPalette.HighlightedText, Qt.black)
+    dark_palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
+    dark_palette.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
+    dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
+    dark_palette.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.white)
+    dark_palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
+    dark_palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
+    dark_palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
+    dark_palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
+    dark_palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+    dark_palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
 
-    app.setPalette(dark_palette)
+    application_instance.setPalette(dark_palette)
 
-    app.setStyleSheet(
+    application_instance.setStyleSheet(
         "QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; }"
     )
 
@@ -42,13 +44,11 @@ def main():
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
 
-    # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
     root_logger.addHandler(console_handler)
 
-    # Timed Rotating File handler (rotates daily at midnight, keeps 7 days)
-    def add_file_handler(logger_obj, filename, formatter, info_msg=None):
+    def add_file_handler(logger_object, filename, formatter, info_message=None):
         try:
             from logging.handlers import TimedRotatingFileHandler
 
@@ -58,68 +58,109 @@ def main():
             handler.suffix = "%Y-%m-%d"
             handler.namer = lambda name: name.replace(".log.", "_") + ".log"
             handler.setFormatter(formatter)
-            logger_obj.addHandler(handler)
-            # Prevent propagation to root logger to keep console clean (only Global log in console)
-            if logger_obj != logging.getLogger():
-                logger_obj.propagate = False
-            if info_msg:
-                logging.info(info_msg)
-        except Exception as e:
-            logging.error(f"Could not create log file {filename}: {e}")
+            logger_object.addHandler(handler)
+            if logger_object != logging.getLogger():
+                logger_object.propagate = False
+            if info_message:
+                logging.info(info_message)
+        except Exception as exc:
+            logging.error(f"Could not create log file {filename}: {exc}")
 
-    # Ensure log directory exists
-    log_dir = Path(config.log_directory)
-    log_dir.mkdir(parents=True, exist_ok=True)
+    log_directory = Path(config.log_directory)
+    try:
+        log_directory.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        logging.warning(f"Could not create log directory {log_directory}: {exc}")
 
-    # Global log (Optional file logging, always to console)
     if config.enable_global_file_logging:
         add_file_handler(
             root_logger,
-            str(log_dir / "lan-streamer.log"),
+            str(log_directory / "lan-streamer.log"),
             log_formatter,
-            f"Logging to {log_dir / 'lan-streamer.log'} (rotated daily)",
+            f"Logging to {log_directory / 'lan-streamer.log'} (rotated daily)",
         )
     else:
         logging.info(
             "Global logging to console only (file logging disabled in settings)"
         )
 
-    # Component-specific logs
     add_file_handler(
-        logging.getLogger("lan_streamer.db"), str(log_dir / "db.log"), log_formatter
+        logging.getLogger("lan_streamer.db"),
+        str(log_directory / "db.log"),
+        log_formatter,
     )
     add_file_handler(
-        logging.getLogger("lan_streamer.ui"), str(log_dir / "ui.log"), log_formatter
+        logging.getLogger("lan_streamer.backend"),
+        str(log_directory / "backend.log"),
+        log_formatter,
     )
     add_file_handler(
         logging.getLogger("lan_streamer.scanner"),
-        str(log_dir / "scanner.log"),
+        str(log_directory / "scanner.log"),
         log_formatter,
     )
     add_file_handler(
         logging.getLogger("lan_streamer.jellyfin"),
-        str(log_dir / "jellyfin.log"),
+        str(log_directory / "jellyfin.log"),
         log_formatter,
     )
     add_file_handler(
         logging.getLogger("lan_streamer.tmdb"),
-        str(log_dir / "tmdb.log"),
+        str(log_directory / "tmdb.log"),
         log_formatter,
     )
     add_file_handler(
         logging.getLogger("lan_streamer.player_widget"),
-        str(log_dir / "player.log"),
+        str(log_directory / "player.log"),
         log_formatter,
     )
 
-    recreated = db.init_db()
-    app = QApplication(sys.argv)
-    setup_dark_theme(app)
+    db.init_db()
+    application_instance = QApplication(sys.argv)
+    setup_dark_theme(application_instance)
 
-    window = MainWindow(recreated_db=recreated)
-    window.show()
+    application_instance.setFont(QFont("Inter", 14))
 
-    sys.exit(app.exec())
+    main_window = QMainWindow()
+    main_window.setWindowTitle("LAN Streamer - Premium Edition")
+    main_window.resize(1200, 800)
+
+    central_widget = QWidget()
+    stacked_layout = QStackedLayout(central_widget)
+    main_window.setCentralWidget(central_widget)
+
+    qml_view = QQuickWidget(main_window)
+    qml_view.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+
+    backend_bridge = BackendBridge()
+    qml_view.rootContext().setContextProperty("backendBridge", backend_bridge)
+
+    qml_file_path = Path(__file__).parent / "assets" / "main.qml"
+    qml_view.setSource(QUrl.fromLocalFile(str(qml_file_path)))
+
+    player_view = VideoPlayerWidget()
+
+    stacked_layout.addWidget(qml_view)
+    stacked_layout.addWidget(player_view)
+
+    def on_playback_requested(file_path: str):
+        player_view.play_video(file_path)
+        stacked_layout.setCurrentIndex(1)
+
+    backend_bridge.playbackRequested.connect(on_playback_requested)
+
+    def on_back_requested():
+        stacked_layout.setCurrentIndex(0)
+
+    player_view.back_requested.connect(on_back_requested)
+
+    main_window.show()
+
+    if qml_view.status() == QQuickWidget.Status.Error:
+        sys.exit(-1)
+        return
+
+    sys.exit(application_instance.exec())
 
 
 if __name__ == "__main__":

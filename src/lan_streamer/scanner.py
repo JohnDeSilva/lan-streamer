@@ -57,6 +57,7 @@ def scan_directories(
     jellyfin_data: Dict[str, Any] = None,
     callback: Any = None,
     force_refresh: bool = False,
+    cleanup: bool = False,
 ) -> Dict[str, Any]:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -110,12 +111,15 @@ def scan_directories(
                             "id": tmdb_identifier,
                             "name": existing_series["metadata"].get(
                                 "tmdb_name", series_name
-                            ),  # Use tmdb_name if available
+                            ),
                             "overview": existing_series["metadata"].get("overview", ""),
                             "poster_path": existing_series["metadata"].get(
                                 "poster_path", ""
                             ),
-                            "_is_prefetched": True,  # Signal to scan_series to not re-fetch
+                            "first_air_date": existing_series["metadata"].get(
+                                "first_air_date", ""
+                            ),
+                            "_is_prefetched": True,
                         }
                         is_locked = True
 
@@ -126,6 +130,7 @@ def scan_directories(
                 manual_jellyfin_id=existing_jellyfin_id,
                 existing_series_data=existing_series,
                 force_refresh=force_refresh,
+                cleanup=cleanup,
             )
             if is_locked:
                 series_data["metadata"]["locked_metadata"] = True
@@ -197,6 +202,14 @@ def scan_directories(
             if callback:
                 callback(library)
 
+    if not cleanup and existing_library:
+        for old_series_name, old_series_data in existing_library.items():
+            if old_series_name not in library:
+                logger.info(
+                    f"Preserving missing series folder '{old_series_name}' (non-destructive)"
+                )
+                library[old_series_name] = old_series_data
+
     return library
 
 
@@ -207,6 +220,7 @@ def scan_series(
     manual_jellyfin_id: str = None,
     existing_series_data: Dict[str, Any] = None,
     force_refresh: bool = False,
+    cleanup: bool = False,
 ) -> Dict[str, Any]:
     """
     Scans a single series directory and fetches metadata from TMDB.
@@ -221,6 +235,7 @@ def scan_series(
         "overview": "",
         "poster_path": "",
         "tmdb_name": "",
+        "first_air_date": "",
         "jellyfin_id": manual_jellyfin_id or "",
     }
 
@@ -246,6 +261,7 @@ def scan_series(
                 "name": series_metadata["tmdb_name"],
                 "overview": series_metadata["overview"],
                 "poster_path": series_metadata["poster_path"],
+                "first_air_date": series_metadata.get("first_air_date", ""),
             }
         else:
             tmdb_series = tmdb_client.search_series(series_name)
@@ -264,6 +280,7 @@ def scan_series(
         series_metadata["tmdb_identifier"] = tmdb_identifier
         series_metadata["overview"] = tmdb_series.get("overview", "")
         series_metadata["tmdb_name"] = tmdb_series.get("name", "")
+        series_metadata["first_air_date"] = tmdb_series.get("first_air_date", "")
 
         # Artwork — TMDB returns a poster_path fragment
         poster_path = tmdb_series.get("poster_path") or ""
@@ -358,6 +375,7 @@ def scan_series(
                 tmdb_episode_identifier = None
                 tmdb_name = None
                 tmdb_number = None
+                air_date = ""
                 jellyfin_id = ""
 
                 # Try to reuse existing metadata
@@ -370,9 +388,12 @@ def scan_series(
                     tmdb_episode_identifier = existing_ep["tmdb_identifier"]
                     tmdb_name = existing_ep["tmdb_name"]
                     tmdb_number = existing_ep["tmdb_number"]
+                    air_date = existing_ep.get("air_date", "")
                     jellyfin_id = existing_ep.get("jellyfin_id", "")
                     logger.debug(f"Reusing existing metadata for '{episode_name}'")
                 else:
+                    if existing_ep:
+                        air_date = existing_ep.get("air_date", "")
                     # Match TMDB episode by S01E02 pattern in filename
                     parsed = _parse_episode_number(episode_name)
                     if parsed:
@@ -386,6 +407,7 @@ def scan_series(
                                 )
                                 tmdb_name = tmdb_episode.get("name")
                                 tmdb_number = tmdb_episode.get("episode_number")
+                                air_date = tmdb_episode.get("air_date", "")
                                 break
                     else:
                         # Fallback: Try to match by name if we can't parse SxxExx
@@ -400,6 +422,7 @@ def scan_series(
                                 )
                                 tmdb_name = tmdb_episode.get("name")
                                 tmdb_number = tmdb_episode.get("episode_number")
+                                air_date = tmdb_episode.get("air_date", "")
                                 break
 
                 try:
@@ -501,12 +524,39 @@ def scan_series(
                         "tmdb_identifier": tmdb_episode_identifier,
                         "tmdb_name": tmdb_name,
                         "tmdb_number": tmdb_number,
+                        "air_date": air_date,
                         "jellyfin_id": jellyfin_id,
                         "watched": existing_ep.get("watched", False)
                         if existing_ep
                         else False,
                         "date_added": ctime,
                     }
+                )
+
+    if not cleanup and existing_series_data:
+        for old_season_name, old_season_data in existing_series_data.get(
+            "seasons", {}
+        ).items():
+            if old_season_name not in series_data["seasons"]:
+                logger.info(
+                    f"Preserving missing season folder '{old_season_name}' (non-destructive)"
+                )
+                series_data["seasons"][old_season_name] = old_season_data
+            else:
+                found_paths = {
+                    ep["path"]
+                    for ep in series_data["seasons"][old_season_name]["episodes"]
+                }
+                for old_ep in old_season_data.get("episodes", []):
+                    if old_ep["path"] not in found_paths:
+                        logger.info(
+                            f"Preserving missing episode file '{old_ep['name']}' (non-destructive)"
+                        )
+                        series_data["seasons"][old_season_name]["episodes"].append(
+                            old_ep
+                        )
+                series_data["seasons"][old_season_name]["episodes"].sort(
+                    key=lambda x: natural_sort_key(x["name"])
                 )
 
     return series_data

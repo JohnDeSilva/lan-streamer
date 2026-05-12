@@ -27,6 +27,7 @@ class Series(Base):
     overview = Column(String)
     tmdb_name = Column(String)
     locked_metadata = Column(Boolean, default=False)
+    first_air_date = Column(String)
 
     seasons = relationship(
         "Season",
@@ -76,6 +77,7 @@ class Episode(Base):
     tmdb_number = Column(Integer)
     watched = Column(Boolean, default=False)
     date_added = Column(Integer, default=0)
+    air_date = Column(String)
 
     season = relationship("Season", back_populates="episodes")
 

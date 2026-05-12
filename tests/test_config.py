@@ -18,7 +18,7 @@ def test_config_initialization(mock_config_file):
     assert config.jellyfin_api_key == ""
     assert config.tmdb_api_key == ""
     assert config.sync_history_on_start is True
-    assert config.filter_unwatched is False
+    assert config.filter_out_watched is False
     assert config.sort_mode == "Alphabetical"
 
 
@@ -32,7 +32,7 @@ def test_config_load_existing(mock_config_file):
                 "jellyfin_api_key": "test_key",
                 "tmdb_api_key": "tmdb_key",
                 "sync_history_on_start": False,
-                "filter_unwatched": True,
+                "filter_out_watched": True,
                 "sort_mode": "Date Added (Newest)",
             },
             f,
@@ -44,7 +44,7 @@ def test_config_load_existing(mock_config_file):
     assert config.jellyfin_api_key == "test_key"
     assert config.tmdb_api_key == "tmdb_key"
     assert config.sync_history_on_start is False
-    assert config.filter_unwatched is True
+    assert config.filter_out_watched is True
     assert config.sort_mode == "Date Added (Newest)"
 
 

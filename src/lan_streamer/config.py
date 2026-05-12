@@ -13,7 +13,7 @@ class Config:
         self.tmdb_api_key: str = ""
         # sync_history_on_start: auto-sync Jellyfin watch history every startup
         self.sync_history_on_start: bool = True
-        self.filter_unwatched: bool = False
+        self.filter_out_watched: bool = False
         self.sort_mode: str = "Alphabetical"
         self.database_path: str = str(
             Path.home() / ".config" / "lan-streamer" / "library.db"
@@ -49,7 +49,10 @@ class Config:
                         "sync_history_on_start",
                         data.get("sync_on_start", True),
                     )
-                    self.filter_unwatched = data.get("filter_unwatched", False)
+                    self.filter_out_watched = data.get(
+                        "filter_out_watched",
+                        data.get("filter_unwatched", False),
+                    )
                     self.sort_mode = data.get("sort_mode", "Alphabetical")
                     self.database_path = data.get(
                         "database_path",
@@ -93,7 +96,10 @@ class Config:
             self.libraries = {}
 
     def save(self):
-        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            print(f"Could not create config directory {CONFIG_FILE.parent}: {exc}")
         try:
             with open(CONFIG_FILE, "w") as f:
                 json.dump(
@@ -103,7 +109,7 @@ class Config:
                         "jellyfin_api_key": self.jellyfin_api_key,
                         "tmdb_api_key": self.tmdb_api_key,
                         "sync_history_on_start": self.sync_history_on_start,
-                        "filter_unwatched": self.filter_unwatched,
+                        "filter_out_watched": self.filter_out_watched,
                         "sort_mode": self.sort_mode,
                         "database_path": self.database_path,
                         "log_directory": self.log_directory,

@@ -89,7 +89,10 @@ def init_db() -> bool:
     Ensures the DB directory exists.
     Returns True if the database was recreated.
     """
-    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        logger.warning(f"Could not create database directory {DB_FILE.parent}: {exc}")
     return False
 
 
@@ -120,6 +123,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
                         "overview": series.overview,
                         "tmdb_name": series.tmdb_name,
                         "locked_metadata": bool(series.locked_metadata),
+                        "first_air_date": series.first_air_date or "",
                     },
                     "seasons": {},
                 }
@@ -145,6 +149,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
                             "tmdb_number": episode.tmdb_number,
                             "watched": bool(episode.watched),
                             "date_added": episode.date_added or 0,
+                            "air_date": episode.air_date or "",
                         }
                         season_dict["episodes"].append(episode_data)
 
@@ -207,6 +212,9 @@ def save_library(library_name: str, library: Dict[str, Any]):
                     bool(series_metadata.get("locked_metadata"))
                     or series.locked_metadata
                 )
+                series.first_air_date = (
+                    series_metadata.get("first_air_date") or series.first_air_date
+                )
 
                 existing_seasons = {sea.name: sea for sea in series.seasons}
                 touched_season_names = set()
@@ -261,6 +269,7 @@ def save_library(library_name: str, library: Dict[str, Any]):
                         episode.date_added = (
                             ep_data.get("date_added") or episode.date_added or 0
                         )
+                        episode.air_date = ep_data.get("air_date") or episode.air_date
 
     # Deletions are now handled exclusively by cleanup_library to prevent accidental data loss
     # during temporary drive disconnection or partial scans.

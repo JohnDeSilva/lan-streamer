@@ -19,9 +19,11 @@ It bridges the gap between local file storage (e.g., NAS, External Drives) and o
     *   Automatically downloads high-quality posters and overviews.
     *   Syncs "Watched" status back to your Jellyfin server in real-time.
 *   **📁 Multi-Library Organization**: Group your content into logical libraries (e.g., "Main", "Archive", "Anime") with support for multiple root directories per library.
+*   **📅 Air Date Awareness**: Leverages TMDB episode and series air dates to enable accurate "Recently Aired" library sorting.
+*   **🏷️ Media Renamer**: Built-in utility to safely and consistently rename local files to match official metadata (e.g., standardizing S01E01 naming).
 *   **🧹 Library Cleanup**: Deep cleanup tool that removes missing files, seasons, and series from the database while maintaining metadata integrity.
-*   **🛠️ Manual Corrections**: Effortlessly fix incorrect matches via the "Match Series..." context menu.
-*   **🎨 Premium Dark UI**: A sleek, high-contrast interface built with PySide6 (Qt) for a smooth and responsive desktop experience.
+*   **🛠️ Manual Corrections**: Effortlessly fix incorrect matches via the "Match Series..." context menu, or bulk-mark seasons as watched.
+*   **🎨 Premium Dark UI**: A sleek, high-contrast hybrid interface built with PySide6 (QWidget) and QML for a smooth, fluid, and responsive desktop experience.
 
 ---
 
@@ -127,7 +129,7 @@ Logs are automatically organized and rotated daily within the configured log dir
 ## 🧪 Development
 
 ### Technical Stack
-*   **UI Framework**: [PySide6](https://doc.qt.io/qtforpython/) (Qt 6)
+*   **UI Framework**: [PySide6](https://doc.qt.io/qtforpython/) (Qt 6) with QML
 *   **Database**: [SQLite 3](https://www.sqlite.org/) with [SQLAlchemy](https://www.sqlalchemy.org/) ORM and [Alembic](https://alembic.sqlalchemy.org/) migrations
 *   **Package Manager**: [uv](https://github.com/astral-sh/uv)
 *   **Linting/Formatting**: [Ruff](https://github.com/astral-sh/ruff)

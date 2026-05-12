@@ -746,3 +746,83 @@ def test_scan_series_preserves_watched_status(tmp_path):
 
         # Verify metadata WAS refreshed (to confirm it was indeed a full scan)
         assert mock_tmdb.get_seasons.call_count == 1
+
+
+def test_scan_directories_non_destructive_cleanup(tmp_path):
+    """Test non-destructive preservation vs cleanup purging behavior."""
+    from lan_streamer.scanner import scan_directories
+
+    root = tmp_path / "cleanup_root"
+    root.mkdir()
+    show_dir = root / "Active Show"
+    show_dir.mkdir()
+    season_dir = show_dir / "Season 1"
+    season_dir.mkdir()
+    ep_file = season_dir / "S01E01.mkv"
+    ep_file.touch()
+
+    existing_library = {
+        "Offline Show": {
+            "metadata": {"tmdb_identifier": "off1"},
+            "seasons": {},
+        },
+        "Active Show": {
+            "metadata": {"tmdb_identifier": "act1"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "S01E01.mkv",
+                            "path": str(ep_file.absolute()),
+                            "watched": True,
+                        },
+                        {
+                            "name": "S01E02.mkv",
+                            "path": "/missing/path/S01E02.mkv",
+                            "watched": False,
+                        },
+                    ],
+                },
+                "Season 2 (Offline)": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "S02E01.mkv",
+                            "path": "/missing/path/S02E01.mkv",
+                            "watched": False,
+                        }
+                    ],
+                },
+            },
+        },
+    }
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.search_series.return_value = {"id": "act1", "name": "Active Show"}
+    mock_tmdb.get_seasons.return_value = [{"season_number": 1, "id": "s1"}]
+    mock_tmdb.get_episodes.return_value = [{"episode_number": 1, "id": "e1"}]
+    mock_tmdb.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        # 1. Non-destructive scan (cleanup=False)
+        lib_preserved = scan_directories(
+            [str(root)], existing_library=existing_library, cleanup=False
+        )
+        assert "Offline Show" in lib_preserved
+        active_seasons = lib_preserved["Active Show"]["seasons"]
+        assert "Season 2 (Offline)" in active_seasons
+        eps = active_seasons["Season 1"]["episodes"]
+        assert len(eps) == 2
+        assert any(ep["path"] == "/missing/path/S01E02.mkv" for ep in eps)
+
+        # 2. Cleanup scan (cleanup=True)
+        lib_cleaned = scan_directories(
+            [str(root)], existing_library=existing_library, cleanup=True
+        )
+        assert "Offline Show" not in lib_cleaned
+        active_seasons_cleaned = lib_cleaned["Active Show"]["seasons"]
+        assert "Season 2 (Offline)" not in active_seasons_cleaned
+        eps_cleaned = active_seasons_cleaned["Season 1"]["episodes"]
+        assert len(eps_cleaned) == 1
+        assert eps_cleaned[0]["path"] == str(ep_file.absolute())
