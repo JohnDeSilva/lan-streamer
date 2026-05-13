@@ -80,6 +80,7 @@ SplitView {
             // Action Button: Match Metadata placed at the bottom of the column
             Button {
                 id: matchMetadataButton
+                objectName: "matchMetadataButton"
                 Layout.fillWidth: true
                 Layout.preferredHeight: 38
                 text: "🔍 Match Metadata..."
@@ -108,6 +109,7 @@ SplitView {
             // Action Button: Rename Files placed beneath match metadata
             Button {
                 id: renameFilesTriggerButton
+                objectName: "renameFilesTriggerButton"
                 Layout.fillWidth: true
                 Layout.preferredHeight: 38
                 text: "✏️ Rename Files..."

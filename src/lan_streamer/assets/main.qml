@@ -12,9 +12,9 @@ Rectangle {
     // Dynamic presentation layer view state tracking
     property bool isOverviewMode: true
     property bool isSettingsMode: false
-    property string selectedSeriesTitle: ""
-    property string selectedSeriesPoster: ""
-    property int selectedSeriesIndex: -1
+    property string selectedSeriesTitle: backendBridge ? backendBridge.selectedSeriesTitle : ""
+    property string selectedSeriesPoster: backendBridge ? backendBridge.selectedSeriesPoster : ""
+    property int selectedSeriesIndex: backendBridge ? backendBridge.selectedSeriesIndex : -1
 
     // Main layout wrapper
     ColumnLayout {

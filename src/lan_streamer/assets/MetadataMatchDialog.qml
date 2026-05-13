@@ -38,6 +38,7 @@ Popup {
                 elide: Text.ElideRight
             }
             Button {
+                objectName: "closeMetadataMatchDialogButton"
                 text: "✕"
                 background: Rectangle { color: "transparent" }
                 contentItem: Text { text: parent.text; color: "#94A3B8"; font.pixelSize: 18; font.bold: true }
@@ -128,6 +129,13 @@ Popup {
 
                 required property var modelData
 
+                MouseArea {
+                    id: searchResultMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.NoButton
+                }
+
                 RowLayout {
                     anchors.fill: parent
                     anchors.margins: 10
@@ -157,6 +165,7 @@ Popup {
                     }
 
                     Button {
+                        objectName: "applyMetadataMatchButton"
                         text: "Apply"
                         background: Rectangle {
                             color: parent.hovered ? "#059669" : "#10B981"
@@ -175,12 +184,6 @@ Popup {
                             }
                         }
                     }
-                }
-
-                MouseArea {
-                    id: searchResultMouseArea
-                    anchors.fill: parent
-                    hoverEnabled: true
                 }
             }
 

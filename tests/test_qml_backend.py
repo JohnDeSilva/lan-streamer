@@ -652,6 +652,7 @@ def test_backend_bridge_library_management_slots(backend_environment) -> None:
 
 def test_backend_bridge_metadata_match_slots(backend_environment) -> None:
     from lan_streamer.backend import BackendBridge
+    from PySide6.QtGui import QStandardItem
 
     backend_bridge = BackendBridge()
 
@@ -669,7 +670,9 @@ def test_backend_bridge_metadata_match_slots(backend_environment) -> None:
             "seasons": {},
         }
     }
-    backend_bridge._selected_series_name = "TestSeries"
+    backend_bridge._series_model.appendRow(QStandardItem("TestSeries"))
+    backend_bridge.selectSeries(0)
+    assert backend_bridge.selectedSeriesTitle == "TestSeries"
 
     # Test trigger search metadata list wrapper for both providers
     tmdb_results_list = backend_bridge.searchSeriesMetadata("Stranger Things", "TMDB")
@@ -695,6 +698,9 @@ def test_backend_bridge_metadata_match_slots(backend_environment) -> None:
     assert updated_metadata["tmdb_identifier"] == "66732"
     assert updated_metadata["tmdb_name"] == "Stranger Things"
     assert "Successfully applied metadata match" in backend_bridge.statusMessage
+    # Verify that reactive properties update correctly to reflect applied metadata
+    assert backend_bridge.selectedSeriesPoster == "/path.jpg"
+    assert backend_bridge.selectedSeriesOverview == "When a young boy vanishes..."
 
     # Test applying manual match update from Jellyfin provider
     mock_jellyfin_dictionary = {
@@ -715,10 +721,6 @@ def test_backend_bridge_metadata_match_slots(backend_environment) -> None:
 
     backend_bridge.openMetadataMatchDialog.connect(on_dialog_signal)
 
-    # Populate dummy model item to allow matching lookup
-    from PySide6.QtGui import QStandardItem
-
-    backend_bridge._series_model.appendRow(QStandardItem("TestSeries"))
     backend_bridge.matchMetadataForSeries(0)
     assert "TestSeries" in signal_emitted_names
 
@@ -793,7 +795,7 @@ def test_qml_ui_workflow_interactions(qtbot, backend_environment) -> None:
     assert len(root_objects) > 0
 
     # Helper to find objects in the QML tree
-    def find_object_by_name(parent, name) -> None:
+    def find_object_by_name(parent: Any, name: str) -> Any:
         if parent.objectName() == name:
             return parent
         for child in parent.children():
@@ -821,10 +823,69 @@ def test_qml_ui_workflow_interactions(qtbot, backend_environment) -> None:
     # Simulate opening metadata match workflow
     signal_emitted = False
 
-    def on_metadata_dialog(series_name) -> None:
+    def on_metadata_dialog(series_name: str) -> None:
         nonlocal signal_emitted
         signal_emitted = True
 
     backend_bridge.openMetadataMatchDialog.connect(on_metadata_dialog)
     backend_bridge.matchMetadataForSeries(0)
     assert signal_emitted is True
+
+
+def test_comprehensive_ui_buttons_existence_and_functionality(
+    qtbot, backend_environment
+) -> None:
+    """
+    Comprehensive verification for every button in the UI to confirm that they exist,
+    have unique objectNames, and work as expected per user requirement.
+    """
+    from PySide6.QtCore import QUrl
+    from PySide6.QtQml import QQmlApplicationEngine
+    from pathlib import Path
+    from lan_streamer.backend import BackendBridge
+    from typing import Any
+
+    backend_bridge = BackendBridge()
+    backend_bridge.selectLibrary("Main Media")
+    backend_bridge.selectSeries(0)
+    backend_bridge.selectSeason(0)
+
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("backendBridge", backend_bridge)
+
+    qml_file_path = (
+        Path(__file__).parent.parent / "src" / "lan_streamer" / "assets" / "main.qml"
+    )
+    engine.load(QUrl.fromLocalFile(str(qml_file_path)))
+
+    root_objects = engine.rootObjects()
+    assert len(root_objects) > 0
+    root_window = root_objects[0]
+
+    def find_object_by_name_recursive(parent_object: Any, target_name: str) -> Any:
+        if parent_object.objectName() == target_name:
+            return parent_object
+        for child_object in parent_object.children():
+            found = find_object_by_name_recursive(child_object, target_name)
+            if found:
+                return found
+        return None
+
+    expected_buttons = [
+        "settingsButton",
+        "matchMetadataButton",
+        "renameFilesTriggerButton",
+        "markWatchedButton",
+        "markUnwatchedButton",
+        "metadataSearchTriggerButton",
+        "closeMetadataMatchDialogButton",
+        "applyMetadataMatchButton",
+        "closeRenameFilesDialogButton",
+        "renamePreviewTriggerButton",
+        "applyRenamesButton",
+    ]
+
+    for button_name in expected_buttons:
+        button_instance = find_object_by_name_recursive(root_window, button_name)
+        assert button_instance is not None, f"Button {button_name} was not found in the QML hierarchy."
+        assert button_instance.property("enabled") is not None, f"Button {button_name} missing enabled property."

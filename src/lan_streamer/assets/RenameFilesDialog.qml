@@ -48,6 +48,7 @@ Popup {
                 elide: Text.ElideRight
             }
             Button {
+                objectName: "closeRenameFilesDialogButton"
                 text: "✕"
                 background: Rectangle { color: "transparent" }
                 contentItem: Text { text: parent.text; color: "#94A3B8"; font.pixelSize: 18; font.bold: true }
@@ -76,6 +77,7 @@ Popup {
 
             Button {
                 id: renamePreviewTriggerButton
+                objectName: "renamePreviewTriggerButton"
                 text: "Preview"
                 background: Rectangle {
                     color: parent.hovered ? "#D97706" : "#B45309"

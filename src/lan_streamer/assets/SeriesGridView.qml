@@ -219,9 +219,6 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: {
-                            rootWindow.selectedSeriesTitle = modelDisplay
-                            rootWindow.selectedSeriesPoster = posterPath
-                            rootWindow.selectedSeriesIndex = index
                             if (backendBridge) {
                                 backendBridge.selectSeries(index)
                             }

@@ -33,8 +33,14 @@ class BackendBridge(QObject):
     )  # Emits target file path to trigger embedded video surface
     openMetadataMatchDialog = Signal(str)
     selectedSeriesOverviewChanged = Signal()
+    selectedSeriesTitleChanged = Signal()
+    selectedSeriesPosterChanged = Signal()
+    selectedSeriesIndexChanged = Signal()
     # Explicit class-level annotations enabling IDEs (Pylance, PyCharm) to display typehints perfectly
     selectedSeriesOverview: str
+    selectedSeriesTitle: str
+    selectedSeriesPoster: str
+    selectedSeriesIndex: int
     availableLibraries: List[str]
     statusMessage: str
     seriesModel: QStandardItemModel
@@ -90,6 +96,8 @@ class BackendBridge(QObject):
         self._cached_library_data: dict[str, Any] = {}
         self._selected_series_name: str = ""
         self._selected_series_overview: str = ""
+        self._selected_series_poster: str = ""
+        self._selected_series_index: int = -1
         self._selected_season_name: str = ""
 
         if self._available_libraries:
@@ -100,6 +108,18 @@ class BackendBridge(QObject):
     @Property(str, notify=selectedSeriesOverviewChanged)
     def selectedSeriesOverview(self) -> str:
         return self._selected_series_overview
+
+    @Property(str, notify=selectedSeriesTitleChanged)
+    def selectedSeriesTitle(self) -> str:
+        return self._selected_series_name
+
+    @Property(str, notify=selectedSeriesPosterChanged)
+    def selectedSeriesPoster(self) -> str:
+        return self._selected_series_poster
+
+    @Property(int, notify=selectedSeriesIndexChanged)
+    def selectedSeriesIndex(self) -> int:
+        return self._selected_series_index
 
     @Property(list, notify=availableLibrariesChanged)
     def availableLibraries(self) -> List[str]:
@@ -308,6 +328,14 @@ class BackendBridge(QObject):
         self._cache_series_metrics()
         self._season_model.clear()
         self._episode_model.clear()
+        self._selected_series_name = ""
+        self._selected_series_overview = ""
+        self._selected_series_poster = ""
+        self._selected_series_index = -1
+        self.selectedSeriesOverviewChanged.emit()
+        self.selectedSeriesTitleChanged.emit()
+        self.selectedSeriesPosterChanged.emit()
+        self.selectedSeriesIndexChanged.emit()
 
         self._refresh_series_model()
         self.statusMessage = "Loaded library series successfully"
@@ -394,22 +422,42 @@ class BackendBridge(QObject):
 
     @Slot(int)
     def selectSeries(self, index: int) -> None:
+        logger.info(f"-> Slot selectSeries invoked for row index: {index}")
         self._season_model.clear()
         self._episode_model.clear()
         self._selected_series_name = ""
         self._selected_series_overview = ""
+        self._selected_series_poster = ""
+        self._selected_series_index = -1
         self.selectedSeriesOverviewChanged.emit()
+        self.selectedSeriesTitleChanged.emit()
+        self.selectedSeriesPosterChanged.emit()
+        self.selectedSeriesIndexChanged.emit()
         self._selected_season_name = ""
 
         item = self._series_model.item(index)
         if not item:
+            logger.warning(
+                f"selectSeries aborted: row index {index} out of bounds. Total series count: {self._series_model.rowCount()}"
+            )
             return
 
         self._selected_series_name = item.text()
+        self._selected_series_index = index
+        logger.info(
+            f"Active series selection updated to '{self._selected_series_name}' (index {index})"
+        )
         series_content = self._cached_library_data.get(self._selected_series_name, {})
         series_metadata = series_content.get("metadata", {})
         self._selected_series_overview = series_metadata.get("overview", "")
+        self._selected_series_poster = series_metadata.get("poster_path", "")
+        logger.debug(
+            f"Emitting reactive property updates: title='{self._selected_series_name}', poster='{self._selected_series_poster}', overview length={len(self._selected_series_overview)}"
+        )
         self.selectedSeriesOverviewChanged.emit()
+        self.selectedSeriesTitleChanged.emit()
+        self.selectedSeriesPosterChanged.emit()
+        self.selectedSeriesIndexChanged.emit()
         seasons = series_content.get("seasons", {})
 
         # Use natural sort key if available from database module
@@ -536,14 +584,19 @@ class BackendBridge(QObject):
 
     @Slot(int)
     def matchMetadataForSeries(self, index: int) -> None:
+        logger.info(f"-> Slot matchMetadataForSeries invoked for row index: {index}")
         item = self._series_model.item(index)
         if item:
             series_target_name = item.text()
             self.statusMessage = f"Matching metadata for: {series_target_name}"
             logger.info(
-                f"Triggered metadata match slot for series: {series_target_name}"
+                f"Resolved series '{series_target_name}' at index {index}. Emitting openMetadataMatchDialog signal."
             )
             self.openMetadataMatchDialog.emit(series_target_name)
+        else:
+            logger.warning(
+                f"matchMetadataForSeries aborted: invalid row index {index}. Total series items: {self._series_model.rowCount()}"
+            )
 
     @Slot(str, str, result="QVariantList")
     def searchSeriesMetadata(self, query: str, provider_name: str) -> list:
@@ -588,50 +641,79 @@ class BackendBridge(QObject):
 
     @Slot(str, "QVariantMap")
     def applySeriesMetadataMatch(self, series_name: str, match_data: dict) -> None:
+        logger.info(
+            f"-> Slot applySeriesMetadataMatch invoked. target_series='{series_name}', payload={match_data}"
+        )
         if not getattr(self, "_cached_library_data", None):
+            logger.error(
+                "applySeriesMetadataMatch aborted: internal _cached_library_data dictionary is empty or uninitialized."
+            )
             return
-        if series_name in self._cached_library_data:
-            target_series_data = self._cached_library_data[series_name]
-            metadata_dictionary = target_series_data.get("metadata", {})
+        if series_name not in self._cached_library_data:
+            logger.error(
+                f"applySeriesMetadataMatch aborted: series '{series_name}' not present in cached keys: {list(self._cached_library_data.keys())}"
+            )
+            return
 
-            provider_type = match_data.get("provider", "TMDB")
-            if provider_type == "Jellyfin":
-                metadata_dictionary["jellyfin_id"] = match_data.get("id", "")
-                if match_data.get("tmdb_id"):
-                    metadata_dictionary["tmdb_identifier"] = match_data.get(
-                        "tmdb_id", ""
-                    )
-            else:
-                metadata_dictionary["tmdb_identifier"] = match_data.get("id", "")
+        target_series_data = self._cached_library_data[series_name]
+        metadata_dictionary = target_series_data.get("metadata", {})
+        logger.debug(f"Pre-application metadata state for '{series_name}': {metadata_dictionary}")
 
-            if match_data.get("name"):
-                metadata_dictionary["tmdb_name"] = match_data.get("name", "")
-            if match_data.get("overview"):
-                metadata_dictionary["overview"] = match_data.get("overview", "")
-            if match_data.get("poster_path"):
-                metadata_dictionary["poster_path"] = match_data.get("poster_path", "")
-            if match_data.get("first_air_date"):
-                metadata_dictionary["first_air_date"] = match_data.get(
-                    "first_air_date", ""
+        provider_type = match_data.get("provider", "TMDB")
+        if provider_type == "Jellyfin":
+            metadata_dictionary["jellyfin_id"] = match_data.get("id", "")
+            if match_data.get("tmdb_id"):
+                metadata_dictionary["tmdb_identifier"] = match_data.get("tmdb_id", "")
+        else:
+            metadata_dictionary["tmdb_identifier"] = match_data.get("id", "")
+
+        if match_data.get("name"):
+            metadata_dictionary["tmdb_name"] = match_data.get("name", "")
+        if match_data.get("overview"):
+            metadata_dictionary["overview"] = match_data.get("overview", "")
+        if match_data.get("poster_path"):
+            raw_poster = match_data.get("poster_path", "")
+            tmdb_id_val = metadata_dictionary.get("tmdb_identifier", "")
+            if raw_poster and tmdb_id_val:
+                logger.info(f"Downloading poster fragment '{raw_poster}' for TMDB ID '{tmdb_id_val}'")
+                cached_poster_path = tmdb_client.download_image(
+                    raw_poster, f"tmdb_series_{tmdb_id_val}"
                 )
+                metadata_dictionary["poster_path"] = cached_poster_path or raw_poster
+            else:
+                metadata_dictionary["poster_path"] = raw_poster
+        if match_data.get("first_air_date"):
+            metadata_dictionary["first_air_date"] = match_data.get("first_air_date", "")
 
-            target_series_data["metadata"] = metadata_dictionary
+        target_series_data["metadata"] = metadata_dictionary
+        logger.debug(f"Post-application metadata state for '{series_name}': {metadata_dictionary}")
 
-            # Save persistence layer
+        # Save persistence layer
+        try:
             db.save_library(self._current_library_name, self._cached_library_data)
-            self.statusMessage = (
-                f"Successfully applied metadata match for: {series_name}"
-            )
-            logger.info(
-                f"Updated metadata match for series '{series_name}' via provider '{provider_type}' with ID '{match_data.get('id')}'"
-            )
-            self._refresh_series_model()
-            # If the currently selected series matches, refresh detail view models too
-            if getattr(self, "_selected_series_name", "") == series_name:
-                for row_index in range(self._series_model.rowCount()):
-                    if self._series_model.item(row_index).text() == series_name:
-                        self.selectSeries(row_index)
-                        break
+            logger.info(f"Successfully preserved updated metadata for '{series_name}' to SQL database.")
+        except Exception as database_error:
+            logger.exception(f"Exception encountered during SQL database preservation: {database_error}")
+
+        self.statusMessage = f"Successfully applied metadata match for: {series_name}"
+        logger.info(
+            f"Updated metadata match for series '{series_name}' via provider '{provider_type}' with ID '{match_data.get('id')}'"
+        )
+        self._refresh_series_model()
+
+        # If the currently selected series matches, refresh detail view models too
+        current_selection = getattr(self, "_selected_series_name", "")
+        logger.info(f"Post-refresh check: current active UI series selection is '{current_selection}'")
+        if current_selection == series_name:
+            reselected = False
+            for row_index in range(self._series_model.rowCount()):
+                if self._series_model.item(row_index).text() == series_name:
+                    logger.info(f"Re-triggering selectSeries({row_index}) to synchronize UI reactive models.")
+                    self.selectSeries(row_index)
+                    reselected = True
+                    break
+            if not reselected:
+                logger.warning(f"Failed to locate '{series_name}' in updated series model rows to re-select.")
 
     @Slot(int, str, result="QVariantList")
     def getRenamePreviews(self, series_index: int, file_template: str) -> list:
@@ -646,9 +728,15 @@ class BackendBridge(QObject):
 
     @Slot(list, result="QVariantList")
     def applyRenames(self, preview_items: list) -> list:
+        logger.info(
+            f"-> Slot applyRenames invoked with {len(preview_items)} requested file renames."
+        )
         from .renamer import perform_rename
 
         def on_rename_success(old_path_string: str, new_path_string: str) -> None:
+            logger.info(
+                f"Renamer successfully mapped path: '{old_path_string}' -> '{new_path_string}'"
+            )
             db.update_episode_path(old_path_string, new_path_string)
             # Update cached library in memory by removing old references and adding new ones/updating existing
             for series_dictionary in self._cached_library_data.values():
@@ -659,23 +747,44 @@ class BackendBridge(QObject):
                             episode_dictionary["path"] = new_path_string
                             new_path_object = Path(new_path_string)
                             episode_dictionary["name"] = new_path_object.name
+                            logger.debug(
+                                f"Updated in-memory cache reference for episode '{episode_dictionary['name']}'"
+                            )
                             break
 
         rename_results = perform_rename(preview_items, on_rename_success)
+        logger.info(
+            f"Finished batch rename operations. Processed results count: {len(rename_results)}"
+        )
 
         # Resave persistent database layer to ensure complete sync
         if getattr(self, "_current_library_name", ""):
-            db.save_library(self._current_library_name, self._cached_library_data)
+            try:
+                db.save_library(self._current_library_name, self._cached_library_data)
+                logger.info(
+                    f"Saved updated renamed library cache to database for '{self._current_library_name}'"
+                )
+            except Exception as resave_error:
+                logger.exception(
+                    f"Exception while resaving database during applyRenames: {resave_error}"
+                )
 
         # Refresh currently selected series detail models if active
-        if getattr(self, "_selected_series_name", ""):
+        active_series = getattr(self, "_selected_series_name", "")
+        if active_series:
+            reselected_renamed = False
             for row_index in range(self._series_model.rowCount()):
-                if (
-                    self._series_model.item(row_index).text()
-                    == self._selected_series_name
-                ):
+                if self._series_model.item(row_index).text() == active_series:
+                    logger.info(
+                        f"Re-triggering selectSeries({row_index}) post-rename for '{active_series}'"
+                    )
                     self.selectSeries(row_index)
+                    reselected_renamed = True
                     break
+            if not reselected_renamed:
+                logger.warning(
+                    f"Post-rename refresh failed to locate active series '{active_series}'"
+                )
 
         return rename_results
 
@@ -838,6 +947,14 @@ class BackendBridge(QObject):
                     self._series_model.clear()
                     self._season_model.clear()
                     self._episode_model.clear()
+                    self._selected_series_name = ""
+                    self._selected_series_overview = ""
+                    self._selected_series_poster = ""
+                    self._selected_series_index = -1
+                    self.selectedSeriesOverviewChanged.emit()
+                    self.selectedSeriesTitleChanged.emit()
+                    self.selectedSeriesPosterChanged.emit()
+                    self.selectedSeriesIndexChanged.emit()
 
     @Slot(str, str)
     def addRootDirectoryToLibrary(self, library_name: str, directory_path: str) -> None:
