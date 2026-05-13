@@ -129,6 +129,48 @@ class TMDBClient:
     # Public API
     # ------------------------------------------------------------------
 
+    def _select_best_candidate(
+        self, results_list: list, target_title: str, custom_threshold: float = 0.7
+    ) -> dict | None:
+        from difflib import SequenceMatcher
+
+        target_clean = self._clean_name(target_title).lower()
+        if not target_clean:
+            return None
+
+        scored_candidates = []
+        for candidate_item in results_list:
+            candidate_name = candidate_item.get("name", "")
+            candidate_clean = self._clean_name(candidate_name).lower()
+            if not candidate_clean:
+                continue
+
+            if candidate_clean == target_clean:
+                return candidate_item
+
+            similarity_ratio = SequenceMatcher(
+                None, target_clean, candidate_clean
+            ).ratio()
+            scored_candidates.append((similarity_ratio, candidate_item))
+
+        if scored_candidates:
+            scored_candidates.sort(key=lambda item: item[0], reverse=True)
+            best_ratio, best_candidate = scored_candidates[0]
+            if custom_threshold != 0.7:
+                is_similar_result = self._is_similar(
+                    target_title,
+                    best_candidate.get("name", ""),
+                    threshold=custom_threshold,
+                )
+            else:
+                is_similar_result = self._is_similar(
+                    target_title, best_candidate.get("name", "")
+                )
+            if best_ratio >= custom_threshold or is_similar_result:
+                return best_candidate
+
+        return None
+
     def search_series(self, name: str) -> dict | None:
         """Searches TMDB for the best-matching TV series.
         Works without an API key — returns None gracefully if auth fails.
@@ -144,12 +186,14 @@ class TMDBClient:
         for search_term in dict.fromkeys([exact_name, colon_name, cleaned_name]):
             results = self._do_search(search_term)
             if results:
-                top = results[0]
-                if self._is_similar(name, top.get("name", "")):
+                best_match = self._select_best_candidate(
+                    results, name, custom_threshold=0.7
+                )
+                if best_match:
                     logger.info(
-                        f"Found TMDB match for '{name}': {top.get('name')} (ID: {top.get('id')})"
+                        f"Found TMDB match for '{name}': {best_match.get('name')} (ID: {best_match.get('id')})"
                     )
-                    return top
+                    return best_match
 
         # Fallback: first two words
         words = cleaned_name.split()
@@ -157,12 +201,14 @@ class TMDBClient:
             shorter = " ".join(words[:2])
             results = self._do_search(shorter)
             if results:
-                top = results[0]
-                if self._is_similar(cleaned_name, top.get("name", "")):
+                best_match = self._select_best_candidate(
+                    results, cleaned_name, custom_threshold=0.7
+                )
+                if best_match:
                     logger.info(
-                        f"Found TMDB match for '{name}' (two-word fallback): {top.get('name')}"
+                        f"Found TMDB match for '{name}' (two-word fallback): {best_match.get('name')}"
                     )
-                    return top
+                    return best_match
 
         # Fallback: first word only (strict)
         if len(words) > 1 and len(words[0]) > 3:
@@ -170,14 +216,14 @@ class TMDBClient:
             if first.lower() not in ["the", "marvel", "star", "a", "an"]:
                 results = self._do_search(first)
                 if results:
-                    top = results[0]
-                    if self._is_similar(
-                        cleaned_name, top.get("name", ""), threshold=0.8
-                    ):
+                    best_match = self._select_best_candidate(
+                        results, cleaned_name, custom_threshold=0.8
+                    )
+                    if best_match:
                         logger.info(
-                            f"Found TMDB match for '{name}' (first-word fallback): {top.get('name')}"
+                            f"Found TMDB match for '{name}' (first-word fallback): {best_match.get('name')}"
                         )
-                        return top
+                        return best_match
 
         logger.warning(f"No TMDB series found for: '{name}'")
         return None

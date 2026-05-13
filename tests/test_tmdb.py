@@ -443,3 +443,17 @@ def test_tmdb_search_first_word_fallback(tmdb) -> None:
         res = tmdb.search_series("Breaking Bad Show")
         assert res is not None
         assert res["id"] == 1
+
+
+def test_search_series_scoring_priority(tmdb) -> None:
+    """Verify that scoring prioritizes the exact subtitle match over a preceding generic title."""
+    candidates_list = [
+        {"id": 61889, "name": "Daredevil"},
+        {"id": 208857, "name": "Daredevil: Born Again"},
+    ]
+    tmdb._do_search = MagicMock(return_value=candidates_list)
+
+    # Search for DareDevil - born again
+    result = tmdb.search_series("DareDevil - born again")
+    assert result is not None
+    assert result["id"] == 208857

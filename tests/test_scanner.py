@@ -291,8 +291,8 @@ def test_parse_episode_number() -> None:
     assert _parse_episode_number("no_episode.mkv") is None
 
 
-def test_scan_tmdb_merge_by_tmdb_identifier(tmp_path) -> None:
-    """Two differently-named folders with same TMDB ID should be merged."""
+def test_scan_tmdb_no_merge_differently_named_folders(tmp_path) -> None:
+    """Two differently-named folders with same TMDB ID should NOT be merged per user requirement."""
     folder_a = tmp_path / "Show Part 1"
     folder_b = tmp_path / "Show Part 2"
     for folder in [folder_a, folder_b]:
@@ -325,11 +325,10 @@ def test_scan_tmdb_merge_by_tmdb_identifier(tmp_path) -> None:
     mock_tmdb.download_image.return_value = ""
     with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
         library = scan_directories([str(tmp_path)])
-    # Both folders should be merged under one entry
-    assert len(library) == 1
-    merged = list(library.values())[0]
-    episodes = merged["seasons"]["Season 1"]["episodes"]
-    assert len(episodes) == 2
+    # Both folders should be kept separate per updated requirement
+    assert len(library) == 2
+    assert "Show Part 1" in library
+    assert "Show Part 2" in library
 
 
 def test_scan_directories_merge_branches(tmp_path) -> None:
@@ -826,3 +825,46 @@ def test_scan_directories_non_destructive_cleanup(tmp_path) -> None:
         eps_cleaned = active_seasons_cleaned["Season 1"]["episodes"]
         assert len(eps_cleaned) == 1
         assert eps_cleaned[0]["path"] == str(ep_file.absolute())
+
+
+def test_scan_distinct_series_metadata_collision(tmp_path) -> None:
+    """Verify that similar folder names with unique TMDB IDs map to distinct library series without collisions."""
+    folder_daredevil = tmp_path / "DareDevil"
+    folder_born_again = tmp_path / "DareDevil - born again"
+
+    for folder in [folder_daredevil, folder_born_again]:
+        s = folder / "Season 1"
+        s.mkdir(parents=True)
+
+    (folder_daredevil / "Season 1" / "S01E01.mkv").touch()
+    (folder_born_again / "Season 1" / "S01E01.mkv").touch()
+
+    mock_tmdb = MagicMock()
+
+    def mock_search_series(query: str) -> dict | None:
+        if "born again" in query.lower():
+            return {"id": "208857", "name": "Daredevil: Born Again"}
+        return {"id": "61889", "name": "Daredevil"}
+
+    def mock_get_series_by_id(tmdb_id: str | int) -> dict:
+        target_id = str(tmdb_id)
+        if target_id == "208857":
+            return {"id": "208857", "name": "Daredevil: Born Again"}
+        return {"id": "61889", "name": "Daredevil"}
+
+    mock_tmdb.search_series.side_effect = mock_search_series
+    mock_tmdb.get_series_by_id.side_effect = mock_get_series_by_id
+    mock_tmdb.get_seasons.return_value = [
+        {"id": "s1", "episode_number": 1, "season_number": 1, "image": ""}
+    ]
+    mock_tmdb.get_episodes.return_value = [{"id": "e1", "episode_number": 1}]
+    mock_tmdb.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        library = scan_directories([str(tmp_path)])
+
+    assert len(library) == 2
+    assert "DareDevil" in library
+    assert "DareDevil - born again" in library
+    assert library["DareDevil"]["metadata"]["tmdb_identifier"] == "61889"
+    assert library["DareDevil - born again"]["metadata"]["tmdb_identifier"] == "208857"

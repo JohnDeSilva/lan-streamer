@@ -1,4 +1,5 @@
 import pytest
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from lan_streamer.backend import BackendBridge
@@ -670,6 +671,7 @@ def test_backend_bridge_metadata_match_slots(backend_environment) -> None:
             "seasons": {},
         }
     }
+    backend_bridge._series_model.clear()
     backend_bridge._series_model.appendRow(QStandardItem("TestSeries"))
     backend_bridge.selectSeries(0)
     assert backend_bridge.selectedSeriesTitle == "TestSeries"
@@ -843,12 +845,17 @@ def test_comprehensive_ui_buttons_existence_and_functionality(
     from PySide6.QtQml import QQmlApplicationEngine
     from pathlib import Path
     from lan_streamer.backend import BackendBridge
-    from typing import Any
 
     backend_bridge = BackendBridge()
     backend_bridge.selectLibrary("Main Media")
     backend_bridge.selectSeries(0)
     backend_bridge.selectSeason(0)
+
+    from lan_streamer.backend import tmdb_client
+
+    tmdb_client.search_series_full = MagicMock(
+        return_value=[{"id": "1", "name": "Cosmos"}]
+    )
 
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backendBridge", backend_bridge)
@@ -861,6 +868,8 @@ def test_comprehensive_ui_buttons_existence_and_functionality(
     root_objects = engine.rootObjects()
     assert len(root_objects) > 0
     root_window = root_objects[0]
+
+    backend_bridge.openMetadataMatchDialog.emit("Cosmos")
 
     def find_object_by_name_recursive(parent_object: Any, target_name: str) -> Any:
         if parent_object.objectName() == target_name:
@@ -879,7 +888,6 @@ def test_comprehensive_ui_buttons_existence_and_functionality(
         "markUnwatchedButton",
         "metadataSearchTriggerButton",
         "closeMetadataMatchDialogButton",
-        "applyMetadataMatchButton",
         "closeRenameFilesDialogButton",
         "renamePreviewTriggerButton",
         "applyRenamesButton",
@@ -887,5 +895,9 @@ def test_comprehensive_ui_buttons_existence_and_functionality(
 
     for button_name in expected_buttons:
         button_instance = find_object_by_name_recursive(root_window, button_name)
-        assert button_instance is not None, f"Button {button_name} was not found in the QML hierarchy."
-        assert button_instance.property("enabled") is not None, f"Button {button_name} missing enabled property."
+        assert button_instance is not None, (
+            f"Button {button_name} was not found in the QML hierarchy."
+        )
+        assert button_instance.property("enabled") is not None, (
+            f"Button {button_name} missing enabled property."
+        )

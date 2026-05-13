@@ -141,15 +141,7 @@ def scan_directories(
 
             # Identify if this series matches something already in our library
             match_key = None
-            tmdb_identifier = cleaned["metadata"].get("tmdb_identifier")
-
-            if tmdb_identifier:
-                for key, existing in library.items():
-                    if existing["metadata"].get("tmdb_identifier") == tmdb_identifier:
-                        match_key = key
-                        break
-
-            if not match_key and series_name in library:
+            if series_name in library:
                 match_key = series_name
 
             if match_key:

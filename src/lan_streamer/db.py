@@ -200,7 +200,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
                 if not series:
                     series = Series(library_name=library_name, name=series_name)
                     session.add(series)
-                    stats["series"] += 1
+                stats["series"] += 1
 
                 series.jellyfin_id = (
                     series_metadata.get("jellyfin_id") or series.jellyfin_id
@@ -234,7 +234,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
                     if not season:
                         season = Season(name=season_name, series=series)
                         session.add(season)
-                        stats["seasons"] += 1
+                    stats["seasons"] += 1
 
                     season.jellyfin_id = (
                         season_metadata.get("jellyfin_id") or season.jellyfin_id
@@ -256,7 +256,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
                         if not episode:
                             episode = Episode(path=path, season=season)
                             session.add(episode)
-                            stats["episodes"] += 1
+                        stats["episodes"] += 1
 
                         episode.name = ep_data["name"]
                         episode.jellyfin_id = (

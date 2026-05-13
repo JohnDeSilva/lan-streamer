@@ -324,6 +324,8 @@ class BackendBridge(QObject):
         self._current_library_name = library_name
         self.statusMessage = f"Loading library: {library_name}"
 
+        previous_selected_series = getattr(self, "_selected_series_name", "")
+
         self._cached_library_data = db.load_library(library_name)
         self._cache_series_metrics()
         self._season_model.clear()
@@ -338,6 +340,17 @@ class BackendBridge(QObject):
         self.selectedSeriesIndexChanged.emit()
 
         self._refresh_series_model()
+
+        if (
+            previous_selected_series
+            and previous_selected_series in self._cached_library_data
+        ):
+            for row in range(self._series_model.rowCount()):
+                item = self._series_model.item(row)
+                if item and item.text() == previous_selected_series:
+                    self.selectSeries(row)
+                    break
+
         self.statusMessage = "Loaded library series successfully"
 
     def _cache_series_metrics(self) -> None:
@@ -657,7 +670,9 @@ class BackendBridge(QObject):
 
         target_series_data = self._cached_library_data[series_name]
         metadata_dictionary = target_series_data.get("metadata", {})
-        logger.debug(f"Pre-application metadata state for '{series_name}': {metadata_dictionary}")
+        logger.debug(
+            f"Pre-application metadata state for '{series_name}': {metadata_dictionary}"
+        )
 
         provider_type = match_data.get("provider", "TMDB")
         if provider_type == "Jellyfin":
@@ -675,7 +690,9 @@ class BackendBridge(QObject):
             raw_poster = match_data.get("poster_path", "")
             tmdb_id_val = metadata_dictionary.get("tmdb_identifier", "")
             if raw_poster and tmdb_id_val:
-                logger.info(f"Downloading poster fragment '{raw_poster}' for TMDB ID '{tmdb_id_val}'")
+                logger.info(
+                    f"Downloading poster fragment '{raw_poster}' for TMDB ID '{tmdb_id_val}'"
+                )
                 cached_poster_path = tmdb_client.download_image(
                     raw_poster, f"tmdb_series_{tmdb_id_val}"
                 )
@@ -686,14 +703,20 @@ class BackendBridge(QObject):
             metadata_dictionary["first_air_date"] = match_data.get("first_air_date", "")
 
         target_series_data["metadata"] = metadata_dictionary
-        logger.debug(f"Post-application metadata state for '{series_name}': {metadata_dictionary}")
+        logger.debug(
+            f"Post-application metadata state for '{series_name}': {metadata_dictionary}"
+        )
 
         # Save persistence layer
         try:
             db.save_library(self._current_library_name, self._cached_library_data)
-            logger.info(f"Successfully preserved updated metadata for '{series_name}' to SQL database.")
+            logger.info(
+                f"Successfully preserved updated metadata for '{series_name}' to SQL database."
+            )
         except Exception as database_error:
-            logger.exception(f"Exception encountered during SQL database preservation: {database_error}")
+            logger.exception(
+                f"Exception encountered during SQL database preservation: {database_error}"
+            )
 
         self.statusMessage = f"Successfully applied metadata match for: {series_name}"
         logger.info(
@@ -703,17 +726,23 @@ class BackendBridge(QObject):
 
         # If the currently selected series matches, refresh detail view models too
         current_selection = getattr(self, "_selected_series_name", "")
-        logger.info(f"Post-refresh check: current active UI series selection is '{current_selection}'")
+        logger.info(
+            f"Post-refresh check: current active UI series selection is '{current_selection}'"
+        )
         if current_selection == series_name:
             reselected = False
             for row_index in range(self._series_model.rowCount()):
                 if self._series_model.item(row_index).text() == series_name:
-                    logger.info(f"Re-triggering selectSeries({row_index}) to synchronize UI reactive models.")
+                    logger.info(
+                        f"Re-triggering selectSeries({row_index}) to synchronize UI reactive models."
+                    )
                     self.selectSeries(row_index)
                     reselected = True
                     break
             if not reselected:
-                logger.warning(f"Failed to locate '{series_name}' in updated series model rows to re-select.")
+                logger.warning(
+                    f"Failed to locate '{series_name}' in updated series model rows to re-select."
+                )
 
     @Slot(int, str, result="QVariantList")
     def getRenamePreviews(self, series_index: int, file_template: str) -> list:
