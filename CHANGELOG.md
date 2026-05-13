@@ -1,3 +1,9 @@
+## 0.11.2 (2026-05-12)
+
+### Fix
+
+- **player**: fixes embedded vs vlc playback
+
 ## 0.11.1 (2026-05-12)
 
 ### Fix
