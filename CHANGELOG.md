@@ -1,3 +1,11 @@
+## 0.11.4 (2026-05-13)
+
+### Fix
+
+- **tmdb**: when metadata for a series is set manually do not overwrite when refreshing library
+- **scanner**: fixes bug where series with similar names would be combined
+- **ui**: fixed metadata match window
+
 ## 0.11.3 (2026-05-12)
 
 ### Fix
