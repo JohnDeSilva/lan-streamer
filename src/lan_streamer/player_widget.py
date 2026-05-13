@@ -91,23 +91,15 @@ class VideoPlayerWidget(QWidget):
                 "--video-filter=deinterlace",
                 "--deinterlace=1",
                 "--deinterlace-mode=yadif",
-                # Caching to prevent stuttering
+                # Caching to ensure smooth delivery
                 "--file-caching=3000",
-                "--network-caching=3000",
-                "--live-caching=3000",
-                # Timing and jitter improvements
-                "--clock-jitter=0",
-                "--clock-synchro=0",
+                "--network-caching=5000",
+                "--live-caching=5000",
                 # High quality scaling and decoding
                 "--swscale-mode=2",  # Lanczos
                 "--avcodec-skiploopfilter=0",
-                # Buffering
-                "--network-caching=5000",
-                "--live-caching=5000",
-                # Performance and completeness
+                # Enable multi-threaded decoding
                 "--avcodec-threads=0",  # Auto-detect cores
-                "--no-skip-frames",  # Don't skip frames to save CPU
-                "--no-drop-late-frames",  # Don't drop frames if slightly late
             ]
 
             if config.enable_hw_accel:
