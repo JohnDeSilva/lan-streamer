@@ -55,7 +55,7 @@ class BackendBridge(QObject):
     configSyncHistoryOnStart: bool
     configUseEmbeddedPlayer: bool
     configEnableHardwareAcceleration: bool
-    configEnableGlobalFileLogging: bool
+    configDivideLogsByService: bool
     configEnableCaching: bool
     configMaxCacheSizeGb: float
     configDatabasePath: str
@@ -249,13 +249,13 @@ class BackendBridge(QObject):
             self.configChanged.emit()
 
     @Property(bool, notify=configChanged)
-    def configEnableGlobalFileLogging(self) -> bool:
-        return config.enable_global_file_logging
+    def configDivideLogsByService(self) -> bool:
+        return config.divide_logs_by_service
 
-    @configEnableGlobalFileLogging.setter
-    def configEnableGlobalFileLogging(self, value: bool) -> None:
-        if config.enable_global_file_logging != value:
-            config.enable_global_file_logging = value
+    @configDivideLogsByService.setter
+    def configDivideLogsByService(self, value: bool) -> None:
+        if config.divide_logs_by_service != value:
+            config.divide_logs_by_service = value
             config.save()
             self.configChanged.emit()
 
@@ -1031,6 +1031,7 @@ class ScanWorker(QThread):
 
     def run(self) -> None:
         try:
+            logger.info(f"ScanWorker starting run for directories: {self.root_directories}")
             # Fetch Jellyfin correlation data if configured
             jellyfin_data = None
             if jellyfin_client.is_configured():
@@ -1044,8 +1045,10 @@ class ScanWorker(QThread):
                 force_refresh=self.force_refresh,
                 cleanup=self.cleanup,
             )
+            logger.info("ScanWorker finished successfully")
             self.finished.emit(library)
         except Exception as exc:
+            logger.exception("ScanWorker failed")
             self.error.emit(str(exc))
 
 
@@ -1058,11 +1061,13 @@ class SyncAllWorker(QThread):
 
     def run(self) -> None:
         try:
+            logger.info("SyncAllWorker starting run")
             jellyfin_data = None
             if jellyfin_client.is_configured():
                 jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
             for library_name, root_directories in config.libraries.items():
+                logger.debug(f"SyncAllWorker scanning {library_name}")
                 self.progress.emit(f"Scanning library '{library_name}'...")
                 existing_library_data = db.load_library(library_name)
                 library = scan_directories(
@@ -1071,8 +1076,10 @@ class SyncAllWorker(QThread):
                     jellyfin_data=jellyfin_data,
                 )
                 db.save_library(library_name, library)
+            logger.info("SyncAllWorker finished successfully")
             self.finished.emit()
         except Exception as exc:
+            logger.exception("SyncAllWorker failed")
             self.error.emit(str(exc))
 
 
@@ -1094,9 +1101,12 @@ class CleanupWorker(QThread):
 
     def run(self) -> None:
         try:
+            logger.info(f"CleanupWorker starting for library {self.library_name}")
             results = db.cleanup_library(self.library_name, self.root_directories)
+            logger.info(f"CleanupWorker finished with results: {results}")
             self.finished.emit(results)
         except Exception as exc:
+            logger.exception("CleanupWorker failed")
             self.error.emit(str(exc))
 
 
@@ -1108,14 +1118,17 @@ class JellyfinPullWorker(QThread):
 
     def run(self) -> None:
         try:
+            logger.info("JellyfinPullWorker starting run")
             watched_identifiers, watched_paths, watched_names = (
                 jellyfin_client.fetch_watched_episodes()
             )
             updated_count = db.sync_watched_from_jellyfin_data(
                 watched_identifiers, watched_paths, watched_names
             )
+            logger.info(f"JellyfinPullWorker finished, updated {updated_count} episodes")
             self.finished.emit(updated_count)
         except Exception as exc:
+            logger.exception("JellyfinPullWorker failed")
             self.error.emit(str(exc))
 
 
@@ -1127,6 +1140,7 @@ class JellyfinPushWorker(QThread):
 
     def run(self) -> None:
         try:
+            logger.info("JellyfinPushWorker starting run")
             episodes_list = db.get_all_episodes_with_jellyfin_id()
             pushed_count = 0
             for episode_record in episodes_list:
@@ -1134,6 +1148,8 @@ class JellyfinPushWorker(QThread):
                     episode_record["jellyfin_id"], bool(episode_record["watched"])
                 )
                 pushed_count += 1
+            logger.info(f"JellyfinPushWorker finished, pushed {pushed_count} episodes")
             self.finished.emit(pushed_count)
         except Exception as exc:
+            logger.exception("JellyfinPushWorker failed")
             self.error.emit(str(exc))

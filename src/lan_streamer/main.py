@@ -47,7 +47,10 @@ def main() -> None:
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    
+    # Map string log level to logging constant
+    log_level = getattr(logging, config.log_level.upper(), logging.INFO)
+    root_logger.setLevel(log_level)
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
@@ -98,7 +101,7 @@ def main() -> None:
     except Exception as exc:
         logging.debug(f"Error cleaning old logs: {exc}")
 
-    if config.enable_global_file_logging:
+    if not config.divide_logs_by_service:
         add_file_handler(
             root_logger,
             str(log_directory / "lan-streamer.log"),
@@ -106,40 +109,37 @@ def main() -> None:
             f"Logging to {log_directory / 'lan-streamer.log'} (rotated daily)",
         )
     else:
-        logging.info(
-            "Global logging to console only (file logging disabled in settings)"
+        logging.info("Logging divided into individual service log files")
+        add_file_handler(
+            logging.getLogger("lan_streamer.db"),
+            str(log_directory / "db.log"),
+            log_formatter,
         )
-
-    add_file_handler(
-        logging.getLogger("lan_streamer.db"),
-        str(log_directory / "db.log"),
-        log_formatter,
-    )
-    add_file_handler(
-        logging.getLogger("lan_streamer.backend"),
-        str(log_directory / "backend.log"),
-        log_formatter,
-    )
-    add_file_handler(
-        logging.getLogger("lan_streamer.scanner"),
-        str(log_directory / "scanner.log"),
-        log_formatter,
-    )
-    add_file_handler(
-        logging.getLogger("lan_streamer.jellyfin"),
-        str(log_directory / "jellyfin.log"),
-        log_formatter,
-    )
-    add_file_handler(
-        logging.getLogger("lan_streamer.tmdb"),
-        str(log_directory / "tmdb.log"),
-        log_formatter,
-    )
-    add_file_handler(
-        logging.getLogger("lan_streamer.player_widget"),
-        str(log_directory / "player.log"),
-        log_formatter,
-    )
+        add_file_handler(
+            logging.getLogger("lan_streamer.backend"),
+            str(log_directory / "backend.log"),
+            log_formatter,
+        )
+        add_file_handler(
+            logging.getLogger("lan_streamer.scanner"),
+            str(log_directory / "scanner.log"),
+            log_formatter,
+        )
+        add_file_handler(
+            logging.getLogger("lan_streamer.jellyfin"),
+            str(log_directory / "jellyfin.log"),
+            log_formatter,
+        )
+        add_file_handler(
+            logging.getLogger("lan_streamer.tmdb"),
+            str(log_directory / "tmdb.log"),
+            log_formatter,
+        )
+        add_file_handler(
+            logging.getLogger("lan_streamer.player_widget"),
+            str(log_directory / "player.log"),
+            log_formatter,
+        )
 
     db.init_db()
     application_instance = QApplication(sys.argv)

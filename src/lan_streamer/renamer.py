@@ -97,7 +97,7 @@ def format_name(template: str, data: Dict[str, Any]) -> str:
         logger.warning(f"Invalid token in template: {e}")
         return template  # Return template as is if it fails
     except Exception as e:
-        logger.error(f"Error formatting name with template '{template}': {e}")
+        logger.exception(f"Error formatting name with template '{template}'")
         return template
 
 
@@ -109,6 +109,8 @@ def get_rename_preview(
     Each item contains old_path, new_name, and new_path.
     """
     previews = []
+
+    logger.info(f"Generating rename preview for template: '{file_template}'")
 
     # Get series level info
     series_title = series_data.get("metadata", {}).get("tmdb_name") or series_data.get(
@@ -211,6 +213,7 @@ def perform_rename(
     db_callback is an optional function to update the database for each successful rename.
     """
     results = []
+    logger.info(f"Starting batch rename for {len(previews)} items")
     for item in previews:
         old_path = Path(item["old_path"])
         new_path = Path(item["new_path"])
@@ -262,7 +265,7 @@ def perform_rename(
                 try:
                     db_callback(str(old_path), str(new_path))
                 except Exception as e:
-                    logger.error(f"Failed to update DB for {old_path}: {e}")
+                    logger.exception(f"Failed to update DB for {old_path}")
                     # We still count the file rename as a success
 
             result["success"] = True
@@ -272,6 +275,6 @@ def perform_rename(
         except Exception as e:
             result["error"] = str(e)
             results.append(result)
-            logger.error(f"Rename failed: {old_path} -> {new_path}: {e}")
+            logger.exception(f"Rename failed: {old_path} -> {new_path}")
 
     return results

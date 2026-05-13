@@ -19,7 +19,8 @@ class Config:
             Path.home() / ".config" / "lan-streamer" / "library.db"
         )
         self.log_directory: str = str(Path.home() / ".config" / "lan-streamer" / "logs")
-        self.enable_global_file_logging: bool = False
+        self.log_level: str = "INFO"
+        self.divide_logs_by_service: bool = False
         self.enable_caching: bool = False
         self.watched_threshold: float = 0.9
         self.cache_directory: str = str(
@@ -64,8 +65,10 @@ class Config:
                         "log_directory",
                         str(Path.home() / ".config" / "lan-streamer" / "logs"),
                     )
-                    self.enable_global_file_logging = data.get(
-                        "enable_global_file_logging", False
+                    self.log_level = data.get("log_level", "INFO")
+                    self.divide_logs_by_service = data.get(
+                        "divide_logs_by_service",
+                        not data.get("enable_global_file_logging", True),
                     )
                     self.enable_caching = data.get("enable_caching", False)
                     self.watched_threshold = data.get("watched_threshold", 0.9)
@@ -117,7 +120,8 @@ class Config:
                         "sort_mode": self.sort_mode,
                         "database_path": self.database_path,
                         "log_directory": self.log_directory,
-                        "enable_global_file_logging": self.enable_global_file_logging,
+                        "log_level": self.log_level,
+                        "divide_logs_by_service": self.divide_logs_by_service,
                         "enable_caching": self.enable_caching,
                         "watched_threshold": self.watched_threshold,
                         "cache_directory": self.cache_directory,

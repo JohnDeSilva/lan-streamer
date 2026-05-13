@@ -26,4 +26,4 @@ def play_video(file_path: str) -> None:
         else:
             subprocess.Popen(["vlc", str(path)])
     except Exception as exception_instance:
-        logger.error(f"Error launching VLC: {exception_instance}")
+        logger.exception("Error launching VLC")

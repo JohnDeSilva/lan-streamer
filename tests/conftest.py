@@ -43,7 +43,7 @@ def protect_user_dirs(tmp_path) -> None:
         lan_streamer.config.config.tmdb_api_key = ""
         lan_streamer.config.config.database_path = str(db_file)
         lan_streamer.config.config.log_directory = str(tmp_path / "logs")
-        lan_streamer.config.config.enable_global_file_logging = False
+        lan_streamer.config.config.divide_logs_by_service = False
 
         yield
 

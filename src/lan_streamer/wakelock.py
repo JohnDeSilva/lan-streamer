@@ -32,7 +32,7 @@ class WakeLock:
                     self._inhibit_macos(reason)
                 self.active = True
             except Exception as e:
-                logger.error(f"Failed to inhibit sleep: {e}")
+                logger.exception("Failed to inhibit sleep")
 
     def uninhibit(self) -> None:
         with self._lock:
@@ -49,7 +49,7 @@ class WakeLock:
                     self._uninhibit_macos()
                 self.active = False
             except Exception as e:
-                logger.error(f"Failed to release sleep inhibition: {e}")
+                logger.exception("Failed to release sleep inhibition")
 
     def _inhibit_linux(self, reason: str) -> None:
         # Try gdbus first (standard for GNOME/KDE)
@@ -125,7 +125,7 @@ class WakeLock:
         try:
             ctypes.windll.kernel32.SetThreadExecutionState(0x80000003)  # type: ignore[attr-defined]
         except Exception as e:
-            logger.error(f"Windows SetThreadExecutionState failed: {e}")
+            logger.exception("Windows SetThreadExecutionState failed")
 
     def _uninhibit_windows(self) -> None:
         import ctypes
@@ -143,7 +143,7 @@ class WakeLock:
                 ["caffeinate", "-d", "-i", "-s", "-w", str(os.getpid())]
             )
         except Exception as e:
-            logger.error(f"macOS caffeinate failed: {e}")
+            logger.exception("macOS caffeinate failed")
 
     def _uninhibit_macos(self) -> None:
         if self._process:

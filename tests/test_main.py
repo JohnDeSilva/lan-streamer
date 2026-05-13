@@ -1,6 +1,33 @@
+import pytest
 from unittest.mock import MagicMock, patch
 from typing import Callable, Any
 from lan_streamer import main
+
+
+@pytest.fixture(autouse=True)
+def cleanup_logging_handlers() -> Any:
+    import logging
+
+    def close_all() -> None:
+        for logger_name in [
+            "",
+            "lan_streamer.db",
+            "lan_streamer.backend",
+            "lan_streamer.scanner",
+            "lan_streamer.jellyfin",
+            "lan_streamer.tmdb",
+            "lan_streamer.player_widget",
+        ]:
+            target_logger = (
+                logging.getLogger(logger_name) if logger_name else logging.getLogger()
+            )
+            for handler_object in target_logger.handlers[:]:
+                handler_object.close()
+                target_logger.removeHandler(handler_object)
+
+    close_all()
+    yield
+    close_all()
 
 
 def test_setup_dark_theme(qtbot: Any) -> None:
@@ -59,7 +86,7 @@ def test_main_logging_setup(tmp_path: Any) -> None:
 
             from lan_streamer.config import config
 
-            config.enable_global_file_logging = True
+            config.divide_logs_by_service = False
             main.main()
 
             log_file_path = os.path.join(config.log_directory, "lan-streamer.log")
@@ -75,6 +102,21 @@ def test_main_logging_setup(tmp_path: Any) -> None:
             assert any(
                 isinstance(handler, logging.StreamHandler) for handler in handlers_list
             )
+
+            for handler_object in root_logger.handlers[:]:
+                handler_object.close()
+                root_logger.removeHandler(handler_object)
+
+            # Test divided service logging mode
+            config.divide_logs_by_service = True
+            db_logger = logging.getLogger("lan_streamer.db")
+            for handler_object in db_logger.handlers[:]:
+                handler_object.close()
+                db_logger.removeHandler(handler_object)
+
+            main.main()
+            db_log_path = os.path.join(config.log_directory, "db.log")
+            assert os.path.exists(db_log_path)
     finally:
         os.chdir(old_current_working_directory)
 

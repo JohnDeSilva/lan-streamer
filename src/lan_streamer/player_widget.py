@@ -67,7 +67,7 @@ class CacheWorker(QThread):
             self.finished.emit(str(self.dest_path))
             logger.info(f"Caching finished: {self.dest_path}")
         except Exception as e:
-            logger.error(f"Caching failed: {e}")
+            logger.exception("Caching failed")
             self.error.emit(str(e))
 
 
@@ -547,7 +547,7 @@ class VideoPlayerWidget(QWidget):
                 self._load_and_play(str(dest_path))
                 return
         except Exception as error:
-            logger.warning(f"Could not verify existing cache file size: {error}")
+            logger.exception("Could not verify existing cache file size")
 
         self._cleanup_cache()
 
@@ -935,9 +935,7 @@ class VideoPlayerWidget(QWidget):
                             if self.cached_file_path == str(file_path):
                                 self.cached_file_path = None
                     except Exception as error:
-                        logger.error(
-                            f"Error checking or deleting old cache file {file_path}: {error}"
-                        )
+                        logger.exception(f"Error checking or deleting old cache file {file_path}")
 
             # 2. Enforce maximum cache size
             max_size_bytes = config.max_cache_size_gb * 1024 * 1024 * 1024
@@ -952,7 +950,7 @@ class VideoPlayerWidget(QWidget):
                         )
                         total_size_bytes += file_status.st_size
                     except Exception as error:
-                        logger.error(f"Error stating cache file {file_path}: {error}")
+                        logger.exception(f"Error stating cache file {file_path}")
 
             if total_size_bytes > max_size_bytes:
                 cached_files.sort(key=lambda item: item[0])
@@ -968,12 +966,10 @@ class VideoPlayerWidget(QWidget):
                         if self.cached_file_path == str(file_path):
                             self.cached_file_path = None
                     except Exception as error:
-                        logger.error(
-                            f"Error deleting cache file {file_path} for size enforcement: {error}"
-                        )
+                        logger.exception(f"Error deleting cache file {file_path} for size enforcement")
 
         except Exception as error:
-            logger.error(f"Error during cache cleanup: {error}")
+            logger.exception("Error during cache cleanup")
 
     def on_back_clicked(self) -> None:
         self.stop()

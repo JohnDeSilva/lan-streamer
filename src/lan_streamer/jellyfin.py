@@ -76,9 +76,7 @@ class JellyfinClient:
                 self._cached_user_id = users[0].get("Id")
                 return self._cached_user_id
         except requests.exceptions.ConnectionError as exception:
-            logger.error(
-                f"Connection error reaching Jellyfin at {base_url}: {exception}"
-            )
+            logger.exception(f"Connection error reaching Jellyfin at {base_url}")
             if base_url.startswith("https://") and not config.jellyfin_url.startswith(
                 "https://"
             ):
@@ -94,11 +92,9 @@ class JellyfinClient:
                         self._cached_user_id = users[0].get("Id")
                         return self._cached_user_id
                 except Exception as retry_exception:
-                    logger.error(f"Retry with http failed: {retry_exception}")
+                    logger.exception("Retry with http failed")
         except Exception as exception:
-            logger.error(
-                f"Unexpected error getting Jellyfin user: {exception}", exc_info=True
-            )
+            logger.exception("Unexpected error getting Jellyfin user")
         return None
 
     # ------------------------------------------------------------------
@@ -137,7 +133,7 @@ class JellyfinClient:
             s.close()
             logger.info("Raw socket connection successful!")
         except Exception as e:
-            logger.error(f"Raw socket failed: {e}")
+            logger.exception("Raw socket failed")
             return (
                 False,
                 f"System-level connection failed (Socket Error): {e}\nThis usually means a firewall or VPN is blocking the application.",
@@ -158,14 +154,14 @@ class JellyfinClient:
             response.raise_for_status()
             return True, "Connection successful!"
         except requests.exceptions.ConnectionError as e:
-            logger.error(f"HTTP connection failed: {e}")
+            logger.exception("HTTP connection failed")
             return False, f"HTTP connection failed: {e}"
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:
                 return False, "Invalid API Key (Unauthorized)."
             return False, f"HTTP Error: {e}"
         except Exception as e:
-            logger.error(f"Unexpected error testing {test_url}: {e}")
+            logger.exception(f"Unexpected error testing {test_url}")
             return False, f"Unexpected error: {e}"
 
     # ------------------------------------------------------------------
@@ -223,9 +219,7 @@ class JellyfinClient:
                     break
                 start_index += limit
             except Exception as exception:
-                logger.error(
-                    f"Failed to fetch watched episodes from Jellyfin: {exception}"
-                )
+                logger.exception("Failed to fetch watched episodes from Jellyfin")
                 break
 
         logger.info(
@@ -323,9 +317,7 @@ class JellyfinClient:
                     break
                 start_index += limit
             except Exception as exception:
-                logger.error(
-                    f"Failed to fetch episode mapping from Jellyfin: {exception}"
-                )
+                logger.exception("Failed to fetch episode mapping from Jellyfin")
                 break
 
         # 2. Fetch Series for TMDB mapping
@@ -355,9 +347,7 @@ class JellyfinClient:
                     break
                 start_index += limit
             except Exception as exception:
-                logger.error(
-                    f"Failed to fetch series mapping from Jellyfin: {exception}"
-                )
+                logger.exception("Failed to fetch series mapping from Jellyfin")
                 break
 
         logger.info(
@@ -390,7 +380,7 @@ class JellyfinClient:
             response.raise_for_status()
             return True
         except Exception as e:
-            logger.error(f"Failed to mark item {item_id} as played: {e}")
+            logger.exception(f"Failed to mark item {item_id} as played")
             return False
 
     def unmark_as_played(self, item_id: str) -> bool:
@@ -408,7 +398,7 @@ class JellyfinClient:
             response.raise_for_status()
             return True
         except Exception as e:
-            logger.error(f"Failed to unmark item {item_id} as played: {e}")
+            logger.exception(f"Failed to unmark item {item_id} as played")
             return False
 
     # ------------------------------------------------------------------
@@ -442,7 +432,7 @@ class JellyfinClient:
             data = response.json()
             return data.get("Items", [])
         except Exception as exception:
-            logger.error(f"Failed to search Jellyfin for series '{name}': {exception}")
+            logger.exception(f"Failed to search Jellyfin for series '{name}'")
             return []
 
     def get_series_episodes(self, series_id: str) -> list:
@@ -472,9 +462,7 @@ class JellyfinClient:
             data = response.json()
             return data.get("Items", [])
         except Exception as exception:
-            logger.error(
-                f"Failed to fetch episodes for Jellyfin series {series_id}: {exception}"
-            )
+            logger.exception(f"Failed to fetch episodes for Jellyfin series {series_id}")
             return []
 
     # ------------------------------------------------------------------
@@ -497,7 +485,7 @@ class JellyfinClient:
                 url = f"{self._get_base_url()}/Users/{user_id}/PlayedItems/{item_id}"
                 self.session.delete(url, headers=self._get_headers(), timeout=5)
         except Exception as e:
-            logger.error(f"Error setting watched status for {item_id}: {e}")
+            logger.exception(f"Error setting watched status for {item_id}")
 
 
 jellyfin_client = JellyfinClient()

@@ -21,6 +21,7 @@ def _parse_episode_number(filename: str) -> tuple[int, int] | None:
     """Returns (season_num, episode_num) parsed from filename, or None."""
     match = _EPISODE_REGEX.search(filename)
     if match:
+        logger.debug(f"Parsed episode S{match.group(1)}E{match.group(2)} from '{filename}'")
         return int(match.group(1)), int(match.group(2))
     return None
 
@@ -29,6 +30,7 @@ def _parse_season_number(season_name: str) -> int | None:
     """Returns season number parsed from folder name (e.g. 'Season 1'), or None."""
     match = _SEASON_REGEX.search(season_name)
     if match:
+        logger.debug(f"Parsed season number {match.group(1)} from '{season_name}'")
         return int(match.group(1))
     return None
 
@@ -420,7 +422,8 @@ def scan_series(
 
                 try:
                     ctime = os.path.getctime(episode_path)
-                except OSError:
+                except OSError as e:
+                    logger.debug(f"Could not read ctime for {episode_path}: {e}")
                     ctime = 0
 
                 jellyfin_path_map = (
@@ -552,4 +555,5 @@ def scan_series(
                     key=lambda x: natural_sort_key(x["name"])
                 )
 
+    logger.info(f"Completed scan for series '{series_name}', found {len(series_data['seasons'])} seasons.")
     return series_data

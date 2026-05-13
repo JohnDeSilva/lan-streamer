@@ -374,6 +374,7 @@ def test_settings_dialog_lifecycle(qtbot: Any) -> None:
         assert dialog_instance.log_dir_input.text() == "/custom/logs"
 
     dialog_instance.log_retention_input.setText("14")
+    dialog_instance.log_saving_mode_selector.setCurrentText("Divided Service Logs")
     dialog_instance.save_config()
 
     assert config.jellyfin_url == "http://localhost:8096"
@@ -383,11 +384,14 @@ def test_settings_dialog_lifecycle(qtbot: Any) -> None:
     assert config.database_path == "/custom/lib.db"
     assert config.log_directory == "/custom/logs"
     assert config.max_log_retention_days == 14
+    assert config.divide_logs_by_service is True
 
     # Test ValueError fallback coverage
     dialog_instance.log_retention_input.setText("invalid_days")
+    dialog_instance.log_saving_mode_selector.setCurrentText("Single Global File")
     dialog_instance.save_config()
     assert config.max_log_retention_days == 14
+    assert config.divide_logs_by_service is False
 
 
 def test_controller_worker_slots(sample_library_dictionary: Dict[str, Any]) -> None:

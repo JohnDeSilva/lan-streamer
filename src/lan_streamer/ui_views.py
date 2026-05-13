@@ -1212,6 +1212,8 @@ class SettingsDialog(QDialog):
         self.db_path_input: QLineEdit = QLineEdit()
         self.log_dir_input: QLineEdit = QLineEdit()
         self.log_retention_input: QLineEdit = QLineEdit()
+        self.log_saving_mode_selector: QComboBox = QComboBox()
+        self.log_level_selector: QComboBox = QComboBox()
 
         self._setup_ui()
         self._load_config()
@@ -1327,7 +1329,17 @@ class SettingsDialog(QDialog):
         advanced_layout.addWidget(QLabel("Max Log Retention Days:"), 2, 0)
         advanced_layout.addWidget(self.log_retention_input, 2, 1)
 
-        advanced_layout.setRowStretch(3, 1)
+        advanced_layout.addWidget(QLabel("Log Saving Mode:"), 3, 0)
+        self.log_saving_mode_selector.addItems(
+            ["Single Global File", "Divided Service Logs"]
+        )
+        advanced_layout.addWidget(self.log_saving_mode_selector, 3, 1)
+
+        advanced_layout.addWidget(QLabel("Log Level:"), 4, 0)
+        self.log_level_selector.addItems(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+        advanced_layout.addWidget(self.log_level_selector, 4, 1)
+
+        advanced_layout.setRowStretch(5, 1)
         tab_container.addTab(advanced_tab, "Advanced")
 
         main_layout.addWidget(tab_container)
@@ -1359,6 +1371,12 @@ class SettingsDialog(QDialog):
         self.db_path_input.setText(config.database_path)
         self.log_dir_input.setText(config.log_directory)
         self.log_retention_input.setText(str(config.max_log_retention_days))
+        self.log_saving_mode_selector.setCurrentText(
+            "Divided Service Logs"
+            if config.divide_logs_by_service
+            else "Single Global File"
+        )
+        self.log_level_selector.setCurrentText(config.log_level.upper())
 
         self.staged_libraries = {
             library_name: list(directories)
@@ -1474,10 +1492,16 @@ class SettingsDialog(QDialog):
             config.database_path = self.db_path_input.text().strip()
         if self.log_dir_input.text().strip():
             config.log_directory = self.log_dir_input.text().strip()
+            
+        config.log_level = self.log_level_selector.currentText()
         try:
             config.max_log_retention_days = int(self.log_retention_input.text().strip())
         except ValueError:
             pass
+
+        config.divide_logs_by_service = (
+            self.log_saving_mode_selector.currentText() == "Divided Service Logs"
+        )
 
         config.libraries = self.staged_libraries
         config.save()

@@ -126,3 +126,28 @@ def test_config_max_log_retention(mock_config_file) -> None:
 
     loaded = Config()
     assert loaded.max_log_retention_days == 30
+
+
+def test_config_divide_logs_by_service(mock_config_file) -> None:
+    config = Config()
+    assert config.divide_logs_by_service is False
+
+    # Test load legacy enable_global_file_logging: true -> divide_logs_by_service: False
+    with open(mock_config_file, "w") as f:
+        json.dump({"enable_global_file_logging": True}, f)
+    loaded1 = Config()
+    assert loaded1.divide_logs_by_service is False
+
+    # Test load legacy enable_global_file_logging: false -> divide_logs_by_service: True
+    with open(mock_config_file, "w") as f:
+        json.dump({"enable_global_file_logging": False}, f)
+    loaded2 = Config()
+    assert loaded2.divide_logs_by_service is True
+
+    # Test native divide_logs_by_service takes precedence
+    with open(mock_config_file, "w") as f:
+        json.dump(
+            {"divide_logs_by_service": True, "enable_global_file_logging": True}, f
+        )
+    loaded3 = Config()
+    assert loaded3.divide_logs_by_service is True
