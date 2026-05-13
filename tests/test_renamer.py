@@ -86,6 +86,7 @@ def test_get_rename_preview() -> None:
     previews = get_rename_preview(series_data, template)
 
     assert len(previews) == 1
+    assert previews[0]["old_name"] == "pilot.mkv"
     assert previews[0]["new_name"] == "Breaking Bad - S01E01.mkv"
     assert previews[0]["new_path"].endswith("Breaking Bad - S01E01.mkv")
 
@@ -269,10 +270,13 @@ def test_get_rename_preview_with_subtitles(tmp_path) -> None:
     assert len(previews) == 3
 
     video_preview = next(p for p in previews if not p["is_subtitle"])
+    assert video_preview["old_name"] == "ep1.mkv"
     assert video_preview["new_name"] == "Show - S01E01.mkv"
 
     sub1 = next(p for p in previews if p["new_name"] == "Show - S01E01.srt")
+    assert sub1["old_name"] == "ep1.srt"
     assert sub1["is_subtitle"] is True
 
     sub2 = next(p for p in previews if p["new_name"] == "Show - S01E01.en.srt")
+    assert sub2["old_name"] == "ep1.en.srt"
     assert sub2["is_subtitle"] is True

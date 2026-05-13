@@ -1,14 +1,21 @@
 import sys
 import logging
 from pathlib import Path
+from typing import Optional
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedLayout
 from PySide6.QtGui import QPalette, QColor, QFont
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtQuickWidgets import QQuickWidget
+from PySide6.QtCore import Qt
 
 from . import db, __version__
 from .config import config
-from .backend import BackendBridge
+from .ui_views import (
+    Controller,
+    LibraryGridView,
+    SeriesDetailView,
+    MetadataMatchDialog,
+    RenamePreviewDialog,
+    get_application_stylesheet,
+)
 from .player_widget import VideoPlayerWidget
 from .player import play_video
 
@@ -17,14 +24,14 @@ def setup_dark_theme(application_instance: QApplication) -> None:
     application_instance.setStyle("Fusion")
 
     dark_palette = QPalette()
-    dark_palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ColorRole.Window, QColor(25, 25, 25))
     dark_palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
-    dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ColorRole.Base, QColor(30, 30, 30))
+    dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(40, 40, 40))
     dark_palette.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
     dark_palette.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.white)
     dark_palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ColorRole.Button, QColor(42, 42, 42))
     dark_palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
     dark_palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
     dark_palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
@@ -32,10 +39,7 @@ def setup_dark_theme(application_instance: QApplication) -> None:
     dark_palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
 
     application_instance.setPalette(dark_palette)
-
-    application_instance.setStyleSheet(
-        "QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; }"
-    )
+    application_instance.setStyleSheet(get_application_stylesheet())
 
 
 def main() -> None:
@@ -53,7 +57,7 @@ def main() -> None:
         logger_object: logging.Logger,
         filename: str,
         formatter: logging.Formatter,
-        info_message: str | None = None,
+        info_message: Optional[str] = None,
     ) -> None:
         try:
             from logging.handlers import TimedRotatingFileHandler
@@ -85,10 +89,10 @@ def main() -> None:
         import time
 
         cutoff = time.time() - (config.max_log_retention_days * 86400)
-        for p in log_directory.glob("*.log*"):
-            if p.is_file() and p.stat().st_mtime < cutoff:
+        for path_item in log_directory.glob("*.log*"):
+            if path_item.is_file() and path_item.stat().st_mtime < cutoff:
                 try:
-                    p.unlink()
+                    path_item.unlink()
                 except Exception:
                     pass
     except Exception as exc:
@@ -152,43 +156,62 @@ def main() -> None:
     stacked_layout = QStackedLayout(central_widget)
     main_window.setCentralWidget(central_widget)
 
-    qml_view = QQuickWidget(main_window)
-    qml_view.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
-
-    backend_bridge = BackendBridge()
-    qml_view.rootContext().setContextProperty("backendBridge", backend_bridge)
-
-    qml_file_path = Path(__file__).parent / "assets" / "main.qml"
-    qml_view.setSource(QUrl.fromLocalFile(str(qml_file_path)))
-
+    controller = Controller()
+    library_grid_view = LibraryGridView(controller)
+    series_detail_view = SeriesDetailView(controller)
     player_view = VideoPlayerWidget()
 
-    stacked_layout.addWidget(qml_view)
+    stacked_layout.addWidget(library_grid_view)
+    stacked_layout.addWidget(series_detail_view)
     stacked_layout.addWidget(player_view)
+
+    # Wire view routing and modal display signals
+    def on_series_selected(series_name: str) -> None:
+        stacked_layout.setCurrentIndex(1)
+
+    controller.series_selected.connect(on_series_selected)
+
+    def on_grid_back_requested() -> None:
+        stacked_layout.setCurrentIndex(0)
+
+    series_detail_view.back_requested.connect(on_grid_back_requested)
 
     def on_playback_requested(file_path: str) -> None:
         if config.use_embedded_player:
             player_view.play_video(file_path)
-            stacked_layout.setCurrentIndex(1)
+            stacked_layout.setCurrentIndex(2)
         else:
             try:
                 play_video(file_path)
             except Exception as exception_instance:
                 logging.error(f"Failed to launch external player: {exception_instance}")
 
-    backend_bridge.playbackRequested.connect(on_playback_requested)
+    controller.playback_requested.connect(on_playback_requested)
 
-    def on_back_requested() -> None:
-        stacked_layout.setCurrentIndex(0)
+    def on_player_back_requested() -> None:
+        stacked_layout.setCurrentIndex(1)
 
-    player_view.back_requested.connect(on_back_requested)
+    player_view.back_requested.connect(on_player_back_requested)
+
+    def on_metadata_dialog_requested(series_name: str) -> None:
+        dialog_instance = MetadataMatchDialog(series_name, controller, main_window)
+        dialog_instance.exec()
+
+    controller.metadata_dialog_requested.connect(on_metadata_dialog_requested)
+
+    def on_rename_dialog_requested(series_name: str) -> None:
+        dialog_instance = RenamePreviewDialog(series_name, controller, main_window)
+        dialog_instance.exec()
+
+    controller.rename_dialog_requested.connect(on_rename_dialog_requested)
+
+    controller.status_changed.connect(main_window.statusBar().showMessage)
+
+    # Initialize library dropdown entries
+    library_names_list = list(config.libraries.keys())
+    library_grid_view.populate_libraries(library_names_list)
 
     main_window.show()
-
-    if qml_view.status() == QQuickWidget.Status.Error:
-        sys.exit(-1)
-        return
-
     sys.exit(application_instance.exec())
 
 

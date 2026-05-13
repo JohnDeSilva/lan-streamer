@@ -151,6 +151,7 @@ def get_rename_preview(
 
             previews.append(
                 {
+                    "old_name": old_path.name,
                     "old_path": str(old_path),
                     "new_name": new_filename,
                     "new_path": str(new_path),
@@ -186,6 +187,7 @@ def get_rename_preview(
 
                             previews.append(
                                 {
+                                    "old_name": sibling.name,
                                     "old_path": str(sibling),
                                     "new_name": sibling_new_name,
                                     "new_path": str(sibling_new_path),
