@@ -123,13 +123,14 @@ def scan_directories(
                         }
                         is_locked = True
 
+            series_force_refresh = force_refresh if not is_locked else False
             series_data = scan_series(
                 series_directory,
                 tmdb_series=tmdb_series,
                 jellyfin_data=jellyfin_data,
                 manual_jellyfin_id=existing_jellyfin_id,
                 existing_series_data=existing_series,
-                force_refresh=force_refresh,
+                force_refresh=series_force_refresh,
                 cleanup=cleanup,
             )
             if is_locked:

@@ -868,3 +868,40 @@ def test_scan_distinct_series_metadata_collision(tmp_path) -> None:
     assert "DareDevil - born again" in library
     assert library["DareDevil"]["metadata"]["tmdb_identifier"] == "61889"
     assert library["DareDevil - born again"]["metadata"]["tmdb_identifier"] == "208857"
+
+
+def test_scan_directories_locked_metadata_bypasses_refresh(tmp_path) -> None:
+    """Verify that series with locked metadata bypass automatic updates during library refresh."""
+    series_dir = tmp_path / "Locked Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    (season_dir / "S01E01.mkv").touch()
+
+    existing_library = {
+        "Locked Show": {
+            "metadata": {
+                "tmdb_identifier": "locked_id",
+                "tmdb_name": "Locked Custom Title",
+                "overview": "Preserved overview",
+                "locked_metadata": True,
+            },
+            "seasons": {},
+        }
+    }
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.get_seasons.return_value = []
+    mock_tmdb.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        library = scan_directories(
+            [str(tmp_path)], existing_library=existing_library, force_refresh=True
+        )
+
+    assert library["Locked Show"]["metadata"]["tmdb_identifier"] == "locked_id"
+    assert library["Locked Show"]["metadata"]["tmdb_name"] == "Locked Custom Title"
+    assert library["Locked Show"]["metadata"]["overview"] == "Preserved overview"
+    assert library["Locked Show"]["metadata"]["locked_metadata"] is True
+    mock_tmdb.search_series.assert_not_called()
+    mock_tmdb.get_series_by_id.assert_not_called()

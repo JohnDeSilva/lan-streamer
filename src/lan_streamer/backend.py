@@ -702,6 +702,7 @@ class BackendBridge(QObject):
         if match_data.get("first_air_date"):
             metadata_dictionary["first_air_date"] = match_data.get("first_air_date", "")
 
+        metadata_dictionary["locked_metadata"] = True
         target_series_data["metadata"] = metadata_dictionary
         logger.debug(
             f"Post-application metadata state for '{series_name}': {metadata_dictionary}"
