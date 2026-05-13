@@ -159,3 +159,97 @@ def test_main_proactive_log_cleanup(tmp_path) -> None:
 
     assert not old_file.exists()
     assert new_file.exists()
+
+
+def test_main_on_playback_requested_embedded() -> None:
+    from lan_streamer.config import config
+
+    config.use_embedded_player = True
+    with (
+        patch("sys.exit", MagicMock()),
+        patch("lan_streamer.main.QApplication", MagicMock()),
+        patch("lan_streamer.main.QMainWindow", MagicMock()),
+        patch("lan_streamer.main.QWidget", MagicMock()),
+        patch("lan_streamer.main.QStackedLayout", MagicMock()) as mock_layout_class,
+        patch("lan_streamer.main.QQuickWidget", MagicMock()),
+        patch("lan_streamer.main.BackendBridge", MagicMock()) as mock_bridge_class,
+        patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
+        patch("lan_streamer.main.db.init_db", MagicMock()),
+    ):
+        main.main()
+        mock_bridge_instance = mock_bridge_class.return_value
+        mock_player_instance = mock_player_class.return_value
+        mock_layout_instance = mock_layout_class.return_value
+
+        mock_bridge_instance.playbackRequested.connect.assert_called_once()
+        callback_function = mock_bridge_instance.playbackRequested.connect.call_args[0][
+            0
+        ]
+
+        callback_function("/path/to/video.mkv")
+
+        mock_player_instance.play_video.assert_called_once_with("/path/to/video.mkv")
+        mock_layout_instance.setCurrentIndex.assert_called_with(1)
+
+
+def test_main_on_playback_requested_external() -> None:
+    from lan_streamer.config import config
+
+    config.use_embedded_player = False
+    with (
+        patch("sys.exit", MagicMock()),
+        patch("lan_streamer.main.QApplication", MagicMock()),
+        patch("lan_streamer.main.QMainWindow", MagicMock()),
+        patch("lan_streamer.main.QWidget", MagicMock()),
+        patch("lan_streamer.main.QStackedLayout", MagicMock()),
+        patch("lan_streamer.main.QQuickWidget", MagicMock()),
+        patch("lan_streamer.main.BackendBridge", MagicMock()) as mock_bridge_class,
+        patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
+        patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("lan_streamer.main.play_video", MagicMock()) as mock_external_play,
+    ):
+        main.main()
+        mock_bridge_instance = mock_bridge_class.return_value
+        mock_player_instance = mock_player_class.return_value
+
+        mock_bridge_instance.playbackRequested.connect.assert_called_once()
+        callback_function = mock_bridge_instance.playbackRequested.connect.call_args[0][
+            0
+        ]
+
+        callback_function("/path/to/video.mkv")
+
+        mock_player_instance.play_video.assert_not_called()
+        mock_external_play.assert_called_once_with("/path/to/video.mkv")
+
+
+def test_main_on_playback_requested_external_exception() -> None:
+    from lan_streamer.config import config
+
+    config.use_embedded_player = False
+    with (
+        patch("sys.exit", MagicMock()),
+        patch("lan_streamer.main.QApplication", MagicMock()),
+        patch("lan_streamer.main.QMainWindow", MagicMock()),
+        patch("lan_streamer.main.QWidget", MagicMock()),
+        patch("lan_streamer.main.QStackedLayout", MagicMock()),
+        patch("lan_streamer.main.QQuickWidget", MagicMock()),
+        patch("lan_streamer.main.BackendBridge", MagicMock()) as mock_bridge_class,
+        patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
+        patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch(
+            "lan_streamer.main.play_video",
+            side_effect=Exception("External player launch fault"),
+        ) as mock_external_play,
+        patch("logging.error", MagicMock()) as mock_log_error,
+    ):
+        main.main()
+        mock_bridge_instance = mock_bridge_class.return_value
+
+        callback_function = mock_bridge_instance.playbackRequested.connect.call_args[0][
+            0
+        ]
+        callback_function("/path/to/video.mkv")
+
+        mock_external_play.assert_called_once_with("/path/to/video.mkv")
+        mock_log_error.assert_called()

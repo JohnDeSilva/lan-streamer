@@ -10,6 +10,7 @@ from . import db, __version__
 from .config import config
 from .backend import BackendBridge
 from .player_widget import VideoPlayerWidget
+from .player import play_video
 
 
 def setup_dark_theme(application_instance: QApplication) -> None:
@@ -166,8 +167,14 @@ def main() -> None:
     stacked_layout.addWidget(player_view)
 
     def on_playback_requested(file_path: str) -> None:
-        player_view.play_video(file_path)
-        stacked_layout.setCurrentIndex(1)
+        if config.use_embedded_player:
+            player_view.play_video(file_path)
+            stacked_layout.setCurrentIndex(1)
+        else:
+            try:
+                play_video(file_path)
+            except Exception as exception_instance:
+                logging.error(f"Failed to launch external player: {exception_instance}")
 
     backend_bridge.playbackRequested.connect(on_playback_requested)
 
