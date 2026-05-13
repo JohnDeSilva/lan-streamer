@@ -353,3 +353,25 @@ def test_get_jellyfin_correlation_data_series_id_map(jf_client) -> None:
     assert (1, 1) in data["series_id_map"]["s1"]["episodes"]
     assert data["series_id_map"]["s1"]["episodes"][(1, 1)] == "ep1"
     assert "episode 1" in data["series_id_map"]["s1"]["names"]
+
+
+def test_search_movie(jf_client) -> None:
+    jf_client._cached_user_id = "user123"
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"Items": [{"Id": "m1", "Name": "Movie One"}]}
+    jf_client.session.get = MagicMock(return_value=mock_resp)
+
+    results = jf_client.search_movie("Movie One")
+    assert len(results) == 1
+    assert results[0]["Id"] == "m1"
+
+
+def test_search_movie_not_configured(jf_client) -> None:
+    with patch.object(config, "jellyfin_url", ""):
+        assert jf_client.search_movie("Test") == []
+
+
+def test_search_movie_error(jf_client) -> None:
+    jf_client._cached_user_id = "user123"
+    jf_client.session.get = MagicMock(side_effect=Exception("API Error"))
+    assert jf_client.search_movie("Test") == []

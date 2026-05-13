@@ -149,3 +149,56 @@ def test_playback_position_migration_with_fake_data(tmp_path) -> None:
         )
 
     engine.dispose()
+
+
+def test_movies_table_migration_with_fake_data(tmp_path) -> None:
+    """
+    Robustly test Alembic migration e5421f98bc12 -> 1d504caf3889 and downgrade
+    verifying creation and removal of the movies table.
+    """
+    db_path = tmp_path / "test_migration_fake_data_movies.db"
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    # 1. Upgrade to previous revision e5421f98bc12
+    command.upgrade(alembic_cfg, "e5421f98bc12")
+
+    # 2. Insert fake data representing user records before migration
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO series (library_name, name) VALUES ('Lib', 'Fake Series')"
+            )
+        )
+
+    # 3. Upgrade to our target revision 1d504caf3889
+    command.upgrade(alembic_cfg, "1d504caf3889")
+
+    # 4. Verify new table exists and insert data
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO movies (library_name, name, path) VALUES ('Movies', 'Fake Movie', '/fake/movie.mp4')"
+            )
+        )
+
+    with engine.connect() as conn:
+        movie_row = conn.execute(
+            sa.text("SELECT name, path FROM movies WHERE id=1")
+        ).fetchone()
+        assert movie_row[0] == "Fake Movie"
+        assert movie_row[1] == "/fake/movie.mp4"
+
+    # 5. Verify downgrade functionality cleanly drops the table
+    command.downgrade(alembic_cfg, "e5421f98bc12")
+    with engine.connect() as conn:
+        with pytest.raises(sa.exc.OperationalError):
+            conn.execute(sa.text("SELECT * FROM movies")).fetchall()
+
+        assert (
+            conn.execute(sa.text("SELECT name FROM series WHERE id=1")).scalar()
+            == "Fake Series"
+        )
+
+    engine.dispose()

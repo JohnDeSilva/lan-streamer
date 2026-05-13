@@ -905,3 +905,261 @@ def test_scan_directories_locked_metadata_bypasses_refresh(tmp_path) -> None:
     assert library["Locked Show"]["metadata"]["locked_metadata"] is True
     mock_tmdb.search_series.assert_not_called()
     mock_tmdb.get_series_by_id.assert_not_called()
+
+
+def test_scan_series_auto_refresh_new_files(tmp_path) -> None:
+    series_dir = tmp_path / "AutoShow"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    new_file = season_dir / "S01E02.mkv"
+    new_file.touch()
+
+    existing_library = {
+        "AutoShow": {
+            "metadata": {
+                "tmdb_identifier": "old_id",
+                "tmdb_name": "Old Title",
+                "overview": "Old overview",
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "S01E01.mkv",
+                            "path": str(season_dir / "S01E01.mkv"),
+                        }
+                    ]
+                }
+            },
+        }
+    }
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.get_series_by_id.return_value = {
+        "id": "old_id",
+        "name": "Fresh Title",
+        "overview": "Fresh overview",
+    }
+    mock_tmdb.get_seasons.return_value = []
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        res = scanner.scan_directories(
+            [str(tmp_path)], existing_library=existing_library, force_refresh=False
+        )
+
+    assert res["AutoShow"]["metadata"]["tmdb_name"] == "Fresh Title"
+    mock_tmdb.get_series_by_id.assert_called_once_with("old_id")
+
+
+def test_scan_movie_auto_refresh_new_files(tmp_path) -> None:
+    movie_dir = tmp_path / "Avatar (2009)"
+    movie_dir.mkdir()
+    new_file = movie_dir / "avatar_extended.mkv"
+    new_file.touch()
+
+    existing_library = {
+        "Avatar (2009)": {
+            "tmdb_identifier": "m_id",
+            "tmdb_name": "Old Movie",
+            "path": "/old/path/avatar.mkv",
+        }
+    }
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.get_movie_by_id.return_value = {
+        "id": "m_id",
+        "title": "Fresh Avatar",
+        "overview": "Fresh Avatar overview",
+        "runtime": 162,
+    }
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        res = scanner.scan_directories(
+            [str(tmp_path)],
+            library_type="movie",
+            existing_library=existing_library,
+            force_refresh=False,
+        )
+
+    assert res["Avatar (2009)"]["tmdb_name"] == "Fresh Avatar"
+    mock_tmdb.get_movie_by_id.assert_called_once_with("m_id")
+
+
+def test_scan_movie_early_return_jellyfin_mapping(tmp_path) -> None:
+    movie_dir = tmp_path / "Inception (2010)"
+    movie_dir.mkdir()
+    video_file = movie_dir / "inception.mkv"
+    video_file.touch()
+    video_path = str(video_file.absolute())
+
+    existing_movie = {
+        "path": video_path,
+        "tmdb_identifier": "tmdb_inc",
+        "tmdb_name": "Inception",
+    }
+
+    jellyfin_data = {
+        "path_map": {video_path: {"id": "jf_inc_path"}},
+        "tmdb_episode_map": {"tmdb_inc": "jf_inc_tmdb"},
+    }
+
+    res = scanner.scan_movie(
+        movie_dir, existing_movie_data=existing_movie, jellyfin_data=jellyfin_data
+    )
+    assert res["jellyfin_id"] == "jf_inc_path"
+
+    # Test tmdb map fallback when path not in map
+    jellyfin_data_tmdb = {
+        "path_map": {},
+        "tmdb_episode_map": {"tmdb_inc": "jf_inc_tmdb"},
+    }
+    res2 = scanner.scan_movie(
+        movie_dir, existing_movie_data=existing_movie, jellyfin_data=jellyfin_data_tmdb
+    )
+    assert res2["jellyfin_id"] == "jf_inc_tmdb"
+
+
+def test_scan_series_early_return_jellyfin_mapping(tmp_path) -> None:
+    series_dir = tmp_path / "Fast Series"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    ep_file = season_dir / "S01E01.mkv"
+    ep_file.touch()
+    ep_path = str(ep_file.absolute())
+
+    def get_existing() -> dict:
+        return {
+            "metadata": {"tmdb_identifier": "tmdb_series_fast"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "path": ep_path,
+                            "tmdb_identifier": "tmdb_ep_fast",
+                            "tmdb_episode_identifier": "tmdb_ep_fast_id",
+                        }
+                    ]
+                }
+            },
+        }
+
+    jellyfin_data = {
+        "tmdb_series_map": {"tmdb_series_fast": "jf_series_fast"},
+        "path_map": {ep_path: {"id": "jf_ep_path"}},
+        "tmdb_episode_map": {},
+    }
+
+    res = scanner.scan_series(
+        series_dir, existing_series_data=get_existing(), jellyfin_data=jellyfin_data
+    )
+    assert res["metadata"]["jellyfin_id"] == "jf_series_fast"
+    assert res["seasons"]["Season 1"]["episodes"][0]["jellyfin_id"] == "jf_ep_path"
+
+    # Test episode map fallback via tmdb_identifier / tmdb_episode_identifier
+    jellyfin_data_tmdb = {
+        "tmdb_series_map": {},
+        "path_map": {},
+        "tmdb_episode_map": {"tmdb_ep_fast": "jf_ep_tmdb"},
+    }
+    res2 = scanner.scan_series(
+        series_dir,
+        existing_series_data=get_existing(),
+        jellyfin_data=jellyfin_data_tmdb,
+    )
+    assert res2["seasons"]["Season 1"]["episodes"][0]["jellyfin_id"] == "jf_ep_tmdb"
+
+    jellyfin_data_tmdb2 = {
+        "tmdb_series_map": {},
+        "path_map": {},
+        "tmdb_episode_map": {"tmdb_ep_fast_id": "jf_ep_tmdb_id"},
+    }
+    existing_series_no_tmdb = {
+        "metadata": {},
+        "seasons": {
+            "Season 1": {
+                "episodes": [
+                    {
+                        "path": ep_path,
+                        "tmdb_episode_identifier": "tmdb_ep_fast_id",
+                    }
+                ]
+            }
+        },
+    }
+    res3 = scanner.scan_series(
+        series_dir,
+        existing_series_data=existing_series_no_tmdb,
+        jellyfin_data=jellyfin_data_tmdb2,
+    )
+    assert res3["seasons"]["Season 1"]["episodes"][0]["jellyfin_id"] == "jf_ep_tmdb_id"
+
+
+def test_scan_directories_merge_existing_episodes(tmp_path) -> None:
+    root1 = tmp_path / "root1"
+    root2 = tmp_path / "root2"
+    for r in [root1, root2]:
+        s = r / "Merged Show" / "Season 1"
+        s.mkdir(parents=True)
+
+    file1 = root1 / "Merged Show" / "Season 1" / "S01E01.mkv"
+    file1.touch()
+    file2 = root2 / "Merged Show" / "Season 1" / "S01E02.mkv"
+    file2.touch()
+    file3 = root2 / "Merged Show" / "Season 1" / "S01E01.mkv"  # exact name dup
+    file3.touch()
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.search_series.return_value = {"id": "m_id", "name": "Merged Show"}
+    mock_tmdb.get_seasons.return_value = [{"season_number": 1, "id": "s1"}]
+    mock_tmdb.get_episodes.return_value = [
+        {"episode_number": 1, "id": "e1"},
+        {"episode_number": 2, "id": "e2"},
+    ]
+    mock_tmdb.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        lib = scanner.scan_directories([str(root1), str(root2)])
+
+    assert "Merged Show" in lib
+    eps = lib["Merged Show"]["seasons"]["Season 1"]["episodes"]
+    assert len(eps) >= 2
+
+
+def test_scan_series_uses_cached_image(tmp_path) -> None:
+    """Verify that cached posters are used directly without internet downloads."""
+    series_dir = tmp_path / "Cached Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    (season_dir / "S01E01.mkv").touch()
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.search_series.return_value = {
+        "id": "cached_id",
+        "name": "Cached Show",
+        "poster_path": "/remote.jpg",
+    }
+    mock_tmdb.get_seasons.return_value = [
+        {"season_number": 1, "id": "season_cached_id", "poster_path": "/remote_s1.jpg"}
+    ]
+    mock_tmdb.get_episodes.return_value = [{"episode_number": 1, "id": "e1"}]
+
+    def mock_get_cached(key: str) -> str:
+        if "season" in key:
+            return "/local_cache/season.jpg"
+        return "/local_cache/series.jpg"
+
+    mock_tmdb.get_cached_image.side_effect = mock_get_cached
+    mock_tmdb.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        lib = scanner.scan_directories([str(tmp_path)])
+
+    assert "Cached Show" in lib
+    meta = lib["Cached Show"]["metadata"]
+    assert meta["poster_path"] == "/local_cache/series.jpg"
+    s_meta = lib["Cached Show"]["seasons"]["Season 1"]["metadata"]
+    assert s_meta["poster_path"] == "/local_cache/season.jpg"
+    mock_tmdb.download_image.assert_not_called()

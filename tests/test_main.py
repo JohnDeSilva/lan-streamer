@@ -50,6 +50,7 @@ def test_main_execution() -> None:
         patch("lan_streamer.main.Controller", MagicMock()),
         patch("lan_streamer.main.LibraryGridView", MagicMock()) as mock_grid_class,
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+        patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch(
@@ -81,6 +82,7 @@ def test_main_logging_setup(tmp_path: Any) -> None:
             patch("lan_streamer.main.Controller", MagicMock()),
             patch("lan_streamer.main.LibraryGridView", MagicMock()),
             patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+            patch("lan_streamer.main.MovieDetailView", MagicMock()),
             patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
             patch("lan_streamer.main.db.init_db", MagicMock()),
             patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
@@ -144,6 +146,7 @@ def test_main_logging_failure() -> None:
         patch("lan_streamer.main.Controller", MagicMock()),
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+        patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", lambda exit_code: None),
@@ -178,6 +181,7 @@ def test_main_proactive_log_cleanup(tmp_path: Any) -> None:
         patch("lan_streamer.main.Controller", MagicMock()),
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+        patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
@@ -202,6 +206,9 @@ def test_main_signal_routing() -> None:
         patch("lan_streamer.main.Controller", MagicMock()) as mock_controller_class,
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()) as mock_detail_class,
+        patch(
+            "lan_streamer.main.MovieDetailView", MagicMock()
+        ) as mock_movie_detail_class,
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
@@ -214,6 +221,7 @@ def test_main_signal_routing() -> None:
 
         mock_controller_instance = mock_controller_class.return_value
         mock_detail_instance = mock_detail_class.return_value
+        mock_movie_detail_instance = mock_movie_detail_class.return_value
         mock_player_instance = mock_player_class.return_value
         mock_layout_instance = mock_layout_class.return_value
 
@@ -231,13 +239,27 @@ def test_main_signal_routing() -> None:
         grid_back_slot()
         mock_layout_instance.setCurrentIndex.assert_called_with(0)
 
-        # Test playback requested callback triggers player embedded and switches to index 2
+        # Test movie_selected callback routes to movie detail view (index 2)
+        movie_selected_slot: Callable[[str], None] = (
+            mock_controller_instance.movie_selected.connect.call_args[0][0]
+        )
+        movie_selected_slot("Avatar")
+        mock_layout_instance.setCurrentIndex.assert_called_with(2)
+
+        # Test movie detail view back button routes to grid view (index 0)
+        movie_back_slot: Callable[[], None] = (
+            mock_movie_detail_instance.back_requested.connect.call_args[0][0]
+        )
+        movie_back_slot()
+        mock_layout_instance.setCurrentIndex.assert_called_with(0)
+
+        # Test playback requested callback triggers player embedded and switches to index 3
         playback_slot: Callable[[str], None] = (
             mock_controller_instance.playback_requested.connect.call_args[0][0]
         )
         playback_slot("/path/to/vid.mkv")
         mock_player_instance.play_video.assert_called_once_with("/path/to/vid.mkv")
-        mock_layout_instance.setCurrentIndex.assert_called_with(2)
+        mock_layout_instance.setCurrentIndex.assert_called_with(3)
 
         # Test player back button routes to detail view (index 1)
         player_back_slot: Callable[[], None] = (
@@ -274,6 +296,7 @@ def test_main_playback_requested_external() -> None:
         patch("lan_streamer.main.Controller", MagicMock()) as mock_controller_class,
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+        patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
@@ -305,6 +328,7 @@ def test_main_playback_requested_external_exception() -> None:
         patch("lan_streamer.main.Controller", MagicMock()) as mock_controller_class,
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+        patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),

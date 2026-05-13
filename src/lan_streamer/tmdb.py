@@ -125,6 +125,23 @@ class TMDBClient:
             logger.exception(f"TMDB search failed for '{query}'")
             return []
 
+    def _do_movie_search(self, query: str, year: int | None = None) -> list:
+        """Raw TMDB movie search. Returns list of result dicts."""
+        try:
+            params = self._params({"query": query, "page": 1})
+            if year:
+                params["year"] = year
+            resp = self.session.get(
+                f"{TMDB_BASE_URL}/search/movie",
+                params=params,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json().get("results", [])
+        except Exception:
+            logger.exception(f"TMDB movie search failed for '{query}'")
+            return []
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -140,7 +157,9 @@ class TMDBClient:
 
         scored_candidates = []
         for candidate_item in results_list:
-            candidate_name = candidate_item.get("name", "")
+            candidate_name = candidate_item.get("name") or candidate_item.get(
+                "title", ""
+            )
             candidate_clean = self._clean_name(candidate_name).lower()
             if not candidate_clean:
                 continue
@@ -156,16 +175,15 @@ class TMDBClient:
         if scored_candidates:
             scored_candidates.sort(key=lambda item: item[0], reverse=True)
             best_ratio, best_candidate = scored_candidates[0]
+            best_name = best_candidate.get("name") or best_candidate.get("title", "")
             if custom_threshold != 0.7:
                 is_similar_result = self._is_similar(
                     target_title,
-                    best_candidate.get("name", ""),
+                    best_name,
                     threshold=custom_threshold,
                 )
             else:
-                is_similar_result = self._is_similar(
-                    target_title, best_candidate.get("name", "")
-                )
+                is_similar_result = self._is_similar(target_title, best_name)
             if best_ratio >= custom_threshold or is_similar_result:
                 return best_candidate
 
@@ -235,6 +253,37 @@ class TMDBClient:
         results = self._do_search(query)
         return results[:limit]
 
+    def search_movie(self, name: str, year: int | None = None) -> dict | None:
+        """Searches TMDB for the best-matching movie."""
+        exact_name = name.replace(".", " ").replace("_", " ").strip()
+        cleaned_name = self._clean_name(name)
+
+        logger.debug(
+            f"Searching TMDB for Movie: Exact='{exact_name}', Cleaned='{cleaned_name}', Year={year}"
+        )
+
+        for search_term in dict.fromkeys([exact_name, cleaned_name]):
+            results = self._do_movie_search(search_term, year)
+            if results:
+                best_match = self._select_best_candidate(
+                    results, name, custom_threshold=0.7
+                )
+                if best_match:
+                    logger.info(
+                        f"Found TMDB movie match for '{name}': {best_match.get('title')} (ID: {best_match.get('id')})"
+                    )
+                    return best_match
+
+        logger.warning(f"No TMDB movie found for: '{name}'")
+        return None
+
+    def search_movie_full(self, query: str, limit: int = 10) -> list:
+        """Returns multiple movie results for the manual-match dialog."""
+        if not self.is_configured():
+            return []
+        results = self._do_movie_search(query)
+        return results[:limit]
+
     def get_series_by_id(self, tmdb_identifierentifier: str | int) -> dict | None:
         """Fetches full series details from TMDB."""
         try:
@@ -247,6 +296,20 @@ class TMDBClient:
             return resp.json()
         except Exception:
             logger.exception(f"TMDB get_series_by_id({tmdb_identifierentifier}) failed")
+            return None
+
+    def get_movie_by_id(self, tmdb_identifier: str | int) -> dict | None:
+        """Fetches full movie details from TMDB."""
+        try:
+            resp = self.session.get(
+                f"{TMDB_BASE_URL}/movie/{tmdb_identifier}",
+                params=self._params(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            logger.exception(f"TMDB get_movie_by_id({tmdb_identifier}) failed")
             return None
 
     def get_seasons(self, tmdb_identifierentifier: str | int) -> list:
@@ -275,6 +338,19 @@ class TMDBClient:
             )
             return []
 
+    def get_cached_image(self, cache_key: str) -> str:
+        """Checks the /cache/images directory first to see if a poster already exists for the given cache_key."""
+        if not cache_key:
+            return ""
+        if CACHE_DIR.exists():
+            for file_path in CACHE_DIR.glob(f"{cache_key}.*"):
+                if file_path.is_file():
+                    logger.debug(
+                        f"Found existing cached poster for {cache_key}: {file_path}"
+                    )
+                    return str(file_path)
+        return ""
+
     def download_image(self, poster_path: str, cache_key: str) -> str:
         """Downloads a poster image from the TMDB CDN and caches it locally.
         `poster_path` can be a bare TMDB path (/abc.jpg) or a full URL.
@@ -282,6 +358,22 @@ class TMDBClient:
         """
         if not poster_path or not cache_key:
             return ""
+
+        # If poster_path is already a local absolute file path (contains multiple slashes)
+        # Bare TMDB path fragments have exactly one leading slash (e.g., /abc.jpg).
+        if poster_path.startswith("/") and "/" in poster_path[1:]:
+            logger.debug(
+                f"download_image: Preserving existing absolute local poster path: {poster_path}"
+            )
+            return poster_path
+
+        # Look in the /cache/images directory first to see if we already have the poster
+        cached_existing = self.get_cached_image(cache_key)
+        if cached_existing and isinstance(cached_existing, str):
+            logger.debug(
+                f"download_image: Found existing cached image for {cache_key}, skipping internet download."
+            )
+            return cached_existing
 
         # Build full URL if given a bare path
         if poster_path.startswith("/"):

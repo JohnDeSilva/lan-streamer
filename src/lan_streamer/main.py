@@ -12,6 +12,7 @@ from .ui_views import (
     Controller,
     LibraryGridView,
     SeriesDetailView,
+    MovieDetailView,
     MetadataMatchDialog,
     RenamePreviewDialog,
     get_application_stylesheet,
@@ -168,10 +169,12 @@ def main() -> None:
     controller = Controller()
     library_grid_view = LibraryGridView(controller)
     series_detail_view = SeriesDetailView(controller)
+    movie_detail_view = MovieDetailView(controller)
     player_view = VideoPlayerWidget()
 
     stacked_layout.addWidget(library_grid_view)
     stacked_layout.addWidget(series_detail_view)
+    stacked_layout.addWidget(movie_detail_view)
     stacked_layout.addWidget(player_view)
 
     # Wire view routing and modal display signals
@@ -180,15 +183,21 @@ def main() -> None:
 
     controller.series_selected.connect(on_series_selected)
 
+    def on_movie_selected(movie_name: str) -> None:
+        stacked_layout.setCurrentIndex(2)
+
+    controller.movie_selected.connect(on_movie_selected)
+
     def on_grid_back_requested() -> None:
         stacked_layout.setCurrentIndex(0)
 
     series_detail_view.back_requested.connect(on_grid_back_requested)
+    movie_detail_view.back_requested.connect(on_grid_back_requested)
 
     def on_playback_requested(file_path: str) -> None:
         if config.use_embedded_player:
             player_view.play_video(file_path)
-            stacked_layout.setCurrentIndex(2)
+            stacked_layout.setCurrentIndex(3)
         else:
             try:
                 play_video(file_path)
@@ -198,7 +207,12 @@ def main() -> None:
     controller.playback_requested.connect(on_playback_requested)
 
     def on_player_back_requested() -> None:
-        stacked_layout.setCurrentIndex(1)
+        # Determine whether to go back to movie or series detail view
+        library_config = config.libraries.get(controller.current_library_name, {})
+        if library_config.get("type") == "movie":
+            stacked_layout.setCurrentIndex(2)
+        else:
+            stacked_layout.setCurrentIndex(1)
 
     player_view.back_requested.connect(on_player_back_requested)
 

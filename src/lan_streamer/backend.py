@@ -1,7 +1,18 @@
 import logging
 from pathlib import Path
 from typing import List, Any
-from PySide6.QtCore import QObject, Property, Signal, Slot, Qt, QThread, QByteArray
+from PySide6.QtCore import (
+    QObject,
+    Property,
+    Signal,
+    Slot,
+    Qt,
+    QThread,
+    QByteArray,
+    QFileSystemWatcher,
+    QTimer,
+)
+
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 from .config import config
@@ -61,6 +72,9 @@ class BackendBridge(QObject):
     configDatabasePath: str
     configLogDirectory: str
     configMaxLogRetentionDays: int
+    _file_system_watcher: QFileSystemWatcher
+    _debounce_timer: QTimer
+    _scan_worker: "ScanWorker" | None
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -99,6 +113,16 @@ class BackendBridge(QObject):
         self._selected_series_poster: str = ""
         self._selected_series_index: int = -1
         self._selected_season_name: str = ""
+
+        self._debounce_timer = QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(2000)
+        self._debounce_timer.timeout.connect(self._on_debounce_timeout)
+
+        self._file_system_watcher = QFileSystemWatcher(self)
+        self._file_system_watcher.directoryChanged.connect(self._on_directory_changed)
+
+        self._scan_worker = None
 
         if self._available_libraries:
             self.selectLibrary(self._available_libraries[0])
@@ -326,7 +350,26 @@ class BackendBridge(QObject):
 
         previous_selected_series = getattr(self, "_selected_series_name", "")
 
-        self._cached_library_data = db.load_library(library_name)
+        raw_config = config.libraries.get(library_name, {})
+        library_config = (
+            raw_config
+            if isinstance(raw_config, dict)
+            else {"type": "tv", "paths": raw_config}
+        )
+
+        existing_directories = self._file_system_watcher.directories()
+        if existing_directories:
+            self._file_system_watcher.removePaths(existing_directories)
+
+        root_directories: List[str] = library_config.get("paths", [])
+        for directory_path in root_directories:
+            if Path(directory_path).is_dir():
+                self._file_system_watcher.addPath(directory_path)
+
+        if library_config.get("type", "tv") == "movie":
+            self._cached_library_data = db.load_movie_library(library_name)
+        else:
+            self._cached_library_data = db.load_library(library_name)
         self._cache_series_metrics()
         self._season_model.clear()
         self._episode_model.clear()
@@ -352,6 +395,16 @@ class BackendBridge(QObject):
                     break
 
         self.statusMessage = "Loaded library series successfully"
+
+    def _on_directory_changed(self, path_string: str) -> None:
+        logger.info(
+            f"Directory modification detected at '{path_string}'. Triggering scan debounce timer."
+        )
+        self._debounce_timer.start()
+
+    def _on_debounce_timeout(self) -> None:
+        logger.info("Debounce timeout complete. Triggering automatic scanForNewFiles.")
+        self.scanForNewFiles()
 
     def _cache_series_metrics(self) -> None:
         if not getattr(self, "_cached_library_data", None):
@@ -384,8 +437,6 @@ class BackendBridge(QObject):
     def _refresh_series_model(self) -> None:
         if not getattr(self, "_cached_library_data", None):
             return
-
-        self._series_model.clear()
 
         series_entries = []
         for series_name, series_data in self._cached_library_data.items():
@@ -425,11 +476,28 @@ class BackendBridge(QObject):
         else:
             series_entries.sort(key=lambda entry: entry["name"].lower())
 
-        for entry in series_entries:
-            item = QStandardItem(entry["name"])
-            item.setData(entry["name"], Qt.ItemDataRole.DisplayRole)
-            item.setData(entry["poster_path"], self.poster_role)
-            self._series_model.appendRow(item)
+        current_row_count = self._series_model.rowCount()
+        target_row_count = len(series_entries)
+
+        for row_idx, entry in enumerate(series_entries):
+            if row_idx < current_row_count:
+                item = self._series_model.item(row_idx)
+                if item:
+                    if item.text() != entry["name"]:
+                        item.setText(entry["name"])
+                        item.setData(entry["name"], Qt.ItemDataRole.DisplayRole)
+                    if item.data(self.poster_role) != entry["poster_path"]:
+                        item.setData(entry["poster_path"], self.poster_role)
+            else:
+                item = QStandardItem(entry["name"])
+                item.setData(entry["name"], Qt.ItemDataRole.DisplayRole)
+                item.setData(entry["poster_path"], self.poster_role)
+                self._series_model.appendRow(item)
+
+        if current_row_count > target_row_count:
+            self._series_model.removeRows(
+                target_row_count, current_row_count - target_row_count
+            )
 
         self.seriesModelChanged.emit()
 
@@ -837,7 +905,19 @@ class BackendBridge(QObject):
             self.statusMessage = "Select a library first"
             return
 
-        root_directories = config.libraries.get(self._current_library_name, [])
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            logger.info(
+                "ScanWorker is already actively running. Skipping redundant automatic scan trigger."
+            )
+            return
+
+        raw_config = config.libraries.get(self._current_library_name, {})
+        library_config = (
+            raw_config
+            if isinstance(raw_config, dict)
+            else {"type": "tv", "paths": raw_config}
+        )
+        root_directories = library_config.get("paths", [])
         self.statusMessage = (
             f"Scanning for new files in '{self._current_library_name}'..."
         )
@@ -847,11 +927,13 @@ class BackendBridge(QObject):
 
         self._scan_worker = ScanWorker(
             root_directories=root_directories,
+            library_type=library_config.get("type", "tv"),
             existing_library=self._cached_library_data,
             force_refresh=False,
             cleanup=False,
         )
         self._scan_worker.finished.connect(self._on_scan_worker_finished)
+        self._scan_worker.partial_result.connect(self._on_scan_worker_partial)
         self._scan_worker.error.connect(self._on_worker_error)
         self._scan_worker.start()
 
@@ -862,7 +944,13 @@ class BackendBridge(QObject):
             self.statusMessage = "Select a library first"
             return
 
-        root_directories = config.libraries.get(self._current_library_name, [])
+        raw_config = config.libraries.get(self._current_library_name, {})
+        library_config = (
+            raw_config
+            if isinstance(raw_config, dict)
+            else {"type": "tv", "paths": raw_config}
+        )
+        root_directories = library_config.get("paths", [])
         self.statusMessage = (
             f"Full refresh triggered for '{self._current_library_name}'..."
         )
@@ -872,11 +960,13 @@ class BackendBridge(QObject):
 
         self._scan_worker = ScanWorker(
             root_directories=root_directories,
+            library_type=library_config.get("type", "tv"),
             existing_library=self._cached_library_data,
             force_refresh=True,
             cleanup=False,
         )
         self._scan_worker.finished.connect(self._on_scan_worker_finished)
+        self._scan_worker.partial_result.connect(self._on_scan_worker_partial)
         self._scan_worker.error.connect(self._on_worker_error)
         self._scan_worker.start()
 
@@ -887,7 +977,13 @@ class BackendBridge(QObject):
             self.statusMessage = "Select a library first"
             return
 
-        root_directories = config.libraries.get(self._current_library_name, [])
+        raw_config = config.libraries.get(self._current_library_name, {})
+        library_config = (
+            raw_config
+            if isinstance(raw_config, dict)
+            else {"type": "tv", "paths": raw_config}
+        )
+        root_directories = library_config.get("paths", [])
         self.statusMessage = (
             f"Cleaning up missing files in '{self._current_library_name}'..."
         )
@@ -938,13 +1034,56 @@ class BackendBridge(QObject):
     def _on_jellyfin_push_finished(self, pushed_count: int) -> None:
         self.statusMessage = f"Pushed watch history: synced {pushed_count} episodes"
 
+    def _on_scan_worker_partial(self, partial_library: dict) -> None:
+        pass
+
     def _on_scan_worker_finished(self, updated_library: dict) -> None:
         if getattr(self, "_current_library_name", ""):
-            db.save_library(self._current_library_name, updated_library)
+            raw_config = config.libraries.get(self._current_library_name, {})
+            library_config = (
+                raw_config
+                if isinstance(raw_config, dict)
+                else {"type": "tv", "paths": raw_config}
+            )
+            library_type = library_config.get("type", "tv")
+
+            has_new_content = False
+            old_library = getattr(self, "_cached_library_data", {})
+            for name, data in updated_library.items():
+                if name not in old_library:
+                    has_new_content = True
+                    break
+                if library_type == "movie":
+                    if data.get("path") != old_library[name].get("path"):
+                        has_new_content = True
+                        break
+                else:
+                    old_count = sum(
+                        len(s.get("episodes", []))
+                        for s in old_library[name].get("seasons", {}).values()
+                    )
+                    new_count = sum(
+                        len(s.get("episodes", []))
+                        for s in data.get("seasons", {}).values()
+                    )
+                    if new_count > old_count:
+                        has_new_content = True
+                        break
+
+            if library_type == "movie":
+                db.save_movie_library(self._current_library_name, updated_library)
+            else:
+                db.save_library(self._current_library_name, updated_library)
             self._cached_library_data = updated_library
-            self._cache_series_metrics()
-            self.selectLibrary(self._current_library_name)
-            self.statusMessage = "New files scanned successfully"
+
+            if has_new_content and jellyfin_client.is_configured():
+                logger.info(
+                    "New content detected upon scan completion. Pulling Jellyfin watch history."
+                )
+                self.pullWatchHistoryFromJellyfin()
+            else:
+                self.selectLibrary(self._current_library_name)
+                self.statusMessage = "Scan completed successfully"
 
     def _on_worker_error(self, error_text: str) -> None:
         self.statusMessage = f"Scan error: {error_text}"
@@ -972,6 +1111,9 @@ class BackendBridge(QObject):
                 if self._available_libraries:
                     self.selectLibrary(self._available_libraries[0])
                 else:
+                    existing_directories = self._file_system_watcher.directories()
+                    if existing_directories:
+                        self._file_system_watcher.removePaths(existing_directories)
                     self._current_library_name = ""
                     self._cached_library_data = {}
                     self._series_model.clear()
@@ -993,6 +1135,8 @@ class BackendBridge(QObject):
             config.add_root_dir(library_name, directory_path)
             self.statusMessage = f"Added path to {library_name}"
             self.availableLibrariesChanged.emit()
+            if getattr(self, "_current_library_name", "") == library_name:
+                self.selectLibrary(library_name)
 
     @Slot(str, str)
     def removeRootDirectoryFromLibrary(
@@ -1002,10 +1146,13 @@ class BackendBridge(QObject):
             config.remove_root_dir(library_name, directory_path)
             self.statusMessage = f"Removed path from {library_name}"
             self.availableLibrariesChanged.emit()
+            if getattr(self, "_current_library_name", "") == library_name:
+                self.selectLibrary(library_name)
 
     @Slot(str, result=list)
     def getRootDirectoriesForLibrary(self, library_name: str) -> List[str]:
-        return config.libraries.get(library_name, [])
+        library_config = config.libraries.get(library_name, {})
+        return library_config.get("paths", [])
 
 
 class ScanWorker(QThread):
@@ -1018,6 +1165,7 @@ class ScanWorker(QThread):
     def __init__(
         self,
         root_directories: List[str],
+        library_type: str,
         existing_library: dict,
         force_refresh: bool = False,
         cleanup: bool = False,
@@ -1025,6 +1173,7 @@ class ScanWorker(QThread):
     ) -> None:
         super().__init__(parent)
         self.root_directories = root_directories
+        self.library_type = library_type
         self.existing_library = existing_library
         self.force_refresh = force_refresh
         self.cleanup = cleanup
@@ -1041,6 +1190,7 @@ class ScanWorker(QThread):
 
             library = scan_directories(
                 self.root_directories,
+                library_type=self.library_type,
                 existing_library=self.existing_library,
                 jellyfin_data=jellyfin_data,
                 callback=self.partial_result.emit,
@@ -1068,16 +1218,25 @@ class SyncAllWorker(QThread):
             if jellyfin_client.is_configured():
                 jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
-            for library_name, root_directories in config.libraries.items():
+            for library_name, library_config in config.libraries.items():
+                root_directories = library_config.get("paths", [])
                 logger.debug(f"SyncAllWorker scanning {library_name}")
                 self.progress.emit(f"Scanning library '{library_name}'...")
-                existing_library_data = db.load_library(library_name)
+                existing_library_data = (
+                    db.load_library(library_name)
+                    if library_config.get("type", "tv") == "tv"
+                    else db.load_movie_library(library_name)
+                )
                 library = scan_directories(
                     root_directories,
+                    library_type=library_config.get("type", "tv"),
                     existing_library=existing_library_data,
                     jellyfin_data=jellyfin_data,
                 )
-                db.save_library(library_name, library)
+                if library_config.get("type", "tv") == "tv":
+                    db.save_library(library_name, library)
+                else:
+                    db.save_movie_library(library_name, library)
             logger.info("SyncAllWorker finished successfully")
             self.finished.emit()
         except Exception as exc:

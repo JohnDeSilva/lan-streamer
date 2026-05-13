@@ -457,3 +457,54 @@ def test_search_series_scoring_priority(tmdb) -> None:
     result = tmdb.search_series("DareDevil - born again")
     assert result is not None
     assert result["id"] == 208857
+
+
+def test_search_movie_success(tmdb) -> None:
+    tmdb._do_movie_search = MagicMock(
+        return_value=[{"id": 19995, "title": "Avatar", "release_date": "2009-12-15"}]
+    )
+    result = tmdb.search_movie("Avatar", year=2009)
+    assert result is not None
+    assert result["id"] == 19995
+
+
+def test_search_movie_no_match(tmdb) -> None:
+    tmdb._do_movie_search = MagicMock(return_value=[])
+    result = tmdb.search_movie("Unknown Movie XYZ")
+    assert result is None
+
+
+def test_search_movie_full(tmdb) -> None:
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "results": [{"id": 1, "title": "M1"}, {"id": 2, "title": "M2"}]
+    }
+    tmdb.session.get = MagicMock(return_value=mock_resp)
+    results = tmdb.search_movie_full("Movie")
+    assert len(results) == 2
+
+
+def test_search_movie_full_not_configured() -> None:
+    with patch.object(config, "tmdb_api_key", ""):
+        client = TMDBClient()
+        assert client.search_movie_full("anything") == []
+
+
+def test_get_movie_by_id(tmdb) -> None:
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"id": 19995, "title": "Avatar"}
+    tmdb.session.get = MagicMock(return_value=mock_resp)
+
+    result = tmdb.get_movie_by_id(19995)
+    assert result is not None
+    assert result["id"] == 19995
+
+
+def test_get_movie_by_id_error(tmdb) -> None:
+    tmdb.session.get = MagicMock(side_effect=Exception("network error"))
+    assert tmdb.get_movie_by_id(1) is None
+
+
+def test_do_movie_search_error(tmdb) -> None:
+    tmdb.session.get = MagicMock(side_effect=Exception("network error"))
+    assert tmdb._do_movie_search("query") == []

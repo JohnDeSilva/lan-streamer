@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from typing import Any, Dict, List, Optional
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -119,7 +119,7 @@ def test_controller_sorting_and_filtering() -> None:
 def test_controller_triggers(qtbot: Any) -> None:
     controller_instance = Controller()
     controller_instance.current_library_name = "Test Lib"
-    config.libraries["Test Lib"] = ["/path/to/media"]
+    config.libraries["Test Lib"] = {"type": "tv", "paths": ["/path/to/media"]}
 
     with patch("lan_streamer.ui_views.ScanWorker") as mock_scan:
         controller_instance.trigger_scan(force_refresh=True)
@@ -448,7 +448,7 @@ def test_settings_dialog_libraries_management(qtbot: Any) -> None:
         dialog_instance.add_staged_directory()
         assert (
             "/media/cinematic"
-            in dialog_instance.staged_libraries["UniqueTestCinematicLib999"]
+            in dialog_instance.staged_libraries["UniqueTestCinematicLib999"]["paths"]
         )
 
         # Test Remove Directory
@@ -456,7 +456,9 @@ def test_settings_dialog_libraries_management(qtbot: Any) -> None:
         dialog_instance.remove_staged_directory()
         assert (
             "/media/cinematic"
-            not in dialog_instance.staged_libraries["UniqueTestCinematicLib999"]
+            not in dialog_instance.staged_libraries["UniqueTestCinematicLib999"][
+                "paths"
+            ]
         )
 
         # Test Remove Library
@@ -510,3 +512,53 @@ def test_settings_dialog_backup_options(qtbot: Any) -> None:
     ):
         dialog_instance.trigger_restore_database()
         mock_info.assert_called_once()
+
+
+def test_controller_partial_scan_updates() -> None:
+    controller_instance = Controller()
+    controller_instance.current_library_name = "TestCinematic"
+    partial_library = {"Avatar": {"metadata": {"poster_path": "/avatar.jpg"}}}
+    mock_slot = MagicMock()
+    controller_instance.library_loaded.connect(mock_slot)
+    controller_instance._on_scan_partial(partial_library)
+    assert controller_instance.cached_library_data == partial_library
+    mock_slot.assert_called_once()
+
+
+def test_controller_file_system_monitoring(
+    sample_library_dictionary: Dict[str, Any], qtbot: Any, tmp_path: Any
+) -> None:
+    controller_instance = Controller()
+    media_directory = tmp_path / "cinematic_roots"
+    media_directory.mkdir()
+    directory_path_string = str(media_directory)
+
+    config.libraries["ActiveMonitoredLib"] = {
+        "type": "tv",
+        "paths": [directory_path_string],
+    }
+
+    with patch("lan_streamer.db.load_library", return_value=sample_library_dictionary):
+        controller_instance.select_library("ActiveMonitoredLib")
+        assert (
+            directory_path_string
+            in controller_instance.file_system_watcher.directories()
+        )
+
+        with patch.object(controller_instance.debounce_timer, "start") as mock_start:
+            controller_instance._on_directory_changed(directory_path_string)
+            mock_start.assert_called_once()
+
+        with patch.object(controller_instance, "trigger_scan") as mock_trigger:
+            controller_instance._on_debounce_timeout()
+            mock_trigger.assert_called_once_with(force_refresh=False)
+
+        # Test concurrency protection
+        mock_worker = MagicMock()
+        mock_worker.isRunning.return_value = True
+        controller_instance.scan_worker_instance = mock_worker
+        controller_instance.current_library_name = "ActiveMonitoredLib"
+
+        with patch("lan_streamer.ui_views.ScanWorker") as mock_worker_constructor:
+            controller_instance.trigger_scan(force_refresh=False)
+            mock_worker_constructor.assert_not_called()

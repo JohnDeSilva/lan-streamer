@@ -46,7 +46,7 @@ def test_config_load_existing(mock_config_file) -> None:
         )
 
     config = Config()
-    assert config.libraries == {"TestLib": ["/path/to/test"]}
+    assert config.libraries == {"TestLib": {"type": "tv", "paths": ["/path/to/test"]}}
     assert config.jellyfin_url == "http://test"
     assert config.jellyfin_api_key == "test_key"
     assert config.tmdb_api_key == "tmdb_key"
@@ -62,7 +62,7 @@ def test_config_migrate_old_format(mock_config_file) -> None:
         json.dump({"root_dirs": ["/old/path"]}, f)
 
     config = Config()
-    assert config.libraries == {"Default": ["/old/path"]}
+    assert config.libraries == {"Default": {"type": "tv", "paths": ["/old/path"]}}
     assert config.jellyfin_url == ""
 
 
@@ -82,10 +82,10 @@ def test_config_add_remove_library(mock_config_file) -> None:
     assert "NewLib" in config.libraries
 
     config.add_root_dir("NewLib", "/some/path")
-    assert "/some/path" in config.libraries["NewLib"]
+    assert "/some/path" in config.libraries["NewLib"]["paths"]
 
     config.remove_root_dir("NewLib", "/some/path")
-    assert "/some/path" not in config.libraries["NewLib"]
+    assert "/some/path" not in config.libraries["NewLib"]["paths"]
 
     config.remove_library("NewLib")
     assert "NewLib" not in config.libraries

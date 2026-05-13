@@ -189,7 +189,7 @@ class JellyfinClient:
 
         while True:
             parameters: dict[str, str | int] = {
-                "IncludeItemTypes": "Episode",
+                "IncludeItemTypes": "Episode,Movie",
                 "Recursive": "true",
                 "Fields": "Path,SeriesName",
                 "Filters": "IsPlayed",
@@ -258,7 +258,7 @@ class JellyfinClient:
 
         while True:
             parameters: dict[str, str | int] = {
-                "IncludeItemTypes": "Episode",
+                "IncludeItemTypes": "Episode,Movie",
                 "Recursive": "true",
                 "Fields": "Path,SeriesId,SeasonId,ProviderIds,SeriesName",
                 "Limit": limit,
@@ -324,7 +324,7 @@ class JellyfinClient:
         start_index = 0
         while True:
             search_params: dict[str, str | int] = {
-                "IncludeItemTypes": "Series",
+                "IncludeItemTypes": "Series,Movie",
                 "Recursive": "true",
                 "Fields": "ProviderIds",
                 "Limit": limit,
@@ -433,6 +433,36 @@ class JellyfinClient:
             return data.get("Items", [])
         except Exception:
             logger.exception(f"Failed to search Jellyfin for series '{name}'")
+            return []
+
+    def search_movie(self, name: str) -> list:
+        """
+        Searches Jellyfin for movies matching the given name.
+        Returns a list of movie items.
+        """
+        if not self.is_configured():
+            return []
+
+        user_id = self.get_current_user_id()
+        if not user_id:
+            return []
+
+        url = f"{self._get_base_url()}/Users/{user_id}/Items"
+        parameters = {
+            "SearchTerm": name,
+            "IncludeItemTypes": "Movie",
+            "Recursive": "true",
+            "Fields": "Path,ProviderIds,ProductionYear,Overview",
+        }
+        try:
+            response = self.session.get(
+                url, headers=self._get_headers(), params=parameters, timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("Items", [])
+        except Exception:
+            logger.exception(f"Failed to search Jellyfin for movie '{name}'")
             return []
 
     def get_series_episodes(self, series_id: str) -> list:

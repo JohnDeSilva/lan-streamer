@@ -23,7 +23,16 @@ from PySide6.QtWidgets import (
     QFrame,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal, Slot, QObject, QSize
+from PySide6.QtCore import (
+    Qt,
+    Signal,
+    Slot,
+    QObject,
+    QSize,
+    QFileSystemWatcher,
+    QTimer,
+)
+
 from PySide6.QtGui import QPixmap, QIcon, QFont, QColor
 
 from .config import config
@@ -160,10 +169,14 @@ class Controller(QObject):
 
     library_loaded = Signal()
     series_selected = Signal(str)
+    movie_selected = Signal(str)
     status_changed = Signal(str)
     playback_requested = Signal(str)
     metadata_dialog_requested = Signal(str)
     rename_dialog_requested = Signal(str)
+
+    file_system_watcher: QFileSystemWatcher
+    debounce_timer: QTimer
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -177,48 +190,96 @@ class Controller(QObject):
         self.pull_worker_instance: Optional[JellyfinPullWorker] = None
         self.push_worker_instance: Optional[JellyfinPushWorker] = None
 
+        self.debounce_timer = QTimer(self)
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.setInterval(2000)
+        self.debounce_timer.timeout.connect(self._on_debounce_timeout)
+
+        self.file_system_watcher = QFileSystemWatcher(self)
+        self.file_system_watcher.directoryChanged.connect(self._on_directory_changed)
+
     def select_library(self, library_name: str) -> None:
         logger.info(f"Controller loading library: {library_name}")
         self.current_library_name = library_name
         self.status_changed.emit(f"Loading library: {library_name}...")
 
-        self.cached_library_data = db.load_library(library_name)
+        library_config = config.libraries.get(library_name, {})
+
+        existing_directories = self.file_system_watcher.directories()
+        if existing_directories:
+            self.file_system_watcher.removePaths(existing_directories)
+
+        root_directories: List[str] = library_config.get("paths", [])
+        for directory_path in root_directories:
+            if Path(directory_path).is_dir():
+                self.file_system_watcher.addPath(directory_path)
+
+        if library_config.get("type", "tv") == "movie":
+            self.cached_library_data = db.load_movie_library(library_name)
+        else:
+            self.cached_library_data = db.load_library(library_name)
         self._cache_series_metrics()
         self.selected_series_name = ""
 
         self.status_changed.emit("Library loaded successfully.")
         self.library_loaded.emit()
 
+    def _on_directory_changed(self, path_string: str) -> None:
+        logger.info(
+            f"Directory modification detected on '{path_string}'. Triggering scan debounce timer."
+        )
+        self.debounce_timer.start()
+
+    def _on_debounce_timeout(self) -> None:
+        logger.info(
+            "Debounce interval complete. Triggering background scan for additions."
+        )
+        self.trigger_scan(force_refresh=False)
+
     def _cache_series_metrics(self) -> None:
         for series_name, series_data in self.cached_library_data.items():
-            total_episodes: int = 0
-            watched_episodes: int = 0
-            max_date_added: int = 0
-            max_air_date: str = ""
+            if "seasons" not in series_data:
+                is_watched = bool(series_data.get("watched"))
+                series_data["metrics"] = {
+                    "total_episodes": 1,
+                    "watched_episodes": 1 if is_watched else 0,
+                    "max_date_added": series_data.get("date_added") or 0,
+                    "max_air_date": str(series_data.get("year") or ""),
+                }
+            else:
+                total_episodes: int = 0
+                watched_episodes: int = 0
+                max_date_added: int = 0
+                max_air_date: str = ""
 
-            for season_data in series_data.get("seasons", {}).values():
-                for episode_record in season_data.get("episodes", []):
-                    total_episodes += 1
-                    if episode_record.get("watched"):
-                        watched_episodes += 1
-                    added_timestamp: int = episode_record.get("date_added") or 0
-                    if added_timestamp > max_date_added:
-                        max_date_added = added_timestamp
-                    air_date_string: str = episode_record.get("air_date") or ""
-                    if air_date_string > max_air_date:
-                        max_air_date = air_date_string
+                for season_data in series_data.get("seasons", {}).values():
+                    for episode_record in season_data.get("episodes", []):
+                        total_episodes += 1
+                        if episode_record.get("watched"):
+                            watched_episodes += 1
+                        added_timestamp: int = episode_record.get("date_added") or 0
+                        if added_timestamp > max_date_added:
+                            max_date_added = added_timestamp
+                        air_date_string: str = episode_record.get("air_date") or ""
+                        if air_date_string > max_air_date:
+                            max_air_date = air_date_string
 
-            series_data["metrics"] = {
-                "total_episodes": total_episodes,
-                "watched_episodes": watched_episodes,
-                "max_date_added": max_date_added,
-                "max_air_date": max_air_date,
-            }
+                series_data["metrics"] = {
+                    "total_episodes": total_episodes,
+                    "watched_episodes": watched_episodes,
+                    "max_date_added": max_date_added,
+                    "max_air_date": max_air_date,
+                }
 
     def select_series(self, series_name: str) -> None:
         if series_name in self.cached_library_data:
             self.selected_series_name = series_name
             self.series_selected.emit(series_name)
+
+    def select_movie(self, movie_name: str) -> None:
+        if movie_name in self.cached_library_data:
+            self.selected_series_name = movie_name
+            self.movie_selected.emit(movie_name)
 
     def set_sort_mode(self, mode: str) -> None:
         if self.sort_mode != mode:
@@ -243,12 +304,18 @@ class Controller(QObject):
         # Update cached state in memory
         jellyfin_identifier: str = ""
         for series_data in self.cached_library_data.values():
-            for season_data in series_data.get("seasons", {}).values():
-                for episode_record in season_data.get("episodes", []):
-                    if episode_record.get("path") == absolute_path:
-                        episode_record["watched"] = watched
-                        jellyfin_identifier = episode_record.get("jellyfin_id", "")
-                        break
+            if "seasons" not in series_data:
+                if series_data.get("path") == absolute_path:
+                    series_data["watched"] = watched
+                    jellyfin_identifier = series_data.get("jellyfin_id", "")
+                    break
+            else:
+                for season_data in series_data.get("seasons", {}).values():
+                    for episode_record in season_data.get("episodes", []):
+                        if episode_record.get("path") == absolute_path:
+                            episode_record["watched"] = watched
+                            jellyfin_identifier = episode_record.get("jellyfin_id", "")
+                            break
 
         self._cache_series_metrics()
 
@@ -262,7 +329,11 @@ class Controller(QObject):
                 )
 
         if self.selected_series_name:
-            self.series_selected.emit(self.selected_series_name)
+            target_record = self.cached_library_data.get(self.selected_series_name, {})
+            if "seasons" not in target_record:
+                self.movie_selected.emit(self.selected_series_name)
+            else:
+                self.series_selected.emit(self.selected_series_name)
         self.library_loaded.emit()
 
     def trigger_scan(self, force_refresh: bool = False) -> None:
@@ -270,41 +341,65 @@ class Controller(QObject):
             self.status_changed.emit("Select a library first.")
             return
 
-        root_directories: List[str] = config.libraries.get(
-            self.current_library_name, []
-        )
+        if (
+            self.scan_worker_instance is not None
+            and self.scan_worker_instance.isRunning()
+        ):
+            logger.info(
+                "ScanWorker is already actively running. Skipping redundant automatic scan trigger."
+            )
+            return
+
+        library_config = config.libraries.get(self.current_library_name, {})
+        root_directories: List[str] = library_config.get("paths", [])
+        library_type: str = library_config.get("type", "tv")
         self.status_changed.emit(
             f"Scanning library '{self.current_library_name}' (force={force_refresh})..."
         )
 
         self.scan_worker_instance = ScanWorker(
             root_directories=root_directories,
+            library_type=library_type,
             existing_library=self.cached_library_data,
             force_refresh=force_refresh,
             cleanup=False,
         )
         self.scan_worker_instance.finished.connect(self._on_scan_finished)
+        self.scan_worker_instance.partial_result.connect(self._on_scan_partial)
         self.scan_worker_instance.error.connect(self._on_worker_error)
         self.scan_worker_instance.start()
 
+    def _on_scan_partial(self, partial_library: Dict[str, Any]) -> None:
+        if self.current_library_name:
+            # We create a shallow copy/update of cached data to not lose references while UI re-renders
+            self.cached_library_data = partial_library
+            self._cache_series_metrics()
+            self.library_loaded.emit()
+
     def _on_scan_finished(self, updated_library: Dict[str, Any]) -> None:
         if self.current_library_name:
-            db.save_library(self.current_library_name, updated_library)
+            library_config = config.libraries.get(self.current_library_name, {})
+            if library_config.get("type", "tv") == "movie":
+                db.save_movie_library(self.current_library_name, updated_library)
+            else:
+                db.save_library(self.current_library_name, updated_library)
             self.cached_library_data = updated_library
             self._cache_series_metrics()
             self.status_changed.emit("Library scan completed successfully.")
             self.library_loaded.emit()
             if self.selected_series_name:
-                self.series_selected.emit(self.selected_series_name)
+                if library_config.get("type", "tv") == "movie":
+                    self.movie_selected.emit(self.selected_series_name)
+                else:
+                    self.series_selected.emit(self.selected_series_name)
 
     def trigger_cleanup(self) -> None:
         if not self.current_library_name:
             self.status_changed.emit("Select a library first.")
             return
 
-        root_directories: List[str] = config.libraries.get(
-            self.current_library_name, []
-        )
+        library_config = config.libraries.get(self.current_library_name, {})
+        root_directories: List[str] = library_config.get("paths", [])
         self.status_changed.emit(
             f"Cleaning up missing files in '{self.current_library_name}'..."
         )
@@ -367,59 +462,78 @@ class Controller(QObject):
         self, series_name: str, match_dictionary: Dict[str, Any]
     ) -> None:
         logger.info(
-            f"Controller applying metadata match for series '{series_name}': {match_dictionary}"
+            f"Controller applying metadata match for '{series_name}': {match_dictionary}"
         )
         if series_name not in self.cached_library_data:
             return
 
+        library_config = config.libraries.get(self.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+
         series_record: Dict[str, Any] = self.cached_library_data[series_name]
-        metadata_dictionary: Dict[str, Any] = series_record.get("metadata", {})
+        target_dict: Dict[str, Any] = (
+            series_record if is_movie else series_record.get("metadata", {})
+        )
 
         provider_name: str = match_dictionary.get("provider", "TMDB")
         target_identifier: str = match_dictionary.get("id", "")
 
         if provider_name == "Jellyfin":
-            metadata_dictionary["jellyfin_id"] = target_identifier
+            target_dict["jellyfin_id"] = target_identifier
             tmdb_id_mapped: str = match_dictionary.get("tmdb_id", "")
             if tmdb_id_mapped:
-                metadata_dictionary["tmdb_identifier"] = tmdb_id_mapped
+                target_dict["tmdb_identifier"] = tmdb_id_mapped
         else:
-            metadata_dictionary["tmdb_identifier"] = target_identifier
+            target_dict["tmdb_identifier"] = target_identifier
 
         if match_dictionary.get("name"):
-            metadata_dictionary["tmdb_name"] = match_dictionary.get("name", "")
+            target_dict["tmdb_name"] = match_dictionary.get("name", "")
         if match_dictionary.get("overview"):
-            metadata_dictionary["overview"] = match_dictionary.get("overview", "")
+            target_dict["overview"] = match_dictionary.get("overview", "")
+
         if match_dictionary.get("poster_path"):
             raw_poster_path: str = match_dictionary.get("poster_path", "")
-            tmdb_identifier_value: str = metadata_dictionary.get("tmdb_identifier", "")
+            tmdb_identifier_value: str = target_dict.get("tmdb_identifier", "")
             if raw_poster_path and tmdb_identifier_value:
+                prefix = "tmdb_movie_" if is_movie else "tmdb_series_"
                 cached_image_path: Optional[str] = tmdb_client.download_image(
-                    raw_poster_path, f"tmdb_series_{tmdb_identifier_value}"
+                    raw_poster_path, f"{prefix}{tmdb_identifier_value}"
                 )
-                metadata_dictionary["poster_path"] = (
-                    cached_image_path or raw_poster_path
-                )
+                target_dict["poster_path"] = cached_image_path or raw_poster_path
             else:
-                metadata_dictionary["poster_path"] = raw_poster_path
+                target_dict["poster_path"] = raw_poster_path
 
-        if match_dictionary.get("first_air_date"):
-            metadata_dictionary["first_air_date"] = match_dictionary.get(
-                "first_air_date", ""
-            )
+        if not is_movie and match_dictionary.get("first_air_date"):
+            target_dict["first_air_date"] = match_dictionary.get("first_air_date", "")
+        elif is_movie and match_dictionary.get("first_air_date"):
+            air_date_str = match_dictionary.get("first_air_date", "")
+            if air_date_str:
+                try:
+                    target_dict["year"] = int(air_date_str.split("-")[0])
+                except ValueError:
+                    pass
 
-        metadata_dictionary["locked_metadata"] = True
-        series_record["metadata"] = metadata_dictionary
+        target_dict["locked_metadata"] = True
+        if not is_movie:
+            series_record["metadata"] = target_dict
 
         if self.current_library_name:
-            db.save_library(self.current_library_name, self.cached_library_data)
+            if is_movie:
+                db.save_movie_library(
+                    self.current_library_name, self.cached_library_data
+                )
+            else:
+                db.save_library(self.current_library_name, self.cached_library_data)
 
         self.status_changed.emit(
             f"Successfully applied metadata match to '{series_name}'."
         )
         self.library_loaded.emit()
         if self.selected_series_name == series_name:
-            self.series_selected.emit(series_name)
+            if is_movie:
+                self.movie_selected.emit(series_name)
+            else:
+                self.series_selected.emit(series_name)
 
     def apply_rename_batch(self, preview_results: List[Dict[str, Any]]) -> None:
         logger.info(
@@ -464,6 +578,7 @@ class LibraryGridView(QWidget):
         self.library_selector: QComboBox = QComboBox()
         self.sort_selector: QComboBox = QComboBox()
         self.filter_watched_checkbox: QCheckBox = QCheckBox("Hide Watched")
+        self.cached_icons: Dict[str, QIcon] = {}
 
         self._setup_ui()
         self._wire_signals()
@@ -537,8 +652,12 @@ class LibraryGridView(QWidget):
         self.library_selector.blockSignals(True)
         self.library_selector.clear()
         self.library_selector.addItems(library_names)
-        if self.controller.current_library_name:
+        if (
+            self.controller.current_library_name
+            and self.controller.current_library_name in library_names
+        ):
             self.library_selector.setCurrentText(self.controller.current_library_name)
+            self.controller.select_library(self.controller.current_library_name)
         elif library_names:
             self.controller.select_library(library_names[0])
             self.library_selector.setCurrentText(library_names[0])
@@ -548,6 +667,7 @@ class LibraryGridView(QWidget):
     def open_settings_dialog(self) -> None:
         dialog_instance = SettingsDialog(self)
         dialog_instance.exec()
+        self.populate_libraries(sorted(config.libraries.keys()))
 
     @Slot(str)
     def on_library_changed(self, library_name: str) -> None:
@@ -556,13 +676,14 @@ class LibraryGridView(QWidget):
 
     @Slot()
     def populate_grid(self) -> None:
-        self.series_list_widget.clear()
-
         # Build list of displayable series structured records
         series_entries: List[Dict[str, Any]] = []
         for series_name, series_data in self.controller.cached_library_data.items():
             metrics_dictionary: Dict[str, Any] = series_data.get("metrics", {})
-            metadata_dictionary: Dict[str, Any] = series_data.get("metadata", {})
+            is_movie: bool = "seasons" not in series_data
+            metadata_dictionary: Dict[str, Any] = (
+                series_data if is_movie else series_data.get("metadata", {})
+            )
 
             total_episodes: int = metrics_dictionary.get("total_episodes", 0)
             watched_episodes: int = metrics_dictionary.get("watched_episodes", 0)
@@ -575,7 +696,11 @@ class LibraryGridView(QWidget):
             if self.controller.filter_out_watched and is_fully_watched:
                 continue
 
-            first_air_date: str = metadata_dictionary.get("first_air_date", "")
+            first_air_date: str = (
+                str(metadata_dictionary.get("year", ""))
+                if is_movie
+                else metadata_dictionary.get("first_air_date", "")
+            )
             effective_air_date: str = max(max_air_date, first_air_date)
             poster_path_string: str = metadata_dictionary.get("poster_path", "")
 
@@ -587,6 +712,7 @@ class LibraryGridView(QWidget):
                     "effective_air_date": effective_air_date,
                     "watched_count": watched_episodes,
                     "total_count": total_episodes,
+                    "is_movie": is_movie,
                 }
             )
 
@@ -601,52 +727,94 @@ class LibraryGridView(QWidget):
         else:
             series_entries.sort(key=lambda entry: entry["name"].lower())
 
-        # Render items into the responsive icon grid
-        for entry_record in series_entries:
+        current_item_count: int = self.series_list_widget.count()
+        target_item_count: int = len(series_entries)
+        poster_role: int = int(Qt.ItemDataRole.UserRole) + 1
+
+        # Render items into the responsive icon grid via delta in-place synchronization
+        for row_index, entry_record in enumerate(series_entries):
             series_title: str = entry_record["name"]
             watched_count: int = entry_record["watched_count"]
             total_count: int = entry_record["total_count"]
-
-            display_label: str = f"{series_title}\n({watched_count}/{total_count})"
-
-            list_item: QListWidgetItem = QListWidgetItem(display_label)
-            list_item.setData(Qt.ItemDataRole.UserRole, series_title)
-
-            # Assign text alignment and tooltip properties
-            list_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            list_item.setToolTip(series_title)
-
-            # Load poster icon fragment if mapped locally
+            is_movie: bool = entry_record["is_movie"]
             poster_path_value: str = entry_record["poster_path"]
-            icon_assigned: bool = False
-            if poster_path_value:
-                poster_path_object = Path(poster_path_value)
-                if poster_path_object.is_file():
-                    pixmap_instance = QPixmap(str(poster_path_object))
-                    if not pixmap_instance.isNull():
-                        # Scale down smoothly for rich grid performance
-                        scaled_pixmap = pixmap_instance.scaled(
-                            160,
-                            220,
-                            Qt.AspectRatioMode.KeepAspectRatio,
-                            Qt.TransformationMode.SmoothTransformation,
-                        )
-                        list_item.setIcon(QIcon(scaled_pixmap))
-                        icon_assigned = True
 
-            if not icon_assigned:
-                # Provide a beautifully generated blank/fallback placeholder icon image
+            if is_movie:
+                status_string: str = "Watched" if watched_count > 0 else "Unwatched"
+                display_label: str = f"{series_title}\n({status_string})"
+            else:
+                display_label: str = f"{series_title}\n({watched_count}/{total_count})"
+
+            list_item: Optional[QListWidgetItem] = None
+            if row_index < current_item_count:
+                list_item = self.series_list_widget.item(row_index)
+
+            if list_item is not None:
+                if list_item.text() != display_label:
+                    list_item.setText(display_label)
+                if list_item.data(Qt.ItemDataRole.UserRole) != series_title:
+                    list_item.setData(Qt.ItemDataRole.UserRole, series_title)
+                    list_item.setToolTip(series_title)
+
+                stored_poster: Any = list_item.data(poster_role)
+                if stored_poster != poster_path_value:
+                    list_item.setData(poster_role, poster_path_value)
+                    self._assign_item_icon(list_item, poster_path_value)
+            else:
+                new_item: QListWidgetItem = QListWidgetItem(display_label)
+                new_item.setData(Qt.ItemDataRole.UserRole, series_title)
+                new_item.setData(poster_role, poster_path_value)
+                new_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                new_item.setToolTip(series_title)
+                self._assign_item_icon(new_item, poster_path_value)
+                self.series_list_widget.addItem(new_item)
+
+        while self.series_list_widget.count() > target_item_count:
+            last_row_index: int = self.series_list_widget.count() - 1
+            self.series_list_widget.takeItem(last_row_index)
+
+    def _assign_item_icon(
+        self, item_target: QListWidgetItem, poster_path_value: str
+    ) -> None:
+        if poster_path_value in self.cached_icons:
+            item_target.setIcon(self.cached_icons[poster_path_value])
+            return
+
+        icon_assigned: bool = False
+        if poster_path_value:
+            poster_path_object = Path(poster_path_value)
+            if poster_path_object.is_file():
+                pixmap_instance = QPixmap(str(poster_path_object))
+                if not pixmap_instance.isNull():
+                    scaled_pixmap = pixmap_instance.scaled(
+                        160,
+                        220,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    loaded_icon = QIcon(scaled_pixmap)
+                    self.cached_icons[poster_path_value] = loaded_icon
+                    item_target.setIcon(loaded_icon)
+                    icon_assigned = True
+
+        if not icon_assigned:
+            if "" not in self.cached_icons:
                 fallback_pixmap = QPixmap(160, 220)
                 fallback_pixmap.fill(QColor(40, 40, 40))
-                list_item.setIcon(QIcon(fallback_pixmap))
-
-            self.series_list_widget.addItem(list_item)
+                self.cached_icons[""] = QIcon(fallback_pixmap)
+            item_target.setIcon(self.cached_icons[""])
 
     @Slot(QListWidgetItem)
     def on_item_clicked(self, item_target: QListWidgetItem) -> None:
-        series_title: str = item_target.data(Qt.ItemDataRole.UserRole)
-        if series_title:
-            self.controller.select_series(series_title)
+        title: str = item_target.data(Qt.ItemDataRole.UserRole)
+        if title:
+            library_config = config.libraries.get(
+                self.controller.current_library_name, {}
+            )
+            if library_config.get("type") == "movie":
+                self.controller.select_movie(title)
+            else:
+                self.controller.select_series(title)
 
 
 class SeriesDetailView(QWidget):
@@ -988,10 +1156,16 @@ class MetadataMatchDialog(QDialog):
         self.results_table.setRowCount(0)
         self.search_results_list = []
 
+        library_config = config.libraries.get(self.controller.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+
         if provider_string == "Jellyfin":
-            raw_results: List[Dict[str, Any]] = jellyfin_client.search_series(
-                query_string
-            )
+            if is_movie:
+                raw_results: List[Dict[str, Any]] = jellyfin_client.search_movie(
+                    query_string
+                )
+            else:
+                raw_results = jellyfin_client.search_series(query_string)
             for item_data in raw_results:
                 production_year_value: str = item_data.get("ProductionYear", "")
                 first_air_date_value: str = (
@@ -1011,19 +1185,34 @@ class MetadataMatchDialog(QDialog):
                     }
                 )
         else:
-            raw_results = tmdb_client.search_series_full(query_string)
-            for item_data in raw_results:
-                self.search_results_list.append(
-                    {
-                        "id": str(item_data.get("id", "")),
-                        "tmdb_id": str(item_data.get("id", "")),
-                        "name": item_data.get("name", ""),
-                        "first_air_date": item_data.get("first_air_date", ""),
-                        "overview": item_data.get("overview", ""),
-                        "poster_path": item_data.get("poster_path", ""),
-                        "provider": "TMDB",
-                    }
-                )
+            if is_movie:
+                raw_results = tmdb_client.search_movie_full(query_string)
+                for item_data in raw_results:
+                    self.search_results_list.append(
+                        {
+                            "id": str(item_data.get("id", "")),
+                            "tmdb_id": str(item_data.get("id", "")),
+                            "name": item_data.get("title", ""),
+                            "first_air_date": item_data.get("release_date", ""),
+                            "overview": item_data.get("overview", ""),
+                            "poster_path": item_data.get("poster_path", ""),
+                            "provider": "TMDB",
+                        }
+                    )
+            else:
+                raw_results = tmdb_client.search_series_full(query_string)
+                for item_data in raw_results:
+                    self.search_results_list.append(
+                        {
+                            "id": str(item_data.get("id", "")),
+                            "tmdb_id": str(item_data.get("id", "")),
+                            "name": item_data.get("name", ""),
+                            "first_air_date": item_data.get("first_air_date", ""),
+                            "overview": item_data.get("overview", ""),
+                            "poster_path": item_data.get("poster_path", ""),
+                            "provider": "TMDB",
+                        }
+                    )
 
         self.results_table.setRowCount(len(self.search_results_list))
         for row_index, result_dictionary in enumerate(self.search_results_list):
@@ -1194,8 +1383,9 @@ class SettingsDialog(QDialog):
         self.jellyfin_key_input: QLineEdit = QLineEdit()
         self.tmdb_key_input: QLineEdit = QLineEdit()
 
-        self.staged_libraries: Dict[str, List[str]] = {}
+        self.staged_libraries: Dict[str, Dict[str, Any]] = {}
         self.library_name_input: QLineEdit = QLineEdit()
+        self.library_type_input: QComboBox = QComboBox()
         self.library_selector: QComboBox = QComboBox()
         self.directory_list_widget: QListWidget = QListWidget()
 
@@ -1260,6 +1450,10 @@ class SettingsDialog(QDialog):
         create_layout.addWidget(QLabel("New Library Name:"))
         self.library_name_input.setPlaceholderText("e.g. Movies, Documentaries")
         create_layout.addWidget(self.library_name_input)
+
+        create_layout.addWidget(QLabel("Type:"))
+        self.library_type_input.addItems(["TV Shows", "Movies"])
+        create_layout.addWidget(self.library_type_input)
 
         add_library_button: QPushButton = QPushButton("Create Library")
         add_library_button.clicked.connect(self.add_staged_library)
@@ -1423,8 +1617,11 @@ class SettingsDialog(QDialog):
         )
 
         self.staged_libraries = {
-            library_name: list(directories)
-            for library_name, directories in config.libraries.items()
+            library_name: {
+                "type": library_config.get("type", "tv"),
+                "paths": list(library_config.get("paths", [])),
+            }
+            for library_name, library_config in config.libraries.items()
         }
         self._refresh_library_selector()
 
@@ -1443,11 +1640,16 @@ class SettingsDialog(QDialog):
         self.directory_list_widget.clear()
         selected_library: str = self.library_selector.currentText()
         if selected_library in self.staged_libraries:
-            self.directory_list_widget.addItems(self.staged_libraries[selected_library])
+            self.directory_list_widget.addItems(
+                self.staged_libraries[selected_library].get("paths", [])
+            )
 
     @Slot()
     def add_staged_library(self) -> None:
         new_library_name: str = self.library_name_input.text().strip()
+        new_library_type: str = (
+            "movie" if self.library_type_input.currentText() == "Movies" else "tv"
+        )
         if not new_library_name:
             return
         if new_library_name in self.staged_libraries:
@@ -1458,7 +1660,10 @@ class SettingsDialog(QDialog):
             )
             return
 
-        self.staged_libraries[new_library_name] = []
+        self.staged_libraries[new_library_name] = {
+            "type": new_library_type,
+            "paths": [],
+        }
         self.library_name_input.clear()
         self._refresh_library_selector()
         self.library_selector.setCurrentText(new_library_name)
@@ -1485,8 +1690,10 @@ class SettingsDialog(QDialog):
             self, "Select Root Directory"
         )
         if chosen_directory:
-            if chosen_directory not in self.staged_libraries[selected_library]:
-                self.staged_libraries[selected_library].append(chosen_directory)
+            paths: List[str] = self.staged_libraries[selected_library].get("paths", [])
+            if chosen_directory not in paths:
+                paths.append(chosen_directory)
+                self.staged_libraries[selected_library]["paths"] = paths
                 self._refresh_directory_list()
 
     @Slot()
@@ -1499,8 +1706,10 @@ class SettingsDialog(QDialog):
             return
 
         directory_path: str = selected_item.text()
-        if directory_path in self.staged_libraries[selected_library]:
-            self.staged_libraries[selected_library].remove(directory_path)
+        paths: List[str] = self.staged_libraries[selected_library].get("paths", [])
+        if directory_path in paths:
+            paths.remove(directory_path)
+            self.staged_libraries[selected_library]["paths"] = paths
             self._refresh_directory_list()
 
     @Slot()
@@ -1640,3 +1849,153 @@ class SettingsDialog(QDialog):
                     "Restore Failed",
                     "Failed to restore database. Ensure the file is uncorrupted.",
                 )
+
+
+class MovieDetailView(QWidget):
+    """
+    Presents exhaustive movie structure, overview, and direct execution actions.
+    Enforces strict typing and zero-abbreviation naming standard.
+    """
+
+    back_requested = Signal()
+
+    def __init__(
+        self, controller_instance: Controller, parent: Optional[QWidget] = None
+    ) -> None:
+        super().__init__(parent)
+        self.controller: Controller = controller_instance
+        self.title_label: QLabel = QLabel()
+        self.overview_label: QLabel = QLabel()
+        self.poster_label: QLabel = QLabel()
+        self.metadata_label: QLabel = QLabel()
+        self.play_button: QPushButton = QPushButton("▶ Play Movie")
+
+        self._setup_ui()
+        self.controller.movie_selected.connect(self.populate_movie_details)
+        self._current_movie_path: str = ""
+
+    def _setup_ui(self) -> None:
+        main_layout: QVBoxLayout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(15)
+
+        # Header Panel
+        header_layout: QHBoxLayout = QHBoxLayout()
+        header_layout.setSpacing(20)
+
+        back_button: QPushButton = QPushButton("← Back to Library")
+        back_button.clicked.connect(self.back_requested.emit)
+        header_layout.addWidget(back_button, 0, Qt.AlignmentFlag.AlignTop)
+
+        self.poster_label.setFixedSize(180, 260)
+        self.poster_label.setStyleSheet(
+            "background-color: #222222; border: 1px solid #444444; border-radius: 6px;"
+        )
+        self.poster_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header_layout.addWidget(self.poster_label, 0, Qt.AlignmentFlag.AlignTop)
+
+        info_layout: QVBoxLayout = QVBoxLayout()
+        info_layout.setSpacing(10)
+
+        self.title_label.setFont(QFont("Inter", 24, QFont.Weight.Bold))
+        self.title_label.setWordWrap(True)
+        info_layout.addWidget(self.title_label)
+
+        self.metadata_label.setFont(QFont("Inter", 12))
+        self.metadata_label.setStyleSheet("color: #aaaaaa;")
+        info_layout.addWidget(self.metadata_label)
+
+        self.overview_label.setFont(QFont("Inter", 13))
+        self.overview_label.setWordWrap(True)
+        self.overview_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        info_layout.addWidget(self.overview_label)
+
+        # Action Buttons Row
+        actions_row_layout: QHBoxLayout = QHBoxLayout()
+        actions_row_layout.setSpacing(10)
+
+        self.play_button.setObjectName("accentButton")
+        self.play_button.clicked.connect(self._on_play_clicked)
+        actions_row_layout.addWidget(self.play_button)
+
+        match_metadata_button: QPushButton = QPushButton("Match Movie Metadata...")
+        match_metadata_button.setObjectName("matchMetadataButton")
+        match_metadata_button.clicked.connect(
+            lambda: self.controller.metadata_dialog_requested.emit(
+                self.controller.selected_series_name
+            )
+        )
+        actions_row_layout.addWidget(match_metadata_button)
+
+        actions_row_layout.addStretch()
+        info_layout.addLayout(actions_row_layout)
+
+        header_layout.addLayout(info_layout)
+        main_layout.addLayout(header_layout)
+
+        # Horizontal Divider Line
+        divider_line: QFrame = QFrame()
+        divider_line.setFrameShape(QFrame.Shape.HLine)
+        divider_line.setFrameShadow(QFrame.Shadow.Sunken)
+        divider_line.setStyleSheet("border-color: #333333;")
+        main_layout.addWidget(divider_line)
+
+        main_layout.addStretch()
+
+    @Slot(str)
+    def populate_movie_details(self, movie_name: str) -> None:
+        movie_record: Dict[str, Any] = self.controller.cached_library_data.get(
+            movie_name, {}
+        )
+        self._current_movie_path = movie_record.get("path", "")
+
+        movie_display_title: str = movie_record.get("tmdb_name") or movie_name
+        self.title_label.setText(movie_display_title)
+        self.overview_label.setText(
+            movie_record.get("overview") or "No overview available."
+        )
+
+        year: int = movie_record.get("year", 0)
+        runtime: int = movie_record.get("runtime", 0)
+        rating: str = movie_record.get("rating", "")
+        genre: str = movie_record.get("genre", "")
+
+        metadata_parts = []
+        if year:
+            metadata_parts.append(str(year))
+        if runtime:
+            metadata_parts.append(f"{runtime} min")
+        if rating:
+            metadata_parts.append(f"★ {rating}")
+        if genre:
+            metadata_parts.append(genre)
+
+        self.metadata_label.setText(" • ".join(metadata_parts))
+
+        poster_path_string: str = movie_record.get("poster_path", "")
+        pixmap_assigned: bool = False
+        if poster_path_string:
+            poster_path_object = Path(poster_path_string)
+            if poster_path_object.is_file():
+                pixmap_instance = QPixmap(str(poster_path_object))
+                if not pixmap_instance.isNull():
+                    self.poster_label.setPixmap(
+                        pixmap_instance.scaled(
+                            180,
+                            260,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
+                    pixmap_assigned = True
+
+        if not pixmap_assigned:
+            self.poster_label.clear()
+            self.poster_label.setText("No Poster")
+
+    @Slot()
+    def _on_play_clicked(self) -> None:
+        if self._current_movie_path:
+            self.controller.playback_requested.emit(self._current_movie_path)

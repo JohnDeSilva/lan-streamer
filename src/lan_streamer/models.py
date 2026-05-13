@@ -99,3 +99,30 @@ class Episode(Base):
         Index("idx_episodes_jellyfin_id", "jellyfin_id"),
         Index("idx_episodes_season_id", "season_id"),
     )
+
+
+class Movie(Base):
+    __tablename__ = "movies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    library_name: Mapped[Optional[str]] = mapped_column(String)
+    name: Mapped[Optional[str]] = mapped_column(String)
+    jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_identifier: Mapped[Optional[str]] = mapped_column(String)
+    poster_path: Mapped[Optional[str]] = mapped_column(String)
+    overview: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_name: Mapped[Optional[str]] = mapped_column(String)
+    locked_metadata: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
+    date_added: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    path: Mapped[Optional[str]] = mapped_column(String, unique=True)
+    runtime: Mapped[Optional[int]] = mapped_column(Integer)
+    rating: Mapped[Optional[str]] = mapped_column(String)
+    genre: Mapped[Optional[str]] = mapped_column(String)
+    year: Mapped[Optional[int]] = mapped_column(Integer)
+    watched: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
+    last_played_position: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+
+    __table_args__ = (
+        UniqueConstraint("library_name", "name", name="uq_movies_library_name_name"),
+        Index("idx_movies_jellyfin_id", "jellyfin_id"),
+    )

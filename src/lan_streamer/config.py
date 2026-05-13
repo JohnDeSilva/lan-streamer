@@ -1,13 +1,13 @@
 import json
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Any
 
 CONFIG_FILE = Path.home() / ".config" / "lan-streamer" / "config.json"
 
 
 class Config:
     def __init__(self) -> None:
-        self.libraries: Dict[str, List[str]] = {}
+        self.libraries: Dict[str, Dict[str, Any]] = {}
         self.jellyfin_url: str = ""
         self.jellyfin_api_key: str = ""
         self.tmdb_api_key: str = ""
@@ -112,10 +112,26 @@ class Config:
                     )
 
                     if "libraries" in data:
-                        self.libraries = data["libraries"]
+                        raw_libraries = data["libraries"]
+                        # Migrate old format if needed
+                        for lib_name, lib_val in raw_libraries.items():
+                            if isinstance(lib_val, list):
+                                self.libraries[lib_name] = {
+                                    "type": "tv",
+                                    "paths": lib_val,
+                                }
+                            else:
+                                self.libraries[lib_name] = lib_val
+                        if any(isinstance(val, list) for val in raw_libraries.values()):
+                            self.save()
                     elif "root_dirs" in data:
-                        # Migrate old format
-                        self.libraries = {"Default": data.get("root_dirs", [])}
+                        # Migrate very old format
+                        self.libraries = {
+                            "Default": {
+                                "type": "tv",
+                                "paths": data.get("root_dirs", []),
+                            }
+                        }
                         self.save()
                     else:
                         self.libraries = {}
@@ -167,9 +183,9 @@ class Config:
         except Exception as e:
             print(f"Error saving config: {e}")
 
-    def add_library(self, name: str) -> None:
+    def add_library(self, name: str, library_type: str = "tv") -> None:
         if name not in self.libraries:
-            self.libraries[name] = []
+            self.libraries[name] = {"type": library_type, "paths": []}
             self.save()
 
     def remove_library(self, name: str) -> None:
@@ -178,14 +194,20 @@ class Config:
             self.save()
 
     def add_root_dir(self, library_name: str, path: str) -> None:
-        if library_name in self.libraries and path not in self.libraries[library_name]:
-            self.libraries[library_name].append(path)
-            self.save()
+        if library_name in self.libraries:
+            paths = self.libraries[library_name].get("paths", [])
+            if path not in paths:
+                paths.append(path)
+                self.libraries[library_name]["paths"] = paths
+                self.save()
 
     def remove_root_dir(self, library_name: str, path: str) -> None:
-        if library_name in self.libraries and path in self.libraries[library_name]:
-            self.libraries[library_name].remove(path)
-            self.save()
+        if library_name in self.libraries:
+            paths = self.libraries[library_name].get("paths", [])
+            if path in paths:
+                paths.remove(path)
+                self.libraries[library_name]["paths"] = paths
+                self.save()
 
 
 config = Config()

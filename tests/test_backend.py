@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from typing import Any, Dict, List
 from lan_streamer.backend import (
     BackendBridge,
@@ -234,7 +234,7 @@ def test_backend_bridge_jellyfin_sync_triggers() -> None:
 def test_backend_workers_execution() -> None:
     # Test ScanWorker
     with patch("lan_streamer.backend.scan_directories", return_value={}) as mock_scan:
-        worker_instance = ScanWorker(["/path"], {})
+        worker_instance = ScanWorker(["/path"], "tv", {})
         worker_instance.run()
         mock_scan.assert_called_once()
 
@@ -282,3 +282,78 @@ def test_backend_renamer_slots(sample_library_payload: Dict[str, Any]) -> None:
         with patch("lan_streamer.renamer.perform_rename", return_value=[]):
             renames_list = bridge_instance.applyRenames([])
             assert renames_list == []
+
+
+def test_backend_partial_scan_updates() -> None:
+    bridge_instance = BackendBridge()
+    bridge_instance._current_library_name = "TestMedia"
+    partial_data = {"Show A": {"metadata": {"poster_path": "/a.jpg"}}}
+    bridge_instance._on_scan_worker_partial(partial_data)
+    assert getattr(bridge_instance, "_cached_library_data", {}) == {}
+
+
+def test_backend_file_system_monitoring(
+    sample_library_payload: Dict[str, Any], qtbot: Any, tmp_path: Any
+) -> None:
+    bridge_instance = BackendBridge()
+    media_directory = tmp_path / "media_roots"
+    media_directory.mkdir()
+    directory_path_string = str(media_directory)
+
+    config.libraries["MonitoredLib"] = {"type": "tv", "paths": [directory_path_string]}
+
+    with patch("lan_streamer.db.load_library", return_value=sample_library_payload):
+        bridge_instance.selectLibrary("MonitoredLib")
+        assert (
+            directory_path_string in bridge_instance._file_system_watcher.directories()
+        )
+
+        # Trigger directory change slot manually to simulate file system activity
+        with patch.object(bridge_instance._debounce_timer, "start") as mock_timer_start:
+            bridge_instance._on_directory_changed(directory_path_string)
+            mock_timer_start.assert_called_once()
+
+        # Trigger debounce timeout slot manually to verify scan trigger
+        with patch.object(bridge_instance, "scanForNewFiles") as mock_scan:
+            bridge_instance._on_debounce_timeout()
+            mock_scan.assert_called_once()
+
+        # Test concurrency protection: if ScanWorker is already running, avoid duplicate triggers
+        mock_active_worker = MagicMock()
+        mock_active_worker.isRunning.return_value = True
+        bridge_instance._scan_worker = mock_active_worker
+        bridge_instance._current_library_name = "MonitoredLib"
+
+        with patch("lan_streamer.backend.ScanWorker") as mock_worker_class:
+            bridge_instance.scanForNewFiles()
+            mock_worker_class.assert_not_called()
+
+
+def test_backend_on_scan_worker_finished_flows() -> None:
+    bridge = BackendBridge()
+    config.libraries["TestMovieLib"] = {"type": "movie", "paths": ["/mpath"]}
+    bridge._current_library_name = "TestMovieLib"
+    bridge._cached_library_data = {"Movie 1": {"path": "/mpath/m1.mp4"}}
+
+    updated_movie_lib = {"Movie 1": {"path": "/mpath/m1.mp4"}}
+    with (
+        patch("lan_streamer.db.save_movie_library") as mock_save,
+        patch.object(bridge, "selectLibrary") as mock_select,
+    ):
+        bridge._on_scan_worker_finished(updated_movie_lib)
+        mock_save.assert_called_once_with("TestMovieLib", updated_movie_lib)
+        mock_select.assert_called_once_with("TestMovieLib")
+
+    config.libraries["TestTvLib"] = {"type": "tv", "paths": ["/tpath"]}
+    bridge._current_library_name = "TestTvLib"
+    bridge._cached_library_data = {"Show A": {"seasons": {"S1": {"episodes": [{}]}}}}
+
+    updated_tv_lib = {"Show A": {"seasons": {"S1": {"episodes": [{}, {}]}}}}
+    with (
+        patch("lan_streamer.db.save_library") as mock_save,
+        patch("lan_streamer.jellyfin.jellyfin_client.is_configured", return_value=True),
+        patch.object(bridge, "pullWatchHistoryFromJellyfin") as mock_pull,
+    ):
+        bridge._on_scan_worker_finished(updated_tv_lib)
+        mock_save.assert_called_once_with("TestTvLib", updated_tv_lib)
+        mock_pull.assert_called_once()
