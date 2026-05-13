@@ -96,7 +96,7 @@ def format_name(template: str, data: Dict[str, Any]) -> str:
     except KeyError as e:
         logger.warning(f"Invalid token in template: {e}")
         return template  # Return template as is if it fails
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error formatting name with template '{template}'")
         return template
 
@@ -264,7 +264,7 @@ def perform_rename(
             if db_callback and not item.get("is_subtitle"):
                 try:
                     db_callback(str(old_path), str(new_path))
-                except Exception as e:
+                except Exception:
                     logger.exception(f"Failed to update DB for {old_path}")
                     # We still count the file rename as a success
 

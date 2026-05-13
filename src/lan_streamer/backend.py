@@ -1031,7 +1031,9 @@ class ScanWorker(QThread):
 
     def run(self) -> None:
         try:
-            logger.info(f"ScanWorker starting run for directories: {self.root_directories}")
+            logger.info(
+                f"ScanWorker starting run for directories: {self.root_directories}"
+            )
             # Fetch Jellyfin correlation data if configured
             jellyfin_data = None
             if jellyfin_client.is_configured():
@@ -1125,7 +1127,9 @@ class JellyfinPullWorker(QThread):
             updated_count = db.sync_watched_from_jellyfin_data(
                 watched_identifiers, watched_paths, watched_names
             )
-            logger.info(f"JellyfinPullWorker finished, updated {updated_count} episodes")
+            logger.info(
+                f"JellyfinPullWorker finished, updated {updated_count} episodes"
+            )
             self.finished.emit(updated_count)
         except Exception as exc:
             logger.exception("JellyfinPullWorker failed")

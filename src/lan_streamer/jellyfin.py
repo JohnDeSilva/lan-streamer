@@ -75,7 +75,7 @@ class JellyfinClient:
             if users and len(users) > 0:
                 self._cached_user_id = users[0].get("Id")
                 return self._cached_user_id
-        except requests.exceptions.ConnectionError as exception:
+        except requests.exceptions.ConnectionError:
             logger.exception(f"Connection error reaching Jellyfin at {base_url}")
             if base_url.startswith("https://") and not config.jellyfin_url.startswith(
                 "https://"
@@ -91,9 +91,9 @@ class JellyfinClient:
                     if users and len(users) > 0:
                         self._cached_user_id = users[0].get("Id")
                         return self._cached_user_id
-                except Exception as retry_exception:
+                except Exception:
                     logger.exception("Retry with http failed")
-        except Exception as exception:
+        except Exception:
             logger.exception("Unexpected error getting Jellyfin user")
         return None
 
@@ -218,7 +218,7 @@ class JellyfinClient:
                 if len(items) < limit:
                     break
                 start_index += limit
-            except Exception as exception:
+            except Exception:
                 logger.exception("Failed to fetch watched episodes from Jellyfin")
                 break
 
@@ -316,7 +316,7 @@ class JellyfinClient:
                 if len(items) < limit:
                     break
                 start_index += limit
-            except Exception as exception:
+            except Exception:
                 logger.exception("Failed to fetch episode mapping from Jellyfin")
                 break
 
@@ -346,7 +346,7 @@ class JellyfinClient:
                 if len(items) < limit:
                     break
                 start_index += limit
-            except Exception as exception:
+            except Exception:
                 logger.exception("Failed to fetch series mapping from Jellyfin")
                 break
 
@@ -379,7 +379,7 @@ class JellyfinClient:
             response = self.session.post(url, headers=self._get_headers(), timeout=10)
             response.raise_for_status()
             return True
-        except Exception as e:
+        except Exception:
             logger.exception(f"Failed to mark item {item_id} as played")
             return False
 
@@ -397,7 +397,7 @@ class JellyfinClient:
             response = self.session.delete(url, headers=self._get_headers(), timeout=10)
             response.raise_for_status()
             return True
-        except Exception as e:
+        except Exception:
             logger.exception(f"Failed to unmark item {item_id} as played")
             return False
 
@@ -431,7 +431,7 @@ class JellyfinClient:
             response.raise_for_status()
             data = response.json()
             return data.get("Items", [])
-        except Exception as exception:
+        except Exception:
             logger.exception(f"Failed to search Jellyfin for series '{name}'")
             return []
 
@@ -461,8 +461,10 @@ class JellyfinClient:
             response.raise_for_status()
             data = response.json()
             return data.get("Items", [])
-        except Exception as exception:
-            logger.exception(f"Failed to fetch episodes for Jellyfin series {series_id}")
+        except Exception:
+            logger.exception(
+                f"Failed to fetch episodes for Jellyfin series {series_id}"
+            )
             return []
 
     # ------------------------------------------------------------------
@@ -484,7 +486,7 @@ class JellyfinClient:
             else:
                 url = f"{self._get_base_url()}/Users/{user_id}/PlayedItems/{item_id}"
                 self.session.delete(url, headers=self._get_headers(), timeout=5)
-        except Exception as e:
+        except Exception:
             logger.exception(f"Error setting watched status for {item_id}")
 
 

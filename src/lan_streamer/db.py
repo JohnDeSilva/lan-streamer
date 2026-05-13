@@ -163,7 +163,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
 
                 if series.name is not None:
                     library_data[series.name] = series_dict
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error loading library '{library_name}' from database")
         return {}
 
@@ -282,7 +282,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
 
     # Deletions are now handled exclusively by cleanup_library to prevent accidental data loss
     # during temporary drive disconnection or partial scans.
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error saving library '{library_name}' to database")
 
     duration = time.time() - start_time
@@ -300,7 +300,7 @@ def update_episode_watched_status(path: str, watched: bool) -> None:
             episode = session.query(Episode).filter(Episode.path == path).first()
             if episode:
                 episode.watched = watched
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error updating watched status for {path}")
 
 
@@ -312,7 +312,7 @@ def update_episode_path(old_path: str, new_path: str) -> None:
             episode = session.query(Episode).filter(Episode.path == old_path).first()
             if episode:
                 episode.path = new_path
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error updating episode path from {old_path} to {new_path}")
 
 
@@ -324,7 +324,7 @@ def update_episode_playback_position(path: str, position: int) -> bool:
             if episode:
                 episode.last_played_position = position
                 return True
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error updating playback position for {path}")
     return False
 
@@ -336,7 +336,7 @@ def get_episode_playback_position(path: str) -> int:
             episode = session.query(Episode).filter(Episode.path == path).first()
             if episode and episode.last_played_position:
                 return int(episode.last_played_position)
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error retrieving playback position for {path}")
     return 0
 
@@ -365,8 +365,10 @@ def update_season_watched_status(
             if season:
                 for episode in season.episodes:
                     episode.watched = watched
-    except Exception as e:
-        logger.exception(f"Error updating watched status for {series_name} - {season_name}")
+    except Exception:
+        logger.exception(
+            f"Error updating watched status for {series_name} - {season_name}"
+        )
 
 
 def update_series_watched_status(
@@ -389,7 +391,7 @@ def update_series_watched_status(
                 for season in series.seasons:
                     for episode in season.episodes:
                         episode.watched = watched
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error updating watched status for series {series_name}")
 
 
@@ -458,7 +460,7 @@ def sync_watched_from_jellyfin_data(
         logger.info(
             f"sync_watched_from_jellyfin_data: marked {updated_count} episodes as watched in {duration:.3f}s."
         )
-    except Exception as exception:
+    except Exception:
         logger.exception("Error in sync_watched_from_jellyfin_data")
 
     return updated_count
@@ -483,7 +485,7 @@ def get_all_episodes_with_jellyfin_id() -> list:
                         "watched": row.watched,
                     }
                 )
-    except Exception as e:
+    except Exception:
         logger.exception("Error fetching episodes with Jellyfin ID")
     return episodes
 
@@ -594,7 +596,7 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
             f"Cleanup for '{library_name}' completed in {duration:.3f}s: "
             f"{stats['series']} series, {stats['seasons']} seasons, {stats['episodes']} episodes removed."
         )
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error during library cleanup for '{library_name}'")
         raise
 

@@ -21,6 +21,11 @@ def test_config_initialization(mock_config_file) -> None:
     assert config.filter_out_watched is False
     assert config.sort_mode == "Alphabetical"
     assert config.max_cache_size_gb == 15.0
+    assert config.backup_directory.endswith("backups")
+    assert config.config_backup_frequency == 0
+    assert config.database_backup_frequency == 0
+    assert config.config_backup_retention == 7
+    assert config.database_backup_retention == 7
 
 
 def test_config_load_existing(mock_config_file) -> None:
@@ -151,3 +156,20 @@ def test_config_divide_logs_by_service(mock_config_file) -> None:
         )
     loaded3 = Config()
     assert loaded3.divide_logs_by_service is True
+
+
+def test_config_backup_settings(mock_config_file) -> None:
+    config = Config()
+    config.backup_directory = "/custom/backups"
+    config.config_backup_frequency = 3
+    config.database_backup_frequency = 5
+    config.config_backup_retention = 10
+    config.database_backup_retention = 14
+    config.save()
+
+    loaded = Config()
+    assert loaded.backup_directory == "/custom/backups"
+    assert loaded.config_backup_frequency == 3
+    assert loaded.database_backup_frequency == 5
+    assert loaded.config_backup_retention == 10
+    assert loaded.database_backup_retention == 14

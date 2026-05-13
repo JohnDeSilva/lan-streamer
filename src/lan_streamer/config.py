@@ -33,6 +33,13 @@ class Config:
         self.player_overlay_color: str = "white"
         self.max_cache_size_gb: float = 15.0
         self.max_log_retention_days: int = 7
+        self.backup_directory: str = str(
+            Path.home() / ".config" / "lan-streamer" / "backups"
+        )
+        self.config_backup_frequency: int = 0
+        self.database_backup_frequency: int = 0
+        self.config_backup_retention: int = 7
+        self.database_backup_retention: int = 7
         self.load()
 
     def load(self) -> None:
@@ -87,6 +94,22 @@ class Config:
                     )
                     self.max_cache_size_gb = data.get("max_cache_size_gb", 15.0)
                     self.max_log_retention_days = data.get("max_log_retention_days", 7)
+                    self.backup_directory = data.get(
+                        "backup_directory",
+                        str(Path.home() / ".config" / "lan-streamer" / "backups"),
+                    )
+                    self.config_backup_frequency = data.get(
+                        "config_backup_frequency", 0
+                    )
+                    self.database_backup_frequency = data.get(
+                        "database_backup_frequency", 0
+                    )
+                    self.config_backup_retention = data.get(
+                        "config_backup_retention", 7
+                    )
+                    self.database_backup_retention = data.get(
+                        "database_backup_retention", 7
+                    )
 
                     if "libraries" in data:
                         self.libraries = data["libraries"]
@@ -132,6 +155,11 @@ class Config:
                         "player_overlay_color": self.player_overlay_color,
                         "max_cache_size_gb": self.max_cache_size_gb,
                         "max_log_retention_days": self.max_log_retention_days,
+                        "backup_directory": self.backup_directory,
+                        "config_backup_frequency": self.config_backup_frequency,
+                        "database_backup_frequency": self.database_backup_frequency,
+                        "config_backup_retention": self.config_backup_retention,
+                        "database_backup_retention": self.database_backup_retention,
                     },
                     f,
                     indent=4,

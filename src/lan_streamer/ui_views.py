@@ -1188,7 +1188,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Application Configuration")
-        self.resize(750, 550)
+        self.resize(800, 700)
 
         self.jellyfin_url_input: QLineEdit = QLineEdit()
         self.jellyfin_key_input: QLineEdit = QLineEdit()
@@ -1214,6 +1214,12 @@ class SettingsDialog(QDialog):
         self.log_retention_input: QLineEdit = QLineEdit()
         self.log_saving_mode_selector: QComboBox = QComboBox()
         self.log_level_selector: QComboBox = QComboBox()
+
+        self.backup_directory_input: QLineEdit = QLineEdit()
+        self.config_backup_frequency_input: QLineEdit = QLineEdit()
+        self.database_backup_frequency_input: QLineEdit = QLineEdit()
+        self.config_backup_retention_input: QLineEdit = QLineEdit()
+        self.database_backup_retention_input: QLineEdit = QLineEdit()
 
         self._setup_ui()
         self._load_config()
@@ -1336,10 +1342,38 @@ class SettingsDialog(QDialog):
         advanced_layout.addWidget(self.log_saving_mode_selector, 3, 1)
 
         advanced_layout.addWidget(QLabel("Log Level:"), 4, 0)
-        self.log_level_selector.addItems(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+        self.log_level_selector.addItems(
+            ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        )
         advanced_layout.addWidget(self.log_level_selector, 4, 1)
 
-        advanced_layout.setRowStretch(5, 1)
+        advanced_layout.addWidget(QLabel("Backup Directory:"), 5, 0)
+        advanced_layout.addWidget(self.backup_directory_input, 5, 1)
+        browse_backup_button: QPushButton = QPushButton("Browse Folder...")
+        browse_backup_button.clicked.connect(self.browse_backup_directory)
+        advanced_layout.addWidget(browse_backup_button, 5, 2)
+
+        advanced_layout.addWidget(QLabel("Config Backup Freq (Days):"), 6, 0)
+        advanced_layout.addWidget(self.config_backup_frequency_input, 6, 1)
+
+        advanced_layout.addWidget(QLabel("Database Backup Freq (Days):"), 7, 0)
+        advanced_layout.addWidget(self.database_backup_frequency_input, 7, 1)
+
+        advanced_layout.addWidget(QLabel("Config Backup Retention:"), 8, 0)
+        advanced_layout.addWidget(self.config_backup_retention_input, 8, 1)
+
+        advanced_layout.addWidget(QLabel("Database Backup Retention:"), 9, 0)
+        advanced_layout.addWidget(self.database_backup_retention_input, 9, 1)
+
+        restore_config_button: QPushButton = QPushButton("Restore Config...")
+        restore_config_button.clicked.connect(self.trigger_restore_config)
+        advanced_layout.addWidget(restore_config_button, 10, 0)
+
+        restore_database_button: QPushButton = QPushButton("Restore Database...")
+        restore_database_button.clicked.connect(self.trigger_restore_database)
+        advanced_layout.addWidget(restore_database_button, 10, 1)
+
+        advanced_layout.setRowStretch(11, 1)
         tab_container.addTab(advanced_tab, "Advanced")
 
         main_layout.addWidget(tab_container)
@@ -1377,6 +1411,16 @@ class SettingsDialog(QDialog):
             else "Single Global File"
         )
         self.log_level_selector.setCurrentText(config.log_level.upper())
+
+        self.backup_directory_input.setText(config.backup_directory)
+        self.config_backup_frequency_input.setText(str(config.config_backup_frequency))
+        self.database_backup_frequency_input.setText(
+            str(config.database_backup_frequency)
+        )
+        self.config_backup_retention_input.setText(str(config.config_backup_retention))
+        self.database_backup_retention_input.setText(
+            str(config.database_backup_retention)
+        )
 
         self.staged_libraries = {
             library_name: list(directories)
@@ -1492,7 +1536,7 @@ class SettingsDialog(QDialog):
             config.database_path = self.db_path_input.text().strip()
         if self.log_dir_input.text().strip():
             config.log_directory = self.log_dir_input.text().strip()
-            
+
         config.log_level = self.log_level_selector.currentText()
         try:
             config.max_log_retention_days = int(self.log_retention_input.text().strip())
@@ -1503,6 +1547,96 @@ class SettingsDialog(QDialog):
             self.log_saving_mode_selector.currentText() == "Divided Service Logs"
         )
 
+        if self.backup_directory_input.text().strip():
+            config.backup_directory = self.backup_directory_input.text().strip()
+
+        try:
+            config.config_backup_frequency = int(
+                self.config_backup_frequency_input.text().strip()
+            )
+        except ValueError:
+            pass
+
+        try:
+            config.database_backup_frequency = int(
+                self.database_backup_frequency_input.text().strip()
+            )
+        except ValueError:
+            pass
+
+        try:
+            config.config_backup_retention = int(
+                self.config_backup_retention_input.text().strip()
+            )
+        except ValueError:
+            pass
+
+        try:
+            config.database_backup_retention = int(
+                self.database_backup_retention_input.text().strip()
+            )
+        except ValueError:
+            pass
+
         config.libraries = self.staged_libraries
         config.save()
         self.accept()
+
+    @Slot()
+    def browse_backup_directory(self) -> None:
+        chosen_directory: str = QFileDialog.getExistingDirectory(
+            self, "Select Backup Directory", self.backup_directory_input.text()
+        )
+        if chosen_directory:
+            self.backup_directory_input.setText(chosen_directory)
+
+    @Slot()
+    def trigger_restore_config(self) -> None:
+        chosen_file, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Configuration Backup to Restore",
+            self.backup_directory_input.text(),
+            "JSON Files (*.json);;All Files (*)",
+        )
+        if chosen_file:
+            from .backup import restore_config_backup
+
+            success: bool = restore_config_backup(chosen_file)
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Restore Successful",
+                    "Configuration successfully restored and reloaded.",
+                )
+                self._load_config()
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Restore Failed",
+                    "Failed to restore configuration. Ensure the file is valid.",
+                )
+
+    @Slot()
+    def trigger_restore_database(self) -> None:
+        chosen_file, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Database Backup to Restore",
+            self.backup_directory_input.text(),
+            "Database Files (*.db);;All Files (*)",
+        )
+        if chosen_file:
+            from .backup import restore_database_backup
+
+            success: bool = restore_database_backup(chosen_file)
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Restore Successful",
+                    "Database successfully restored from backup.",
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Restore Failed",
+                    "Failed to restore database. Ensure the file is uncorrupted.",
+                )

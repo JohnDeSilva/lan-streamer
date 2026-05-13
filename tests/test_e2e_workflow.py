@@ -462,3 +462,51 @@ def test_settings_dialog_libraries_management(qtbot: Any) -> None:
         # Test Remove Library
         dialog_instance.remove_staged_library()
         assert "UniqueTestCinematicLib999" not in dialog_instance.staged_libraries
+
+
+def test_settings_dialog_backup_options(qtbot: Any) -> None:
+    dialog_instance = SettingsDialog()
+    qtbot.addWidget(dialog_instance)
+
+    with patch(
+        "lan_streamer.ui_views.QFileDialog.getExistingDirectory",
+        return_value="/custom/ui_backups",
+    ):
+        dialog_instance.browse_backup_directory()
+        assert dialog_instance.backup_directory_input.text() == "/custom/ui_backups"
+
+    dialog_instance.config_backup_frequency_input.setText("5")
+    dialog_instance.database_backup_frequency_input.setText("10")
+    dialog_instance.config_backup_retention_input.setText("15")
+    dialog_instance.database_backup_retention_input.setText("20")
+
+    dialog_instance.save_config()
+
+    assert config.backup_directory == "/custom/ui_backups"
+    assert config.config_backup_frequency == 5
+    assert config.database_backup_frequency == 10
+    assert config.config_backup_retention == 15
+    assert config.database_backup_retention == 20
+
+    # Test Restore Triggers coverage
+    with (
+        patch(
+            "lan_streamer.ui_views.QFileDialog.getOpenFileName",
+            return_value=("/path/to/backup.json", ""),
+        ),
+        patch("lan_streamer.backup.restore_config_backup", return_value=True),
+        patch("lan_streamer.ui_views.QMessageBox.information") as mock_info,
+    ):
+        dialog_instance.trigger_restore_config()
+        mock_info.assert_called_once()
+
+    with (
+        patch(
+            "lan_streamer.ui_views.QFileDialog.getOpenFileName",
+            return_value=("/path/to/backup.db", ""),
+        ),
+        patch("lan_streamer.backup.restore_database_backup", return_value=True),
+        patch("lan_streamer.ui_views.QMessageBox.information") as mock_info,
+    ):
+        dialog_instance.trigger_restore_database()
+        mock_info.assert_called_once()

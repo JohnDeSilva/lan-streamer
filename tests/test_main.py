@@ -17,6 +17,7 @@ def cleanup_logging_handlers() -> Any:
             "lan_streamer.jellyfin",
             "lan_streamer.tmdb",
             "lan_streamer.player_widget",
+            "lan_streamer.backup",
         ]:
             target_logger = (
                 logging.getLogger(logger_name) if logger_name else logging.getLogger()
@@ -51,12 +52,16 @@ def test_main_execution() -> None:
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch(
+            "lan_streamer.backup.perform_scheduled_backups", MagicMock()
+        ) as mock_backup,
     ):
         mock_application_instance = mock_application_class.return_value
         mock_grid_instance = mock_grid_class.return_value
 
         main.main()
 
+        mock_backup.assert_called_once()
         mock_grid_instance.populate_libraries.assert_called_once()
         mock_application_instance.exec.assert_called_once()
 
@@ -78,6 +83,7 @@ def test_main_logging_setup(tmp_path: Any) -> None:
             patch("lan_streamer.main.SeriesDetailView", MagicMock()),
             patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
             patch("lan_streamer.main.db.init_db", MagicMock()),
+            patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
             patch("sys.exit", MagicMock()),
         ):
             root_logger = logging.getLogger()
@@ -139,6 +145,7 @@ def test_main_logging_failure() -> None:
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
+        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", lambda exit_code: None),
     ):
         main.main()
@@ -173,6 +180,7 @@ def test_main_proactive_log_cleanup(tmp_path: Any) -> None:
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", MagicMock()),
     ):
         main.main()
@@ -196,6 +204,7 @@ def test_main_signal_routing() -> None:
         patch("lan_streamer.main.SeriesDetailView", MagicMock()) as mock_detail_class,
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
         patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
         patch("lan_streamer.main.MetadataMatchDialog", MagicMock()) as mock_meta_dialog,
         patch(
             "lan_streamer.main.RenamePreviewDialog", MagicMock()
@@ -267,6 +276,7 @@ def test_main_playback_requested_external() -> None:
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
         patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
         patch("lan_streamer.main.play_video", MagicMock()) as mock_external_play,
     ):
         main.main()
@@ -297,6 +307,7 @@ def test_main_playback_requested_external_exception() -> None:
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
         patch(
             "lan_streamer.main.play_video",
             side_effect=Exception("External player launch fault"),

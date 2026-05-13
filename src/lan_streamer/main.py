@@ -47,7 +47,7 @@ def main() -> None:
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
     root_logger = logging.getLogger()
-    
+
     # Map string log level to logging constant
     log_level = getattr(logging, config.log_level.upper(), logging.INFO)
     root_logger.setLevel(log_level)
@@ -140,6 +140,15 @@ def main() -> None:
             str(log_directory / "player.log"),
             log_formatter,
         )
+        add_file_handler(
+            logging.getLogger("lan_streamer.backup"),
+            str(log_directory / "backup.log"),
+            log_formatter,
+        )
+
+    from .backup import perform_scheduled_backups
+
+    perform_scheduled_backups()
 
     db.init_db()
     application_instance = QApplication(sys.argv)

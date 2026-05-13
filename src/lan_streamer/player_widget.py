@@ -546,7 +546,7 @@ class VideoPlayerWidget(QWidget):
                 self.progress_overlay.hide()
                 self._load_and_play(str(dest_path))
                 return
-        except Exception as error:
+        except Exception:
             logger.exception("Could not verify existing cache file size")
 
         self._cleanup_cache()
@@ -934,8 +934,10 @@ class VideoPlayerWidget(QWidget):
                             file_path.unlink()
                             if self.cached_file_path == str(file_path):
                                 self.cached_file_path = None
-                    except Exception as error:
-                        logger.exception(f"Error checking or deleting old cache file {file_path}")
+                    except Exception:
+                        logger.exception(
+                            f"Error checking or deleting old cache file {file_path}"
+                        )
 
             # 2. Enforce maximum cache size
             max_size_bytes = config.max_cache_size_gb * 1024 * 1024 * 1024
@@ -949,7 +951,7 @@ class VideoPlayerWidget(QWidget):
                             (file_status.st_mtime, file_status.st_size, file_path)
                         )
                         total_size_bytes += file_status.st_size
-                    except Exception as error:
+                    except Exception:
                         logger.exception(f"Error stating cache file {file_path}")
 
             if total_size_bytes > max_size_bytes:
@@ -965,10 +967,12 @@ class VideoPlayerWidget(QWidget):
                         total_size_bytes -= file_size
                         if self.cached_file_path == str(file_path):
                             self.cached_file_path = None
-                    except Exception as error:
-                        logger.exception(f"Error deleting cache file {file_path} for size enforcement")
+                    except Exception:
+                        logger.exception(
+                            f"Error deleting cache file {file_path} for size enforcement"
+                        )
 
-        except Exception as error:
+        except Exception:
             logger.exception("Error during cache cleanup")
 
     def on_back_clicked(self) -> None:

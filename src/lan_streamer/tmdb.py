@@ -121,7 +121,7 @@ class TMDBClient:
             )
             resp.raise_for_status()
             return resp.json().get("results", [])
-        except Exception as e:
+        except Exception:
             logger.exception(f"TMDB search failed for '{query}'")
             return []
 
@@ -245,7 +245,7 @@ class TMDBClient:
             )
             resp.raise_for_status()
             return resp.json()
-        except Exception as e:
+        except Exception:
             logger.exception(f"TMDB get_series_by_id({tmdb_identifierentifier}) failed")
             return None
 
@@ -269,8 +269,10 @@ class TMDBClient:
             )
             resp.raise_for_status()
             return resp.json().get("episodes", [])
-        except Exception as e:
-            logger.exception(f"TMDB get_episodes({tmdb_identifierentifier}, S{season_num}) failed")
+        except Exception:
+            logger.exception(
+                f"TMDB get_episodes({tmdb_identifierentifier}, S{season_num}) failed"
+            )
             return []
 
     def download_image(self, poster_path: str, cache_key: str) -> str:
@@ -300,7 +302,7 @@ class TMDBClient:
                 with open(image_path, "wb") as f:
                     f.write(resp.content)
                 return str(image_path)
-        except Exception as e:
+        except Exception:
             logger.exception(f"Failed to download image from '{image_url}'")
         return ""
 

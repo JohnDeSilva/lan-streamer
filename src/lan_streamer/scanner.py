@@ -21,7 +21,9 @@ def _parse_episode_number(filename: str) -> tuple[int, int] | None:
     """Returns (season_num, episode_num) parsed from filename, or None."""
     match = _EPISODE_REGEX.search(filename)
     if match:
-        logger.debug(f"Parsed episode S{match.group(1)}E{match.group(2)} from '{filename}'")
+        logger.debug(
+            f"Parsed episode S{match.group(1)}E{match.group(2)} from '{filename}'"
+        )
         return int(match.group(1)), int(match.group(2))
     return None
 
@@ -555,5 +557,7 @@ def scan_series(
                     key=lambda x: natural_sort_key(x["name"])
                 )
 
-    logger.info(f"Completed scan for series '{series_name}', found {len(series_data['seasons'])} seasons.")
+    logger.info(
+        f"Completed scan for series '{series_name}', found {len(series_data['seasons'])} seasons."
+    )
     return series_data
