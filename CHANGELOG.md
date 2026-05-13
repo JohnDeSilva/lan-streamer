@@ -1,3 +1,14 @@
+## 0.12.0 (2026-05-13)
+
+### Feat
+
+- **backup**: adds backup and restore for config and DB
+- **ui**: changes UI back to pure PySide6
+
+### Fix
+
+- **logging**: improves logging coverage and makes logging more configurable
+
 ## 0.11.4 (2026-05-13)
 
 ### Fix
