@@ -858,3 +858,68 @@ def test_series_detail_view_episode_match_button(
     match_button.click()
 
     assert emitted_signals == [("Cosmos", "/media/Cosmos/Season 1/ep1.mkv")]
+
+
+def test_apply_metadata_match_refreshes_episodes() -> None:
+    controller_instance = Controller()
+    controller_instance.current_library_name = "tv"
+    controller_instance.cached_library_data = {
+        "RefreshShow": {
+            "metadata": {"tmdb_identifier": "old_id"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "S01E01.mkv",
+                            "path": "/path/to/S01E01.mkv",
+                            "tmdb_identifier": "",
+                        },
+                        {
+                            "name": "Pilot Part 2.mkv",
+                            "path": "/path/to/Pilot Part 2.mkv",
+                            "tmdb_identifier": "",
+                        },
+                    ]
+                }
+            },
+        }
+    }
+
+    mock_episodes_list = [
+        {
+            "id": "ep_999",
+            "episode_number": 1,
+            "name": "Pilot Part 1",
+            "air_date": "2021-01-01",
+            "runtime": 45,
+        },
+        {
+            "id": "ep_888",
+            "episode_number": 2,
+            "name": "Pilot Part 2",
+            "air_date": "2021-01-08",
+            "runtime": 50,
+        },
+    ]
+
+    with (
+        patch(
+            "lan_streamer.ui_views.tmdb_client.get_episodes",
+            return_value=mock_episodes_list,
+        ),
+        patch("lan_streamer.db.save_library") as mock_save,
+    ):
+        controller_instance.apply_metadata_match(
+            "RefreshShow", {"id": "new_tmdb_id", "name": "Refreshed Show Title"}
+        )
+        mock_save.assert_called_once()
+
+    episodes_result = controller_instance.cached_library_data["RefreshShow"]["seasons"][
+        "Season 1"
+    ]["episodes"]
+    assert episodes_result[0]["tmdb_identifier"] == "ep_999"
+    assert episodes_result[0]["tmdb_number"] == 1
+    assert episodes_result[0]["runtime"] == 45
+
+    assert episodes_result[1]["tmdb_identifier"] == "ep_888"
+    assert episodes_result[1]["tmdb_name"] == "Pilot Part 2"

@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
 from PySide6.QtWidgets import (
@@ -613,6 +614,82 @@ class Controller(QObject):
         target_dict["locked_metadata"] = True
         if not is_movie:
             series_record["metadata"] = target_dict
+
+            new_tmdb_identifier: str = target_dict.get("tmdb_identifier", "")
+            if new_tmdb_identifier:
+                for season_folder_name, season_data_dict in series_record.get(
+                    "seasons", {}
+                ).items():
+                    if season_folder_name.lower() == "specials":
+                        target_season_number: int = 0
+                    else:
+                        parsed_season_match = re.search(r"\d+", season_folder_name)
+                        target_season_number = (
+                            int(parsed_season_match.group())
+                            if parsed_season_match
+                            else -1
+                        )
+
+                    if target_season_number >= 0:
+                        fetched_episodes_list = tmdb_client.get_episodes(
+                            new_tmdb_identifier, target_season_number
+                        )
+                        for episode_item_dict in season_data_dict.get("episodes", []):
+                            episode_filename: str = str(
+                                episode_item_dict.get("name")
+                                or Path(str(episode_item_dict.get("path", ""))).name
+                            )
+                            matched_tmdb_episode: Optional[Dict[str, Any]] = None
+
+                            ep_num_match = re.search(
+                                r"[Ss]\d+[Ee](\d+)", episode_filename
+                            )
+                            if ep_num_match:
+                                target_ep_number: int = int(ep_num_match.group(1))
+                                for cand_ep in fetched_episodes_list:
+                                    if (
+                                        cand_ep.get("episode_number")
+                                        == target_ep_number
+                                    ):
+                                        matched_tmdb_episode = cand_ep
+                                        break
+                            else:
+                                stem_lower: str = Path(episode_filename).stem.lower()
+                                for cand_ep in fetched_episodes_list:
+                                    cand_name: str = str(
+                                        cand_ep.get("name") or ""
+                                    ).lower()
+                                    if cand_name and cand_name in stem_lower:
+                                        matched_tmdb_episode = cand_ep
+                                        break
+
+                            if matched_tmdb_episode:
+                                matched_id_str: str = str(
+                                    matched_tmdb_episode.get("id", "")
+                                )
+                                episode_item_dict["tmdb_identifier"] = matched_id_str
+                                episode_item_dict["tmdb_episode_identifier"] = (
+                                    matched_id_str
+                                )
+                                if matched_tmdb_episode.get("name"):
+                                    episode_item_dict["tmdb_name"] = (
+                                        matched_tmdb_episode.get("name", "")
+                                    )
+                                if (
+                                    matched_tmdb_episode.get("episode_number")
+                                    is not None
+                                ):
+                                    episode_item_dict["tmdb_number"] = (
+                                        matched_tmdb_episode.get("episode_number")
+                                    )
+                                if matched_tmdb_episode.get("air_date"):
+                                    episode_item_dict["air_date"] = (
+                                        matched_tmdb_episode.get("air_date", "")
+                                    )
+                                if matched_tmdb_episode.get("runtime"):
+                                    episode_item_dict["runtime"] = (
+                                        matched_tmdb_episode.get("runtime", 0)
+                                    )
 
         if self.current_library_name:
             if is_movie:
