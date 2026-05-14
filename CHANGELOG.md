@@ -1,3 +1,13 @@
+## 0.13.0 (2026-05-13)
+
+### Feat
+
+- **library**: adds movie Libraries
+
+### Fix
+
+- **jellyfin**: splits jellyfin sync from tmdb sync and makes it more clear when a series is not matched on jellyfin
+
 ## 0.12.0 (2026-05-13)
 
 ### Feat
