@@ -233,3 +233,43 @@ class CleanupAllLibrariesWorker(QThread):
         except Exception as exception_instance:
             logger.exception("CleanupAllLibrariesWorker failed")
             self.error.emit(str(exception_instance))
+
+
+class RuntimeExtractionWorker(QThread):
+    """Processes videos sequentially in the background to extract missing runtimes."""
+
+    progress_updated = Signal(int, int)
+    finished = Signal(int)
+    error = Signal(str)
+
+    def run(self) -> None:
+        try:
+            logger.info("RuntimeExtractionWorker starting run")
+            from .scanner import _extract_video_runtime
+
+            items_list: List[Dict[str, Any]] = db.get_items_missing_runtime()
+            total_count: int = len(items_list)
+            completed_count: int = 0
+            updated_count: int = 0
+
+            for item_dictionary in items_list:
+                file_path: str = item_dictionary["path"]
+                extracted_runtime: int = _extract_video_runtime(file_path)
+                if extracted_runtime > 0:
+                    db.update_item_runtime(
+                        item_dictionary["id"],
+                        item_dictionary["type"],
+                        extracted_runtime,
+                    )
+                    updated_count += 1
+
+                completed_count += 1
+                self.progress_updated.emit(completed_count, total_count)
+
+            logger.info(
+                f"RuntimeExtractionWorker finished, updated {updated_count} items"
+            )
+            self.finished.emit(updated_count)
+        except Exception as exception_instance:
+            logger.exception("RuntimeExtractionWorker failed")
+            self.error.emit(str(exception_instance))

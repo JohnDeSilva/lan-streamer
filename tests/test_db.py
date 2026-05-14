@@ -328,3 +328,56 @@ def test_update_and_get_playback_position(mock_db_file) -> None:
     assert db.update_episode_playback_position("/path/to/pos.mkv", 350) is True
     assert db.get_episode_playback_position("/path/to/pos.mkv") == 350
     assert db.update_episode_playback_position("/nonexistent/path.mkv", 10) is False
+
+
+def test_runtime_management_functions(mock_db_file) -> None:
+    from lan_streamer.db import get_session
+    from lan_streamer.models import Movie
+
+    with get_session() as session:
+        series = Series(name="RuntimeShow", library_name="RuntimeLib")
+        session.add(series)
+        session.flush()
+
+        season = Season(series_id=series.id, name="S1")
+        session.add(season)
+        session.flush()
+
+        episode_missing = Episode(
+            season_id=season.id, name="E1", path="/path/to/missing_ep.mkv", runtime=0
+        )
+        episode_present = Episode(
+            season_id=season.id, name="E2", path="/path/to/present_ep.mkv", runtime=25
+        )
+        movie_missing = Movie(
+            name="MissingMovie",
+            path="/path/to/missing_movie.mkv",
+            library_name="Movies",
+            runtime=None,
+        )
+        session.add_all([episode_missing, episode_present, movie_missing])
+        session.commit()
+
+    items = db.get_items_missing_runtime()
+    assert len(items) == 2
+    paths = {item["path"] for item in items}
+    assert "/path/to/missing_ep.mkv" in paths
+    assert "/path/to/missing_movie.mkv" in paths
+
+    # Update runtime
+    for item in items:
+        db.update_item_runtime(item["id"], item["type"], 45)
+
+    # Verify updates
+    with get_session() as session:
+        updated_episode = (
+            session.query(Episode).filter_by(path="/path/to/missing_ep.mkv").first()
+        )
+        assert updated_episode is not None
+        assert updated_episode.runtime == 45
+
+        updated_movie = (
+            session.query(Movie).filter_by(path="/path/to/missing_movie.mkv").first()
+        )
+        assert updated_movie is not None
+        assert updated_movie.runtime == 45

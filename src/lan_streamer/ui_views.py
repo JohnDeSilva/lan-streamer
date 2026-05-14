@@ -47,6 +47,7 @@ from .backend import (
     JellyfinPushWorker,
     ScanAllLibrariesWorker,
     CleanupAllLibrariesWorker,
+    RuntimeExtractionWorker,
 )
 
 logger = logging.getLogger(__name__)
@@ -196,6 +197,7 @@ class Controller(QObject):
         self.push_worker_instance: Optional[JellyfinPushWorker] = None
         self.scan_all_worker_instance: Optional[ScanAllLibrariesWorker] = None
         self.cleanup_all_worker_instance: Optional[CleanupAllLibrariesWorker] = None
+        self.runtime_worker_instance: Optional[RuntimeExtractionWorker] = None
 
         self.debounce_timer = QTimer(self)
         self.debounce_timer.setSingleShot(True)
@@ -488,6 +490,33 @@ class Controller(QObject):
 
     def _on_cleanup_all_finished(self) -> None:
         self.status_changed.emit("Global multi-library cleanup completed successfully.")
+        if self.current_library_name:
+            self.select_library(self.current_library_name)
+
+    def trigger_runtime_extraction(self) -> None:
+        if (
+            self.runtime_worker_instance is not None
+            and self.runtime_worker_instance.isRunning()
+        ):
+            logger.info("RuntimeExtractionWorker is already running.")
+            return
+
+        self.status_changed.emit("Extracting missing video runtimes in background...")
+        self.runtime_worker_instance = RuntimeExtractionWorker()
+        self.runtime_worker_instance.progress_updated.connect(self._on_runtime_progress)
+        self.runtime_worker_instance.finished.connect(self._on_runtime_finished)
+        self.runtime_worker_instance.error.connect(self._on_worker_error)
+        self.runtime_worker_instance.start()
+
+    def _on_runtime_progress(self, completed_count: int, total_count: int) -> None:
+        self.global_progress_updated.emit(
+            "Extracting Runtimes", completed_count, total_count
+        )
+
+    def _on_runtime_finished(self, updated_count: int) -> None:
+        self.status_changed.emit(
+            f"Runtime extraction completed: updated {updated_count} videos."
+        )
         if self.current_library_name:
             self.select_library(self.current_library_name)
 
@@ -1854,6 +1883,12 @@ class SettingsDialog(QDialog):
         cleanup_all_button.clicked.connect(self.trigger_global_cleanup)
         management_layout.addWidget(cleanup_all_button)
 
+        extract_runtime_button: QPushButton = QPushButton(
+            "Extract Missing Video Runtimes (Background)"
+        )
+        extract_runtime_button.clicked.connect(self.trigger_global_runtime_extraction)
+        management_layout.addWidget(extract_runtime_button)
+
         # Refresh Metadata Group
         refresh_frame: QFrame = QFrame()
         refresh_frame.setStyleSheet(
@@ -2220,6 +2255,17 @@ class SettingsDialog(QDialog):
             self.global_progress_bar.setValue(0)
             self.global_progress_bar.setFormat("Starting global cleanup...")
             self.controller.trigger_cleanup_all()
+
+    @Slot()
+    def trigger_global_runtime_extraction(self) -> None:
+        if self.controller is not None:
+            self.global_progress_bar.setVisible(True)
+            self.global_progress_bar.setMaximum(100)
+            self.global_progress_bar.setValue(0)
+            self.global_progress_bar.setFormat(
+                "Starting background runtime extraction..."
+            )
+            self.controller.trigger_runtime_extraction()
 
     @Slot()
     def trigger_global_refresh_metadata(self) -> None:

@@ -7,6 +7,7 @@ from lan_streamer.backend import (
     JellyfinPushWorker,
     ScanAllLibrariesWorker,
     CleanupAllLibrariesWorker,
+    RuntimeExtractionWorker,
 )
 
 
@@ -206,3 +207,43 @@ def test_cleanup_all_libraries_worker_execution() -> None:
             worker.error.connect(errors_emitted.append)
             worker.run()
             assert errors_emitted == ["Global clean error"]
+
+
+def test_runtime_extraction_worker_execution() -> None:
+    # Successful run
+    with (
+        patch("lan_streamer.backend.db.get_items_missing_runtime") as mock_get_items,
+        patch("lan_streamer.scanner._extract_video_runtime") as mock_extract,
+        patch("lan_streamer.backend.db.update_item_runtime") as mock_update,
+    ):
+        mock_get_items.return_value = [
+            {"id": 101, "path": "/vid1.mkv", "type": "episode"},
+            {"id": 102, "path": "/vid2.mkv", "type": "movie"},
+        ]
+        mock_extract.side_effect = [22, 0]
+
+        progress_emitted: List[tuple] = []
+        finished_emitted: List[int] = []
+
+        worker = RuntimeExtractionWorker()
+        worker.progress_updated.connect(
+            lambda completed, total: progress_emitted.append((completed, total))
+        )
+        worker.finished.connect(finished_emitted.append)
+        worker.run()
+
+        assert mock_extract.call_count == 2
+        mock_update.assert_called_once_with(101, "episode", 22)
+        assert progress_emitted == [(1, 2), (2, 2)]
+        assert finished_emitted == [1]
+
+    # Exception run
+    with patch(
+        "lan_streamer.backend.db.get_items_missing_runtime",
+        side_effect=Exception("DB connection error"),
+    ):
+        errors_emitted: List[str] = []
+        worker = RuntimeExtractionWorker()
+        worker.error.connect(errors_emitted.append)
+        worker.run()
+        assert errors_emitted == ["DB connection error"]

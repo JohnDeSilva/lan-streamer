@@ -814,3 +814,54 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
         raise
 
     return stats
+
+
+def get_items_missing_runtime() -> List[Dict[str, Any]]:
+    """Retrieves all episodes and movies whose runtime is 0 or missing."""
+    items_list: List[Dict[str, Any]] = []
+    try:
+        with get_session() as session:
+            episodes = (
+                session.query(Episode)
+                .filter((Episode.runtime == 0) | (Episode.runtime.is_(None)))
+                .all()
+            )
+            for episode in episodes:
+                if episode.path:
+                    items_list.append(
+                        {"id": episode.id, "path": episode.path, "type": "episode"}
+                    )
+
+            movies = (
+                session.query(Movie)
+                .filter((Movie.runtime == 0) | (Movie.runtime.is_(None)))
+                .all()
+            )
+            for movie in movies:
+                if movie.path:
+                    items_list.append(
+                        {"id": movie.id, "path": movie.path, "type": "movie"}
+                    )
+    except Exception:
+        logger.exception("Error fetching items missing runtime")
+    return items_list
+
+
+def update_item_runtime(
+    item_identifier: int, item_type: str, runtime_minutes: int
+) -> None:
+    """Updates the runtime field for a given episode or movie."""
+    try:
+        with get_session() as session:
+            if item_type == "episode":
+                episode = (
+                    session.query(Episode).filter(Episode.id == item_identifier).first()
+                )
+                if episode:
+                    episode.runtime = runtime_minutes
+            elif item_type == "movie":
+                movie = session.query(Movie).filter(Movie.id == item_identifier).first()
+                if movie:
+                    movie.runtime = runtime_minutes
+    except Exception:
+        logger.exception(f"Error updating runtime for {item_type} ID {item_identifier}")
