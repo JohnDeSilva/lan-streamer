@@ -1,3 +1,11 @@
+## 0.13.2 (2026-05-14)
+
+### Fix
+
+- **scanner**: moves runtime calculator into separate process
+- **scanner**: updates scanner to calculate runtime for videos
+- **UI**: adds runtime and air date to episodes in series view
+
 ## 0.13.1 (2026-05-13)
 
 ### Fix
