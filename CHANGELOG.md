@@ -1,3 +1,10 @@
+## 0.13.3 (2026-05-14)
+
+### Fix
+
+- **ui,metdata**: adds per episode metadata search
+- **ui**: adds makr season/series as watched buttons to series view
+
 ## 0.13.2 (2026-05-14)
 
 ### Fix
