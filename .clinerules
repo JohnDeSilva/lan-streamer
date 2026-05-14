@@ -14,7 +14,7 @@ These rules apply to all AI coding assistants working on this repository.
     *   ✅ `database`, `connection`
 
 ## Frameworks
-*   **UI**: PySide6 (Qt for Python) for the desktop interface.
+*   **UI**: PySide6 (Qt for Python QtWidgets strictly; QML is not part of the project) for the desktop interface.
 *   **Database**: SQLite with SQLAlchemy ORM and Alembic for migrations.
 *   **Networking**: `requests` for Jellyfin and TMDB API communication.
 *   **Build/Env**: `uv` for dependency management and execution.
