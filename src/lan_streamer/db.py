@@ -152,6 +152,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
                             "watched": bool(episode.watched),
                             "date_added": episode.date_added or 0,
                             "air_date": episode.air_date or "",
+                            "runtime": episode.runtime or 0,
                         }
                         season_dict["episodes"].append(episode_data)
 
@@ -279,6 +280,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
                             ep_data.get("date_added") or episode.date_added or 0
                         )
                         episode.air_date = ep_data.get("air_date") or episode.air_date
+                        episode.runtime = ep_data.get("runtime") or episode.runtime or 0
 
     # Deletions are now handled exclusively by cleanup_library to prevent accidental data loss
     # during temporary drive disconnection or partial scans.

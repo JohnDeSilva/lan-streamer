@@ -1029,9 +1029,9 @@ class SeriesDetailView(QWidget):
 
             # Create an explicit QTableWidget layout for absolute robust item targeting under automated tests
             episode_table: QTableWidget = QTableWidget()
-            episode_table.setColumnCount(4)
+            episode_table.setColumnCount(5)
             episode_table.setHorizontalHeaderLabels(
-                ["#", "Episode Title", "Watched", "Action"]
+                ["#", "Episode Title", "Air Date", "Runtime", "Watched"]
             )
             episode_table.horizontalHeader().setSectionResizeMode(
                 1, QHeaderView.ResizeMode.Stretch
@@ -1045,6 +1045,9 @@ class SeriesDetailView(QWidget):
             episode_table.horizontalHeader().setSectionResizeMode(
                 3, QHeaderView.ResizeMode.ResizeToContents
             )
+            episode_table.horizontalHeader().setSectionResizeMode(
+                4, QHeaderView.ResizeMode.ResizeToContents
+            )
             episode_table.setSelectionBehavior(
                 QTableWidget.SelectionBehavior.SelectRows
             )
@@ -1053,6 +1056,19 @@ class SeriesDetailView(QWidget):
             episode_table.setShowGrid(False)
 
             episode_table.setRowCount(len(episodes_list))
+
+            def make_cell_clicked_slot(
+                ep_list: List[Dict[str, Any]],
+            ) -> Callable[[int, int], None]:
+                def slot(row: int, col: int) -> None:
+                    if col == 1:
+                        target_path = ep_list[row].get("path", "")
+                        if target_path:
+                            self.controller.playback_requested.emit(target_path)
+
+                return slot
+
+            episode_table.cellClicked.connect(make_cell_clicked_slot(episodes_list))
 
             for row_index, episode_record in enumerate(episodes_list):
                 tmdb_number_value: Optional[int] = episode_record.get("tmdb_number")
@@ -1071,6 +1087,9 @@ class SeriesDetailView(QWidget):
 
                 absolute_path: str = episode_record.get("path", "")
                 is_watched: bool = bool(episode_record.get("watched", False))
+                air_date_string: str = episode_record.get("air_date") or ""
+                runtime_value: int = episode_record.get("runtime", 0)
+                runtime_string: str = f"{runtime_value} min" if runtime_value else ""
 
                 # Render table item entities cleanly
                 number_item: QTableWidgetItem = QTableWidgetItem(number_string)
@@ -1078,7 +1097,16 @@ class SeriesDetailView(QWidget):
                 episode_table.setItem(row_index, 0, number_item)
 
                 title_item: QTableWidgetItem = QTableWidgetItem(title_string)
+                title_item.setToolTip("Click to play episode")
                 episode_table.setItem(row_index, 1, title_item)
+
+                air_date_item: QTableWidgetItem = QTableWidgetItem(air_date_string)
+                air_date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                episode_table.setItem(row_index, 2, air_date_item)
+
+                runtime_item: QTableWidgetItem = QTableWidgetItem(runtime_string)
+                runtime_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                episode_table.setItem(row_index, 3, runtime_item)
 
                 # Custom interactive widget wrapper for Checkbox column to bind perfectly under pytest-qt
                 checkbox_container: QWidget = QWidget()
@@ -1100,33 +1128,19 @@ class SeriesDetailView(QWidget):
 
                 watched_checkbox.toggled.connect(make_toggle_slot(absolute_path))
                 checkbox_layout.addWidget(watched_checkbox)
-                episode_table.setCellWidget(row_index, 2, checkbox_container)
-
-                # Custom interactive Play Button to trigger embedded playback instantly
-                play_button: QPushButton = QPushButton("▶ Play")
-                play_button.setObjectName(f"playButton_{row_index}_{absolute_path}")
-                play_button.setProperty("targetPath", absolute_path)
-
-                def make_play_slot(path_target: str) -> Callable[[], None]:
-                    return lambda: self.controller.playback_requested.emit(path_target)
-
-                play_button.clicked.connect(make_play_slot(absolute_path))
-                episode_table.setCellWidget(row_index, 3, play_button)
+                episode_table.setCellWidget(row_index, 4, checkbox_container)
 
             self.seasons_tab_widget.addTab(episode_table, season_name)
 
-    def get_play_button_by_row(
+    def trigger_episode_playback_by_row(
         self, season_tab_index: int, row_index: int
-    ) -> Optional[QPushButton]:
-        """Test Helper returning the explicit play button instance for automated test clicks."""
+    ) -> None:
+        """Test Helper triggering playback by simulating a click on the episode title cell."""
         target_widget: Optional[QWidget] = self.seasons_tab_widget.widget(
             season_tab_index
         )
         if isinstance(target_widget, QTableWidget):
-            cell_widget: Optional[QWidget] = target_widget.cellWidget(row_index, 3)
-            if isinstance(cell_widget, QPushButton):
-                return cell_widget
-        return None
+            target_widget.cellClicked.emit(row_index, 1)
 
 
 class MetadataMatchDialog(QDialog):

@@ -42,6 +42,7 @@ def sample_library_dictionary() -> Dict[str, Any]:
                             "tmdb_name": "The Shores of the Cosmic Ocean",
                             "date_added": 1000,
                             "air_date": "1980-09-28",
+                            "runtime": 60,
                         },
                         {
                             "name": "ep2.mkv",
@@ -51,6 +52,7 @@ def sample_library_dictionary() -> Dict[str, Any]:
                             "tmdb_name": "One Voice in the Cosmic Fugue",
                             "date_added": 2000,
                             "air_date": "1980-10-05",
+                            "runtime": 59,
                         },
                     ]
                 }
@@ -214,10 +216,17 @@ def test_series_detail_view_rendering(
     # Verify table row properties
     table_widget: Optional[Any] = detail_view.seasons_tab_widget.widget(0)
     assert isinstance(table_widget, QTableWidget)
+    assert table_widget.columnCount() == 5
     assert table_widget.rowCount() == 2
     table_item = table_widget.item(0, 1)
     assert table_item is not None
     assert table_item.text() == "The Shores of the Cosmic Ocean"
+    air_date_item = table_widget.item(0, 2)
+    assert air_date_item is not None
+    assert air_date_item.text() == "1980-09-28"
+    runtime_item = table_widget.item(0, 3)
+    assert runtime_item is not None
+    assert runtime_item.text() == "60 min"
 
 
 def test_e2e_checkbox_toggled_marks_watched(
@@ -234,8 +243,8 @@ def test_e2e_checkbox_toggled_marks_watched(
     table_widget: Optional[Any] = detail_view.seasons_tab_widget.widget(0)
     assert isinstance(table_widget, QTableWidget)
 
-    # Locate inner checkbox widget cleanly
-    container_widget: Optional[Any] = table_widget.cellWidget(0, 2)
+    # Locate inner checkbox widget cleanly in column 4
+    container_widget: Optional[Any] = table_widget.cellWidget(0, 4)
     assert container_widget is not None
     checkbox_instance: Optional[QCheckBox] = container_widget.findChild(QCheckBox)
     assert checkbox_instance is not None
@@ -251,7 +260,7 @@ def test_e2e_checkbox_toggled_marks_watched(
         )
 
 
-def test_e2e_play_button_triggers_playback(
+def test_e2e_title_click_triggers_playback(
     sample_library_dictionary: Dict[str, Any], qtbot: Any
 ) -> None:
     controller_instance = Controller()
@@ -262,15 +271,10 @@ def test_e2e_play_button_triggers_playback(
     qtbot.addWidget(detail_view)
     detail_view.populate_series_details("Cosmos")
 
-    play_button_instance: Optional[QPushButton] = detail_view.get_play_button_by_row(
-        season_tab_index=0, row_index=0
-    )
-    assert play_button_instance is not None
-
     requested_paths_emitted: List[str] = []
     controller_instance.playback_requested.connect(requested_paths_emitted.append)
 
-    play_button_instance.click()
+    detail_view.trigger_episode_playback_by_row(season_tab_index=0, row_index=0)
     assert requested_paths_emitted == ["/media/Cosmos/Season 1/ep1.mkv"]
 
 

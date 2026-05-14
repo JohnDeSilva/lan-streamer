@@ -716,6 +716,7 @@ def scan_series(
                 tmdb_name = None
                 tmdb_number = None
                 air_date = ""
+                runtime = 0
                 jellyfin_id = ""
 
                 # Try to reuse existing metadata
@@ -731,11 +732,13 @@ def scan_series(
                     tmdb_name = existing_ep.get("tmdb_name")
                     tmdb_number = existing_ep.get("tmdb_number")
                     air_date = existing_ep.get("air_date", "")
+                    runtime = existing_ep.get("runtime", 0)
                     jellyfin_id = existing_ep.get("jellyfin_id", "")
                     logger.debug(f"Reusing existing metadata for '{episode_name}'")
                 else:
                     if existing_ep:
                         air_date = existing_ep.get("air_date", "")
+                        runtime = existing_ep.get("runtime", 0)
                     # Match TMDB episode by S01E02 pattern in filename
                     parsed = _parse_episode_number(episode_name)
                     if parsed:
@@ -750,6 +753,7 @@ def scan_series(
                                 tmdb_name = tmdb_episode.get("name")
                                 tmdb_number = tmdb_episode.get("episode_number")
                                 air_date = tmdb_episode.get("air_date", "")
+                                runtime = tmdb_episode.get("runtime", 0)
                                 break
                     else:
                         # Fallback: Try to match by name if we can't parse SxxExx
@@ -765,6 +769,7 @@ def scan_series(
                                 tmdb_name = tmdb_episode.get("name")
                                 tmdb_number = tmdb_episode.get("episode_number")
                                 air_date = tmdb_episode.get("air_date", "")
+                                runtime = tmdb_episode.get("runtime", 0)
                                 break
 
                 try:
@@ -869,6 +874,7 @@ def scan_series(
                         "tmdb_name": tmdb_name,
                         "tmdb_number": tmdb_number,
                         "air_date": air_date,
+                        "runtime": runtime,
                         "jellyfin_id": jellyfin_id,
                         "watched": existing_ep.get("watched", False)
                         if existing_ep

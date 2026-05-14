@@ -202,3 +202,65 @@ def test_movies_table_migration_with_fake_data(tmp_path) -> None:
         )
 
     engine.dispose()
+
+
+def test_episodes_runtime_migration_with_fake_data(tmp_path) -> None:
+    """
+    Robustly test Alembic migration 1d504caf3889 -> fa4ad8226f3a and downgrade
+    verifying clean addition, nullability, update preservation, and column drop of runtime.
+    """
+    db_path = tmp_path / "test_migration_fake_data_runtime.db"
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    # 1. Upgrade to previous revision 1d504caf3889
+    command.upgrade(alembic_cfg, "1d504caf3889")
+
+    # 2. Insert fake data representing user records before migration
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO series (library_name, name) VALUES ('Lib', 'Fake Series')"
+            )
+        )
+        conn.execute(
+            sa.text("INSERT INTO seasons (series_id, name) VALUES (1, 'Season 1')")
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO episodes (season_id, name, path) VALUES (1, 'Ep 1', '/fake/path/runtime')"
+            )
+        )
+
+    # 3. Upgrade to our target revision fa4ad8226f3a
+    command.upgrade(alembic_cfg, "fa4ad8226f3a")
+
+    # 4. Verify fake data preservation and confirm new column exists as nullable
+    with engine.connect() as conn:
+        ep_row = conn.execute(
+            sa.text("SELECT name, runtime FROM episodes WHERE id=1")
+        ).fetchone()
+        assert ep_row[0] == "Ep 1"
+        assert ep_row[1] is None
+
+        conn.execute(sa.text("UPDATE episodes SET runtime=45 WHERE id=1"))
+        conn.commit()
+
+        updated_runtime = conn.execute(
+            sa.text("SELECT runtime FROM episodes WHERE id=1")
+        ).scalar()
+        assert updated_runtime == 45
+
+    # 5. Verify downgrade functionality cleanly strips the column
+    command.downgrade(alembic_cfg, "1d504caf3889")
+    with engine.connect() as conn:
+        with pytest.raises(sa.exc.OperationalError):
+            conn.execute(sa.text("SELECT runtime FROM episodes")).fetchall()
+
+        assert (
+            conn.execute(sa.text("SELECT name FROM episodes WHERE id=1")).scalar()
+            == "Ep 1"
+        )
+
+    engine.dispose()

@@ -94,6 +94,8 @@ class BackendBridge(QObject):
         self.path_role = Qt.ItemDataRole.UserRole + 2
         self.jellyfin_identifier_role = Qt.ItemDataRole.UserRole + 3
         self.poster_role = Qt.ItemDataRole.UserRole + 4
+        self.air_date_role = Qt.ItemDataRole.UserRole + 5
+        self.runtime_role = Qt.ItemDataRole.UserRole + 6
 
         # Configure custom QML role names mapping across all models
         unified_role_names: dict[int, QByteArray] = {
@@ -102,6 +104,8 @@ class BackendBridge(QObject):
             self.path_role: QByteArray(b"path"),
             self.jellyfin_identifier_role: QByteArray(b"jellyfinIdentifier"),
             self.poster_role: QByteArray(b"posterPath"),
+            self.air_date_role: QByteArray(b"airDate"),
+            self.runtime_role: QByteArray(b"runtime"),
         }
         self._series_model.setItemRoleNames(unified_role_names)
         self._season_model.setItemRoleNames(unified_role_names)
@@ -585,12 +589,16 @@ class BackendBridge(QObject):
             is_watched = bool(episode_data.get("watched", False))
             file_path = episode_data.get("path", "")
             jellyfin_identifier = episode_data.get("jellyfin_id", "")
+            air_date_val = episode_data.get("air_date", "")
+            runtime_val = episode_data.get("runtime", 0)
 
             episode_item = QStandardItem(display_name)
             episode_item.setData(display_name, Qt.ItemDataRole.DisplayRole)
             episode_item.setData(is_watched, self.watched_role)
             episode_item.setData(file_path, self.path_role)
             episode_item.setData(jellyfin_identifier, self.jellyfin_identifier_role)
+            episode_item.setData(air_date_val, self.air_date_role)
+            episode_item.setData(runtime_val, self.runtime_role)
 
             self._episode_model.appendRow(episode_item)
 
