@@ -174,6 +174,7 @@ class Controller(QObject):
     playback_requested = Signal(str)
     metadata_dialog_requested = Signal(str)
     rename_dialog_requested = Signal(str)
+    jellyfin_dialog_requested = Signal(str)
 
     file_system_watcher: QFileSystemWatcher
     debounce_timer: QTimer
@@ -320,7 +321,11 @@ class Controller(QObject):
         self._cache_series_metrics()
 
         # Sync to remote server if configured
-        if jellyfin_identifier and jellyfin_client.is_configured():
+        if (
+            config.sync_history_on_start
+            and jellyfin_identifier
+            and jellyfin_client.is_configured()
+        ):
             try:
                 jellyfin_client.set_watched_status(jellyfin_identifier, watched)
             except Exception as exception_instance:
@@ -534,6 +539,45 @@ class Controller(QObject):
                 self.movie_selected.emit(series_name)
             else:
                 self.series_selected.emit(series_name)
+
+    def apply_jellyfin_watch_match(
+        self, series_name: str, match_dictionary: Dict[str, Any]
+    ) -> None:
+        logger.info(
+            f"Controller applying Jellyfin watch history match for '{series_name}': {match_dictionary}"
+        )
+        if series_name not in self.cached_library_data:
+            return
+
+        library_config = config.libraries.get(self.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+
+        series_record: Dict[str, Any] = self.cached_library_data[series_name]
+        target_dict: Dict[str, Any] = (
+            series_record if is_movie else series_record.get("metadata", {})
+        )
+
+        target_identifier: str = match_dictionary.get("id", "")
+        target_dict["jellyfin_id"] = target_identifier
+
+        if self.current_library_name:
+            if is_movie:
+                db.save_movie_library(
+                    self.current_library_name, self.cached_library_data
+                )
+            else:
+                db.save_library(self.current_library_name, self.cached_library_data)
+
+        self.status_changed.emit(
+            f"Successfully linked Jellyfin watch history for '{series_name}'."
+        )
+        self.library_loaded.emit()
+        if self.selected_series_name == series_name:
+            if is_movie:
+                self.movie_selected.emit(series_name)
+            else:
+                self.series_selected.emit(series_name)
+        self.trigger_scan(force_refresh=False)
 
     def apply_rename_batch(self, preview_results: List[Dict[str, Any]]) -> None:
         logger.info(
@@ -831,9 +875,13 @@ class SeriesDetailView(QWidget):
         super().__init__(parent)
         self.controller: Controller = controller_instance
         self.title_label: QLabel = QLabel()
+        self.jellyfin_status_label: QLabel = QLabel()
         self.overview_label: QLabel = QLabel()
         self.poster_label: QLabel = QLabel()
         self.seasons_tab_widget: QTabWidget = QTabWidget()
+        self.match_jellyfin_button: QPushButton = QPushButton(
+            "Match Jellyfin Watch History..."
+        )
 
         self._setup_ui()
         self.controller.series_selected.connect(self.populate_series_details)
@@ -865,6 +913,9 @@ class SeriesDetailView(QWidget):
         self.title_label.setWordWrap(True)
         info_layout.addWidget(self.title_label)
 
+        self.jellyfin_status_label.setFont(QFont("Inter", 11, QFont.Weight.Bold))
+        info_layout.addWidget(self.jellyfin_status_label)
+
         self.overview_label.setFont(QFont("Inter", 13))
         self.overview_label.setWordWrap(True)
         self.overview_label.setSizePolicy(
@@ -884,6 +935,14 @@ class SeriesDetailView(QWidget):
             )
         )
         actions_row_layout.addWidget(match_metadata_button)
+
+        self.match_jellyfin_button.setObjectName("matchJellyfinButton")
+        self.match_jellyfin_button.clicked.connect(
+            lambda: self.controller.jellyfin_dialog_requested.emit(
+                self.controller.selected_series_name
+            )
+        )
+        actions_row_layout.addWidget(self.match_jellyfin_button)
 
         rename_files_button: QPushButton = QPushButton("Rename Files...")
         rename_files_button.setObjectName("renameFilesButton")
@@ -922,6 +981,20 @@ class SeriesDetailView(QWidget):
         self.overview_label.setText(
             metadata_dictionary.get("overview") or "No overview available."
         )
+
+        jellyfin_identifier_value: str = metadata_dictionary.get("jellyfin_id", "")
+        if jellyfin_client.is_configured():
+            self.match_jellyfin_button.setVisible(True)
+            self.jellyfin_status_label.setVisible(True)
+            if jellyfin_identifier_value:
+                self.jellyfin_status_label.setText("Jellyfin Sync: Matched")
+                self.jellyfin_status_label.setStyleSheet("color: #43a047;")
+            else:
+                self.jellyfin_status_label.setText("⚠️ Jellyfin Sync: Not Matched")
+                self.jellyfin_status_label.setStyleSheet("color: #e53935;")
+        else:
+            self.match_jellyfin_button.setVisible(False)
+            self.jellyfin_status_label.setVisible(False)
 
         # Load dynamic poster fragment
         poster_path_string: str = metadata_dictionary.get("poster_path", "")
@@ -1078,7 +1151,6 @@ class MetadataMatchDialog(QDialog):
         self.series_name: str = series_name
         self.controller: Controller = controller_instance
         self.search_input: QLineEdit = QLineEdit()
-        self.provider_selector: QComboBox = QComboBox()
         self.results_table: QTableWidget = QTableWidget()
         self.search_results_list: List[Dict[str, Any]] = []
 
@@ -1099,11 +1171,6 @@ class MetadataMatchDialog(QDialog):
         top_row_layout.addWidget(QLabel("Search Query:"))
         self.search_input.setMinimumWidth(250)
         top_row_layout.addWidget(self.search_input)
-
-        top_row_layout.addSpacing(15)
-        top_row_layout.addWidget(QLabel("Provider:"))
-        self.provider_selector.addItems(["TMDB", "Jellyfin"])
-        top_row_layout.addWidget(self.provider_selector)
 
         search_button: QPushButton = QPushButton("Search")
         search_button.setObjectName("metadataSearchTriggerButton")
@@ -1148,7 +1215,6 @@ class MetadataMatchDialog(QDialog):
     @Slot()
     def execute_search(self) -> None:
         query_string: str = self.search_input.text().strip()
-        provider_string: str = self.provider_selector.currentText()
         if not query_string:
             return
 
@@ -1159,60 +1225,34 @@ class MetadataMatchDialog(QDialog):
         library_config = config.libraries.get(self.controller.current_library_name, {})
         is_movie = library_config.get("type", "tv") == "movie"
 
-        if provider_string == "Jellyfin":
-            if is_movie:
-                raw_results: List[Dict[str, Any]] = jellyfin_client.search_movie(
-                    query_string
-                )
-            else:
-                raw_results = jellyfin_client.search_series(query_string)
+        if is_movie:
+            raw_results = tmdb_client.search_movie_full(query_string)
             for item_data in raw_results:
-                production_year_value: str = item_data.get("ProductionYear", "")
-                first_air_date_value: str = (
-                    f"{production_year_value}-01-01" if production_year_value else ""
-                )
-                provider_ids_dict: Dict[str, Any] = item_data.get("ProviderIds", {})
-
                 self.search_results_list.append(
                     {
-                        "id": str(item_data.get("Id", "")),
-                        "tmdb_id": str(provider_ids_dict.get("Tmdb", "")),
-                        "name": item_data.get("Name", ""),
-                        "first_air_date": first_air_date_value,
-                        "overview": item_data.get("Overview", ""),
-                        "poster_path": "",
-                        "provider": "Jellyfin",
+                        "id": str(item_data.get("id", "")),
+                        "tmdb_id": str(item_data.get("id", "")),
+                        "name": item_data.get("title", ""),
+                        "first_air_date": item_data.get("release_date", ""),
+                        "overview": item_data.get("overview", ""),
+                        "poster_path": item_data.get("poster_path", ""),
+                        "provider": "TMDB",
                     }
                 )
         else:
-            if is_movie:
-                raw_results = tmdb_client.search_movie_full(query_string)
-                for item_data in raw_results:
-                    self.search_results_list.append(
-                        {
-                            "id": str(item_data.get("id", "")),
-                            "tmdb_id": str(item_data.get("id", "")),
-                            "name": item_data.get("title", ""),
-                            "first_air_date": item_data.get("release_date", ""),
-                            "overview": item_data.get("overview", ""),
-                            "poster_path": item_data.get("poster_path", ""),
-                            "provider": "TMDB",
-                        }
-                    )
-            else:
-                raw_results = tmdb_client.search_series_full(query_string)
-                for item_data in raw_results:
-                    self.search_results_list.append(
-                        {
-                            "id": str(item_data.get("id", "")),
-                            "tmdb_id": str(item_data.get("id", "")),
-                            "name": item_data.get("name", ""),
-                            "first_air_date": item_data.get("first_air_date", ""),
-                            "overview": item_data.get("overview", ""),
-                            "poster_path": item_data.get("poster_path", ""),
-                            "provider": "TMDB",
-                        }
-                    )
+            raw_results = tmdb_client.search_series_full(query_string)
+            for item_data in raw_results:
+                self.search_results_list.append(
+                    {
+                        "id": str(item_data.get("id", "")),
+                        "tmdb_id": str(item_data.get("id", "")),
+                        "name": item_data.get("name", ""),
+                        "first_air_date": item_data.get("first_air_date", ""),
+                        "overview": item_data.get("overview", ""),
+                        "poster_path": item_data.get("poster_path", ""),
+                        "provider": "TMDB",
+                    }
+                )
 
         self.results_table.setRowCount(len(self.search_results_list))
         for row_index, result_dictionary in enumerate(self.search_results_list):
@@ -1246,6 +1286,154 @@ class MetadataMatchDialog(QDialog):
         target_row_index: int = selected_rows[0]
         match_record: Dict[str, Any] = self.search_results_list[target_row_index]
         self.controller.apply_metadata_match(self.series_name, match_record)
+        self.accept()
+
+
+class JellyfinMatchDialog(QDialog):
+    """
+    Search modal to retrieve series or movie IDs specifically from Jellyfin for watch history correlation.
+    Strictly typesafe with zero abbreviations.
+    """
+
+    def __init__(
+        self,
+        series_name: str,
+        controller_instance: Controller,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.series_name: str = series_name
+        self.controller: Controller = controller_instance
+        self.search_input: QLineEdit = QLineEdit()
+        self.results_table: QTableWidget = QTableWidget()
+        self.search_results_list: List[Dict[str, Any]] = []
+
+        self.setWindowTitle(f"Match Jellyfin Watch History: {series_name}")
+        self.resize(800, 500)
+        self._setup_ui()
+        self.search_input.setText(series_name)
+
+    def _setup_ui(self) -> None:
+        main_layout: QVBoxLayout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(12)
+
+        # Top Form Filters Row
+        top_row_layout: QHBoxLayout = QHBoxLayout()
+        top_row_layout.setSpacing(10)
+
+        top_row_layout.addWidget(QLabel("Search Query:"))
+        self.search_input.setMinimumWidth(250)
+        top_row_layout.addWidget(self.search_input)
+
+        search_button: QPushButton = QPushButton("Search Jellyfin")
+        search_button.setObjectName("jellyfinSearchTriggerButton")
+        search_button.clicked.connect(self.execute_search)
+        top_row_layout.addWidget(search_button)
+
+        main_layout.addLayout(top_row_layout)
+
+        # Search Results Matrix Table
+        self.results_table.setColumnCount(4)
+        self.results_table.setHorizontalHeaderLabels(
+            ["Jellyfin ID", "Series Title", "Production Year", "Overview"]
+        )
+        self.results_table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.Stretch
+        )
+        self.results_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        self.results_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.results_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.results_table.verticalHeader().setVisible(False)
+
+        main_layout.addWidget(self.results_table)
+
+        # Bottom Form Actions Buttons
+        bottom_buttons_layout: QHBoxLayout = QHBoxLayout()
+        bottom_buttons_layout.addStretch()
+
+        cancel_button: QPushButton = QPushButton("Cancel")
+        cancel_button.setObjectName("closeJellyfinMatchDialogButton")
+        cancel_button.clicked.connect(self.reject)
+        bottom_buttons_layout.addWidget(cancel_button)
+
+        apply_button: QPushButton = QPushButton("Link Selected Match")
+        apply_button.setObjectName("accentButton")
+        apply_button.clicked.connect(self.apply_selected)
+        bottom_buttons_layout.addWidget(apply_button)
+
+        main_layout.addLayout(bottom_buttons_layout)
+
+    @Slot()
+    def execute_search(self) -> None:
+        query_string: str = self.search_input.text().strip()
+        if not query_string:
+            return
+
+        self.results_table.clearContents()
+        self.results_table.setRowCount(0)
+        self.search_results_list = []
+
+        library_config = config.libraries.get(self.controller.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+
+        if is_movie:
+            raw_results: List[Dict[str, Any]] = jellyfin_client.search_movie(
+                query_string
+            )
+        else:
+            raw_results = jellyfin_client.search_series(query_string)
+
+        for item_data in raw_results:
+            production_year_value: str = str(item_data.get("ProductionYear", ""))
+            first_air_date_value: str = (
+                production_year_value if production_year_value else ""
+            )
+
+            self.search_results_list.append(
+                {
+                    "id": str(item_data.get("Id", "")),
+                    "name": item_data.get("Name", ""),
+                    "first_air_date": first_air_date_value,
+                    "overview": item_data.get("Overview", ""),
+                    "provider": "Jellyfin",
+                }
+            )
+
+        self.results_table.setRowCount(len(self.search_results_list))
+        for row_index, result_dictionary in enumerate(self.search_results_list):
+            id_item: QTableWidgetItem = QTableWidgetItem(result_dictionary["id"])
+            self.results_table.setItem(row_index, 0, id_item)
+
+            name_item: QTableWidgetItem = QTableWidgetItem(result_dictionary["name"])
+            self.results_table.setItem(row_index, 1, name_item)
+
+            date_item: QTableWidgetItem = QTableWidgetItem(
+                result_dictionary["first_air_date"]
+            )
+            self.results_table.setItem(row_index, 2, date_item)
+
+            overview_item: QTableWidgetItem = QTableWidgetItem(
+                result_dictionary["overview"]
+            )
+            self.results_table.setItem(row_index, 3, overview_item)
+
+    @Slot()
+    def apply_selected(self) -> None:
+        selected_rows: List[int] = [
+            item.row() for item in self.results_table.selectedItems()
+        ]
+        if not selected_rows:
+            QMessageBox.warning(
+                self, "Selection Required", "Please select a match result first."
+            )
+            return
+
+        target_row_index: int = selected_rows[0]
+        match_record: Dict[str, Any] = self.search_results_list[target_row_index]
+        self.controller.apply_jellyfin_watch_match(self.series_name, match_record)
         self.accept()
 
 
@@ -1382,6 +1570,9 @@ class SettingsDialog(QDialog):
         self.jellyfin_url_input: QLineEdit = QLineEdit()
         self.jellyfin_key_input: QLineEdit = QLineEdit()
         self.tmdb_key_input: QLineEdit = QLineEdit()
+        self.sync_jellyfin_checkbox: QCheckBox = QCheckBox(
+            "Sync Jellyfin Watch History"
+        )
 
         self.staged_libraries: Dict[str, Dict[str, Any]] = {}
         self.library_name_input: QLineEdit = QLineEdit()
@@ -1437,7 +1628,9 @@ class SettingsDialog(QDialog):
         self.tmdb_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         connectivity_layout.addWidget(self.tmdb_key_input, 2, 1)
 
-        connectivity_layout.setRowStretch(3, 1)
+        connectivity_layout.addWidget(self.sync_jellyfin_checkbox, 3, 0, 1, 2)
+
+        connectivity_layout.setRowStretch(4, 1)
         tab_container.addTab(connectivity_tab, "Remote APIs")
 
         # Libraries Management Pane
@@ -1591,6 +1784,7 @@ class SettingsDialog(QDialog):
         self.jellyfin_url_input.setText(config.jellyfin_url)
         self.jellyfin_key_input.setText(config.jellyfin_api_key)
         self.tmdb_key_input.setText(config.tmdb_api_key)
+        self.sync_jellyfin_checkbox.setChecked(config.sync_history_on_start)
 
         self.use_embedded_checkbox.setChecked(config.use_embedded_player)
         self.enable_caching_checkbox.setChecked(config.enable_caching)
@@ -1736,6 +1930,7 @@ class SettingsDialog(QDialog):
         config.jellyfin_url = self.jellyfin_url_input.text().strip()
         config.jellyfin_api_key = self.jellyfin_key_input.text().strip()
         config.tmdb_api_key = self.tmdb_key_input.text().strip()
+        config.sync_history_on_start = self.sync_jellyfin_checkbox.isChecked()
 
         config.use_embedded_player = self.use_embedded_checkbox.isChecked()
         config.enable_caching = self.enable_caching_checkbox.isChecked()

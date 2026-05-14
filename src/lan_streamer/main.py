@@ -14,11 +14,13 @@ from .ui_views import (
     SeriesDetailView,
     MovieDetailView,
     MetadataMatchDialog,
+    JellyfinMatchDialog,
     RenamePreviewDialog,
     get_application_stylesheet,
 )
 from .player_widget import VideoPlayerWidget
 from .player import play_video
+from .jellyfin import jellyfin_client
 
 
 def setup_dark_theme(application_instance: QApplication) -> None:
@@ -216,6 +218,11 @@ def main() -> None:
 
     player_view.back_requested.connect(on_player_back_requested)
 
+    def on_watched_marked(file_path: str) -> None:
+        controller.mark_episode_watched(file_path, True)
+
+    player_view.watched_marked.connect(on_watched_marked)
+
     def on_metadata_dialog_requested(series_name: str) -> None:
         dialog_instance = MetadataMatchDialog(series_name, controller, main_window)
         dialog_instance.exec()
@@ -228,11 +235,20 @@ def main() -> None:
 
     controller.rename_dialog_requested.connect(on_rename_dialog_requested)
 
+    def on_jellyfin_dialog_requested(series_name: str) -> None:
+        dialog_instance = JellyfinMatchDialog(series_name, controller, main_window)
+        dialog_instance.exec()
+
+    controller.jellyfin_dialog_requested.connect(on_jellyfin_dialog_requested)
+
     controller.status_changed.connect(main_window.statusBar().showMessage)
 
     # Initialize library dropdown entries
     library_names_list = list(config.libraries.keys())
     library_grid_view.populate_libraries(library_names_list)
+
+    if config.sync_history_on_start and jellyfin_client.is_configured():
+        controller.trigger_jellyfin_pull()
 
     main_window.show()
     sys.exit(application_instance.exec())

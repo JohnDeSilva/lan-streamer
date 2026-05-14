@@ -41,13 +41,16 @@ def test_setup_dark_theme(qtbot: Any) -> None:
 
 
 def test_main_execution() -> None:
+    from lan_streamer.config import config
+
+    config.sync_history_on_start = True
     with (
         patch("sys.exit", MagicMock()),
         patch("lan_streamer.main.QApplication", MagicMock()) as mock_application_class,
         patch("lan_streamer.main.QMainWindow", MagicMock()),
         patch("lan_streamer.main.QWidget", MagicMock()),
         patch("lan_streamer.main.QStackedLayout", MagicMock()),
-        patch("lan_streamer.main.Controller", MagicMock()),
+        patch("lan_streamer.main.Controller", MagicMock()) as mock_controller_class,
         patch("lan_streamer.main.LibraryGridView", MagicMock()) as mock_grid_class,
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
@@ -56,14 +59,17 @@ def test_main_execution() -> None:
         patch(
             "lan_streamer.backup.perform_scheduled_backups", MagicMock()
         ) as mock_backup,
+        patch("lan_streamer.main.jellyfin_client.is_configured", return_value=True),
     ):
         mock_application_instance = mock_application_class.return_value
         mock_grid_instance = mock_grid_class.return_value
+        mock_controller_instance = mock_controller_class.return_value
 
         main.main()
 
         mock_backup.assert_called_once()
         mock_grid_instance.populate_libraries.assert_called_once()
+        mock_controller_instance.trigger_jellyfin_pull.assert_called_once()
         mock_application_instance.exec.assert_called_once()
 
 
@@ -267,6 +273,15 @@ def test_main_signal_routing() -> None:
         )
         player_back_slot()
         mock_layout_instance.setCurrentIndex.assert_called_with(1)
+
+        # Test watched marked callback routes to controller mark_episode_watched
+        watched_marked_slot: Callable[[str], None] = (
+            mock_player_instance.watched_marked.connect.call_args[0][0]
+        )
+        watched_marked_slot("/path/to/vid.mkv")
+        mock_controller_instance.mark_episode_watched.assert_called_once_with(
+            "/path/to/vid.mkv", True
+        )
 
         # Test metadata dialog connection
         meta_slot: Callable[[str], None] = (

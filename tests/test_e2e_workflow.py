@@ -13,6 +13,7 @@ from lan_streamer.ui_views import (
     LibraryGridView,
     SeriesDetailView,
     MetadataMatchDialog,
+    JellyfinMatchDialog,
     RenamePreviewDialog,
     SettingsDialog,
     get_application_stylesheet,
@@ -197,12 +198,18 @@ def test_series_detail_view_rendering(
     detail_view = SeriesDetailView(controller_instance)
     qtbot.addWidget(detail_view)
 
-    detail_view.populate_series_details("Cosmos")
+    with patch(
+        "lan_streamer.ui_views.jellyfin_client.is_configured", return_value=True
+    ):
+        detail_view.populate_series_details("Cosmos")
 
-    assert detail_view.title_label.text() == "Cosmos: A Personal Voyage"
-    assert "Space exploration" in detail_view.overview_label.text()
-    assert detail_view.seasons_tab_widget.count() == 1
-    assert detail_view.seasons_tab_widget.tabText(0) == "Season 1"
+        assert detail_view.title_label.text() == "Cosmos: A Personal Voyage"
+        assert "Space exploration" in detail_view.overview_label.text()
+        assert detail_view.seasons_tab_widget.count() == 1
+        assert detail_view.seasons_tab_widget.tabText(0) == "Season 1"
+        assert detail_view.jellyfin_status_label.isHidden() is False
+        assert "Not Matched" in detail_view.jellyfin_status_label.text()
+        assert detail_view.match_jellyfin_button.isHidden() is False
 
     # Verify table row properties
     table_widget: Optional[Any] = detail_view.seasons_tab_widget.widget(0)
@@ -307,6 +314,46 @@ def test_metadata_match_dialog_workflow(
             assert metadata_dictionary["tmdb_identifier"] == "999"
             assert metadata_dictionary["tmdb_name"] == "Cosmos Remastered"
             assert metadata_dictionary["locked_metadata"] is True
+
+
+def test_jellyfin_match_dialog_workflow(
+    sample_library_dictionary: Dict[str, Any], qtbot: Any
+) -> None:
+    controller_instance = Controller()
+    controller_instance.cached_library_data = sample_library_dictionary
+    controller_instance.current_library_name = "Test Lib"
+
+    dialog_instance = JellyfinMatchDialog("Cosmos", controller_instance)
+    qtbot.addWidget(dialog_instance)
+
+    with patch("lan_streamer.ui_views.jellyfin_client.search_series") as mock_search:
+        mock_search.return_value = [
+            {
+                "Id": "jellyfin_id_123",
+                "Name": "Cosmos Series",
+                "ProductionYear": 1980,
+                "Overview": "Overview test.",
+            }
+        ]
+
+        dialog_instance.execute_search()
+        assert dialog_instance.results_table.rowCount() == 1
+        result_item = dialog_instance.results_table.item(0, 1)
+        assert result_item is not None
+        assert result_item.text() == "Cosmos Series"
+
+        dialog_instance.results_table.selectRow(0)
+
+        with patch("lan_streamer.db.save_library") as mock_save:
+            with patch.object(controller_instance, "trigger_scan") as mock_scan:
+                dialog_instance.apply_selected()
+                mock_save.assert_called_once()
+                mock_scan.assert_called_once_with(force_refresh=False)
+
+                metadata_dictionary: Dict[str, Any] = (
+                    controller_instance.cached_library_data["Cosmos"]["metadata"]
+                )
+                assert metadata_dictionary["jellyfin_id"] == "jellyfin_id_123"
 
 
 def test_rename_preview_dialog_workflow(
