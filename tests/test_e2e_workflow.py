@@ -348,12 +348,12 @@ def test_jellyfin_match_dialog_workflow(
             with patch.object(controller_instance, "trigger_scan") as mock_scan:
                 dialog_instance.apply_selected()
                 mock_save.assert_called_once()
-                mock_scan.assert_called_once_with(force_refresh=False)
+                mock_scan.assert_not_called()
 
-                metadata_dictionary: Dict[str, Any] = (
-                    controller_instance.cached_library_data["Cosmos"]["metadata"]
-                )
-                assert metadata_dictionary["jellyfin_id"] == "jellyfin_id_123"
+            metadata_dictionary: Dict[str, Any] = (
+                controller_instance.cached_library_data["Cosmos"]["metadata"]
+            )
+            assert metadata_dictionary["jellyfin_id"] == "jellyfin_id_123"
 
 
 def test_rename_preview_dialog_workflow(
@@ -594,11 +594,11 @@ def test_controller_file_system_monitoring(
 
         with patch.object(controller_instance.debounce_timer, "start") as mock_start:
             controller_instance._on_directory_changed(directory_path_string)
-            mock_start.assert_called_once()
+            mock_start.assert_not_called()
 
         with patch.object(controller_instance, "trigger_scan") as mock_trigger:
             controller_instance._on_debounce_timeout()
-            mock_trigger.assert_called_once_with(force_refresh=False)
+            mock_trigger.assert_not_called()
 
         # Test concurrency protection
         mock_worker = MagicMock()

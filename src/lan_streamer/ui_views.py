@@ -227,15 +227,11 @@ class Controller(QObject):
 
     def _on_directory_changed(self, path_string: str) -> None:
         logger.info(
-            f"Directory modification detected on '{path_string}'. Triggering scan debounce timer."
+            f"Directory modification detected on '{path_string}'. Automated background scanning disabled."
         )
-        self.debounce_timer.start()
 
     def _on_debounce_timeout(self) -> None:
-        logger.info(
-            "Debounce interval complete. Triggering background scan for additions."
-        )
-        self.trigger_scan(force_refresh=False)
+        pass
 
     def _cache_series_metrics(self) -> None:
         for series_name, series_data in self.cached_library_data.items():
@@ -303,35 +299,19 @@ class Controller(QObject):
         db.update_episode_watched_status(absolute_path, watched)
 
         # Update cached state in memory
-        jellyfin_identifier: str = ""
         for series_data in self.cached_library_data.values():
             if "seasons" not in series_data:
                 if series_data.get("path") == absolute_path:
                     series_data["watched"] = watched
-                    jellyfin_identifier = series_data.get("jellyfin_id", "")
                     break
             else:
                 for season_data in series_data.get("seasons", {}).values():
                     for episode_record in season_data.get("episodes", []):
                         if episode_record.get("path") == absolute_path:
                             episode_record["watched"] = watched
-                            jellyfin_identifier = episode_record.get("jellyfin_id", "")
                             break
 
         self._cache_series_metrics()
-
-        # Sync to remote server if configured
-        if (
-            config.sync_history_on_start
-            and jellyfin_identifier
-            and jellyfin_client.is_configured()
-        ):
-            try:
-                jellyfin_client.set_watched_status(jellyfin_identifier, watched)
-            except Exception as exception_instance:
-                logger.error(
-                    f"Failed to synchronize watch state to Jellyfin: {exception_instance}"
-                )
 
         if self.selected_series_name:
             target_record = self.cached_library_data.get(self.selected_series_name, {})
@@ -577,7 +557,6 @@ class Controller(QObject):
                 self.movie_selected.emit(series_name)
             else:
                 self.series_selected.emit(series_name)
-        self.trigger_scan(force_refresh=False)
 
     def apply_rename_batch(self, preview_results: List[Dict[str, Any]]) -> None:
         logger.info(
@@ -632,46 +611,61 @@ class LibraryGridView(QWidget):
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(12)
 
-        # Top Control Toolbar
-        toolbar_layout: QHBoxLayout = QHBoxLayout()
-        toolbar_layout.setSpacing(10)
+        # Top Filters Row
+        top_toolbar_layout: QHBoxLayout = QHBoxLayout()
+        top_toolbar_layout.setSpacing(10)
 
-        toolbar_layout.addWidget(QLabel("Library:"))
+        top_toolbar_layout.addWidget(QLabel("Library:"))
         self.library_selector.setMinimumWidth(150)
-        toolbar_layout.addWidget(self.library_selector)
+        top_toolbar_layout.addWidget(self.library_selector)
 
-        toolbar_layout.addSpacing(15)
-        toolbar_layout.addWidget(QLabel("Sort By:"))
+        top_toolbar_layout.addSpacing(15)
+        top_toolbar_layout.addWidget(QLabel("Sort By:"))
         self.sort_selector.addItems(
             ["Alphabetical", "Recently Added", "Recently Aired"]
         )
         self.sort_selector.setCurrentText(self.controller.sort_mode)
-        toolbar_layout.addWidget(self.sort_selector)
+        top_toolbar_layout.addWidget(self.sort_selector)
 
-        toolbar_layout.addSpacing(15)
+        top_toolbar_layout.addSpacing(15)
         self.filter_watched_checkbox.setChecked(self.controller.filter_out_watched)
-        toolbar_layout.addWidget(self.filter_watched_checkbox)
+        top_toolbar_layout.addWidget(self.filter_watched_checkbox)
 
-        toolbar_layout.addStretch()
-
-        scan_button: QPushButton = QPushButton("Scan New Files")
-        scan_button.clicked.connect(lambda: self.controller.trigger_scan(False))
-        toolbar_layout.addWidget(scan_button)
-
-        refresh_all_button: QPushButton = QPushButton("Refresh Metadata")
-        refresh_all_button.clicked.connect(lambda: self.controller.trigger_scan(True))
-        toolbar_layout.addWidget(refresh_all_button)
-
-        cleanup_button: QPushButton = QPushButton("Cleanup")
-        cleanup_button.clicked.connect(self.controller.trigger_cleanup)
-        toolbar_layout.addWidget(cleanup_button)
+        top_toolbar_layout.addStretch()
 
         settings_button: QPushButton = QPushButton("Settings...")
         settings_button.setObjectName("openSettingsButton")
         settings_button.clicked.connect(self.open_settings_dialog)
-        toolbar_layout.addWidget(settings_button)
+        top_toolbar_layout.addWidget(settings_button)
 
-        main_layout.addLayout(toolbar_layout)
+        main_layout.addLayout(top_toolbar_layout)
+
+        # Bottom Actions Row
+        actions_toolbar_layout: QHBoxLayout = QHBoxLayout()
+        actions_toolbar_layout.setSpacing(10)
+
+        scan_button: QPushButton = QPushButton("Scan New Files")
+        scan_button.clicked.connect(lambda: self.controller.trigger_scan(False))
+        actions_toolbar_layout.addWidget(scan_button)
+
+        refresh_all_button: QPushButton = QPushButton("Refresh Metadata")
+        refresh_all_button.clicked.connect(lambda: self.controller.trigger_scan(True))
+        actions_toolbar_layout.addWidget(refresh_all_button)
+
+        pull_history_button: QPushButton = QPushButton("Pull Watch History")
+        pull_history_button.clicked.connect(self.controller.trigger_jellyfin_pull)
+        actions_toolbar_layout.addWidget(pull_history_button)
+
+        push_history_button: QPushButton = QPushButton("Push Watch History")
+        push_history_button.clicked.connect(self.controller.trigger_jellyfin_push)
+        actions_toolbar_layout.addWidget(push_history_button)
+
+        cleanup_button: QPushButton = QPushButton("Cleanup")
+        cleanup_button.clicked.connect(self.controller.trigger_cleanup)
+        actions_toolbar_layout.addWidget(cleanup_button)
+
+        actions_toolbar_layout.addStretch()
+        main_layout.addLayout(actions_toolbar_layout)
 
         # Series Responsive List/Grid Widget
         self.series_list_widget.setViewMode(QListWidget.ViewMode.IconMode)
@@ -1570,9 +1564,6 @@ class SettingsDialog(QDialog):
         self.jellyfin_url_input: QLineEdit = QLineEdit()
         self.jellyfin_key_input: QLineEdit = QLineEdit()
         self.tmdb_key_input: QLineEdit = QLineEdit()
-        self.sync_jellyfin_checkbox: QCheckBox = QCheckBox(
-            "Sync Jellyfin Watch History"
-        )
 
         self.staged_libraries: Dict[str, Dict[str, Any]] = {}
         self.library_name_input: QLineEdit = QLineEdit()
@@ -1627,8 +1618,6 @@ class SettingsDialog(QDialog):
         connectivity_layout.addWidget(QLabel("TMDB API Key:"), 2, 0)
         self.tmdb_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         connectivity_layout.addWidget(self.tmdb_key_input, 2, 1)
-
-        connectivity_layout.addWidget(self.sync_jellyfin_checkbox, 3, 0, 1, 2)
 
         connectivity_layout.setRowStretch(4, 1)
         tab_container.addTab(connectivity_tab, "Remote APIs")
@@ -1784,7 +1773,6 @@ class SettingsDialog(QDialog):
         self.jellyfin_url_input.setText(config.jellyfin_url)
         self.jellyfin_key_input.setText(config.jellyfin_api_key)
         self.tmdb_key_input.setText(config.tmdb_api_key)
-        self.sync_jellyfin_checkbox.setChecked(config.sync_history_on_start)
 
         self.use_embedded_checkbox.setChecked(config.use_embedded_player)
         self.enable_caching_checkbox.setChecked(config.enable_caching)
@@ -1930,7 +1918,7 @@ class SettingsDialog(QDialog):
         config.jellyfin_url = self.jellyfin_url_input.text().strip()
         config.jellyfin_api_key = self.jellyfin_key_input.text().strip()
         config.tmdb_api_key = self.tmdb_key_input.text().strip()
-        config.sync_history_on_start = self.sync_jellyfin_checkbox.isChecked()
+        config.sync_history_on_start = False
 
         config.use_embedded_player = self.use_embedded_checkbox.isChecked()
         config.enable_caching = self.enable_caching_checkbox.isChecked()

@@ -59,7 +59,6 @@ def test_main_execution() -> None:
         patch(
             "lan_streamer.backup.perform_scheduled_backups", MagicMock()
         ) as mock_backup,
-        patch("lan_streamer.main.jellyfin_client.is_configured", return_value=True),
     ):
         mock_application_instance = mock_application_class.return_value
         mock_grid_instance = mock_grid_class.return_value
@@ -69,7 +68,7 @@ def test_main_execution() -> None:
 
         mock_backup.assert_called_once()
         mock_grid_instance.populate_libraries.assert_called_once()
-        mock_controller_instance.trigger_jellyfin_pull.assert_called_once()
+        mock_controller_instance.trigger_jellyfin_pull.assert_not_called()
         mock_application_instance.exec.assert_called_once()
 
 

@@ -20,7 +20,6 @@ from .ui_views import (
 )
 from .player_widget import VideoPlayerWidget
 from .player import play_video
-from .jellyfin import jellyfin_client
 
 
 def setup_dark_theme(application_instance: QApplication) -> None:
@@ -246,9 +245,6 @@ def main() -> None:
     # Initialize library dropdown entries
     library_names_list = list(config.libraries.keys())
     library_grid_view.populate_libraries(library_names_list)
-
-    if config.sync_history_on_start and jellyfin_client.is_configured():
-        controller.trigger_jellyfin_pull()
 
     main_window.show()
     sys.exit(application_instance.exec())

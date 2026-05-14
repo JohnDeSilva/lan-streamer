@@ -398,13 +398,11 @@ class BackendBridge(QObject):
 
     def _on_directory_changed(self, path_string: str) -> None:
         logger.info(
-            f"Directory modification detected at '{path_string}'. Triggering scan debounce timer."
+            f"Directory modification detected at '{path_string}'. Automated scanning disabled."
         )
-        self._debounce_timer.start()
 
     def _on_debounce_timeout(self) -> None:
-        logger.info("Debounce timeout complete. Triggering automatic scanForNewFiles.")
-        self.scanForNewFiles()
+        pass
 
     def _cache_series_metrics(self) -> None:
         if not getattr(self, "_cached_library_data", None):
@@ -607,17 +605,12 @@ class BackendBridge(QObject):
             item = self._episode_model.item(row_index)
             if item:
                 file_path = item.data(self.path_role)
-                jellyfin_identifier = item.data(self.jellyfin_identifier_role)
 
                 # Update underlying database record without abbreviations
                 if file_path:
                     db.update_episode_watched_status(file_path, True)
                     item.setData(True, self.watched_role)
                     updated_count += 1
-
-                # Synchronize to remote Jellyfin server if available
-                if jellyfin_identifier and jellyfin_client.is_configured():
-                    jellyfin_client.set_watched_status(jellyfin_identifier, True)
 
         # Refresh cached model state
         self._refresh_cached_episode_watched_state(selected_rows, True)
@@ -632,15 +625,11 @@ class BackendBridge(QObject):
             item = self._episode_model.item(row_index)
             if item:
                 file_path = item.data(self.path_role)
-                jellyfin_identifier = item.data(self.jellyfin_identifier_role)
 
                 if file_path:
                     db.update_episode_watched_status(file_path, False)
                     item.setData(False, self.watched_role)
                     updated_count += 1
-
-                if jellyfin_identifier and jellyfin_client.is_configured():
-                    jellyfin_client.set_watched_status(jellyfin_identifier, False)
 
         self._refresh_cached_episode_watched_state(selected_rows, False)
         self.statusMessage = f"Marked {updated_count} episodes as unwatched"
@@ -1047,43 +1036,14 @@ class BackendBridge(QObject):
             )
             library_type = library_config.get("type", "tv")
 
-            has_new_content = False
-            old_library = getattr(self, "_cached_library_data", {})
-            for name, data in updated_library.items():
-                if name not in old_library:
-                    has_new_content = True
-                    break
-                if library_type == "movie":
-                    if data.get("path") != old_library[name].get("path"):
-                        has_new_content = True
-                        break
-                else:
-                    old_count = sum(
-                        len(s.get("episodes", []))
-                        for s in old_library[name].get("seasons", {}).values()
-                    )
-                    new_count = sum(
-                        len(s.get("episodes", []))
-                        for s in data.get("seasons", {}).values()
-                    )
-                    if new_count > old_count:
-                        has_new_content = True
-                        break
-
             if library_type == "movie":
                 db.save_movie_library(self._current_library_name, updated_library)
             else:
                 db.save_library(self._current_library_name, updated_library)
             self._cached_library_data = updated_library
 
-            if has_new_content and jellyfin_client.is_configured():
-                logger.info(
-                    "New content detected upon scan completion. Pulling Jellyfin watch history."
-                )
-                self.pullWatchHistoryFromJellyfin()
-            else:
-                self.selectLibrary(self._current_library_name)
-                self.statusMessage = "Scan completed successfully"
+            self.selectLibrary(self._current_library_name)
+            self.statusMessage = "Scan completed successfully"
 
     def _on_worker_error(self, error_text: str) -> None:
         self.statusMessage = f"Scan error: {error_text}"

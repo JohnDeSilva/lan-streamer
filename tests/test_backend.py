@@ -311,12 +311,12 @@ def test_backend_file_system_monitoring(
         # Trigger directory change slot manually to simulate file system activity
         with patch.object(bridge_instance._debounce_timer, "start") as mock_timer_start:
             bridge_instance._on_directory_changed(directory_path_string)
-            mock_timer_start.assert_called_once()
+            mock_timer_start.assert_not_called()
 
         # Trigger debounce timeout slot manually to verify scan trigger
         with patch.object(bridge_instance, "scanForNewFiles") as mock_scan:
             bridge_instance._on_debounce_timeout()
-            mock_scan.assert_called_once()
+            mock_scan.assert_not_called()
 
         # Test concurrency protection: if ScanWorker is already running, avoid duplicate triggers
         mock_active_worker = MagicMock()
@@ -353,7 +353,9 @@ def test_backend_on_scan_worker_finished_flows() -> None:
         patch("lan_streamer.db.save_library") as mock_save,
         patch("lan_streamer.jellyfin.jellyfin_client.is_configured", return_value=True),
         patch.object(bridge, "pullWatchHistoryFromJellyfin") as mock_pull,
+        patch.object(bridge, "selectLibrary") as mock_select,
     ):
         bridge._on_scan_worker_finished(updated_tv_lib)
         mock_save.assert_called_once_with("TestTvLib", updated_tv_lib)
-        mock_pull.assert_called_once()
+        mock_pull.assert_not_called()
+        mock_select.assert_called_once_with("TestTvLib")
