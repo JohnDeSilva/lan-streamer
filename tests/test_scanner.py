@@ -571,7 +571,7 @@ def test_parse_season_number() -> None:
     assert _parse_season_number("S03") is None
     assert _parse_season_number("Season1") == 1
     assert _parse_season_number("season 5") == 5
-    assert _parse_season_number("Specials") is None
+    assert _parse_season_number("Specials") == 0
 
 
 def test_scan_series_tmdb_name_fallback(tmp_path) -> None:

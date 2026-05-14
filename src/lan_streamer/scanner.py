@@ -30,6 +30,8 @@ def _parse_episode_number(filename: str) -> tuple[int, int] | None:
 
 def _parse_season_number(season_name: str) -> int | None:
     """Returns season number parsed from folder name (e.g. 'Season 1'), or None."""
+    if season_name.lower() == "specials":
+        return 0
     match = _SEASON_REGEX.search(season_name)
     if match:
         logger.debug(f"Parsed season number {match.group(1)} from '{season_name}'")
@@ -683,8 +685,11 @@ def scan_series(
         tmdb_episodes: list = []
 
         # Extract season number from directory name
-        season_num_match = re.search(r"\d+", season_name)
-        season_index = int(season_num_match.group()) if season_num_match else -1
+        if season_name.lower() == "specials":
+            season_index = 0
+        else:
+            season_num_match = re.search(r"\d+", season_name)
+            season_index = int(season_num_match.group()) if season_num_match else -1
 
         # Try to find matching season in tmdb_seasons
         matched_tmdb_season = None

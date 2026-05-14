@@ -179,6 +179,7 @@ class Controller(QObject):
     metadata_dialog_requested = Signal(str)
     rename_dialog_requested = Signal(str)
     jellyfin_dialog_requested = Signal(str)
+    episode_metadata_dialog_requested = Signal(str, str)
     global_progress_updated = Signal(str, int, int)
 
     file_system_watcher: QFileSystemWatcher
@@ -667,6 +668,52 @@ class Controller(QObject):
             if is_movie:
                 self.movie_selected.emit(series_name)
             else:
+                self.series_selected.emit(series_name)
+
+    def apply_episode_metadata_match(
+        self, series_name: str, episode_path: str, match_dictionary: Dict[str, Any]
+    ) -> None:
+        logger.info(
+            f"Controller applying episode metadata match for '{series_name}' at '{episode_path}': {match_dictionary}"
+        )
+        if series_name not in self.cached_library_data:
+            return
+
+        series_record: Dict[str, Any] = self.cached_library_data[series_name]
+        episode_found: bool = False
+
+        for season_data in series_record.get("seasons", {}).values():
+            for episode_record in season_data.get("episodes", []):
+                if episode_record.get("path") == episode_path:
+                    target_identifier: str = str(match_dictionary.get("id", ""))
+                    episode_record["tmdb_identifier"] = target_identifier
+                    episode_record["tmdb_episode_identifier"] = target_identifier
+                    if match_dictionary.get("name"):
+                        episode_record["tmdb_name"] = match_dictionary.get("name", "")
+                    if match_dictionary.get("episode_number") is not None:
+                        episode_record["tmdb_number"] = match_dictionary.get(
+                            "episode_number"
+                        )
+                    if match_dictionary.get("air_date"):
+                        episode_record["air_date"] = match_dictionary.get(
+                            "air_date", ""
+                        )
+                    if match_dictionary.get("runtime"):
+                        episode_record["runtime"] = match_dictionary.get("runtime", 0)
+                    episode_found = True
+                    break
+            if episode_found:
+                break
+
+        if episode_found:
+            if self.current_library_name:
+                db.save_library(self.current_library_name, self.cached_library_data)
+
+            self.status_changed.emit(
+                f"Successfully applied episode metadata match to '{series_name}'."
+            )
+            self.library_loaded.emit()
+            if self.selected_series_name == series_name:
                 self.series_selected.emit(series_name)
 
     def apply_rename_batch(self, preview_results: List[Dict[str, Any]]) -> None:
@@ -1203,9 +1250,9 @@ class SeriesDetailView(QWidget):
 
             # Create an explicit QTableWidget layout for absolute robust item targeting under automated tests
             episode_table: QTableWidget = QTableWidget()
-            episode_table.setColumnCount(5)
+            episode_table.setColumnCount(6)
             episode_table.setHorizontalHeaderLabels(
-                ["#", "Episode Title", "Air Date", "Runtime", "Watched"]
+                ["#", "Episode Title", "Air Date", "Runtime", "Watched", "Actions"]
             )
             episode_table.horizontalHeader().setSectionResizeMode(
                 1, QHeaderView.ResizeMode.Stretch
@@ -1221,6 +1268,9 @@ class SeriesDetailView(QWidget):
             )
             episode_table.horizontalHeader().setSectionResizeMode(
                 4, QHeaderView.ResizeMode.ResizeToContents
+            )
+            episode_table.horizontalHeader().setSectionResizeMode(
+                5, QHeaderView.ResizeMode.ResizeToContents
             )
             episode_table.setSelectionBehavior(
                 QTableWidget.SelectionBehavior.SelectRows
@@ -1303,6 +1353,31 @@ class SeriesDetailView(QWidget):
                 watched_checkbox.toggled.connect(make_toggle_slot(absolute_path))
                 checkbox_layout.addWidget(watched_checkbox)
                 episode_table.setCellWidget(row_index, 4, checkbox_container)
+
+                # Custom interactive widget wrapper for Actions column
+                match_button: QPushButton = QPushButton("Match...")
+                match_button.setObjectName(f"matchEpisodeButton_{row_index}")
+                match_button.setToolTip("Match individual episode metadata on TMDB")
+
+                def make_match_slot(
+                    target_series: str, target_path: str
+                ) -> Callable[[], None]:
+                    return lambda: (
+                        self.controller.episode_metadata_dialog_requested.emit(
+                            target_series, target_path
+                        )
+                    )
+
+                match_button.clicked.connect(
+                    make_match_slot(series_name, absolute_path)
+                )
+
+                action_container: QWidget = QWidget()
+                action_layout: QHBoxLayout = QHBoxLayout(action_container)
+                action_layout.setContentsMargins(2, 2, 2, 2)
+                action_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                action_layout.addWidget(match_button)
+                episode_table.setCellWidget(row_index, 5, action_container)
 
             # Create season_page container to house the table and mark season watched button cleanly
             season_page: QWidget = QWidget()
@@ -1655,6 +1730,190 @@ class JellyfinMatchDialog(QDialog):
         target_row_index: int = selected_rows[0]
         match_record: Dict[str, Any] = self.search_results_list[target_row_index]
         self.controller.apply_jellyfin_watch_match(self.series_name, match_record)
+        self.accept()
+
+
+class EpisodeMatchDialog(QDialog):
+    """
+    Modal dialog allowing users to match metadata on TMDB for an individual episode of a show.
+    Conforms strictly to zero-abbreviation variable naming and strict static typing standards.
+    """
+
+    def __init__(
+        self,
+        series_name: str,
+        episode_path: str,
+        controller_instance: Controller,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.series_name: str = series_name
+        self.episode_path: str = episode_path
+        self.controller: Controller = controller_instance
+        self.season_selector: QComboBox = QComboBox()
+        self.results_table: QTableWidget = QTableWidget()
+        self.search_results_list: List[Dict[str, Any]] = []
+
+        series_record: Dict[str, Any] = self.controller.cached_library_data.get(
+            self.series_name, {}
+        )
+        metadata_dictionary: Dict[str, Any] = series_record.get("metadata", {})
+        self.tmdb_identifier: str = metadata_dictionary.get("tmdb_identifier", "")
+
+        if not self.tmdb_identifier:
+            matched_series = tmdb_client.search_series(self.series_name)
+            if matched_series:
+                self.tmdb_identifier = str(matched_series.get("id", ""))
+
+        self.setWindowTitle(f"Match Episode Metadata: {series_name}")
+        self.resize(900, 500)
+        self._setup_ui()
+        self._populate_seasons()
+
+    def _setup_ui(self) -> None:
+        main_layout: QVBoxLayout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(12)
+
+        top_row_layout: QHBoxLayout = QHBoxLayout()
+        top_row_layout.setSpacing(10)
+        top_row_layout.addWidget(QLabel("TMDB Season:"))
+        self.season_selector.setMinimumWidth(200)
+        self.season_selector.currentTextChanged.connect(self.on_season_changed)
+        top_row_layout.addWidget(self.season_selector)
+        top_row_layout.addStretch()
+        main_layout.addLayout(top_row_layout)
+
+        self.results_table.setColumnCount(4)
+        self.results_table.setHorizontalHeaderLabels(
+            ["Episode #", "Episode Title", "Air Date", "Overview"]
+        )
+        self.results_table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.Stretch
+        )
+        self.results_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.results_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.results_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        self.results_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.results_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.results_table.verticalHeader().setVisible(False)
+        main_layout.addWidget(self.results_table)
+
+        bottom_buttons_layout: QHBoxLayout = QHBoxLayout()
+        bottom_buttons_layout.addStretch()
+
+        cancel_button: QPushButton = QPushButton("Cancel")
+        cancel_button.setObjectName("closeEpisodeMatchDialogButton")
+        cancel_button.clicked.connect(self.reject)
+        bottom_buttons_layout.addWidget(cancel_button)
+
+        apply_button: QPushButton = QPushButton("Apply Selected Match")
+        apply_button.setObjectName("accentButton")
+        apply_button.clicked.connect(self.apply_selected)
+        bottom_buttons_layout.addWidget(apply_button)
+
+        main_layout.addLayout(bottom_buttons_layout)
+
+    def _populate_seasons(self) -> None:
+        seasons_list: List[Dict[str, Any]] = []
+        if self.tmdb_identifier:
+            seasons_list = tmdb_client.get_seasons(self.tmdb_identifier)
+
+        self.season_selector.blockSignals(True)
+        for season_dictionary in seasons_list:
+            season_number_value: int = season_dictionary.get("season_number", 0)
+            season_name_value: str = (
+                season_dictionary.get("name") or f"Season {season_number_value}"
+            )
+            self.season_selector.addItem(season_name_value, season_number_value)
+        self.season_selector.blockSignals(False)
+
+        if self.season_selector.count() > 0:
+            self.on_season_changed(self.season_selector.currentText())
+
+    @Slot(str)
+    def on_season_changed(self, season_text: str) -> None:
+        if not self.tmdb_identifier or self.season_selector.count() == 0:
+            return
+
+        season_number_value: Any = self.season_selector.currentData()
+        if season_number_value is None:
+            return
+
+        season_number_int: int = int(season_number_value)
+        self.results_table.clearContents()
+        self.results_table.setRowCount(0)
+        self.search_results_list = []
+
+        episodes_data: List[Dict[str, Any]] = tmdb_client.get_episodes(
+            self.tmdb_identifier, season_number_int
+        )
+
+        for episode_dictionary in episodes_data:
+            episode_identifier_str: str = str(episode_dictionary.get("id", ""))
+            episode_number_int: int = episode_dictionary.get("episode_number", 0)
+            episode_name_str: str = episode_dictionary.get("name", "")
+            air_date_str: str = episode_dictionary.get("air_date", "")
+            overview_str: str = episode_dictionary.get("overview", "")
+            runtime_int: int = episode_dictionary.get("runtime", 0)
+
+            self.search_results_list.append(
+                {
+                    "id": episode_identifier_str,
+                    "episode_number": episode_number_int,
+                    "name": episode_name_str,
+                    "air_date": air_date_str,
+                    "overview": overview_str,
+                    "runtime": runtime_int,
+                }
+            )
+
+        self.results_table.setRowCount(len(self.search_results_list))
+        for row_index, record_dictionary in enumerate(self.search_results_list):
+            number_item: QTableWidgetItem = QTableWidgetItem(
+                str(record_dictionary["episode_number"])
+            )
+            number_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.results_table.setItem(row_index, 0, number_item)
+
+            name_item: QTableWidgetItem = QTableWidgetItem(record_dictionary["name"])
+            self.results_table.setItem(row_index, 1, name_item)
+
+            date_item: QTableWidgetItem = QTableWidgetItem(
+                record_dictionary["air_date"]
+            )
+            date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.results_table.setItem(row_index, 2, date_item)
+
+            overview_item: QTableWidgetItem = QTableWidgetItem(
+                record_dictionary["overview"]
+            )
+            self.results_table.setItem(row_index, 3, overview_item)
+
+    @Slot()
+    def apply_selected(self) -> None:
+        selected_rows: List[int] = [
+            item.row() for item in self.results_table.selectedItems()
+        ]
+        if not selected_rows:
+            QMessageBox.warning(
+                self,
+                "Selection Required",
+                "Please select an episode match result first.",
+            )
+            return
+
+        target_row_index: int = selected_rows[0]
+        match_record: Dict[str, Any] = self.search_results_list[target_row_index]
+        self.controller.apply_episode_metadata_match(
+            self.series_name, self.episode_path, match_record
+        )
         self.accept()
 
 

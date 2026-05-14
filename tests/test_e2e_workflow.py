@@ -14,6 +14,7 @@ from lan_streamer.ui_views import (
     SeriesDetailView,
     MetadataMatchDialog,
     JellyfinMatchDialog,
+    EpisodeMatchDialog,
     RenamePreviewDialog,
     SettingsDialog,
     get_application_stylesheet,
@@ -218,7 +219,7 @@ def test_series_detail_view_rendering(
     assert page_widget is not None
     table_widget: Optional[Any] = page_widget.findChild(QTableWidget)
     assert isinstance(table_widget, QTableWidget)
-    assert table_widget.columnCount() == 5
+    assert table_widget.columnCount() == 6
     assert table_widget.rowCount() == 2
     table_item = table_widget.item(0, 1)
     assert table_item is not None
@@ -768,3 +769,92 @@ def test_settings_dialog_global_actions(qtbot: Any) -> None:
     dialog_no_controller.trigger_global_refresh_metadata()
     dialog_no_controller.trigger_global_jellyfin_pull()
     dialog_no_controller.trigger_global_jellyfin_push()
+
+
+def test_episode_metadata_match_dialog_workflow(
+    sample_library_dictionary: Dict[str, Any], qtbot: Any
+) -> None:
+    controller_instance = Controller()
+    controller_instance.cached_library_data = sample_library_dictionary
+    controller_instance.current_library_name = "Test Lib"
+
+    # Pre-assign tmdb_identifier to series metadata to enable episode fetching
+    sample_library_dictionary["Cosmos"]["metadata"]["tmdb_identifier"] = "888"
+
+    episode_target_path: str = "/media/Cosmos/Season 1/ep1.mkv"
+
+    with patch("lan_streamer.ui_views.tmdb_client.get_seasons") as mock_seasons:
+        mock_seasons.return_value = [{"season_number": 1, "name": "Season 1"}]
+        with patch("lan_streamer.ui_views.tmdb_client.get_episodes") as mock_episodes:
+            mock_episodes.return_value = [
+                {
+                    "id": 777,
+                    "episode_number": 1,
+                    "name": "Matched Episode Title",
+                    "air_date": "1980-09-28",
+                    "overview": "Episode overview text.",
+                    "runtime": 62,
+                }
+            ]
+
+            dialog_instance = EpisodeMatchDialog(
+                "Cosmos", episode_target_path, controller_instance
+            )
+            qtbot.addWidget(dialog_instance)
+
+            # Trigger season changed explicitly to populate results
+            dialog_instance.on_season_changed("Season 1")
+            assert dialog_instance.results_table.rowCount() == 1
+            result_item = dialog_instance.results_table.item(0, 1)
+            assert result_item is not None
+            assert result_item.text() == "Matched Episode Title"
+
+            # Select row and apply
+            dialog_instance.results_table.selectRow(0)
+
+            with patch("lan_streamer.db.save_library") as mock_save:
+                dialog_instance.apply_selected()
+                mock_save.assert_called_once()
+
+                episode_record: Dict[str, Any] = (
+                    controller_instance.cached_library_data["Cosmos"]["seasons"][
+                        "Season 1"
+                    ]["episodes"][0]
+                )
+                assert episode_record["tmdb_identifier"] == "777"
+                assert episode_record["tmdb_episode_identifier"] == "777"
+                assert episode_record["tmdb_name"] == "Matched Episode Title"
+                assert episode_record["runtime"] == 62
+
+            # Test empty selection alert
+            dialog_instance.results_table.clearSelection()
+            with patch("lan_streamer.ui_views.QMessageBox.warning") as mock_warning:
+                dialog_instance.apply_selected()
+                mock_warning.assert_called_once()
+
+
+def test_series_detail_view_episode_match_button(
+    sample_library_dictionary: Dict[str, Any], qtbot: Any
+) -> None:
+    controller_instance = Controller()
+    controller_instance.cached_library_data = sample_library_dictionary
+    controller_instance._cache_series_metrics()
+
+    detail_view = SeriesDetailView(controller_instance)
+    qtbot.addWidget(detail_view)
+    detail_view.populate_series_details("Cosmos")
+
+    emitted_signals: List[Any] = []
+
+    def slot(series_name: str, path_string: str) -> None:
+        emitted_signals.append((series_name, path_string))
+
+    controller_instance.episode_metadata_dialog_requested.connect(slot)
+
+    match_button: Optional[QPushButton] = detail_view.findChild(
+        QPushButton, "matchEpisodeButton_0"
+    )
+    assert match_button is not None
+    match_button.click()
+
+    assert emitted_signals == [("Cosmos", "/media/Cosmos/Season 1/ep1.mkv")]

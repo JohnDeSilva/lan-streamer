@@ -312,21 +312,18 @@ class TMDBClient:
             logger.exception(f"TMDB get_movie_by_id({tmdb_identifier}) failed")
             return None
 
-    def get_seasons(self, tmdb_identifierentifier: str | int) -> list:
+    def get_seasons(self, tmdb_identifier: str | int) -> list:
         """Returns season list for a series (from the series detail response)."""
-        data = self.get_series_by_id(tmdb_identifierentifier)
+        data = self.get_series_by_id(tmdb_identifier)
         if not data:
             return []
-        seasons = data.get("seasons", [])
-        # Filter out specials (season_number == 0) unless that's all there is
-        official = [s for s in seasons if s.get("season_number", 0) > 0]
-        return official if official else seasons
+        return data.get("seasons", [])
 
-    def get_episodes(self, tmdb_identifierentifier: str | int, season_num: int) -> list:
+    def get_episodes(self, tmdb_identifier: str | int, season_num: int) -> list:
         """Returns episodes for a given season number."""
         try:
             resp = self.session.get(
-                f"{TMDB_BASE_URL}/tv/{tmdb_identifierentifier}/season/{season_num}",
+                f"{TMDB_BASE_URL}/tv/{tmdb_identifier}/season/{season_num}",
                 params=self._params(),
                 timeout=10,
             )
@@ -334,7 +331,7 @@ class TMDBClient:
             return resp.json().get("episodes", [])
         except Exception:
             logger.exception(
-                f"TMDB get_episodes({tmdb_identifierentifier}, S{season_num}) failed"
+                f"TMDB get_episodes({tmdb_identifier}, S{season_num}) failed"
             )
             return []
 

@@ -217,13 +217,12 @@ def test_get_seasons(tmdb) -> None:
         "seasons": [
             {"id": 1, "season_number": 1, "name": "Season 1"},
             {"id": 2, "season_number": 2, "name": "Season 2"},
-            {"id": 0, "season_number": 0, "name": "Specials"},  # filtered out
+            {"id": 0, "season_number": 0, "name": "Specials"},
         ],
     }
     tmdb.session.get = MagicMock(return_value=mock_resp)
     seasons = tmdb.get_seasons(1234)
-    assert len(seasons) == 2
-    assert all(s["season_number"] > 0 for s in seasons)
+    assert len(seasons) == 3
 
 
 def test_get_seasons_only_specials(tmdb) -> None:
