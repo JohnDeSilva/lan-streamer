@@ -180,12 +180,14 @@ def main() -> None:
 
     # Wire view routing and modal display signals
     def on_series_selected(series_name: str) -> None:
-        stacked_layout.setCurrentIndex(1)
+        if not getattr(controller, "is_video_playing", False):
+            stacked_layout.setCurrentIndex(1)
 
     controller.series_selected.connect(on_series_selected)
 
     def on_movie_selected(movie_name: str) -> None:
-        stacked_layout.setCurrentIndex(2)
+        if not getattr(controller, "is_video_playing", False):
+            stacked_layout.setCurrentIndex(2)
 
     controller.movie_selected.connect(on_movie_selected)
 
@@ -197,6 +199,8 @@ def main() -> None:
 
     def on_playback_requested(file_path: str) -> None:
         if config.use_embedded_player:
+            if hasattr(controller, "set_video_playing"):
+                controller.set_video_playing(True)
             player_view.play_video(file_path)
             stacked_layout.setCurrentIndex(3)
         else:
@@ -208,6 +212,8 @@ def main() -> None:
     controller.playback_requested.connect(on_playback_requested)
 
     def on_player_back_requested() -> None:
+        if hasattr(controller, "set_video_playing"):
+            controller.set_video_playing(False)
         # Determine whether to go back to movie or series detail view
         library_config = config.libraries.get(controller.current_library_name, {})
         if library_config.get("type") == "movie":

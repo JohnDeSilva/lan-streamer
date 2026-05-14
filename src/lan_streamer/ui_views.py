@@ -198,6 +198,7 @@ class Controller(QObject):
         self.scan_all_worker_instance: Optional[ScanAllLibrariesWorker] = None
         self.cleanup_all_worker_instance: Optional[CleanupAllLibrariesWorker] = None
         self.runtime_worker_instance: Optional[RuntimeExtractionWorker] = None
+        self.is_video_playing: bool = False
 
         self.debounce_timer = QTimer(self)
         self.debounce_timer.setSingleShot(True)
@@ -321,13 +322,16 @@ class Controller(QObject):
 
         self._cache_series_metrics()
 
-        if self.selected_series_name:
-            target_record = self.cached_library_data.get(self.selected_series_name, {})
-            if "seasons" not in target_record:
-                self.movie_selected.emit(self.selected_series_name)
-            else:
-                self.series_selected.emit(self.selected_series_name)
-        self.library_loaded.emit()
+        if not self.is_video_playing:
+            if self.selected_series_name:
+                target_record = self.cached_library_data.get(
+                    self.selected_series_name, {}
+                )
+                if "seasons" not in target_record:
+                    self.movie_selected.emit(self.selected_series_name)
+                else:
+                    self.series_selected.emit(self.selected_series_name)
+            self.library_loaded.emit()
 
     def trigger_scan(self, force_refresh: bool = False) -> None:
         if not self.current_library_name:
@@ -367,7 +371,8 @@ class Controller(QObject):
             # We create a shallow copy/update of cached data to not lose references while UI re-renders
             self.cached_library_data = partial_library
             self._cache_series_metrics()
-            self.library_loaded.emit()
+            if not self.is_video_playing:
+                self.library_loaded.emit()
 
     def _on_scan_finished(self, updated_library: Dict[str, Any]) -> None:
         if self.current_library_name:
@@ -379,12 +384,13 @@ class Controller(QObject):
             self.cached_library_data = updated_library
             self._cache_series_metrics()
             self.status_changed.emit("Library scan completed successfully.")
-            self.library_loaded.emit()
-            if self.selected_series_name:
-                if library_config.get("type", "tv") == "movie":
-                    self.movie_selected.emit(self.selected_series_name)
-                else:
-                    self.series_selected.emit(self.selected_series_name)
+            if not self.is_video_playing:
+                self.library_loaded.emit()
+                if self.selected_series_name:
+                    if library_config.get("type", "tv") == "movie":
+                        self.movie_selected.emit(self.selected_series_name)
+                    else:
+                        self.series_selected.emit(self.selected_series_name)
 
     def trigger_cleanup(self) -> None:
         if not self.current_library_name:
@@ -666,6 +672,18 @@ class Controller(QObject):
         if self.selected_series_name:
             self.series_selected.emit(self.selected_series_name)
 
+    def set_video_playing(self, is_playing: bool) -> None:
+        logger.info(f"Controller setting video playing state: {is_playing}")
+        self.is_video_playing = is_playing
+        if not is_playing:
+            self.library_loaded.emit()
+            if self.selected_series_name:
+                library_config = config.libraries.get(self.current_library_name, {})
+                if library_config.get("type", "tv") == "movie":
+                    self.movie_selected.emit(self.selected_series_name)
+                else:
+                    self.series_selected.emit(self.selected_series_name)
+
 
 class LibraryGridView(QWidget):
     """
@@ -795,6 +813,8 @@ class LibraryGridView(QWidget):
 
     @Slot()
     def populate_grid(self) -> None:
+        if getattr(self.controller, "is_video_playing", False):
+            return
         # Build list of displayable series structured records
         series_entries: List[Dict[str, Any]] = []
         for series_name, series_data in self.controller.cached_library_data.items():
@@ -1046,6 +1066,8 @@ class SeriesDetailView(QWidget):
 
     @Slot(str)
     def populate_series_details(self, series_name: str) -> None:
+        if getattr(self.controller, "is_video_playing", False):
+            return
         series_record: Dict[str, Any] = self.controller.cached_library_data.get(
             series_name, {}
         )
@@ -2403,6 +2425,8 @@ class MovieDetailView(QWidget):
 
     @Slot(str)
     def populate_movie_details(self, movie_name: str) -> None:
+        if getattr(self.controller, "is_video_playing", False):
+            return
         movie_record: Dict[str, Any] = self.controller.cached_library_data.get(
             movie_name, {}
         )

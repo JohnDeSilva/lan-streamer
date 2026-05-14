@@ -229,6 +229,7 @@ def test_main_signal_routing() -> None:
         mock_movie_detail_instance = mock_movie_detail_class.return_value
         mock_player_instance = mock_player_class.return_value
         mock_layout_instance = mock_layout_class.return_value
+        mock_controller_instance.is_video_playing = False
 
         # Test series_selected callback routes to detail view (index 1)
         series_selected_slot: Callable[[str], None] = (
@@ -263,6 +264,7 @@ def test_main_signal_routing() -> None:
             mock_controller_instance.playback_requested.connect.call_args[0][0]
         )
         playback_slot("/path/to/vid.mkv")
+        mock_controller_instance.set_video_playing.assert_called_once_with(True)
         mock_player_instance.play_video.assert_called_once_with("/path/to/vid.mkv")
         mock_layout_instance.setCurrentIndex.assert_called_with(3)
 
@@ -271,6 +273,7 @@ def test_main_signal_routing() -> None:
             mock_player_instance.back_requested.connect.call_args[0][0]
         )
         player_back_slot()
+        mock_controller_instance.set_video_playing.assert_called_with(False)
         mock_layout_instance.setCurrentIndex.assert_called_with(1)
 
         # Test watched marked callback routes to controller mark_episode_watched
