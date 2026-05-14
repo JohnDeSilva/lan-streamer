@@ -37,6 +37,55 @@ def _parse_season_number(season_name: str) -> int | None:
     return None
 
 
+def _extract_video_runtime(file_path: str) -> int:
+    """
+    Extracts video runtime in minutes directly from the video file itself.
+    First attempts using ffprobe via subprocess for clean offline parsing,
+    falling back to libvlc media parsing if ffprobe is unavailable.
+    Untyped definitions and abbreviations are strictly prohibited.
+    """
+    if not file_path or not os.path.exists(file_path):
+        return 0
+
+    try:
+        import subprocess
+
+        process_result: subprocess.CompletedProcess[str] = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                file_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if process_result.returncode == 0 and process_result.stdout.strip():
+            duration_seconds: float = float(process_result.stdout.strip())
+            return int(round(duration_seconds / 60.0))
+    except Exception as error_instance:
+        logger.debug(f"ffprobe extraction failed for '{file_path}': {error_instance}")
+
+    try:
+        import vlc
+
+        vlc_instance: Any = vlc.Instance("--quiet")
+        media_object: Any = vlc_instance.media_new(file_path)
+        media_object.parse()
+        duration_milliseconds: int = media_object.get_duration()
+        if duration_milliseconds > 0:
+            return int(round(duration_milliseconds / 60000.0))
+    except Exception as error_instance:
+        logger.debug(f"vlc extraction failed for '{file_path}': {error_instance}")
+
+    return 0
+
+
 def clean_series_data(series_data: Dict[str, Any]) -> Dict[str, Any] | None:
     """Cleans up temporary tmdb variables from series data."""
     clean_seasons = {}
@@ -346,6 +395,8 @@ def scan_movie(
                     movie_data["jellyfin_id"] = tmdb_map[movie_data["tmdb_identifier"]]
         if manual_jellyfin_id:
             movie_data["jellyfin_id"] = manual_jellyfin_id
+        if not movie_data.get("runtime"):
+            movie_data["runtime"] = _extract_video_runtime(video_path)
         return movie_data
 
     if tmdb_movie and "title" not in tmdb_movie and "id" in tmdb_movie:
@@ -437,7 +488,7 @@ def scan_movie(
         if existing_movie_data
         else False,
         "date_added": ctime,
-        "runtime": movie_metadata["runtime"],
+        "runtime": movie_metadata["runtime"] or _extract_video_runtime(video_path),
         "rating": movie_metadata["rating"],
         "genre": movie_metadata["genre"],
         "year": movie_metadata["year"],
@@ -529,18 +580,19 @@ def scan_series(
             )
         if manual_jellyfin_id:
             meta["jellyfin_id"] = manual_jellyfin_id
-        if jellyfin_data:
-            path_map = jellyfin_data.get("path_map", {})
-            tmdb_map = jellyfin_data.get("tmdb_episode_map", {})
-            for season in series_data.get("seasons", {}).values():
-                for ep in season.get("episodes", []):
-                    if not ep.get("jellyfin_id"):
-                        if ep.get("path") in path_map:
-                            ep["jellyfin_id"] = path_map[ep["path"]]["id"]
-                        elif ep.get("tmdb_identifier") in tmdb_map:
-                            ep["jellyfin_id"] = tmdb_map[ep["tmdb_identifier"]]
-                        elif ep.get("tmdb_episode_identifier") in tmdb_map:
-                            ep["jellyfin_id"] = tmdb_map[ep["tmdb_episode_identifier"]]
+        path_map = jellyfin_data.get("path_map", {}) if jellyfin_data else {}
+        tmdb_map = jellyfin_data.get("tmdb_episode_map", {}) if jellyfin_data else {}
+        for season in series_data.get("seasons", {}).values():
+            for ep in season.get("episodes", []):
+                if jellyfin_data and not ep.get("jellyfin_id"):
+                    if ep.get("path") in path_map:
+                        ep["jellyfin_id"] = path_map[ep["path"]]["id"]
+                    elif ep.get("tmdb_identifier") in tmdb_map:
+                        ep["jellyfin_id"] = tmdb_map[ep["tmdb_identifier"]]
+                    elif ep.get("tmdb_episode_identifier") in tmdb_map:
+                        ep["jellyfin_id"] = tmdb_map[ep["tmdb_episode_identifier"]]
+                if not ep.get("runtime"):
+                    ep["runtime"] = _extract_video_runtime(ep.get("path", ""))
         return series_data
 
     # If we only have an ID (from manual match), fetch full metadata
@@ -874,7 +926,7 @@ def scan_series(
                         "tmdb_name": tmdb_name,
                         "tmdb_number": tmdb_number,
                         "air_date": air_date,
-                        "runtime": runtime,
+                        "runtime": runtime or _extract_video_runtime(episode_path),
                         "jellyfin_id": jellyfin_id,
                         "watched": existing_ep.get("watched", False)
                         if existing_ep

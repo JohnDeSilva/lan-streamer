@@ -1163,3 +1163,68 @@ def test_scan_series_uses_cached_image(tmp_path) -> None:
     s_meta = lib["Cached Show"]["seasons"]["Season 1"]["metadata"]
     assert s_meta["poster_path"] == "/local_cache/season.jpg"
     mock_tmdb.download_image.assert_not_called()
+
+
+def test_extract_video_runtime_ffprobe_success(tmp_path) -> None:
+    from lan_streamer.scanner import _extract_video_runtime
+
+    video_file = tmp_path / "test_video.mkv"
+    video_file.touch()
+
+    mock_completed_process = MagicMock()
+    mock_completed_process.returncode = 0
+    mock_completed_process.stdout = " 1234.56 \n"
+
+    with patch("subprocess.run", return_value=mock_completed_process) as mock_run:
+        runtime_minutes = _extract_video_runtime(str(video_file.absolute()))
+        assert runtime_minutes == 21  # round(1234.56 / 60) = round(20.576) = 21
+        mock_run.assert_called_once()
+
+
+def test_extract_video_runtime_vlc_fallback(tmp_path) -> None:
+    from lan_streamer.scanner import _extract_video_runtime
+
+    video_file = tmp_path / "test_video_vlc.mkv"
+    video_file.touch()
+
+    # Make subprocess.run raise an Exception or returncode != 0 to trigger vlc fallback
+    mock_completed_process = MagicMock()
+    mock_completed_process.returncode = 1
+
+    mock_media = MagicMock()
+    mock_media.get_duration.return_value = 1500000  # 25 minutes in ms
+
+    mock_instance = MagicMock()
+    mock_instance.media_new.return_value = mock_media
+
+    mock_vlc_module = MagicMock()
+    mock_vlc_module.Instance.return_value = mock_instance
+
+    with (
+        patch("subprocess.run", return_value=mock_completed_process),
+        patch.dict("sys.modules", {"vlc": mock_vlc_module}),
+    ):
+        runtime_minutes = _extract_video_runtime(str(video_file.absolute()))
+        assert runtime_minutes == 25
+        mock_media.parse.assert_called_once()
+
+
+def test_extract_video_runtime_failure(tmp_path) -> None:
+    from lan_streamer.scanner import _extract_video_runtime
+
+    # Test nonexistent file
+    assert _extract_video_runtime("") == 0
+    assert _extract_video_runtime("/nonexistent/file.mkv") == 0
+
+    video_file = tmp_path / "fail_video.mkv"
+    video_file.touch()
+
+    # Both ffprobe and vlc raise exceptions
+    with (
+        patch("subprocess.run", side_effect=Exception("ffprobe error")),
+        patch.dict(
+            "sys.modules",
+            {"vlc": MagicMock(Instance=MagicMock(side_effect=Exception("vlc error")))},
+        ),
+    ):
+        assert _extract_video_runtime(str(video_file.absolute())) == 0
