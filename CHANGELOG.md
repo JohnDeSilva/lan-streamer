@@ -1,3 +1,9 @@
+## 0.14.0 (2026-05-14)
+
+### Feat
+
+- **player**: automatically enables english subtitles
+
 ## 0.13.4 (2026-05-14)
 
 ### Fix
