@@ -1,3 +1,9 @@
+## 0.13.4 (2026-05-14)
+
+### Fix
+
+- **scanner**: refresh series metadata after manual match
+
 ## 0.13.3 (2026-05-14)
 
 ### Fix
