@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from lan_streamer.scanner import scan_directories
 import lan_streamer.scanner as scanner
 from unittest.mock import MagicMock, patch
@@ -1228,3 +1230,481 @@ def test_extract_video_runtime_failure(tmp_path) -> None:
         ),
     ):
         assert _extract_video_runtime(str(video_file.absolute())) == 0
+
+
+# ---------------------------------------------------------------------------
+# Granular unit tests for extracted scanner helper functions
+# ---------------------------------------------------------------------------
+
+
+def test_is_video_file_positive(tmp_path: Path) -> None:
+    from lan_streamer.scanner import _is_video_file
+
+    for ext in [".mkv", ".mp4", ".avi", ".mov", ".wmv"]:
+        f = tmp_path / f"episode{ext}"
+        f.touch()
+        assert _is_video_file(f) is True
+
+
+def test_is_video_file_negative(tmp_path: Path) -> None:
+    from lan_streamer.scanner import _is_video_file
+
+    text_file = tmp_path / "notes.txt"
+    text_file.touch()
+    assert _is_video_file(text_file) is False
+    non_existent = tmp_path / "ghost.mkv"
+    assert _is_video_file(non_existent) is False
+
+
+def test_is_video_file_directory(tmp_path: Path) -> None:
+    from lan_streamer.scanner import _is_video_file
+
+    subdir = tmp_path / "Season 1"
+    subdir.mkdir()
+    assert _is_video_file(subdir) is False
+
+
+def test_build_locked_tv_tmdb_stub() -> None:
+    from lan_streamer.scanner import _build_locked_tv_tmdb_stub
+
+    existing = {
+        "metadata": {
+            "tmdb_identifier": "tt_123",
+            "tmdb_name": "Great Show",
+            "overview": "A show.",
+            "poster_path": "/p.jpg",
+            "first_air_date": "2020-01-01",
+        }
+    }
+    stub = _build_locked_tv_tmdb_stub(existing)
+    assert stub["id"] == "tt_123"
+    assert stub["name"] == "Great Show"
+    assert stub["_is_prefetched"] is True
+
+
+def test_build_locked_tv_tmdb_stub_empty() -> None:
+    from lan_streamer.scanner import _build_locked_tv_tmdb_stub
+
+    stub = _build_locked_tv_tmdb_stub({})
+    assert stub["id"] is None
+    assert stub["_is_prefetched"] is True
+
+
+def test_build_locked_movie_tmdb_stub() -> None:
+    from lan_streamer.scanner import _build_locked_movie_tmdb_stub
+
+    existing = {
+        "tmdb_identifier": "m_1",
+        "tmdb_name": "Movie",
+        "overview": "Desc.",
+        "poster_path": "/p.jpg",
+    }
+    stub = _build_locked_movie_tmdb_stub(existing, "Movie (2020)")
+    assert stub["id"] == "m_1"
+    assert stub["title"] == "Movie"
+    assert stub["_is_prefetched"] is True
+
+
+def test_build_locked_movie_tmdb_stub_fallback_title() -> None:
+    from lan_streamer.scanner import _build_locked_movie_tmdb_stub
+
+    stub = _build_locked_movie_tmdb_stub({}, "Avatar (2009)")
+    assert stub["title"] == "Avatar (2009)"
+    assert stub["id"] is None
+
+
+def test_resolve_existing_jellyfin_id_tv() -> None:
+    from lan_streamer.scanner import _resolve_existing_jellyfin_id
+
+    existing = {"metadata": {"jellyfin_id": "jf_series_abc"}}
+    assert _resolve_existing_jellyfin_id(existing, "tv") == "jf_series_abc"
+
+
+def test_resolve_existing_jellyfin_id_tv_missing() -> None:
+    from lan_streamer.scanner import _resolve_existing_jellyfin_id
+
+    assert _resolve_existing_jellyfin_id({}, "tv") is None
+    assert _resolve_existing_jellyfin_id({"metadata": {}}, "tv") is None
+
+
+def test_resolve_existing_jellyfin_id_movie() -> None:
+    from lan_streamer.scanner import _resolve_existing_jellyfin_id
+
+    existing = {"jellyfin_id": "jf_movie_xyz"}
+    assert _resolve_existing_jellyfin_id(existing, "movie") == "jf_movie_xyz"
+
+
+def test_resolve_existing_jellyfin_id_movie_empty_string() -> None:
+    from lan_streamer.scanner import _resolve_existing_jellyfin_id
+
+    assert _resolve_existing_jellyfin_id({"jellyfin_id": ""}, "movie") is None
+
+
+def test_merge_season_episodes_new_episodes() -> None:
+    from lan_streamer.scanner import _merge_season_episodes
+
+    existing: list = [{"name": "S01E01.mkv", "path": "/a/S01E01.mkv"}]
+    _merge_season_episodes(
+        existing, [{"name": "S01E02.mkv", "path": "/a/S01E02.mkv"}], "Season 1"
+    )
+    assert len(existing) == 2
+
+
+def test_merge_season_episodes_path_duplicate() -> None:
+    from lan_streamer.scanner import _merge_season_episodes
+
+    existing: list = [{"name": "S01E01.mkv", "path": "/a/S01E01.mkv"}]
+    _merge_season_episodes(
+        existing, [{"name": "S01E01.mkv", "path": "/a/S01E01.mkv"}], "Season 1"
+    )
+    assert len(existing) == 1
+
+
+def test_merge_season_episodes_name_duplicate_skips() -> None:
+    """When a new episode has the same name but different path, it is skipped."""
+    from lan_streamer.scanner import _merge_season_episodes
+
+    existing: list = [{"name": "S01E01.mkv", "path": "/a/S01E01.mkv"}]
+    _merge_season_episodes(
+        existing, [{"name": "S01E01.mkv", "path": "/b/S01E01.mkv"}], "Season 1"
+    )
+    # Episode count must not grow — name duplicate is rejected
+    assert len(existing) == 1
+
+
+def test_build_movie_metadata_defaults() -> None:
+    from lan_streamer.scanner import _build_movie_metadata_defaults
+
+    d = _build_movie_metadata_defaults()
+    for key in (
+        "tmdb_identifier",
+        "overview",
+        "poster_path",
+        "tmdb_name",
+        "jellyfin_id",
+        "runtime",
+        "rating",
+        "genre",
+        "year",
+    ):
+        assert key in d
+    assert d["runtime"] == 0
+    assert d["year"] == 0
+
+
+def test_apply_existing_movie_metadata_copies_fields() -> None:
+    from lan_streamer.scanner import (
+        _build_movie_metadata_defaults,
+        _apply_existing_movie_metadata,
+    )
+
+    metadata = _build_movie_metadata_defaults()
+    _apply_existing_movie_metadata(
+        metadata, {"tmdb_identifier": "old_id", "overview": "Desc", "runtime": 90}, None
+    )
+    assert metadata["tmdb_identifier"] == "old_id"
+    assert metadata["runtime"] == 90
+
+
+def test_apply_existing_movie_metadata_manual_jellyfin_id() -> None:
+    from lan_streamer.scanner import (
+        _build_movie_metadata_defaults,
+        _apply_existing_movie_metadata,
+    )
+
+    metadata = _build_movie_metadata_defaults()
+    _apply_existing_movie_metadata(
+        metadata, {"jellyfin_id": "jf_original"}, "jf_manual"
+    )
+    assert metadata["jellyfin_id"] == "jf_manual"
+
+
+def test_apply_existing_movie_metadata_ignores_falsy() -> None:
+    from lan_streamer.scanner import (
+        _build_movie_metadata_defaults,
+        _apply_existing_movie_metadata,
+    )
+
+    metadata = _build_movie_metadata_defaults()
+    metadata["tmdb_identifier"] = "keep_me"
+    _apply_existing_movie_metadata(metadata, {"tmdb_identifier": ""}, None)
+    assert metadata["tmdb_identifier"] == "keep_me"
+
+
+def test_resolve_movie_jellyfin_id_no_data() -> None:
+    from lan_streamer.scanner import _resolve_movie_jellyfin_id
+
+    assert (
+        _resolve_movie_jellyfin_id({"jellyfin_id": "existing"}, "/p.mkv", None)
+        == "existing"
+    )
+
+
+def test_resolve_movie_jellyfin_id_path_map() -> None:
+    from lan_streamer.scanner import _resolve_movie_jellyfin_id
+
+    metadata = {"jellyfin_id": ""}
+    jd = {"path_map": {"/path/movie.mkv": {"id": "jf_path"}}}
+    assert _resolve_movie_jellyfin_id(metadata, "/path/movie.mkv", jd) == "jf_path"
+
+
+def test_resolve_movie_jellyfin_id_tmdb_map() -> None:
+    from lan_streamer.scanner import _resolve_movie_jellyfin_id
+
+    metadata = {"jellyfin_id": "", "tmdb_identifier": "tmdb_99"}
+    jd = {"path_map": {}, "tmdb_episode_map": {"tmdb_99": "jf_tmdb"}}
+    assert _resolve_movie_jellyfin_id(metadata, "/p.mkv", jd) == "jf_tmdb"
+
+
+def test_resolve_movie_jellyfin_id_no_match() -> None:
+    from lan_streamer.scanner import _resolve_movie_jellyfin_id
+
+    metadata = {"jellyfin_id": "preexisting", "tmdb_identifier": "unknown"}
+    jd = {"path_map": {}, "tmdb_episode_map": {}}
+    assert _resolve_movie_jellyfin_id(metadata, "/p.mkv", jd) == "preexisting"
+
+
+def test_build_existing_episodes_index() -> None:
+    from lan_streamer.scanner import _build_existing_episodes_index
+
+    ep1 = {"path": "/a/S01E01.mkv", "name": "S01E01.mkv"}
+    ep2 = {"path": "/a/S01E02.mkv", "name": "S01E02.mkv"}
+    index = _build_existing_episodes_index(
+        {"seasons": {"Season 1": {"episodes": [ep1, ep2]}}}
+    )
+    assert "/a/S01E01.mkv" in index
+    assert index["/a/S01E01.mkv"] is ep1
+
+
+def test_build_existing_episodes_index_empty() -> None:
+    from lan_streamer.scanner import _build_existing_episodes_index
+
+    assert _build_existing_episodes_index({}) == {}
+
+
+def test_detect_new_series_files_finds_new(tmp_path: Path) -> None:
+    from lan_streamer.scanner import _detect_new_series_files
+
+    series_dir = tmp_path / "Show"
+    (series_dir / "Season 1").mkdir(parents=True)
+    (series_dir / "Season 1" / "S01E01.mkv").touch()
+    assert _detect_new_series_files(series_dir, {}) is True
+
+
+def test_detect_new_series_files_all_indexed(tmp_path: Path) -> None:
+    from lan_streamer.scanner import _detect_new_series_files
+
+    series_dir = tmp_path / "Show"
+    (series_dir / "Season 1").mkdir(parents=True)
+    f = series_dir / "Season 1" / "S01E01.mkv"
+    f.touch()
+    assert _detect_new_series_files(series_dir, {str(f.absolute()): {}}) is False
+
+
+def test_build_series_metadata_defaults_all_keys() -> None:
+    from lan_streamer.scanner import _build_series_metadata_defaults
+
+    d = _build_series_metadata_defaults(None)
+    for key in (
+        "tmdb_identifier",
+        "overview",
+        "poster_path",
+        "tmdb_name",
+        "first_air_date",
+        "jellyfin_id",
+    ):
+        assert key in d
+    assert d["jellyfin_id"] == ""
+
+
+def test_build_series_metadata_defaults_with_id() -> None:
+    from lan_streamer.scanner import _build_series_metadata_defaults
+
+    assert _build_series_metadata_defaults("jf_123")["jellyfin_id"] == "jf_123"
+
+
+def test_resolve_series_poster_cached() -> None:
+    from lan_streamer.scanner import _resolve_series_poster
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.get_cached_image.return_value = "/cache/series.jpg"
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        result = _resolve_series_poster({"poster_path": "/remote.jpg"}, "tmdb_1", None)
+    assert result == "/cache/series.jpg"
+    mock_tmdb.download_image.assert_not_called()
+
+
+def test_resolve_series_poster_existing_local(tmp_path: Path) -> None:
+    from lan_streamer.scanner import _resolve_series_poster
+
+    local = tmp_path / "poster.jpg"
+    local.touch()
+    mock_tmdb = MagicMock()
+    mock_tmdb.get_cached_image.return_value = ""
+    existing = {"metadata": {"poster_path": str(local)}}
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        result = _resolve_series_poster({"poster_path": ""}, "tmdb_2", existing)
+    assert result == str(local)
+    mock_tmdb.download_image.assert_not_called()
+
+
+def test_resolve_series_poster_downloads() -> None:
+    from lan_streamer.scanner import _resolve_series_poster
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.get_cached_image.return_value = ""
+    mock_tmdb.download_image.return_value = "/dl/series.jpg"
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        result = _resolve_series_poster(
+            {"poster_path": "/remote/poster.jpg"}, "tmdb_3", None
+        )
+    assert result == "/dl/series.jpg"
+    mock_tmdb.download_image.assert_called_once()
+
+
+def test_resolve_series_poster_no_poster() -> None:
+    from lan_streamer.scanner import _resolve_series_poster
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.get_cached_image.return_value = ""
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        assert _resolve_series_poster({"poster_path": ""}, "tmdb_4", None) == ""
+
+
+def test_resolve_series_poster_prefetched_local() -> None:
+    from lan_streamer.scanner import _resolve_series_poster
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.get_cached_image.return_value = ""
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        result = _resolve_series_poster(
+            {"poster_path": "local.jpg", "_is_prefetched": True}, "tmdb_5", None
+        )
+    assert result == "local.jpg"
+    mock_tmdb.download_image.assert_not_called()
+
+
+def test_resolve_episode_jellyfin_id_path_map() -> None:
+    from lan_streamer.scanner import _resolve_episode_jellyfin_id
+
+    series_data: dict = {"metadata": {"jellyfin_id": ""}}
+    season_metadata: dict = {"jellyfin_id": ""}
+    jf_id, series_jf, season_jf = _resolve_episode_jellyfin_id(
+        episode_path="/shows/S01E01.mkv",
+        episode_name="S01E01.mkv",
+        episode_file=Path("/shows/S01E01.mkv"),
+        tmdb_episode_identifier=None,
+        tmdb_name=None,
+        tmdb_number=None,
+        season_name="Season 1",
+        series_directory=Path("/shows"),
+        series_data=series_data,
+        season_metadata=season_metadata,
+        tmdb_series=None,
+        jellyfin_data={
+            "path_map": {
+                "/shows/S01E01.mkv": {
+                    "id": "jf_ep_1",
+                    "series_id": "jf_s",
+                    "season_id": "jf_ss",
+                }
+            },
+            "tmdb_episode_map": {},
+        },
+    )
+    assert jf_id == "jf_ep_1"
+    assert series_jf == "jf_s"
+    assert season_jf == "jf_ss"
+
+
+def test_resolve_episode_jellyfin_id_no_data() -> None:
+    from lan_streamer.scanner import _resolve_episode_jellyfin_id
+
+    jf_id, s, ss = _resolve_episode_jellyfin_id(
+        episode_path="/p/ep.mkv",
+        episode_name="ep.mkv",
+        episode_file=Path("/p/ep.mkv"),
+        tmdb_episode_identifier=None,
+        tmdb_name=None,
+        tmdb_number=None,
+        season_name="Season 1",
+        series_directory=Path("/p"),
+        series_data={"metadata": {"jellyfin_id": ""}},
+        season_metadata={"jellyfin_id": ""},
+        tmdb_series=None,
+        jellyfin_data=None,
+    )
+    assert jf_id == "" and s == "" and ss == ""
+
+
+def test_resolve_episode_jellyfin_id_tmdb_map() -> None:
+    from lan_streamer.scanner import _resolve_episode_jellyfin_id
+
+    jf_id, _, _ = _resolve_episode_jellyfin_id(
+        episode_path="/p/ep.mkv",
+        episode_name="ep.mkv",
+        episode_file=Path("/p/ep.mkv"),
+        tmdb_episode_identifier="tmdb_ep_42",
+        tmdb_name=None,
+        tmdb_number=None,
+        season_name="Season 1",
+        series_directory=Path("/p"),
+        series_data={"metadata": {"jellyfin_id": ""}},
+        season_metadata={"jellyfin_id": ""},
+        tmdb_series=None,
+        jellyfin_data={
+            "path_map": {},
+            "tmdb_episode_map": {"tmdb_ep_42": "jf_ep_tmdb"},
+        },
+    )
+    assert jf_id == "jf_ep_tmdb"
+
+
+def test_resolve_episode_jellyfin_id_name_map() -> None:
+    from lan_streamer.scanner import _resolve_episode_jellyfin_id
+
+    jf_id, _, _ = _resolve_episode_jellyfin_id(
+        episode_path="/p/Pilot.mkv",
+        episode_name="Pilot.mkv",
+        episode_file=Path("/p/Pilot.mkv"),
+        tmdb_episode_identifier=None,
+        tmdb_name="Pilot Episode",
+        tmdb_number=1,
+        season_name="Season 1",
+        series_directory=Path("/shows/Great Show"),
+        series_data={"metadata": {"jellyfin_id": ""}},
+        season_metadata={"jellyfin_id": ""},
+        tmdb_series={"name": "Great Show"},
+        jellyfin_data={
+            "path_map": {},
+            "tmdb_episode_map": {},
+            "name_map": {("great show", "pilot episode"): "jf_ep_name"},
+        },
+    )
+    assert jf_id == "jf_ep_name"
+
+
+def test_resolve_episode_jellyfin_id_series_id_map_sxxexx() -> None:
+    from lan_streamer.scanner import _resolve_episode_jellyfin_id
+
+    jf_id, _, _ = _resolve_episode_jellyfin_id(
+        episode_path="/p/S01E03.mkv",
+        episode_name="S01E03.mkv",
+        episode_file=Path("/p/S01E03.mkv"),
+        tmdb_episode_identifier=None,
+        tmdb_name=None,
+        tmdb_number=None,
+        season_name="Season 1",
+        series_directory=Path("/p"),
+        series_data={"metadata": {"jellyfin_id": "jf_series_id"}},
+        season_metadata={"jellyfin_id": ""},
+        tmdb_series=None,
+        jellyfin_data={
+            "path_map": {},
+            "tmdb_episode_map": {},
+            "series_id_map": {
+                "jf_series_id": {"episodes": {(1, 3): "jf_ep_s01e03"}, "names": {}}
+            },
+        },
+    )
+    assert jf_id == "jf_ep_s01e03"

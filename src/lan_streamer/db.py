@@ -98,6 +98,296 @@ def init_db() -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Pure ORM → dict builders — each converts a single ORM row to a plain dict.
+# These are extracted for readability and to enable isolated unit testing.
+# ---------------------------------------------------------------------------
+
+
+def _build_episode_dict(episode: "Episode") -> Dict[str, Any]:
+    """Maps a single Episode ORM row to its plain dictionary representation."""
+    return {
+        "name": episode.name,
+        "path": episode.path,
+        "jellyfin_id": episode.jellyfin_id,
+        "tmdb_episode_identifier": episode.tmdb_episode_identifier,
+        "tmdb_name": episode.tmdb_name,
+        "tmdb_number": episode.tmdb_number,
+        "watched": bool(episode.watched),
+        "date_added": episode.date_added or 0,
+        "air_date": episode.air_date or "",
+        "runtime": episode.runtime or 0,
+    }
+
+
+def _build_season_dict(season: "Season") -> Dict[str, Any]:
+    """Maps a single Season ORM row (with its episodes) to a plain dict."""
+    episodes = [_build_episode_dict(episode) for episode in season.episodes]
+    episodes.sort(key=lambda x: natural_sort_key(x["name"]))
+    return {
+        "metadata": {
+            "jellyfin_id": season.jellyfin_id,
+            "poster_path": season.poster_path,
+        },
+        "episodes": episodes,
+    }
+
+
+def _build_series_dict(series: "Series") -> Dict[str, Any]:
+    """Maps a single Series ORM row (with seasons and episodes) to a plain dict."""
+    seasons: Dict[str, Any] = {}
+    for season in series.seasons:
+        if season.name is not None:
+            seasons[season.name] = _build_season_dict(season)
+    return {
+        "metadata": {
+            "jellyfin_id": series.jellyfin_id,
+            "tmdb_identifier": series.tmdb_identifier,
+            "poster_path": series.poster_path,
+            "overview": series.overview,
+            "tmdb_name": series.tmdb_name,
+            "locked_metadata": bool(series.locked_metadata),
+            "first_air_date": series.first_air_date or "",
+        },
+        "seasons": seasons,
+    }
+
+
+def _build_movie_dict(movie: "Movie") -> Dict[str, Any]:
+    """Maps a single Movie ORM row to its plain dictionary representation."""
+    return {
+        "name": movie.name,
+        "path": movie.path,
+        "jellyfin_id": movie.jellyfin_id,
+        "tmdb_identifier": movie.tmdb_identifier,
+        "poster_path": movie.poster_path,
+        "overview": movie.overview,
+        "tmdb_name": movie.tmdb_name,
+        "locked_metadata": bool(movie.locked_metadata),
+        "date_added": movie.date_added or 0,
+        "runtime": movie.runtime or 0,
+        "rating": movie.rating or "",
+        "genre": movie.genre or "",
+        "year": movie.year or 0,
+        "watched": bool(movie.watched),
+        "last_played_position": movie.last_played_position or 0,
+    }
+
+
+def _apply_movie_fields(movie: "Movie", movie_data: Dict[str, Any]) -> None:
+    """
+    Applies all scalar fields from *movie_data* onto the *movie* ORM object.
+    Only overrides existing values when the incoming value is non-falsy.
+    """
+    path = movie_data.get("path")
+    movie.path = path or movie.path
+    movie.jellyfin_id = movie_data.get("jellyfin_id") or movie.jellyfin_id
+    movie.tmdb_identifier = movie_data.get("tmdb_identifier") or movie.tmdb_identifier
+    movie.poster_path = movie_data.get("poster_path") or movie.poster_path
+    movie.overview = movie_data.get("overview") or movie.overview
+    movie.tmdb_name = movie_data.get("tmdb_name") or movie.tmdb_name
+    movie.locked_metadata = (
+        bool(movie_data.get("locked_metadata")) or movie.locked_metadata
+    )
+    movie.date_added = movie_data.get("date_added") or movie.date_added or 0
+    movie.runtime = movie_data.get("runtime") or movie.runtime or 0
+    movie.rating = movie_data.get("rating") or movie.rating or ""
+    movie.genre = movie_data.get("genre") or movie.genre or ""
+    movie.year = movie_data.get("year") or movie.year or 0
+    movie.watched = movie.watched or bool(movie_data.get("watched"))
+    movie.last_played_position = (
+        movie_data.get("last_played_position") or movie.last_played_position or 0
+    )
+
+
+# ---------------------------------------------------------------------------
+# Isolated sync helpers — each handles one strategy of the Jellyfin sync pass.
+# ---------------------------------------------------------------------------
+
+
+def _sync_watched_by_ids(session: "Session", watched_ids: Set[str]) -> int:
+    """
+    Marks all Episodes and Movies whose Jellyfin ID is in *watched_ids* as watched.
+    Returns the combined update count.
+    """
+    if not watched_ids:
+        return 0
+    count = int(
+        session.query(Episode)
+        .filter(Episode.jellyfin_id.in_(watched_ids))
+        .update({"watched": True}, synchronize_session=False)
+    )
+    count += int(
+        session.query(Movie)
+        .filter(Movie.jellyfin_id.in_(watched_ids))
+        .update({"watched": True}, synchronize_session=False)
+    )
+    return count
+
+
+def _sync_watched_by_paths(session: "Session", watched_paths: Set[str]) -> int:
+    """
+    Marks all Episodes and Movies whose file path is in *watched_paths* as watched.
+    Returns the combined update count.
+    """
+    if not watched_paths:
+        return 0
+    count = int(
+        session.query(Episode)
+        .filter(Episode.watched.is_(False), Episode.path.in_(watched_paths))
+        .update({"watched": True}, synchronize_session=False)
+    )
+    count += int(
+        session.query(Movie)
+        .filter(Movie.watched.is_(False), Movie.path.in_(watched_paths))
+        .update({"watched": True}, synchronize_session=False)
+    )
+    return count
+
+
+def _sync_watched_by_names(
+    session: "Session", watched_names: Set[Tuple[str, str]]
+) -> int:
+    """
+    Marks Episodes whose (series_name, episode_name) pair is in *watched_names* as watched.
+    Returns the total update count.
+    """
+    if not watched_names:
+        return 0
+    count = 0
+    for series_name, episode_name in watched_names:
+        episode_ids = [
+            row.id
+            for row in session.query(Episode.id)
+            .join(Season)
+            .join(Series)
+            .filter(
+                Episode.watched.is_(False),
+                func.lower(Series.name) == series_name.lower(),
+                func.lower(Episode.name) == episode_name.lower(),
+            )
+            .all()
+        ]
+        if episode_ids:
+            count += int(
+                session.query(Episode)
+                .filter(Episode.id.in_(episode_ids))
+                .update({"watched": True}, synchronize_session=False)
+            )
+    return count
+
+
+# ---------------------------------------------------------------------------
+# Isolated cleanup helpers — each handles one library type's cleanup pass.
+# ---------------------------------------------------------------------------
+
+
+def _cleanup_movie_library(
+    session: "Session",
+    library_name: str,
+    stats: Dict[str, int],
+) -> None:
+    """Removes Movie records whose file path no longer exists on disk."""
+    movie_list = session.query(Movie).filter(Movie.library_name == library_name).all()
+    for movie in movie_list:
+        if movie.path and not Path(movie.path).exists():
+            logger.info(
+                f"Cleanup: Removing missing movie '{movie.name}' at '{movie.path}'"
+            )
+            session.delete(movie)
+            stats["movies"] += 1
+
+
+def _cleanup_tv_library(
+    session: "Session",
+    library_name: str,
+    root_directories: List[str],
+    stats: Dict[str, int],
+) -> None:
+    """
+    Removes Series/Season/Episode records whose corresponding paths no longer
+    exist on disk, then purges any empty seasons or series left behind.
+    """
+    series_list = (
+        session.query(Series).filter(Series.library_name == library_name).all()
+    )
+
+    for series in series_list:
+        series_path_exists = any(
+            series.name and (Path(root) / series.name).is_dir()
+            for root in root_directories
+        )
+        if not series_path_exists:
+            logger.info(f"Cleanup: Removing missing series '{series.name}'")
+            stats["seasons"] += len(series.seasons)
+            for season in series.seasons:
+                stats["episodes"] += len(season.episodes)
+            session.delete(series)
+            stats["series"] += 1
+            continue
+
+        for season in series.seasons:
+            season_path_exists = any(
+                series.name
+                and season.name
+                and (Path(root) / series.name / season.name).is_dir()
+                for root in root_directories
+            )
+            if not season_path_exists:
+                logger.info(
+                    f"Cleanup: Removing missing season '{season.name}' "
+                    f"from series '{series.name}'"
+                )
+                stats["episodes"] += len(season.episodes)
+                session.delete(season)
+                stats["seasons"] += 1
+                continue
+
+            for episode in season.episodes:
+                if episode.path and not Path(episode.path).exists():
+                    logger.info(
+                        f"Cleanup: Removing missing episode '{episode.name}' "
+                        f"at '{episode.path}'"
+                    )
+                    session.delete(episode)
+                    stats["episodes"] += 1
+
+    # Purge seasons and series that became empty after episode deletion
+    session.flush()
+    session.expire_all()
+
+    empty_seasons = (
+        session.query(Season)
+        .join(Series)
+        .filter(Series.library_name == library_name)
+        .filter(~Season.episodes.any())
+        .all()
+    )
+    for season in empty_seasons:
+        season_series_name = (
+            season.series.name if season.series and season.series.name else "Unknown"
+        )
+        logger.info(
+            f"Cleanup: Removing empty season '{season.name}' "
+            f"from series '{season_series_name}'"
+        )
+        session.delete(season)
+        stats["seasons"] += 1
+
+    session.flush()
+
+    empty_series = (
+        session.query(Series)
+        .filter(Series.library_name == library_name)
+        .filter(~Series.seasons.any())
+        .all()
+    )
+    for series in empty_series:
+        logger.info(f"Cleanup: Removing empty series '{series.name}'")
+        session.delete(series)
+        stats["series"] += 1
+
+
 def load_library(library_name: str) -> Dict[str, Any]:
     """
     Loads the library from the database and constructs a nested dictionary structure.
@@ -117,53 +407,12 @@ def load_library(library_name: str) -> Dict[str, Any]:
 
             for series in series_list:
                 stats["series"] += 1
-                series_dict: Dict[str, Any] = {
-                    "metadata": {
-                        "jellyfin_id": series.jellyfin_id,
-                        "tmdb_identifier": series.tmdb_identifier,
-                        "poster_path": series.poster_path,
-                        "overview": series.overview,
-                        "tmdb_name": series.tmdb_name,
-                        "locked_metadata": bool(series.locked_metadata),
-                        "first_air_date": series.first_air_date or "",
-                    },
-                    "seasons": {},
-                }
-
+                stats["seasons"] += len(series.seasons)
                 for season in series.seasons:
-                    stats["seasons"] += 1
-                    season_dict: Dict[str, Any] = {
-                        "metadata": {
-                            "jellyfin_id": season.jellyfin_id,
-                            "poster_path": season.poster_path,
-                        },
-                        "episodes": [],
-                    }
-
-                    for episode in season.episodes:
-                        stats["episodes"] += 1
-                        episode_data = {
-                            "name": episode.name,
-                            "path": episode.path,
-                            "jellyfin_id": episode.jellyfin_id,
-                            "tmdb_episode_identifier": episode.tmdb_episode_identifier,
-                            "tmdb_name": episode.tmdb_name,
-                            "tmdb_number": episode.tmdb_number,
-                            "watched": bool(episode.watched),
-                            "date_added": episode.date_added or 0,
-                            "air_date": episode.air_date or "",
-                            "runtime": episode.runtime or 0,
-                        }
-                        season_dict["episodes"].append(episode_data)
-
-                    season_dict["episodes"].sort(
-                        key=lambda x: natural_sort_key(x["name"])
-                    )
-                    if season.name is not None:
-                        series_dict["seasons"][season.name] = season_dict
-
+                    stats["episodes"] += len(season.episodes)
                 if series.name is not None:
-                    library_data[series.name] = series_dict
+                    library_data[series.name] = _build_series_dict(series)
+
     except Exception:
         logger.exception(f"Error loading library '{library_name}' from database")
         return {}
@@ -173,6 +422,85 @@ def load_library(library_name: str) -> Dict[str, Any]:
         f"Loaded library '{library_name}' in {duration:.3f}s: {stats['series']} series, {stats['seasons']} seasons, {stats['episodes']} episodes."
     )
     return library_data
+
+
+def _save_series_record(
+    session: Session,
+    library_name: str,
+    series_name: str,
+    series_data: Dict[str, Any],
+    existing_series: Dict[str, Series],
+    stats: Dict[str, int],
+) -> Series:
+    series = existing_series.get(series_name)
+    if not series:
+        series = Series(library_name=library_name, name=series_name)
+        session.add(series)
+    stats["series"] += 1
+
+    series_metadata = series_data.get("metadata", {})
+    series.jellyfin_id = series_metadata.get("jellyfin_id") or series.jellyfin_id
+    series.tmdb_identifier = (
+        series_metadata.get("tmdb_identifier") or series.tmdb_identifier
+    )
+    series.poster_path = series_metadata.get("poster_path") or series.poster_path
+    series.overview = series_metadata.get("overview") or series.overview
+    series.tmdb_name = series_metadata.get("tmdb_name") or series.tmdb_name
+    series.locked_metadata = (
+        bool(series_metadata.get("locked_metadata")) or series.locked_metadata
+    )
+    series.first_air_date = (
+        series_metadata.get("first_air_date") or series.first_air_date
+    )
+    return series
+
+
+def _save_season_record(
+    session: Session,
+    series: Series,
+    season_name: str,
+    season_data: Dict[str, Any],
+    existing_seasons: Dict[str, Season],
+    stats: Dict[str, int],
+) -> Season:
+    season = existing_seasons.get(season_name)
+    if not season:
+        season = Season(name=season_name, series=series)
+        session.add(season)
+    stats["seasons"] += 1
+
+    season_metadata = season_data.get("metadata", {})
+    season.jellyfin_id = season_metadata.get("jellyfin_id") or season.jellyfin_id
+    season.poster_path = season_metadata.get("poster_path") or season.poster_path
+    return season
+
+
+def _save_episode_record(
+    session: Session,
+    season: Season,
+    episode_data: Dict[str, Any],
+    existing_episodes: Dict[str, Episode],
+    stats: Dict[str, int],
+) -> Episode:
+    path = episode_data["path"]
+    episode = existing_episodes.get(path)
+    if not episode:
+        episode = Episode(path=path, season=season)
+        session.add(episode)
+    stats["episodes"] += 1
+
+    episode.name = episode_data["name"]
+    episode.jellyfin_id = episode_data.get("jellyfin_id") or episode.jellyfin_id
+    episode.tmdb_episode_identifier = (
+        episode_data.get("tmdb_episode_identifier") or episode.tmdb_episode_identifier
+    )
+    episode.tmdb_name = episode_data.get("tmdb_name") or episode.tmdb_name
+    episode.tmdb_number = episode_data.get("tmdb_number") or episode.tmdb_number
+    episode.watched = episode.watched or bool(episode_data.get("watched"))
+    episode.date_added = episode_data.get("date_added") or episode.date_added or 0
+    episode.air_date = episode_data.get("air_date") or episode.air_date
+    episode.runtime = episode_data.get("runtime") or episode.runtime or 0
+    return episode
 
 
 def save_library(library_name: str, library: Dict[str, Any]) -> None:
@@ -185,102 +513,49 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
     try:
         with get_session() as session:
             existing_series = {
-                s.name: s
-                for s in session.query(Series)
+                series_obj.name: series_obj
+                for series_obj in session.query(Series)
                 .filter(Series.library_name == library_name)
                 .all()
-                if s.name is not None
+                if series_obj.name is not None
             }
-            touched_series_names = set()
 
             for series_name, series_data in library.items():
-                touched_series_names.add(series_name)
-                series_metadata = series_data.get("metadata", {})
-
-                series = existing_series.get(series_name)
-                if not series:
-                    series = Series(library_name=library_name, name=series_name)
-                    session.add(series)
-                stats["series"] += 1
-
-                series.jellyfin_id = (
-                    series_metadata.get("jellyfin_id") or series.jellyfin_id
-                )
-                series.tmdb_identifier = (
-                    series_metadata.get("tmdb_identifier") or series.tmdb_identifier
-                )
-                series.poster_path = (
-                    series_metadata.get("poster_path") or series.poster_path
-                )
-                series.overview = series_metadata.get("overview") or series.overview
-                series.tmdb_name = series_metadata.get("tmdb_name") or series.tmdb_name
-                series.locked_metadata = (
-                    bool(series_metadata.get("locked_metadata"))
-                    or series.locked_metadata
-                )
-                series.first_air_date = (
-                    series_metadata.get("first_air_date") or series.first_air_date
+                series = _save_series_record(
+                    session,
+                    library_name,
+                    series_name,
+                    series_data,
+                    existing_series,
+                    stats,
                 )
 
                 existing_seasons = {
-                    sea.name: sea for sea in series.seasons if sea.name is not None
+                    season_obj.name: season_obj
+                    for season_obj in series.seasons
+                    if season_obj.name is not None
                 }
-                touched_season_names = set()
 
                 for season_name, season_data in series_data.get("seasons", {}).items():
-                    touched_season_names.add(season_name)
-                    season_metadata = season_data.get("metadata", {})
-
-                    season = existing_seasons.get(season_name)
-                    if not season:
-                        season = Season(name=season_name, series=series)
-                        session.add(season)
-                    stats["seasons"] += 1
-
-                    season.jellyfin_id = (
-                        season_metadata.get("jellyfin_id") or season.jellyfin_id
-                    )
-                    season.poster_path = (
-                        season_metadata.get("poster_path") or season.poster_path
+                    season = _save_season_record(
+                        session,
+                        series,
+                        season_name,
+                        season_data,
+                        existing_seasons,
+                        stats,
                     )
 
                     existing_episodes = {
-                        ep.path: ep for ep in season.episodes if ep.path is not None
+                        episode_obj.path: episode_obj
+                        for episode_obj in season.episodes
+                        if episode_obj.path is not None
                     }
-                    touched_episode_paths = set()
 
-                    for ep_data in season_data.get("episodes", []):
-                        path = ep_data["path"]
-                        touched_episode_paths.add(path)
-
-                        episode = existing_episodes.get(path)
-                        if not episode:
-                            episode = Episode(path=path, season=season)
-                            session.add(episode)
-                        stats["episodes"] += 1
-
-                        episode.name = ep_data["name"]
-                        episode.jellyfin_id = (
-                            ep_data.get("jellyfin_id") or episode.jellyfin_id
+                    for episode_data in season_data.get("episodes", []):
+                        _save_episode_record(
+                            session, season, episode_data, existing_episodes, stats
                         )
-                        episode.tmdb_episode_identifier = (
-                            ep_data.get("tmdb_episode_identifier")
-                            or episode.tmdb_episode_identifier
-                        )
-                        episode.tmdb_name = (
-                            ep_data.get("tmdb_name") or episode.tmdb_name
-                        )
-                        episode.tmdb_number = (
-                            ep_data.get("tmdb_number") or episode.tmdb_number
-                        )
-                        episode.watched = episode.watched or bool(
-                            ep_data.get("watched")
-                        )
-                        episode.date_added = (
-                            ep_data.get("date_added") or episode.date_added or 0
-                        )
-                        episode.air_date = ep_data.get("air_date") or episode.air_date
-                        episode.runtime = ep_data.get("runtime") or episode.runtime or 0
 
     # Deletions are now handled exclusively by cleanup_library to prevent accidental data loss
     # during temporary drive disconnection or partial scans.
@@ -408,28 +683,7 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> None:
                     existing_movies_by_path[path] = movie
                 existing_movies_by_name[movie_name] = movie
 
-                movie.path = path or movie.path
-                movie.jellyfin_id = movie_data.get("jellyfin_id") or movie.jellyfin_id
-                movie.tmdb_identifier = (
-                    movie_data.get("tmdb_identifier") or movie.tmdb_identifier
-                )
-                movie.poster_path = movie_data.get("poster_path") or movie.poster_path
-                movie.overview = movie_data.get("overview") or movie.overview
-                movie.tmdb_name = movie_data.get("tmdb_name") or movie.tmdb_name
-                movie.locked_metadata = (
-                    bool(movie_data.get("locked_metadata")) or movie.locked_metadata
-                )
-                movie.date_added = movie_data.get("date_added") or movie.date_added or 0
-                movie.runtime = movie_data.get("runtime") or movie.runtime or 0
-                movie.rating = movie_data.get("rating") or movie.rating or ""
-                movie.genre = movie_data.get("genre") or movie.genre or ""
-                movie.year = movie_data.get("year") or movie.year or 0
-                movie.watched = movie.watched or bool(movie_data.get("watched"))
-                movie.last_played_position = (
-                    movie_data.get("last_played_position")
-                    or movie.last_played_position
-                    or 0
-                )
+                _apply_movie_fields(movie, movie_data)
 
     except Exception:
         logger.exception(f"Error saving movie library '{library_name}' to database")
@@ -571,67 +825,20 @@ def sync_watched_from_jellyfin_data(
 
     start_time = time.time()
     logger.info(
-        f"Starting bulk watched status sync: {len(watched_ids)} IDs, {len(watched_paths)} paths, {len(watched_names or [])} names."
+        f"Starting bulk watched status sync: {len(watched_ids)} IDs, "
+        f"{len(watched_paths)} paths, {len(watched_names or [])} names."
     )
     updated_count = 0
     try:
         with get_session() as session:
-            if watched_ids:
-                res = (
-                    session.query(Episode)
-                    .filter(Episode.jellyfin_id.in_(watched_ids))
-                    .update({"watched": True}, synchronize_session=False)
-                )
-                updated_count += res
-
-                res_m = (
-                    session.query(Movie)
-                    .filter(Movie.jellyfin_id.in_(watched_ids))
-                    .update({"watched": True}, synchronize_session=False)
-                )
-                updated_count += res_m
-
-            if watched_paths:
-                res = (
-                    session.query(Episode)
-                    .filter(Episode.watched.is_(False), Episode.path.in_(watched_paths))
-                    .update({"watched": True}, synchronize_session=False)
-                )
-                updated_count += res
-
-                res_m = (
-                    session.query(Movie)
-                    .filter(Movie.watched.is_(False), Movie.path.in_(watched_paths))
-                    .update({"watched": True}, synchronize_session=False)
-                )
-                updated_count += res_m
-
-            if watched_names:
-                for series_name, episode_name in watched_names:
-                    # Find IDs first because update() doesn't support join() directly in all dialects
-                    ep_ids = [
-                        e.id
-                        for e in session.query(Episode.id)
-                        .join(Season)
-                        .join(Series)
-                        .filter(
-                            Episode.watched.is_(False),
-                            func.lower(Series.name) == series_name.lower(),
-                            func.lower(Episode.name) == episode_name.lower(),
-                        )
-                        .all()
-                    ]
-                    if ep_ids:
-                        res = (
-                            session.query(Episode)
-                            .filter(Episode.id.in_(ep_ids))
-                            .update({"watched": True}, synchronize_session=False)
-                        )
-                        updated_count += res
+            updated_count += _sync_watched_by_ids(session, watched_ids)
+            updated_count += _sync_watched_by_paths(session, watched_paths)
+            updated_count += _sync_watched_by_names(session, watched_names or set())
 
         duration = time.time() - start_time
         logger.info(
-            f"sync_watched_from_jellyfin_data: marked {updated_count} episodes as watched in {duration:.3f}s."
+            f"sync_watched_from_jellyfin_data: marked {updated_count} episodes as "
+            f"watched in {duration:.3f}s."
         )
     except Exception:
         logger.exception("Error in sync_watched_from_jellyfin_data")
@@ -691,112 +898,9 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
     try:
         with get_session() as session:
             if library_type == "movie":
-                movie_list = (
-                    session.query(Movie)
-                    .filter(Movie.library_name == library_name)
-                    .all()
-                )
-                for movie in movie_list:
-                    if movie.path and not Path(movie.path).exists():
-                        logger.info(
-                            f"Cleanup: Removing missing movie '{movie.name}' at '{movie.path}'"
-                        )
-                        session.delete(movie)
-                        stats["movies"] += 1
+                _cleanup_movie_library(session, library_name, stats)
             else:
-                # 1. Check all series in this library
-                series_list = (
-                    session.query(Series)
-                    .filter(Series.library_name == library_name)
-                    .all()
-                )
-
-                for series in series_list:
-                    series_path_exists = False
-                    for root in root_directories:
-                        if series.name and (Path(root) / series.name).is_dir():
-                            series_path_exists = True
-                            break
-
-                    if not series_path_exists:
-                        logger.info(f"Cleanup: Removing missing series '{series.name}'")
-                        # Count children before deletion for accurate stats
-                        stats["seasons"] += len(series.seasons)
-                        for season in series.seasons:
-                            stats["episodes"] += len(season.episodes)
-
-                        session.delete(series)
-                        stats["series"] += 1
-                        continue
-
-                    # 2. Check seasons within existing series
-                    for season in series.seasons:
-                        season_path_exists = False
-                        for root in root_directories:
-                            if (
-                                series.name
-                                and season.name
-                                and (Path(root) / series.name / season.name).is_dir()
-                            ):
-                                season_path_exists = True
-                                break
-
-                        if not season_path_exists:
-                            logger.info(
-                                f"Cleanup: Removing missing season '{season.name}' from series '{series.name}'"
-                            )
-                            # Count episodes before deletion for accurate stats
-                            stats["episodes"] += len(season.episodes)
-                            session.delete(season)
-                            stats["seasons"] += 1
-                            continue
-
-                        # 3. Check episodes within existing seasons
-                        for episode in season.episodes:
-                            if episode.path and not Path(episode.path).exists():
-                                logger.info(
-                                    f"Cleanup: Removing missing episode '{episode.name}' at '{episode.path}'"
-                                )
-                                session.delete(episode)
-                                stats["episodes"] += 1
-
-                # 4. Clean up seasons/series that became empty after episode deletion
-                session.flush()
-                session.expire_all()
-
-                # Find seasons with no episodes
-                empty_seasons = (
-                    session.query(Season)
-                    .join(Series)
-                    .filter(Series.library_name == library_name)
-                    .filter(~Season.episodes.any())
-                    .all()
-                )
-                for season in empty_seasons:
-                    series_name = (
-                        season.series.name
-                        if season.series and season.series.name
-                        else "Unknown"
-                    )
-                    logger.info(
-                        f"Cleanup: Removing empty season '{season.name}' from series '{series_name}'"
-                    )
-                    session.delete(season)
-                    stats["seasons"] += 1
-
-                session.flush()
-
-                # Find series with no seasons
-                empty_series = (
-                    session.query(Series)
-                    .filter(Series.library_name == library_name)
-                    .filter(~Series.seasons.any())
-                    .all()
-                )
-                for series in empty_series:
-                    logger.info(f"Cleanup: Removing empty series '{series.name}'")
-                    session.delete(series)
-                    stats["series"] += 1
+                _cleanup_tv_library(session, library_name, root_directories, stats)
 
         duration = time.time() - start_time
         if library_type == "movie":

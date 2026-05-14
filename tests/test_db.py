@@ -381,3 +381,389 @@ def test_runtime_management_functions(mock_db_file) -> None:
         )
         assert updated_movie is not None
         assert updated_movie.runtime == 45
+
+
+# ---------------------------------------------------------------------------
+# Granular unit tests for extracted db helper functions
+# ---------------------------------------------------------------------------
+
+
+def test_build_episode_dict(mock_db_file) -> None:
+    from lan_streamer.db import _build_episode_dict, get_session
+    from lan_streamer.models import Series, Season, Episode
+
+    with get_session() as session:
+        series = Series(name="S", library_name="L")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        ep = Episode(
+            season_id=season.id,
+            name="S01E01.mkv",
+            path="/p/S01E01.mkv",
+            watched=True,
+            runtime=42,
+            air_date="2022-01-01",
+            tmdb_name="Pilot",
+            tmdb_number=1,
+            tmdb_episode_identifier="tmdb_ep_1",
+            jellyfin_id="jf_ep_1",
+        )
+        session.add(ep)
+        session.flush()
+        result = _build_episode_dict(ep)
+
+    assert result["name"] == "S01E01.mkv"
+    assert result["path"] == "/p/S01E01.mkv"
+    assert result["watched"] is True
+    assert result["runtime"] == 42
+    assert result["air_date"] == "2022-01-01"
+    assert result["tmdb_name"] == "Pilot"
+    assert result["tmdb_number"] == 1
+    assert result["jellyfin_id"] == "jf_ep_1"
+
+
+def test_build_episode_dict_defaults(mock_db_file) -> None:
+    from lan_streamer.db import _build_episode_dict, get_session
+    from lan_streamer.models import Series, Season, Episode
+
+    with get_session() as session:
+        series = Series(name="S", library_name="L")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        ep = Episode(season_id=season.id, name="ep.mkv", path="/p/ep.mkv")
+        session.add(ep)
+        session.flush()
+        result = _build_episode_dict(ep)
+
+    assert result["runtime"] == 0
+    assert result["air_date"] == ""
+    assert result["watched"] is False
+
+
+def test_build_season_dict(mock_db_file) -> None:
+    from lan_streamer.db import _build_season_dict, get_session
+    from lan_streamer.models import Series, Season, Episode
+
+    with get_session() as session:
+        series = Series(name="S", library_name="L")
+        session.add(series)
+        session.flush()
+        season = Season(
+            series_id=series.id,
+            name="Season 1",
+            jellyfin_id="jf_s1",
+            poster_path="/poster.jpg",
+        )
+        session.add(season)
+        session.flush()
+        ep1 = Episode(season_id=season.id, name="S01E02.mkv", path="/p2")
+        ep2 = Episode(season_id=season.id, name="S01E01.mkv", path="/p1")
+        session.add_all([ep1, ep2])
+        session.flush()
+        result = _build_season_dict(season)
+
+    assert result["metadata"]["jellyfin_id"] == "jf_s1"
+    assert result["metadata"]["poster_path"] == "/poster.jpg"
+    # Episodes should be sorted naturally
+    assert result["episodes"][0]["name"] == "S01E01.mkv"
+    assert result["episodes"][1]["name"] == "S01E02.mkv"
+
+
+def test_build_series_dict(mock_db_file) -> None:
+    from lan_streamer.db import _build_series_dict, get_session
+    from lan_streamer.models import Series, Season, Episode
+
+    with get_session() as session:
+        series = Series(
+            name="MyShow",
+            library_name="L",
+            jellyfin_id="jf_s",
+            tmdb_identifier="tmdb_s",
+            poster_path="/sp.jpg",
+            overview="Great show",
+            tmdb_name="My Show",
+            locked_metadata=True,
+            first_air_date="2021-06-01",
+        )
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        ep = Episode(season_id=season.id, name="S01E01.mkv", path="/p")
+        session.add(ep)
+        session.flush()
+        result = _build_series_dict(series)
+
+    assert result["metadata"]["jellyfin_id"] == "jf_s"
+    assert result["metadata"]["tmdb_identifier"] == "tmdb_s"
+    assert result["metadata"]["locked_metadata"] is True
+    assert result["metadata"]["first_air_date"] == "2021-06-01"
+    assert "Season 1" in result["seasons"]
+
+
+def test_build_movie_dict(mock_db_file) -> None:
+    from lan_streamer.db import _build_movie_dict, get_session
+    from lan_streamer.models import Movie
+
+    with get_session() as session:
+        movie = Movie(
+            name="Inception",
+            library_name="Movies",
+            path="/movies/inception.mkv",
+            jellyfin_id="jf_m",
+            tmdb_identifier="tt_inc",
+            poster_path="/p.jpg",
+            overview="Heist",
+            tmdb_name="Inception",
+            locked_metadata=False,
+            date_added=1000,
+            runtime=148,
+            rating="8.8",
+            genre="Thriller",
+            year=2010,
+            watched=True,
+            last_played_position=60,
+        )
+        session.add(movie)
+        session.flush()
+        result = _build_movie_dict(movie)
+
+    assert result["name"] == "Inception"
+    assert result["runtime"] == 148
+    assert result["rating"] == "8.8"
+    assert result["genre"] == "Thriller"
+    assert result["year"] == 2010
+    assert result["watched"] is True
+    assert result["last_played_position"] == 60
+
+
+def test_apply_movie_fields_sets_all_values(mock_db_file) -> None:
+    from lan_streamer.db import _apply_movie_fields, get_session
+    from lan_streamer.models import Movie
+
+    with get_session() as session:
+        movie = Movie(name="EmptyMovie", library_name="L", path="/old.mkv")
+        session.add(movie)
+        session.flush()
+
+        movie_data = {
+            "path": "/new.mkv",
+            "jellyfin_id": "jf_new",
+            "tmdb_identifier": "tmdb_new",
+            "poster_path": "/new_p.jpg",
+            "overview": "New overview",
+            "tmdb_name": "New Name",
+            "locked_metadata": True,
+            "date_added": 2000,
+            "runtime": 90,
+            "rating": "7.5",
+            "genre": "Drama",
+            "year": 2023,
+            "watched": True,
+            "last_played_position": 30,
+        }
+        _apply_movie_fields(movie, movie_data)
+
+        assert movie.path == "/new.mkv"
+        assert movie.jellyfin_id == "jf_new"
+        assert movie.runtime == 90
+        assert movie.rating == "7.5"
+        assert movie.watched is True
+
+
+def test_apply_movie_fields_does_not_overwrite_with_falsy(mock_db_file) -> None:
+    from lan_streamer.db import _apply_movie_fields, get_session
+    from lan_streamer.models import Movie
+
+    with get_session() as session:
+        movie = Movie(
+            name="M", library_name="L", path="/keep.mkv", jellyfin_id="keep_jf"
+        )
+        session.add(movie)
+        session.flush()
+        _apply_movie_fields(movie, {"path": "", "jellyfin_id": ""})
+        assert movie.path == "/keep.mkv"
+        assert movie.jellyfin_id == "keep_jf"
+
+
+def test_sync_watched_by_ids(mock_db_file) -> None:
+    from lan_streamer.db import _sync_watched_by_ids, get_session
+    from lan_streamer.models import Series, Season, Episode
+
+    with get_session() as session:
+        series = Series(name="S", library_name="L")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="S1")
+        session.add(season)
+        session.flush()
+        ep1 = Episode(
+            season_id=season.id,
+            name="E1",
+            path="/p1",
+            jellyfin_id="jf_watched_1",
+            watched=False,
+        )
+        ep2 = Episode(
+            season_id=season.id,
+            name="E2",
+            path="/p2",
+            jellyfin_id="jf_not_in_set",
+            watched=False,
+        )
+        session.add_all([ep1, ep2])
+        session.flush()
+
+        count = _sync_watched_by_ids(session, {"jf_watched_1"})
+        assert count == 1
+
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        ep = session.query(Episode).filter_by(path="/p1").first()
+        assert ep is not None and ep.watched is True
+        ep2 = session.query(Episode).filter_by(path="/p2").first()
+        assert ep2 is not None and ep2.watched is False
+
+
+def test_sync_watched_by_ids_empty(mock_db_file) -> None:
+    from lan_streamer.db import _sync_watched_by_ids, get_session
+
+    with get_session() as session:
+        assert _sync_watched_by_ids(session, set()) == 0
+
+
+def test_sync_watched_by_paths(mock_db_file) -> None:
+    from lan_streamer.db import _sync_watched_by_paths, get_session
+    from lan_streamer.models import Series, Season, Episode
+
+    with get_session() as session:
+        series = Series(name="S", library_name="L")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="S1")
+        session.add(season)
+        session.flush()
+        ep = Episode(season_id=season.id, name="E1", path="/path/ep.mkv", watched=False)
+        session.add(ep)
+        session.flush()
+
+        count = _sync_watched_by_paths(session, {"/path/ep.mkv"})
+        assert count == 1
+
+
+def test_sync_watched_by_paths_empty(mock_db_file) -> None:
+    from lan_streamer.db import _sync_watched_by_paths, get_session
+
+    with get_session() as session:
+        assert _sync_watched_by_paths(session, set()) == 0
+
+
+def test_sync_watched_by_names(mock_db_file) -> None:
+    from lan_streamer.db import _sync_watched_by_names, get_session
+    from lan_streamer.models import Series, Season, Episode
+
+    with get_session() as session:
+        series = Series(name="Cool Show", library_name="L")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="S1")
+        session.add(season)
+        session.flush()
+        ep = Episode(season_id=season.id, name="The Pilot", path="/p", watched=False)
+        session.add(ep)
+        session.flush()
+
+        count = _sync_watched_by_names(session, {("Cool Show", "The Pilot")})
+        assert count == 1
+
+
+def test_sync_watched_by_names_empty(mock_db_file) -> None:
+    from lan_streamer.db import _sync_watched_by_names, get_session
+
+    with get_session() as session:
+        assert _sync_watched_by_names(session, set()) == 0
+
+
+def test_cleanup_movie_library_removes_missing(mock_db_file, tmp_path) -> None:
+    from lan_streamer.db import _cleanup_movie_library, get_session
+    from lan_streamer.models import Movie
+
+    real_file = tmp_path / "present.mkv"
+    real_file.touch()
+
+    with get_session() as session:
+        movie_present = Movie(
+            name="Present", library_name="Movies", path=str(real_file)
+        )
+        movie_missing = Movie(
+            name="Missing", library_name="Movies", path="/nonexistent/missing.mkv"
+        )
+        session.add_all([movie_present, movie_missing])
+        session.flush()
+
+        stats = {"movies": 0}
+        _cleanup_movie_library(session, "Movies", stats)
+        assert stats["movies"] == 1
+
+    with get_session() as session:
+        remaining = session.query(Movie).filter_by(library_name="Movies").all()
+        assert len(remaining) == 1
+        assert remaining[0].name == "Present"
+
+
+def test_cleanup_tv_library_removes_missing_series(mock_db_file, tmp_path) -> None:
+    from lan_streamer.db import _cleanup_tv_library, get_session
+    from lan_streamer.models import Series, Season, Episode
+
+    real_series_dir = tmp_path / "ActiveShow"
+    season_dir = real_series_dir / "Season 1"
+    season_dir.mkdir(parents=True)
+
+    with get_session() as session:
+        active = Series(name="ActiveShow", library_name="L")
+        missing = Series(name="MissingShow", library_name="L")
+        session.add_all([active, missing])
+        session.flush()
+        season = Season(series_id=missing.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        ep = Episode(season_id=season.id, name="E1", path="/p/E1.mkv")
+        session.add(ep)
+        session.flush()
+
+        stats = {"series": 0, "seasons": 0, "episodes": 0, "movies": 0}
+        _cleanup_tv_library(session, "L", [str(tmp_path)], stats)
+        assert stats["series"] >= 1
+        assert stats["episodes"] >= 1
+
+
+def test_cleanup_tv_library_removes_missing_episode(mock_db_file, tmp_path) -> None:
+    from lan_streamer.db import _cleanup_tv_library, get_session
+    from lan_streamer.models import Series, Season, Episode
+
+    series_dir = tmp_path / "ShowWithMissingEp"
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir(parents=True)
+
+    with get_session() as session:
+        series = Series(name="ShowWithMissingEp", library_name="L")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        ep_missing = Episode(season_id=season.id, name="E1", path="/nonexistent/ep.mkv")
+        session.add(ep_missing)
+        session.flush()
+
+        stats = {"series": 0, "seasons": 0, "episodes": 0, "movies": 0}
+        _cleanup_tv_library(session, "L", [str(tmp_path)], stats)
+        assert stats["episodes"] >= 1
