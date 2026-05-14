@@ -22,7 +22,7 @@ class Config:
         self.log_level: str = "INFO"
         self.divide_logs_by_service: bool = False
         self.enable_caching: bool = False
-        self.watched_threshold: float = 0.9
+        self.watched_threshold: float = 0.95
         self.cache_directory: str = str(
             Path.home() / ".config" / "lan-streamer" / "cache"
         )
@@ -78,7 +78,7 @@ class Config:
                         not data.get("enable_global_file_logging", True),
                     )
                     self.enable_caching = data.get("enable_caching", False)
-                    self.watched_threshold = data.get("watched_threshold", 0.9)
+                    self.watched_threshold = data.get("watched_threshold", 0.95)
                     self.cache_directory = data.get(
                         "cache_directory",
                         str(Path.home() / ".config" / "lan-streamer" / "cache"),

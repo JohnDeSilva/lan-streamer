@@ -404,6 +404,7 @@ def test_settings_dialog_lifecycle(qtbot: Any) -> None:
     dialog_instance.use_embedded_checkbox.setChecked(False)
     dialog_instance.enable_caching_checkbox.setChecked(True)
     dialog_instance.enable_hw_accel_checkbox.setChecked(False)
+    dialog_instance.watched_threshold_input.setText("98")
 
     # Test Advanced options
     with patch(
@@ -428,6 +429,7 @@ def test_settings_dialog_lifecycle(qtbot: Any) -> None:
     assert config.use_embedded_player is False
     assert config.enable_caching is True
     assert config.enable_hw_accel is False
+    assert config.watched_threshold == 0.98
     assert config.database_path == "/custom/lib.db"
     assert config.log_directory == "/custom/logs"
     assert config.max_log_retention_days == 14
@@ -435,9 +437,11 @@ def test_settings_dialog_lifecycle(qtbot: Any) -> None:
 
     # Test ValueError fallback coverage
     dialog_instance.log_retention_input.setText("invalid_days")
+    dialog_instance.watched_threshold_input.setText("invalid_threshold")
     dialog_instance.log_saving_mode_selector.setCurrentText("Single Global File")
     dialog_instance.save_config()
     assert config.max_log_retention_days == 14
+    assert config.watched_threshold == 0.98
     assert config.divide_logs_by_service is False
 
 

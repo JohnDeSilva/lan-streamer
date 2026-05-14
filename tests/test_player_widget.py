@@ -165,16 +165,17 @@ def test_update_ui(player_widget) -> None:
     assert "00:50 / 01:40" in player_widget.time_label.text()
 
 
-def test_update_ui_watched_threshold(player_widget) -> None:
+def test_stop_marks_watched_beyond_threshold(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget.mediaplayer.get_media.return_value = MagicMock()
     player_widget.mediaplayer.get_position.return_value = 0.95
     player_widget.mediaplayer.get_time.return_value = 95000
     player_widget.mediaplayer.get_length.return_value = 100000
     player_widget.current_media_path = "/path/to/video.mp4"
+    config.watched_threshold = 0.95
 
     with patch.object(player_widget, "_mark_as_watched") as mock_mark:
-        player_widget.update_ui()
+        player_widget.stop()
         mock_mark.assert_called_once()
 
 

@@ -128,6 +128,7 @@ class VideoPlayerWidget(QWidget):
         self.cached_file_path: str | None = None
         self.pending_resume_position: int = 0
         self.is_watched_marked = False
+        self._is_playback_finished = False
         self.is_muted = False
         self.previous_volume = 80
         self.wakelock = WakeLock()
@@ -484,6 +485,7 @@ class VideoPlayerWidget(QWidget):
         self.stop()
         self.current_media_path = file_path
         self.is_watched_marked = False
+        self._is_playback_finished = False
         self.pending_resume_position = 0
 
         saved_pos = db.get_episode_playback_position(file_path)
@@ -685,10 +687,17 @@ class VideoPlayerWidget(QWidget):
                 curr_time = self.mediaplayer.get_time() // 1000
                 duration = self.mediaplayer.get_length() // 1000
                 if duration > 0:
-                    if (
-                        not self.is_watched_marked
-                        and (curr_time / duration) < config.watched_threshold
-                    ):
+                    is_completed = (
+                        self._is_playback_finished
+                        or (curr_time / duration) >= config.watched_threshold
+                    )
+                    if not self.is_watched_marked and is_completed:
+                        logger.info(
+                            f"Playback completed or exceeded watched threshold. Marking as watched for {self.current_media_path}"
+                        )
+                        self._mark_as_watched()
+                        db.update_episode_playback_position(self.current_media_path, 0)
+                    elif not self.is_watched_marked:
                         if curr_time > 60:
                             logger.info(
                                 f"Saving playback position for {self.current_media_path} at {curr_time}s"
@@ -705,7 +714,7 @@ class VideoPlayerWidget(QWidget):
                             )
                     else:
                         logger.info(
-                            f"Playback completed or exceeded threshold, clearing saved position for {self.current_media_path}"
+                            f"Video already marked watched, clearing saved position for {self.current_media_path}"
                         )
                         db.update_episode_playback_position(self.current_media_path, 0)
 
@@ -716,6 +725,7 @@ class VideoPlayerWidget(QWidget):
         self.seek_slider.setValue(0)
         self.time_label.setText("00:00 / 00:00")
         self._cleanup_cache()
+        self._is_playback_finished = False
 
     def _on_stop_clicked(self) -> None:
         """Called when user clicks the stop button."""
@@ -729,6 +739,7 @@ class VideoPlayerWidget(QWidget):
     @Slot()
     def _handle_playback_finished(self) -> None:
         """Handles the end of playback on the UI thread."""
+        self._is_playback_finished = True
         self.stop()
         self.back_requested.emit()
 
@@ -893,13 +904,6 @@ class VideoPlayerWidget(QWidget):
             self.time_label.setText(time_text)
             self.fs_time_label.setText(time_text)
 
-            # Check 90% threshold
-            if (
-                not self.is_watched_marked
-                and (curr_time / duration) >= config.watched_threshold
-            ):
-                self._mark_as_watched()
-
     def _format_time(self, seconds: int) -> str:
         m, s = divmod(seconds, 60)
         h, m = divmod(m, 60)
@@ -909,9 +913,7 @@ class VideoPlayerWidget(QWidget):
 
     def _mark_as_watched(self) -> None:
         if self.current_media_path:
-            logger.info(
-                f"Marking as watched (90% threshold reached): {self.current_media_path}"
-            )
+            logger.info(f"Marking as watched: {self.current_media_path}")
             db.update_episode_watched_status(self.current_media_path, True)
             self.is_watched_marked = True
             self.watched_marked.emit(self.current_media_path)

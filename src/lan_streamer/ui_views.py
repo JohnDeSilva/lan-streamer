@@ -1580,6 +1580,7 @@ class SettingsDialog(QDialog):
         self.enable_hw_accel_checkbox: QCheckBox = QCheckBox(
             "Enable Hardware Acceleration Decoding"
         )
+        self.watched_threshold_input: QLineEdit = QLineEdit()
 
         self.db_path_input: QLineEdit = QLineEdit()
         self.log_dir_input: QLineEdit = QLineEdit()
@@ -1687,6 +1688,14 @@ class SettingsDialog(QDialog):
         player_layout.addWidget(self.use_embedded_checkbox)
         player_layout.addWidget(self.enable_caching_checkbox)
         player_layout.addWidget(self.enable_hw_accel_checkbox)
+
+        threshold_layout: QHBoxLayout = QHBoxLayout()
+        threshold_layout.addWidget(QLabel("Watched Threshold (% of video length):"))
+        self.watched_threshold_input.setFixedWidth(80)
+        threshold_layout.addWidget(self.watched_threshold_input)
+        threshold_layout.addStretch()
+        player_layout.addLayout(threshold_layout)
+
         player_layout.addStretch()
 
         tab_container.addTab(player_tab, "Video Player")
@@ -1777,6 +1786,7 @@ class SettingsDialog(QDialog):
         self.use_embedded_checkbox.setChecked(config.use_embedded_player)
         self.enable_caching_checkbox.setChecked(config.enable_caching)
         self.enable_hw_accel_checkbox.setChecked(config.enable_hw_accel)
+        self.watched_threshold_input.setText(str(int(config.watched_threshold * 100)))
 
         self.db_path_input.setText(config.database_path)
         self.log_dir_input.setText(config.log_directory)
@@ -1923,6 +1933,14 @@ class SettingsDialog(QDialog):
         config.use_embedded_player = self.use_embedded_checkbox.isChecked()
         config.enable_caching = self.enable_caching_checkbox.isChecked()
         config.enable_hw_accel = self.enable_hw_accel_checkbox.isChecked()
+        try:
+            parsed_threshold = float(self.watched_threshold_input.text().strip())
+            if parsed_threshold > 1.0:
+                config.watched_threshold = parsed_threshold / 100.0
+            else:
+                config.watched_threshold = parsed_threshold
+        except ValueError:
+            pass
 
         if self.db_path_input.text().strip():
             config.database_path = self.db_path_input.text().strip()
