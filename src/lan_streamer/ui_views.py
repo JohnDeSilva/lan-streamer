@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QSizePolicy,
+    QProgressBar,
 )
 from PySide6.QtCore import (
     Qt,
@@ -44,6 +45,8 @@ from .backend import (
     CleanupWorker,
     JellyfinPullWorker,
     JellyfinPushWorker,
+    ScanAllLibrariesWorker,
+    CleanupAllLibrariesWorker,
 )
 
 logger = logging.getLogger(__name__)
@@ -175,6 +178,7 @@ class Controller(QObject):
     metadata_dialog_requested = Signal(str)
     rename_dialog_requested = Signal(str)
     jellyfin_dialog_requested = Signal(str)
+    global_progress_updated = Signal(str, int, int)
 
     file_system_watcher: QFileSystemWatcher
     debounce_timer: QTimer
@@ -190,6 +194,8 @@ class Controller(QObject):
         self.cleanup_worker_instance: Optional[CleanupWorker] = None
         self.pull_worker_instance: Optional[JellyfinPullWorker] = None
         self.push_worker_instance: Optional[JellyfinPushWorker] = None
+        self.scan_all_worker_instance: Optional[ScanAllLibrariesWorker] = None
+        self.cleanup_all_worker_instance: Optional[CleanupAllLibrariesWorker] = None
 
         self.debounce_timer = QTimer(self)
         self.debounce_timer.setSingleShot(True)
@@ -438,6 +444,52 @@ class Controller(QObject):
         self.status_changed.emit(
             f"Watch history pushed successfully: synchronized {pushed_count} episodes."
         )
+
+    def trigger_scan_all(self, force_refresh: bool = False) -> None:
+        if (
+            self.scan_all_worker_instance is not None
+            and self.scan_all_worker_instance.isRunning()
+        ):
+            logger.info("ScanAllLibrariesWorker is already running.")
+            return
+
+        self.status_changed.emit("Scanning all libraries...")
+        self.scan_all_worker_instance = ScanAllLibrariesWorker(
+            force_refresh=force_refresh
+        )
+        self.scan_all_worker_instance.library_progress.connect(
+            self.global_progress_updated.emit
+        )
+        self.scan_all_worker_instance.finished.connect(self._on_scan_all_finished)
+        self.scan_all_worker_instance.error.connect(self._on_worker_error)
+        self.scan_all_worker_instance.start()
+
+    def _on_scan_all_finished(self) -> None:
+        self.status_changed.emit("Global multi-library scan completed successfully.")
+        if self.current_library_name:
+            self.select_library(self.current_library_name)
+
+    def trigger_cleanup_all(self) -> None:
+        if (
+            self.cleanup_all_worker_instance is not None
+            and self.cleanup_all_worker_instance.isRunning()
+        ):
+            logger.info("CleanupAllLibrariesWorker is already running.")
+            return
+
+        self.status_changed.emit("Cleaning up all libraries...")
+        self.cleanup_all_worker_instance = CleanupAllLibrariesWorker()
+        self.cleanup_all_worker_instance.library_progress.connect(
+            self.global_progress_updated.emit
+        )
+        self.cleanup_all_worker_instance.finished.connect(self._on_cleanup_all_finished)
+        self.cleanup_all_worker_instance.error.connect(self._on_worker_error)
+        self.cleanup_all_worker_instance.start()
+
+    def _on_cleanup_all_finished(self) -> None:
+        self.status_changed.emit("Global multi-library cleanup completed successfully.")
+        if self.current_library_name:
+            self.select_library(self.current_library_name)
 
     def _on_worker_error(self, error_message: str) -> None:
         self.status_changed.emit(f"Worker Error: {error_message}")
@@ -703,7 +755,7 @@ class LibraryGridView(QWidget):
 
     @Slot()
     def open_settings_dialog(self) -> None:
-        dialog_instance = SettingsDialog(self)
+        dialog_instance = SettingsDialog(self.controller, self)
         dialog_instance.exec()
         self.populate_libraries(sorted(config.libraries.keys()))
 
@@ -1570,10 +1622,23 @@ class SettingsDialog(QDialog):
     Configuration modal encapsulating system directory management and operational behaviors.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        controller_instance: Optional[Controller] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
+        self.controller: Optional[Controller] = controller_instance
         self.setWindowTitle("Application Configuration")
         self.resize(800, 700)
+
+        self.force_refresh_checkbox: QCheckBox = QCheckBox(
+            "Force refresh metadata (update/search TMDB)"
+        )
+        self.global_progress_bar: QProgressBar = QProgressBar()
+        self.global_progress_bar.setVisible(False)
+        if self.controller is not None:
+            self.controller.global_progress_updated.connect(self._on_global_progress)
 
         self.jellyfin_url_input: QLineEdit = QLineEdit()
         self.jellyfin_key_input: QLineEdit = QLineEdit()
@@ -1774,6 +1839,68 @@ class SettingsDialog(QDialog):
 
         advanced_layout.setRowStretch(11, 1)
         tab_container.addTab(advanced_tab, "Advanced")
+
+        # Library Management Pane
+        management_tab: QWidget = QWidget()
+        management_layout: QVBoxLayout = QVBoxLayout(management_tab)
+        management_layout.setSpacing(15)
+
+        scan_all_button: QPushButton = QPushButton("Scan New Files (All Libraries)")
+        scan_all_button.setObjectName("accentButton")
+        scan_all_button.clicked.connect(self.trigger_global_scan_files)
+        management_layout.addWidget(scan_all_button)
+
+        cleanup_all_button: QPushButton = QPushButton("Cleanup All Libraries")
+        cleanup_all_button.clicked.connect(self.trigger_global_cleanup)
+        management_layout.addWidget(cleanup_all_button)
+
+        # Refresh Metadata Group
+        refresh_frame: QFrame = QFrame()
+        refresh_frame.setStyleSheet(
+            "QFrame { background-color: #222222; border: 1px solid #333333; border-radius: 6px; }"
+        )
+        refresh_layout: QVBoxLayout = QVBoxLayout(refresh_frame)
+        refresh_layout.setSpacing(10)
+
+        refresh_all_button: QPushButton = QPushButton(
+            "Refresh Metadata (All Libraries)"
+        )
+        refresh_all_button.clicked.connect(self.trigger_global_refresh_metadata)
+        refresh_layout.addWidget(refresh_all_button)
+
+        refresh_layout.addWidget(self.force_refresh_checkbox)
+        management_layout.addWidget(refresh_frame)
+
+        # Jellyfin Sync Group
+        jellyfin_frame: QFrame = QFrame()
+        jellyfin_frame.setStyleSheet(
+            "QFrame { background-color: #222222; border: 1px solid #333333; border-radius: 6px; }"
+        )
+        jellyfin_layout: QVBoxLayout = QVBoxLayout(jellyfin_frame)
+        jellyfin_layout.setSpacing(10)
+
+        pull_all_button: QPushButton = QPushButton(
+            "Pull Watch History from Jellyfin (All Libraries)"
+        )
+        pull_all_button.clicked.connect(self.trigger_global_jellyfin_pull)
+        jellyfin_layout.addWidget(pull_all_button)
+
+        push_all_button: QPushButton = QPushButton(
+            "Push Watch History to Jellyfin (All Libraries)"
+        )
+        push_all_button.clicked.connect(self.trigger_global_jellyfin_push)
+        jellyfin_layout.addWidget(push_all_button)
+        management_layout.addWidget(jellyfin_frame)
+
+        management_layout.addSpacing(10)
+        management_layout.addWidget(QLabel("Global Operation Progress:"))
+        self.global_progress_bar.setMinimum(0)
+        self.global_progress_bar.setMaximum(100)
+        self.global_progress_bar.setValue(0)
+        management_layout.addWidget(self.global_progress_bar)
+
+        management_layout.addStretch()
+        tab_container.addTab(management_tab, "Library Management")
 
         main_layout.addWidget(tab_container)
 
@@ -2064,6 +2191,75 @@ class SettingsDialog(QDialog):
                     "Restore Failed",
                     "Failed to restore database. Ensure the file is uncorrupted.",
                 )
+
+    @Slot(str, int, int)
+    def _on_global_progress(
+        self, library_name: str, completed_count: int, total_count: int
+    ) -> None:
+        self.global_progress_bar.setVisible(True)
+        self.global_progress_bar.setMaximum(total_count)
+        self.global_progress_bar.setValue(completed_count)
+        self.global_progress_bar.setFormat(
+            f"Processing '{library_name}' ({completed_count}/{total_count})"
+        )
+
+    @Slot()
+    def trigger_global_scan_files(self) -> None:
+        if self.controller is not None:
+            self.global_progress_bar.setVisible(True)
+            self.global_progress_bar.setMaximum(100)
+            self.global_progress_bar.setValue(0)
+            self.global_progress_bar.setFormat("Starting global file scan...")
+            self.controller.trigger_scan_all(False)
+
+    @Slot()
+    def trigger_global_cleanup(self) -> None:
+        if self.controller is not None:
+            self.global_progress_bar.setVisible(True)
+            self.global_progress_bar.setMaximum(100)
+            self.global_progress_bar.setValue(0)
+            self.global_progress_bar.setFormat("Starting global cleanup...")
+            self.controller.trigger_cleanup_all()
+
+    @Slot()
+    def trigger_global_refresh_metadata(self) -> None:
+        if self.controller is not None:
+            self.global_progress_bar.setVisible(True)
+            self.global_progress_bar.setMaximum(100)
+            self.global_progress_bar.setValue(0)
+            self.global_progress_bar.setFormat("Starting global metadata refresh...")
+            self.controller.trigger_scan_all(self.force_refresh_checkbox.isChecked())
+
+    @Slot()
+    def trigger_global_jellyfin_pull(self) -> None:
+        if self.controller is not None:
+            self.global_progress_bar.setVisible(True)
+            self.global_progress_bar.setMaximum(100)
+            self.global_progress_bar.setValue(50)
+            self.global_progress_bar.setFormat("Pulling history from Jellyfin...")
+            self.controller.trigger_jellyfin_pull()
+            QTimer.singleShot(
+                2000,
+                lambda: self._complete_jellyfin_progress("Jellyfin pull completed."),
+            )
+
+    @Slot()
+    def trigger_global_jellyfin_push(self) -> None:
+        if self.controller is not None:
+            self.global_progress_bar.setVisible(True)
+            self.global_progress_bar.setMaximum(100)
+            self.global_progress_bar.setValue(50)
+            self.global_progress_bar.setFormat("Pushing history to Jellyfin...")
+            self.controller.trigger_jellyfin_push()
+            QTimer.singleShot(
+                2000,
+                lambda: self._complete_jellyfin_progress("Jellyfin push completed."),
+            )
+
+    def _complete_jellyfin_progress(self, message_text: str) -> None:
+        self.global_progress_bar.setMaximum(100)
+        self.global_progress_bar.setValue(100)
+        self.global_progress_bar.setFormat(message_text)
 
 
 class MovieDetailView(QWidget):

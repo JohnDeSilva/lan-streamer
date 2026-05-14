@@ -617,3 +617,91 @@ def test_controller_file_system_monitoring(
         with patch("lan_streamer.ui_views.ScanWorker") as mock_worker_constructor:
             controller_instance.trigger_scan(force_refresh=False)
             mock_worker_constructor.assert_not_called()
+
+
+def test_controller_global_triggers() -> None:
+    controller_instance = Controller()
+    controller_instance.current_library_name = "CosmosLib"
+
+    with patch("lan_streamer.ui_views.ScanAllLibrariesWorker") as mock_scan_all:
+        controller_instance.trigger_scan_all(force_refresh=True)
+        mock_scan_all.assert_called_once_with(force_refresh=True)
+        mock_scan_all.return_value.start.assert_called_once()
+
+        # Test concurrency protection
+        mock_worker = MagicMock()
+        mock_worker.isRunning.return_value = True
+        controller_instance.scan_all_worker_instance = mock_worker
+        controller_instance.trigger_scan_all(force_refresh=False)
+        assert mock_scan_all.call_count == 1
+
+        # Test finished callback
+        with patch.object(controller_instance, "select_library") as mock_select:
+            controller_instance._on_scan_all_finished()
+            mock_select.assert_called_once_with("CosmosLib")
+
+    with patch("lan_streamer.ui_views.CleanupAllLibrariesWorker") as mock_cleanup_all:
+        controller_instance.trigger_cleanup_all()
+        mock_cleanup_all.assert_called_once()
+        mock_cleanup_all.return_value.start.assert_called_once()
+
+        # Test concurrency protection
+        mock_worker_clean = MagicMock()
+        mock_worker_clean.isRunning.return_value = True
+        controller_instance.cleanup_all_worker_instance = mock_worker_clean
+        controller_instance.trigger_cleanup_all()
+        assert mock_cleanup_all.call_count == 1
+
+        # Test finished callback
+        with patch.object(controller_instance, "select_library") as mock_select:
+            controller_instance._on_cleanup_all_finished()
+            mock_select.assert_called_once_with("CosmosLib")
+
+
+def test_settings_dialog_global_actions(qtbot: Any) -> None:
+    controller_instance = Controller()
+    dialog_instance = SettingsDialog(controller_instance)
+    qtbot.addWidget(dialog_instance)
+
+    with patch.object(controller_instance, "trigger_scan_all") as mock_scan_all:
+        dialog_instance.trigger_global_scan_files()
+        mock_scan_all.assert_called_once_with(False)
+        assert (
+            dialog_instance.global_progress_bar.format()
+            == "Starting global file scan..."
+        )
+
+        dialog_instance.force_refresh_checkbox.setChecked(True)
+        dialog_instance.trigger_global_refresh_metadata()
+        mock_scan_all.assert_called_with(True)
+
+    with patch.object(controller_instance, "trigger_cleanup_all") as mock_clean_all:
+        dialog_instance.trigger_global_cleanup()
+        mock_clean_all.assert_called_once()
+
+    with patch.object(controller_instance, "trigger_jellyfin_pull") as mock_pull:
+        dialog_instance.trigger_global_jellyfin_pull()
+        mock_pull.assert_called_once()
+
+    with patch.object(controller_instance, "trigger_jellyfin_push") as mock_push:
+        dialog_instance.trigger_global_jellyfin_push()
+        mock_push.assert_called_once()
+
+    # Test progress slot
+    dialog_instance._on_global_progress("TV_Lib", 1, 5)
+    assert dialog_instance.global_progress_bar.maximum() == 5
+    assert dialog_instance.global_progress_bar.value() == 1
+    assert "TV_Lib" in dialog_instance.global_progress_bar.format()
+
+    # Test jellyfin progress callback
+    dialog_instance._complete_jellyfin_progress("Complete Message")
+    assert dialog_instance.global_progress_bar.value() == 100
+    assert dialog_instance.global_progress_bar.format() == "Complete Message"
+
+    # Test no controller instance handles safely
+    dialog_no_controller = SettingsDialog(None)
+    dialog_no_controller.trigger_global_scan_files()
+    dialog_no_controller.trigger_global_cleanup()
+    dialog_no_controller.trigger_global_refresh_metadata()
+    dialog_no_controller.trigger_global_jellyfin_pull()
+    dialog_no_controller.trigger_global_jellyfin_push()

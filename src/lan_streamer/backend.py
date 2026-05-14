@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 from PySide6.QtCore import QObject, Signal, QThread
 
 from . import db
+from .config import config
 from .jellyfin import jellyfin_client
 from .scanner import scan_directories
 
@@ -132,3 +133,103 @@ class JellyfinPushWorker(QThread):
         except Exception as exc:
             logger.exception("JellyfinPushWorker failed")
             self.error.emit(str(exc))
+
+
+class ScanAllLibrariesWorker(QThread):
+    """Scans all configured libraries sequentially using TMDB for metadata."""
+
+    library_progress = Signal(str, int, int)
+    finished = Signal()
+    error = Signal(str)
+
+    def __init__(
+        self,
+        force_refresh: bool = False,
+        parent: Optional[QObject] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.force_refresh: bool = force_refresh
+
+    def run(self) -> None:
+        try:
+            logger.info("ScanAllLibrariesWorker starting global scan run")
+            libraries_dictionary = config.libraries
+            total_count: int = len(libraries_dictionary)
+            completed_count: int = 0
+
+            jellyfin_data: Optional[Dict[str, Any]] = None
+            if jellyfin_client.is_configured():
+                jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
+
+            for library_name, library_configuration in libraries_dictionary.items():
+                logger.info(f"ScanAllLibrariesWorker scanning library: {library_name}")
+                root_directories: List[str] = list(
+                    library_configuration.get("paths", [])
+                )
+                library_type: str = library_configuration.get("type", "tv")
+
+                existing_library_data: Dict[str, Any] = {}
+                if library_type == "movie":
+                    existing_library_data = db.load_movie_library(library_name)
+                else:
+                    existing_library_data = db.load_library(library_name)
+
+                updated_library_data: Dict[str, Any] = scan_directories(
+                    root_directories,
+                    library_type=library_type,
+                    existing_library=existing_library_data,
+                    jellyfin_data=jellyfin_data,
+                    callback=None,
+                    force_refresh=self.force_refresh,
+                    cleanup=False,
+                )
+
+                if library_type == "movie":
+                    db.save_movie_library(library_name, updated_library_data)
+                else:
+                    db.save_library(library_name, updated_library_data)
+
+                completed_count += 1
+                self.library_progress.emit(library_name, completed_count, total_count)
+
+            logger.info("ScanAllLibrariesWorker finished successfully")
+            self.finished.emit()
+        except Exception as exception_instance:
+            logger.exception("ScanAllLibrariesWorker failed")
+            self.error.emit(str(exception_instance))
+
+
+class CleanupAllLibrariesWorker(QThread):
+    """Removes missing items from the database across all configured libraries sequentially."""
+
+    library_progress = Signal(str, int, int)
+    finished = Signal()
+    error = Signal(str)
+
+    def __init__(self, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+
+    def run(self) -> None:
+        try:
+            logger.info("CleanupAllLibrariesWorker starting global cleanup run")
+            libraries_dictionary = config.libraries
+            total_count: int = len(libraries_dictionary)
+            completed_count: int = 0
+
+            for library_name, library_configuration in libraries_dictionary.items():
+                logger.info(
+                    f"CleanupAllLibrariesWorker cleaning library: {library_name}"
+                )
+                root_directories: List[str] = list(
+                    library_configuration.get("paths", [])
+                )
+                db.cleanup_library(library_name, root_directories)
+
+                completed_count += 1
+                self.library_progress.emit(library_name, completed_count, total_count)
+
+            logger.info("CleanupAllLibrariesWorker finished successfully")
+            self.finished.emit()
+        except Exception as exception_instance:
+            logger.exception("CleanupAllLibrariesWorker failed")
+            self.error.emit(str(exception_instance))

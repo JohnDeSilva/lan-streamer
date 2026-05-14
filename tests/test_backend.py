@@ -5,6 +5,8 @@ from lan_streamer.backend import (
     CleanupWorker,
     JellyfinPullWorker,
     JellyfinPushWorker,
+    ScanAllLibrariesWorker,
+    CleanupAllLibrariesWorker,
 )
 
 
@@ -110,3 +112,97 @@ def test_jellyfin_push_worker_execution() -> None:
         worker.error.connect(emitted_errors.append)
         worker.run()
         assert emitted_errors == ["Push error"]
+
+
+def test_scan_all_libraries_worker_execution() -> None:
+    # Successful run
+    with (
+        patch("lan_streamer.backend.config") as mock_config,
+        patch("lan_streamer.backend.jellyfin_client.is_configured", return_value=True),
+        patch(
+            "lan_streamer.backend.jellyfin_client.get_jellyfin_correlation_data",
+            return_value={"map": {}},
+        ),
+        patch("lan_streamer.backend.db.load_library", return_value={"old_tv": {}}),
+        patch(
+            "lan_streamer.backend.db.load_movie_library",
+            return_value={"old_movie": {}},
+        ),
+        patch(
+            "lan_streamer.backend.scan_directories", return_value={"new_data": {}}
+        ) as mock_scan,
+        patch("lan_streamer.backend.db.save_library") as mock_save_tv,
+        patch("lan_streamer.backend.db.save_movie_library") as mock_save_movie,
+    ):
+        mock_config.libraries = {
+            "TV_Lib": {"paths": ["/tv_path"], "type": "tv"},
+            "Movie_Lib": {"paths": ["/movie_path"], "type": "movie"},
+        }
+        progress_emitted: List[tuple] = []
+        finished_emitted: List[bool] = []
+
+        worker = ScanAllLibrariesWorker(force_refresh=True)
+        worker.library_progress.connect(
+            lambda name, comp, tot: progress_emitted.append((name, comp, tot))
+        )
+        worker.finished.connect(lambda: finished_emitted.append(True))
+        worker.run()
+
+        assert len(mock_scan.call_args_list) == 2
+        mock_save_tv.assert_called_once_with("TV_Lib", {"new_data": {}})
+        mock_save_movie.assert_called_once_with("Movie_Lib", {"new_data": {}})
+        assert progress_emitted == [("TV_Lib", 1, 2), ("Movie_Lib", 2, 2)]
+        assert finished_emitted == [True]
+
+    # Exception run
+    with patch("lan_streamer.backend.config") as mock_config:
+        mock_config.libraries = {"TV_Lib": {}}
+        with patch(
+            "lan_streamer.backend.scan_directories",
+            side_effect=Exception("Global scan error"),
+        ):
+            errors_emitted: List[str] = []
+            worker = ScanAllLibrariesWorker()
+            worker.error.connect(errors_emitted.append)
+            worker.run()
+            assert errors_emitted == ["Global scan error"]
+
+
+def test_cleanup_all_libraries_worker_execution() -> None:
+    # Successful run
+    with (
+        patch("lan_streamer.backend.config") as mock_config,
+        patch("lan_streamer.backend.db.cleanup_library") as mock_clean,
+    ):
+        mock_config.libraries = {
+            "LibA": {"paths": ["/path_a"]},
+            "LibB": {"paths": ["/path_b"]},
+        }
+        progress_emitted: List[tuple] = []
+        finished_emitted: List[bool] = []
+
+        worker = CleanupAllLibrariesWorker()
+        worker.library_progress.connect(
+            lambda name, comp, tot: progress_emitted.append((name, comp, tot))
+        )
+        worker.finished.connect(lambda: finished_emitted.append(True))
+        worker.run()
+
+        assert mock_clean.call_count == 2
+        mock_clean.assert_any_call("LibA", ["/path_a"])
+        mock_clean.assert_any_call("LibB", ["/path_b"])
+        assert progress_emitted == [("LibA", 1, 2), ("LibB", 2, 2)]
+        assert finished_emitted == [True]
+
+    # Exception run
+    with patch("lan_streamer.backend.config") as mock_config:
+        mock_config.libraries = {"LibA": {}}
+        with patch(
+            "lan_streamer.backend.db.cleanup_library",
+            side_effect=Exception("Global clean error"),
+        ):
+            errors_emitted: List[str] = []
+            worker = CleanupAllLibrariesWorker()
+            worker.error.connect(errors_emitted.append)
+            worker.run()
+            assert errors_emitted == ["Global clean error"]
