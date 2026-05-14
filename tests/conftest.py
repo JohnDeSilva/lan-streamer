@@ -1,5 +1,6 @@
 import os
 import pytest
+import subprocess
 from unittest.mock import patch
 
 # Force offscreen rendering so individual tests run seamlessly in GUI-less IDE test explorers
@@ -50,3 +51,73 @@ def protect_user_dirs(tmp_path) -> None:
         # Dispose engine after test too
         if lan_streamer.db._engine is not None:
             lan_streamer.db._engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def generated_video_asset(tmp_path_factory) -> str:
+    """
+    Dynamically generates a realistic 1x1 multi-language subtitle MKV test asset via ffmpeg.
+    Returns the absolute file path to the asset. Skips tests requiring it if ffmpeg is not available.
+    """
+    asset_dir = tmp_path_factory.mktemp("video_assets")
+    output_mkv = asset_dir / "test_video.mkv"
+
+    subs = [
+        ("spa", "Spanish", "Pista de subtítulos en español"),
+        ("fre", "French", "Piste de sous-titres en français"),
+        ("ger", "German", "Deutsche Untertitelspur"),
+        ("eng", "English (Forced)", "Forced English Subtitle Track"),
+        ("eng", "English [Signs]", "English Signs Subtitle Track"),
+        ("eng", "English (Songs)", "English Songs Subtitle Track"),
+        ("eng", "English", "Main Standard English Subtitle Track"),
+    ]
+
+    srt_inputs = []
+    maps = ["-map", "0:v"]
+    metadata_args = []
+
+    for idx, (lang, title, text) in enumerate(subs):
+        srt_file = asset_dir / f"sub{idx}.srt"
+        srt_file.write_text(
+            f"1\n00:00:00,000 --> 00:00:08,000\n{text}\n", encoding="utf-8"
+        )
+        srt_inputs.extend(["-i", str(srt_file)])
+        maps.extend(["-map", f"{idx + 1}:s"])
+        metadata_args.extend(
+            [
+                f"-metadata:s:s:{idx}",
+                f"language={lang}",
+                f"-metadata:s:s:{idx}",
+                f"title={title}",
+            ]
+        )
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:s=1x1:d=10",
+        *srt_inputs,
+        *maps,
+        *metadata_args,
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv444p",
+        "-c:s",
+        "srt",
+        str(output_mkv),
+    ]
+
+    try:
+        subprocess.run(
+            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    except Exception:
+        pytest.skip(
+            "ffmpeg is not available or failed to run to generate video test asset."
+        )
+
+    return str(output_mkv)

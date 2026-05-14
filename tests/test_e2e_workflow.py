@@ -23,7 +23,7 @@ from lan_streamer.config import config
 
 
 @pytest.fixture
-def sample_library_dictionary() -> Dict[str, Any]:
+def sample_library_dictionary(generated_video_asset: str) -> Dict[str, Any]:
     return {
         "Cosmos": {
             "metadata": {
@@ -36,8 +36,8 @@ def sample_library_dictionary() -> Dict[str, Any]:
                 "Season 1": {
                     "episodes": [
                         {
-                            "name": "ep1.mkv",
-                            "path": "/media/Cosmos/Season 1/ep1.mkv",
+                            "name": "test_video.mkv",
+                            "path": generated_video_asset,
                             "watched": False,
                             "tmdb_number": 1,
                             "tmdb_name": "The Shores of the Cosmic Ocean",
@@ -233,7 +233,7 @@ def test_series_detail_view_rendering(
 
 
 def test_e2e_checkbox_toggled_marks_watched(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any
+    sample_library_dictionary: Dict[str, Any], qtbot: Any, generated_video_asset: str
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -256,7 +256,7 @@ def test_e2e_checkbox_toggled_marks_watched(
 
     with patch("lan_streamer.db.update_episode_watched_status") as mock_db:
         checkbox_instance.setChecked(True)
-        mock_db.assert_called_once_with("/media/Cosmos/Season 1/ep1.mkv", True)
+        mock_db.assert_called_once_with(generated_video_asset, True)
         assert (
             controller_instance.cached_library_data["Cosmos"]["seasons"]["Season 1"][
                 "episodes"
@@ -266,7 +266,7 @@ def test_e2e_checkbox_toggled_marks_watched(
 
 
 def test_e2e_title_click_triggers_playback(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any
+    sample_library_dictionary: Dict[str, Any], qtbot: Any, generated_video_asset: str
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -280,7 +280,7 @@ def test_e2e_title_click_triggers_playback(
     controller_instance.playback_requested.connect(requested_paths_emitted.append)
 
     detail_view.trigger_episode_playback_by_row(season_tab_index=0, row_index=0)
-    assert requested_paths_emitted == ["/media/Cosmos/Season 1/ep1.mkv"]
+    assert requested_paths_emitted == [generated_video_asset]
 
 
 def test_series_detail_view_bulk_actions_and_tab_selection(qtbot: Any) -> None:
@@ -425,7 +425,7 @@ def test_jellyfin_match_dialog_workflow(
 
 
 def test_rename_preview_dialog_workflow(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any
+    sample_library_dictionary: Dict[str, Any], qtbot: Any, generated_video_asset: str
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -434,10 +434,13 @@ def test_rename_preview_dialog_workflow(
     with patch("lan_streamer.renamer.get_rename_preview") as mock_preview:
         mock_preview.return_value = [
             {
-                "old_name": "ep1.mkv",
+                "old_name": "test_video.mkv",
                 "new_name": "Cosmos S01E01 - The Shores of the Cosmic Ocean.mkv",
-                "old_path": "/media/Cosmos/Season 1/ep1.mkv",
-                "new_path": "/media/Cosmos/Season 1/Cosmos S01E01 - The Shores of the Cosmic Ocean.mkv",
+                "old_path": generated_video_asset,
+                "new_path": generated_video_asset.replace(
+                    "test_video.mkv",
+                    "Cosmos S01E01 - The Shores of the Cosmic Ocean.mkv",
+                ),
             }
         ]
 
@@ -447,7 +450,7 @@ def test_rename_preview_dialog_workflow(
         assert dialog_instance.preview_table.rowCount() == 1
         preview_item = dialog_instance.preview_table.item(0, 0)
         assert preview_item is not None
-        assert preview_item.text() == "ep1.mkv"
+        assert preview_item.text() == "test_video.mkv"
 
         def side_effect_perform(
             preview_results: List[Dict[str, Any]], success_callback: Any
@@ -772,7 +775,7 @@ def test_settings_dialog_global_actions(qtbot: Any) -> None:
 
 
 def test_episode_metadata_match_dialog_workflow(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any
+    sample_library_dictionary: Dict[str, Any], qtbot: Any, generated_video_asset: str
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -781,7 +784,7 @@ def test_episode_metadata_match_dialog_workflow(
     # Pre-assign tmdb_identifier to series metadata to enable episode fetching
     sample_library_dictionary["Cosmos"]["metadata"]["tmdb_identifier"] = "888"
 
-    episode_target_path: str = "/media/Cosmos/Season 1/ep1.mkv"
+    episode_target_path: str = generated_video_asset
 
     with patch("lan_streamer.ui_views.tmdb_client.get_seasons") as mock_seasons:
         mock_seasons.return_value = [{"season_number": 1, "name": "Season 1"}]
@@ -834,7 +837,7 @@ def test_episode_metadata_match_dialog_workflow(
 
 
 def test_series_detail_view_episode_match_button(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any
+    sample_library_dictionary: Dict[str, Any], qtbot: Any, generated_video_asset: str
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -857,7 +860,7 @@ def test_series_detail_view_episode_match_button(
     assert match_button is not None
     match_button.click()
 
-    assert emitted_signals == [("Cosmos", "/media/Cosmos/Season 1/ep1.mkv")]
+    assert emitted_signals == [("Cosmos", generated_video_asset)]
 
 
 def test_apply_metadata_match_refreshes_episodes() -> None:

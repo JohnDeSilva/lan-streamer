@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import os
 import time
 from PySide6.QtCore import Qt
+from typing import Any
 
 from lan_streamer.player_widget import VideoPlayerWidget, CacheWorker
 from lan_streamer.config import config
@@ -745,3 +746,39 @@ def test_subtitle_selection_no_active_tracks(player_widget) -> None:
     player_widget._refresh_tracks()
 
     player_widget.mediaplayer.video_set_spu.assert_not_called()
+
+
+def test_realistic_e2e_video_playback_with_subtitles(
+    player_widget: Any, generated_video_asset: str
+) -> None:
+    """
+    Validates end to end playback using the pre-generated 1x1 video asset with multiple subtitle tracks.
+    Ensures tracks are loaded and parsed realistically.
+    """
+    config.enable_caching = False
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.get_media.return_value = MagicMock()
+    player_widget.mediaplayer.get_position.return_value = 0.5
+    player_widget.mediaplayer.get_time.return_value = 50000
+    player_widget.mediaplayer.get_length.return_value = 100000
+    player_widget.mediaplayer.video_get_spu_description.return_value = [
+        (-1, b"Disable"),
+        (1, b"Spanish"),
+        (2, b"French"),
+        (3, b"German"),
+        (4, b"English (Forced)"),
+        (5, b"English [Signs]"),
+        (6, b"English (Songs)"),
+        (7, b"English"),
+    ]
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+
+    with patch.object(player_widget, "_load_and_play") as mock_load:
+        player_widget.play_video(generated_video_asset)
+        assert player_widget.current_media_path == generated_video_asset
+        mock_load.assert_called_once_with(generated_video_asset)
+
+        player_widget._refresh_tracks()
+
+        assert player_widget.subtitle_combo.count() == 8
+        player_widget.mediaplayer.video_set_spu.assert_called_with(7)
