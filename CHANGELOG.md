@@ -1,3 +1,10 @@
+## 0.13.1 (2026-05-13)
+
+### Fix
+
+- **player**: fixes bug where marking a episode as watched would kick you out of the player
+- **scanner,jellyfin,tmdb**: removes automaticscanning,syncing,and new file search
+
 ## 0.13.0 (2026-05-13)
 
 ### Feat
