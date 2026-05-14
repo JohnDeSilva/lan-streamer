@@ -644,12 +644,52 @@ class VideoPlayerWidget(QWidget):
         self.subtitle_combo.blockSignals(True)
         self.subtitle_combo.clear()
         subtitle_tracks = self.mediaplayer.video_get_spu_description()
-        for track_id, track_name in subtitle_tracks:
-            self.subtitle_combo.addItem(
-                track_name.decode() if isinstance(track_name, bytes) else track_name,
-                track_id,
-            )
-        current_sub = self.mediaplayer.video_get_spu()
+        decoded_subs = []
+        if subtitle_tracks:
+            for track_id, track_name in subtitle_tracks:
+                decoded_name = (
+                    track_name.decode() if isinstance(track_name, bytes) else track_name
+                )
+                self.subtitle_combo.addItem(decoded_name, track_id)
+                decoded_subs.append((track_id, decoded_name))
+
+        selected_spu = None
+        active_subs = [
+            (t_id, t_name)
+            for t_id, t_name in decoded_subs
+            if t_id != -1 and "disable" not in t_name.lower()
+        ]
+
+        if active_subs:
+            english_subs = [
+                (t_id, t_name)
+                for t_id, t_name in active_subs
+                if "english" in t_name.lower()
+            ]
+            if english_subs:
+                if len(english_subs) == 1:
+                    selected_spu = english_subs[0][0]
+                else:
+                    excluded_words = ["forced", "signs", "songs"]
+                    preferred_subs = [
+                        (t_id, t_name)
+                        for t_id, t_name in english_subs
+                        if not any(word in t_name.lower() for word in excluded_words)
+                    ]
+                    if preferred_subs:
+                        selected_spu = preferred_subs[0][0]
+                    else:
+                        selected_spu = english_subs[0][0]
+            else:
+                selected_spu = active_subs[0][0]
+
+        if selected_spu is not None:
+            logger.info(f"Automatically selecting subtitle track ID: {selected_spu}")
+            self.mediaplayer.video_set_spu(selected_spu)
+            current_sub = selected_spu
+        else:
+            current_sub = self.mediaplayer.video_get_spu()
+
         idx = self.subtitle_combo.findData(current_sub)
         if idx != -1:
             self.subtitle_combo.setCurrentIndex(idx)

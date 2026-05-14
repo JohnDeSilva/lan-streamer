@@ -670,3 +670,78 @@ def test_ask_resume_playback(player_widget) -> None:
                 assert len(added_buttons) == 2
                 assert added_buttons[0].text() == "Resume Playback"
                 assert added_buttons[1].text() == "Start from Beginning"
+
+
+def test_subtitle_selection_single_english(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = []
+    player_widget.mediaplayer.video_get_spu_description.return_value = [
+        (-1, b"Disable"),
+        (1, b"English"),
+        (2, b"Spanish"),
+    ]
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+
+    player_widget._refresh_tracks()
+
+    player_widget.mediaplayer.video_set_spu.assert_called_once_with(1)
+
+
+def test_subtitle_selection_multiple_english_filtered(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = []
+    player_widget.mediaplayer.video_get_spu_description.return_value = [
+        (-1, b"Disable"),
+        (1, b"English (Forced)"),
+        (2, b"English [Signs]"),
+        (3, b"English (Songs)"),
+        (4, b"English"),
+    ]
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+
+    player_widget._refresh_tracks()
+
+    player_widget.mediaplayer.video_set_spu.assert_called_once_with(4)
+
+
+def test_subtitle_selection_multiple_english_all_excluded(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = []
+    player_widget.mediaplayer.video_get_spu_description.return_value = [
+        (-1, b"Disable"),
+        (1, b"English (Forced)"),
+        (2, b"English [Signs]"),
+    ]
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+
+    player_widget._refresh_tracks()
+
+    # Should fallback to the first English track if all contain excluded words
+    player_widget.mediaplayer.video_set_spu.assert_called_once_with(1)
+
+
+def test_subtitle_selection_no_english_fallback(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = []
+    player_widget.mediaplayer.video_get_spu_description.return_value = [
+        (-1, b"Disable"),
+        (2, b"French"),
+    ]
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+
+    player_widget._refresh_tracks()
+
+    player_widget.mediaplayer.video_set_spu.assert_called_once_with(2)
+
+
+def test_subtitle_selection_no_active_tracks(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = []
+    player_widget.mediaplayer.video_get_spu_description.return_value = [
+        (-1, b"Disable"),
+    ]
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+
+    player_widget._refresh_tracks()
+
+    player_widget.mediaplayer.video_set_spu.assert_not_called()
