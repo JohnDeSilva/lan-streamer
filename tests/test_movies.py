@@ -346,7 +346,7 @@ def test_movie_scanner_flat_dict_integration() -> None:
     with patch("lan_streamer.db.update_episode_watched_status"):
         controller.mark_episode_watched("/movies/Inception/Inception.mkv", False)
 
-    assert emitted_movies == ["Inception (2010)"]
+    assert emitted_movies == []
     assert res["Inception (2010)"]["watched"] is False
 
 

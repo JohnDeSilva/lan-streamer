@@ -214,7 +214,9 @@ def test_series_detail_view_rendering(
         assert detail_view.match_jellyfin_button.isHidden() is False
 
     # Verify table row properties
-    table_widget: Optional[Any] = detail_view.seasons_tab_widget.widget(0)
+    page_widget: Optional[Any] = detail_view.seasons_tab_widget.widget(0)
+    assert page_widget is not None
+    table_widget: Optional[Any] = page_widget.findChild(QTableWidget)
     assert isinstance(table_widget, QTableWidget)
     assert table_widget.columnCount() == 5
     assert table_widget.rowCount() == 2
@@ -240,7 +242,9 @@ def test_e2e_checkbox_toggled_marks_watched(
     qtbot.addWidget(detail_view)
     detail_view.populate_series_details("Cosmos")
 
-    table_widget: Optional[Any] = detail_view.seasons_tab_widget.widget(0)
+    page_widget: Optional[Any] = detail_view.seasons_tab_widget.widget(0)
+    assert page_widget is not None
+    table_widget: Optional[Any] = page_widget.findChild(QTableWidget)
     assert isinstance(table_widget, QTableWidget)
 
     # Locate inner checkbox widget cleanly in column 4
@@ -276,6 +280,65 @@ def test_e2e_title_click_triggers_playback(
 
     detail_view.trigger_episode_playback_by_row(season_tab_index=0, row_index=0)
     assert requested_paths_emitted == ["/media/Cosmos/Season 1/ep1.mkv"]
+
+
+def test_series_detail_view_bulk_actions_and_tab_selection(qtbot: Any) -> None:
+    multi_season_library: Dict[str, Any] = {
+        "Cosmos": {
+            "metadata": {"tmdb_name": "Cosmos"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {"path": "/p1", "watched": True},
+                        {"path": "/p2", "watched": True},
+                    ]
+                },
+                "Season 2": {
+                    "episodes": [
+                        {"path": "/p3", "watched": False},
+                        {"path": "/p4", "watched": False},
+                    ]
+                },
+            },
+        }
+    }
+
+    controller_instance = Controller()
+    controller_instance.current_library_name = "Test Lib"
+    controller_instance.cached_library_data = multi_season_library
+    controller_instance.selected_series_name = "Cosmos"
+    controller_instance._cache_series_metrics()
+
+    detail_view = SeriesDetailView(controller_instance)
+    qtbot.addWidget(detail_view)
+
+    # Test auto selection of latest unwatched season tab on opening
+    detail_view.populate_series_details("Cosmos")
+    assert detail_view.seasons_tab_widget.currentIndex() == 1  # Season 2 has unwatched
+
+    # Test Mark season as watched button
+    with patch("lan_streamer.db.update_season_watched_status") as mock_db_season:
+        season_button: Optional[QPushButton] = detail_view.findChild(
+            QPushButton, "markSeasonWatchedButton_Season 2"
+        )
+        assert season_button is not None
+        season_button.click()
+        mock_db_season.assert_called_once_with("Test Lib", "Cosmos", "Season 2", True)
+        assert (
+            multi_season_library["Cosmos"]["seasons"]["Season 2"]["episodes"][0][
+                "watched"
+            ]
+            is True
+        )
+
+    # Test Mark Series as Watched button
+    with patch("lan_streamer.db.update_series_watched_status") as mock_db_series:
+        series_button: Optional[QPushButton] = detail_view.findChild(
+            QPushButton, "markSeriesWatchedButton"
+        )
+        assert series_button is not None
+        series_button.click()
+        mock_db_series.assert_called_once_with("Test Lib", "Cosmos", True)
 
 
 def test_metadata_match_dialog_workflow(

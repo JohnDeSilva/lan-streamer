@@ -323,14 +323,38 @@ class Controller(QObject):
         self._cache_series_metrics()
 
         if not self.is_video_playing:
-            if self.selected_series_name:
-                target_record = self.cached_library_data.get(
-                    self.selected_series_name, {}
-                )
-                if "seasons" not in target_record:
-                    self.movie_selected.emit(self.selected_series_name)
-                else:
-                    self.series_selected.emit(self.selected_series_name)
+            self.library_loaded.emit()
+
+    def mark_season_watched(self, series_name: str, season_name: str) -> None:
+        logger.info(
+            f"Controller marking season watched for series '{series_name}', season '{season_name}'"
+        )
+        db.update_season_watched_status(
+            self.current_library_name, series_name, season_name, True
+        )
+
+        series_data: Dict[str, Any] = self.cached_library_data.get(series_name, {})
+        season_data: Dict[str, Any] = series_data.get("seasons", {}).get(
+            season_name, {}
+        )
+        for episode_record in season_data.get("episodes", []):
+            episode_record["watched"] = True
+
+        self._cache_series_metrics()
+        if not self.is_video_playing:
+            self.library_loaded.emit()
+
+    def mark_series_watched(self, series_name: str) -> None:
+        logger.info(f"Controller marking entire series watched: '{series_name}'")
+        db.update_series_watched_status(self.current_library_name, series_name, True)
+
+        series_data: Dict[str, Any] = self.cached_library_data.get(series_name, {})
+        for season_data in series_data.get("seasons", {}).values():
+            for episode_record in season_data.get("episodes", []):
+                episode_record["watched"] = True
+
+        self._cache_series_metrics()
+        if not self.is_video_playing:
             self.library_loaded.emit()
 
     def trigger_scan(self, force_refresh: bool = False) -> None:
@@ -977,6 +1001,11 @@ class SeriesDetailView(QWidget):
         self.match_jellyfin_button: QPushButton = QPushButton(
             "Match Jellyfin Watch History..."
         )
+        self.mark_series_watched_button: QPushButton = QPushButton(
+            "Mark Series as Watched"
+        )
+        self._current_series_name: str = ""
+        self._season_tables: Dict[str, QTableWidget] = {}
 
         self._setup_ui()
         self.controller.series_selected.connect(self.populate_series_details)
@@ -1048,6 +1077,10 @@ class SeriesDetailView(QWidget):
         )
         actions_row_layout.addWidget(rename_files_button)
 
+        self.mark_series_watched_button.setObjectName("markSeriesWatchedButton")
+        self.mark_series_watched_button.clicked.connect(self._on_mark_series_watched)
+        actions_row_layout.addWidget(self.mark_series_watched_button)
+
         actions_row_layout.addStretch()
         info_layout.addLayout(actions_row_layout)
 
@@ -1064,10 +1097,48 @@ class SeriesDetailView(QWidget):
         # Seasons Table Container Tabs
         main_layout.addWidget(self.seasons_tab_widget)
 
+    @Slot()
+    def _on_mark_series_watched(self) -> None:
+        if not self.controller.selected_series_name:
+            return
+        self.controller.mark_series_watched(self.controller.selected_series_name)
+        for table_widget in self._season_tables.values():
+            for row in range(table_widget.rowCount()):
+                cell_widget = table_widget.cellWidget(row, 4)
+                if cell_widget:
+                    checkbox = cell_widget.findChild(QCheckBox)
+                    if checkbox and not checkbox.isChecked():
+                        checkbox.blockSignals(True)
+                        checkbox.setChecked(True)
+                        checkbox.blockSignals(False)
+
+    @Slot(str)
+    def _on_mark_season_watched(self, season_name: str) -> None:
+        if not self.controller.selected_series_name:
+            return
+        self.controller.mark_season_watched(
+            self.controller.selected_series_name, season_name
+        )
+        table_widget = self._season_tables.get(season_name)
+        if table_widget:
+            for row in range(table_widget.rowCount()):
+                cell_widget = table_widget.cellWidget(row, 4)
+                if cell_widget:
+                    checkbox = cell_widget.findChild(QCheckBox)
+                    if checkbox and not checkbox.isChecked():
+                        checkbox.blockSignals(True)
+                        checkbox.setChecked(True)
+                        checkbox.blockSignals(False)
+
     @Slot(str)
     def populate_series_details(self, series_name: str) -> None:
         if getattr(self.controller, "is_video_playing", False):
             return
+
+        is_opening: bool = self._current_series_name != series_name
+        self._current_series_name = series_name
+        self._season_tables = {}
+
         series_record: Dict[str, Any] = self.controller.cached_library_data.get(
             series_name, {}
         )
@@ -1233,7 +1304,44 @@ class SeriesDetailView(QWidget):
                 checkbox_layout.addWidget(watched_checkbox)
                 episode_table.setCellWidget(row_index, 4, checkbox_container)
 
-            self.seasons_tab_widget.addTab(episode_table, season_name)
+            # Create season_page container to house the table and mark season watched button cleanly
+            season_page: QWidget = QWidget()
+            season_layout: QVBoxLayout = QVBoxLayout(season_page)
+            season_layout.setContentsMargins(0, 5, 0, 0)
+            season_layout.setSpacing(10)
+
+            season_actions_layout: QHBoxLayout = QHBoxLayout()
+            mark_season_button: QPushButton = QPushButton("Mark season as watched")
+            mark_season_button.setObjectName(f"markSeasonWatchedButton_{season_name}")
+
+            def make_season_watched_slot(
+                target_season: str,
+            ) -> Callable[[], None]:
+                return lambda: self._on_mark_season_watched(target_season)
+
+            mark_season_button.clicked.connect(make_season_watched_slot(season_name))
+            season_actions_layout.addWidget(mark_season_button)
+            season_actions_layout.addStretch()
+            season_layout.addLayout(season_actions_layout)
+
+            self._season_tables[season_name] = episode_table
+            season_layout.addWidget(episode_table)
+
+            self.seasons_tab_widget.addTab(season_page, season_name)
+
+        if is_opening and sorted_season_names:
+            target_tab_index: int = 0
+            for index_position, season_name in enumerate(sorted_season_names):
+                season_data_record = seasons_dictionary.get(season_name, {})
+                has_unwatched: bool = False
+                for ep in season_data_record.get("episodes", []):
+                    if not ep.get("watched"):
+                        has_unwatched = True
+                        break
+                if has_unwatched:
+                    target_tab_index = index_position
+                    break
+            self.seasons_tab_widget.setCurrentIndex(target_tab_index)
 
     def trigger_episode_playback_by_row(
         self, season_tab_index: int, row_index: int
@@ -1242,8 +1350,10 @@ class SeriesDetailView(QWidget):
         target_widget: Optional[QWidget] = self.seasons_tab_widget.widget(
             season_tab_index
         )
-        if isinstance(target_widget, QTableWidget):
-            target_widget.cellClicked.emit(row_index, 1)
+        if target_widget:
+            table_target = target_widget.findChild(QTableWidget)
+            if table_target:
+                table_target.cellClicked.emit(row_index, 1)
 
 
 class MetadataMatchDialog(QDialog):
