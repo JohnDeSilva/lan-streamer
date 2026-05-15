@@ -1,3 +1,13 @@
+## 0.14.1 (2026-05-15)
+
+### Fix
+
+- **player**: fixes bug where controls stayed on screen after pausing
+
+### Refactor
+
+- splits larger functions into smaller help function to improve readbility and testability
+
 ## 0.14.0 (2026-05-14)
 
 ### Feat
