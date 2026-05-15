@@ -264,9 +264,8 @@ def test_fullscreen_mouse_move(player_widget, qtbot) -> None:
         assert not player_widget.fullscreen_overlay.isHidden()
         assert player_widget.hide_controls_timer.isActive()
 
-        # Simulate timer timeout
+        # Simulate timer timeout (controls hide regardless of playing/paused state)
         player_widget.mediaplayer = MagicMock()
-        player_widget.mediaplayer.is_playing.return_value = True
         player_widget._hide_fullscreen_controls()
 
         assert player_widget.fullscreen_overlay.isHidden()

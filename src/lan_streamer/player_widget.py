@@ -389,11 +389,7 @@ class VideoPlayerWidget(QWidget):
         self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def _hide_fullscreen_controls(self) -> None:
-        if (
-            self.window().isFullScreen()
-            and self.mediaplayer
-            and self.mediaplayer.is_playing()
-        ):
+        if self.window().isFullScreen() and self.mediaplayer:
             self.fullscreen_overlay.hide()
             self.setCursor(Qt.CursorShape.BlankCursor)
 
