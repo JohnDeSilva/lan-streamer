@@ -1708,3 +1708,171 @@ def test_resolve_episode_jellyfin_id_series_id_map_sxxexx() -> None:
         },
     )
     assert jf_id == "jf_ep_s01e03"
+
+
+# ---------------------------------------------------------------------------
+# get_detailed_file_info
+# ---------------------------------------------------------------------------
+
+
+def test_get_detailed_file_info_missing_path() -> None:
+    """Missing or empty path should return a zero-filled info dict."""
+    info = scanner.get_detailed_file_info("")
+    assert info["size_bytes"] == 0
+    assert info["resolution"] == "Unknown"
+    assert info["audio_tracks"] == []
+
+    info2 = scanner.get_detailed_file_info("/nonexistent/file.mkv")
+    assert info2["size_bytes"] == 0
+
+
+def test_get_detailed_file_info_ffprobe_success(tmp_path: Path) -> None:
+    """When ffprobe succeeds, resolution and track data should be populated."""
+    import json
+
+    video_file = tmp_path / "movie.mkv"
+    video_file.write_bytes(b"\x00" * 16)  # Non-empty file
+
+    ffprobe_output = json.dumps(
+        {
+            "streams": [
+                {
+                    "index": 0,
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "width": 1920,
+                    "height": 1080,
+                    "tags": {},
+                },
+                {
+                    "index": 1,
+                    "codec_type": "audio",
+                    "codec_name": "aac",
+                    "tags": {"language": "eng", "title": "English"},
+                },
+                {
+                    "index": 2,
+                    "codec_type": "subtitle",
+                    "codec_name": "srt",
+                    "tags": {"language": "spa", "title": "Spanish"},
+                },
+            ],
+            "format": {},
+        }
+    )
+
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = ffprobe_output
+
+    with patch("subprocess.run", return_value=mock_result):
+        info = scanner.get_detailed_file_info(str(video_file))
+
+    assert info["resolution"] == "1920x1080"
+    assert info["video_codec"] == "h264"
+    assert len(info["audio_tracks"]) == 1
+    assert info["audio_tracks"][0]["language"] == "eng"
+    assert len(info["subtitle_tracks"]) == 1
+    assert info["subtitle_tracks"][0]["language"] == "spa"
+
+
+def test_get_detailed_file_info_ffprobe_exception(tmp_path: Path) -> None:
+    """Exceptions from ffprobe should be swallowed; info dict returned with defaults."""
+
+    video_file = tmp_path / "movie.mkv"
+    video_file.write_bytes(b"\x00" * 16)
+
+    with patch("subprocess.run", side_effect=OSError("ffprobe not found")):
+        info = scanner.get_detailed_file_info(str(video_file))
+
+    assert info["resolution"] == "Unknown"
+    assert info["audio_tracks"] == []
+
+
+def test_get_detailed_file_info_ffprobe_nonzero_return(tmp_path: Path) -> None:
+    """Non-zero ffprobe returncode should leave resolution as Unknown."""
+
+    video_file = tmp_path / "bad.mkv"
+    video_file.write_bytes(b"\x00" * 8)
+
+    mock_result = MagicMock()
+    mock_result.returncode = 1
+    mock_result.stdout = ""
+
+    with patch("subprocess.run", return_value=mock_result):
+        info = scanner.get_detailed_file_info(str(video_file))
+
+    assert info["resolution"] == "Unknown"
+
+
+# ---------------------------------------------------------------------------
+# _extract_video_runtime
+# ---------------------------------------------------------------------------
+
+
+def test_extract_video_runtime_missing_file() -> None:
+    """Empty path and non-existent path should return 0."""
+    from lan_streamer.scanner import _extract_video_runtime
+
+    assert _extract_video_runtime("") == 0
+    assert _extract_video_runtime("/nonexistent/video.mkv") == 0
+
+
+def test_extract_video_runtime_ffprobe_success_explicit_minutes(tmp_path: Path) -> None:
+    """Successful ffprobe output should be converted from seconds to minutes."""
+    from lan_streamer.scanner import _extract_video_runtime
+
+    video_file = tmp_path / "video.mkv"
+    video_file.touch()
+
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = "3660.0\n"  # 61 minutes
+
+    with patch("subprocess.run", return_value=mock_result):
+        runtime = _extract_video_runtime(str(video_file))
+
+    assert runtime == 61
+
+
+def test_extract_video_runtime_ffprobe_fails_vlc_fallback(tmp_path: Path) -> None:
+    """When ffprobe fails, the function should fall back to vlc."""
+    from lan_streamer.scanner import _extract_video_runtime
+
+    video_file = tmp_path / "video.mkv"
+    video_file.touch()
+
+    ffprobe_result = MagicMock()
+    ffprobe_result.returncode = 1
+    ffprobe_result.stdout = ""
+
+    mock_vlc = MagicMock()
+    mock_instance = MagicMock()
+    mock_media = MagicMock()
+    mock_media.get_duration.return_value = 5400000  # 90 minutes in ms
+    mock_instance.media_new.return_value = mock_media
+    mock_vlc.Instance.return_value = mock_instance
+
+    with (
+        patch("subprocess.run", return_value=ffprobe_result),
+        patch.dict("sys.modules", {"vlc": mock_vlc}),
+    ):
+        runtime = _extract_video_runtime(str(video_file))
+
+    assert runtime == 90
+
+
+def test_extract_video_runtime_both_fail(tmp_path: Path) -> None:
+    """When both ffprobe and vlc fail, the function should return 0."""
+    from lan_streamer.scanner import _extract_video_runtime
+
+    video_file = tmp_path / "video.mkv"
+    video_file.touch()
+
+    with (
+        patch("subprocess.run", side_effect=FileNotFoundError("ffprobe not found")),
+        patch.dict("sys.modules", {"vlc": None}),
+    ):
+        runtime = _extract_video_runtime(str(video_file))
+
+    assert runtime == 0

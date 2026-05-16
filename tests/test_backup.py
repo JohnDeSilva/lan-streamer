@@ -205,3 +205,122 @@ def test_restore_database_backup_invalid(backup_environment: Path) -> None:
     corrupt_db: Path = backup_environment / "corrupt.db"
     corrupt_db.write_text("plain text file not an sqlite database")
     assert backup.restore_database_backup(str(corrupt_db)) is False
+
+
+# ---------------------------------------------------------------------------
+# create_config_backup — missing source
+# ---------------------------------------------------------------------------
+
+
+def test_create_config_backup_missing_source(backup_environment: Path) -> None:
+    """create_config_backup returns False when the config file does not exist."""
+    with patch(
+        "lan_streamer.backup.CONFIG_FILE", backup_environment / "nonexistent.json"
+    ):
+        result = backup.create_config_backup()
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# create_database_backup — missing source
+# ---------------------------------------------------------------------------
+
+
+def test_create_database_backup_missing_source(backup_environment: Path) -> None:
+    """create_database_backup returns False when the database file does not exist."""
+    with patch.dict(
+        os.environ, {"LAN_STREAMER_DB": str(backup_environment / "no_db.db")}
+    ):
+        result = backup.create_database_backup()
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# cleanup_old_backups — guards
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_old_backups_zero_retention(backup_environment: Path) -> None:
+    """Retention limit ≤ 0 should return immediately without deleting anything."""
+    backup_directory: Path = backup_environment / "backups"
+    (backup_directory / "20260101_000000_config.json").write_text("content")
+    (backup_directory / "20260102_000000_config.json").write_text("content")
+
+    backup.cleanup_old_backups(backup_directory, "_config.json", 0)
+
+    remaining = list(backup_directory.glob("*_config.json"))
+    assert len(remaining) == 2  # Nothing deleted
+
+
+def test_cleanup_old_backups_non_dir_path(tmp_path: Path) -> None:
+    """Passing a non-existent path should return immediately without error."""
+    non_existent = tmp_path / "does_not_exist"
+    # Should not raise
+    backup.cleanup_old_backups(non_existent, "_config.json", 5)
+
+
+# ---------------------------------------------------------------------------
+# restore_config_backup — additional error paths
+# ---------------------------------------------------------------------------
+
+
+def test_restore_config_backup_non_dict_json(backup_environment: Path) -> None:
+    """JSON that does not parse to a dict (e.g. a list) should return False."""
+    bad_json_file: Path = backup_environment / "list_backup.json"
+    bad_json_file.write_text("[1, 2, 3]")  # Valid JSON, but not a dict
+
+    result = backup.restore_config_backup(str(bad_json_file))
+    assert result is False
+
+
+def test_restore_config_backup_copy_error(backup_environment: Path) -> None:
+    """If shutil.copy2 raises during restore, the function should return False."""
+    good_json_file: Path = backup_environment / "good_backup.json"
+    good_json_file.write_text(json.dumps({"key": "value"}))
+
+    with patch("shutil.copy2", side_effect=OSError("Permission denied")):
+        result = backup.restore_config_backup(str(good_json_file))
+
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# restore_database_backup — additional error paths
+# ---------------------------------------------------------------------------
+
+
+def test_restore_database_backup_copy_error(backup_environment: Path) -> None:
+    """If shutil.copy2 raises during DB restore, the function should return False."""
+    valid_backup_db: Path = backup_environment / "valid2.db"
+
+    test_engine = create_engine(f"sqlite:///{valid_backup_db}")
+    with test_engine.connect() as connection_instance:
+        connection_instance.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS series "
+                "(id INTEGER PRIMARY KEY, library_name TEXT, name TEXT)"
+            )
+        )
+    test_engine.dispose()
+
+    with patch("shutil.copy2", side_effect=OSError("Disk full")):
+        result = backup.restore_database_backup(str(valid_backup_db))
+
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# perform_scheduled_backups — directory creation error
+# ---------------------------------------------------------------------------
+
+
+def test_perform_scheduled_backups_dir_creation_failure(
+    backup_environment: Path,
+) -> None:
+    """When the backup directory cannot be created, the function returns early."""
+    with (
+        patch.object(config, "backup_directory", "/root/cannot_create_this"),
+        patch("pathlib.Path.mkdir", side_effect=PermissionError("Permission denied")),
+    ):
+        # Should NOT raise
+        backup.perform_scheduled_backups()

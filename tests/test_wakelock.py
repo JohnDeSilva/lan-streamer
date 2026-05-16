@@ -57,3 +57,77 @@ def test_wakelock_macos() -> None:
             wakelock.uninhibit()
             assert wakelock.active is False
             mock_process.terminate.assert_called()
+
+
+def test_wakelock_inhibit_already_active_is_a_noop() -> None:
+    """Calling inhibit twice must not re-enter the underlying platform call."""
+    wakelock = WakeLock()
+    with patch("sys.platform", "linux"):
+        with patch("subprocess.check_output", return_value="(uint32 1,)") as mock_check:
+            wakelock.inhibit("first")
+            assert wakelock.active is True
+            call_count_after_first = mock_check.call_count
+
+            # Second inhibit — should be a no-op
+            wakelock.inhibit("second")
+            assert mock_check.call_count == call_count_after_first
+
+
+def test_wakelock_uninhibit_when_not_active_is_a_noop() -> None:
+    """Calling uninhibit when not active must not call any platform API."""
+    wakelock = WakeLock()
+    with patch("subprocess.run") as mock_run:
+        wakelock.uninhibit()
+        mock_run.assert_not_called()
+    assert wakelock.active is False
+
+
+def test_wakelock_linux_xdg_fallback() -> None:
+    """When gdbus fails, _inhibit_linux must fall back to xdg-screensaver."""
+    wakelock = WakeLock()
+    with patch("sys.platform", "linux"):
+        with (
+            patch("subprocess.check_output", side_effect=FileNotFoundError("no gdbus")),
+            patch("subprocess.Popen") as mock_popen,
+        ):
+            wakelock.inhibit("test fallback")
+            mock_popen.assert_called_once()
+            assert "xdg-screensaver" in mock_popen.call_args[0][0]
+
+
+def test_wakelock_linux_uninhibit_no_cookie() -> None:
+    """Uninhibiting without a gdbus cookie should still run xdg-screensaver resume."""
+    wakelock = WakeLock()
+    wakelock.active = True
+    wakelock._cookie = None  # No cookie was stored
+
+    with patch("sys.platform", "linux"):
+        with patch("subprocess.run") as mock_run:
+            wakelock.uninhibit()
+            # gdbus UnInhibit must NOT have been called (no cookie)
+            for call_args in mock_run.call_args_list:
+                cmd = call_args[0][0] if call_args[0] else []
+                assert "UnInhibit" not in " ".join(cmd)
+            # xdg-screensaver resume must have been called
+            assert any(
+                "xdg-screensaver" in " ".join(c[0][0] if c[0] else [])
+                for c in mock_run.call_args_list
+            )
+    assert wakelock.active is False
+
+
+def test_wakelock_macos_kill_on_terminate_timeout() -> None:
+    """If terminate raises an exception, uninhibit must attempt kill."""
+    wakelock = WakeLock()
+    mock_process = MagicMock()
+    mock_process.terminate.side_effect = Exception("terminate failed")
+
+    wakelock._process = mock_process
+    wakelock.active = True
+
+    with patch("sys.platform", "darwin"):
+        wakelock.uninhibit()
+
+    mock_process.kill.assert_called_once()
+    assert wakelock._process is None
+    assert wakelock.active is False
