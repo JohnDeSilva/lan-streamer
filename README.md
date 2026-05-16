@@ -121,6 +121,10 @@ Logs are stored in the configured `log_directory` (default: `~/.config/lan-strea
         - `tmdb.log`: TMDB metadata fetching.
         - `player.log`: Video playback and VLC engine details.
         - `backup.log`: Database and configuration backups.
+        - `opensubtitles.log`: Subtitle search and downloads.
+        - `wakelock.log`: System sleep prevention events.
+        - `ui.log`: User interface events and view state transitions.
+        - `renamer.log`: Batch file renaming operations.
 
 All logs are rotated daily at midnight. On application startup, the system automatically purges log files older than the retention threshold.
 

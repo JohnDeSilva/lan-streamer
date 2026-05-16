@@ -147,8 +147,33 @@ def main() -> None:
             log_formatter,
         )
         add_file_handler(
+            logging.getLogger("lan_streamer.player"),
+            str(log_directory / "player.log"),
+            log_formatter,
+        )
+        add_file_handler(
             logging.getLogger("lan_streamer.backup"),
             str(log_directory / "backup.log"),
+            log_formatter,
+        )
+        add_file_handler(
+            logging.getLogger("lan_streamer.opensubtitles"),
+            str(log_directory / "opensubtitles.log"),
+            log_formatter,
+        )
+        add_file_handler(
+            logging.getLogger("lan_streamer.wakelock"),
+            str(log_directory / "wakelock.log"),
+            log_formatter,
+        )
+        add_file_handler(
+            logging.getLogger("lan_streamer.ui_views"),
+            str(log_directory / "ui.log"),
+            log_formatter,
+        )
+        add_file_handler(
+            logging.getLogger("lan_streamer.renamer"),
+            str(log_directory / "renamer.log"),
             log_formatter,
         )
 

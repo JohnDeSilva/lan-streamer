@@ -17,7 +17,12 @@ def cleanup_logging_handlers() -> Any:
             "lan_streamer.jellyfin",
             "lan_streamer.tmdb",
             "lan_streamer.player_widget",
+            "lan_streamer.player",
             "lan_streamer.backup",
+            "lan_streamer.opensubtitles",
+            "lan_streamer.wakelock",
+            "lan_streamer.ui_views",
+            "lan_streamer.renamer",
         ]:
             target_logger = (
                 logging.getLogger(logger_name) if logger_name else logging.getLogger()
@@ -130,6 +135,13 @@ def test_main_logging_setup(tmp_path: Any) -> None:
             main.main()
             db_log_path = os.path.join(config.log_directory, "db.log")
             assert os.path.exists(db_log_path)
+            assert os.path.exists(
+                os.path.join(config.log_directory, "opensubtitles.log")
+            )
+            assert os.path.exists(os.path.join(config.log_directory, "wakelock.log"))
+            assert os.path.exists(os.path.join(config.log_directory, "ui.log"))
+            assert os.path.exists(os.path.join(config.log_directory, "renamer.log"))
+            assert os.path.exists(os.path.join(config.log_directory, "player.log"))
     finally:
         os.chdir(old_current_working_directory)
 

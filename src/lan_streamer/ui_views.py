@@ -3369,7 +3369,7 @@ class SettingsDialog(QDialog):
         advanced_layout.addWidget(QLabel("Max Log Retention Days:"), 2, 0)
         advanced_layout.addWidget(self.log_retention_input, 2, 1)
 
-        advanced_layout.addWidget(QLabel("Log Saving Mode:"), 3, 0)
+        advanced_layout.addWidget(QLabel("Log Saving Mode (Restart Required):"), 3, 0)
         self.log_saving_mode_selector.addItems(
             ["Single Global File", "Divided Service Logs"]
         )
