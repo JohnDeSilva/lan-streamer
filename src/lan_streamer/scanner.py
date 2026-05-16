@@ -1,6 +1,8 @@
 import os
 import logging
 import re
+import json
+import subprocess
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from .tmdb import tmdb_client
@@ -8,8 +10,85 @@ from .db import natural_sort_key
 
 logger = logging.getLogger(__name__)
 
+
+def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
+    """
+    Extracts exhaustive technical metadata from a video file using ffprobe.
+    Returns a dictionary containing resolution, codecs, and track listings.
+    """
+    info: Dict[str, Any] = {
+        "path": file_path,
+        "size_bytes": 0,
+        "video_type": "Unknown",
+        "resolution": "Unknown",
+        "audio_tracks": [],
+        "subtitle_tracks": [],
+    }
+
+    if not file_path or not os.path.exists(file_path):
+        return info
+
+    path_obj = Path(file_path)
+    info["size_bytes"] = path_obj.stat().st_size
+    info["video_type"] = path_obj.suffix.upper().replace(".", "")
+
+    try:
+        process_result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+                file_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if process_result.returncode == 0:
+            data = json.loads(process_result.stdout)
+            streams = data.get("streams", [])
+
+            for stream in streams:
+                codec_type = stream.get("codec_type")
+                codec_name = stream.get("codec_name", "unknown")
+                tags = stream.get("tags", {})
+                language = tags.get("language", "und")
+                title = tags.get("title", "")
+
+                track_info = {
+                    "index": stream.get("index"),
+                    "codec": codec_name,
+                    "language": language,
+                    "title": title,
+                }
+
+                if codec_type == "video":
+                    width = stream.get("width")
+                    height = stream.get("height")
+                    if width and height:
+                        info["resolution"] = f"{width}x{height}"
+                    if not info.get("video_codec"):
+                        info["video_codec"] = codec_name
+                elif codec_type == "audio":
+                    info["audio_tracks"].append(track_info)
+                elif codec_type == "subtitle":
+                    info["subtitle_tracks"].append(track_info)
+
+    except Exception as exc:
+        logger.error(f"Failed to extract detailed info for {file_path}: {exc}")
+
+    return info
+
+
 # Video file extensions we support
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm"}
+
+# Subtitle file extensions we support
+SUBTITLE_EXTENSIONS = {".srt", ".ass", ".vtt", ".sub", ".idx"}
 
 # Regex to extract S01E02 style episode numbers from filenames
 _EPISODE_REGEX = re.compile(r"[Ss](\d+)[Ee](\d+)")

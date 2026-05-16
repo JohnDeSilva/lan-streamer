@@ -2,10 +2,9 @@ import re
 import logging
 from pathlib import Path
 from typing import Dict, List, Any
+from .scanner import SUBTITLE_EXTENSIONS
 
 logger = logging.getLogger(__name__)
-
-SUBTITLE_EXTENSIONS = {".srt", ".ass", ".vtt", ".sub", ".idx"}
 
 
 def sanitize_filename(filename: str) -> str:

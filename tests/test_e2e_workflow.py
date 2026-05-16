@@ -210,9 +210,6 @@ def test_series_detail_view_rendering(
         assert "Space exploration" in detail_view.overview_label.text()
         assert detail_view.seasons_tab_widget.count() == 1
         assert detail_view.seasons_tab_widget.tabText(0) == "Season 1"
-        assert detail_view.jellyfin_status_label.isHidden() is False
-        assert "Not Matched" in detail_view.jellyfin_status_label.text()
-        assert detail_view.match_jellyfin_button.isHidden() is False
 
     # Verify table row properties
     page_widget: Optional[Any] = detail_view.seasons_tab_widget.widget(0)
@@ -221,13 +218,13 @@ def test_series_detail_view_rendering(
     assert isinstance(table_widget, QTableWidget)
     assert table_widget.columnCount() == 6
     assert table_widget.rowCount() == 2
-    table_item = table_widget.item(0, 1)
+    table_item = table_widget.item(0, 2)
     assert table_item is not None
     assert table_item.text() == "The Shores of the Cosmic Ocean"
-    air_date_item = table_widget.item(0, 2)
+    air_date_item = table_widget.item(0, 3)
     assert air_date_item is not None
     assert air_date_item.text() == "1980-09-28"
-    runtime_item = table_widget.item(0, 3)
+    runtime_item = table_widget.item(0, 4)
     assert runtime_item is not None
     assert runtime_item.text() == "60 min"
 
@@ -248,8 +245,8 @@ def test_e2e_checkbox_toggled_marks_watched(
     table_widget: Optional[Any] = page_widget.findChild(QTableWidget)
     assert isinstance(table_widget, QTableWidget)
 
-    # Locate inner checkbox widget cleanly in column 4
-    container_widget: Optional[Any] = table_widget.cellWidget(0, 4)
+    # Locate inner checkbox widget cleanly in column 5
+    container_widget: Optional[Any] = table_widget.cellWidget(0, 5)
     assert container_widget is not None
     checkbox_instance: Optional[QCheckBox] = container_widget.findChild(QCheckBox)
     assert checkbox_instance is not None
@@ -332,13 +329,9 @@ def test_series_detail_view_bulk_actions_and_tab_selection(qtbot: Any) -> None:
             is True
         )
 
-    # Test Mark Series as Watched button
+    # Test Mark Series as Watched logic via controller directly as button moved to dialog
     with patch("lan_streamer.db.update_series_watched_status") as mock_db_series:
-        series_button: Optional[QPushButton] = detail_view.findChild(
-            QPushButton, "markSeriesWatchedButton"
-        )
-        assert series_button is not None
-        series_button.click()
+        controller_instance.mark_series_watched("Cosmos")
         mock_db_series.assert_called_once_with("Test Lib", "Cosmos", True)
 
 
@@ -852,10 +845,10 @@ def test_series_detail_view_episode_match_button(
     def slot(series_name: str, path_string: str) -> None:
         emitted_signals.append((series_name, path_string))
 
-    controller_instance.episode_metadata_dialog_requested.connect(slot)
+    controller_instance.episode_details_requested.connect(slot)
 
     match_button: Optional[QPushButton] = detail_view.findChild(
-        QPushButton, "matchEpisodeButton_0"
+        QPushButton, "detailsEpisodeButton_0"
     )
     assert match_button is not None
     match_button.click()

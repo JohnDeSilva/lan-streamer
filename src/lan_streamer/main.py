@@ -16,6 +16,9 @@ from .ui_views import (
     MetadataMatchDialog,
     JellyfinMatchDialog,
     EpisodeMatchDialog,
+    EpisodeDetailsDialog,
+    MovieDetailsDialog,
+    SeriesDetailsDialog,
     RenamePreviewDialog,
     get_application_stylesheet,
 )
@@ -258,6 +261,28 @@ def main() -> None:
     controller.episode_metadata_dialog_requested.connect(
         on_episode_metadata_dialog_requested
     )
+
+    def on_episode_details_requested(series_name: str, episode_path: str) -> None:
+        dialog_instance = EpisodeDetailsDialog(
+            series_name, episode_path, controller, main_window
+        )
+        dialog_instance.exec()
+
+    controller.episode_details_requested.connect(on_episode_details_requested)
+
+    def on_movie_details_requested(movie_name: str, movie_path: str) -> None:
+        dialog_instance = MovieDetailsDialog(
+            movie_name, movie_path, controller, main_window
+        )
+        dialog_instance.exec()
+
+    controller.movie_details_requested.connect(on_movie_details_requested)
+
+    def on_series_details_requested(series_name: str) -> None:
+        dialog_instance = SeriesDetailsDialog(series_name, controller, main_window)
+        dialog_instance.exec()
+
+    controller.series_details_requested.connect(on_series_details_requested)
 
     controller.status_changed.connect(main_window.statusBar().showMessage)
 
