@@ -11,6 +11,9 @@ class Config:
         self.jellyfin_url: str = ""
         self.jellyfin_api_key: str = ""
         self.tmdb_api_key: str = ""
+        self.opensubtitles_username: str = ""
+        self.opensubtitles_password: str = ""
+        self.opensubtitles_api_key: str = ""
         # sync_history_on_start: auto-sync Jellyfin watch history every startup
         self.sync_history_on_start: bool = True
         self.filter_out_watched: bool = False
@@ -54,6 +57,9 @@ class Config:
                         "tmdb_api_key",
                         data.get("tvdb_api_key", ""),  # backwards compat
                     )
+                    self.opensubtitles_username = data.get("opensubtitles_username", "")
+                    self.opensubtitles_password = data.get("opensubtitles_password", "")
+                    self.opensubtitles_api_key = data.get("opensubtitles_api_key", "")
                     # Support old key name for backwards compatibility
                     self.sync_history_on_start = data.get(
                         "sync_history_on_start",
@@ -154,6 +160,9 @@ class Config:
                         "jellyfin_url": self.jellyfin_url,
                         "jellyfin_api_key": self.jellyfin_api_key,
                         "tmdb_api_key": self.tmdb_api_key,
+                        "opensubtitles_username": self.opensubtitles_username,
+                        "opensubtitles_password": self.opensubtitles_password,
+                        "opensubtitles_api_key": self.opensubtitles_api_key,
                         "sync_history_on_start": self.sync_history_on_start,
                         "filter_out_watched": self.filter_out_watched,
                         "sort_mode": self.sort_mode,

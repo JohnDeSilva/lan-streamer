@@ -1915,6 +1915,192 @@ class JellyfinMatchDialog(QDialog):
         self.accept()
 
 
+class SubtitleSearchDialog(QDialog):
+    """
+    Search and download subtitles from OpenSubtitles.com.
+    """
+
+    def __init__(
+        self,
+        media_name: str,
+        media_record: Dict[str, Any],
+        controller_instance: "Controller",
+        is_movie: bool = False,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.media_name = media_name
+        self.media_record = media_record
+        self.controller = controller_instance
+        self.is_movie = is_movie
+        self.results: List[Dict[str, Any]] = []
+
+        self.setWindowTitle(f"Search Subtitles: {media_name}")
+        self.resize(800, 500)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+
+        search_layout = QHBoxLayout()
+        self.query_edit = QLineEdit()
+
+        if self.is_movie:
+            tmdb_name = self.media_record.get("tmdb_name") or self.media_name
+            year = self.media_record.get("year", "")
+            default_query = f"{tmdb_name} {year}".strip()
+        else:
+            series_record = self.controller.cached_library_data.get(self.media_name, {})
+            tmdb_name = (
+                series_record.get("metadata", {}).get("tmdb_name") or self.media_name
+            )
+            season_num = self.media_record.get("season_number", 1)
+            episode_num = self.media_record.get("tmdb_number", 1)
+            default_query = f"{tmdb_name} S{season_num:02d}E{episode_num:02d}"
+
+        self.query_edit.setText(default_query)
+        search_layout.addWidget(QLabel("Query:"))
+        search_layout.addWidget(self.query_edit)
+
+        self.lang_edit = QLineEdit("en")
+        self.lang_edit.setFixedWidth(50)
+        search_layout.addWidget(QLabel("Languages:"))
+        search_layout.addWidget(self.lang_edit)
+
+        search_btn = QPushButton("Search")
+        search_btn.clicked.connect(self._on_search_clicked)
+        search_layout.addWidget(search_btn)
+        layout.addLayout(search_layout)
+
+        self.results_table = QTableWidget(0, 4)
+        self.results_table.setHorizontalHeaderLabels(
+            ["Language", "Filename", "Rating", "Downloads"]
+        )
+        self.results_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        layout.addWidget(self.results_table)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        self.download_btn = QPushButton("Download Selected")
+        self.download_btn.setEnabled(False)
+        self.download_btn.clicked.connect(self._on_download_clicked)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.reject)
+        buttons.addWidget(close_btn)
+        buttons.addWidget(self.download_btn)
+        layout.addLayout(buttons)
+
+        self.results_table.itemSelectionChanged.connect(
+            lambda: self.download_btn.setEnabled(
+                len(self.results_table.selectedItems()) > 0
+            )
+        )
+
+    def _on_search_clicked(self) -> None:
+        from .opensubtitles import opensubtitles_client
+
+        query = self.query_edit.text().strip()
+        langs = self.lang_edit.text().strip()
+
+        tmdb_id = None
+        season_num = None
+        episode_num = None
+
+        if self.is_movie:
+            tmdb_id_str = self.media_record.get("tmdb_id")
+            tmdb_id = (
+                int(tmdb_id_str) if tmdb_id_str and str(tmdb_id_str).isdigit() else None
+            )
+        else:
+            series_record = self.controller.cached_library_data.get(self.media_name, {})
+            tmdb_id_str = series_record.get("metadata", {}).get("tmdb_id")
+            tmdb_id = (
+                int(tmdb_id_str) if tmdb_id_str and str(tmdb_id_str).isdigit() else None
+            )
+            season_num = self.media_record.get("season_number")
+            episode_num = self.media_record.get("tmdb_number")
+
+        self.results = opensubtitles_client.search_subtitles(
+            query=query if not tmdb_id else None,
+            tmdb_id=tmdb_id,
+            season_number=season_num,
+            episode_number=episode_num,
+            languages=langs,
+        )
+
+        self.results_table.setRowCount(0)
+        for res in self.results:
+            attr = res.get("attributes", {})
+            row = self.results_table.rowCount()
+            self.results_table.insertRow(row)
+
+            self.results_table.setItem(
+                row, 0, QTableWidgetItem(attr.get("language", ""))
+            )
+            self.results_table.setItem(
+                row, 1, QTableWidgetItem(attr.get("release", ""))
+            )
+            self.results_table.setItem(
+                row, 2, QTableWidgetItem(str(attr.get("ratings", 0)))
+            )
+            self.results_table.setItem(
+                row, 3, QTableWidgetItem(str(attr.get("download_count", 0)))
+            )
+
+        if not self.results:
+            QMessageBox.information(self, "Search", "No subtitles found.")
+
+    def _on_download_clicked(self) -> None:
+        from .opensubtitles import opensubtitles_client
+
+        selected_row = self.results_table.currentRow()
+        if selected_row < 0 or selected_row >= len(self.results):
+            return
+
+        subtitle_data = self.results[selected_row]
+        file_id = (
+            subtitle_data.get("attributes", {}).get("files", [{}])[0].get("file_id")
+        )
+        if not file_id:
+            QMessageBox.warning(self, "Download", "No file ID found for this subtitle.")
+            return
+
+        download_url = opensubtitles_client.get_download_link(file_id)
+        if not download_url:
+            QMessageBox.warning(
+                self,
+                "Download",
+                "Could not get download link. Check your credentials in Settings.",
+            )
+            return
+
+        content = opensubtitles_client.download_subtitle(download_url)
+        if not content:
+            QMessageBox.warning(
+                self, "Download", "Failed to download subtitle content."
+            )
+            return
+
+        # Save next to video file
+        video_path = Path(self.media_record.get("path", ""))
+        if not video_path.exists():
+            QMessageBox.warning(self, "Download", "Video file not found on disk.")
+            return
+
+        lang = subtitle_data.get("attributes", {}).get("language", "en")
+        sub_path = video_path.with_suffix(f".{lang}.srt")
+
+        try:
+            with open(sub_path, "wb") as f:
+                f.write(content)
+            QMessageBox.information(self, "Download", f"Subtitle saved to:\n{sub_path}")
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Download", f"Error saving subtitle: {e}")
+
+
 class EpisodeDetailsDialog(QDialog):
     """
     Comprehensive multi-tab interface for viewing/editing episode metadata
@@ -2070,6 +2256,10 @@ class EpisodeDetailsDialog(QDialog):
         self.merge_button.clicked.connect(self._on_merge_clicked)
         layout.addWidget(self.merge_button)
 
+        osub_btn = QPushButton("Search OpenSubtitles.com for Subtitles...")
+        osub_btn.clicked.connect(self._on_search_osub_clicked)
+        layout.addWidget(osub_btn)
+
         layout.addStretch()
 
         return widget
@@ -2178,6 +2368,18 @@ class EpisodeDetailsDialog(QDialog):
         if confirm == QMessageBox.StandardButton.Yes:
             self.controller.merge_subtitles(self.episode_path, self._ext_subs)
             self.accept()
+
+    @Slot()
+    def _on_search_osub_clicked(self) -> None:
+        dialog = SubtitleSearchDialog(
+            self.series_name,
+            self.episode_record,
+            self.controller,
+            is_movie=False,
+            parent=self,
+        )
+        if dialog.exec():
+            self._refresh_file_info()
 
 
 class MovieDetailsDialog(QDialog):
@@ -2334,6 +2536,10 @@ class MovieDetailsDialog(QDialog):
         self.merge_button.clicked.connect(self._on_merge_clicked)
         layout.addWidget(self.merge_button)
 
+        osub_btn = QPushButton("Search OpenSubtitles.com for Subtitles...")
+        osub_btn.clicked.connect(self._on_search_osub_clicked)
+        layout.addWidget(osub_btn)
+
         layout.addStretch()
 
         return widget
@@ -2446,6 +2652,18 @@ class MovieDetailsDialog(QDialog):
         if confirm == QMessageBox.StandardButton.Yes:
             self.controller.merge_subtitles(self.movie_path, self._ext_subs)
             self.accept()
+
+    @Slot()
+    def _on_search_osub_clicked(self) -> None:
+        dialog = SubtitleSearchDialog(
+            self.movie_name,
+            self.movie_record,
+            self.controller,
+            is_movie=True,
+            parent=self,
+        )
+        if dialog.exec():
+            self._refresh_file_info()
 
 
 class SeriesDetailsDialog(QDialog):
@@ -2912,6 +3130,9 @@ class SettingsDialog(QDialog):
         self.jellyfin_url_input: QLineEdit = QLineEdit()
         self.jellyfin_key_input: QLineEdit = QLineEdit()
         self.tmdb_key_input: QLineEdit = QLineEdit()
+        self.opensubtitles_username_input: QLineEdit = QLineEdit()
+        self.opensubtitles_password_input: QLineEdit = QLineEdit()
+        self.opensubtitles_api_key_input: QLineEdit = QLineEdit()
 
         self.staged_libraries: Dict[str, Dict[str, Any]] = {}
         self.library_name_input: QLineEdit = QLineEdit()
@@ -2945,6 +3166,45 @@ class SettingsDialog(QDialog):
         self._setup_ui()
         self._load_config()
 
+    def _create_header_with_info(self, text: str, info_text: str) -> QWidget:
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        header = QLabel(f"<b>{text}</b>")
+        header.setStyleSheet("font-size: 14px;")
+        layout.addWidget(header)
+
+        info_btn = QPushButton("?")
+        info_btn.setFixedSize(20, 20)
+        info_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        info_btn.setToolTip("Click for details on how to get these credentials")
+        info_btn.setFlat(True)
+        info_btn.setStyleSheet(
+            """
+            QPushButton {
+                color: #3498db;
+                font-weight: bold;
+                font-size: 16px;
+                border: none;
+                background: none;
+                padding: 0;
+            }
+            QPushButton:hover {
+                text-decoration: underline;
+                color: #2980b9;
+            }
+        """
+        )
+        info_btn.clicked.connect(
+            lambda: QMessageBox.information(self, f"About {text}", info_text)
+        )
+        layout.addWidget(info_btn)
+        layout.addStretch()
+
+        return container
+
     def _setup_ui(self) -> None:
         main_layout: QVBoxLayout = QVBoxLayout(self)
         main_layout.setContentsMargins(20, 20, 20, 20)
@@ -2956,19 +3216,52 @@ class SettingsDialog(QDialog):
         connectivity_tab: QWidget = QWidget()
         connectivity_layout: QGridLayout = QGridLayout(connectivity_tab)
         connectivity_layout.setSpacing(12)
+        connectivity_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        connectivity_layout.addWidget(QLabel("Jellyfin Server URL:"), 0, 0)
-        connectivity_layout.addWidget(self.jellyfin_url_input, 0, 1)
-
-        connectivity_layout.addWidget(QLabel("Jellyfin API Token:"), 1, 0)
+        # Jellyfin Section
+        jelly_header = self._create_header_with_info(
+            "Jellyfin Server",
+            "Jellyfin credentials allow Lan Streamer to sync your watch history.\n\n"
+            "- Server URL: The address of your Jellyfin server (e.g. http://192.168.1.50:8096)\n"
+            "- API Token: Create this in Jellyfin Dashboard -> Dashboard -> API Keys.",
+        )
+        connectivity_layout.addWidget(jelly_header, 0, 0, 1, 2)
+        connectivity_layout.addWidget(QLabel("Server URL:"), 1, 0)
+        connectivity_layout.addWidget(self.jellyfin_url_input, 1, 1)
+        connectivity_layout.addWidget(QLabel("API Token:"), 2, 0)
         self.jellyfin_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        connectivity_layout.addWidget(self.jellyfin_key_input, 1, 1)
+        connectivity_layout.addWidget(self.jellyfin_key_input, 2, 1)
 
-        connectivity_layout.addWidget(QLabel("TMDB API Key:"), 2, 0)
+        # TMDB Section
+        tmdb_header = self._create_header_with_info(
+            "The Movie Database (TMDB)",
+            "TMDB is used to fetch posters, descriptions, and episode metadata.\n\n"
+            "- API Key: Create a free key at https://www.themoviedb.org/settings/api",
+        )
+        connectivity_layout.addWidget(tmdb_header, 3, 0, 1, 2)
+        connectivity_layout.addWidget(QLabel("API Key:"), 4, 0)
         self.tmdb_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        connectivity_layout.addWidget(self.tmdb_key_input, 2, 1)
+        connectivity_layout.addWidget(self.tmdb_key_input, 4, 1)
 
-        connectivity_layout.setRowStretch(4, 1)
+        # OpenSubtitles Section
+        osub_header = self._create_header_with_info(
+            "OpenSubtitles.com",
+            "Allows searching and downloading subtitles directly.\n\n"
+            "- Username/Password: Your personal OpenSubtitles.com account.\n"
+            "- API Key: MANDATORY for the app to connect. Create a free 'Consumer Key' "
+            "at https://www.opensubtitles.com/en/consumers",
+        )
+        connectivity_layout.addWidget(osub_header, 5, 0, 1, 2)
+        connectivity_layout.addWidget(QLabel("Username:"), 6, 0)
+        connectivity_layout.addWidget(self.opensubtitles_username_input, 6, 1)
+        connectivity_layout.addWidget(QLabel("Password:"), 7, 0)
+        self.opensubtitles_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        connectivity_layout.addWidget(self.opensubtitles_password_input, 7, 1)
+        connectivity_layout.addWidget(QLabel("API Key:"), 8, 0)
+        self.opensubtitles_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        connectivity_layout.addWidget(self.opensubtitles_api_key_input, 8, 1)
+
+        connectivity_layout.setRowStretch(9, 1)
         tab_container.addTab(connectivity_tab, "Remote APIs")
 
         # Libraries Management Pane
@@ -3198,6 +3491,9 @@ class SettingsDialog(QDialog):
         self.jellyfin_url_input.setText(config.jellyfin_url)
         self.jellyfin_key_input.setText(config.jellyfin_api_key)
         self.tmdb_key_input.setText(config.tmdb_api_key)
+        self.opensubtitles_username_input.setText(config.opensubtitles_username)
+        self.opensubtitles_password_input.setText(config.opensubtitles_password)
+        self.opensubtitles_api_key_input.setText(config.opensubtitles_api_key)
 
         self.use_embedded_checkbox.setChecked(config.use_embedded_player)
         self.enable_caching_checkbox.setChecked(config.enable_caching)
@@ -3344,6 +3640,9 @@ class SettingsDialog(QDialog):
         config.jellyfin_url = self.jellyfin_url_input.text().strip()
         config.jellyfin_api_key = self.jellyfin_key_input.text().strip()
         config.tmdb_api_key = self.tmdb_key_input.text().strip()
+        config.opensubtitles_username = self.opensubtitles_username_input.text().strip()
+        config.opensubtitles_password = self.opensubtitles_password_input.text().strip()
+        config.opensubtitles_api_key = self.opensubtitles_api_key_input.text().strip()
         config.sync_history_on_start = False
 
         config.use_embedded_player = self.use_embedded_checkbox.isChecked()
