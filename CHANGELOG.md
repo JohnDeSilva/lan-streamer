@@ -1,3 +1,15 @@
+## 0.15.0 (2026-05-15)
+
+### Feat
+
+- **subtitles**: Adds search opensubtitles functionality
+- **ui**: Adds season and episode detail view.
+
+### Fix
+
+- **logs**: adds divided logs for opensubtiles,wakelock,ui, and renamer
+- **player**: makes cache size configurable
+
 ## 0.14.1 (2026-05-15)
 
 ### Fix
