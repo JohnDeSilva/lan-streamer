@@ -3150,6 +3150,7 @@ class SettingsDialog(QDialog):
             "Enable Hardware Acceleration Decoding"
         )
         self.watched_threshold_input: QLineEdit = QLineEdit()
+        self.max_cache_size_input: QLineEdit = QLineEdit()
 
         self.db_path_input: QLineEdit = QLineEdit()
         self.log_dir_input: QLineEdit = QLineEdit()
@@ -3337,6 +3338,13 @@ class SettingsDialog(QDialog):
         threshold_layout.addStretch()
         player_layout.addLayout(threshold_layout)
 
+        cache_size_layout: QHBoxLayout = QHBoxLayout()
+        cache_size_layout.addWidget(QLabel("Max Cache Size (GB):"))
+        self.max_cache_size_input.setFixedWidth(80)
+        cache_size_layout.addWidget(self.max_cache_size_input)
+        cache_size_layout.addStretch()
+        player_layout.addLayout(cache_size_layout)
+
         player_layout.addStretch()
 
         tab_container.addTab(player_tab, "Video Player")
@@ -3499,6 +3507,7 @@ class SettingsDialog(QDialog):
         self.enable_caching_checkbox.setChecked(config.enable_caching)
         self.enable_hw_accel_checkbox.setChecked(config.enable_hw_accel)
         self.watched_threshold_input.setText(str(int(config.watched_threshold * 100)))
+        self.max_cache_size_input.setText(str(config.max_cache_size_gb))
 
         self.db_path_input.setText(config.database_path)
         self.log_dir_input.setText(config.log_directory)
@@ -3654,6 +3663,11 @@ class SettingsDialog(QDialog):
                 config.watched_threshold = parsed_threshold / 100.0
             else:
                 config.watched_threshold = parsed_threshold
+        except ValueError:
+            pass
+
+        try:
+            config.max_cache_size_gb = float(self.max_cache_size_input.text().strip())
         except ValueError:
             pass
 
