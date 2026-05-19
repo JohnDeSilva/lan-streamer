@@ -112,6 +112,8 @@ release: check-lint typecheck test
 	uv run cz bump
 	uv lock
 	git add uv.lock
-	git commit -m "chore: update lockfile for $$(uv run cz version --project)"
+	git commit --amend --no-edit
+	git tag -d "$$(uv run cz version --project)" || true
+	git tag -a "v$$(uv run cz version --project)" -m "Release v$$(uv run cz version --project)"
 	git push origin main
 	git push origin --tags
