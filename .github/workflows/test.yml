@@ -23,11 +23,12 @@ jobs:
       - name: Set up Python
         run: uv python install
 
-      - name: Install system dependencies for Qt/PySide6 and VLC
+      - name: Install system dependencies for Qt/PySide6 and VLC/ffmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             vlc \
+            ffmpeg \
             libegl1 \
             libgl1-mesa-dev \
             libxkbcommon-x11-0 \
@@ -68,10 +69,11 @@ jobs:
       - name: Set up Python
         run: uv python install
 
-      - name: Install system dependencies for Qt/PySide6 and VLC
+      - name: Install system dependencies for Qt/PySide6 and VLC/ffmpeg
         run: |
           dnf install -y \
             vlc \
+            ffmpeg \
             mesa-libGL-devel \
             mesa-libEGL-devel \
             libxkbcommon-x11 \
