@@ -1,3 +1,12 @@
+## 0.15.2 (2026-05-19)
+
+### Fix
+
+- **macos**: handle missing VLC env var
+- **dev-dependency**: bump commitizen from 4.15.1 to 4.16.0
+- **dev-dependency**: bump types-requests
+- **dependency**: bump requests from 2.33.1 to 2.34.0
+
 ## 0.15.1 (2026-05-15)
 
 ### Fix
