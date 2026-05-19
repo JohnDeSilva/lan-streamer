@@ -1,0 +1,29 @@
+repos:
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.16.0
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+      - id: commitizen-branch
+        stages: [pre-push]
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run mypy src/
+        language: system
+        pass_filenames: false
+        stages: [commit, pre-push]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format .
+        language: system
+        pass_filenames: false
+        stages: [commit, pre-push]
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix .
+        language: system
+        pass_filenames: false
+        stages: [commit, pre-push]

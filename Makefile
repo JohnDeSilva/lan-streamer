@@ -6,11 +6,13 @@ ifeq ($(UV),)
 	PYTEST := .venv/bin/pytest
 	RUFF := .venv/bin/ruff
 	MYPY := .venv/bin/mypy
+	PRE_COMMIT := .venv/bin/pre-commit
 else
 	PYTHON := uv run python
 	PYTEST := uv run pytest
 	RUFF := uv run ruff
 	MYPY := uv run mypy
+	PRE_COMMIT := uv run pre-commit
 endif
 # Wayland detection for stable VLC embedding
 ifeq ($(XDG_SESSION_TYPE),wayland)
@@ -25,15 +27,16 @@ run: migrate
 typecheck:
 	$(MYPY) src/
 
-lint: typecheck
-	$(RUFF) format .
-	$(RUFF) check --fix .
+lint:
+	$(PRE_COMMIT) run --all-files
 
 reformat: lint
 
-check-lint: typecheck
-	$(RUFF) format --check .
-	$(RUFF) check .
+check-lint:
+	$(PRE_COMMIT) run --all-files --show-diff-on-failure
+
+setup-git-hooks:
+	$(PRE_COMMIT) install --hook-type commit-msg --hook-type pre-push --hook-type pre-commit
 
 test:
 	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src $(PYTHON) -m alembic upgrade head
