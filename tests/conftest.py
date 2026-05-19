@@ -92,8 +92,9 @@ def generated_video_asset(tmp_path_factory) -> str:
             ]
         )
 
+    ffmpeg_bin = "/usr/bin/ffmpeg" if os.path.exists("/usr/bin/ffmpeg") else "ffmpeg"
     cmd = [
-        "ffmpeg",
+        ffmpeg_bin,
         "-y",
         "-f",
         "lavfi",
@@ -116,11 +117,14 @@ def generated_video_asset(tmp_path_factory) -> str:
     except Exception as e:
         stderr_output = getattr(e, "stderr", "")
         stdout_output = getattr(e, "stdout", "")
-        pytest.skip(
+        msg = (
             f"ffmpeg is not available or failed to run to generate video test asset.\n"
             f"Error: {e}\n"
             f"stdout: {stdout_output}\n"
             f"stderr: {stderr_output}"
         )
+        if os.environ.get("GITHUB_ACTIONS"):
+            raise RuntimeError(msg) from e
+        pytest.skip(msg)
 
     return str(output_mkv)
