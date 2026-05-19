@@ -96,11 +96,8 @@ jobs:
 
 
   build-macos:
-    name: Build Executable (macOS - ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-13, macos-latest]
+    name: Build Executable (macOS)
+    runs-on: macos-latest
 
     steps:
       - name: Checkout code
@@ -114,12 +111,7 @@ jobs:
       - name: Set up Python
         run: uv python install
 
-      - name: Setup FFmpeg (Intel macOS)
-        if: matrix.os == 'macos-13'
-        uses: FedericoCarboni/setup-ffmpeg@v3
-
       - name: Setup FFmpeg (Apple Silicon macOS)
-        if: matrix.os != 'macos-13'
         run: brew install ffmpeg
 
       - name: Install VLC
