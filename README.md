@@ -1,10 +1,10 @@
 # LAN Streamer
 [![Lint](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/lint.yml/badge.svg)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/lint.yml)
 [![Test](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/test.yml/badge.svg)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/test.yml)
-[![Ubuntu](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml/badge.svg?job=Build%20Executable%20%28Ubuntu%29)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
-[![Fedora](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml/badge.svg?job=Build%20Executable%20%28Fedora%29)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
-[![macOS](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml/badge.svg?job=Build%20Executable%20%28macOS%20-%20macos-latest%29)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
-[![Windows](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml/badge.svg?job=Build%20Executable%20%28Windows%29)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
+[![Ubuntu](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20Ubuntu)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
+[![Fedora](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20Fedora)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
+[![macOS](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20macOS)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
+[![Windows](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20Windows)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
 
 **LAN Streamer** is a lightweight media library manager designed for local media playback with a metadata-rich browsing interface.
 
