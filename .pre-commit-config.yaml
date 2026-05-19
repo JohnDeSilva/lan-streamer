@@ -4,11 +4,16 @@ repos:
     hooks:
       - id: commitizen
         stages: [commit-msg]
-      - id: commitizen-branch
-        stages: [pre-push]
 
   - repo: local
     hooks:
+      - id: commitizen-branch
+        name: commitizen check branch
+        entry: >-
+          bash -c 'if [ -n "$PRE_COMMIT_FROM_REF" ]; then .venv/bin/cz check --rev-range "$PRE_COMMIT_FROM_REF..$PRE_COMMIT_TO_REF"; else echo "Skipping branch check: no revision range provided."; fi'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
       - id: mypy
         name: mypy
         entry: make typecheck

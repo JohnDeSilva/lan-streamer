@@ -1,0 +1,37 @@
+FROM fedora:latest
+
+# Install bootstrapping and system dependencies
+RUN dnf update -y && dnf install -y \
+    git \
+    make \
+    tar \
+    xz \
+    findutils \
+    shadow-utils \
+    curl \
+    && dnf install -y \
+    https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm \
+    && dnf install -y \
+    vlc \
+    ffmpeg \
+    mesa-libGL-devel \
+    mesa-libEGL-devel \
+    libxkbcommon-x11 \
+    xcb-util-wm \
+    xcb-util-image \
+    xcb-util-keysyms \
+    xcb-util-renderutil \
+    && dnf clean all
+
+# Install uv for Python environment management
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Install the required Python version via uv
+RUN uv python install
+
+# Copy the codebase and pre-sync Python dependencies
+WORKDIR /app
+COPY . /app
+RUN uv sync

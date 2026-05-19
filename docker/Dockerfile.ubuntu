@@ -1,0 +1,36 @@
+FROM ubuntu:latest
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies for VLC, FFmpeg, and Qt/PySide6 offscreen QPA
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    make \
+    vlc \
+    ffmpeg \
+    libegl1 \
+    libgl1-mesa-dev \
+    libxkbcommon-x11-0 \
+    libxcb-icccm4 \
+    libxcb-image0 \
+    libxcb-keysyms1 \
+    libxcb-randr0 \
+    libxcb-render-util0 \
+    libxcb-xinerama0 \
+    libxcb-xfixes0 \
+    libxcb-shape0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for Python environment management
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Install the required Python version via uv
+RUN uv python install
+
+# Copy the codebase and pre-sync Python dependencies
+WORKDIR /app
+COPY . /app
+RUN uv sync

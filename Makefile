@@ -1,4 +1,4 @@
-.PHONY: run lint check-lint reformat test load-test build-mac clean revision migrate release
+.PHONY: run lint check-lint reformat test load-test test-ubuntu test-fedora test-distros build-mac clean revision migrate release
 
 UV := $(shell command -v uv 2> /dev/null)
 ifeq ($(UV),)
@@ -20,6 +20,9 @@ ifeq ($(XDG_SESSION_TYPE),wayland)
 else
     QT_PLATFORM :=
 endif
+
+# Container engine detection (prefers docker, falls back to podman, defaults to docker)
+CONTAINER_ENGINE ?= $(shell command -v docker 2> /dev/null || command -v podman 2> /dev/null || echo docker)
 
 run: migrate
 	PYTHONPATH=src $(QT_PLATFORM) $(PYTHON) -m lan_streamer.main
@@ -52,8 +55,25 @@ test:
 load-test: migrate
 	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "load" -s --no-cov tests/
 
-build-mac:
-	uv run pyinstaller --name "Lan Streamer" --windowed --noconfirm src/lan_streamer/main.py
+test-ubuntu:
+	$(CONTAINER_ENGINE) build -t lan-streamer-test-ubuntu -f docker/Dockerfile.ubuntu .
+	$(CONTAINER_ENGINE) rm -f lan-streamer-test-ubuntu-run || true
+	$(CONTAINER_ENGINE) run --name lan-streamer-test-ubuntu-run lan-streamer-test-ubuntu make test; \
+	EXIT_CODE=$$?; \
+	$(CONTAINER_ENGINE) cp lan-streamer-test-ubuntu-run:/app/.coverage ./coverage-results/ubuntu.coverage || true; \
+	$(CONTAINER_ENGINE) rm -f lan-streamer-test-ubuntu-run; \
+	exit $$EXIT_CODE
+
+test-fedora:
+	$(CONTAINER_ENGINE) build -t lan-streamer-test-fedora -f docker/Dockerfile.fedora .
+	$(CONTAINER_ENGINE) rm -f lan-streamer-test-fedora-run || true
+	$(CONTAINER_ENGINE) run --name lan-streamer-test-fedora-run lan-streamer-test-fedora make test; \
+	EXIT_CODE=$$?; \
+	$(CONTAINER_ENGINE) cp lan-streamer-test-fedora-run:/app/.coverage ./coverage-results/fedora.coverage || true; \
+	$(CONTAINER_ENGINE) rm -f lan-streamer-test-fedora-run; \
+	exit $$EXIT_CODE
+
+test-distros: test-ubuntu test-fedora
 
 clean:
 	rm -rf build/ dist/ *.spec .pytest_cache .ruff_cache *.log *.db*
