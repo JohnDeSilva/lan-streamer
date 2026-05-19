@@ -1,3 +1,9 @@
+## 0.16.0 (2026-05-19)
+
+### Fix
+
+- **macos**: updates mac executable to run in windowed mode and have the correct extension
+
 ## 0.15.2 (2026-05-19)
 
 ### Fix
