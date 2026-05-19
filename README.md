@@ -155,7 +155,7 @@ The application automatically tracks your playback progress and maintains a "wat
 
 ---
 
-## 🧪 Development
+## 🧪 Development & Quality Assurance
 
 ### Technical Stack
 *   **UI**: PySide6 (Qt 6)
@@ -165,18 +165,76 @@ The application automatically tracks your playback progress and maintains a "wat
 *   **Linting**: Ruff
 *   **Type Checking**: mypy
 
-### Testing
+### Local Testing & Linting
+Run unit tests with coverage validation (90% minimum threshold):
 ```bash
 make test
 ```
 
-### Releases
-Uses [Conventional Commits](https://www.conventionalcommits.org/) for versioning.
+Check formatting, lint rules, and types:
 ```bash
-make release
+make lint
+```
+Or run individual checks:
+```bash
+make check-lint  # Verify styling without fixing
+make typecheck   # Run static type analysis
 ```
 
+### 🤝 Git Hooks
+The repository includes pre-commit hooks to automate quality checks before committing or pushing code:
+1.  **Installation**:
+    ```bash
+    make setup-git-hooks
+    ```
+2.  **Hook Execution**:
+    -   **`commit-msg`**: Validates that commit messages follow the [Conventional Commits](https://www.conventionalcommits.org/) specification using `commitizen`.
+    -   **`pre-commit`**: Automatically runs type-checking (`make typecheck`) and style checks (`make check-lint`).
+    -   **`pre-push`**: Ensures type-checking, style checks, and commit range conformity (`commitizen check branch`) pass before pushing remote branches.
+
+### 🐳 Local Containerized Testing
+To ensure binary build stability and dependency compatibility across different Linux distributions, you can run isolated containerized tests locally (requires Docker or Podman):
+*   **Ubuntu**: Builds, tests, and verifies the standalone binary inside an Ubuntu container:
+    ```bash
+    make test-ubuntu
+    ```
+*   **Fedora**: Builds, tests, and verifies the standalone binary inside a Fedora container:
+    ```bash
+    make test-fedora
+    ```
+*   **All Distros**: Runs both Ubuntu and Fedora suites sequentially:
+    ```bash
+    make test-distros
+    ```
+
 ---
+
+## 🛡️ Continuous Integration & Repository Operations
+
+All code pushed or submitted via Pull Request is automatically validated through GitHub Actions workflows:
+
+### GitHub Workflows
+1.  **Lint & Typecheck (`lint.yml`)**:
+    -   Triggered on push and pull requests targeting `main`.
+    -   Automatically checks formatting, executes Ruff linting, runs Mypy type-checking, and verifies commit message compliance for branch revisions.
+2.  **Cross-Platform Verification (`test.yml`)**:
+    -   Runs a multi-operating system matrix validating all code paths:
+        -   **Ubuntu**: Sets up system packages (VLC, FFmpeg7, Qt libs), runs unit tests with coverage constraints, compiles the standalone PyInstaller executable, and performs an offscreen dry-run verification.
+        -   **Fedora**: Provisions a Fedora container to run tests, compile the executable, and verify dry-run startup.
+        -   **macOS**: Configures macOS-latest with brew-installed VLC, runs tests, and compiles/validates the executable with target-specific VLC library pathing.
+        -   **Windows**: Deploys Windows-latest, installs VLC/FFmpeg, applies schema migrations, runs tests, and compiles/verifies the executable.
+
+### Repository Management
+-   **Dependabot**: Configured (`.github/dependabot.yml`) to perform daily updates on the `uv` package ecosystem to ensure dependencies remain secure and up-to-date.
+-   **Code Ownership**: Configured (`.github/CODEOWNERS`) to assign ownership of all project files to `@JohnDeSilva`.
+-   **Releases**: Automatic version bumps and changelog management are handled through:
+    ```bash
+    make release
+    ```
+    This validates linting, runs the test suite, bumps the project version via `cz bump`, regenerates `uv.lock`, commits, and pushes the code and new version tags to GitHub.
+
+---
+
 
 ## 📜 License
 MIT License. See [LICENSE](LICENSE) for details.
