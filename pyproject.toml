@@ -5,7 +5,7 @@ description = "Lightweight media library manager for local playback with Jellyfi
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "pyside6>=6.11.0",
+    "pyside6>=6.11.1",
     "requests>=2.34.0",
     "sqlalchemy>=2.0.0",
     "alembic>=1.13.0",
