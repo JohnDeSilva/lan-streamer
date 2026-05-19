@@ -45,6 +45,13 @@ jobs:
       - name: Run unit tests with coverage check
         run: make test
 
+      - name: Build executable
+        run: make build
+
+      - name: Validate executable runs
+        run: make validate-executable
+
+
   test-fedora:
     name: Test (Fedora)
     runs-on: ubuntu-latest
@@ -85,3 +92,93 @@ jobs:
 
       - name: Run unit tests
         run: make test
+
+      - name: Build executable
+        run: make build
+
+      - name: Validate executable runs
+        run: make validate-executable
+
+
+  test-macos:
+    name: Test (macOS)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Setup FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+
+      - name: Install VLC
+        run: brew install --cask vlc
+
+      - name: Run unit tests
+        env:
+          PYTHON_VLC_LIB_PATH: /Applications/VLC.app/Contents/MacOS/lib/libvlc.dylib
+        run: make test
+
+      - name: Build executable
+        run: make build
+
+      - name: Validate executable runs
+        env:
+          PYTHON_VLC_LIB_PATH: /Applications/VLC.app/Contents/MacOS/lib/libvlc.dylib
+        run: make validate-executable
+
+
+  test-windows:
+    name: Test (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Setup FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+
+      - name: Install VLC
+        run: choco install vlc -y
+
+      - name: Run unit tests
+        shell: bash
+        env:
+          PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
+          LAN_STREAMER_DB: ./test_library.db
+          PYTHONPATH: src
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          uv run python -m alembic upgrade head
+          uv run pytest --cov-fail-under=90 -m "not load" tests/
+          rm -f ./test_library.db ./test_library.db-wal ./test_library.db-shm
+
+      - name: Build executable
+        shell: bash
+        run: uv run pyinstaller --onefile --paths src src/entrypoint.py --name lan-streamer
+
+      - name: Validate executable runs
+        shell: bash
+        env:
+          PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
+          LAN_STREAMER_DRY_RUN: '1'
+          QT_QPA_PLATFORM: offscreen
+        run: ./dist/lan-streamer.exe
+

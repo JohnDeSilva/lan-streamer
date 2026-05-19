@@ -49,6 +49,17 @@ def setup_dark_theme(application_instance: QApplication) -> None:
 
 
 def main() -> None:
+    import os
+
+    if os.environ.get("LAN_STREAMER_DRY_RUN") == "1":
+        if not os.environ.get("QT_QPA_PLATFORM"):
+            os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        _app = QApplication(sys.argv)
+        print(
+            "LAN Streamer: Dry run verification successful. Qt application successfully initialized."
+        )
+        sys.exit(0)
+
     log_formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )

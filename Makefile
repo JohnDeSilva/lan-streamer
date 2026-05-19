@@ -1,4 +1,4 @@
-.PHONY: run lint check-lint reformat test load-test test-ubuntu test-fedora test-distros build-mac clean revision migrate release
+.PHONY: run lint check-lint reformat test load-test test-ubuntu test-fedora test-distros build validate-executable validate-ubuntu validate-fedora validate-distros clean revision migrate release
 
 UV := $(shell command -v uv 2> /dev/null)
 ifeq ($(UV),)
@@ -62,6 +62,10 @@ test-ubuntu:
 	EXIT_CODE=$$?; \
 	$(CONTAINER_ENGINE) cp lan-streamer-test-ubuntu-run:/app/.coverage ./coverage-results/ubuntu.coverage || true; \
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-ubuntu-run; \
+	if [ $$EXIT_CODE -eq 0 ]; then \
+		$(MAKE) validate-ubuntu; \
+		EXIT_CODE=$$?; \
+	fi; \
 	exit $$EXIT_CODE
 
 test-fedora:
@@ -71,9 +75,27 @@ test-fedora:
 	EXIT_CODE=$$?; \
 	$(CONTAINER_ENGINE) cp lan-streamer-test-fedora-run:/app/.coverage ./coverage-results/fedora.coverage || true; \
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-fedora-run; \
+	if [ $$EXIT_CODE -eq 0 ]; then \
+		$(MAKE) validate-fedora; \
+		EXIT_CODE=$$?; \
+	fi; \
 	exit $$EXIT_CODE
 
+validate-ubuntu:
+	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_DRY_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-ubuntu ./dist/lan-streamer
+
+validate-fedora:
+	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_DRY_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-fedora ./dist/lan-streamer
+
+validate-distros: validate-ubuntu validate-fedora
+
 test-distros: test-ubuntu test-fedora
+
+build:
+	$(PYTHON) -m PyInstaller --onefile --paths src src/entrypoint.py --name lan-streamer
+
+validate-executable: build
+	LAN_STREAMER_DRY_RUN=1 QT_QPA_PLATFORM=offscreen ./dist/lan-streamer
 
 clean:
 	rm -rf build/ dist/ *.spec .pytest_cache .ruff_cache *.log *.db*
