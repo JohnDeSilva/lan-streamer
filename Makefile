@@ -128,11 +128,10 @@ release: check-lint typecheck test
 	git add uv.lock
 	@if ! git commit --amend --no-edit --no-verify; then \
 		echo "Release failed during commit --amend. Backing out changes..."; \
-		git tag -d "$$(uv run cz version --project)" 2>/dev/null || true; \
+		git tag -d "v$$(uv run cz version --project)" 2>/dev/null || true; \
 		git reset --hard HEAD~1; \
 		exit 1; \
 	fi
-	git tag -d "$$(uv run cz version --project)" || true
-	git tag -a "v$$(uv run cz version --project)" -m "Release v$$(uv run cz version --project)"
+	git tag -f -a "v$$(uv run cz version --project)" -m "Release v$$(uv run cz version --project)"
 	git push origin main
 	git push origin --tags
