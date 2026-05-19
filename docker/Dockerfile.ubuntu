@@ -5,9 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies for VLC, FFmpeg, and Qt/PySide6 offscreen QPA
 RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    && add-apt-repository -y ppa:ubuntuhandbook1/ffmpeg7 \
-    && apt-get update && apt-get install -y \
+    binutils \
     curl \
     git \
     make \
@@ -37,3 +35,7 @@ RUN uv python install
 WORKDIR /app
 COPY . /app
 RUN uv sync
+
+# Build the executable
+RUN uv run pyinstaller --onefile --paths src src/entrypoint.py --name lan-streamer
+

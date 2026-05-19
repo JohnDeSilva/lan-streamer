@@ -8,6 +8,7 @@ RUN dnf update -y && dnf install -y \
     xz \
     findutils \
     shadow-utils \
+    binutils \
     curl \
     && dnf install -y \
     https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
@@ -35,3 +36,7 @@ RUN uv python install
 WORKDIR /app
 COPY . /app
 RUN uv sync
+
+# Build the executable
+RUN uv run pyinstaller --onefile --paths src src/entrypoint.py --name lan-streamer
+
