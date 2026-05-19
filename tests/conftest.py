@@ -103,21 +103,24 @@ def generated_video_asset(tmp_path_factory) -> str:
         *maps,
         *metadata_args,
         "-c:v",
-        "libx264",
+        "mpeg4",
         "-pix_fmt",
-        "yuv444p",
+        "yuv420p",
         "-c:s",
         "srt",
         str(output_mkv),
     ]
 
     try:
-        subprocess.run(
-            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-    except Exception:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except Exception as e:
+        stderr_output = getattr(e, "stderr", "")
+        stdout_output = getattr(e, "stdout", "")
         pytest.skip(
-            "ffmpeg is not available or failed to run to generate video test asset."
+            f"ffmpeg is not available or failed to run to generate video test asset.\n"
+            f"Error: {e}\n"
+            f"stdout: {stdout_output}\n"
+            f"stderr: {stderr_output}"
         )
 
     return str(output_mkv)
