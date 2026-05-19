@@ -27,13 +27,19 @@ run: migrate
 typecheck:
 	$(MYPY) src/
 
-lint:
-	$(PRE_COMMIT) run --all-files
+format:
+	$(RUFF) format .
 
-reformat: lint
+ruff-check:
+	$(RUFF) check --fix .
+
+lint: format ruff-check typecheck
+
+reformat: format ruff-check
 
 check-lint:
-	$(PRE_COMMIT) run --all-files --show-diff-on-failure
+	$(RUFF) format --check .
+	$(RUFF) check .
 
 setup-git-hooks:
 	$(PRE_COMMIT) install --hook-type commit-msg --hook-type pre-push --hook-type pre-commit
@@ -59,7 +65,7 @@ revision:
 migrate:
 	PYTHONPATH=src $(PYTHON) -m alembic upgrade head
 
-release: check-lint test
+release: check-lint typecheck test
 	uv lock
 	uv run cz bump
 	uv lock

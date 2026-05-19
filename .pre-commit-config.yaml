@@ -11,19 +11,13 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: uv run mypy src/
+        entry: make typecheck
         language: system
         pass_filenames: false
-        stages: [commit, pre-push]
-      - id: ruff-format
-        name: ruff format
-        entry: uv run ruff format .
+        stages: [pre-commit, pre-push]
+      - id: lint-check
+        name: lint check
+        entry: make check-lint
         language: system
         pass_filenames: false
-        stages: [commit, pre-push]
-      - id: ruff-check
-        name: ruff check
-        entry: uv run ruff check --fix .
-        language: system
-        pass_filenames: false
-        stages: [commit, pre-push]
+        stages: [pre-commit, pre-push]
