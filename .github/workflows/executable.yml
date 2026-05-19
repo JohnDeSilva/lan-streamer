@@ -145,14 +145,16 @@ jobs:
           PYTHON_VLC_LIB_PATH: /Applications/VLC.app/Contents/MacOS/lib/libvlc.dylib
         run: make validate-executable
 
-      - name: Rename executable for artifact
-        run: mv dist/lan-streamer dist/lan-streamer-macos
+      - name: Prepare macOS Artifact
+        run: |
+          mkdir -p dist/mac-artifact
+          mv dist/lan-streamer.app dist/mac-artifact/LanStreamer.app
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: lan-streamer-macos
-          path: dist/lan-streamer-macos
+          path: dist/mac-artifact/
 
 
   build-windows:
@@ -179,7 +181,7 @@ jobs:
 
       - name: Build executable
         shell: bash
-        run: uv run pyinstaller --onefile --paths src src/entrypoint.py --name lan-streamer
+        run: uv run pyinstaller --noconfirm --onefile --windowed --paths src src/entrypoint.py --name lan-streamer
 
       - name: Validate executable runs
         shell: bash

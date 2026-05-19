@@ -1,5 +1,7 @@
 .PHONY: run lint check-lint reformat test load-test test-ubuntu test-fedora test-distros build validate-executable validate-ubuntu validate-fedora validate-distros clean revision migrate release
 
+UNAME_S := $(shell uname -s)
+
 UV := $(shell command -v uv 2> /dev/null)
 ifeq ($(UV),)
 	PYTHON := .venv/bin/python
@@ -92,10 +94,18 @@ validate-distros: validate-ubuntu validate-fedora
 test-distros: test-ubuntu test-fedora
 
 build:
-	$(PYTHON) -m PyInstaller --onefile --paths src src/entrypoint.py --name lan-streamer
+ifeq ($(UNAME_S),Darwin)
+	$(PYTHON) -m PyInstaller --noconfirm --windowed --paths src src/entrypoint.py --name lan-streamer
+else
+	$(PYTHON) -m PyInstaller --noconfirm --onefile --windowed --paths src src/entrypoint.py --name lan-streamer
+endif
 
 validate-executable: build
+ifeq ($(UNAME_S),Darwin)
+	LAN_STREAMER_DRY_RUN=1 QT_QPA_PLATFORM=offscreen ./dist/lan-streamer.app/Contents/MacOS/lan-streamer
+else
 	LAN_STREAMER_DRY_RUN=1 QT_QPA_PLATFORM=offscreen ./dist/lan-streamer
+endif
 
 clean:
 	rm -rf build/ dist/ *.spec .pytest_cache .ruff_cache *.log *.db*

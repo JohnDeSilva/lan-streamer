@@ -79,6 +79,9 @@ make run
 > [!IMPORTANT]
 > **MacOS (Apple Silicon)**: Ensure the **Apple Silicon** version of VLC is installed. The Intel version cannot be loaded by a native ARM64 Python process.
 
+> [!WARNING]
+> **MacOS Gatekeeper**: The downloaded macOS artifact contains an unsigned `.app` bundle. You may see a "cannot be verified" or "malware" warning. To open it, either **Right-Click -> Open** the `LanStreamer.app` to bypass the warning, or clear the quarantine attribute by running `xattr -cr /path/to/LanStreamer.app` in your terminal.
+
 ### Setup Guide
 1.  **Configure TMDB**: Go to **Metadata > TMDB Settings...** and enter your API Key.
 2.  **Configure Jellyfin (Optional)**: In **Watch History > Jellyfin Settings**, enter your Server URL and API Key.
