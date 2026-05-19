@@ -3,6 +3,8 @@ name: Build Executables
 on:
   push:
     branches: [ "main" ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ "main" ]
 
@@ -47,6 +49,15 @@ jobs:
 
       - name: Validate executable runs
         run: make validate-executable
+
+      - name: Rename executable for artifact
+        run: mv dist/lan-streamer dist/lan-streamer-ubuntu
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lan-streamer-ubuntu
+          path: dist/lan-streamer-ubuntu
 
 
   build-fedora:
@@ -94,6 +105,15 @@ jobs:
       - name: Validate executable runs
         run: make validate-executable
 
+      - name: Rename executable for artifact
+        run: mv dist/lan-streamer dist/lan-streamer-fedora
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lan-streamer-fedora
+          path: dist/lan-streamer-fedora
+
 
   build-macos:
     name: Build Executable (macOS)
@@ -124,6 +144,15 @@ jobs:
         env:
           PYTHON_VLC_LIB_PATH: /Applications/VLC.app/Contents/MacOS/lib/libvlc.dylib
         run: make validate-executable
+
+      - name: Rename executable for artifact
+        run: mv dist/lan-streamer dist/lan-streamer-macos
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lan-streamer-macos
+          path: dist/lan-streamer-macos
 
 
   build-windows:
@@ -160,3 +189,31 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: ./dist/lan-streamer.exe
 
+      - name: Rename executable for artifact
+        shell: bash
+        run: mv dist/lan-streamer.exe dist/lan-streamer-windows.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lan-streamer-windows
+          path: dist/lan-streamer-windows.exe
+
+  release:
+    name: Create Release
+    needs: [build-ubuntu, build-fedora, build-macos, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release-assets
+          merge-multiple: true
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./release-assets/*
