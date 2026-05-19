@@ -46,7 +46,7 @@ jobs:
 
   test-fedora:
     name: Test (Fedora)
-    runs-on: ubuntu-latest
+    runs-on: fedora-latest
     container:
       image: fedora:latest
 
