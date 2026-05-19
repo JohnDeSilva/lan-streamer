@@ -109,10 +109,19 @@ migrate:
 
 release: check-lint typecheck test
 	uv lock
-	uv run cz bump
+	@if ! uv run cz bump --no-verify; then \
+		echo "Release failed during cz bump. Backing out changes..."; \
+		git checkout -- pyproject.toml src/lan_streamer/__init__.py CHANGELOG.md uv.lock 2>/dev/null || true; \
+		exit 1; \
+	fi
 	uv lock
 	git add uv.lock
-	git commit --amend --no-edit
+	@if ! git commit --amend --no-edit --no-verify; then \
+		echo "Release failed during commit --amend. Backing out changes..."; \
+		git tag -d "$$(uv run cz version --project)" 2>/dev/null || true; \
+		git reset --hard HEAD~1; \
+		exit 1; \
+	fi
 	git tag -d "$$(uv run cz version --project)" || true
 	git tag -a "v$$(uv run cz version --project)" -m "Release v$$(uv run cz version --project)"
 	git push origin main
