@@ -131,3 +131,70 @@ def test_wakelock_macos_kill_on_terminate_timeout() -> None:
     mock_process.kill.assert_called_once()
     assert wakelock._process is None
     assert wakelock.active is False
+
+
+def test_wakelock_inhibit_exception_catch() -> None:
+    wakelock = WakeLock()
+    with patch("sys.platform", "linux"):
+        with patch.object(
+            wakelock, "_inhibit_linux", side_effect=Exception("mock error")
+        ):
+            wakelock.inhibit()
+            assert wakelock.active is False
+
+
+def test_wakelock_uninhibit_exception_catch() -> None:
+    wakelock = WakeLock()
+    wakelock.active = True
+    with patch("sys.platform", "linux"):
+        with patch.object(
+            wakelock, "_uninhibit_linux", side_effect=Exception("mock error")
+        ):
+            wakelock.uninhibit()
+            # It logs and catches, active is not unset if it completely failed before setting active=False
+            assert wakelock.active is True
+
+
+def test_wakelock_linux_xdg_exception() -> None:
+    wakelock = WakeLock()
+    with patch("sys.platform", "linux"):
+        with patch("subprocess.check_output", side_effect=FileNotFoundError()):
+            with patch("subprocess.Popen", side_effect=Exception("xdg failed")):
+                wakelock.inhibit()
+                assert wakelock.active is True
+
+
+def test_wakelock_linux_uninhibit_exceptions() -> None:
+    wakelock = WakeLock()
+    wakelock._cookie = "123"
+    with patch("sys.platform", "linux"):
+        # both gdbus and xdg-screensaver fail
+        with patch("subprocess.run", side_effect=Exception("fail")):
+            wakelock._uninhibit_linux()
+            assert wakelock._cookie is None
+
+
+def test_wakelock_windows_exceptions() -> None:
+    wakelock = WakeLock()
+    with patch("sys.platform", "win32"):
+        mock_ctypes.windll.kernel32.SetThreadExecutionState.side_effect = Exception(
+            "win fail"
+        )
+        wakelock._inhibit_windows()
+        wakelock._uninhibit_windows()
+        mock_ctypes.windll.kernel32.SetThreadExecutionState.side_effect = None
+
+
+def test_wakelock_macos_exceptions() -> None:
+    wakelock = WakeLock()
+    with patch("sys.platform", "darwin"):
+        with patch("subprocess.Popen", side_effect=Exception("mac fail")):
+            wakelock._inhibit_macos("test")
+            assert wakelock._process is None
+
+        mock_process = MagicMock()
+        mock_process.terminate.side_effect = Exception("term fail")
+        mock_process.kill.side_effect = Exception("kill fail")
+        wakelock._process = mock_process
+        wakelock._uninhibit_macos()
+        assert wakelock._process is None

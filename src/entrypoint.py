@@ -17,6 +17,29 @@ if sys.platform == "darwin" and getattr(sys, "frozen", False):
     if "VLC_PLUGIN_PATH" not in os.environ:
         os.environ["VLC_PLUGIN_PATH"] = "/Applications/VLC.app/Contents/MacOS/plugins"
 
+# Linux/Windows PyInstaller compatibility for system VLC plugins
+elif getattr(sys, "frozen", False) and "VLC_PLUGIN_PATH" not in os.environ:
+    if sys.platform == "linux":
+        common_plugin_paths = [
+            "/usr/lib/x86_64-linux-gnu/vlc/plugins",
+            "/usr/lib/aarch64-linux-gnu/vlc/plugins",
+            "/usr/lib64/vlc/plugins",
+            "/usr/lib/vlc/plugins",
+        ]
+        for path in common_plugin_paths:
+            if os.path.isdir(path):
+                os.environ["VLC_PLUGIN_PATH"] = path
+                break
+    elif sys.platform == "win32":
+        common_plugin_paths = [
+            r"C:\Program Files\VideoLAN\VLC\plugins",
+            r"C:\Program Files (x86)\VideoLAN\VLC\plugins",
+        ]
+        for path in common_plugin_paths:
+            if os.path.isdir(path):
+                os.environ["VLC_PLUGIN_PATH"] = path
+                break
+
 from lan_streamer.main import main
 
 if __name__ == "__main__":
