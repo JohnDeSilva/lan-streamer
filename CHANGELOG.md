@@ -289,6 +289,13 @@
 
 - initial commit
 
+## v0.16.4 (2026-05-19)
+
+### Fix
+
+- **build**: generates github release_notes with releases
+- **build**: creates a dmg artifact for macos
+
 ## v0.16.3 (2026-05-19)
 
 ### Fix
