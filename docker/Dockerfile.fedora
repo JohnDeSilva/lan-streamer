@@ -1,5 +1,5 @@
-FROM fedora:latest
-
+ARG TEST_OS_VERSION=latest
+FROM fedora:${TEST_OS_VERSION}
 # Install bootstrapping and system dependencies
 RUN dnf update -y && dnf install -y \
     git \

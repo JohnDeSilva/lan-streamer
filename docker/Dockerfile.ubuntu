@@ -1,11 +1,12 @@
-FROM ubuntu:latest
-
+ARG TEST_OS_VERSION=latest
+FROM ubuntu:${TEST_OS_VERSION}
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies for VLC, FFmpeg, and Qt/PySide6 offscreen QPA
 RUN apt-get update && apt-get install -y --no-install-recommends \
     binutils \
+    ca-certificates \
     curl \
     git \
     make \

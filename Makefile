@@ -1,4 +1,4 @@
-.PHONY: run lint check-lint reformat test load-test test-ubuntu test-fedora test-distros build validate-executable validate-ubuntu validate-fedora validate-distros clean revision migrate release build-ubuntu-image build-fedora-image
+.PHONY: run lint check-lint reformat test test-local load-test build validate-executable clean revision migrate release build-test-image
 
 UNAME_S := $(shell uname -s)
 
@@ -26,6 +26,11 @@ endif
 # Container engine detection (prefers docker, falls back to podman, defaults to docker)
 CONTAINER_ENGINE ?= $(shell command -v docker 2> /dev/null || command -v podman 2> /dev/null || echo docker)
 
+TEST_OS ?= fedora
+TEST_OS_VERSION ?= latest
+GIT_HASH := $(shell git rev-parse --short HEAD)
+DOCKERFILE := $(shell if [ -f docker/Dockerfile.$(TEST_OS)-$(TEST_OS_VERSION) ]; then echo docker/Dockerfile.$(TEST_OS)-$(TEST_OS_VERSION); else echo docker/Dockerfile.$(TEST_OS); fi)
+
 run: migrate
 	PYTHONPATH=src $(QT_PLATFORM) $(PYTHON) -m lan_streamer.main
 
@@ -50,53 +55,31 @@ check-lint:
 setup-git-hooks:
 	$(PRE_COMMIT) install --hook-type commit-msg --hook-type pre-push --hook-type pre-commit
 
-test:
+test-local:
 	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src $(PYTHON) -m alembic upgrade head
 	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) --cov-fail-under=90 -m "not load" tests/
 	rm -f ./test_library.db ./test_library.db-wal ./test_library.db-shm
 
+build-test-image:
+	$(CONTAINER_ENGINE) build --build-arg TEST_OS_VERSION=$(TEST_OS_VERSION) -t lan-streamer-test-$(TEST_OS):$(GIT_HASH) -f $(DOCKERFILE) .
+
+ifeq ($(UNAME_S),Linux)
+test: build-test-image
+	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-run || true
+	$(CONTAINER_ENGINE) run --name lan-streamer-test-$(TEST_OS)-run lan-streamer-test-$(TEST_OS):$(GIT_HASH) make test-local; \
+	EXIT_CODE=$$?; \
+	mkdir -p ./coverage-results; \
+	$(CONTAINER_ENGINE) cp lan-streamer-test-$(TEST_OS)-run:/app/.coverage ./coverage-results/$(TEST_OS).coverage || true; \
+	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-run; \
+	exit $$EXIT_CODE
+else
+test: test-local
+endif
+
 load-test: migrate
 	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "load" -s --no-cov tests/
 
-build-ubuntu-image:
-	$(CONTAINER_ENGINE) build -t lan-streamer-test-ubuntu -f docker/Dockerfile.ubuntu .
 
-build-fedora-image:
-	$(CONTAINER_ENGINE) build -t lan-streamer-test-fedora -f docker/Dockerfile.fedora .
-
-test-ubuntu: build-ubuntu-image
-	$(CONTAINER_ENGINE) rm -f lan-streamer-test-ubuntu-run || true
-	$(CONTAINER_ENGINE) run --name lan-streamer-test-ubuntu-run lan-streamer-test-ubuntu make test; \
-	EXIT_CODE=$$?; \
-	$(CONTAINER_ENGINE) cp lan-streamer-test-ubuntu-run:/app/.coverage ./coverage-results/ubuntu.coverage || true; \
-	$(CONTAINER_ENGINE) rm -f lan-streamer-test-ubuntu-run; \
-	if [ $$EXIT_CODE -eq 0 ]; then \
-		$(MAKE) validate-ubuntu; \
-		EXIT_CODE=$$?; \
-	fi; \
-	exit $$EXIT_CODE
-
-test-fedora: build-fedora-image
-	$(CONTAINER_ENGINE) rm -f lan-streamer-test-fedora-run || true
-	$(CONTAINER_ENGINE) run --name lan-streamer-test-fedora-run lan-streamer-test-fedora make test; \
-	EXIT_CODE=$$?; \
-	$(CONTAINER_ENGINE) cp lan-streamer-test-fedora-run:/app/.coverage ./coverage-results/fedora.coverage || true; \
-	$(CONTAINER_ENGINE) rm -f lan-streamer-test-fedora-run; \
-	if [ $$EXIT_CODE -eq 0 ]; then \
-		$(MAKE) validate-fedora; \
-		EXIT_CODE=$$?; \
-	fi; \
-	exit $$EXIT_CODE
-
-validate-ubuntu: build-ubuntu-image
-	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_DRY_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-ubuntu ./dist/lan-streamer
-
-validate-fedora: build-fedora-image
-	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_DRY_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-fedora ./dist/lan-streamer
-
-validate-distros: validate-ubuntu validate-fedora
-
-test-distros: test-ubuntu test-fedora
 
 build:
 ifeq ($(UNAME_S),Darwin)
@@ -107,11 +90,18 @@ else
 	$(PYTHON) -m PyInstaller --noconfirm --onefile --windowed --paths src src/entrypoint.py --name lan-streamer
 endif
 
-validate-executable: build
+validate-executable:
 ifeq ($(UNAME_S),Darwin)
+	$(MAKE) build
 	LAN_STREAMER_DRY_RUN=1 QT_QPA_PLATFORM=offscreen ./dist/lan-streamer.app/Contents/MacOS/lan-streamer
 else
-	LAN_STREAMER_DRY_RUN=1 QT_QPA_PLATFORM=offscreen ./dist/lan-streamer
+	$(MAKE) build-test-image
+	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_DRY_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-$(TEST_OS):$(GIT_HASH) ./dist/lan-streamer
+	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-extract || true
+	$(CONTAINER_ENGINE) create --name lan-streamer-test-$(TEST_OS)-extract lan-streamer-test-$(TEST_OS):$(GIT_HASH)
+	mkdir -p dist
+	$(CONTAINER_ENGINE) cp lan-streamer-test-$(TEST_OS)-extract:/app/dist/lan-streamer ./dist/lan-streamer
+	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-extract
 endif
 
 clean:

@@ -15,87 +15,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install
-
-      - name: Install system dependencies for Qt/PySide6 and VLC/ffmpeg
-        run: |
-          sudo add-apt-repository -y ppa:ubuntuhandbook1/ffmpeg7
-          sudo apt-get update
-          sudo apt-get install -y \
-            vlc \
-            ffmpeg \
-            libegl1 \
-            libgl1-mesa-dev \
-            libxkbcommon-x11-0 \
-            libxcb-icccm4 \
-            libxcb-image0 \
-            libxcb-keysyms1 \
-            libxcb-randr0 \
-            libxcb-render-util0 \
-            libxcb-xinerama0 \
-            libxcb-xfixes0 \
-            libxcb-shape0
-
       - name: Run unit tests with coverage check
-        run: make test
-
-      - name: Build executable
-        run: make build
+        run: TEST_OS=ubuntu make test
 
       - name: Validate executable runs
-        run: make validate-executable
+        run: TEST_OS=ubuntu make validate-executable
 
 
   test-fedora:
     name: Test (Fedora)
     runs-on: ubuntu-latest
-    container:
-      image: fedora:latest
 
     steps:
-      - name: Install bootstrapping dependencies
-        run: |
-          dnf update -y
-          dnf install -y git make tar xz findutils shadow-utils
-          # Enable RPM Fusion for VLC
-          dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-"$(rpm -E %fedora)".noarch.rpm https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-"$(rpm -E %fedora)".noarch.rpm
-
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install
-
-      - name: Install system dependencies for Qt/PySide6 and VLC/ffmpeg
-        run: |
-          dnf install -y \
-            vlc \
-            ffmpeg \
-            mesa-libGL-devel \
-            mesa-libEGL-devel \
-            libxkbcommon-x11 \
-            binutils \
-            xcb-util-wm \
-            xcb-util-image \
-            xcb-util-keysyms \
-            xcb-util-renderutil
-
       - name: Run unit tests
-        run: make test
-
-      - name: Build executable
-        run: make build
+        run: TEST_OS=fedora make test
 
       - name: Validate executable runs
-        run: make validate-executable
+        run: TEST_OS=fedora make validate-executable
