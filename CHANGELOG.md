@@ -289,6 +289,19 @@
 
 - initial commit
 
+## v0.16.5 (2026-05-20)
+
+### Fix
+
+- **macos**: adds common plugin paths for vlc on mac
+- **ui**: displays watched status by text color instead of checkbox
+- **dev-dependency**: bump commitizen from 4.16.0 to 4.16.2
+- **dependency**: bump requests from 2.34.0 to 2.34.2
+
+### Refactor
+
+- **db**: updates queries to use sqlalchemy 2.0 syntax
+
 ## v0.16.4 (2026-05-19)
 
 ### Fix
