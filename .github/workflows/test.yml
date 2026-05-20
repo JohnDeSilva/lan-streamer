@@ -99,4 +99,3 @@ jobs:
 
       - name: Validate executable runs
         run: make validate-executable
-
