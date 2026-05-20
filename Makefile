@@ -101,6 +101,8 @@ test-distros: test-ubuntu test-fedora
 build:
 ifeq ($(UNAME_S),Darwin)
 	$(PYTHON) -m PyInstaller --noconfirm --windowed --paths src src/entrypoint.py --name lan-streamer
+	rm -rf dist/lan-streamer
+	ln -sf lan-streamer.app/Contents/MacOS/lan-streamer dist/lan-streamer
 else
 	$(PYTHON) -m PyInstaller --noconfirm --onefile --windowed --paths src src/entrypoint.py --name lan-streamer
 endif

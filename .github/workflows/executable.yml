@@ -148,13 +148,16 @@ jobs:
       - name: Prepare macOS Artifact
         run: |
           cd dist
-          mv lan-streamer.app lan-streamer-macos.app
+          mkdir -p dmg_root
+          mv lan-streamer.app "dmg_root/Lan Streamer.app"
+          ln -s /Applications dmg_root/Applications
+          hdiutil create -volname "Lan Streamer" -srcfolder dmg_root -ov -format UDZO lan-streamer-macos.dmg
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lan-streamer-macos.app
-          path: dist/lan-streamer-macos.app
+          name: lan-streamer-macos
+          path: dist/lan-streamer-macos.dmg
 
 
   build-windows:
