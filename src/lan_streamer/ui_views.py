@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QProgressBar,
     QFormLayout,
+    QMenu,
 )
 from PySide6.QtCore import (
     Qt,
@@ -34,9 +35,10 @@ from PySide6.QtCore import (
     QSize,
     QFileSystemWatcher,
     QTimer,
+    QPoint,
 )
 
-from PySide6.QtGui import QPixmap, QIcon, QFont, QColor
+from PySide6.QtGui import QPixmap, QIcon, QFont, QColor, QAction
 
 from .config import config
 from . import db
@@ -1348,15 +1350,7 @@ class SeriesDetailView(QWidget):
         if not self.controller.selected_series_name:
             return
         self.controller.mark_series_watched(self.controller.selected_series_name)
-        for table_widget in self._season_tables.values():
-            for row in range(table_widget.rowCount()):
-                cell_widget = table_widget.cellWidget(row, 4)
-                if cell_widget:
-                    checkbox = cell_widget.findChild(QCheckBox)
-                    if checkbox and not checkbox.isChecked():
-                        checkbox.blockSignals(True)
-                        checkbox.setChecked(True)
-                        checkbox.blockSignals(False)
+        self.populate_series_details(self._current_series_name)
 
     @Slot(str)
     def _on_mark_season_watched(self, season_name: str) -> None:
@@ -1365,16 +1359,7 @@ class SeriesDetailView(QWidget):
         self.controller.mark_season_watched(
             self.controller.selected_series_name, season_name
         )
-        table_widget = self._season_tables.get(season_name)
-        if table_widget:
-            for row in range(table_widget.rowCount()):
-                cell_widget = table_widget.cellWidget(row, 4)
-                if cell_widget:
-                    checkbox = cell_widget.findChild(QCheckBox)
-                    if checkbox and not checkbox.isChecked():
-                        checkbox.blockSignals(True)
-                        checkbox.setChecked(True)
-                        checkbox.blockSignals(False)
+        self.populate_series_details(self._current_series_name)
 
     @Slot(str)
     def populate_series_details(self, series_name: str) -> None:
@@ -1435,9 +1420,9 @@ class SeriesDetailView(QWidget):
 
             # Create an explicit QTableWidget layout for absolute robust item targeting under automated tests
             episode_table: QTableWidget = QTableWidget()
-            episode_table.setColumnCount(6)
+            episode_table.setColumnCount(5)
             episode_table.setHorizontalHeaderLabels(
-                ["Details", "#", "Episode Title", "Air Date", "Runtime", "Watched"]
+                ["Details", "#", "Episode Title", "Air Date", "Runtime"]
             )
             episode_table.horizontalHeader().setSectionResizeMode(
                 0, QHeaderView.ResizeMode.ResizeToContents
@@ -1454,9 +1439,6 @@ class SeriesDetailView(QWidget):
             episode_table.horizontalHeader().setSectionResizeMode(
                 4, QHeaderView.ResizeMode.ResizeToContents
             )
-            episode_table.horizontalHeader().setSectionResizeMode(
-                5, QHeaderView.ResizeMode.ResizeToContents
-            )
             episode_table.setSelectionBehavior(
                 QTableWidget.SelectionBehavior.SelectRows
             )
@@ -1467,11 +1449,11 @@ class SeriesDetailView(QWidget):
             episode_table.setRowCount(len(episodes_list))
 
             def make_cell_clicked_slot(
-                ep_list: List[Dict[str, Any]],
+                episode_list: List[Dict[str, Any]],
             ) -> Callable[[int, int], None]:
                 def slot(row: int, col: int) -> None:
                     if col == 2:  # Title column
-                        target_path = ep_list[row].get("path", "")
+                        target_path = episode_list[row].get("path", "")
                         if target_path:
                             self.controller.playback_requested.emit(target_path)
 
@@ -1522,44 +1504,68 @@ class SeriesDetailView(QWidget):
                 details_layout.addWidget(details_button)
                 episode_table.setCellWidget(row_index, 0, details_container)
 
+                # Determine distinctive color: unwatched blue (#0e5296), watched grey (#888888)
+                text_color: QColor = (
+                    QColor("#888888") if is_watched else QColor("#0e5296")
+                )
+
                 # Render table item entities cleanly
                 number_item: QTableWidgetItem = QTableWidgetItem(number_string)
                 number_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                number_item.setForeground(text_color)
                 episode_table.setItem(row_index, 1, number_item)
 
                 title_item: QTableWidgetItem = QTableWidgetItem(title_string)
                 title_item.setToolTip("Click to play episode")
+                title_item.setForeground(text_color)
                 episode_table.setItem(row_index, 2, title_item)
 
                 air_date_item: QTableWidgetItem = QTableWidgetItem(air_date_string)
                 air_date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                air_date_item.setForeground(text_color)
                 episode_table.setItem(row_index, 3, air_date_item)
 
                 runtime_item: QTableWidgetItem = QTableWidgetItem(runtime_string)
                 runtime_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                runtime_item.setForeground(text_color)
                 episode_table.setItem(row_index, 4, runtime_item)
 
-                # Custom interactive widget wrapper for Checkbox column to bind perfectly under pytest-qt
-                checkbox_container: QWidget = QWidget()
-                checkbox_layout: QHBoxLayout = QHBoxLayout(checkbox_container)
-                checkbox_layout.setContentsMargins(0, 0, 0, 0)
-                checkbox_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            def make_context_menu_slot(
+                table: QTableWidget, season: str, episode_list: List[Dict[str, Any]]
+            ) -> Callable[[QPoint], None]:
+                def show_context_menu(position: QPoint) -> None:
+                    item: Optional[QTableWidgetItem] = table.itemAt(position)
+                    if not item:
+                        return
+                    row: int = item.row()
+                    episode: Dict[str, Any] = episode_list[row]
+                    menu: QMenu = QMenu(table)
 
-                watched_checkbox: QCheckBox = QCheckBox()
-                watched_checkbox.setChecked(is_watched)
-                watched_checkbox.setObjectName(
-                    f"watchedCheckbox_{row_index}_{absolute_path}"
-                )
-
-                # Capture closure scope cleanly
-                def make_toggle_slot(path_target: str) -> Callable[[bool], None]:
-                    return lambda checked: self.controller.mark_episode_watched(
-                        path_target, checked
+                    is_watched: bool = bool(episode.get("watched", False))
+                    action_text: str = (
+                        "Mark as Unwatched" if is_watched else "Mark as Watched"
                     )
+                    toggle_action: QAction = QAction(action_text, table)
 
-                watched_checkbox.toggled.connect(make_toggle_slot(absolute_path))
-                checkbox_layout.addWidget(watched_checkbox)
-                episode_table.setCellWidget(row_index, 5, checkbox_container)
+                    def handle_toggle() -> None:
+                        target_path: str = episode.get("path", "")
+                        if target_path:
+                            new_status: bool = not is_watched
+                            self.controller.mark_episode_watched(
+                                target_path, new_status
+                            )
+                            self.populate_series_details(self._current_series_name)
+
+                    toggle_action.triggered.connect(handle_toggle)
+                    menu.addAction(toggle_action)
+                    menu.exec(table.viewport().mapToGlobal(position))
+
+                return show_context_menu
+
+            episode_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            episode_table.customContextMenuRequested.connect(
+                make_context_menu_slot(episode_table, season_name, episodes_list)
+            )
 
             # Create season_page container to house the table and mark season watched button cleanly
             season_page: QWidget = QWidget()

@@ -2,7 +2,6 @@ import pytest
 from unittest.mock import patch, MagicMock
 from typing import Any, Dict, List, Optional
 from PySide6.QtWidgets import (
-    QCheckBox,
     QPushButton,
     QTableWidget,
     QListWidgetItem,
@@ -216,7 +215,7 @@ def test_series_detail_view_rendering(
     assert page_widget is not None
     table_widget: Optional[Any] = page_widget.findChild(QTableWidget)
     assert isinstance(table_widget, QTableWidget)
-    assert table_widget.columnCount() == 6
+    assert table_widget.columnCount() == 5
     assert table_widget.rowCount() == 2
     table_item = table_widget.item(0, 2)
     assert table_item is not None
@@ -229,7 +228,7 @@ def test_series_detail_view_rendering(
     assert runtime_item.text() == "60 min"
 
 
-def test_e2e_checkbox_toggled_marks_watched(
+def test_e2e_right_click_marks_watched(
     sample_library_dictionary: Dict[str, Any], qtbot: Any, generated_video_asset: str
 ) -> None:
     controller_instance = Controller()
@@ -245,21 +244,52 @@ def test_e2e_checkbox_toggled_marks_watched(
     table_widget: Optional[Any] = page_widget.findChild(QTableWidget)
     assert isinstance(table_widget, QTableWidget)
 
-    # Locate inner checkbox widget cleanly in column 5
-    container_widget: Optional[Any] = table_widget.cellWidget(0, 5)
-    assert container_widget is not None
-    checkbox_instance: Optional[QCheckBox] = container_widget.findChild(QCheckBox)
-    assert checkbox_instance is not None
+    from unittest.mock import patch, MagicMock
 
-    with patch("lan_streamer.db.update_episode_watched_status") as mock_db:
-        checkbox_instance.setChecked(True)
-        mock_db.assert_called_once_with(generated_video_asset, True)
-        assert (
-            controller_instance.cached_library_data["Cosmos"]["seasons"]["Season 1"][
-                "episodes"
-            ][0]["watched"]
-            is True
-        )
+    with patch("lan_streamer.ui_views.QMenu") as mock_qmenu_class:
+        mock_menu_instance = MagicMock()
+        mock_qmenu_class.return_value = mock_menu_instance
+
+        item = table_widget.item(0, 2)
+        assert item is not None
+        pos = table_widget.visualItemRect(item).center()
+        table_widget.customContextMenuRequested.emit(pos)
+
+        assert mock_menu_instance.exec.called
+        assert mock_menu_instance.addAction.called
+        action = mock_menu_instance.addAction.call_args[0][0]
+        assert "Mark as Watched" in action.text()
+        action.trigger()
+
+    assert (
+        controller_instance.cached_library_data["Cosmos"]["seasons"]["Season 1"][
+            "episodes"
+        ][0]["watched"]
+        is True
+    )
+
+    # The episode in row 1 is watched, let's mark it as unwatched
+    with patch("lan_streamer.ui_views.QMenu") as mock_qmenu_class:
+        mock_menu_instance = MagicMock()
+        mock_qmenu_class.return_value = mock_menu_instance
+
+        item = table_widget.item(1, 2)
+        assert item is not None
+        pos = table_widget.visualItemRect(item).center()
+        table_widget.customContextMenuRequested.emit(pos)
+
+        assert mock_menu_instance.exec.called
+        assert mock_menu_instance.addAction.called
+        action = mock_menu_instance.addAction.call_args[0][0]
+        assert "Mark as Unwatched" in action.text()
+        action.trigger()
+
+    assert (
+        controller_instance.cached_library_data["Cosmos"]["seasons"]["Season 1"][
+            "episodes"
+        ][1]["watched"]
+        is False
+    )
 
 
 def test_e2e_title_click_triggers_playback(
