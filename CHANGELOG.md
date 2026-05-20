@@ -289,6 +289,13 @@
 
 - initial commit
 
+## v0.16.3 (2026-05-19)
+
+### Fix
+
+- **build**: Fixes executable extension for mac app
+- **ui**: handle ui issues found in wayland environments
+
 ## v0.16.2 (2026-05-19)
 
 ### Fix
