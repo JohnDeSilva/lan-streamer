@@ -60,6 +60,10 @@ def main() -> None:
         )
         sys.exit(0)
 
+    if sys.platform.startswith("linux") and not os.environ.get("QT_QPA_PLATFORM"):
+        if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
+            os.environ["QT_QPA_PLATFORM"] = "xcb"
+
     log_formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
