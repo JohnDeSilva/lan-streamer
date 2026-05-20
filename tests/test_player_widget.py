@@ -781,3 +781,40 @@ def test_realistic_e2e_video_playback_with_subtitles(
 
         assert player_widget.subtitle_combo.count() == 8
         player_widget.mediaplayer.video_set_spu.assert_called_with(7)
+
+
+def test_vlc_instance_fallback_swscale_mode(qtbot) -> None:
+    """Test that if vlc.Instance returns None and --swscale-mode=2 is present, it retries without the flag."""
+
+    # We will mock vlc.Instance so that it returns None the FIRST time it's called with --swscale-mode=2
+    # And returns a valid mock instance the second time (when the flag is removed).
+
+    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+        mock_vlc_module.Instance.side_effect = lambda args: (
+            None if "--swscale-mode=2" in args else MagicMock()
+        )
+        mock_vlc_module.EventType = MagicMock()
+
+        # Instantiate the widget
+        widget = VideoPlayerWidget()
+
+        # Verify Instance was called twice
+        assert mock_vlc_module.Instance.call_count == 2
+
+        # The second call should not have the flag
+        second_call_args = mock_vlc_module.Instance.call_args_list[1][0][0]
+        assert "--swscale-mode=2" not in second_call_args
+
+        # The mediaplayer should have been successfully created from the fallback instance
+        assert widget.mediaplayer is not None
+
+
+def test_vlc_instance_complete_failure(qtbot) -> None:
+    """Test when VLC fails to initialize completely even after fallback."""
+    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+        mock_vlc_module.Instance.return_value = None
+        mock_vlc_module.EventType = MagicMock()
+
+        widget = VideoPlayerWidget()
+        assert widget.instance is None
+        assert widget.mediaplayer is None

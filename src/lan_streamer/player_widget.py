@@ -114,13 +114,29 @@ class VideoPlayerWidget(QWidget):
 
             logger.info(f"Initializing VLC Instance with args: {args}")
             self.instance = vlc.Instance(args)
-            self.mediaplayer = self.instance.media_player_new()
 
-            # Event manager for detecting end of playback
-            self.event_manager = self.mediaplayer.event_manager()
-            self.event_manager.event_attach(
-                vlc.EventType.MediaPlayerEndReached, self._on_playback_finished
-            )
+            # Fallback for environments missing swscale plugin (e.g. PyInstaller executables)
+            if self.instance is None and "--swscale-mode=2" in args:
+                logger.warning(
+                    "VLC initialization failed. Retrying without --swscale-mode=2"
+                )
+                args.remove("--swscale-mode=2")
+                self.instance = vlc.Instance(args)
+
+            if self.instance is not None:
+                self.mediaplayer = self.instance.media_player_new()
+            else:
+                self.mediaplayer = None
+                logger.error(
+                    "VLC Instance could not be initialized even after fallback."
+                )
+
+            if self.mediaplayer:
+                # Event manager for detecting end of playback
+                self.event_manager = self.mediaplayer.event_manager()
+                self.event_manager.event_attach(
+                    vlc.EventType.MediaPlayerEndReached, self._on_playback_finished
+                )
         else:
             self.instance = None
             self.mediaplayer = None
