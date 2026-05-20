@@ -1,6 +1,8 @@
 # LAN Streamer
 [![Lint](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/lint.yml/badge.svg)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/lint.yml)
 [![Test](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/test.yml/badge.svg)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/test.yml)
+
+
 [![Ubuntu](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20Ubuntu)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
 [![Fedora](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20Fedora)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
 [![macOS](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20macOS)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)

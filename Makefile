@@ -1,4 +1,4 @@
-.PHONY: run lint check-lint reformat test load-test test-ubuntu test-fedora test-distros build validate-executable validate-ubuntu validate-fedora validate-distros clean revision migrate release
+.PHONY: run lint check-lint reformat test load-test test-ubuntu test-fedora test-distros build validate-executable validate-ubuntu validate-fedora validate-distros clean revision migrate release build-ubuntu-image build-fedora-image
 
 UNAME_S := $(shell uname -s)
 
@@ -57,8 +57,13 @@ test:
 load-test: migrate
 	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "load" -s --no-cov tests/
 
-test-ubuntu:
+build-ubuntu-image:
 	$(CONTAINER_ENGINE) build -t lan-streamer-test-ubuntu -f docker/Dockerfile.ubuntu .
+
+build-fedora-image:
+	$(CONTAINER_ENGINE) build -t lan-streamer-test-fedora -f docker/Dockerfile.fedora .
+
+test-ubuntu: build-ubuntu-image
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-ubuntu-run || true
 	$(CONTAINER_ENGINE) run --name lan-streamer-test-ubuntu-run lan-streamer-test-ubuntu make test; \
 	EXIT_CODE=$$?; \
@@ -70,8 +75,7 @@ test-ubuntu:
 	fi; \
 	exit $$EXIT_CODE
 
-test-fedora:
-	$(CONTAINER_ENGINE) build -t lan-streamer-test-fedora -f docker/Dockerfile.fedora .
+test-fedora: build-fedora-image
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-fedora-run || true
 	$(CONTAINER_ENGINE) run --name lan-streamer-test-fedora-run lan-streamer-test-fedora make test; \
 	EXIT_CODE=$$?; \
@@ -83,10 +87,10 @@ test-fedora:
 	fi; \
 	exit $$EXIT_CODE
 
-validate-ubuntu:
+validate-ubuntu: build-ubuntu-image
 	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_DRY_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-ubuntu ./dist/lan-streamer
 
-validate-fedora:
+validate-fedora: build-fedora-image
 	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_DRY_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-fedora ./dist/lan-streamer
 
 validate-distros: validate-ubuntu validate-fedora
