@@ -10,6 +10,8 @@ from sqlalchemy import (
     create_engine,
     func,
     event,
+    select,
+    update,
 )
 from sqlalchemy.orm import (
     sessionmaker,
@@ -213,14 +215,18 @@ def _sync_watched_by_ids(session: "Session", watched_ids: Set[str]) -> int:
     if not watched_ids:
         return 0
     count = int(
-        session.query(Episode)
-        .filter(Episode.jellyfin_id.in_(watched_ids))
-        .update({"watched": True}, synchronize_session=False)
+        session.execute(
+            update(Episode)
+            .where(Episode.jellyfin_id.in_(watched_ids))
+            .values(watched=True)
+        ).rowcount  # type: ignore[attr-defined]
+        or 0
     )
     count += int(
-        session.query(Movie)
-        .filter(Movie.jellyfin_id.in_(watched_ids))
-        .update({"watched": True}, synchronize_session=False)
+        session.execute(
+            update(Movie).where(Movie.jellyfin_id.in_(watched_ids)).values(watched=True)
+        ).rowcount  # type: ignore[attr-defined]
+        or 0
     )
     return count
 
@@ -233,14 +239,20 @@ def _sync_watched_by_paths(session: "Session", watched_paths: Set[str]) -> int:
     if not watched_paths:
         return 0
     count = int(
-        session.query(Episode)
-        .filter(Episode.watched.is_(False), Episode.path.in_(watched_paths))
-        .update({"watched": True}, synchronize_session=False)
+        session.execute(
+            update(Episode)
+            .where(Episode.watched.is_(False), Episode.path.in_(watched_paths))
+            .values(watched=True)
+        ).rowcount  # type: ignore[attr-defined]
+        or 0
     )
     count += int(
-        session.query(Movie)
-        .filter(Movie.watched.is_(False), Movie.path.in_(watched_paths))
-        .update({"watched": True}, synchronize_session=False)
+        session.execute(
+            update(Movie)
+            .where(Movie.watched.is_(False), Movie.path.in_(watched_paths))
+            .values(watched=True)
+        ).rowcount  # type: ignore[attr-defined]
+        or 0
     )
     return count
 
@@ -256,23 +268,26 @@ def _sync_watched_by_names(
         return 0
     count = 0
     for series_name, episode_name in watched_names:
-        episode_ids = [
-            row.id
-            for row in session.query(Episode.id)
-            .join(Season)
-            .join(Series)
-            .filter(
-                Episode.watched.is_(False),
-                func.lower(Series.name) == series_name.lower(),
-                func.lower(Episode.name) == episode_name.lower(),
-            )
-            .all()
-        ]
+        episode_ids = list(
+            session.scalars(
+                select(Episode.id)
+                .join(Season)
+                .join(Series)
+                .where(
+                    Episode.watched.is_(False),
+                    func.lower(Series.name) == series_name.lower(),
+                    func.lower(Episode.name) == episode_name.lower(),
+                )
+            ).all()
+        )
         if episode_ids:
             count += int(
-                session.query(Episode)
-                .filter(Episode.id.in_(episode_ids))
-                .update({"watched": True}, synchronize_session=False)
+                session.execute(
+                    update(Episode)
+                    .where(Episode.id.in_(episode_ids))
+                    .values(watched=True)
+                ).rowcount  # type: ignore[attr-defined]
+                or 0
             )
     return count
 
@@ -288,7 +303,9 @@ def _cleanup_movie_library(
     stats: Dict[str, int],
 ) -> None:
     """Removes Movie records whose file path no longer exists on disk."""
-    movie_list = session.query(Movie).filter(Movie.library_name == library_name).all()
+    movie_list = session.scalars(
+        select(Movie).where(Movie.library_name == library_name)
+    ).all()
     for movie in movie_list:
         if movie.path and not Path(movie.path).exists():
             logger.info(
@@ -308,9 +325,9 @@ def _cleanup_tv_library(
     Removes Series/Season/Episode records whose corresponding paths no longer
     exist on disk, then purges any empty seasons or series left behind.
     """
-    series_list = (
-        session.query(Series).filter(Series.library_name == library_name).all()
-    )
+    series_list = session.scalars(
+        select(Series).where(Series.library_name == library_name)
+    ).all()
 
     for series in series_list:
         series_path_exists = any(
@@ -356,13 +373,12 @@ def _cleanup_tv_library(
     session.flush()
     session.expire_all()
 
-    empty_seasons = (
-        session.query(Season)
+    empty_seasons = session.scalars(
+        select(Season)
         .join(Series)
-        .filter(Series.library_name == library_name)
-        .filter(~Season.episodes.any())
-        .all()
-    )
+        .where(Series.library_name == library_name)
+        .where(~Season.episodes.any())
+    ).all()
     for season in empty_seasons:
         season_series_name = (
             season.series.name if season.series and season.series.name else "Unknown"
@@ -376,12 +392,11 @@ def _cleanup_tv_library(
 
     session.flush()
 
-    empty_series = (
-        session.query(Series)
-        .filter(Series.library_name == library_name)
-        .filter(~Series.seasons.any())
-        .all()
-    )
+    empty_series = session.scalars(
+        select(Series)
+        .where(Series.library_name == library_name)
+        .where(~Series.seasons.any())
+    ).all()
     for series in empty_series:
         logger.info(f"Cleanup: Removing empty series '{series.name}'")
         session.delete(series)
@@ -398,12 +413,11 @@ def load_library(library_name: str) -> Dict[str, Any]:
 
     try:
         with get_session() as session:
-            series_list = (
-                session.query(Series)
-                .filter(Series.library_name == library_name)
+            series_list = session.scalars(
+                select(Series)
+                .where(Series.library_name == library_name)
                 .order_by(Series.name)
-                .all()
-            )
+            ).all()
 
             for series in series_list:
                 stats["series"] += 1
@@ -514,9 +528,9 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
         with get_session() as session:
             existing_series = {
                 series_obj.name: series_obj
-                for series_obj in session.query(Series)
-                .filter(Series.library_name == library_name)
-                .all()
+                for series_obj in session.scalars(
+                    select(Series).where(Series.library_name == library_name)
+                ).all()
                 if series_obj.name is not None
             }
 
@@ -580,35 +594,16 @@ def load_movie_library(library_name: str) -> Dict[str, Any]:
 
     try:
         with get_session() as session:
-            movie_list = (
-                session.query(Movie)
-                .filter(Movie.library_name == library_name)
+            movie_list = session.scalars(
+                select(Movie)
+                .where(Movie.library_name == library_name)
                 .order_by(Movie.name)
-                .all()
-            )
+            ).all()
 
             for movie in movie_list:
                 stats["movies"] += 1
-                movie_dict: Dict[str, Any] = {
-                    "name": movie.name,
-                    "path": movie.path,
-                    "jellyfin_id": movie.jellyfin_id,
-                    "tmdb_identifier": movie.tmdb_identifier,
-                    "poster_path": movie.poster_path,
-                    "overview": movie.overview,
-                    "tmdb_name": movie.tmdb_name,
-                    "locked_metadata": bool(movie.locked_metadata),
-                    "date_added": movie.date_added or 0,
-                    "runtime": movie.runtime or 0,
-                    "rating": movie.rating or "",
-                    "genre": movie.genre or "",
-                    "year": movie.year or 0,
-                    "watched": bool(movie.watched),
-                    "last_played_position": movie.last_played_position or 0,
-                }
-
                 if movie.name is not None:
-                    library_data[movie.name] = movie_dict
+                    library_data[movie.name] = _build_movie_dict(movie)
     except Exception:
         logger.exception(f"Error loading movie library '{library_name}' from database")
         return {}
@@ -631,9 +626,9 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> None:
         with get_session() as session:
             existing_movies_by_name = {
                 m.name: m
-                for m in session.query(Movie)
-                .filter(Movie.library_name == library_name)
-                .all()
+                for m in session.scalars(
+                    select(Movie).where(Movie.library_name == library_name)
+                ).all()
                 if m.name is not None
             }
             incoming_paths = [
@@ -643,9 +638,9 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> None:
             if incoming_paths:
                 existing_movies_by_path = {
                     m.path: m
-                    for m in session.query(Movie)
-                    .filter(Movie.path.in_(incoming_paths))
-                    .all()
+                    for m in session.scalars(
+                        select(Movie).where(Movie.path.in_(incoming_paths))
+                    ).all()
                     if m.path is not None
                 }
 
@@ -699,11 +694,13 @@ def update_episode_watched_status(path: str, watched: bool) -> None:
     try:
         logger.info(f"Updating watched status for {path} to {watched}")
         with get_session() as session:
-            episode = session.query(Episode).filter(Episode.path == path).first()
+            episode = session.scalars(
+                select(Episode).where(Episode.path == path)
+            ).first()
             if episode:
                 episode.watched = watched
             else:
-                movie = session.query(Movie).filter(Movie.path == path).first()
+                movie = session.scalars(select(Movie).where(Movie.path == path)).first()
                 if movie:
                     movie.watched = watched
     except Exception:
@@ -715,7 +712,9 @@ def update_episode_path(old_path: str, new_path: str) -> None:
     try:
         logger.info(f"Updating episode path from {old_path} to {new_path}")
         with get_session() as session:
-            episode = session.query(Episode).filter(Episode.path == old_path).first()
+            episode = session.scalars(
+                select(Episode).where(Episode.path == old_path)
+            ).first()
             if episode:
                 episode.path = new_path
     except Exception:
@@ -726,11 +725,13 @@ def update_episode_playback_position(path: str, position: int) -> bool:
     """Saves the last played playback offset (in seconds) for a given episode."""
     try:
         with get_session() as session:
-            episode = session.query(Episode).filter(Episode.path == path).first()
+            episode = session.scalars(
+                select(Episode).where(Episode.path == path)
+            ).first()
             if episode:
                 episode.last_played_position = position
                 return True
-            movie = session.query(Movie).filter(Movie.path == path).first()
+            movie = session.scalars(select(Movie).where(Movie.path == path)).first()
             if movie:
                 movie.last_played_position = position
                 return True
@@ -743,10 +744,12 @@ def get_episode_playback_position(path: str) -> int:
     """Retrieves the stored last played playback offset (in seconds) for a given episode."""
     try:
         with get_session() as session:
-            episode = session.query(Episode).filter(Episode.path == path).first()
+            episode = session.scalars(
+                select(Episode).where(Episode.path == path)
+            ).first()
             if episode and episode.last_played_position:
                 return int(episode.last_played_position)
-            movie = session.query(Movie).filter(Movie.path == path).first()
+            movie = session.scalars(select(Movie).where(Movie.path == path)).first()
             if movie and movie.last_played_position:
                 return int(movie.last_played_position)
     except Exception:
@@ -765,19 +768,21 @@ def update_season_watched_status(
             f"Updating watched status for {series_name} - {season_name} in {library_name} to {watched}"
         )
         with get_session() as session:
-            season = (
-                session.query(Season)
+            season = session.scalars(
+                select(Season)
                 .join(Series)
-                .filter(
+                .where(
                     Series.library_name == library_name,
                     Series.name == series_name,
                     Season.name == season_name,
                 )
-                .first()
-            )
+            ).first()
             if season:
-                for episode in season.episodes:
-                    episode.watched = watched
+                session.execute(
+                    update(Episode)
+                    .where(Episode.season_id == season.id)
+                    .values(watched=watched)
+                )
     except Exception:
         logger.exception(
             f"Error updating watched status for {series_name} - {season_name}"
@@ -795,11 +800,11 @@ def update_series_watched_status(
             f"Updating watched status for entire series {series_name} in {library_name} to {watched}"
         )
         with get_session() as session:
-            series = (
-                session.query(Series)
-                .filter(Series.library_name == library_name, Series.name == series_name)
-                .first()
-            )
+            series = session.scalars(
+                select(Series).where(
+                    Series.library_name == library_name, Series.name == series_name
+                )
+            ).first()
             if series:
                 for season in series.seasons:
                     for episode in season.episodes:
@@ -848,40 +853,30 @@ def sync_watched_from_jellyfin_data(
 
 def get_all_episodes_with_jellyfin_id() -> list:
     """Returns a list of all episodes and movies that have a Jellyfin ID associated."""
-    episodes = []
+    items: list = []
     try:
         with get_session() as session:
-            rows = (
-                session.query(Episode)
-                .filter(Episode.jellyfin_id.is_not(None), Episode.jellyfin_id != "")
-                .all()
-            )
-            for row in rows:
-                episodes.append(
-                    {
-                        "name": row.name,
-                        "path": row.path,
-                        "jellyfin_id": row.jellyfin_id,
-                        "watched": row.watched,
-                    }
-                )
-            mrows = (
-                session.query(Movie)
-                .filter(Movie.jellyfin_id.is_not(None), Movie.jellyfin_id != "")
-                .all()
-            )
-            for mrow in mrows:
-                episodes.append(
-                    {
-                        "name": mrow.name,
-                        "path": mrow.path,
-                        "jellyfin_id": mrow.jellyfin_id,
-                        "watched": mrow.watched,
-                    }
-                )
+            model: type[Episode] | type[Movie]
+            for model in (Episode, Movie):
+                rows = session.scalars(
+                    select(model).where(
+                        model.jellyfin_id.is_not(None),
+                        model.jellyfin_id != "",
+                    )
+                ).all()
+                row: Episode | Movie
+                for row in rows:  # type: ignore[assignment]
+                    items.append(
+                        {
+                            "name": row.name,
+                            "path": row.path,
+                            "jellyfin_id": row.jellyfin_id,
+                            "watched": row.watched,
+                        }
+                    )
     except Exception:
         logger.exception("Error fetching episodes/movies with Jellyfin ID")
-    return episodes
+    return items
 
 
 def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str, int]:
@@ -925,22 +920,20 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
     items_list: List[Dict[str, Any]] = []
     try:
         with get_session() as session:
-            episodes = (
-                session.query(Episode)
-                .filter((Episode.runtime == 0) | (Episode.runtime.is_(None)))
-                .all()
-            )
+            episodes = session.scalars(
+                select(Episode).where(
+                    (Episode.runtime == 0) | (Episode.runtime.is_(None))
+                )
+            ).all()
             for episode in episodes:
                 if episode.path:
                     items_list.append(
                         {"id": episode.id, "path": episode.path, "type": "episode"}
                     )
 
-            movies = (
-                session.query(Movie)
-                .filter((Movie.runtime == 0) | (Movie.runtime.is_(None)))
-                .all()
-            )
+            movies = session.scalars(
+                select(Movie).where((Movie.runtime == 0) | (Movie.runtime.is_(None)))
+            ).all()
             for movie in movies:
                 if movie.path:
                     items_list.append(
@@ -958,13 +951,15 @@ def update_item_runtime(
     try:
         with get_session() as session:
             if item_type == "episode":
-                episode = (
-                    session.query(Episode).filter(Episode.id == item_identifier).first()
-                )
+                episode = session.scalars(
+                    select(Episode).where(Episode.id == item_identifier)
+                ).first()
                 if episode:
                     episode.runtime = runtime_minutes
             elif item_type == "movie":
-                movie = session.query(Movie).filter(Movie.id == item_identifier).first()
+                movie = session.scalars(
+                    select(Movie).where(Movie.id == item_identifier)
+                ).first()
                 if movie:
                     movie.runtime = runtime_minutes
     except Exception:
