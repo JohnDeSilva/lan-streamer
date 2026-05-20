@@ -201,18 +201,21 @@ The repository includes pre-commit hooks to automate quality checks before commi
     -   **`pre-push`**: Ensures type-checking, style checks, and commit range conformity (`commitizen check branch`) pass before pushing remote branches.
 
 ### 🐳 Local Containerized Testing
-To ensure binary build stability and dependency compatibility across different Linux distributions, you can run isolated containerized tests locally (requires Docker or Podman):
-*   **Ubuntu**: Builds, tests, and verifies the standalone binary inside an Ubuntu container:
+To ensure binary build stability and dependency compatibility across different Linux distributions, all Linux testing is centralized via Docker/Podman using the `TEST_OS` and `TEST_OS_VERSION` environment variables.
+
+*   **Test in Container**: Builds the container for the specified OS and runs the test suite inside it. Defaults to `fedora:latest`.
     ```bash
-    make test-ubuntu
+    make test                                      # Runs fedora:latest
+    TEST_OS=ubuntu make test                       # Runs ubuntu:latest
+    TEST_OS=ubuntu TEST_OS_VERSION=22.04 make test # Runs ubuntu:22.04
     ```
-*   **Fedora**: Builds, tests, and verifies the standalone binary inside a Fedora container:
+    > [!TIP]
+    > When testing non-latest OS versions, the `TEST_OS_VERSION` argument is passed dynamically to the base Dockerfile. If the older OS version requires significantly different system dependencies or package names, you can create a version-specific Dockerfile (e.g., `docker/Dockerfile.ubuntu-22.04`), and the `Makefile` will automatically detect and use it instead!
+
+*   **Validate Executable**: Builds the container, tests the compiled PyInstaller executable within the container, and extracts the binary to your host machine's `./dist/` directory.
     ```bash
-    make test-fedora
-    ```
-*   **All Distros**: Runs both Ubuntu and Fedora suites sequentially:
-    ```bash
-    make test-distros
+    make validate-executable
+    TEST_OS=ubuntu make validate-executable
     ```
 
 ---
@@ -228,8 +231,7 @@ All code pushed or submitted via Pull Request is automatically validated through
     -   Executes all `pre-commit` hooks (`hadolint`, `yamllint`, `actionlint`, etc.) across the entire codebase.
 2.  **Cross-Platform Verification (`test.yml`)**:
     -   Runs a multi-operating system matrix validating all code paths:
-        -   **Ubuntu**: Sets up system packages (VLC, FFmpeg7, Qt libs), runs unit tests with coverage constraints, compiles the standalone PyInstaller executable, and performs an offscreen dry-run verification.
-        -   **Fedora**: Provisions a Fedora container to run tests, compile the executable, and verify dry-run startup.
+        -   **Linux (Ubuntu/Fedora)**: Leverages Docker containers via `TEST_OS` in the `Makefile` to securely build, test, and validate binaries without requiring system-level dependencies on the GitHub runner.
         -   **macOS**: Configures macOS-latest with brew-installed VLC, runs tests, and compiles/validates the executable with target-specific VLC library pathing.
         -   **Windows**: Deploys Windows-latest, installs VLC/FFmpeg, applies schema migrations, runs tests, and compiles/verifies the executable.
 3.  **Build Executables & Release (`executable.yml`)**:
