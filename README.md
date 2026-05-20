@@ -79,7 +79,7 @@ make run
 > **MacOS Gatekeeper**: The downloaded macOS artifact contains an unsigned `.app` bundle. You may see a "cannot be verified" or "malware" warning. To open it, either **Right-Click -> Open** the `LanStreamer.app` to bypass the warning, or clear the quarantine attribute by running `xattr -cr /path/to/LanStreamer.app` in your terminal.
 
 > [!TIP]
-> **Standalone Executables**: The pre-compiled Linux macOS, and Windows executables feature **smart VLC plugin discovery**. They will automatically scan your system for native VLC plugins upon startup, allowing advanced rendering flags (like `--swscale-mode=2`) to function natively without any manual `VLC_PLUGIN_PATH` configuration. If plugins are completely missing, the player gracefully falls back to default settings to prevent crashes.
+> **Standalone Executables**: The pre-compiled Linux, macOS, and Windows executables feature **smart VLC plugin discovery**. They will automatically scan your system for native VLC plugins upon startup, allowing advanced rendering flags (like `--swscale-mode=2`) to function natively without any manual `VLC_PLUGIN_PATH` configuration. If plugins are completely missing, the player gracefully falls back to default settings to prevent crashes.
 
 ### Setup Guide
 1.  **Configure TMDB**: Go to **Metadata > TMDB Settings...** and enter your API Key.
