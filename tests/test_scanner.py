@@ -1876,3 +1876,107 @@ def test_extract_video_runtime_both_fail(tmp_path: Path) -> None:
         runtime = _extract_video_runtime(str(video_file))
 
     assert runtime == 0
+
+
+def test_scanner_additional_coverage(tmp_path: Path) -> None:
+    from lan_streamer.scanner import scan_directories, _resolve_episode_jellyfin_id
+
+    # 1. _resolve_episode_jellyfin_id names map match
+    episode_file = tmp_path / "Avatar S01E01.mkv"
+    episode_file.touch()
+    jellyfin_data = {
+        "series_id_map": {
+            "jf_series_id": {"episodes": {}, "names": {"avatar": "jf_ep_avatar"}}
+        }
+    }
+    jellyfin_id, new_series_id, new_season_id = _resolve_episode_jellyfin_id(
+        episode_path=str(episode_file),
+        episode_name="Avatar S01E01.mkv",
+        episode_file=episode_file,
+        tmdb_episode_identifier=None,
+        tmdb_name="Avatar",
+        tmdb_number=1,
+        season_name="Season 1",
+        series_directory=tmp_path,
+        series_data={"metadata": {"jellyfin_id": "jf_series_id"}},
+        season_metadata={},
+        tmdb_series=None,
+        jellyfin_data=jellyfin_data,
+    )
+    assert jellyfin_id == "jf_ep_avatar"
+
+    # 2. Movie library with locked metadata
+    movie_dir = tmp_path / "movies"
+    movie_dir.mkdir()
+    (movie_dir / "Inception").mkdir()
+    (movie_dir / "Inception" / "Inception.mkv").touch()
+
+    existing_library = {
+        "Inception": {
+            "tmdb_identifier": "tmdb_inception_123",
+            "locked_metadata": True,
+            "tmdb_name": "Inception (Locked)",
+            "overview": "Overview",
+            "poster_path": "poster.jpg",
+            "year": 2010,
+            "path": str(movie_dir / "Inception" / "Inception.mkv"),
+        }
+    }
+
+    mock_tmdb = MagicMock()
+    # Ensure tmdb search/get series are not called since they are locked
+    with (
+        patch("lan_streamer.scanner.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.scan_movie") as mock_scan_movie,
+    ):
+        scan_directories(
+            [str(movie_dir)], library_type="movie", existing_library=existing_library
+        )
+        # Should be called with tmdb_movie having build stub fields from existing
+        mock_scan_movie.assert_called_once()
+        called_args = mock_scan_movie.call_args[1]
+        assert called_args["tmdb_movie"]["id"] == "tmdb_inception_123"
+        assert called_args["tmdb_movie"]["title"] == "Inception (Locked)"
+
+    # 3. Preserving missing season folder when cleanup is False
+    from lan_streamer.scanner import scan_series
+
+    show_dir = tmp_path / "My Show"
+    show_dir.mkdir()
+    # On disk we only have Season 2
+    (show_dir / "Season 2").mkdir()
+    (show_dir / "Season 2" / "S02E01.mkv").touch()
+
+    # In DB we have Season 1 and Season 2
+    existing_series_data = {
+        "metadata": {"tmdb_identifier": "show123", "tmdb_name": "My Show"},
+        "seasons": {
+            "Season 1": {
+                "metadata": {},
+                "episodes": [{"name": "S01E01.mkv", "path": "/path/to/S01E01.mkv"}],
+            },
+            "Season 2": {
+                "metadata": {},
+                "episodes": [
+                    {
+                        "name": "S02E01.mkv",
+                        "path": str(show_dir / "Season 2" / "S02E01.mkv"),
+                    }
+                ],
+            },
+        },
+    }
+
+    mock_tmdb_series = MagicMock()
+    mock_tmdb_series.get_seasons.return_value = []
+    mock_tmdb_series.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb_series):
+        scanned_data = scan_series(
+            series_directory=show_dir,
+            existing_series_data=existing_series_data,
+            cleanup=False,
+        )
+        # Season 1 should be preserved since cleanup=False
+        assert "Season 1" in scanned_data["seasons"]
+        assert len(scanned_data["seasons"]["Season 1"]["episodes"]) == 1

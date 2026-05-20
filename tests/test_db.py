@@ -767,3 +767,30 @@ def test_cleanup_tv_library_removes_missing_episode(mock_db_file, tmp_path) -> N
         stats = {"series": 0, "seasons": 0, "episodes": 0, "movies": 0}
         _cleanup_tv_library(session, "L", [str(tmp_path)], stats)
         assert stats["episodes"] >= 1
+
+
+def test_db_edge_cases() -> None:
+    # natural_sort_key with None
+    assert db.natural_sort_key(None) == []
+
+    # init_db with mkdir exception
+    with patch("pathlib.Path.mkdir", side_effect=OSError("Write error")):
+        assert db.init_db() is False
+
+
+def test_db_more_error_paths() -> None:
+    with patch("lan_streamer.db.get_session") as mock_session:
+        mock_session.side_effect = Exception("General DB Error")
+        # Ensure these functions don't raise but log exceptions
+        db.update_season_watched_status("Lib", "Show", "S1", True)
+        db.update_series_watched_status("Lib", "Show", True)
+        db.update_item_runtime(1, "episode", 30)
+        db.sync_watched_from_jellyfin_data({"id1"}, {"/path1"}, {("Show", "Ep1")})
+
+
+def test_get_session_rollback() -> None:
+    from lan_streamer.db import get_session
+
+    with pytest.raises(ValueError):
+        with get_session():
+            raise ValueError("Test rollback trigger")

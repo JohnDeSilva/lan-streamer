@@ -140,6 +140,8 @@ def test_perform_scheduled_backups_frequency_interval(backup_environment: Path) 
     )  # Only old file remains
 
     # 3. Simulate stale backup (8 days ago) -> should generate fresh backup
+    # Clear the recent backup first
+    (backup_directory / recent_filename).unlink()
     stale_time: datetime = datetime.now() - timedelta(days=8)
     stale_filename: str = f"{stale_time.strftime('%Y%m%d_%H%M%S')}_config.json"
     (backup_directory / stale_filename).write_text("stale config")
@@ -324,3 +326,71 @@ def test_perform_scheduled_backups_dir_creation_failure(
     ):
         # Should NOT raise
         backup.perform_scheduled_backups()
+
+
+def test_cleanup_old_backups_unlink_exception(backup_environment: Path) -> None:
+    backup_directory: Path = backup_environment / "backups"
+    (backup_directory / "20260101_000000_config.json").write_text("content")
+    (backup_directory / "20260102_000000_config.json").write_text("content")
+
+    with patch("pathlib.Path.unlink", side_effect=OSError("Access denied")):
+        # Should not raise exception
+        backup.cleanup_old_backups(backup_directory, "_config.json", 1)
+
+
+def test_cleanup_old_backups_general_exception(backup_environment: Path) -> None:
+    backup_directory: Path = backup_environment / "backups"
+    with patch("pathlib.Path.iterdir", side_effect=OSError("Disk failure")):
+        # Should not raise exception
+        backup.cleanup_old_backups(backup_directory, "_config.json", 1)
+
+
+def test_create_config_backup_exception(backup_environment: Path) -> None:
+    with patch("shutil.copy2", side_effect=Exception("Copy failed")):
+        assert backup.create_config_backup() is False
+
+
+def test_create_database_backup_exception(backup_environment: Path) -> None:
+    with patch("shutil.copy2", side_effect=Exception("Copy failed")):
+        assert backup.create_database_backup() is False
+
+
+def test_perform_scheduled_backups_database_recent_and_stale(
+    backup_environment: Path,
+) -> None:
+    backup_directory: Path = backup_environment / "backups"
+    config.database_backup_frequency = 5
+
+    # 1. Recent database backup (2 days ago)
+    recent_time = datetime.now() - timedelta(days=2)
+    recent_name = f"{recent_time.strftime('%Y%m%d_%H%M%S')}_library.db"
+    (backup_directory / recent_name).write_text("recent db content")
+
+    backup.perform_scheduled_backups()
+    # No new database backup should be generated (still 1 db backup in folder)
+    db_backups = list(backup_directory.glob("*_library.db"))
+    assert len(db_backups) == 1
+
+    # Clear files
+    for f in backup_directory.iterdir():
+        f.unlink()
+
+    # 2. Stale database backup (6 days ago)
+    stale_time = datetime.now() - timedelta(days=6)
+    stale_name = f"{stale_time.strftime('%Y%m%d_%H%M%S')}_library.db"
+    (backup_directory / stale_name).write_text("stale db content")
+
+    backup.perform_scheduled_backups()
+    # Stale means a new backup should be generated, total 2 files
+    db_backups = list(backup_directory.glob("*_library.db"))
+    assert len(db_backups) == 2
+
+
+def test_restore_database_integrity_fail(backup_environment: Path) -> None:
+    corrupt_backup: Path = backup_environment / "corrupt_backup.db"
+    corrupt_backup.write_text("mock sqlite file")
+
+    with patch("sqlalchemy.engine.base.Connection.execute") as mock_execute:
+        # Mock integrity_check result to be "corrupted"
+        mock_execute.return_value.scalar.return_value = "corrupted"
+        assert backup.restore_database_backup(str(corrupt_backup)) is False

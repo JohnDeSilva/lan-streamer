@@ -377,3 +377,189 @@ def test_main_playback_requested_external_exception() -> None:
 
         mock_external_play.assert_called_once_with("/path/to/video.mkv")
         mock_log_error.assert_called()
+
+
+def test_main_dry_run() -> None:
+    import os
+
+    def exit_side_effect(code=0):
+        raise SystemExit(code)
+
+    with (
+        patch.dict(os.environ, {"LAN_STREAMER_DRY_RUN": "1", "QT_QPA_PLATFORM": ""}),
+        patch("lan_streamer.main.QApplication", MagicMock()),
+        patch("sys.exit", side_effect=exit_side_effect),
+    ):
+        with pytest.raises(SystemExit) as excinfo:
+            main.main()
+        assert excinfo.value.code == 0
+
+
+def test_main_log_cleanup_unlink_exception() -> None:
+    import pathlib
+
+    with (
+        patch("pathlib.Path.unlink", side_effect=OSError("Access denied")),
+        patch("lan_streamer.main.QApplication", MagicMock()),
+        patch("lan_streamer.main.QMainWindow", MagicMock()),
+        patch("lan_streamer.main.QWidget", MagicMock()),
+        patch("lan_streamer.main.QStackedLayout", MagicMock()),
+        patch("lan_streamer.main.Controller", MagicMock()),
+        patch("lan_streamer.main.LibraryGridView", MagicMock()),
+        patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+        patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
+        patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("sys.exit", MagicMock()),
+    ):
+        # We need a dummy log file that looks old to trigger unlink
+        # Let's mock stat return value to have an old mtime
+        mock_stat = MagicMock()
+        mock_stat.st_mtime = 0
+        with (
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("pathlib.Path.stat", return_value=mock_stat),
+            patch("pathlib.Path.glob", return_value=[pathlib.Path("old_log.log")]),
+        ):
+            main.main()
+
+
+def test_main_wayland_platform() -> None:
+    import os
+
+    with (
+        patch.dict(os.environ, {"XDG_SESSION_TYPE": "wayland", "QT_QPA_PLATFORM": ""}),
+        patch("sys.exit", MagicMock()),
+        patch("lan_streamer.main.QApplication", MagicMock()),
+        patch("lan_streamer.main.QMainWindow", MagicMock()),
+        patch("lan_streamer.main.QWidget", MagicMock()),
+        patch("lan_streamer.main.QStackedLayout", MagicMock()),
+        patch("lan_streamer.main.Controller", MagicMock()),
+        patch("lan_streamer.main.LibraryGridView", MagicMock()),
+        patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+        patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
+        patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+    ):
+        main.main()
+        assert os.environ.get("QT_QPA_PLATFORM") == "xcb"
+
+
+def test_main_log_directory_creation_failure() -> None:
+    with (
+        patch("pathlib.Path.mkdir", side_effect=OSError("Write block")),
+        patch("lan_streamer.main.QApplication", MagicMock()),
+        patch("lan_streamer.main.QMainWindow", MagicMock()),
+        patch("lan_streamer.main.QWidget", MagicMock()),
+        patch("lan_streamer.main.QStackedLayout", MagicMock()),
+        patch("lan_streamer.main.Controller", MagicMock()),
+        patch("lan_streamer.main.LibraryGridView", MagicMock()),
+        patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+        patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
+        patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("sys.exit", MagicMock()),
+    ):
+        main.main()
+
+
+def test_main_log_cleanup_exception() -> None:
+    with (
+        patch("pathlib.Path.glob", side_effect=Exception("Glob failed")),
+        patch("lan_streamer.main.QApplication", MagicMock()),
+        patch("lan_streamer.main.QMainWindow", MagicMock()),
+        patch("lan_streamer.main.QWidget", MagicMock()),
+        patch("lan_streamer.main.QStackedLayout", MagicMock()),
+        patch("lan_streamer.main.Controller", MagicMock()),
+        patch("lan_streamer.main.LibraryGridView", MagicMock()),
+        patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+        patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
+        patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("sys.exit", MagicMock()),
+    ):
+        main.main()
+
+
+def test_main_more_signal_routings() -> None:
+    from lan_streamer.config import config
+
+    config.libraries = {"LibMovie": {"type": "movie"}}
+
+    with (
+        patch("sys.exit", MagicMock()),
+        patch("lan_streamer.main.QApplication", MagicMock()),
+        patch("lan_streamer.main.QMainWindow", MagicMock()),
+        patch("lan_streamer.main.QWidget", MagicMock()),
+        patch("lan_streamer.main.QStackedLayout", MagicMock()) as mock_layout_class,
+        patch("lan_streamer.main.Controller", MagicMock()) as mock_controller_class,
+        patch("lan_streamer.main.LibraryGridView", MagicMock()),
+        patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+        patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
+        patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        # Dialog patches
+        patch("lan_streamer.main.JellyfinMatchDialog", MagicMock()) as mock_jf_dialog,
+        patch(
+            "lan_streamer.main.EpisodeMatchDialog", MagicMock()
+        ) as mock_ep_match_dialog,
+        patch(
+            "lan_streamer.main.EpisodeDetailsDialog", MagicMock()
+        ) as mock_ep_detail_dialog,
+        patch(
+            "lan_streamer.main.MovieDetailsDialog", MagicMock()
+        ) as mock_movie_detail_dialog,
+        patch(
+            "lan_streamer.main.SeriesDetailsDialog", MagicMock()
+        ) as mock_series_detail_dialog,
+    ):
+        main.main()
+        mock_controller_instance = mock_controller_class.return_value
+        mock_player_instance = mock_player_class.return_value
+        mock_layout_instance = mock_layout_class.return_value
+
+        # 1. on_player_back_requested (library type = movie) -> index 2
+        mock_controller_instance.current_library_name = "LibMovie"
+        player_back_slot = mock_player_instance.back_requested.connect.call_args[0][0]
+        player_back_slot()
+        mock_layout_instance.setCurrentIndex.assert_called_with(2)
+
+        # 2. Jellyfin dialog routing
+        jf_dialog_slot = (
+            mock_controller_instance.jellyfin_dialog_requested.connect.call_args[0][0]
+        )
+        jf_dialog_slot("Show")
+        mock_jf_dialog.return_value.exec.assert_called_once()
+
+        # 3. Episode metadata dialog routing
+        ep_match_slot = mock_controller_instance.episode_metadata_dialog_requested.connect.call_args[
+            0
+        ][0]
+        ep_match_slot("Show", "/path/to/ep")
+        mock_ep_match_dialog.return_value.exec.assert_called_once()
+
+        # 4. Episode details dialog routing
+        ep_detail_slot = (
+            mock_controller_instance.episode_details_requested.connect.call_args[0][0]
+        )
+        ep_detail_slot("Show", "/path/to/ep")
+        mock_ep_detail_dialog.return_value.exec.assert_called_once()
+
+        # 5. Movie details dialog routing
+        movie_detail_slot = (
+            mock_controller_instance.movie_details_requested.connect.call_args[0][0]
+        )
+        movie_detail_slot("Movie", "/path/to/movie")
+        mock_movie_detail_dialog.return_value.exec.assert_called_once()
+
+        # 6. Series details dialog routing
+        series_detail_slot = (
+            mock_controller_instance.series_details_requested.connect.call_args[0][0]
+        )
+        series_detail_slot("Show")
+        mock_series_detail_dialog.return_value.exec.assert_called_once()

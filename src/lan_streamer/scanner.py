@@ -129,8 +129,6 @@ def _extract_video_runtime(file_path: str) -> int:
         return 0
 
     try:
-        import subprocess
-
         process_result: subprocess.CompletedProcess[str] = subprocess.run(
             [
                 "ffprobe",
@@ -1110,9 +1108,6 @@ def _process_episode_file(
         jellyfin_id = existing_episode.get("jellyfin_id", "")
         logger.debug(f"Reusing existing metadata for '{episode_name}'")
     else:
-        if existing_episode:
-            air_date = existing_episode.get("air_date", "")
-            runtime = existing_episode.get("runtime", 0)
         parsed = _parse_episode_number(episode_name)
         if parsed:
             _, episode_number = parsed

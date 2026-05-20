@@ -375,3 +375,175 @@ def test_search_movie_error(jf_client) -> None:
     jf_client._cached_user_id = "user123"
     jf_client.session.get = MagicMock(side_effect=Exception("API Error"))
     assert jf_client.search_movie("Test") == []
+
+
+def test_jellyfin_validate_credentials_extra_paths(jf_client) -> None:
+    # dot in URL, not localhost, not IP -> https redirect check
+    with patch("socket.create_connection"):
+        jf_client.session.get = MagicMock(side_effect=Exception("Connection issue"))
+        success, msg = jf_client.validate_credentials("my-jellyfin.domain.com", "key")
+        assert success is False
+
+        # When url starts with http but connection error occurs
+        from requests.exceptions import ConnectionError
+
+        jf_client.session.get.side_effect = ConnectionError("Conn error")
+        success, msg = jf_client.validate_credentials("http://test.com", "key")
+        assert success is False
+        assert "HTTP connection failed" in msg
+
+        # HTTP error other than 401
+        from requests.exceptions import HTTPError
+
+        mock_err_resp = MagicMock()
+        mock_err_resp.status_code = 500
+        jf_client.session.get.side_effect = HTTPError(response=mock_err_resp)
+        success, msg = jf_client.validate_credentials("http://test.com", "key")
+        assert success is False
+        assert "HTTP Error" in msg
+
+
+def test_jellyfin_get_current_user_id_unconfigured() -> None:
+    client = JellyfinClient()
+    with (
+        patch.object(config, "jellyfin_url", "http://test"),
+        patch.object(config, "jellyfin_api_key", "key"),
+    ):
+        # mock session get to return empty list
+        client.session.get = MagicMock()
+        client.session.get.return_value.json.return_value = []
+        assert client.get_current_user_id() is None
+
+
+def test_get_current_user_id_https_retry_error(jf_client) -> None:
+    with (
+        patch.object(config, "jellyfin_url", "test.com"),
+        patch.object(config, "jellyfin_api_key", "key"),
+    ):
+        # First call fails on HTTPS, second call fails on HTTP
+        from requests.exceptions import ConnectionError
+
+        jf_client.session.get = MagicMock(
+            side_effect=[ConnectionError("HTTPS fail"), Exception("HTTP fail")]
+        )
+        assert jf_client.get_current_user_id() is None
+
+
+def test_jellyfin_get_correlation_data_unconfigured(jf_client) -> None:
+    # 1. Unconfigured
+    with patch.object(config, "jellyfin_url", ""):
+        assert jf_client.get_jellyfin_correlation_data() == {}
+
+    # 2. No user_id
+    jf_client.get_current_user_id = MagicMock(return_value=None)
+    assert jf_client.get_jellyfin_correlation_data() == {}
+
+
+def test_jellyfin_correlation_data_pagination_and_exceptions(jf_client) -> None:
+    jf_client._cached_user_id = "user123"
+
+    # Mock 1st page: Episode/Movie search (5000 items)
+    page1 = MagicMock()
+    page1.json.return_value = {
+        "Items": [
+            {
+                "Id": f"ep{i}",
+                "Path": f"/path{i}",
+                "SeriesId": "s1",
+                "Name": f"Ep{i}",
+                "ProviderIds": {"Tmdb": f"tmdb{i}"},
+            }
+            for i in range(5000)
+        ]
+    }
+
+    # Mock 2nd page: Episode/Movie search (1 item)
+    page2 = MagicMock()
+    page2.json.return_value = {
+        "Items": [
+            {
+                "Id": "ep_last",
+                "Path": "/path_last",
+                "SeriesId": "s1",
+                "Name": "EpLast",
+                "ProviderIds": {"Tmdb": "tmdb_last"},
+            }
+        ]
+    }
+
+    # Mock 3rd page: Series/Movie search (5000 items)
+    page3 = MagicMock()
+    page3.json.return_value = {
+        "Items": [{"Id": "s1", "ProviderIds": {"Tmdb": "tmdb_series_1"}}] * 5000
+    }
+
+    # Mock 4th page: Series/Movie search (0 items)
+    page4 = MagicMock()
+    page4.json.return_value = {"Items": []}
+
+    jf_client.session.get = MagicMock(side_effect=[page1, page2, page3, page4])
+
+    data = jf_client.get_jellyfin_correlation_data()
+    assert len(data["path_map"]) == 5001
+    assert data["tmdb_series_map"]["tmdb_series_1"] == "s1"
+
+
+def test_jellyfin_correlation_data_exceptions(jf_client) -> None:
+    jf_client._cached_user_id = "user123"
+    # Exception during Episode fetch
+    jf_client.session.get = MagicMock(side_effect=Exception("Episode API down"))
+    data = jf_client.get_jellyfin_correlation_data()
+    assert data == {
+        "path_map": {},
+        "tmdb_episode_map": {},
+        "tmdb_series_map": {},
+        "name_map": {},
+        "series_id_map": {},
+    }
+
+
+def test_jellyfin_played_status_edge_cases(jf_client) -> None:
+    # 1. Unconfigured
+    with patch.object(config, "jellyfin_url", ""):
+        assert jf_client.mark_as_played("item1") is False
+        assert jf_client.unmark_as_played("item1") is False
+        assert jf_client.get_series_episodes("s1") == []
+        jf_client.set_watched_status("item1", True)  # Should return immediately
+
+    # 2. No user_id
+    jf_client.get_current_user_id = MagicMock(return_value=None)
+    assert jf_client.mark_as_played("item1") is False
+    assert jf_client.unmark_as_played("item1") is False
+    assert jf_client.get_series_episodes("s1") == []
+    assert jf_client.search_series("Test") == []
+    assert jf_client.search_movie("Test") == []
+    jf_client.set_watched_status("item1", True)
+
+
+def test_jellyfin_played_status_exceptions(jf_client) -> None:
+    jf_client._cached_user_id = "user123"
+    jf_client.session.post = MagicMock(side_effect=Exception("Post error"))
+    assert jf_client.mark_as_played("item1") is False
+
+
+def test_jellyfin_fetch_watched_episodes_edge_cases(jf_client) -> None:
+    # No user_id
+    jf_client.get_current_user_id = MagicMock(return_value=None)
+    assert jf_client.fetch_watched_episodes() == (set(), set(), set())
+
+    # Names list population
+    jf_client.get_current_user_id = MagicMock(return_value="user123")
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "Items": [
+            {
+                "Id": "ep1",
+                "Path": "/path1",
+                "SeriesName": "CoolShow",
+                "Name": "EpisodeOne",
+            }
+        ]
+    }
+    jf_client.session.get = MagicMock(return_value=mock_resp)
+    ids, paths, names = jf_client.fetch_watched_episodes()
+    assert ("coolshow", "episodeone") in names
