@@ -23,7 +23,7 @@ It manages local media libraries (e.g., NAS, External Drives) and provides optio
 *   **⚡ Library Scanning**: Uses SQLite `UPSERT` logic for incremental scanning, preserving manual metadata corrections.
 *   **🔍 Metadata Matching**: Multi-stage search strategy to link local media to TMDB and Jellyfin entries.
 *   **📛 Naming Support**: Uses official **TMDB** episode and series names, with filename fallbacks for unmatched items.
-*   **🔄 Bidirectional Sync**: 
+*   **🔄 Bidirectional Sync**:
     *   Downloads posters and overviews from TMDB.
     *   Syncs "Watched" status with Jellyfin servers in real-time.
 *   **🗨️ Subtitle Integration**: Integrated **OpenSubtitles.com** support for searching and downloading subtitles directly within the app.
@@ -182,7 +182,7 @@ Run unit tests with coverage validation (90% minimum threshold):
 make test
 ```
 
-Check formatting, lint rules, and types:
+Check formatting, lint rules, types, and validate all non-Python files (YAML, Dockerfiles, etc) via `pre-commit`:
 ```bash
 make lint
 ```
@@ -228,12 +228,17 @@ All code pushed or submitted via Pull Request is automatically validated through
 1.  **Lint & Typecheck (`lint.yml`)**:
     -   Triggered on push and pull requests targeting `main`.
     -   Automatically checks formatting, executes Ruff linting, runs Mypy type-checking, and verifies commit message compliance for branch revisions.
+    -   Executes all `pre-commit` hooks (`hadolint`, `yamllint`, `actionlint`, etc.) across the entire codebase.
 2.  **Cross-Platform Verification (`test.yml`)**:
     -   Runs a multi-operating system matrix validating all code paths:
         -   **Ubuntu**: Sets up system packages (VLC, FFmpeg7, Qt libs), runs unit tests with coverage constraints, compiles the standalone PyInstaller executable, and performs an offscreen dry-run verification.
         -   **Fedora**: Provisions a Fedora container to run tests, compile the executable, and verify dry-run startup.
         -   **macOS**: Configures macOS-latest with brew-installed VLC, runs tests, and compiles/validates the executable with target-specific VLC library pathing.
         -   **Windows**: Deploys Windows-latest, installs VLC/FFmpeg, applies schema migrations, runs tests, and compiles/verifies the executable.
+3.  **Build Executables & Release (`executable.yml`)**:
+    -   Triggered on pushes to `main` and on version tag creations (`v*`).
+    -   Compiles and packages standalone applications for **Ubuntu**, **Fedora**, **macOS** (as a `.app` bundle), and **Windows**.
+    -   Automatically generates GitHub Releases and attaches the executables as downloadable release assets whenever a new version tag is pushed.
 
 ### Repository Management
 -   **Dependabot**: Configured (`.github/dependabot.yml`) to perform daily updates on the `uv` package ecosystem to ensure dependencies remain secure and up-to-date.
@@ -249,4 +254,3 @@ All code pushed or submitted via Pull Request is automatically validated through
 
 ## 📜 License
 MIT License. See [LICENSE](LICENSE) for details.
-

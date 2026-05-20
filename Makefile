@@ -39,6 +39,7 @@ ruff-check:
 	$(RUFF) check --fix .
 
 lint: format ruff-check typecheck
+	$(PRE_COMMIT) run --all-files
 
 reformat: format ruff-check
 

@@ -11,8 +11,8 @@ RUN dnf update -y && dnf install -y \
     binutils \
     curl \
     && dnf install -y \
-    https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
-    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm \
+    https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-"$(rpm -E %fedora)".noarch.rpm \
+    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-"$(rpm -E %fedora)".noarch.rpm \
     && dnf install -y \
     vlc \
     ffmpeg \
@@ -39,4 +39,3 @@ RUN uv sync
 
 # Build the executable
 RUN uv run pyinstaller --onefile --paths src src/entrypoint.py --name lan-streamer
-

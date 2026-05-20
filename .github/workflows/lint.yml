@@ -31,6 +31,9 @@ jobs:
       - name: Run typecheck
         run: make typecheck
 
+      - name: Run all other linters (pre-commit)
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
       - name: Verify commit messages (Push)
         if: github.event_name == 'push' && github.ref_name != 'main'
         run: |
