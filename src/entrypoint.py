@@ -15,7 +15,21 @@ if sys.platform == "darwin" and getattr(sys, "frozen", False):
             pass
     # Also set VLC_PLUGIN_PATH if not set, as plugins are needed for actual playback
     if "VLC_PLUGIN_PATH" not in os.environ:
-        os.environ["VLC_PLUGIN_PATH"] = "/Applications/VLC.app/Contents/MacOS/plugins"
+        common_plugin_paths = [
+            "/Applications/VLC.app/Contents/MacOS/plugins",
+            os.path.expanduser("~/Applications/VLC.app/Contents/MacOS/plugins"),
+            "/opt/homebrew/lib/vlc/plugins",
+            "/usr/local/lib/vlc/plugins",
+            "/opt/local/lib/vlc/plugins",
+        ]
+        for path in common_plugin_paths:
+            if os.path.isdir(path):
+                os.environ["VLC_PLUGIN_PATH"] = path
+                break
+        else:
+            os.environ["VLC_PLUGIN_PATH"] = (
+                "/Applications/VLC.app/Contents/MacOS/plugins"
+            )
 
 # Linux/Windows PyInstaller compatibility for system VLC plugins
 elif getattr(sys, "frozen", False) and "VLC_PLUGIN_PATH" not in os.environ:
