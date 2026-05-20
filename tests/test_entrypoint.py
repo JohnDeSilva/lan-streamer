@@ -51,7 +51,9 @@ def test_entrypoint_macos_frozen_user_applications() -> None:
     with (
         patch("sys.platform", "darwin"),
         patch("sys.frozen", True, create=True),
-        patch.dict(os.environ, {}, clear=True),
+        patch.dict(
+            os.environ, {"HOME": os.environ.get("HOME", "/home/username")}, clear=True
+        ),
         patch("os.path.isdir", side_effect=mock_isdir),
         patch("lan_streamer.main.main"),
     ):
