@@ -289,6 +289,14 @@
 
 - initial commit
 
+## v0.16.2 (2026-05-19)
+
+### Fix
+
+- **vlc**: make plugin support for vlc more forgiving
+- **linting**: fixes linting errors
+- **build**: re-add missing mac app
+
 ## v0.16.1 (2026-05-19)
 
 ### Fix
