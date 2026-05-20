@@ -167,7 +167,7 @@ The application automatically tracks your playback progress and maintains a "wat
 
 ### Technical Stack
 *   **UI**: PySide6 (Qt 6)
-*   **Database**: SQLite with SQLAlchemy ORM
+*   **Database**: SQLite with SQLAlchemy ORM (using strictly 2.0 query syntax)
 *   **Migrations**: Alembic
 *   **Testing**: pytest, pytest-cov, pytest-qt
 *   **Linting**: Ruff
