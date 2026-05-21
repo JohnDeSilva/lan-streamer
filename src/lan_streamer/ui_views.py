@@ -1,7 +1,7 @@
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Tuple
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QFormLayout,
     QMenu,
+    QPlainTextEdit,
 )
 from PySide6.QtCore import (
     Qt,
@@ -38,7 +39,15 @@ from PySide6.QtCore import (
     QPoint,
 )
 
-from PySide6.QtGui import QPixmap, QIcon, QFont, QColor, QAction
+from PySide6.QtGui import (
+    QPixmap,
+    QIcon,
+    QFont,
+    QColor,
+    QAction,
+    QCloseEvent,
+    QTextCursor,
+)
 
 from .config import config
 from . import db
@@ -3170,6 +3179,13 @@ class SettingsDialog(QDialog):
         self.config_backup_retention_input: QLineEdit = QLineEdit()
         self.database_backup_retention_input: QLineEdit = QLineEdit()
 
+        self.log_level_filter: QComboBox = QComboBox()
+        self.log_search_input: QLineEdit = QLineEdit()
+        self.log_autoscroll_checkbox: QCheckBox = QCheckBox()
+        self.log_display: QPlainTextEdit = QPlainTextEdit()
+        self.all_log_records: List[Tuple[str, str]] = []
+        self._logging_connected: bool = False
+
         self._setup_ui()
         self._load_config()
 
@@ -3484,6 +3500,64 @@ class SettingsDialog(QDialog):
         management_layout.addStretch()
         tab_container.addTab(management_tab, "Library Management")
 
+        # Running Logs Tab
+        logs_tab: QWidget = QWidget()
+        logs_layout: QVBoxLayout = QVBoxLayout(logs_tab)
+        logs_layout.setSpacing(10)
+        logs_layout.setContentsMargins(10, 10, 10, 10)
+
+        # Control panel layout
+        control_layout: QHBoxLayout = QHBoxLayout()
+        control_layout.setSpacing(10)
+
+        control_layout.addWidget(QLabel("Min Level:"))
+        self.log_level_filter.clear()
+        self.log_level_filter.addItems(
+            ["All", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        )
+        self.log_level_filter.setCurrentText("INFO")
+        self.log_level_filter.currentTextChanged.connect(self._on_log_filter_changed)
+        control_layout.addWidget(self.log_level_filter)
+
+        control_layout.addWidget(QLabel("Filter Text:"))
+        self.log_search_input.setPlaceholderText("Search logs...")
+        self.log_search_input.textChanged.connect(self._on_log_filter_changed)
+        control_layout.addWidget(self.log_search_input)
+
+        self.log_autoscroll_checkbox.setText("Auto-scroll")
+        self.log_autoscroll_checkbox.setChecked(True)
+        control_layout.addWidget(self.log_autoscroll_checkbox)
+
+        clear_logs_button: QPushButton = QPushButton("Clear View")
+        clear_logs_button.clicked.connect(self._clear_log_view)
+        control_layout.addWidget(clear_logs_button)
+
+        copy_logs_button: QPushButton = QPushButton("Copy All")
+        copy_logs_button.clicked.connect(self._copy_logs_to_clipboard)
+        control_layout.addWidget(copy_logs_button)
+
+        logs_layout.addLayout(control_layout)
+
+        # PlainTextEdit display configuration
+        self.log_display.setReadOnly(True)
+        log_font: QFont = QFont("Courier New", 10)
+        log_font.setStyleHint(QFont.StyleHint.Monospace)
+        self.log_display.setFont(log_font)
+        self.log_display.setStyleSheet(
+            """
+            QPlainTextEdit {
+                background-color: #121212;
+                color: #dcdcdc;
+                border: 1px solid #333333;
+                border-radius: 6px;
+                padding: 10px;
+            }
+            """
+        )
+        logs_layout.addWidget(self.log_display)
+
+        tab_container.addTab(logs_tab, "Running Logs")
+
         main_layout.addWidget(tab_container)
 
         # Dialog Standard Action Buttons
@@ -3543,6 +3617,16 @@ class SettingsDialog(QDialog):
             for library_name, library_config in config.libraries.items()
         }
         self._refresh_library_selector()
+
+        # Populate initial logs from the buffer
+        from .logging_handler import qt_log_handler
+
+        self.all_log_records = list(qt_log_handler.buffer)
+        self._refresh_log_display()
+
+        # Connect live log signals
+        qt_log_handler.emitter.log_emitted.connect(self._on_log_emitted)
+        self._logging_connected = True
 
     def _refresh_library_selector(self) -> None:
         self.library_selector.blockSignals(True)
@@ -3865,6 +3949,114 @@ class SettingsDialog(QDialog):
         self.global_progress_bar.setMaximum(100)
         self.global_progress_bar.setValue(100)
         self.global_progress_bar.setFormat(message_text)
+
+    @Slot(str)
+    def _on_log_filter_changed(self, text: str) -> None:
+        self._refresh_log_display()
+
+    @Slot()
+    def _clear_log_view(self) -> None:
+        self.all_log_records.clear()
+        self._refresh_log_display()
+
+    @Slot()
+    def _copy_logs_to_clipboard(self) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        log_text: str = "\n".join(
+            [formatted_message for formatted_message, _ in self.all_log_records]
+        )
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(log_text)
+
+    def _refresh_log_display(self) -> None:
+        self.log_display.clear()
+        search_term: str = self.log_search_input.text().strip().lower()
+        selected_level: str = self.log_level_filter.currentText()
+        level_threshold: int = self._get_level_value(selected_level)
+        matching_lines: List[str] = []
+        for formatted_message, level_name in self.all_log_records:
+            record_level_val: int = self._get_level_value(level_name)
+            if record_level_val < level_threshold:
+                continue
+            if search_term and search_term not in formatted_message.lower():
+                continue
+            html_line: str = self._format_log_to_html(formatted_message, level_name)
+            matching_lines.append(html_line)
+        self.log_display.appendHtml("<br>".join(matching_lines))
+        if self.log_autoscroll_checkbox.isChecked():
+            self._scroll_to_bottom()
+
+    def _get_level_value(self, level_name: str) -> int:
+        levels: Dict[str, int] = {
+            "DEBUG": 10,
+            "INFO": 20,
+            "WARNING": 30,
+            "ERROR": 40,
+            "CRITICAL": 50,
+        }
+        return levels.get(level_name.upper(), 0)
+
+    def _format_log_to_html(self, message: str, level_name: str) -> str:
+        import html
+
+        escaped_message: str = html.escape(message)
+        colors: Dict[str, str] = {
+            "DEBUG": "#7f8c8d",
+            "INFO": "#2ecc71",
+            "WARNING": "#f1c40f",
+            "ERROR": "#e74c3c",
+            "CRITICAL": "#e74c3c; font-weight: bold; background-color: #2c3e50;",
+        }
+        color: str = colors.get(level_name.upper(), "#ffffff")
+        level_tag: str = f"[{level_name}]"
+        colored_tag: str = (
+            f'<span style="color: {color}; font-weight: bold;">{level_tag}</span>'
+        )
+        return escaped_message.replace(level_tag, colored_tag, 1)
+
+    @Slot(str, str)
+    def _on_log_emitted(self, formatted_message: str, level_name: str) -> None:
+        self.all_log_records.append((formatted_message, level_name))
+        if len(self.all_log_records) > 1000:
+            self.all_log_records.pop(0)
+        search_term: str = self.log_search_input.text().strip().lower()
+        selected_level: str = self.log_level_filter.currentText()
+        level_threshold: int = self._get_level_value(selected_level)
+        record_level_val: int = self._get_level_value(level_name)
+        if record_level_val >= level_threshold:
+            if not search_term or search_term in formatted_message.lower():
+                html_line: str = self._format_log_to_html(formatted_message, level_name)
+                self.log_display.appendHtml(html_line)
+                if self.log_autoscroll_checkbox.isChecked():
+                    self._scroll_to_bottom()
+
+    def _scroll_to_bottom(self) -> None:
+
+        self.log_display.moveCursor(QTextCursor.MoveOperation.End)
+
+    def _disconnect_logging(self) -> None:
+        if getattr(self, "_logging_connected", False):
+            try:
+                from .logging_handler import qt_log_handler
+
+                qt_log_handler.emitter.log_emitted.disconnect(self._on_log_emitted)
+            except RuntimeError, TypeError:
+                pass
+            self._logging_connected = False
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self._disconnect_logging()
+        super().closeEvent(event)
+
+    def accept(self) -> None:
+        self._disconnect_logging()
+        super().accept()
+
+    def reject(self) -> None:
+        self._disconnect_logging()
+        super().reject()
 
 
 class MovieDetailView(QWidget):

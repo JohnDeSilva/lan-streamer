@@ -192,6 +192,10 @@ def main() -> None:
             log_formatter,
         )
 
+    from .logging_handler import setup_qt_logging
+
+    setup_qt_logging(log_formatter)
+
     from .backup import perform_scheduled_backups
 
     perform_scheduled_backups()
