@@ -565,6 +565,17 @@ def _resolve_episode_jellyfin_id(
     return jellyfin_id, new_series_jellyfin_id, new_season_jellyfin_id
 
 
+class LibraryDict(dict[str, Any]):
+    """
+    Custom dictionary subclass to hold library contents and track
+    any root directories that were unavailable during scanning.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.unavailable_directories: List[str] = []
+
+
 def scan_directories(
     root_directories: List[str],
     library_type: str = "tv",
@@ -573,12 +584,12 @@ def scan_directories(
     callback: Any = None,
     force_refresh: bool = False,
     cleanup: bool = False,
-) -> Dict[str, Any]:
+) -> LibraryDict:
     """
     Scans root directories and matches with TMDB to pull metadata.
     Watch history (watched status) is handled separately via Jellyfin sync.
     """
-    library: Dict[str, Any] = {}
+    library = LibraryDict()
     existing_library = existing_library or {}
 
     logger.info(f"Starting directory scan. Root directories: {root_directories}")
@@ -586,9 +597,9 @@ def scan_directories(
     for root_directory in root_directories:
         logger.info(f"Scanning root directory: {root_directory}")
         root_path = Path(root_directory)
-        if not root_path.exists():
-            continue
-        if not root_path.is_dir():
+        if not root_path.exists() or not root_path.is_dir():
+            logger.warning(f"Root directory '{root_directory}' is unavailable")
+            library.unavailable_directories.append(root_directory)
             continue
 
         # Sort series directories by mtime (newest first)

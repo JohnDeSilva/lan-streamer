@@ -112,7 +112,19 @@ def test_scan_directories_oserror(tmp_path) -> None:
 
 
 def test_scan_directories_nonexistent_path() -> None:
-    assert scan_directories(["/path/does/not/exist/at/all/123456789"]) == {}
+    result = scan_directories(["/path/does/not/exist/at/all/123456789"])
+    assert result == {}
+    assert result.unavailable_directories == ["/path/does/not/exist/at/all/123456789"]
+
+
+def test_scan_directories_mixed_availability(tmp_path: Path) -> None:
+    valid_path = tmp_path / "valid_dir"
+    valid_path.mkdir()
+    invalid_path = "/path/does/not/exist/123"
+
+    result = scan_directories([str(valid_path), invalid_path])
+    assert result == {}
+    assert result.unavailable_directories == [invalid_path]
 
 
 def test_scan_series(tmp_path) -> None:
