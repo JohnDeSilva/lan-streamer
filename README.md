@@ -4,7 +4,9 @@
 
 **LAN Streamer** is a lightweight media library manager designed for local media playback with a metadata-rich browsing interface.
 
-It manages local media libraries (e.g., NAS, External Drives) and provides optional **Jellyfin** and **OpenSubtitles** integration for watch history synchronization and subtitle management without server-side transcoding.
+> *Just play the damn file.*
+
+LAN Streamer is built to play your media files directly and natively without any transcoding, preserving 100% of the original video and audio quality and fidelity. It manages local media libraries (e.g., NAS, External Drives) and provides optional **Jellyfin** and **OpenSubtitles** integration for watch history synchronization and subtitle management.
 
 ---
 
@@ -13,8 +15,8 @@ It manages local media libraries (e.g., NAS, External Drives) and provides optio
 *   **📺 Embedded Playback**: Uses **VLC** for playback directly within the application. Supports audio and subtitle track selection, seeking, and volume control.
 *   **🎭 Theatre Mode**: Hides UI elements during fullscreen playback for an unobstructed view. A minimal control bar provides essential playback actions.
 *   **💾 Local Caching**: Optional pre-playback caching of media files to local storage to eliminate network-related buffering.
-*   **🧠 Progress Tracking**: Automatically marks media as watched based on a configurable threshold and supports resuming playback from saved positions.
-*   **⚡ Library Scanning**: Uses SQLite `UPSERT` logic for incremental scanning, preserving manual metadata corrections.
+*   **🧠 Progress Tracking**: Automatically marks media as watched based on a configurable threshold, supports resuming playback from saved positions, and displays an on-screen overlay to automatically play the next episode in a series once the completion threshold is reached.
+*   **⚡ Library Scanning**: Uses SQLite `UPSERT` logic for incremental scanning, preserving manual metadata corrections. Gracefully handles unavailable root directories during a scan, reporting them as warning notifications without failing the entire scan.
 *   **🔍 Metadata Matching**: Multi-stage search strategy to link local media to TMDB and Jellyfin entries.
 *   **📛 Naming Support**: Uses official **TMDB** episode and series names, with filename fallbacks for unmatched items.
 *   **🔄 Bidirectional Sync**:
@@ -25,7 +27,8 @@ It manages local media libraries (e.g., NAS, External Drives) and provides optio
 *   **📅 Air Date Sorting**: Uses TMDB air dates for "Recently Aired" library sorting.
 *   **🏷️ Media Renamer**: Utility to rename local files to match official metadata standards.
 *   **🧹 Library Cleanup**: Tool to remove missing files and stale database entries while maintaining metadata integrity.
-*   **🎨 Responsive UI**: Native dark mode interface built with PySide6 (QtWidgets).
+*   **📜 Real-Time Log Viewer**: View streaming logs directly within a dedicated "Running Logs" tab in the Settings dialog, with log level filtering, text searching, auto-scroll toggle, and copy-to-clipboard functionality.
+*   **🎨 Responsive UI**: Native dark mode interface built with PySide6 (QtWidgets). Employs color-coded text (blue for unwatched, grey for watched) and a right-click context menu to quickly mark/track series, seasons, and episodes.
 
 ---
 
@@ -136,6 +139,13 @@ Logs are stored in the configured `log_directory` (default: `~/.config/lan-strea
 
 All logs are rotated daily at midnight. On application startup, the system automatically purges log files older than the retention threshold.
 
+#### Real-Time Log Viewer
+The application includes a **Running Logs** tab in Settings. It streams logs in real-time, allowing users to:
+- Filter log entries by minimum level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`).
+- Search/filter log messages dynamically using a text input field.
+- Toggle auto-scroll behavior.
+- Clear the log display or copy all log output to the clipboard.
+
 ### Local Caching
 To minimize network latency and buffering when streaming from remote sources (e.g., NAS over Wi-Fi), LAN Streamer can cache media files to local storage before playback.
 
@@ -160,6 +170,7 @@ The application automatically tracks your playback progress and maintains a "wat
 - **Resume Playback**: If you stop a video after at least 60 seconds of playback, your position is saved. The next time you play the same file, you will be prompted to resume from where you left off.
 - **Automatic "Watched" Status**: Once playback exceeds the `watched_threshold`, the item is marked as watched in the local database. If Jellyfin integration is enabled, this status is immediately synchronized to your Jellyfin server.
 - **Threshold Logic**: If a video is marked as watched (either manually or by reaching the threshold), any saved playback position is cleared.
+- **Autoplay Next Episode**: When the current video progress reaches the completion threshold (matching `watched_threshold`), an on-screen overlay pops up prompting you to play the next episode. Clicking **Play Next** plays the next episode automatically, maintaining the fullscreen status. If you ignore the prompt or close the overlay, you can continue watching.
 
 ---
 
@@ -250,6 +261,12 @@ All code pushed or submitted via Pull Request is automatically validated through
 
 ---
 
+### Standalone Executable Builds
+
+These status badges show the build status of the pre-compiled, standalone executables for various platforms:
+
+> [!WARNING]
+> **Disclaimer**: While the automated build processes are fully monitored, not all compiled executables are manually tested across every potential operating system version or desktop environment. If you encounter bugs, crashes, or execution issues, please submit an issue or a Pull Request (PR) to help resolve them.
 
 [![Ubuntu](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20Ubuntu)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
 
