@@ -818,3 +818,106 @@ def test_vlc_instance_complete_failure(qtbot) -> None:
         widget = VideoPlayerWidget()
         assert widget.instance is None
         assert widget.mediaplayer is None
+
+
+def test_next_episode_popup_triggers_and_interactions(qtbot) -> None:
+    """Test that the next episode popup triggers at >=95% playback progress and interactions function properly."""
+    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+        mock_vlc_module.Instance.return_value = MagicMock()
+        mock_vlc_module.EventType = MagicMock()
+
+        widget = VideoPlayerWidget()
+        qtbot.addWidget(widget)
+
+        # Mock database queries and settings
+        widget.next_episode_info = {
+            "title": "Episode 2 Title",
+            "season": "Season 1",
+            "episode_number": 2,
+            "path": "/path/s1e2.mkv",
+        }
+        widget.current_media_path = "/path/s1e1.mkv"
+
+        # Mock VLC player progress at 94% (should not trigger)
+        widget.mediaplayer.get_media.return_value = MagicMock()
+        widget.mediaplayer.get_time.return_value = 94000
+        widget.mediaplayer.get_length.return_value = 100000
+        widget.mediaplayer.get_position.return_value = 0.94
+
+        widget.update_ui()
+        assert widget.next_episode_popup_frame.isHidden() is True
+        assert widget.next_episode_popup_shown is False
+
+        # Mock VLC player progress at 95% (should trigger)
+        widget.mediaplayer.get_time.return_value = 95000
+        widget.mediaplayer.get_position.return_value = 0.95
+
+        widget.update_ui()
+        assert widget.next_episode_popup_frame.isHidden() is False
+        assert widget.next_episode_popup_shown is True
+        assert "Episode 2 Title" in widget.popup_info_label.text()
+
+        # Test ignoring the popup
+        widget.ignore_next_episode()
+        assert widget.next_episode_popup_frame.isHidden() is True
+
+        # Re-trigger popup
+        widget.next_episode_popup_shown = False
+        widget.update_ui()
+        assert widget.next_episode_popup_frame.isHidden() is False
+
+        # Test playing next episode
+        with (
+            patch("lan_streamer.db.update_episode_watched_status") as mock_watched,
+            patch("lan_streamer.db.update_episode_playback_position") as mock_position,
+            patch.object(widget, "play_video") as mock_play_video,
+            patch.object(widget, "stop") as mock_stop,
+        ):
+            widget.play_next_episode()
+
+            assert widget.next_episode_popup_frame.isHidden() is True
+            mock_watched.assert_called_once_with("/path/s1e1.mkv", True)
+            mock_position.assert_any_call("/path/s1e1.mkv", 0)
+            mock_stop.assert_called_once()
+            mock_play_video.assert_called_once_with("/path/s1e2.mkv")
+
+
+def test_next_episode_popup_fullscreen_and_cursor(qtbot) -> None:
+    """Test that cursor visibility and fullscreen transitions are handled properly."""
+    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+        mock_vlc_module.Instance.return_value = MagicMock()
+        mock_vlc_module.EventType = MagicMock()
+
+        widget = VideoPlayerWidget()
+        qtbot.addWidget(widget)
+
+        widget.next_episode_info = {
+            "title": "Episode 2 Title",
+            "season": "Season 1",
+            "episode_number": 2,
+            "path": "/path/s1e2.mkv",
+        }
+        widget.current_media_path = "/path/s1e1.mkv"
+
+        # Mock window in fullscreen mode
+        mock_window = MagicMock()
+        mock_window.isFullScreen.return_value = True
+        with patch.object(widget, "window", return_value=mock_window):
+            # Trigger popup
+            widget.mediaplayer.get_media.return_value = MagicMock()
+            widget.mediaplayer.get_time.return_value = 95000
+            widget.mediaplayer.get_length.return_value = 100000
+            widget.update_ui()
+
+            # Cursor should be ArrowCursor since popup is shown
+            assert widget.cursor().shape() == Qt.CursorShape.ArrowCursor
+
+            # When hiding fullscreen controls, cursor should stay ArrowCursor
+            widget._hide_fullscreen_controls()
+            assert widget.cursor().shape() == Qt.CursorShape.ArrowCursor
+
+            # Test stop() bypasses exiting fullscreen when transitioning to next episode
+            with patch.object(widget, "toggle_fullscreen") as mock_toggle:
+                widget.is_transitioning_to_next = True
+                widget.stop()
+                mock_toggle.assert_not_called()
