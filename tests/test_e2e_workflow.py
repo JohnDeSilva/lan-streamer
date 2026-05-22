@@ -561,6 +561,53 @@ def test_controller_worker_slots(sample_library_dictionary: Dict[str, Any]) -> N
     controller_instance._on_worker_error("Test Worker Exception")
 
 
+def test_controller_scan_unavailable_directories(
+    sample_library_dictionary: Dict[str, Any],
+) -> None:
+    controller_instance = Controller()
+    controller_instance.current_library_name = "Cosmos"
+    controller_instance.selected_series_name = "Cosmos"
+    controller_instance.cached_library_data = sample_library_dictionary
+
+    # Mock ScanWorker
+    mock_scan_worker = MagicMock()
+    mock_scan_worker.unavailable_directories = [
+        "/unavailable/path/1",
+        "/unavailable/path/2",
+    ]
+    controller_instance.scan_worker_instance = mock_scan_worker
+
+    status_emitted: List[str] = []
+    controller_instance.status_changed.connect(status_emitted.append)
+
+    with patch("lan_streamer.db.save_library"):
+        controller_instance._on_scan_finished(sample_library_dictionary)
+
+    assert status_emitted == [
+        "root directory /unavailable/path/1 is unavailable check connection to /unavailable/path/1",
+        "root directory /unavailable/path/2 is unavailable check connection to /unavailable/path/2",
+    ]
+
+
+def test_controller_scan_all_unavailable_directories() -> None:
+    controller_instance = Controller()
+    controller_instance.current_library_name = "Cosmos"
+
+    mock_scan_all_worker = MagicMock()
+    mock_scan_all_worker.unavailable_directories = ["/unavailable/all/1"]
+    controller_instance.scan_all_worker_instance = mock_scan_all_worker
+
+    status_emitted: List[str] = []
+    controller_instance.status_changed.connect(status_emitted.append)
+
+    with patch.object(controller_instance, "select_library"):
+        controller_instance._on_scan_all_finished()
+
+    assert status_emitted == [
+        "root directory /unavailable/all/1 is unavailable check connection to /unavailable/all/1",
+    ]
+
+
 def test_settings_dialog_libraries_management(qtbot: Any) -> None:
     dialog_instance = SettingsDialog()
     qtbot.addWidget(dialog_instance)

@@ -8,7 +8,7 @@ from PySide6.QtCore import QObject, Signal, QThread
 from . import db
 from .config import config
 from .jellyfin import jellyfin_client
-from .scanner import scan_directories
+from .scanner import scan_directories, LibraryDict
 
 logger = logging.getLogger(__name__)
 
@@ -35,18 +35,20 @@ class ScanWorker(QThread):
         self.existing_library: Dict[str, Any] = existing_library
         self.force_refresh: bool = force_refresh
         self.cleanup: bool = cleanup
+        self.unavailable_directories: List[str] = []
 
     def run(self) -> None:
         try:
             logger.info(
                 f"ScanWorker starting run for directories: {self.root_directories}"
             )
+            self.unavailable_directories = []
             # Fetch Jellyfin correlation data if configured
             jellyfin_data: Optional[Dict[str, Any]] = None
             if jellyfin_client.is_configured():
                 jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
-            library: Dict[str, Any] = scan_directories(
+            library: LibraryDict = scan_directories(
                 self.root_directories,
                 library_type=self.library_type,
                 existing_library=self.existing_library,
@@ -55,6 +57,7 @@ class ScanWorker(QThread):
                 force_refresh=self.force_refresh,
                 cleanup=self.cleanup,
             )
+            self.unavailable_directories = library.unavailable_directories
             logger.info("ScanWorker finished successfully")
             self.finished.emit(library)
         except Exception as exc:
@@ -152,6 +155,7 @@ class ScanAllLibrariesWorker(QThread):
     ) -> None:
         super().__init__(parent)
         self.force_refresh: bool = force_refresh
+        self.unavailable_directories: List[str] = []
 
     def run(self) -> None:
         try:
@@ -159,6 +163,7 @@ class ScanAllLibrariesWorker(QThread):
             libraries_dictionary = config.libraries
             total_count: int = len(libraries_dictionary)
             completed_count: int = 0
+            self.unavailable_directories = []
 
             jellyfin_data: Optional[Dict[str, Any]] = None
             if jellyfin_client.is_configured():
@@ -177,7 +182,7 @@ class ScanAllLibrariesWorker(QThread):
                 else:
                     existing_library_data = db.load_library(library_name)
 
-                updated_library_data: Dict[str, Any] = scan_directories(
+                updated_library_data: LibraryDict = scan_directories(
                     root_directories,
                     library_type=library_type,
                     existing_library=existing_library_data,
@@ -185,6 +190,9 @@ class ScanAllLibrariesWorker(QThread):
                     callback=None,
                     force_refresh=self.force_refresh,
                     cleanup=False,
+                )
+                self.unavailable_directories.extend(
+                    updated_library_data.unavailable_directories
                 )
 
                 if library_type == "movie":

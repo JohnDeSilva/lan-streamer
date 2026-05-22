@@ -426,7 +426,16 @@ class Controller(QObject):
                 db.save_library(self.current_library_name, updated_library)
             self.cached_library_data = updated_library
             self._cache_series_metrics()
-            self.status_changed.emit("Library scan completed successfully.")
+            if (
+                self.scan_worker_instance
+                and self.scan_worker_instance.unavailable_directories
+            ):
+                for directory_name in self.scan_worker_instance.unavailable_directories:
+                    self.status_changed.emit(
+                        f"root directory {directory_name} is unavailable check connection to {directory_name}"
+                    )
+            else:
+                self.status_changed.emit("Library scan completed successfully.")
             if not self.is_video_playing:
                 self.library_loaded.emit()
                 if self.selected_series_name:
@@ -516,7 +525,18 @@ class Controller(QObject):
         self.scan_all_worker_instance.start()
 
     def _on_scan_all_finished(self) -> None:
-        self.status_changed.emit("Global multi-library scan completed successfully.")
+        if (
+            self.scan_all_worker_instance
+            and self.scan_all_worker_instance.unavailable_directories
+        ):
+            for directory_name in self.scan_all_worker_instance.unavailable_directories:
+                self.status_changed.emit(
+                    f"root directory {directory_name} is unavailable check connection to {directory_name}"
+                )
+        else:
+            self.status_changed.emit(
+                "Global multi-library scan completed successfully."
+            )
         if self.current_library_name:
             self.select_library(self.current_library_name)
 

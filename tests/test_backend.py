@@ -14,15 +14,18 @@ from lan_streamer.backend import (
 
 def test_scan_worker_execution() -> None:
     # Successful run
-    with patch(
-        "lan_streamer.backend.scan_directories", return_value={"Cosmos": {}}
-    ) as mock_scan:
+    from lan_streamer.scanner import LibraryDict
+
+    lib = LibraryDict({"Cosmos": {}})
+    lib.unavailable_directories = ["/unavailable/path"]
+    with patch("lan_streamer.backend.scan_directories", return_value=lib) as mock_scan:
         emitted_results: List[Dict[str, Any]] = []
-        worker = ScanWorker(["/path"], "tv", {})
+        worker = ScanWorker(["/path", "/unavailable/path"], "tv", {})
         worker.finished.connect(emitted_results.append)
         worker.run()
         mock_scan.assert_called_once()
         assert emitted_results == [{"Cosmos": {}}]
+        assert worker.unavailable_directories == ["/unavailable/path"]
 
     # Exception run
     with patch(
@@ -118,6 +121,13 @@ def test_jellyfin_push_worker_execution() -> None:
 
 def test_scan_all_libraries_worker_execution() -> None:
     # Successful run
+    from lan_streamer.scanner import LibraryDict
+
+    lib_tv = LibraryDict({"new_data": {}})
+    lib_tv.unavailable_directories = ["/unavailable_tv"]
+    lib_movie = LibraryDict({"new_data": {}})
+    lib_movie.unavailable_directories = ["/unavailable_movie"]
+
     with (
         patch("lan_streamer.backend.config") as mock_config,
         patch("lan_streamer.backend.jellyfin_client.is_configured", return_value=True),
@@ -131,7 +141,7 @@ def test_scan_all_libraries_worker_execution() -> None:
             return_value={"old_movie": {}},
         ),
         patch(
-            "lan_streamer.backend.scan_directories", return_value={"new_data": {}}
+            "lan_streamer.backend.scan_directories", side_effect=[lib_tv, lib_movie]
         ) as mock_scan,
         patch("lan_streamer.backend.db.save_library") as mock_save_tv,
         patch("lan_streamer.backend.db.save_movie_library") as mock_save_movie,
@@ -155,6 +165,10 @@ def test_scan_all_libraries_worker_execution() -> None:
         mock_save_movie.assert_called_once_with("Movie_Lib", {"new_data": {}})
         assert progress_emitted == [("TV_Lib", 1, 2), ("Movie_Lib", 2, 2)]
         assert finished_emitted == [True]
+        assert worker.unavailable_directories == [
+            "/unavailable_tv",
+            "/unavailable_movie",
+        ]
 
     # Exception run
     with patch("lan_streamer.backend.config") as mock_config:
