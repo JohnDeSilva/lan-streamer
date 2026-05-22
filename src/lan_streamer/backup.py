@@ -32,8 +32,8 @@ def cleanup_old_backups(
     backup_directory_path: Path, target_suffix: str, retention_limit: int
 ) -> None:
     """
-    Enforces the retention policy by removing the oldest backup files
-    matching the specified suffix when the count exceeds retention_limit.
+    Enforces the retention policy by removing backup files matching the specified
+    suffix when their age exceeds retention_limit in days.
     """
     if not backup_directory_path.is_dir() or retention_limit <= 0:
         return
@@ -48,20 +48,15 @@ def cleanup_old_backups(
                 if parsed_time is not None:
                     backup_files.append((parsed_time, file_item))
 
-        # Sort chronologically (oldest first)
-        backup_files.sort(key=lambda item: item[0])
-
-        total_files: int = len(backup_files)
-        if total_files > retention_limit:
-            files_to_remove: int = total_files - retention_limit
-            logger.info(
-                f"Retention policy cleanup: removing {files_to_remove} old backups ending with '{target_suffix}'"
-            )
-            for index in range(files_to_remove):
-                _, file_path_to_delete = backup_files[index]
+        current_time: datetime = datetime.now()
+        for parsed_time, file_path_to_delete in backup_files:
+            days_old: int = (current_time - parsed_time).days
+            if days_old > retention_limit:
                 try:
                     file_path_to_delete.unlink()
-                    logger.debug(f"Deleted old backup: {file_path_to_delete}")
+                    logger.info(
+                        f"Deleted old backup: {file_path_to_delete.name} (age: {days_old} days, limit: {retention_limit} days)"
+                    )
                 except Exception as exception_instance:
                     logger.warning(
                         f"Failed to delete old backup file {file_path_to_delete}: {exception_instance}"
