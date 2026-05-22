@@ -60,23 +60,25 @@ def test_get_backup_time_from_filename() -> None:
 def test_cleanup_old_backups_retention(backup_environment: Path) -> None:
     backup_directory: Path = backup_environment / "backups"
 
-    # Create 10 mock backup files with chronological timestamps
-    base_time: datetime = datetime(2026, 1, 1, 10, 0, 0)
+    # Create 10 mock backup files with chronological timestamps relative to now
+    base_time: datetime = datetime.now()
     for index in range(10):
-        current_time: datetime = base_time + timedelta(days=index)
-        filename: str = f"{current_time.strftime('%Y%m%d_%H%M%S')}_config.json"
+        # index 0 is 9 days ago, index 9 is today (0 days ago)
+        file_time: datetime = base_time - timedelta(days=(9 - index))
+        filename: str = f"{file_time.strftime('%Y%m%d_%H%M%S')}_config.json"
         (backup_directory / filename).write_text("mock content")
 
-    # Enforce retention limit of 3 files
+    # Enforce retention limit of 3 days
     backup.cleanup_old_backups(backup_directory, "_config.json", 3)
 
-    # Verify exactly 3 newest files remain
+    # Verify that files older than 3 days are deleted (leaving 0, 1, 2, and 3 days ago files remaining)
     remaining_files: list[Path] = sorted(list(backup_directory.glob("*_config.json")))
-    assert len(remaining_files) == 3
+    assert len(remaining_files) == 4
 
-    # The oldest timestamp remaining should be day 7 (index 7, 8, 9 remain)
+    # The oldest timestamp remaining should be 3 days ago
+    three_days_ago: datetime = base_time - timedelta(days=3)
     oldest_remaining: str = remaining_files[0].name
-    assert oldest_remaining.startswith("20260108")
+    assert oldest_remaining.startswith(three_days_ago.strftime("%Y%m%d"))
 
 
 def test_create_config_backup(backup_environment: Path) -> None:
@@ -119,6 +121,8 @@ def test_perform_scheduled_backups_frequency_interval(backup_environment: Path) 
     backup_directory: Path = backup_environment / "backups"
     config.config_backup_frequency = 7
     config.database_backup_frequency = 7
+    config.config_backup_retention = 10
+    config.database_backup_retention = 10
 
     # 1. Initially empty backup directory -> should generate initial backups
     backup.perform_scheduled_backups()
@@ -360,6 +364,7 @@ def test_perform_scheduled_backups_database_recent_and_stale(
 ) -> None:
     backup_directory: Path = backup_environment / "backups"
     config.database_backup_frequency = 5
+    config.database_backup_retention = 10
 
     # 1. Recent database backup (2 days ago)
     recent_time = datetime.now() - timedelta(days=2)

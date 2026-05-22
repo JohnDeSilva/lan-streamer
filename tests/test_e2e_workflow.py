@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QListWidgetItem,
+    QMessageBox,
 )
 
 from lan_streamer.ui_views import (
@@ -704,6 +705,37 @@ def test_settings_dialog_backup_options(qtbot: Any) -> None:
     ):
         dialog_instance.trigger_restore_database()
         mock_info.assert_called_once()
+
+
+def test_settings_dialog_backup_options_warning(qtbot: Any) -> None:
+    dialog_instance = SettingsDialog()
+    qtbot.addWidget(dialog_instance)
+
+    # 1. Retention less than frequency, user selects No -> should NOT save
+    dialog_instance.config_backup_frequency_input.setText("10")
+    dialog_instance.config_backup_retention_input.setText("5")  # 5 < 10 (warning!)
+    dialog_instance.database_backup_frequency_input.setText("10")
+    dialog_instance.database_backup_retention_input.setText("20")
+
+    original_config_val = config.config_backup_retention
+
+    with patch(
+        "lan_streamer.ui_views.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.No,
+    ) as mock_question:
+        dialog_instance.save_config()
+        mock_question.assert_called_once()
+        assert config.config_backup_retention == original_config_val
+
+    # 2. Retention less than frequency, user selects Yes -> should save
+    with patch(
+        "lan_streamer.ui_views.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ) as mock_question:
+        dialog_instance.save_config()
+        mock_question.assert_called_once()
+        assert config.config_backup_retention == 5
+        assert config.config_backup_frequency == 10
 
 
 def test_controller_partial_scan_updates() -> None:

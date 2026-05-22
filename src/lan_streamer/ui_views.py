@@ -3421,9 +3421,12 @@ class SettingsDialog(QDialog):
 
         db_freq_label: QLabel = QLabel("Database Backup Freq (Days):")
         db_group_layout.addWidget(db_freq_label, 2, 0)
+        self.database_backup_frequency_input.setToolTip(
+            "Setting this to 0 backs up every time the application starts"
+        )
         db_group_layout.addWidget(self.database_backup_frequency_input, 2, 1)
 
-        db_ret_label: QLabel = QLabel("Database Backup Retention:")
+        db_ret_label: QLabel = QLabel("Database Backup Retention (Days):")
         db_group_layout.addWidget(db_ret_label, 3, 0)
         db_group_layout.addWidget(self.database_backup_retention_input, 3, 1)
 
@@ -3501,9 +3504,12 @@ class SettingsDialog(QDialog):
 
         config_freq_label: QLabel = QLabel("Config Backup Freq (Days):")
         config_group_layout.addWidget(config_freq_label, 2, 0)
+        self.config_backup_frequency_input.setToolTip(
+            "Setting this to 0 backs up every time the application starts"
+        )
         config_group_layout.addWidget(self.config_backup_frequency_input, 2, 1)
 
-        config_ret_label: QLabel = QLabel("Config Backup Retention:")
+        config_ret_label: QLabel = QLabel("Config Backup Retention (Days):")
         config_group_layout.addWidget(config_ret_label, 3, 0)
         config_group_layout.addWidget(self.config_backup_retention_input, 3, 1)
 
@@ -3824,6 +3830,54 @@ class SettingsDialog(QDialog):
 
     @Slot()
     def save_config(self) -> None:
+        db_freq = 0
+        db_ret = 0
+        try:
+            db_freq = int(self.database_backup_frequency_input.text().strip())
+        except ValueError:
+            pass
+        try:
+            db_ret = int(self.database_backup_retention_input.text().strip())
+        except ValueError:
+            pass
+
+        cfg_freq = 0
+        cfg_ret = 0
+        try:
+            cfg_freq = int(self.config_backup_frequency_input.text().strip())
+        except ValueError:
+            pass
+        try:
+            cfg_ret = int(self.config_backup_retention_input.text().strip())
+        except ValueError:
+            pass
+
+        warnings: List[str] = []
+        if db_freq > 0 and db_ret < db_freq:
+            warnings.append(
+                f"- Database Backup Retention ({db_ret} days) is less than its backup frequency ({db_freq} days)."
+            )
+        if cfg_freq > 0 and cfg_ret < cfg_freq:
+            warnings.append(
+                f"- Config Backup Retention ({cfg_ret} days) is less than its backup frequency ({cfg_freq} days)."
+            )
+
+        if warnings:
+            warning_text = (
+                "The following backup settings have retention times less than their backup frequencies:\n\n"
+                + "\n".join(warnings)
+                + "\n\nThis may result in backup files being cleaned up before a new backup is created.\n\nDo you want to save these settings anyway?"
+            )
+            confirm = QMessageBox.question(
+                self,
+                "Backup Retention Warning",
+                warning_text,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirm == QMessageBox.StandardButton.No:
+                return
+
         config.jellyfin_url = self.jellyfin_url_input.text().strip()
         config.jellyfin_api_key = self.jellyfin_key_input.text().strip()
         config.tmdb_api_key = self.tmdb_key_input.text().strip()
