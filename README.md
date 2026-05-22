@@ -145,6 +145,7 @@ The application includes a **Running Logs** tab in Settings. Utilizing a thread-
 - Search/filter log messages dynamically using a text input field.
 - Toggle auto-scroll behavior.
 - Clear the log display or copy all log output to the clipboard.
+- Export all logs (including active and rotated logs) into a compressed ZIP file (`lan_streamer_logs_YYYYMMDD_HHMMSS.zip`) saved directly in the user's home directory.
 
 ### Local Caching
 To minimize network latency and buffering when streaming from remote sources (e.g., NAS over Wi-Fi), LAN Streamer can cache media files to local storage before playback.
