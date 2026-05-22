@@ -794,3 +794,97 @@ def test_get_session_rollback() -> None:
     with pytest.raises(ValueError):
         with get_session():
             raise ValueError("Test rollback trigger")
+
+
+def test_get_next_episode(mock_db_file) -> None:
+    # 1. Setup a test library with 2 seasons, and 2 episodes each
+    test_lib = {
+        "Test Series": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Ep 1",
+                            "path": "/path/s1e1.mkv",
+                            "watched": False,
+                            "tmdb_number": 1,
+                            "tmdb_name": "S1E1",
+                        },
+                        {
+                            "name": "Ep 2",
+                            "path": "/path/s1e2.mkv",
+                            "watched": False,
+                            "tmdb_number": 2,
+                            "tmdb_name": "S1E2",
+                        },
+                    ],
+                },
+                "Season 2": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Ep 1",
+                            "path": "/path/s2e1.mkv",
+                            "watched": False,
+                            "tmdb_number": 1,
+                            "tmdb_name": "S2E1",
+                        },
+                    ],
+                },
+            },
+        }
+    }
+    db.save_library("MyLib", test_lib)
+
+    # Test transitioning inside the same season (Ep 1 -> Ep 2)
+    next_ep = db.get_next_episode("/path/s1e1.mkv")
+    assert next_ep is not None
+    assert next_ep["path"] == "/path/s1e2.mkv"
+    assert next_ep["title"] == "S1E2"
+    assert next_ep["season"] == "Season 1"
+    assert next_ep["episode_number"] == 2
+
+    # Test transitioning to the next season (Season 1 Ep 2 -> Season 2 Ep 1)
+    next_ep = db.get_next_episode("/path/s1e2.mkv")
+    assert next_ep is not None
+    assert next_ep["path"] == "/path/s2e1.mkv"
+    assert next_ep["title"] == "S2E1"
+    assert next_ep["season"] == "Season 2"
+    assert next_ep["episode_number"] == 1
+
+    # Test last episode of the series (no next episode)
+    next_ep = db.get_next_episode("/path/s2e1.mkv")
+    assert next_ep is None
+
+    # Test non-existent path
+    assert db.get_next_episode("/path/nonexistent.mkv") is None
+
+
+def test_get_next_episode_natural_sorting(mock_db_file) -> None:
+    """Validate that natural sorting is used, so that Ep 2 comes before Ep 11."""
+    test_lib = {
+        "Test Series": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {"name": "Ep 11", "path": "/path/ep11.mkv", "watched": False},
+                        {"name": "Ep 2", "path": "/path/ep2.mkv", "watched": False},
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library("MyLib", test_lib)
+
+    # In alphabetical sorting, "Ep 11" comes before "Ep 2", so next of "Ep 11" would be "Ep 2".
+    # In natural sorting, "Ep 2" comes before "Ep 11", so next of "Ep 2" should be "Ep 11".
+    next_ep = db.get_next_episode("/path/ep2.mkv")
+    assert next_ep is not None
+    assert next_ep["path"] == "/path/ep11.mkv"
+
+    # Next of "Ep 11" should be None (as it is the last episode under natural sorting)
+    assert db.get_next_episode("/path/ep11.mkv") is None

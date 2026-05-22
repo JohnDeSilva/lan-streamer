@@ -2,7 +2,7 @@ import os
 import time
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional
 from PySide6.QtWidgets import (
     QWidget,
     QMainWindow,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, Slot, QEvent, QSize
+from PySide6.QtGui import QFont
 import sys
 from .config import config
 from . import db
@@ -148,6 +149,9 @@ class VideoPlayerWidget(QWidget):
         self.is_muted = False
         self.previous_volume = 80
         self.wakelock = WakeLock()
+        self.next_episode_popup_shown: bool = False
+        self.next_episode_info: Optional[Dict[str, Any]] = None
+        self.is_transitioning_to_next: bool = False
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         # Timer for auto-hiding fullscreen controls
@@ -292,6 +296,64 @@ class VideoPlayerWidget(QWidget):
         self.osd_timer.setSingleShot(True)
         self.osd_timer.timeout.connect(self.osd_label.hide)
 
+        # Next Episode Popup Overlay
+        self.next_episode_popup_frame = QFrame(self)
+        self.next_episode_popup_frame.setObjectName("nextEpisodePopupFrame")
+        self.next_episode_popup_frame.setStyleSheet("""
+            QFrame#nextEpisodePopupFrame {
+                background-color: rgba(30, 30, 30, 240);
+                border: 2px solid #2a82da;
+                border-radius: 12px;
+            }
+            QLabel {
+                background: transparent;
+                color: white;
+            }
+        """)
+
+        popup_layout = QVBoxLayout(self.next_episode_popup_frame)
+        popup_layout.setContentsMargins(20, 20, 20, 20)
+        popup_layout.setSpacing(15)
+
+        self.popup_title_label = QLabel("Would you like to play the next episode?")
+        self.popup_title_label.setFont(QFont("Inter", 16, QFont.Weight.Bold))
+        self.popup_title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        popup_layout.addWidget(self.popup_title_label)
+
+        self.popup_info_label = QLabel()
+        self.popup_info_label.setFont(QFont("Inter", 13))
+        self.popup_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.popup_info_label.setWordWrap(True)
+        popup_layout.addWidget(self.popup_info_label)
+
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(15)
+
+        self.popup_ignore_button = QPushButton("Ignore")
+        self.popup_ignore_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.popup_ignore_button.clicked.connect(self.ignore_next_episode)
+
+        self.popup_play_next_button = QPushButton("Play Next")
+        self.popup_play_next_button.setObjectName("accentButton")
+        self.popup_play_next_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.popup_play_next_button.setStyleSheet("""
+            QPushButton#accentButton {
+                background-color: #2a82da;
+                color: white;
+                border: none;
+            }
+            QPushButton#accentButton:hover {
+                background-color: #3592ea;
+            }
+        """)
+        self.popup_play_next_button.clicked.connect(self.play_next_episode)
+
+        button_layout.addWidget(self.popup_ignore_button)
+        button_layout.addWidget(self.popup_play_next_button)
+        popup_layout.addLayout(button_layout)
+
+        self.next_episode_popup_frame.hide()
+
         # Stats Overlay (for troubleshooting)
         self.stats_overlay = QFrame(self)
         self.stats_overlay.setStyleSheet(
@@ -406,6 +468,12 @@ class VideoPlayerWidget(QWidget):
 
     def _hide_fullscreen_controls(self) -> None:
         if self.window().isFullScreen() and self.mediaplayer:
+            if (
+                hasattr(self, "next_episode_popup_frame")
+                and not self.next_episode_popup_frame.isHidden()
+            ):
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+                return
             self.fullscreen_overlay.hide()
             self.setCursor(Qt.CursorShape.BlankCursor)
 
@@ -483,6 +551,14 @@ class VideoPlayerWidget(QWidget):
         osd_y = v_geom.y() + (v_geom.height() - self.osd_label.height()) // 2
         self.osd_label.move(osd_x, osd_y)
 
+        # Center Next Episode Popup Overlay
+        if hasattr(self, "next_episode_popup_frame"):
+            popup_size = QSize(500, 200)
+            self.next_episode_popup_frame.resize(popup_size)
+            popup_x = v_geom.x() + (v_geom.width() - popup_size.width()) // 2
+            popup_y = v_geom.y() + (v_geom.height() - popup_size.height()) // 2
+            self.next_episode_popup_frame.move(popup_x, popup_y)
+
         # Position Stats Overlay at top-left
         self.stats_overlay.move(v_geom.x() + 20, v_geom.y() + 20)
 
@@ -498,6 +574,8 @@ class VideoPlayerWidget(QWidget):
         self.current_media_path = file_path
         self.is_watched_marked = False
         self._is_playback_finished = False
+        self.next_episode_popup_shown = False
+        self.next_episode_info = db.get_next_episode(file_path)
         self.pending_resume_position = 0
 
         saved_pos = db.get_episode_playback_position(file_path)
@@ -731,8 +809,12 @@ class VideoPlayerWidget(QWidget):
 
     def stop(self) -> None:
         logger.info("Stopping playback")
-        if self.window().isFullScreen():
+        if self.window().isFullScreen() and not getattr(
+            self, "is_transitioning_to_next", False
+        ):
             self.toggle_fullscreen()
+        if hasattr(self, "next_episode_popup_frame"):
+            self.next_episode_popup_frame.hide()
         if self.mediaplayer:
             media = self.mediaplayer.get_media()
             if media and self.current_media_path:
@@ -955,6 +1037,67 @@ class VideoPlayerWidget(QWidget):
             )
             self.time_label.setText(time_text)
             self.fs_time_label.setText(time_text)
+
+            # Show next episode popup if playback reaches 95% watched and a next episode exists
+            if (
+                not self.next_episode_popup_shown
+                and self.next_episode_info is not None
+                and (curr_time / duration) >= 0.95
+            ):
+                self.show_next_episode_popup()
+
+    def show_next_episode_popup(self) -> None:
+        """Shows the next episode popup overlay with next episode details."""
+        if not self.next_episode_info:
+            return
+
+        self.next_episode_popup_shown = True
+        logger.info(f"Showing next episode popup overlay: {self.next_episode_info}")
+
+        title: str = self.next_episode_info.get("title") or "Unknown Title"
+        season: str = self.next_episode_info.get("season") or "Unknown Season"
+        episode_number: Optional[Any] = self.next_episode_info.get("episode_number")
+
+        episode_string: str = (
+            f"Episode {episode_number}"
+            if episode_number is not None
+            else "Next Episode"
+        )
+        info_text: str = f'{season}, {episode_string}\n"{title}"'
+        self.popup_info_label.setText(info_text)
+
+        if self.window().isFullScreen():
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
+        self.next_episode_popup_frame.show()
+        self.next_episode_popup_frame.raise_()
+        self._reposition_overlays()
+
+    def ignore_next_episode(self) -> None:
+        """Dismisses the next episode popup overlay and continues playing."""
+        logger.info("User ignored the next episode popup")
+        self.next_episode_popup_frame.hide()
+        self.setFocus()
+
+    def play_next_episode(self) -> None:
+        """Plays the next episode immediately, preserving fullscreen state."""
+        logger.info("User requested to play the next episode immediately")
+        next_episode_path: Optional[str] = (
+            self.next_episode_info.get("path") if self.next_episode_info else None
+        )
+        self.next_episode_popup_frame.hide()
+
+        if self.current_media_path:
+            self._mark_as_watched()
+            db.update_episode_playback_position(self.current_media_path, 0)
+
+        self.is_transitioning_to_next = True
+        try:
+            self.stop()
+            if next_episode_path:
+                self.play_video(next_episode_path)
+        finally:
+            self.is_transitioning_to_next = False
 
     def _format_time(self, seconds: int) -> str:
         m, s = divmod(seconds, 60)

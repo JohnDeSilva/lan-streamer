@@ -964,3 +964,67 @@ def update_item_runtime(
                     movie.runtime = runtime_minutes
     except Exception:
         logger.exception(f"Error updating runtime for {item_type} ID {item_identifier}")
+
+
+def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
+    """
+    Finds the next episode in the same series for a given episode path.
+    Sorts seasons and episodes naturally by name.
+    """
+    try:
+        with get_session() as session:
+            current_episode: Optional[Episode] = session.scalars(
+                select(Episode).where(Episode.path == current_path)
+            ).first()
+            if (
+                not current_episode
+                or not current_episode.season
+                or not current_episode.season.series
+            ):
+                return None
+
+            series: Series = current_episode.season.series
+
+            # Get all seasons of the series, sorted naturally by name
+            seasons: List[Season] = sorted(
+                series.seasons, key=lambda s: natural_sort_key(s.name)
+            )
+
+            # Construct flat list of all episodes in series in natural order
+            ordered_episodes: List[Tuple[Episode, Season, int]] = []
+            for season in seasons:
+                # Sort episodes in this season naturally by name
+                season_episodes: List[Episode] = sorted(
+                    season.episodes, key=lambda e: natural_sort_key(e.name)
+                )
+                for index, episode in enumerate(season_episodes):
+                    ordered_episodes.append((episode, season, index + 1))
+
+            # Find current episode index in the ordered list
+            current_index: int = -1
+            for index, (episode, _, _) in enumerate(ordered_episodes):
+                if episode.id == current_episode.id:
+                    current_index = index
+                    break
+
+            if current_index == -1 or current_index == len(ordered_episodes) - 1:
+                return None
+
+            # Retrieve next episode and its season / calculated episode number
+            next_episode, next_season, calculated_episode_number = ordered_episodes[
+                current_index + 1
+            ]
+
+            return {
+                "title": next_episode.tmdb_name
+                if next_episode.tmdb_name
+                else (next_episode.name or "Unknown"),
+                "season": next_season.name or "Unknown",
+                "episode_number": next_episode.tmdb_number
+                if next_episode.tmdb_number is not None
+                else calculated_episode_number,
+                "path": next_episode.path,
+            }
+    except Exception:
+        logger.exception(f"Error getting next episode for path {current_path}")
+    return None
