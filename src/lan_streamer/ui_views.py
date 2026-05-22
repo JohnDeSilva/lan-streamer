@@ -3556,6 +3556,10 @@ class SettingsDialog(QDialog):
         copy_logs_button.clicked.connect(self._copy_logs_to_clipboard)
         control_layout.addWidget(copy_logs_button)
 
+        export_logs_button: QPushButton = QPushButton("Export Logs")
+        export_logs_button.clicked.connect(self._export_logs)
+        control_layout.addWidget(export_logs_button)
+
         logs_layout.addLayout(control_layout)
 
         # PlainTextEdit display configuration
@@ -3989,6 +3993,52 @@ class SettingsDialog(QDialog):
         clipboard = QApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(log_text)
+
+    @Slot()
+    def _export_logs(self) -> None:
+        import zipfile
+        from datetime import datetime
+        from pathlib import Path
+
+        log_dir = Path(config.log_directory)
+        if not log_dir.is_dir():
+            QMessageBox.warning(
+                self,
+                "Export Failed",
+                f"Log directory does not exist or is not a directory: {log_dir}",
+            )
+            return
+
+        log_files = [f for f in log_dir.glob("*.log*") if f.is_file()]
+        if not log_files:
+            QMessageBox.warning(
+                self,
+                "Export Failed",
+                f"No log files found in the log directory: {log_dir}",
+            )
+            return
+
+        try:
+            home_dir = Path.home()
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            zip_filename = f"lan_streamer_logs_{timestamp}.zip"
+            zip_filepath = home_dir / zip_filename
+
+            with zipfile.ZipFile(zip_filepath, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for file_path in log_files:
+                    zip_file.write(file_path, arcname=file_path.name)
+
+            QMessageBox.information(
+                self,
+                "Export Successful",
+                f"Logs successfully exported to:\n{zip_filepath}",
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                f"An error occurred while exporting logs:\n{e}",
+            )
 
     def _refresh_log_display(self) -> None:
         self.log_display.clear()
