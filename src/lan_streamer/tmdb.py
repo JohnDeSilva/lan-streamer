@@ -52,6 +52,7 @@ class TMDBClient:
         """Tests the given API key without persisting it."""
         if not api_key:
             return False, "API Key is required."
+        logger.info("Validating TMDB API Key configuration...")
         try:
             response = self.session.get(
                 f"{TMDB_BASE_URL}/configuration",
@@ -59,6 +60,7 @@ class TMDBClient:
                 timeout=10,
             )
             response.raise_for_status()
+            logger.info("TMDB API Key validation succeeded.")
             return True, "Connection successful!"
         except requests.exceptions.HTTPError as exception:
             if exception.response is not None and exception.response.status_code == 401:
@@ -113,6 +115,7 @@ class TMDBClient:
 
     def _do_search(self, query: str) -> list:
         """Raw TMDB TV search. Returns list of result dicts."""
+        logger.debug(f"Executing raw TMDB TV search for query: '{query}'")
         try:
             resp = self.session.get(
                 f"{TMDB_BASE_URL}/search/tv",
@@ -127,6 +130,9 @@ class TMDBClient:
 
     def _do_movie_search(self, query: str, year: int | None = None) -> list:
         """Raw TMDB movie search. Returns list of result dicts."""
+        logger.debug(
+            f"Executing raw TMDB Movie search for query: '{query}' (Year={year})"
+        )
         try:
             params = self._params({"query": query, "page": 1})
             if year:
@@ -284,22 +290,24 @@ class TMDBClient:
         results = self._do_movie_search(query)
         return results[:limit]
 
-    def get_series_by_id(self, tmdb_identifierentifier: str | int) -> dict | None:
+    def get_series_by_id(self, tmdb_identifier: str | int) -> dict | None:
         """Fetches full series details from TMDB."""
+        logger.info(f"Requesting TMDB series details for ID '{tmdb_identifier}'")
         try:
             resp = self.session.get(
-                f"{TMDB_BASE_URL}/tv/{tmdb_identifierentifier}",
+                f"{TMDB_BASE_URL}/tv/{tmdb_identifier}",
                 params=self._params(),
                 timeout=10,
             )
             resp.raise_for_status()
             return resp.json()
         except Exception:
-            logger.exception(f"TMDB get_series_by_id({tmdb_identifierentifier}) failed")
+            logger.exception(f"TMDB get_series_by_id({tmdb_identifier}) failed")
             return None
 
     def get_movie_by_id(self, tmdb_identifier: str | int) -> dict | None:
         """Fetches full movie details from TMDB."""
+        logger.info(f"Requesting TMDB movie details for ID '{tmdb_identifier}'")
         try:
             resp = self.session.get(
                 f"{TMDB_BASE_URL}/movie/{tmdb_identifier}",
@@ -321,6 +329,9 @@ class TMDBClient:
 
     def get_episodes(self, tmdb_identifier: str | int, season_num: int) -> list:
         """Returns episodes for a given season number."""
+        logger.info(
+            f"Requesting TMDB episodes list for series ID '{tmdb_identifier}', Season {season_num}"
+        )
         try:
             resp = self.session.get(
                 f"{TMDB_BASE_URL}/tv/{tmdb_identifier}/season/{season_num}",
@@ -385,11 +396,13 @@ class TMDBClient:
         if image_path.exists():
             return str(image_path)
 
+        logger.info(f"Downloading poster image from: '{image_url}'")
         try:
             resp = self.session.get(image_url, timeout=15)
             if resp.status_code == 200:
                 with open(image_path, "wb") as f:
                     f.write(resp.content)
+                logger.info(f"Saved poster image locally to '{image_path}'")
                 return str(image_path)
         except Exception:
             logger.exception(f"Failed to download image from '{image_url}'")

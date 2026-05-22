@@ -123,6 +123,9 @@ class WakeLock:
         # ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
         # 0x80000000 | 0x00000001 | 0x00000002 = 0x80000003
         try:
+            logger.info(
+                "Activating Windows sleep inhibition via SetThreadExecutionState"
+            )
             ctypes.windll.kernel32.SetThreadExecutionState(0x80000003)  # type: ignore[attr-defined]
         except Exception:
             logger.exception("Windows SetThreadExecutionState failed")
@@ -132,6 +135,9 @@ class WakeLock:
 
         # ES_CONTINUOUS = 0x80000000
         try:
+            logger.info(
+                "Releasing Windows sleep inhibition via SetThreadExecutionState"
+            )
             ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)  # type: ignore[attr-defined]
         except Exception:
             pass
@@ -139,6 +145,9 @@ class WakeLock:
     def _inhibit_macos(self, reason: str) -> None:
         try:
             # caffeinate -d inhibits display sleep
+            logger.info(
+                f"Activating macOS sleep inhibition via caffeinate for PID {os.getpid()}"
+            )
             self._process = subprocess.Popen(
                 ["caffeinate", "-d", "-i", "-s", "-w", str(os.getpid())]
             )
@@ -147,6 +156,9 @@ class WakeLock:
 
     def _uninhibit_macos(self) -> None:
         if self._process:
+            logger.info(
+                "Releasing macOS sleep inhibition via caffeinate process termination"
+            )
             try:
                 self._process.terminate()
                 self._process.wait(timeout=1)

@@ -65,13 +65,18 @@ def get_session_factory() -> sessionmaker[Session]:
 def get_session() -> Generator[Session, None, None]:
     session_factory = get_session_factory()
     session = session_factory()
+    logger.debug("Database session opened.")
     try:
         yield session
+        logger.debug("Database session committing...")
         session.commit()
-    except Exception:
+        logger.debug("Database session committed successfully.")
+    except Exception as exc:
+        logger.warning(f"Database session rollback triggered due to error: {exc}")
         session.rollback()
         raise
     finally:
+        logger.debug("Database session closed.")
         session.close()
 
 
@@ -93,6 +98,7 @@ def init_db() -> bool:
     Ensures the DB directory exists.
     Returns True if the database was recreated.
     """
+    logger.info(f"Initializing database at: '{DB_FILE}'")
     try:
         DB_FILE.parent.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
@@ -214,6 +220,7 @@ def _sync_watched_by_ids(session: "Session", watched_ids: Set[str]) -> int:
     """
     if not watched_ids:
         return 0
+    logger.debug(f"Syncing watched status by ID for {len(watched_ids)} items")
     count = int(
         session.execute(
             update(Episode)
@@ -228,6 +235,7 @@ def _sync_watched_by_ids(session: "Session", watched_ids: Set[str]) -> int:
         ).rowcount  # type: ignore[attr-defined]
         or 0
     )
+    logger.debug(f"Synced by ID: marked {count} items as watched")
     return count
 
 
@@ -238,6 +246,7 @@ def _sync_watched_by_paths(session: "Session", watched_paths: Set[str]) -> int:
     """
     if not watched_paths:
         return 0
+    logger.debug(f"Syncing watched status by path for {len(watched_paths)} items")
     count = int(
         session.execute(
             update(Episode)
@@ -254,6 +263,7 @@ def _sync_watched_by_paths(session: "Session", watched_paths: Set[str]) -> int:
         ).rowcount  # type: ignore[attr-defined]
         or 0
     )
+    logger.debug(f"Synced by path: marked {count} items as watched")
     return count
 
 
@@ -266,6 +276,7 @@ def _sync_watched_by_names(
     """
     if not watched_names:
         return 0
+    logger.debug(f"Syncing watched status by names for {len(watched_names)} pairs")
     count = 0
     for series_name, episode_name in watched_names:
         episode_ids = list(
@@ -281,6 +292,9 @@ def _sync_watched_by_names(
             ).all()
         )
         if episode_ids:
+            logger.debug(
+                f"Found match: series '{series_name}', episode '{episode_name}' -> Episode IDs: {episode_ids}"
+            )
             count += int(
                 session.execute(
                     update(Episode)
@@ -289,6 +303,7 @@ def _sync_watched_by_names(
                 ).rowcount  # type: ignore[attr-defined]
                 or 0
             )
+    logger.debug(f"Synced by names: marked {count} items as watched")
     return count
 
 
@@ -724,6 +739,7 @@ def update_episode_path(old_path: str, new_path: str) -> None:
 def update_episode_playback_position(path: str, position: int) -> bool:
     """Saves the last played playback offset (in seconds) for a given episode."""
     try:
+        logger.debug(f"Saving playback position for '{path}' to {position}s")
         with get_session() as session:
             episode = session.scalars(
                 select(Episode).where(Episode.path == path)
@@ -743,14 +759,21 @@ def update_episode_playback_position(path: str, position: int) -> bool:
 def get_episode_playback_position(path: str) -> int:
     """Retrieves the stored last played playback offset (in seconds) for a given episode."""
     try:
+        logger.debug(f"Retrieving playback position for '{path}'")
         with get_session() as session:
             episode = session.scalars(
                 select(Episode).where(Episode.path == path)
             ).first()
             if episode and episode.last_played_position:
+                logger.debug(
+                    f"Playback position for episode '{path}' is {episode.last_played_position}s"
+                )
                 return int(episode.last_played_position)
             movie = session.scalars(select(Movie).where(Movie.path == path)).first()
             if movie and movie.last_played_position:
+                logger.debug(
+                    f"Playback position for movie '{path}' is {movie.last_played_position}s"
+                )
                 return int(movie.last_played_position)
     except Exception:
         logger.exception(f"Error retrieving playback position for {path}")
@@ -972,6 +995,7 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
     Sorts seasons and episodes naturally by name.
     """
     try:
+        logger.debug(f"Determining next episode after: '{current_path}'")
         with get_session() as session:
             current_episode: Optional[Episode] = session.scalars(
                 select(Episode).where(Episode.path == current_path)
@@ -981,6 +1005,9 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
                 or not current_episode.season
                 or not current_episode.season.series
             ):
+                logger.debug(
+                    "Current episode, season, or series not found in database."
+                )
                 return None
 
             series: Series = current_episode.season.series
@@ -1007,7 +1034,12 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
                     current_index = index
                     break
 
-            if current_index == -1 or current_index == len(ordered_episodes) - 1:
+            if current_index == -1:
+                logger.debug("Current episode index could not be determined.")
+                return None
+
+            if current_index == len(ordered_episodes) - 1:
+                logger.info("Current episode is the last episode in the series.")
                 return None
 
             # Retrieve next episode and its season / calculated episode number
@@ -1015,7 +1047,7 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
                 current_index + 1
             ]
 
-            return {
+            result = {
                 "title": next_episode.tmdb_name
                 if next_episode.tmdb_name
                 else (next_episode.name or "Unknown"),
@@ -1025,6 +1057,10 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
                 else calculated_episode_number,
                 "path": next_episode.path,
             }
+            logger.info(
+                f"Resolved next episode: '{result['title']}' (S: '{result['season']}', E: {result['episode_number']}) at path '{result['path']}'"
+            )
+            return result
     except Exception:
         logger.exception(f"Error getting next episode for path {current_path}")
     return None

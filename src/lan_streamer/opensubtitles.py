@@ -30,6 +30,7 @@ class OpenSubtitlesClient:
             logger.warning("OpenSubtitles credentials missing, skipping login.")
             return False
 
+        logger.info("Attempting login to OpenSubtitles.com...")
         url = f"{OPENSUBTITLES_API_BASE}login"
         payload = {
             "username": config.opensubtitles_username,
@@ -76,13 +77,16 @@ class OpenSubtitlesClient:
         elif query:
             params["query"] = query
 
+        logger.info(f"Searching OpenSubtitles with parameters: {params}")
         try:
             response = requests.get(
                 url, params=params, headers=self._get_headers(), timeout=15
             )
             if response.status_code == 200:
                 data = response.json()
-                return data.get("data", [])
+                results = data.get("data", [])
+                logger.info(f"OpenSubtitles search returned {len(results)} results.")
+                return results
             else:
                 logger.error(
                     f"OpenSubtitles search failed: {response.status_code} {response.text}"
@@ -101,6 +105,9 @@ class OpenSubtitlesClient:
             # Note: anonymous download might be possible but requires different flow or is restricted
             return None
 
+        logger.info(
+            f"Requesting download link from OpenSubtitles for file ID '{file_id}'"
+        )
         url = f"{OPENSUBTITLES_API_BASE}download"
         payload = {"file_id": file_id}
         try:
@@ -108,7 +115,11 @@ class OpenSubtitlesClient:
                 url, json=payload, headers=self._get_headers(), timeout=15
             )
             if response.status_code == 200:
-                return response.json().get("link")
+                link = response.json().get("link")
+                logger.info(
+                    f"OpenSubtitles download link resolved successfully: {link}"
+                )
+                return link
             else:
                 logger.error(
                     f"OpenSubtitles download request failed: {response.status_code} {response.text}"
@@ -119,9 +130,15 @@ class OpenSubtitlesClient:
 
     def download_subtitle(self, download_url: str) -> Optional[bytes]:
         """Download the actual subtitle content."""
+        logger.info(
+            f"Downloading subtitle content from OpenSubtitles URL: '{download_url}'"
+        )
         try:
             response = requests.get(download_url, timeout=30)
             if response.status_code == 200:
+                logger.info(
+                    "Successfully downloaded subtitle content from OpenSubtitles."
+                )
                 return response.content
             else:
                 logger.error(

@@ -216,6 +216,7 @@ def perform_rename(
     for item in previews:
         old_path = Path(item["old_path"])
         new_path = Path(item["new_path"])
+        logger.debug(f"Attempting to rename '{old_path}' -> '{new_path}'")
 
         result = {
             "old_path": item["old_path"],

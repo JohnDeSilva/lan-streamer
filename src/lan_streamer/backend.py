@@ -447,9 +447,13 @@ class SeriesMetadataEmbedWorker(QThread):
     def run(self) -> None:
         try:
             total_episodes = len(self.episodes)
-            for index, ep_record in enumerate(self.episodes):
-                video_path = ep_record.get("path", "")
+            logger.info(
+                f"SeriesMetadataEmbedWorker starting for series '{self.series_name}', processing {total_episodes} episodes"
+            )
+            for index, episode_record in enumerate(self.episodes):
+                video_path = episode_record.get("path", "")
                 if not video_path:
+                    logger.debug(f"Skipping episode at index {index}: missing path")
                     continue
 
                 self.progress_updated.emit(
@@ -457,10 +461,11 @@ class SeriesMetadataEmbedWorker(QThread):
                 )
 
                 metadata = {
-                    "title": ep_record.get("tmdb_name") or ep_record.get("name", ""),
+                    "title": episode_record.get("tmdb_name")
+                    or episode_record.get("name", ""),
                     "show": self.series_name,
-                    "episode_id": str(ep_record.get("tmdb_number") or ""),
-                    "date": ep_record.get("air_date") or "",
+                    "episode_id": str(episode_record.get("tmdb_number") or ""),
+                    "date": episode_record.get("air_date") or "",
                 }
 
                 video_path_obj = Path(video_path)
@@ -474,7 +479,7 @@ class SeriesMetadataEmbedWorker(QThread):
                 command.append(output_path)
 
                 logger.info(
-                    f"Embedding metadata for series episode {index + 1}/{total_episodes}: {video_path}"
+                    f"Embedding metadata for series episode {index + 1}/{total_episodes}: '{video_path}'"
                 )
                 logger.debug(f"Running ffmpeg command: {' '.join(command)}")
                 process_result = subprocess.run(
@@ -485,14 +490,14 @@ class SeriesMetadataEmbedWorker(QThread):
 
                 if process_result.returncode == 0:
                     os.replace(output_path, video_path)
-                    logger.info(f"Successfully embedded metadata for {video_path}")
+                    logger.info(f"Successfully embedded metadata for: '{video_path}'")
                 else:
                     logger.error(
-                        f"Failed to embed metadata for {video_path}: {process_result.stderr}"
+                        f"Failed to embed metadata for '{video_path}': {process_result.stderr}"
                     )
 
             logger.info(
-                f"SeriesMetadataEmbedWorker finished successfully for series: {self.series_name}"
+                f"SeriesMetadataEmbedWorker finished successfully for series: '{self.series_name}'"
             )
             self.finished.emit()
         except Exception as exception_instance:

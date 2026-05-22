@@ -799,10 +799,12 @@ class VideoPlayerWidget(QWidget):
 
     def play_pause(self) -> None:
         if self.mediaplayer.is_playing():
+            logger.info("Pausing playback")
             self.mediaplayer.pause()
             self.play_button.setText("Play")
             self.fs_pause_button.setText("Play")
         else:
+            logger.info("Resuming playback")
             self.mediaplayer.play()
             self.play_button.setText("Pause")
             self.fs_pause_button.setText("Pause")
@@ -878,6 +880,7 @@ class VideoPlayerWidget(QWidget):
         self.back_requested.emit()
 
     def set_volume(self, volume: int) -> None:
+        logger.debug(f"Setting playback volume to {volume}%")
         if self.mediaplayer:
             self.mediaplayer.audio_set_volume(volume)
 
@@ -968,6 +971,7 @@ class VideoPlayerWidget(QWidget):
         self.osd_timer.start()
 
     def set_position(self, position: int) -> None:
+        logger.debug(f"Seeking player position to: {position}/1000")
         self.mediaplayer.set_position(position / 1000.0)
 
     def toggle_stats(self) -> None:
