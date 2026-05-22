@@ -25,6 +25,8 @@ from .ui_views import (
 from .player_widget import VideoPlayerWidget
 from .player import play_video
 
+logger: logging.Logger = logging.getLogger(__name__)
+
 
 def setup_dark_theme(application_instance: QApplication) -> None:
     application_instance.setStyle("Fusion")
@@ -187,6 +189,11 @@ def main() -> None:
             log_formatter,
         )
         add_file_handler(
+            logging.getLogger("lan_streamer.main"),
+            str(log_directory / "ui.log"),
+            log_formatter,
+        )
+        add_file_handler(
             logging.getLogger("lan_streamer.renamer"),
             str(log_directory / "renamer.log"),
             log_formatter,
@@ -200,7 +207,9 @@ def main() -> None:
 
     perform_scheduled_backups()
 
+    logger.info("Initializing database...")
     db.init_db()
+    logger.info("Initializing Qt Application...")
     application_instance = QApplication(sys.argv)
     setup_dark_theme(application_instance)
 
@@ -215,6 +224,7 @@ def main() -> None:
     stacked_layout = QStackedLayout(central_widget)
     main_window.setCentralWidget(central_widget)
 
+    logger.debug("Instantiating Controller and UI views...")
     controller = Controller()
     library_grid_view = LibraryGridView(controller)
     series_detail_view = SeriesDetailView(controller)
@@ -228,24 +238,30 @@ def main() -> None:
 
     # Wire view routing and modal display signals
     def on_series_selected(series_name: str) -> None:
+        logger.info(f"Navigating to Series Detail View for series: '{series_name}'")
         if not getattr(controller, "is_video_playing", False):
             stacked_layout.setCurrentIndex(1)
 
     controller.series_selected.connect(on_series_selected)
 
     def on_movie_selected(movie_name: str) -> None:
+        logger.info(f"Navigating to Movie Detail View for movie: '{movie_name}'")
         if not getattr(controller, "is_video_playing", False):
             stacked_layout.setCurrentIndex(2)
 
     controller.movie_selected.connect(on_movie_selected)
 
     def on_grid_back_requested() -> None:
+        logger.info("Navigating back to Library Grid View")
         stacked_layout.setCurrentIndex(0)
 
     series_detail_view.back_requested.connect(on_grid_back_requested)
     movie_detail_view.back_requested.connect(on_grid_back_requested)
 
     def on_playback_requested(file_path: str) -> None:
+        logger.info(
+            f"Playback requested for: '{file_path}' (Embedded Player: {config.use_embedded_player})"
+        )
         if config.use_embedded_player:
             if hasattr(controller, "set_video_playing"):
                 controller.set_video_playing(True)
@@ -254,12 +270,13 @@ def main() -> None:
         else:
             try:
                 play_video(file_path)
-            except Exception as exception_instance:
-                logging.error(f"Failed to launch external player: {exception_instance}")
+            except Exception:
+                logger.exception(f"Failed to launch external player for '{file_path}'")
 
     controller.playback_requested.connect(on_playback_requested)
 
     def on_player_back_requested() -> None:
+        logger.info("Playback exit requested, returning to previous details view")
         if hasattr(controller, "set_video_playing"):
             controller.set_video_playing(False)
         # Determine whether to go back to movie or series detail view
@@ -272,23 +289,27 @@ def main() -> None:
     player_view.back_requested.connect(on_player_back_requested)
 
     def on_watched_marked(file_path: str) -> None:
+        logger.info(f"Signal received: marking watched status on '{file_path}'")
         controller.mark_episode_watched(file_path, True)
 
     player_view.watched_marked.connect(on_watched_marked)
 
     def on_metadata_dialog_requested(series_name: str) -> None:
+        logger.info(f"Opening Metadata Match Dialog for series: '{series_name}'")
         dialog_instance = MetadataMatchDialog(series_name, controller, main_window)
         dialog_instance.exec()
 
     controller.metadata_dialog_requested.connect(on_metadata_dialog_requested)
 
     def on_rename_dialog_requested(series_name: str) -> None:
+        logger.info(f"Opening Rename Preview Dialog for series: '{series_name}'")
         dialog_instance = RenamePreviewDialog(series_name, controller, main_window)
         dialog_instance.exec()
 
     controller.rename_dialog_requested.connect(on_rename_dialog_requested)
 
     def on_jellyfin_dialog_requested(series_name: str) -> None:
+        logger.info(f"Opening Jellyfin Match Dialog for series: '{series_name}'")
         dialog_instance = JellyfinMatchDialog(series_name, controller, main_window)
         dialog_instance.exec()
 
@@ -297,6 +318,9 @@ def main() -> None:
     def on_episode_metadata_dialog_requested(
         series_name: str, episode_path: str
     ) -> None:
+        logger.info(
+            f"Opening Episode Match Dialog for series '{series_name}', episode: '{episode_path}'"
+        )
         dialog_instance = EpisodeMatchDialog(
             series_name, episode_path, controller, main_window
         )
@@ -307,6 +331,9 @@ def main() -> None:
     )
 
     def on_episode_details_requested(series_name: str, episode_path: str) -> None:
+        logger.info(
+            f"Opening Episode Details Dialog for series '{series_name}', episode: '{episode_path}'"
+        )
         dialog_instance = EpisodeDetailsDialog(
             series_name, episode_path, controller, main_window
         )
@@ -315,6 +342,9 @@ def main() -> None:
     controller.episode_details_requested.connect(on_episode_details_requested)
 
     def on_movie_details_requested(movie_name: str, movie_path: str) -> None:
+        logger.info(
+            f"Opening Movie Details Dialog for movie '{movie_name}', path: '{movie_path}'"
+        )
         dialog_instance = MovieDetailsDialog(
             movie_name, movie_path, controller, main_window
         )
@@ -323,6 +353,7 @@ def main() -> None:
     controller.movie_details_requested.connect(on_movie_details_requested)
 
     def on_series_details_requested(series_name: str) -> None:
+        logger.info(f"Opening Series Details Dialog for series: '{series_name}'")
         dialog_instance = SeriesDetailsDialog(series_name, controller, main_window)
         dialog_instance.exec()
 
@@ -332,8 +363,10 @@ def main() -> None:
 
     # Initialize library dropdown entries
     library_names_list = list(config.libraries.keys())
+    logger.debug(f"Populating Library Grid View libraries: {library_names_list}")
     library_grid_view.populate_libraries(library_names_list)
 
+    logger.info("Displaying Main Window. Starting Qt event loop.")
     main_window.show()
     sys.exit(application_instance.exec())
 

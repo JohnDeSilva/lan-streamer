@@ -365,7 +365,7 @@ def test_main_playback_requested_external_exception() -> None:
             "lan_streamer.main.play_video",
             side_effect=Exception("External player launch fault"),
         ) as mock_external_play,
-        patch("logging.error", MagicMock()) as mock_log_error,
+        patch("lan_streamer.main.logger") as mock_logger,
     ):
         main.main()
         mock_controller_instance = mock_controller_class.return_value
@@ -376,7 +376,9 @@ def test_main_playback_requested_external_exception() -> None:
         playback_slot("/path/to/video.mkv")
 
         mock_external_play.assert_called_once_with("/path/to/video.mkv")
-        mock_log_error.assert_called()
+        mock_logger.exception.assert_called_once_with(
+            "Failed to launch external player for '/path/to/video.mkv'"
+        )
 
 
 def test_main_dry_run() -> None:

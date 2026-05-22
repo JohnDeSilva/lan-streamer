@@ -374,10 +374,12 @@ class JellyfinClient:
         if not user_id:
             return False
 
+        logger.info(f"Marking item '{item_id}' as played in Jellyfin...")
         url = f"{self._get_base_url()}/Users/{user_id}/PlayedItems/{item_id}"
         try:
             response = self.session.post(url, headers=self._get_headers(), timeout=10)
             response.raise_for_status()
+            logger.info(f"Successfully marked item '{item_id}' as played.")
             return True
         except Exception:
             logger.exception(f"Failed to mark item {item_id} as played")
@@ -392,10 +394,12 @@ class JellyfinClient:
         if not user_id:
             return False
 
+        logger.info(f"Unmarking item '{item_id}' as played in Jellyfin...")
         url = f"{self._get_base_url()}/Users/{user_id}/PlayedItems/{item_id}"
         try:
             response = self.session.delete(url, headers=self._get_headers(), timeout=10)
             response.raise_for_status()
+            logger.info(f"Successfully unmarked item '{item_id}' as played.")
             return True
         except Exception:
             logger.exception(f"Failed to unmark item {item_id} as played")
@@ -416,6 +420,8 @@ class JellyfinClient:
         user_id = self.get_current_user_id()
         if not user_id:
             return []
+
+        logger.debug(f"Searching Jellyfin for series: '{name}'")
 
         url = f"{self._get_base_url()}/Users/{user_id}/Items"
         parameters = {
@@ -446,6 +452,8 @@ class JellyfinClient:
         user_id = self.get_current_user_id()
         if not user_id:
             return []
+
+        logger.debug(f"Searching Jellyfin for movie: '{name}'")
 
         url = f"{self._get_base_url()}/Users/{user_id}/Items"
         parameters = {
@@ -509,6 +517,9 @@ class JellyfinClient:
         if not user_id:
             return
 
+        logger.info(
+            f"Setting watched status of item '{item_id}' to {watched} in Jellyfin..."
+        )
         try:
             if watched:
                 url = f"{self._get_base_url()}/Users/{user_id}/PlayedItems/{item_id}"
@@ -516,6 +527,9 @@ class JellyfinClient:
             else:
                 url = f"{self._get_base_url()}/Users/{user_id}/PlayedItems/{item_id}"
                 self.session.delete(url, headers=self._get_headers(), timeout=5)
+            logger.info(
+                f"Successfully updated watched status for item '{item_id}' in Jellyfin."
+            )
         except Exception:
             logger.exception(f"Error setting watched status for {item_id}")
 

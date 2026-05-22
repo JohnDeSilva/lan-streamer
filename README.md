@@ -113,7 +113,7 @@ make run
 Configuration is managed via **Settings > General Settings** and stored in `~/.config/lan-streamer/config.json`.
 
 ### Logging System
-Logs are stored in the configured `log_directory` (default: `~/.config/lan-streamer/logs`).
+Logs are stored in the configured `log_directory` (default: `~/.config/lan-streamer/logs`). The application features a comprehensive, standardized logging system using `DEBUG`, `INFO`, `WARNING`, and `ERROR` levels across all modules (including background workers, database queries, player widget controls, platform-specific sleep inhibition, and external API integrations) to maximize system observability.
 
 #### Configuration Keys
 - `log_level`: Sets the verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`). Default: `INFO`.
@@ -125,22 +125,22 @@ Logs are stored in the configured `log_directory` (default: `~/.config/lan-strea
     - All application events are logged to a single `lan-streamer.log` file.
 2.  **Divided Mode** (`divide_logs_by_service: true`):
     - Logs are split into service-specific files for easier debugging:
-        - `db.log`: Database operations.
-        - `backend.log`: Background task management.
-        - `scanner.log`: Library scanning and file discovery.
-        - `jellyfin.log`: Jellyfin API synchronization.
-        - `tmdb.log`: TMDB metadata fetching.
-        - `player.log`: Video playback and VLC engine details.
+        - `db.log`: Database operations (session lifecycle, queries, conversions).
+        - `backend.log`: Background task and worker thread management.
+        - `scanner.log`: Library scanning, file discovery, and local metadata correlation.
+        - `jellyfin.log`: Jellyfin API queries and watch status synchronization.
+        - `tmdb.log`: TMDB metadata queries and caching.
+        - `player.log`: Video playback states, VLC engine details, and volume/seek controls.
         - `backup.log`: Database and configuration backups.
-        - `opensubtitles.log`: Subtitle search and downloads.
-        - `wakelock.log`: System sleep prevention events.
-        - `ui.log`: User interface events and view state transitions.
-        - `renamer.log`: Batch file renaming operations.
+        - `opensubtitles.log`: Subtitle searches, downloads, and remote API client actions.
+        - `wakelock.log`: Platform sleep prevention and power management status.
+        - `ui.log`: User interface state, routing events, and settings changes.
+        - `renamer.log`: Batch file renaming operations and subtitle matching.
 
 All logs are rotated daily at midnight. On application startup, the system automatically purges log files older than the retention threshold.
 
 #### Real-Time Log Viewer
-The application includes a **Running Logs** tab in Settings. It streams logs in real-time, allowing users to:
+The application includes a **Running Logs** tab in Settings. Utilizing a thread-safe `QtLogHandler`, it streams logs in real-time, allowing users to:
 - Filter log entries by minimum level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`).
 - Search/filter log messages dynamically using a text input field.
 - Toggle auto-scroll behavior.

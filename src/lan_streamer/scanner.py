@@ -1017,6 +1017,9 @@ def _process_season_metadata(
         season_number_match = re.search(r"\d+", season_name)
         season_index = int(season_number_match.group()) if season_number_match else -1
 
+    logger.debug(
+        f"Processing season directory: '{season_name}' (Season index: {season_index})"
+    )
     matched_tmdb_season = None
     for tmdb_season in series_data["_tmdb_seasons"]:
         if (
@@ -1075,6 +1078,9 @@ def _process_season_metadata(
 
         tmdb_episodes = []
         if needs_episode_search and series_data["_tmdb_series_id"]:
+            logger.info(
+                f"Fetching TMDB episodes list for series ID '{series_data['_tmdb_series_id']}', season index '{season_index}'"
+            )
             tmdb_episodes = tmdb_client.get_episodes(
                 series_data["_tmdb_series_id"], season_index
             )
@@ -1129,6 +1135,10 @@ def _process_episode_file(
                     tmdb_number = tmdb_episode.get("episode_number")
                     air_date = tmdb_episode.get("air_date", "")
                     runtime = tmdb_episode.get("runtime", 0)
+                    logger.debug(
+                        f"Matched '{episode_name}' by parsed episode number: "
+                        f"{episode_number} -> TMDB Name: '{tmdb_name}'"
+                    )
                     break
         else:
             lookup_name = episode_file.stem.lower()
@@ -1140,6 +1150,10 @@ def _process_episode_file(
                     tmdb_number = tmdb_episode.get("episode_number")
                     air_date = tmdb_episode.get("air_date", "")
                     runtime = tmdb_episode.get("runtime", 0)
+                    logger.debug(
+                        f"Matched '{episode_name}' by parsed substring: "
+                        f"'{tmdb_episode_name}' -> TMDB Name: '{tmdb_name}'"
+                    )
                     break
 
     try:

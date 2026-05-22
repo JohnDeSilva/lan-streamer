@@ -1,8 +1,10 @@
 import json
+import logging
 from pathlib import Path
 from typing import List, Dict, Any
 
 CONFIG_FILE = Path.home() / ".config" / "lan-streamer" / "config.json"
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 class Config:
@@ -46,6 +48,7 @@ class Config:
         self.load()
 
     def load(self) -> None:
+        logger.debug(f"Attempting to load config from {CONFIG_FILE}")
         if CONFIG_FILE.exists():
             try:
                 with open(CONFIG_FILE, "r") as f:
@@ -141,17 +144,21 @@ class Config:
                         self.save()
                     else:
                         self.libraries = {}
-            except Exception as e:
-                print(f"Error loading config: {e}")
+            except Exception:
+                logger.exception("Error loading config")
                 self.libraries = {}
         else:
+            logger.info("Config file does not exist. Initializing empty libraries.")
             self.libraries = {}
 
     def save(self) -> None:
+        logger.debug(f"Attempting to save config to {CONFIG_FILE}")
         try:
             CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
         except Exception as exc:
-            print(f"Could not create config directory {CONFIG_FILE.parent}: {exc}")
+            logger.warning(
+                f"Could not create config directory {CONFIG_FILE.parent}: {exc}"
+            )
         try:
             with open(CONFIG_FILE, "w") as f:
                 json.dump(
@@ -189,20 +196,23 @@ class Config:
                     f,
                     indent=4,
                 )
-        except Exception as e:
-            print(f"Error saving config: {e}")
+        except Exception:
+            logger.exception("Error saving config")
 
     def add_library(self, name: str, library_type: str = "tv") -> None:
+        logger.info(f"Adding library '{name}' with type '{library_type}'")
         if name not in self.libraries:
             self.libraries[name] = {"type": library_type, "paths": []}
             self.save()
 
     def remove_library(self, name: str) -> None:
+        logger.info(f"Removing library '{name}'")
         if name in self.libraries:
             del self.libraries[name]
             self.save()
 
     def add_root_dir(self, library_name: str, path: str) -> None:
+        logger.info(f"Adding root directory '{path}' to library '{library_name}'")
         if library_name in self.libraries:
             paths = self.libraries[library_name].get("paths", [])
             if path not in paths:
@@ -211,6 +221,7 @@ class Config:
                 self.save()
 
     def remove_root_dir(self, library_name: str, path: str) -> None:
+        logger.info(f"Removing root directory '{path}' from library '{library_name}'")
         if library_name in self.libraries:
             paths = self.libraries[library_name].get("paths", [])
             if path in paths:
