@@ -3393,63 +3393,127 @@ class SettingsDialog(QDialog):
 
         # Advanced Settings Pane
         advanced_tab: QWidget = QWidget()
-        advanced_layout: QGridLayout = QGridLayout(advanced_tab)
-        advanced_layout.setSpacing(12)
+        advanced_layout: QVBoxLayout = QVBoxLayout(advanced_tab)
+        advanced_layout.setSpacing(15)
+        advanced_layout.setContentsMargins(10, 10, 10, 10)
 
-        advanced_layout.addWidget(QLabel("Database File Path:"), 0, 0)
-        advanced_layout.addWidget(self.db_path_input, 0, 1)
+        # 1. Database Settings Group
+        db_frame: QFrame = QFrame()
+        db_frame.setObjectName("dbGroupFrame")
+        db_frame.setStyleSheet(
+            "QFrame#dbGroupFrame { background-color: #222222; border: 1px solid #333333; border-radius: 8px; }"
+        )
+        db_group_layout: QGridLayout = QGridLayout(db_frame)
+        db_group_layout.setContentsMargins(15, 15, 15, 15)
+        db_group_layout.setSpacing(10)
+        db_group_layout.setColumnStretch(1, 1)
+
+        db_title: QLabel = QLabel("Database Settings")
+        db_title.setStyleSheet("font-size: 15px; font-weight: bold; color: #2a82da;")
+        db_group_layout.addWidget(db_title, 0, 0, 1, 3)
+
+        db_path_label: QLabel = QLabel("Database File Path:")
+        db_group_layout.addWidget(db_path_label, 1, 0)
+        db_group_layout.addWidget(self.db_path_input, 1, 1)
         browse_db_button: QPushButton = QPushButton("Browse File...")
         browse_db_button.clicked.connect(self.browse_database_path)
-        advanced_layout.addWidget(browse_db_button, 0, 2)
+        db_group_layout.addWidget(browse_db_button, 1, 2)
 
-        advanced_layout.addWidget(QLabel("Logs Directory:"), 1, 0)
-        advanced_layout.addWidget(self.log_dir_input, 1, 1)
-        browse_log_button: QPushButton = QPushButton("Browse Folder...")
-        browse_log_button.clicked.connect(self.browse_log_directory)
-        advanced_layout.addWidget(browse_log_button, 1, 2)
+        db_freq_label: QLabel = QLabel("Database Backup Freq (Days):")
+        db_group_layout.addWidget(db_freq_label, 2, 0)
+        db_group_layout.addWidget(self.database_backup_frequency_input, 2, 1)
 
-        advanced_layout.addWidget(QLabel("Max Log Retention Days:"), 2, 0)
-        advanced_layout.addWidget(self.log_retention_input, 2, 1)
-
-        advanced_layout.addWidget(QLabel("Log Saving Mode (Restart Required):"), 3, 0)
-        self.log_saving_mode_selector.addItems(
-            ["Single Global File", "Divided Service Logs"]
-        )
-        advanced_layout.addWidget(self.log_saving_mode_selector, 3, 1)
-
-        advanced_layout.addWidget(QLabel("Log Level:"), 4, 0)
-        self.log_level_selector.addItems(
-            ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        )
-        advanced_layout.addWidget(self.log_level_selector, 4, 1)
-
-        advanced_layout.addWidget(QLabel("Backup Directory:"), 5, 0)
-        advanced_layout.addWidget(self.backup_directory_input, 5, 1)
-        browse_backup_button: QPushButton = QPushButton("Browse Folder...")
-        browse_backup_button.clicked.connect(self.browse_backup_directory)
-        advanced_layout.addWidget(browse_backup_button, 5, 2)
-
-        advanced_layout.addWidget(QLabel("Config Backup Freq (Days):"), 6, 0)
-        advanced_layout.addWidget(self.config_backup_frequency_input, 6, 1)
-
-        advanced_layout.addWidget(QLabel("Database Backup Freq (Days):"), 7, 0)
-        advanced_layout.addWidget(self.database_backup_frequency_input, 7, 1)
-
-        advanced_layout.addWidget(QLabel("Config Backup Retention:"), 8, 0)
-        advanced_layout.addWidget(self.config_backup_retention_input, 8, 1)
-
-        advanced_layout.addWidget(QLabel("Database Backup Retention:"), 9, 0)
-        advanced_layout.addWidget(self.database_backup_retention_input, 9, 1)
-
-        restore_config_button: QPushButton = QPushButton("Restore Config...")
-        restore_config_button.clicked.connect(self.trigger_restore_config)
-        advanced_layout.addWidget(restore_config_button, 10, 0)
+        db_ret_label: QLabel = QLabel("Database Backup Retention:")
+        db_group_layout.addWidget(db_ret_label, 3, 0)
+        db_group_layout.addWidget(self.database_backup_retention_input, 3, 1)
 
         restore_database_button: QPushButton = QPushButton("Restore Database...")
         restore_database_button.clicked.connect(self.trigger_restore_database)
-        advanced_layout.addWidget(restore_database_button, 10, 1)
+        db_group_layout.addWidget(restore_database_button, 4, 1)
 
-        advanced_layout.setRowStretch(11, 1)
+        advanced_layout.addWidget(db_frame)
+
+        # 2. Log Settings Group
+        logs_frame: QFrame = QFrame()
+        logs_frame.setObjectName("logsGroupFrame")
+        logs_frame.setStyleSheet(
+            "QFrame#logsGroupFrame { background-color: #222222; border: 1px solid #333333; border-radius: 8px; }"
+        )
+        logs_group_layout: QGridLayout = QGridLayout(logs_frame)
+        logs_group_layout.setContentsMargins(15, 15, 15, 15)
+        logs_group_layout.setSpacing(10)
+        logs_group_layout.setColumnStretch(1, 1)
+
+        logs_title: QLabel = QLabel("Log Settings")
+        logs_title.setStyleSheet("font-size: 15px; font-weight: bold; color: #2a82da;")
+        logs_group_layout.addWidget(logs_title, 0, 0, 1, 3)
+
+        log_dir_label: QLabel = QLabel("Logs Directory:")
+        logs_group_layout.addWidget(log_dir_label, 1, 0)
+        logs_group_layout.addWidget(self.log_dir_input, 1, 1)
+        browse_log_button: QPushButton = QPushButton("Browse Folder...")
+        browse_log_button.clicked.connect(self.browse_log_directory)
+        logs_group_layout.addWidget(browse_log_button, 1, 2)
+
+        log_level_label: QLabel = QLabel("Log Level:")
+        logs_group_layout.addWidget(log_level_label, 2, 0)
+        self.log_level_selector.addItems(
+            ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        )
+        logs_group_layout.addWidget(self.log_level_selector, 2, 1)
+
+        log_saving_label: QLabel = QLabel("Log Saving Mode (Restart Required):")
+        logs_group_layout.addWidget(log_saving_label, 3, 0)
+        self.log_saving_mode_selector.addItems(
+            ["Single Global File", "Divided Service Logs"]
+        )
+        logs_group_layout.addWidget(self.log_saving_mode_selector, 3, 1)
+
+        log_ret_label: QLabel = QLabel("Max Log Retention Days:")
+        logs_group_layout.addWidget(log_ret_label, 4, 0)
+        logs_group_layout.addWidget(self.log_retention_input, 4, 1)
+
+        advanced_layout.addWidget(logs_frame)
+
+        # 3. Configuration Settings Group
+        config_frame: QFrame = QFrame()
+        config_frame.setObjectName("configGroupFrame")
+        config_frame.setStyleSheet(
+            "QFrame#configGroupFrame { background-color: #222222; border: 1px solid #333333; border-radius: 8px; }"
+        )
+        config_group_layout: QGridLayout = QGridLayout(config_frame)
+        config_group_layout.setContentsMargins(15, 15, 15, 15)
+        config_group_layout.setSpacing(10)
+        config_group_layout.setColumnStretch(1, 1)
+
+        config_title: QLabel = QLabel("Configuration & System Backup Settings")
+        config_title.setStyleSheet(
+            "font-size: 15px; font-weight: bold; color: #2a82da;"
+        )
+        config_group_layout.addWidget(config_title, 0, 0, 1, 3)
+
+        backup_dir_label: QLabel = QLabel("Backup Directory:")
+        config_group_layout.addWidget(backup_dir_label, 1, 0)
+        config_group_layout.addWidget(self.backup_directory_input, 1, 1)
+        browse_backup_button: QPushButton = QPushButton("Browse Folder...")
+        browse_backup_button.clicked.connect(self.browse_backup_directory)
+        config_group_layout.addWidget(browse_backup_button, 1, 2)
+
+        config_freq_label: QLabel = QLabel("Config Backup Freq (Days):")
+        config_group_layout.addWidget(config_freq_label, 2, 0)
+        config_group_layout.addWidget(self.config_backup_frequency_input, 2, 1)
+
+        config_ret_label: QLabel = QLabel("Config Backup Retention:")
+        config_group_layout.addWidget(config_ret_label, 3, 0)
+        config_group_layout.addWidget(self.config_backup_retention_input, 3, 1)
+
+        restore_config_button: QPushButton = QPushButton("Restore Config...")
+        restore_config_button.clicked.connect(self.trigger_restore_config)
+        config_group_layout.addWidget(restore_config_button, 4, 1)
+
+        advanced_layout.addWidget(config_frame)
+
+        advanced_layout.addStretch()
         tab_container.addTab(advanced_tab, "Advanced")
 
         # Library Management Pane
