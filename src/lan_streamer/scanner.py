@@ -584,6 +584,9 @@ def scan_directories(
     callback: Any = None,
     force_refresh: bool = False,
     cleanup: bool = False,
+    single_item_refresh: bool = False,
+    detail_callback: Any = None,
+    root_directory_label: str = "",
 ) -> LibraryDict:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -600,6 +603,8 @@ def scan_directories(
         if not root_path.exists() or not root_path.is_dir():
             logger.warning(f"Root directory '{root_directory}' is unavailable")
             library.unavailable_directories.append(root_directory)
+            if detail_callback:
+                detail_callback("unavailable_root", {"root": root_directory})
             continue
 
         # Sort series directories by mtime (newest first)
@@ -613,23 +618,35 @@ def scan_directories(
             reverse=True,
         )
 
+        if detail_callback:
+            detail_callback(
+                "root_total",
+                {"root": root_directory, "total": len(series_dirs)},
+            )
+
         for series_directory in series_dirs:
             series_name = series_directory.name
+            if detail_callback:
+                detail_callback(
+                    "start_folder",
+                    {"root": root_directory, "folder": series_name},
+                )
 
             # Check if we have an existing manual match for THIS SPECIFIC folder name
             existing_series = existing_library.get(series_name)
             tmdb_series = None
             is_locked = False
             existing_jellyfin_id = None
+            has_meta = False
 
             if existing_series:
                 existing_jellyfin_id = _resolve_existing_jellyfin_id(
                     existing_series, library_type
                 )
                 if library_type == "movie":
-                    if existing_series.get("locked_metadata") and existing_series.get(
-                        "tmdb_identifier"
-                    ):
+                    is_locked = bool(existing_series.get("locked_metadata", False))
+                    has_meta = bool(existing_series.get("tmdb_identifier"))
+                    if is_locked:
                         logger.info(
                             f"Using locked TMDB metadata for movie '{series_name}' "
                             f"(ID: {existing_series['tmdb_identifier']})"
@@ -637,19 +654,27 @@ def scan_directories(
                         tmdb_series = _build_locked_movie_tmdb_stub(
                             existing_series, series_name
                         )
-                        is_locked = True
                 else:
-                    if existing_series.get("metadata", {}).get(
-                        "locked_metadata"
-                    ) and existing_series["metadata"].get("tmdb_identifier"):
+                    is_locked = bool(
+                        existing_series.get("metadata", {}).get(
+                            "locked_metadata", False
+                        )
+                    )
+                    has_meta = bool(
+                        existing_series.get("metadata", {}).get("tmdb_identifier")
+                    )
+                    if is_locked:
                         logger.info(
                             f"Using locked TMDB metadata for '{series_name}' "
                             f"(ID: {existing_series['metadata']['tmdb_identifier']})"
                         )
                         tmdb_series = _build_locked_tv_tmdb_stub(existing_series)
-                        is_locked = True
 
-            series_force_refresh = force_refresh if not is_locked else False
+            series_force_refresh = (
+                force_refresh
+                if not is_locked and (single_item_refresh or not has_meta)
+                else False
+            )
             cleaned: Optional[Dict[str, Any]] = None
             if library_type == "movie":
                 series_data = scan_movie(
@@ -660,8 +685,19 @@ def scan_directories(
                     existing_movie_data=existing_series,
                     force_refresh=series_force_refresh,
                     cleanup=cleanup,
+                    single_item_refresh=single_item_refresh,
+                    detail_callback=detail_callback,
                 )
                 if not series_data:
+                    if detail_callback:
+                        detail_callback(
+                            "finish_folder",
+                            {
+                                "root": root_directory,
+                                "folder": series_name,
+                                "skipped": True,
+                            },
+                        )
                     continue
                 cleaned = series_data
             else:
@@ -673,12 +709,23 @@ def scan_directories(
                     existing_series_data=existing_series,
                     force_refresh=series_force_refresh,
                     cleanup=cleanup,
+                    single_item_refresh=single_item_refresh,
+                    detail_callback=detail_callback,
                 )
                 if is_locked:
                     series_data["metadata"]["locked_metadata"] = True
 
                 cleaned = clean_series_data(series_data)
                 if not cleaned:
+                    if detail_callback:
+                        detail_callback(
+                            "finish_folder",
+                            {
+                                "root": root_directory,
+                                "folder": series_name,
+                                "skipped": True,
+                            },
+                        )
                     continue
 
             # Identify if this series matches something already in our library
@@ -714,6 +761,12 @@ def scan_directories(
             else:
                 library[series_name] = cleaned
 
+            if detail_callback:
+                detail_callback(
+                    "finish_folder",
+                    {"root": root_directory, "folder": series_name, "skipped": False},
+                )
+
             if callback:
                 callback(library)
 
@@ -746,6 +799,8 @@ def scan_movie(
     existing_movie_data: Dict[str, Any] | None = None,
     force_refresh: bool = False,
     cleanup: bool = False,
+    single_item_refresh: bool = False,
+    detail_callback: Any = None,
 ) -> Dict[str, Any] | None:
     folder_name = movie_directory.name
     title, year = _parse_movie_folder(folder_name)
@@ -759,6 +814,11 @@ def scan_movie(
 
     if not video_file:
         return None
+
+    if detail_callback:
+        detail_callback(
+            "start_file", {"file": str(video_file), "folder": movie_directory.name}
+        )
 
     try:
         ctime = os.path.getctime(video_file)
@@ -799,6 +859,8 @@ def scan_movie(
 
     if not force_refresh and not cleanup and existing_movie_data:
         movie_data = existing_movie_data.copy()
+        if video_path:
+            movie_data["path"] = video_path
         if not movie_data.get("jellyfin_id") and jellyfin_data:
             path_map = jellyfin_data.get("path_map", {})
             if video_path in path_map:
@@ -814,9 +876,10 @@ def scan_movie(
         return movie_data
 
     if tmdb_movie and "title" not in tmdb_movie and "id" in tmdb_movie:
-        full = tmdb_client.get_movie_by_id(tmdb_movie["id"])
-        if full:
-            tmdb_movie = full
+        if single_item_refresh or not movie_metadata.get("tmdb_name"):
+            full = tmdb_client.get_movie_by_id(tmdb_movie["id"])
+            if full:
+                tmdb_movie = full
 
     if not tmdb_movie:
         if movie_metadata["tmdb_identifier"]:
@@ -829,7 +892,9 @@ def scan_movie(
                 if movie_metadata["year"]
                 else "",
             }
-        elif not is_locked and not existing_movie_data:
+        elif not is_locked and (
+            single_item_refresh or not existing_movie_data or not existing_tmdb_id
+        ):
             tmdb_movie = tmdb_client.search_movie(title, year)
 
     if tmdb_movie:
@@ -863,17 +928,23 @@ def scan_movie(
         else 0,
     }
 
+    if detail_callback:
+        detail_callback(
+            "finish_file", {"file": str(video_file), "folder": movie_directory.name}
+        )
+
     return movie_data
 
 
 def _process_series_metadata(
     series_directory: Path,
     tmdb_series: Dict[str, Any] | None,
-    jellyfin_data: Dict[str, dict] | None,
+    jellyfin_data: Dict[str, Any] | None,
     manual_jellyfin_id: str | None,
     existing_series_data: Dict[str, Any] | None,
     force_refresh: bool,
     cleanup: bool,
+    single_item_refresh: bool = False,
 ) -> tuple[Dict[str, Any], bool, Dict[str, Any] | None, Dict[str, Any]]:
     series_name = series_directory.name
 
@@ -945,9 +1016,10 @@ def _process_series_metadata(
         return series_data, True, tmdb_series, existing_episodes_by_path
 
     if tmdb_series and "name" not in tmdb_series and "id" in tmdb_series:
-        full = tmdb_client.get_series_by_id(tmdb_series["id"])
-        if full:
-            tmdb_series = full
+        if single_item_refresh or not series_metadata.get("tmdb_name"):
+            full = tmdb_client.get_series_by_id(tmdb_series["id"])
+            if full:
+                tmdb_series = full
 
     if not tmdb_series:
         if series_metadata["tmdb_identifier"]:
@@ -958,7 +1030,11 @@ def _process_series_metadata(
                 "poster_path": series_metadata["poster_path"],
                 "first_air_date": series_metadata.get("first_air_date", ""),
             }
-        elif not is_locked and not existing_series_data:
+        elif not is_locked and (
+            single_item_refresh
+            or not existing_series_data
+            or not existing_tmdb_identifier
+        ):
             tmdb_series = tmdb_client.search_series(series_name)
 
     tmdb_seasons: list[Any] = []
@@ -978,8 +1054,9 @@ def _process_series_metadata(
             if not series_metadata.get("poster_path"):
                 series_metadata["poster_path"] = ""
 
-        if tmdb_identifier:
-            tmdb_seasons = tmdb_client.get_seasons(tmdb_identifier)
+        if tmdb_identifier and not is_locked:
+            if force_refresh or single_item_refresh or not existing_series_data:
+                tmdb_seasons = tmdb_client.get_seasons(tmdb_identifier)
 
     if not series_metadata["jellyfin_id"] and jellyfin_data and tmdb_series:
         tmdb_id = str(tmdb_series.get("id") or "")
@@ -1004,6 +1081,7 @@ def _process_season_metadata(
     series_data: Dict[str, Any],
     existing_series_data: Dict[str, Any] | None,
     existing_episodes_by_path: Dict[str, Any],
+    single_item_refresh: bool = False,
 ) -> tuple[str, int, Dict[str, Any], list[Any]]:
     season_name = season_directory.name
     season_metadata: Dict[str, Any] = {
@@ -1021,13 +1099,22 @@ def _process_season_metadata(
         f"Processing season directory: '{season_name}' (Season index: {season_index})"
     )
     matched_tmdb_season = None
-    for tmdb_season in series_data["_tmdb_seasons"]:
+    for tmdb_season in series_data.get("_tmdb_seasons", []):
         if (
             tmdb_season.get("season_number") == season_index
             or tmdb_season.get("name") == season_name
         ):
             matched_tmdb_season = tmdb_season
             break
+
+    existing_season_id = ""
+    existing_season_poster = ""
+    if existing_series_data and season_name in existing_series_data.get("seasons", {}):
+        old_season_metadata = existing_series_data["seasons"][season_name].get(
+            "metadata", {}
+        )
+        existing_season_id = old_season_metadata.get("tmdb_identifier", "")
+        existing_season_poster = old_season_metadata.get("poster_path", "")
 
     if matched_tmdb_season and series_data["_tmdb_series_id"]:
         season_tmdb_identifier = matched_tmdb_season.get("id")
@@ -1040,19 +1127,6 @@ def _process_season_metadata(
             if season_tmdb_identifier
             else ""
         )
-        existing_season_poster = ""
-        if existing_series_data and season_name in existing_series_data.get(
-            "seasons", {}
-        ):
-            old_season_metadata = existing_series_data["seasons"][season_name].get(
-                "metadata", {}
-            )
-            if (
-                old_season_metadata.get("poster_path")
-                and Path(old_season_metadata["poster_path"]).is_file()
-            ):
-                existing_season_poster = old_season_metadata["poster_path"]
-
         if cached_season_poster and isinstance(cached_season_poster, str):
             season_metadata["poster_path"] = cached_season_poster
         elif existing_season_poster:
@@ -1065,8 +1139,13 @@ def _process_season_metadata(
                 )
             else:
                 season_metadata["poster_path"] = ""
+    else:
+        season_metadata["tmdb_identifier"] = existing_season_id
+        season_metadata["poster_path"] = existing_season_poster
 
-        needs_episode_search = False
+    needs_episode_search = False
+    is_locked = bool(series_data.get("metadata", {}).get("locked_metadata", False))
+    if not is_locked:
         for episode_file in season_directory.iterdir():
             if (
                 episode_file.is_file()
@@ -1076,14 +1155,14 @@ def _process_season_metadata(
                     needs_episode_search = True
                     break
 
-        tmdb_episodes = []
-        if needs_episode_search and series_data["_tmdb_series_id"]:
-            logger.info(
-                f"Fetching TMDB episodes list for series ID '{series_data['_tmdb_series_id']}', season index '{season_index}'"
-            )
-            tmdb_episodes = tmdb_client.get_episodes(
-                series_data["_tmdb_series_id"], season_index
-            )
+    tmdb_episodes = []
+    if needs_episode_search and series_data["_tmdb_series_id"]:
+        logger.info(
+            f"Fetching TMDB episodes list for series ID '{series_data['_tmdb_series_id']}', season index '{season_index}'"
+        )
+        tmdb_episodes = tmdb_client.get_episodes(
+            series_data["_tmdb_series_id"], season_index
+        )
 
     return season_name, season_index, season_metadata, tmdb_episodes
 
@@ -1217,6 +1296,8 @@ def scan_series(
     existing_series_data: Dict[str, Any] | None = None,
     force_refresh: bool = False,
     cleanup: bool = False,
+    single_item_refresh: bool = False,
+    detail_callback: Any = None,
 ) -> Dict[str, Any]:
     """
     Scans a single series directory and fetches metadata from TMDB.
@@ -1233,6 +1314,7 @@ def scan_series(
             existing_series_data,
             force_refresh,
             cleanup,
+            single_item_refresh,
         )
     )
     if is_early_return:
@@ -1248,8 +1330,15 @@ def scan_series(
                 series_data,
                 existing_series_data,
                 existing_episodes_by_path,
+                single_item_refresh,
             )
         )
+
+        if detail_callback:
+            detail_callback(
+                "start_season",
+                {"folder": series_directory.name, "season": season_name},
+            )
 
         series_data["seasons"][season_name] = {
             "metadata": season_metadata,
@@ -1262,6 +1351,15 @@ def scan_series(
                 episode_file.is_file()
                 and episode_file.suffix.lower() in VIDEO_EXTENSIONS
             ):
+                if detail_callback:
+                    detail_callback(
+                        "start_file",
+                        {
+                            "file": str(episode_file),
+                            "folder": series_directory.name,
+                            "season": season_name,
+                        },
+                    )
                 episode_record = _process_episode_file(
                     episode_file,
                     season_name,
@@ -1274,6 +1372,21 @@ def scan_series(
                     existing_episodes_by_path,
                 )
                 series_data["seasons"][season_name]["episodes"].append(episode_record)
+                if detail_callback:
+                    detail_callback(
+                        "finish_file",
+                        {
+                            "file": str(episode_file),
+                            "folder": series_directory.name,
+                            "season": season_name,
+                        },
+                    )
+
+        if detail_callback:
+            detail_callback(
+                "finish_season",
+                {"folder": series_directory.name, "season": season_name},
+            )
 
     if not cleanup and existing_series_data:
         for old_season_name, old_season_data in existing_series_data.get(

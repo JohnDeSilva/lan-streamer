@@ -8,7 +8,13 @@ from PySide6.QtCore import QObject, Signal, QThread
 from . import db
 from .config import config
 from .jellyfin import jellyfin_client
-from .scanner import scan_directories, LibraryDict
+from .scanner import (
+    scan_directories,
+    LibraryDict,
+    scan_series,
+    scan_movie,
+    clean_series_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +151,7 @@ class ScanAllLibrariesWorker(QThread):
     """Scans all configured libraries sequentially using TMDB for metadata."""
 
     library_progress = Signal(str, int, int)
+    detail_progress = Signal(str, dict)  # (event_type, payload)
     finished = Signal()
     error = Signal(str)
 
@@ -157,6 +164,57 @@ class ScanAllLibrariesWorker(QThread):
         self.force_refresh: bool = force_refresh
         self.unavailable_directories: List[str] = []
 
+    def _discover_tree(self) -> Dict[str, Any]:
+        """
+        Pre-walks all library directories to count total folders and files
+        so the UI can initialise the tree and segmented progress bar before
+        scanning begins.  Returns a structure keyed by library name.
+        """
+        from pathlib import Path as _Path
+        from lan_streamer.scanner import VIDEO_EXTENSIONS
+
+        tree: Dict[str, Any] = {}
+        for library_name, library_configuration in config.libraries.items():
+            root_directories: List[str] = list(library_configuration.get("paths", []))
+            library_type: str = library_configuration.get("type", "tv")
+            roots: Dict[str, Any] = {}
+            for root_dir in root_directories:
+                root_path = _Path(root_dir)
+                if not root_path.exists() or not root_path.is_dir():
+                    roots[root_dir] = {}
+                    continue
+                folders: Dict[str, Any] = {}
+                for series_path in sorted(
+                    [
+                        x
+                        for x in root_path.iterdir()
+                        if x.is_dir() and not x.name.startswith(".")
+                    ],
+                    key=lambda x: x.stat().st_mtime,
+                    reverse=True,
+                ):
+                    series_name = series_path.name
+                    if library_type == "tv":
+                        seasons: Dict[str, List[str]] = {}
+                        for season_path in series_path.iterdir():
+                            if season_path.is_dir() and not season_path.name.startswith(
+                                "."
+                            ):
+                                episodes: List[str] = []
+                                for ep_path in season_path.iterdir():
+                                    if (
+                                        ep_path.is_file()
+                                        and ep_path.suffix.lower() in VIDEO_EXTENSIONS
+                                    ):
+                                        episodes.append(ep_path.name)
+                                seasons[season_path.name] = sorted(episodes)
+                        folders[series_name] = {"seasons": seasons}
+                    else:
+                        folders[series_name] = {}
+                roots[root_dir] = folders
+            tree[library_name] = {"type": library_type, "roots": roots}
+        return tree
+
     def run(self) -> None:
         try:
             logger.info("ScanAllLibrariesWorker starting global scan run")
@@ -164,6 +222,10 @@ class ScanAllLibrariesWorker(QThread):
             total_count: int = len(libraries_dictionary)
             completed_count: int = 0
             self.unavailable_directories = []
+
+            # Pre-discover tree structure and tell the UI to initialise it
+            tree_structure = self._discover_tree()
+            self.detail_progress.emit("init_tree", {"tree": tree_structure})
 
             jellyfin_data: Optional[Dict[str, Any]] = None
             if jellyfin_client.is_configured():
@@ -176,11 +238,22 @@ class ScanAllLibrariesWorker(QThread):
                 )
                 library_type: str = library_configuration.get("type", "tv")
 
+                self.detail_progress.emit("start_library", {"library": library_name})
+
                 existing_library_data: Dict[str, Any] = {}
                 if library_type == "movie":
                     existing_library_data = db.load_movie_library(library_name)
                 else:
                     existing_library_data = db.load_library(library_name)
+
+                def _make_detail_callback(lib_name: str) -> Any:
+                    worker_self = self
+
+                    def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
+                        enriched = {"library": lib_name, **payload}
+                        worker_self.detail_progress.emit(event, enriched)
+
+                    return _detail_callback
 
                 updated_library_data: LibraryDict = scan_directories(
                     root_directories,
@@ -190,6 +263,7 @@ class ScanAllLibrariesWorker(QThread):
                     callback=None,
                     force_refresh=self.force_refresh,
                     cleanup=False,
+                    detail_callback=_make_detail_callback(library_name),
                 )
                 self.unavailable_directories.extend(
                     updated_library_data.unavailable_directories
@@ -201,6 +275,7 @@ class ScanAllLibrariesWorker(QThread):
                     db.save_library(library_name, updated_library_data)
 
                 completed_count += 1
+                self.detail_progress.emit("finish_library", {"library": library_name})
                 self.library_progress.emit(library_name, completed_count, total_count)
 
             logger.info("ScanAllLibrariesWorker finished successfully")
@@ -503,3 +578,91 @@ class SeriesMetadataEmbedWorker(QThread):
         except Exception as exception_instance:
             logger.exception("SeriesMetadataEmbedWorker failed")
             self.error.emit(str(exception_instance))
+
+
+class RefreshSeriesWorker(QThread):
+    """Refreshes metadata for a single series or movie by scanning its folder directly."""
+
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        library_name: str,
+        item_name: str,
+        library_type: str,
+        root_directories: List[str],
+        existing_library: Dict[str, Any],
+        parent: Optional[QObject] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.library_name: str = library_name
+        self.item_name: str = item_name
+        self.library_type: str = library_type
+        self.root_directories: List[str] = root_directories
+        self.existing_library: Dict[str, Any] = existing_library
+
+    def run(self) -> None:
+        try:
+            logger.info(
+                f"RefreshSeriesWorker starting for item: {self.item_name} in library {self.library_name}"
+            )
+            # Find the path of the specific series/movie directory within the root directories
+            target_dir: Optional[Path] = None
+            for root_dir in self.root_directories:
+                potential_dir = Path(root_dir) / self.item_name
+                if potential_dir.exists() and potential_dir.is_dir():
+                    target_dir = potential_dir
+                    break
+
+            if not target_dir:
+                raise ValueError(f"Could not find directory for '{self.item_name}'")
+
+            # Fetch Jellyfin correlation data if configured
+            jellyfin_data: Optional[Dict[str, Any]] = None
+            if jellyfin_client.is_configured():
+                jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
+
+            existing_item = self.existing_library.get(self.item_name)
+            # We want to refresh this item from TMDB, bypassing lock.
+            # So we pass tmdb_series/tmdb_movie = None, and single_item_refresh = True.
+            if self.library_type == "movie":
+                item_data = scan_movie(
+                    target_dir,
+                    tmdb_movie=None,
+                    jellyfin_data=jellyfin_data,
+                    manual_jellyfin_id=None,
+                    existing_movie_data=existing_item,
+                    force_refresh=True,
+                    cleanup=False,
+                    single_item_refresh=True,
+                )
+            else:
+                item_data = scan_series(
+                    target_dir,
+                    tmdb_series=None,
+                    jellyfin_data=jellyfin_data,
+                    manual_jellyfin_id=None,
+                    existing_series_data=existing_item,
+                    force_refresh=True,
+                    cleanup=False,
+                    single_item_refresh=True,
+                )
+
+            if not item_data:
+                raise ValueError(f"Scan failed for '{self.item_name}'")
+
+            # Update the existing library dictionary with the new item data
+            updated_library = self.existing_library.copy()
+            if self.library_type != "movie":
+                item_data = clean_series_data(item_data)
+            updated_library[self.item_name] = item_data
+
+            # Persist back to DB
+            db.save_library(self.library_name, updated_library)
+
+            logger.info("RefreshSeriesWorker finished successfully")
+            self.finished.emit(updated_library)
+        except Exception as exc:
+            logger.exception("RefreshSeriesWorker failed")
+            self.error.emit(str(exc))
