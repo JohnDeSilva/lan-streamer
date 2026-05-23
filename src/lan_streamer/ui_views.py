@@ -23,10 +23,11 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QSizePolicy,
-    QProgressBar,
     QFormLayout,
     QMenu,
     QPlainTextEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
 )
 from PySide6.QtCore import (
     Qt,
@@ -47,6 +48,8 @@ from PySide6.QtGui import (
     QAction,
     QCloseEvent,
     QTextCursor,
+    QPainter,
+    QPen,
 )
 
 from .config import config
@@ -178,6 +181,473 @@ def get_application_stylesheet() -> str:
     """
 
 
+# ---------------------------------------------------------------------------
+# Custom progress widgets for the Library Management tab
+# ---------------------------------------------------------------------------
+
+
+class SegmentedProgressBar(QWidget):
+    """
+    A custom progress bar divided into labelled library segments.
+    Within each library segment, root-directory sub-segments are drawn as
+    darker shaded inner regions.  Progress is filled from left to right within
+    each segment independently.
+    """
+
+    # State constants for each segment
+    STATE_PENDING = 0
+    STATE_ACTIVE = 1
+    STATE_DONE = 2
+
+    # Colours
+    _COLOR_BG = QColor("#1e1e1e")
+    _COLOR_BORDER = QColor("#444444")
+    _COLOR_LABEL = QColor("#ffffff")
+    _COLOR_PENDING_FILL = QColor("#2a2a2a")
+    _COLOR_ACTIVE_LIB = QColor("#1565c0")
+    _COLOR_DONE_LIB = QColor("#1b5e20")
+    _COLOR_ROOT_DIVIDER = QColor("#555555")
+    _COLOR_ACTIVE_ROOT = QColor("#1976d2")
+    _COLOR_DONE_ROOT = QColor("#2e7d32")
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setMinimumHeight(52)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        # Ordered list of library names
+        self._library_order: List[str] = []
+        # {library_name: {"roots": [root_dir, ...], "root_totals": {root: int},
+        #                  "root_done": {root: int}, "state": STATE_*}}
+        self._libraries: Dict[str, Any] = {}
+        # {root_dir: state}
+        self._root_states: Dict[str, int] = {}
+
+    def init_from_tree(self, tree: Dict[str, Any]) -> None:
+        """Called once with the pre-discovery tree structure."""
+        self._library_order = list(tree.keys())
+        self._libraries = {}
+        self._root_states = {}
+        for lib_name, lib_data in tree.items():
+            roots = list(lib_data.get("roots", {}).keys())
+            self._libraries[lib_name] = {
+                "roots": roots,
+                "root_totals": {r: len(lib_data["roots"][r]) for r in roots},
+                "root_done": {r: 0 for r in roots},
+                "state": self.STATE_PENDING,
+            }
+            for r in roots:
+                self._root_states[r] = self.STATE_PENDING
+        self.update()
+
+    def mark_library_active(self, library_name: str) -> None:
+        if library_name in self._libraries:
+            self._libraries[library_name]["state"] = self.STATE_ACTIVE
+            for r in self._libraries[library_name]["roots"]:
+                self._root_states[r] = self.STATE_PENDING
+            self.update()
+
+    def mark_library_done(self, library_name: str) -> None:
+        if library_name in self._libraries:
+            self._libraries[library_name]["state"] = self.STATE_DONE
+            for r in self._libraries[library_name]["roots"]:
+                self._root_states[r] = self.STATE_DONE
+            self.update()
+
+    def advance_root(self, root_dir: str) -> None:
+        """Increment the done counter for a root directory."""
+        for lib_name, lib_data in self._libraries.items():
+            if root_dir in lib_data["root_done"]:
+                lib_data["root_done"][root_dir] = min(
+                    lib_data["root_done"][root_dir] + 1,
+                    lib_data["root_totals"].get(root_dir, 1),
+                )
+                lib_data["state"] = self.STATE_ACTIVE
+                self._root_states[root_dir] = self.STATE_ACTIVE
+                self.update()
+                return
+
+    def paintEvent(self, event: Any) -> None:
+        painter = QPainter(self)
+
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+        padding = 2
+        label_height = 16
+        bar_top = label_height + padding
+        bar_height = h - bar_top - padding
+
+        num_libs = len(self._library_order)
+        if num_libs == 0:
+            painter.fillRect(0, bar_top, w, bar_height, self._COLOR_BG)
+            painter.end()
+            return
+
+        lib_width = w / num_libs
+
+        for idx, lib_name in enumerate(self._library_order):
+            lib_data = self._libraries.get(lib_name, {})
+            state = lib_data.get("state", self.STATE_PENDING)
+            lx = int(idx * lib_width)
+            lw = int(lib_width) - 1
+
+            # Background
+            if state == self.STATE_DONE:
+                bg = self._COLOR_DONE_LIB
+            elif state == self.STATE_ACTIVE:
+                bg = self._COLOR_ACTIVE_LIB
+            else:
+                bg = self._COLOR_PENDING_FILL
+            painter.fillRect(lx, bar_top, lw, bar_height, bg)
+
+            # Draw root-directory sub-segments
+            roots = lib_data.get("roots", [])
+            num_roots = len(roots)
+            if num_roots > 1:
+                root_w = lw / num_roots
+                for ridx, root_dir in enumerate(roots):
+                    rx = lx + int(ridx * root_w)
+                    rw = int(root_w) - 1
+                    root_state = self._root_states.get(root_dir, self.STATE_PENDING)
+                    root_total = lib_data.get("root_totals", {}).get(root_dir, 1) or 1
+                    root_done = lib_data.get("root_done", {}).get(root_dir, 0)
+
+                    if root_state == self.STATE_DONE or state == self.STATE_DONE:
+                        painter.fillRect(
+                            rx, bar_top, rw, bar_height, self._COLOR_DONE_ROOT
+                        )
+                    elif state == self.STATE_ACTIVE:
+                        fill_fraction = root_done / root_total
+                        fill_w = int(rw * fill_fraction)
+                        painter.fillRect(
+                            rx, bar_top, fill_w, bar_height, self._COLOR_ACTIVE_ROOT
+                        )
+
+                    # Root divider line
+                    if ridx > 0:
+                        painter.setPen(QPen(self._COLOR_ROOT_DIVIDER, 1))
+                        painter.drawLine(rx, bar_top, rx, bar_top + bar_height)
+
+            # Library border
+            painter.setPen(QPen(self._COLOR_BORDER, 1))
+            painter.drawRect(lx, bar_top, lw, bar_height)
+
+            # Library label (above the bar)
+            painter.setPen(QPen(self._COLOR_LABEL, 1))
+            font = painter.font()
+            font.setPointSize(8)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(
+                lx + 4, 0, lw - 4, label_height, Qt.AlignmentFlag.AlignVCenter, lib_name
+            )
+
+            # Library separator
+            if idx > 0:
+                painter.setPen(QPen(self._COLOR_BORDER, 2))
+                painter.drawLine(lx, bar_top, lx, bar_top + bar_height)
+
+        painter.end()
+
+
+class ScanProgressTree(QWidget):
+    """
+    Scrollable, collapsible tree showing the real-time scan progress.
+
+    Hierarchy:
+      Library  →  Root directory  →  Series/Movie folder
+        (TV only)  →  Season  →  Episode file
+
+    Movie libraries do NOT show individual file nodes.
+    Each node carries a status icon: ⏳ pending · ⚙ processing · ✓ done · ⊘ skipped.
+    """
+
+    _ICON_PENDING = "⏳"
+    _ICON_PROCESSING = "⚙"
+    _ICON_DONE = "✓"
+    _ICON_SKIPPED = "⊘"
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        # Control bar
+        ctrl_bar = QHBoxLayout()
+        expand_btn = QPushButton("Expand All")
+        collapse_btn = QPushButton("Collapse All")
+        expand_btn.setFixedHeight(24)
+        collapse_btn.setFixedHeight(24)
+        expand_btn.clicked.connect(self._on_expand_all)
+        collapse_btn.clicked.connect(self._on_collapse_all)
+        ctrl_bar.addWidget(expand_btn)
+        ctrl_bar.addWidget(collapse_btn)
+        ctrl_bar.addStretch()
+        layout.addLayout(ctrl_bar)
+
+        self._tree = QTreeWidget()
+        self._tree.setHeaderHidden(True)
+        self._tree.setColumnCount(1)
+        self._tree.setAnimated(True)
+        self._tree.setRootIsDecorated(True)
+        self._tree.setMinimumHeight(200)
+        self._tree.setStyleSheet(
+            "QTreeWidget { background-color: #161616; border: 1px solid #333; }"
+            "QTreeWidget::item { padding: 2px 4px; }"
+        )
+        layout.addWidget(self._tree)
+
+        # Lookup maps
+        self._lib_nodes: Dict[str, QTreeWidgetItem] = {}
+        self._lib_types: Dict[str, str] = {}  # library → "tv" | "movie"
+        self._folder_nodes: Dict[
+            str, QTreeWidgetItem
+        ] = {}  # key = "library|root|folder"
+        self._season_nodes: Dict[
+            str, QTreeWidgetItem
+        ] = {}  # key = "library|folder|season"
+        self._file_nodes: Dict[str, QTreeWidgetItem] = {}  # key = file path
+
+    # ------------------------------------------------------------------
+    # Key helpers
+    # ------------------------------------------------------------------
+
+    def _folder_key(self, library: str, root: str, folder: str) -> str:
+        return f"{library}|{root}|{folder}"
+
+    def _season_key(self, library: str, folder: str, season: str) -> str:
+        return f"{library}|{folder}|{season}"
+
+    # ------------------------------------------------------------------
+    # Initialisation
+    # ------------------------------------------------------------------
+
+    def init_from_tree(self, tree: Dict[str, Any]) -> None:
+        """Builds the initial tree with all folder, season, and file nodes in pending state."""
+        self._tree.clear()
+        self._lib_nodes.clear()
+        self._lib_types.clear()
+        self._folder_nodes.clear()
+        self._season_nodes.clear()
+        self._file_nodes.clear()
+
+        for lib_name, lib_data in tree.items():
+            lib_type: str = lib_data.get("type", "tv")
+            self._lib_types[lib_name] = lib_type
+
+            lib_item = QTreeWidgetItem(
+                self._tree, [f"{self._ICON_PENDING}  {lib_name}"]
+            )
+            lib_item.setForeground(0, QColor("#aaaaaa"))
+            lib_font = QFont("Inter", 11, QFont.Weight.Bold)
+            lib_item.setFont(0, lib_font)
+            self._lib_nodes[lib_name] = lib_item
+
+            for root_dir, folders_dict in lib_data.get("roots", {}).items():
+                root_label = root_dir
+                root_item = QTreeWidgetItem(
+                    lib_item, [f"{self._ICON_PENDING}  {root_label}"]
+                )
+                root_item.setForeground(0, QColor("#888888"))
+                root_item.setData(0, Qt.ItemDataRole.UserRole, root_dir)
+
+                for folder_name, folder_info in folders_dict.items():
+                    folder_item = QTreeWidgetItem(
+                        root_item, [f"{self._ICON_PENDING}  {folder_name}"]
+                    )
+                    folder_item.setForeground(0, QColor("#888888"))
+                    key = self._folder_key(lib_name, root_dir, folder_name)
+                    self._folder_nodes[key] = folder_item
+
+                    # For TV libraries, populate seasons and episodes upfront
+                    if lib_type == "tv":
+                        seasons_dict = folder_info.get("seasons", {})
+                        for season_name, episodes_list in seasons_dict.items():
+                            s_key = self._season_key(lib_name, folder_name, season_name)
+                            season_item = QTreeWidgetItem(
+                                folder_item, [f"{self._ICON_PENDING}  {season_name}"]
+                            )
+                            season_item.setForeground(0, QColor("#888888"))
+                            self._season_nodes[s_key] = season_item
+
+                            for ep_name in episodes_list:
+                                ep_path = str(
+                                    Path(root_dir) / folder_name / season_name / ep_name
+                                )
+                                ep_item = QTreeWidgetItem(
+                                    season_item, [f"{self._ICON_PENDING}  {ep_name}"]
+                                )
+                                ep_item.setForeground(0, QColor("#888888"))
+                                self._file_nodes[ep_path] = ep_item
+
+        # Expand libraries, roots, and series folders, but leave seasons collapsed
+        for i in range(self._tree.topLevelItemCount()):
+            item = self._tree.topLevelItem(i)
+            if item is not None:
+                item.setExpanded(True)
+                for j in range(item.childCount()):
+                    root_item = item.child(j)
+                    if root_item is not None:
+                        root_item.setExpanded(True)
+                        for k in range(root_item.childCount()):
+                            folder_item = root_item.child(k)
+                            if folder_item is not None:
+                                folder_item.setExpanded(True)
+                                for m in range(folder_item.childCount()):
+                                    season_item = folder_item.child(m)
+                                    if season_item is not None:
+                                        season_item.setExpanded(False)
+
+    # ------------------------------------------------------------------
+    # Library-level state
+    # ------------------------------------------------------------------
+
+    def mark_library_active(self, library_name: str) -> None:
+        node = self._lib_nodes.get(library_name)
+        if node:
+            node.setText(0, f"{self._ICON_PROCESSING}  {library_name}")
+            node.setForeground(0, QColor("#2196f3"))
+
+    def mark_library_done(self, library_name: str) -> None:
+        node = self._lib_nodes.get(library_name)
+        if node:
+            node.setText(0, f"{self._ICON_DONE}  {library_name}")
+            node.setForeground(0, QColor("#4caf50"))
+
+    # ------------------------------------------------------------------
+    # Folder-level state (series / movie folder)
+    # ------------------------------------------------------------------
+
+    def _find_folder_node(self, library: str, folder: str) -> Optional[QTreeWidgetItem]:
+        """Return the folder node for the first matching root key."""
+        for key, node in self._folder_nodes.items():
+            if key.startswith(f"{library}|") and key.endswith(f"|{folder}"):
+                return node
+        return None
+
+    def mark_folder_active(self, library: str, root: str, folder: str) -> None:
+        key = self._folder_key(library, root, folder)
+        node = self._folder_nodes.get(key)
+        if node:
+            node.setText(0, f"{self._ICON_PROCESSING}  {folder}")
+            node.setForeground(0, QColor("#2196f3"))
+            self._tree.scrollToItem(node)
+
+    def mark_folder_done(
+        self, library: str, root: str, folder: str, skipped: bool = False
+    ) -> None:
+        key = self._folder_key(library, root, folder)
+        node = self._folder_nodes.get(key)
+        if node:
+            if skipped:
+                node.setText(0, f"{self._ICON_SKIPPED}  {folder}")
+                node.setForeground(0, QColor("#888888"))
+            else:
+                node.setText(0, f"{self._ICON_DONE}  {folder}")
+                node.setForeground(0, QColor("#4caf50"))
+
+    # ------------------------------------------------------------------
+    # Season-level state (TV only — nodes created dynamically)
+    # ------------------------------------------------------------------
+
+    def mark_season_active(self, library: str, folder: str, season: str) -> None:
+        """Create the season node under its parent series folder if not yet present."""
+        key = self._season_key(library, folder, season)
+        if key in self._season_nodes:
+            node = self._season_nodes[key]
+            node.setText(0, f"{self._ICON_PROCESSING}  {season}")
+            node.setForeground(0, QColor("#2196f3"))
+            self._tree.scrollToItem(node)
+            return
+
+        # Create node under the series folder
+        parent_node = self._find_folder_node(library, folder)
+        if parent_node is None:
+            return
+        season_item = QTreeWidgetItem(
+            parent_node, [f"{self._ICON_PROCESSING}  {season}"]
+        )
+        season_item.setForeground(0, QColor("#2196f3"))
+        self._season_nodes[key] = season_item
+        parent_node.setExpanded(True)
+        self._tree.scrollToItem(season_item)
+
+    def mark_season_done(self, library: str, folder: str, season: str) -> None:
+        key = self._season_key(library, folder, season)
+        node = self._season_nodes.get(key)
+        if node:
+            node.setText(0, f"{self._ICON_DONE}  {season}")
+            node.setForeground(0, QColor("#4caf50"))
+
+    # ------------------------------------------------------------------
+    # File-level state (episodes under seasons for TV; skipped for movies)
+    # ------------------------------------------------------------------
+
+    def mark_file_active(
+        self, file_path: str, library: str, folder: str, season: str = ""
+    ) -> None:
+        """Add an episode file node.  For movie libraries this is a no-op."""
+        lib_type = self._lib_types.get(library, "tv")
+        if lib_type == "movie":
+            return  # movie libraries don't show individual files
+
+        file_name = Path(file_path).name
+
+        if file_path in self._file_nodes:
+            file_item = self._file_nodes[file_path]
+            file_item.setText(0, f"{self._ICON_PROCESSING}  {file_name}")
+            file_item.setForeground(0, QColor("#2196f3"))
+            self._tree.scrollToItem(file_item)
+            return
+
+        # Prefer the season node as parent; fall back to folder node
+        parent_node: Optional[QTreeWidgetItem] = None
+        if season:
+            season_key = self._season_key(library, folder, season)
+            parent_node = self._season_nodes.get(season_key)
+        if parent_node is None:
+            parent_node = self._find_folder_node(library, folder)
+        if parent_node is None:
+            return
+
+        file_item = QTreeWidgetItem(
+            parent_node, [f"{self._ICON_PROCESSING}  {file_name}"]
+        )
+        file_item.setForeground(0, QColor("#2196f3"))
+        self._file_nodes[file_path] = file_item
+        parent_node.setExpanded(True)
+        self._tree.scrollToItem(file_item)
+
+    def mark_file_done(self, file_path: str) -> None:
+        node = self._file_nodes.get(file_path)
+        if node:
+            file_name = Path(file_path).name
+            node.setText(0, f"{self._ICON_DONE}  {file_name}")
+            node.setForeground(0, QColor("#4caf50"))
+
+    # ------------------------------------------------------------------
+    # Reset / expand / collapse
+    # ------------------------------------------------------------------
+
+    def reset(self) -> None:
+        self._tree.clear()
+        self._lib_nodes.clear()
+        self._lib_types.clear()
+        self._folder_nodes.clear()
+        self._season_nodes.clear()
+        self._file_nodes.clear()
+
+    @Slot()
+    def _on_expand_all(self) -> None:
+        self._tree.expandAll()
+
+    @Slot()
+    def _on_collapse_all(self) -> None:
+        self._tree.collapseAll()
+
+
 class Controller(QObject):
     """
     Core Application Logic Controller managing native UI synchronization and persistence layer interactions.
@@ -197,6 +667,7 @@ class Controller(QObject):
     movie_details_requested = Signal(str, str)
     episode_metadata_dialog_requested = Signal(str, str)
     global_progress_updated = Signal(str, int, int)
+    detail_progress_updated = Signal(str, dict)
 
     file_system_watcher: QFileSystemWatcher
     debounce_timer: QTimer
@@ -519,6 +990,9 @@ class Controller(QObject):
         )
         self.scan_all_worker_instance.library_progress.connect(
             self.global_progress_updated.emit
+        )
+        self.scan_all_worker_instance.detail_progress.connect(
+            self.detail_progress_updated.emit
         )
         self.scan_all_worker_instance.finished.connect(self._on_scan_all_finished)
         self.scan_all_worker_instance.error.connect(self._on_worker_error)
@@ -863,6 +1337,154 @@ class Controller(QObject):
             self.library_loaded.emit()
             if self.selected_series_name == series_name:
                 self.series_selected.emit(series_name)
+
+    def toggle_series_lock(self, series_name: str, locked: bool) -> None:
+        """
+        Updates the locked_metadata flag for a series or movie and persists it to the database.
+        """
+        logger.info(f"Controller toggling lock for '{series_name}' to {locked}")
+        if series_name not in self.cached_library_data:
+            return
+
+        library_config = config.libraries.get(self.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+
+        series_record: Dict[str, Any] = self.cached_library_data[series_name]
+        if is_movie:
+            series_record["locked_metadata"] = locked
+            if self.current_library_name:
+                db.save_movie_library(
+                    self.current_library_name, self.cached_library_data
+                )
+            self.movie_selected.emit(series_name)
+        else:
+            if "metadata" not in series_record:
+                series_record["metadata"] = {}
+            series_record["metadata"]["locked_metadata"] = locked
+            if self.current_library_name:
+                db.save_library(self.current_library_name, self.cached_library_data)
+            self.series_selected.emit(series_name)
+
+        self.library_loaded.emit()
+
+    def trigger_series_refresh(self, series_name: str) -> None:
+        """Triggers a background RefreshSeriesWorker for the specified series or movie."""
+        if not self.current_library_name:
+            self.status_changed.emit("Select a library first.")
+            return
+
+        if self.scan_worker_instance and self.scan_worker_instance.isRunning():
+            self.status_changed.emit("A scan is already in progress.")
+            return
+
+        library_config = config.libraries.get(self.current_library_name, {})
+        library_type = library_config.get("type", "tv")
+        root_directories = library_config.get("paths", [])
+
+        self.status_changed.emit(f"Refreshing metadata for '{series_name}'...")
+
+        from .backend import RefreshSeriesWorker
+
+        self.refresh_worker_instance = RefreshSeriesWorker(
+            library_name=self.current_library_name,
+            item_name=series_name,
+            library_type=library_type,
+            root_directories=root_directories,
+            existing_library=self.cached_library_data,
+        )
+        self.refresh_worker_instance.finished.connect(self._on_refresh_finished)
+        self.refresh_worker_instance.error.connect(self._on_worker_error)
+        self.refresh_worker_instance.start()
+
+    def _on_refresh_finished(self, updated_library: Dict[str, Any]) -> None:
+        if self.current_library_name:
+            self.cached_library_data = updated_library
+            self._cache_series_metrics()
+            self.status_changed.emit("Metadata refresh completed successfully.")
+            if not self.is_video_playing:
+                self.library_loaded.emit()
+                if self.selected_series_name:
+                    library_config = config.libraries.get(self.current_library_name, {})
+                    if library_config.get("type", "tv") == "movie":
+                        self.movie_selected.emit(self.selected_series_name)
+                    else:
+                        self.series_selected.emit(self.selected_series_name)
+
+    def refresh_episode_metadata(self, series_name: str, episode_path: str) -> None:
+        """
+        Queries TMDB directly for the specific episode's metadata and updates it,
+        bypassing lock status (since targeted).
+        """
+        logger.info(
+            f"Controller refreshing episode metadata for '{series_name}' at '{episode_path}'"
+        )
+        if series_name not in self.cached_library_data:
+            return
+
+        series_record = self.cached_library_data[series_name]
+        series_tmdb_id = series_record.get("metadata", {}).get("tmdb_identifier")
+        if not series_tmdb_id:
+            logger.warning(
+                "Cannot refresh episode metadata because series has no TMDB identifier"
+            )
+            return
+
+        target_episode: Optional[Dict[str, Any]] = None
+        target_season_name: Optional[str] = None
+        for season_name, season_data in series_record.get("seasons", {}).items():
+            for ep in season_data.get("episodes", []):
+                if ep.get("path") == episode_path:
+                    target_episode = ep
+                    target_season_name = season_name
+                    break
+            if target_episode:
+                break
+
+        if not target_episode or target_season_name is None:
+            logger.warning("Episode not found in cache")
+            return
+
+        if target_season_name.lower() == "specials":
+            season_index = 0
+        else:
+            import re
+
+            m = re.search(r"\d+", target_season_name)
+            season_index = int(m.group()) if m else 1
+
+        episode_num = target_episode.get("episode_number") or target_episode.get(
+            "tmdb_number"
+        )
+        if episode_num is None:
+            logger.warning("Episode has no episode number")
+            return
+
+        try:
+            tmdb_episodes = tmdb_client.get_episodes(series_tmdb_id, season_index)
+            matched_ep = None
+            for ep in tmdb_episodes:
+                if ep.get("episode_number") == episode_num:
+                    matched_ep = ep
+                    break
+
+            if matched_ep:
+                target_episode["tmdb_name"] = matched_ep.get("name", "")
+                target_episode["name"] = matched_ep.get("name", "")
+                target_episode["overview"] = matched_ep.get("overview", "")
+                target_episode["air_date"] = matched_ep.get("air_date", "")
+                target_episode["runtime"] = matched_ep.get("runtime", 0)
+
+                db.save_library(self.current_library_name, self.cached_library_data)
+                self.library_loaded.emit()
+                if self.selected_series_name == series_name:
+                    self.series_selected.emit(series_name)
+                logger.info("Successfully refreshed episode metadata from TMDB")
+            else:
+                logger.warning(
+                    f"Could not find episode {episode_num} in TMDB season {season_index}"
+                )
+        except Exception:
+            logger.exception("Failed to refresh episode metadata from TMDB")
 
     def update_movie_metadata(
         self, movie_name: str, movie_path: str, metadata: Dict[str, Any]
@@ -1351,7 +1973,10 @@ class SeriesDetailView(QWidget):
         )
         info_layout.addWidget(self.overview_label)
 
-        # Details Button under Poster
+        # Actions Panel
+        actions_layout = QHBoxLayout()
+        actions_layout.setSpacing(10)
+
         series_details_button: QPushButton = QPushButton("Series Details")
         series_details_button.setObjectName("seriesDetailsButton")
         series_details_button.clicked.connect(
@@ -1359,7 +1984,10 @@ class SeriesDetailView(QWidget):
                 self.controller.selected_series_name
             )
         )
-        info_layout.addWidget(series_details_button)
+        actions_layout.addWidget(series_details_button)
+
+        actions_layout.addStretch()
+        info_layout.addLayout(actions_layout)
 
         header_layout.addLayout(info_layout)
         main_layout.addLayout(header_layout)
@@ -1402,6 +2030,8 @@ class SeriesDetailView(QWidget):
         series_record: Dict[str, Any] = self.controller.cached_library_data.get(
             series_name, {}
         )
+        metadata_dictionary: Dict[str, Any] = series_record.get("metadata", {})
+
         metadata_dictionary: Dict[str, Any] = series_record.get("metadata", {})
 
         series_display_title: str = metadata_dictionary.get("tmdb_name") or series_name
@@ -2227,6 +2857,11 @@ class EpisodeDetailsDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(self.locked_checkbox)
 
+        refresh_btn = QPushButton("Refresh Metadata")
+        refresh_btn.setObjectName("refreshMetadataButton")
+        refresh_btn.clicked.connect(self._on_refresh_clicked)
+        layout.addWidget(refresh_btn)
+
         search_btn = QPushButton("Search TMDB for this Episode...")
         search_btn.clicked.connect(self._on_search_tmdb_clicked)
         layout.addWidget(search_btn)
@@ -2367,6 +3002,31 @@ class EpisodeDetailsDialog(QDialog):
         self.reject()
 
     @Slot()
+    def _on_refresh_clicked(self) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Refresh",
+            "Are you sure you want to refresh metadata for this episode from TMDB?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.controller.refresh_episode_metadata(
+                self.series_name, self.episode_path
+            )
+            # Reload data and update UI fields
+            self._load_data()
+            self.title_edit.setText(
+                self.episode_record.get("tmdb_name")
+                or self.episode_record.get("name")
+                or ""
+            )
+            self.runtime_edit.setText(str(self.episode_record.get("runtime") or ""))
+            self.air_date_edit.setText(self.episode_record.get("air_date") or "")
+            self.locked_checkbox.setChecked(
+                bool(self.episode_record.get("locked_metadata", False))
+            )
+
+    @Slot()
     def _on_embed_clicked(self) -> None:
         """Collects current UI metadata and triggers embedding."""
         metadata = {
@@ -2444,7 +3104,11 @@ class MovieDetailsDialog(QDialog):
         self.year_edit: QLineEdit = QLineEdit()
         self.rating_edit: QLineEdit = QLineEdit()
         self.genre_edit: QLineEdit = QLineEdit()
-        self.locked_checkbox: QCheckBox = QCheckBox("Locked Metadata")
+        self.locked_checkbox: QCheckBox = QCheckBox(
+            "Lock Metadata (Prevents automatic updates during scans)"
+        )
+        self.locked_checkbox.setFont(QFont("Inter", 11, QFont.Weight.Bold))
+        self.locked_checkbox.setStyleSheet("color: #ff9800;")
 
         # UI Elements for Tab 2 (File Info)
         self.path_label: QLabel = QLabel()
@@ -2510,6 +3174,10 @@ class MovieDetailsDialog(QDialog):
         search_btn = QPushButton("Search TMDB for this Movie...")
         search_btn.clicked.connect(self._on_search_tmdb_clicked)
         layout.addWidget(search_btn)
+
+        refresh_btn = QPushButton("Refresh Movie Metadata")
+        refresh_btn.clicked.connect(self._on_refresh_clicked)
+        layout.addWidget(refresh_btn)
 
         embed_btn = QPushButton("Embed Metadata into Video File")
         embed_btn.clicked.connect(self._on_embed_clicked)
@@ -2652,6 +3320,18 @@ class MovieDetailsDialog(QDialog):
         self.reject()
 
     @Slot()
+    def _on_refresh_clicked(self) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Refresh",
+            f"Are you sure you want to refresh metadata for '{self.movie_name}' from TMDB?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.controller.trigger_series_refresh(self.movie_name)
+            self.accept()
+
+    @Slot()
     def _on_embed_clicked(self) -> None:
         """Collects current UI metadata and triggers embedding."""
         metadata = {
@@ -2720,7 +3400,7 @@ class SeriesDetailsDialog(QDialog):
         )
 
         self.setWindowTitle(f"Series Details: {series_name}")
-        self.resize(500, 450)
+        self.resize(700, 550)
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -2763,12 +3443,30 @@ class SeriesDetailsDialog(QDialog):
             self.jellyfin_status_label.setVisible(False)
         form.addRow("Sync Status:", self.jellyfin_status_label)
 
+        self.locked_checkbox = QCheckBox(
+            "Lock Metadata (Prevents automatic updates during scans)"
+        )
+        self.locked_checkbox.setFont(QFont("Inter", 11, QFont.Weight.Bold))
+        self.locked_checkbox.setStyleSheet("color: #ff9800;")
+        library_config = config.libraries.get(self.controller.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+        if is_movie:
+            is_locked = bool(self.series_record.get("locked_metadata", False))
+        else:
+            is_locked = bool(metadata.get("locked_metadata", False))
+        self.locked_checkbox.setChecked(is_locked)
+        form.addRow("Metadata Lock:", self.locked_checkbox)
+
         layout.addLayout(form)
 
         # Buttons
         match_meta_btn = QPushButton("Match Series Metadata...")
         match_meta_btn.clicked.connect(self._on_match_meta_clicked)
         layout.addWidget(match_meta_btn)
+
+        refresh_btn = QPushButton("Refresh Series Metadata")
+        refresh_btn.clicked.connect(self._on_refresh_clicked)
+        layout.addWidget(refresh_btn)
 
         match_jellyfin_btn = QPushButton("Match Jellyfin Watch History...")
         match_jellyfin_btn.clicked.connect(self._on_match_jellyfin_clicked)
@@ -2795,7 +3493,7 @@ class SeriesDetailsDialog(QDialog):
         buttons.addStretch()
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.reject)
-        save_btn = QPushButton("Save Name")
+        save_btn = QPushButton("Save")
         save_btn.clicked.connect(self._on_save_clicked)
         buttons.addWidget(close_btn)
         buttons.addWidget(save_btn)
@@ -2804,6 +3502,17 @@ class SeriesDetailsDialog(QDialog):
     def _on_match_meta_clicked(self) -> None:
         self.controller.metadata_dialog_requested.emit(self.series_name)
         self.accept()
+
+    def _on_refresh_clicked(self) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Refresh",
+            f"Are you sure you want to refresh metadata for '{self.series_name}' from TMDB?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.controller.trigger_series_refresh(self.series_name)
+            self.accept()
 
     def _on_match_jellyfin_clicked(self) -> None:
         self.controller.jellyfin_dialog_requested.emit(self.series_name)
@@ -2830,8 +3539,12 @@ class SeriesDetailsDialog(QDialog):
 
     def _on_save_clicked(self) -> None:
         new_name = self.name_edit.text()
+        locked = self.locked_checkbox.isChecked()
         if new_name != self.series_name:
             self.controller.update_series_name(self.series_name, new_name)
+        self.controller.toggle_series_lock(
+            new_name if new_name != self.series_name else self.series_name, locked
+        )
         self.accept()
 
 
@@ -3157,10 +3870,13 @@ class SettingsDialog(QDialog):
         self.force_refresh_checkbox: QCheckBox = QCheckBox(
             "Force refresh metadata (update/search TMDB)"
         )
-        self.global_progress_bar: QProgressBar = QProgressBar()
+        self.global_progress_bar: SegmentedProgressBar = SegmentedProgressBar()
         self.global_progress_bar.setVisible(False)
+        self.scan_progress_tree: ScanProgressTree = ScanProgressTree()
+        self.scan_progress_tree.setVisible(False)
         if self.controller is not None:
             self.controller.global_progress_updated.connect(self._on_global_progress)
+            self.controller.detail_progress_updated.connect(self._on_detail_progress)
 
         self.jellyfin_url_input: QLineEdit = QLineEdit()
         self.jellyfin_key_input: QLineEdit = QLineEdit()
@@ -3582,10 +4298,10 @@ class SettingsDialog(QDialog):
 
         management_layout.addSpacing(10)
         management_layout.addWidget(QLabel("Global Operation Progress:"))
-        self.global_progress_bar.setMinimum(0)
-        self.global_progress_bar.setMaximum(100)
-        self.global_progress_bar.setValue(0)
         management_layout.addWidget(self.global_progress_bar)
+        management_layout.addSpacing(4)
+        management_layout.addWidget(QLabel("Scan Detail:"))
+        management_layout.addWidget(self.scan_progress_tree)
 
         management_layout.addStretch()
         tab_container.addTab(management_tab, "Library Management")
@@ -4017,57 +4733,87 @@ class SettingsDialog(QDialog):
         self, library_name: str, completed_count: int, total_count: int
     ) -> None:
         self.global_progress_bar.setVisible(True)
-        self.global_progress_bar.setMaximum(total_count)
-        self.global_progress_bar.setValue(completed_count)
-        self.global_progress_bar.setFormat(
-            f"Processing '{library_name}' ({completed_count}/{total_count})"
-        )
+        self.global_progress_bar.mark_library_done(library_name)
+
+    @Slot(str, dict)
+    def _on_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
+        """Routes granular scan events to the SegmentedProgressBar and ScanProgressTree."""
+        library = payload.get("library", "")
+        root = payload.get("root", "")
+        folder = payload.get("folder", "")
+        season = payload.get("season", "")
+        file_path = payload.get("file", "")
+
+        if event == "init_tree":
+            tree = payload.get("tree", {})
+            self.global_progress_bar.init_from_tree(tree)
+            self.scan_progress_tree.init_from_tree(tree)
+            self.global_progress_bar.setVisible(True)
+            self.scan_progress_tree.setVisible(True)
+
+        elif event == "start_library":
+            self.global_progress_bar.mark_library_active(library)
+            self.scan_progress_tree.mark_library_active(library)
+
+        elif event == "finish_library":
+            self.global_progress_bar.mark_library_done(library)
+            self.scan_progress_tree.mark_library_done(library)
+
+        elif event == "start_folder":
+            self.global_progress_bar.advance_root(root)
+            self.scan_progress_tree.mark_folder_active(library, root, folder)
+
+        elif event == "finish_folder":
+            skipped = payload.get("skipped", False)
+            self.scan_progress_tree.mark_folder_done(
+                library, root, folder, skipped=skipped
+            )
+
+        elif event == "start_season":
+            self.scan_progress_tree.mark_season_active(library, folder, season)
+
+        elif event == "finish_season":
+            self.scan_progress_tree.mark_season_done(library, folder, season)
+
+        elif event == "start_file":
+            self.scan_progress_tree.mark_file_active(file_path, library, folder, season)
+
+        elif event == "finish_file":
+            self.scan_progress_tree.mark_file_done(file_path)
+
+    def _show_scan_progress_widgets(self) -> None:
+        self.scan_progress_tree.reset()
+        self.global_progress_bar.setVisible(True)
+        self.scan_progress_tree.setVisible(True)
 
     @Slot()
     def trigger_global_scan_files(self) -> None:
         if self.controller is not None:
-            self.global_progress_bar.setVisible(True)
-            self.global_progress_bar.setMaximum(100)
-            self.global_progress_bar.setValue(0)
-            self.global_progress_bar.setFormat("Starting global file scan...")
+            self._show_scan_progress_widgets()
             self.controller.trigger_scan_all(False)
 
     @Slot()
     def trigger_global_cleanup(self) -> None:
         if self.controller is not None:
             self.global_progress_bar.setVisible(True)
-            self.global_progress_bar.setMaximum(100)
-            self.global_progress_bar.setValue(0)
-            self.global_progress_bar.setFormat("Starting global cleanup...")
             self.controller.trigger_cleanup_all()
 
     @Slot()
     def trigger_global_runtime_extraction(self) -> None:
         if self.controller is not None:
             self.global_progress_bar.setVisible(True)
-            self.global_progress_bar.setMaximum(100)
-            self.global_progress_bar.setValue(0)
-            self.global_progress_bar.setFormat(
-                "Starting background runtime extraction..."
-            )
             self.controller.trigger_runtime_extraction()
 
     @Slot()
     def trigger_global_refresh_metadata(self) -> None:
         if self.controller is not None:
-            self.global_progress_bar.setVisible(True)
-            self.global_progress_bar.setMaximum(100)
-            self.global_progress_bar.setValue(0)
-            self.global_progress_bar.setFormat("Starting global metadata refresh...")
+            self._show_scan_progress_widgets()
             self.controller.trigger_scan_all(self.force_refresh_checkbox.isChecked())
 
     @Slot()
     def trigger_global_jellyfin_pull(self) -> None:
         if self.controller is not None:
             self.global_progress_bar.setVisible(True)
-            self.global_progress_bar.setMaximum(100)
-            self.global_progress_bar.setValue(50)
-            self.global_progress_bar.setFormat("Pulling history from Jellyfin...")
             self.controller.trigger_jellyfin_pull()
             QTimer.singleShot(
                 2000,
@@ -4078,9 +4824,6 @@ class SettingsDialog(QDialog):
     def trigger_global_jellyfin_push(self) -> None:
         if self.controller is not None:
             self.global_progress_bar.setVisible(True)
-            self.global_progress_bar.setMaximum(100)
-            self.global_progress_bar.setValue(50)
-            self.global_progress_bar.setFormat("Pushing history to Jellyfin...")
             self.controller.trigger_jellyfin_push()
             QTimer.singleShot(
                 2000,
@@ -4088,9 +4831,7 @@ class SettingsDialog(QDialog):
             )
 
     def _complete_jellyfin_progress(self, message_text: str) -> None:
-        self.global_progress_bar.setMaximum(100)
-        self.global_progress_bar.setValue(100)
-        self.global_progress_bar.setFormat(message_text)
+        pass  # Segmented bar has no text format; completion is driven by mark_library_done
 
     @Slot(str)
     def _on_log_filter_changed(self, text: str) -> None:

@@ -835,10 +835,6 @@ def test_settings_dialog_global_actions(qtbot: Any) -> None:
     with patch.object(controller_instance, "trigger_scan_all") as mock_scan_all:
         dialog_instance.trigger_global_scan_files()
         mock_scan_all.assert_called_once_with(False)
-        assert (
-            dialog_instance.global_progress_bar.format()
-            == "Starting global file scan..."
-        )
 
         dialog_instance.force_refresh_checkbox.setChecked(True)
         dialog_instance.trigger_global_refresh_metadata()
@@ -856,16 +852,54 @@ def test_settings_dialog_global_actions(qtbot: Any) -> None:
         dialog_instance.trigger_global_jellyfin_push()
         mock_push.assert_called_once()
 
-    # Test progress slot
-    dialog_instance._on_global_progress("TV_Lib", 1, 5)
-    assert dialog_instance.global_progress_bar.maximum() == 5
-    assert dialog_instance.global_progress_bar.value() == 1
-    assert "TV_Lib" in dialog_instance.global_progress_bar.format()
+    # Test _on_global_progress slot marks library done on the segmented bar
+    dialog_instance.global_progress_bar.init_from_tree(
+        {
+            "TV_Lib": {
+                "type": "tv",
+                "roots": {
+                    "/tmp": {"SeriesA": {"seasons": {"Season 1": ["S01E01.mkv"]}}}
+                },
+            }
+        }
+    )
+    dialog_instance._on_global_progress("TV_Lib", 1, 1)
+    # Progress was marked done without raising
 
-    # Test jellyfin progress callback
+    # Verify ScanProgressTree handles TV season collapse states & Movie node skipping
+    dialog_instance.scan_progress_tree.init_from_tree(
+        {
+            "TV_Lib": {
+                "type": "tv",
+                "roots": {
+                    "/tmp": {"SeriesA": {"seasons": {"Season 1": ["S01E01.mkv"]}}}
+                },
+            },
+            "Movie_Lib": {"type": "movie", "roots": {"/tmp2": {"MovieA": {}}}},
+        }
+    )
+    # Check that the TV season node exists and is collapsed
+    season_key = dialog_instance.scan_progress_tree._season_key(
+        "TV_Lib", "SeriesA", "Season 1"
+    )
+    season_node = dialog_instance.scan_progress_tree._season_nodes.get(season_key)
+    assert season_node is not None
+    assert not season_node.isExpanded()
+
+    # Episode file node should exist
+    ep_path = "/tmp/SeriesA/Season 1/S01E01.mkv"
+    assert ep_path in dialog_instance.scan_progress_tree._file_nodes
+
+    # Try marking a file active for a Movie library (should be a no-op / skip)
+    dialog_instance.scan_progress_tree.mark_file_active(
+        "/tmp2/MovieA/MovieA.mkv", "Movie_Lib", "MovieA"
+    )
+    assert (
+        "/tmp2/MovieA/MovieA.mkv" not in dialog_instance.scan_progress_tree._file_nodes
+    )
+
+    # _complete_jellyfin_progress is a no-op; just verify it doesn't raise
     dialog_instance._complete_jellyfin_progress("Complete Message")
-    assert dialog_instance.global_progress_bar.value() == 100
-    assert dialog_instance.global_progress_bar.format() == "Complete Message"
 
     # Test no controller instance handles safely
     dialog_no_controller = SettingsDialog(None)
