@@ -2146,3 +2146,7 @@ def test_scan_series_warns_on_nested_too_deep_files(tmp_path) -> None:
             "These files will not be indexed. "
             "Example: 'Season 1/Featurettes/Menu Art.mkv'"
         )
+        # Verify logger.warning was called for ignoring subdirectory
+        mock_warn.assert_any_call(
+            "Ignoring subdirectory in season folder: 'Season 1/Featurettes'"
+        )

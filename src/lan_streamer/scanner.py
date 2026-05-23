@@ -430,6 +430,26 @@ def _detect_new_series_files(
     """
     for file_path in series_directory.rglob("*"):
         if _is_video_file(file_path):
+            try:
+                rel_path = file_path.relative_to(series_directory)
+                parts = rel_path.parts
+                if len(parts) > 2:
+                    first_dir = parts[0]
+                    first_dir_lower = first_dir.lower()
+                    is_valid_season = (
+                        "season" in first_dir_lower
+                        or "special" in first_dir_lower
+                        or "extra" in first_dir_lower
+                        or "featurette" in first_dir_lower
+                        or "bonus" in first_dir_lower
+                        or "shorts" in first_dir_lower
+                        or bool(re.search(r"\d+", first_dir))
+                    )
+                    if is_valid_season:
+                        continue
+            except Exception:
+                pass
+
             abs_path = str(file_path.absolute())
             if abs_path not in existing_episodes_by_path:
                 logger.debug(
@@ -1411,6 +1431,12 @@ def scan_series(
         }
 
         for episode_file in season_directory.iterdir():
+            if episode_file.is_dir() and not episode_file.name.startswith("."):
+                logger.warning(
+                    f"Ignoring subdirectory in season folder: '{episode_file.relative_to(series_directory)}'"
+                )
+                continue
+
             if (
                 episode_file.is_file()
                 and episode_file.suffix.lower() in VIDEO_EXTENSIONS
