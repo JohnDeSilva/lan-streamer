@@ -1322,6 +1322,39 @@ def scan_series(
     instead of searching.
     If manual_jellyfin_id is provided, it links to that Jellyfin item for watch sync.
     """
+    # Check for files outside of season or specials/extras folders
+    outside_file_paths = []
+    for file_path in series_directory.rglob("*"):
+        if file_path.is_file() and _is_video_file(file_path):
+            try:
+                rel_path = file_path.relative_to(series_directory)
+                parts = rel_path.parts
+                if len(parts) == 1:
+                    outside_file_paths.append(file_path)
+                else:
+                    first_dir = parts[0]
+                    first_dir_lower = first_dir.lower()
+                    is_valid = (
+                        "season" in first_dir_lower
+                        or "special" in first_dir_lower
+                        or "extra" in first_dir_lower
+                        or "featurette" in first_dir_lower
+                        or "bonus" in first_dir_lower
+                        or "shorts" in first_dir_lower
+                        or bool(re.search(r"\d+", first_dir))
+                    )
+                    if not is_valid:
+                        outside_file_paths.append(file_path)
+            except Exception:
+                pass
+
+    if outside_file_paths:
+        logger.warning(
+            f"Series '{series_directory.name}' has {len(outside_file_paths)} video file(s) "
+            f"outside of season or specials/extras folders. "
+            f"Example: '{outside_file_paths[0].name}'"
+        )
+
     series_data, is_early_return, tmdb_series, existing_episodes_by_path = (
         _process_series_metadata(
             series_directory,

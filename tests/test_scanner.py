@@ -2073,3 +2073,38 @@ def test_scan_directories_skips_empty_folders(tmp_path) -> None:
     assert "NestedVideoDir" in library_movies
     assert "EmptyDir" not in library_movies
     assert "NonVideoDir" not in library_movies
+
+
+def test_scan_series_warns_on_files_outside_seasons(tmp_path) -> None:
+    """Verify that scan_series logs a warning when there are video files outside of season/specials folders."""
+    series_dir = tmp_path / "MyShow"
+    series_dir.mkdir()
+    # Create a video file directly in the root of the series
+    (series_dir / "MyShow - S01E01.mkv").touch()
+
+    # Also create a valid season directory with a video file (to make sure it scans)
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    (season_dir / "MyShow - S01E02.mkv").touch()
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.search_series.return_value = {
+        "id": "1",
+        "name": "MyShow",
+        "tmdb_identifier": "1",
+        "overview": "desc",
+        "poster_path": "",
+    }
+    mock_tmdb.get_seasons.return_value = []
+
+    with (
+        patch("lan_streamer.scanner.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.logger.warning") as mock_warn,
+    ):
+        scanner.scan_series(series_dir)
+
+        # Verify logger.warning was called
+        mock_warn.assert_any_call(
+            "Series 'MyShow' has 1 video file(s) outside of season or specials/extras folders. "
+            "Example: 'MyShow - S01E01.mkv'"
+        )
