@@ -289,6 +289,31 @@
 
 - initial commit
 
+## v0.17.0 (2026-05-22)
+
+### Feat
+
+- implement real-time segmented progress bar and collapsible scan tree dashboard
+- implement database metadata locking and manual refresh TMDB optimization
+- **settings**: reorganize advanced settings, implement days-based retention, and add validation warning
+- **logging**: add export logs to ZIP in home directory
+- **entrypoint**: improve environment variable and startup logging
+- **ui**: adds a play next video popup when a video being watched hits 95%
+- **ui**: adds real time log viewing tab to settings
+
+### Fix
+
+- ignore folders in season folders and log warnings for them
+- add debug logging for unindexed files and warnings for deeply nested season files
+- log warning when video files are detected outside season or specials/extras folders
+- **settings**: group advanced settings into database, log, and config sections
+- **logging**: implement comprehensive diagnostic logging across services
+- **scanner**: report unavailable root directories during scan
+
+### Perf
+
+- skip empty library folders and optimize TV season metadata TMDB query efficiency
+
 ## v0.16.5 (2026-05-20)
 
 ### Fix
