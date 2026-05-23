@@ -16,8 +16,11 @@ LAN Streamer is built to play your media files directly and natively without any
 *   **🎭 Theatre Mode**: Hides UI elements during fullscreen playback for an unobstructed view. A minimal control bar provides essential playback actions.
 *   **💾 Local Caching**: Optional pre-playback caching of media files to local storage to eliminate network-related buffering.
 *   **🧠 Progress Tracking**: Automatically marks media as watched based on a configurable threshold, supports resuming playback from saved positions, and displays an on-screen overlay to automatically play the next episode in a series once the completion threshold is reached.
-*   **⚡ Library Scanning**: Uses SQLite `UPSERT` logic for incremental scanning, preserving manual metadata corrections. Gracefully handles unavailable root directories during a scan, reporting them as warning notifications without failing the entire scan.
-*   **🔍 Metadata Matching**: Multi-stage search strategy to link local media to TMDB and Jellyfin entries.
+*   **⚡ Library Scanning**: Uses SQLite `UPSERT` logic for incremental scanning, preserving manual metadata corrections. Gracefully handles unavailable root directories during a scan. Displays a detailed, real-time scan progress dashboard in the settings menu:
+    *   **Segmented Progress Bar**: A custom visual progress bar divided into labeled library segments, with sub-segments for each root directory.
+    *   **Collapsible Tree Display**: Displays the scan progress hierarchically (Library → Root Directory Path → TV Show → Season → Episode). TV seasons default to a collapsed state for interactive visibility toggling, while movie libraries skip file-level nodes for clean viewing.
+    *   **Status Indicators**: Every item in the tree features status icons (⏳ pending, ⚙ processing, ✓ done, ⊘ skipped).
+*   **🔍 Metadata Matching**: Multi-stage search strategy to link local media to TMDB and Jellyfin entries. Includes metadata locking capabilities to prevent automatic updates during library scans, alongside targeted metadata refresh controls in details windows to manually refresh individual series or episodes.
 *   **📛 Naming Support**: Uses official **TMDB** episode and series names, with filename fallbacks for unmatched items.
 *   **🔄 Bidirectional Sync**:
     *   Downloads posters and overviews from TMDB.
