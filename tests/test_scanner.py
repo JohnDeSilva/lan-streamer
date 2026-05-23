@@ -1992,3 +1992,84 @@ def test_scanner_additional_coverage(tmp_path: Path) -> None:
         # Season 1 should be preserved since cleanup=False
         assert "Season 1" in scanned_data["seasons"]
         assert len(scanned_data["seasons"]["Season 1"]["episodes"]) == 1
+
+
+def test_scan_directories_skips_empty_folders(tmp_path) -> None:
+    """Verify that scan_directories completely skips directories without video files."""
+    from lan_streamer.scanner import has_video_files
+
+    # 1. Test has_video_files helper
+    empty_dir = tmp_path / "EmptyDir"
+    empty_dir.mkdir()
+    assert not has_video_files(empty_dir)
+
+    non_video_dir = tmp_path / "NonVideoDir"
+    non_video_dir.mkdir()
+    (non_video_dir / "file.txt").touch()
+    (non_video_dir / "image.jpg").touch()
+    assert not has_video_files(non_video_dir)
+
+    video_dir = tmp_path / "VideoDir"
+    video_dir.mkdir()
+    (video_dir / "movie.mp4").touch()
+    assert has_video_files(video_dir)
+
+    nested_video_dir = tmp_path / "NestedVideoDir"
+    nested_video_dir.mkdir()
+    (nested_video_dir / "Season 1").mkdir()
+    (nested_video_dir / "Season 1" / "ep1.mkv").touch()
+    assert has_video_files(nested_video_dir)
+
+    # 2. Test scan_directories skips empty/non-video directories for TV libraries
+    mock_tmdb = MagicMock()
+    mock_tmdb.search_series.return_value = {
+        "id": "1",
+        "tmdb_identifier": "1",
+        "overview": "desc",
+        "poster_path": "",
+    }
+    mock_tmdb.get_series_by_id.return_value = {
+        "id": "1",
+        "tmdb_identifier": "1",
+        "overview": "desc",
+        "poster_path": "",
+    }
+    mock_tmdb.get_seasons.return_value = []
+    mock_tmdb.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        library = scan_directories([str(tmp_path)], library_type="tv")
+
+    # NestedVideoDir contains a Season folder with video file
+    assert "NestedVideoDir" in library
+    assert "EmptyDir" not in library
+    assert "NonVideoDir" not in library
+    # VideoDir contains a video file directly, but for TV libraries it lacks Season subfolders,
+    # so clean_series_data returns None for it.
+    assert "VideoDir" not in library
+
+    # 3. Test for movie library
+    mock_tmdb_movie = MagicMock()
+    mock_tmdb_movie.search_movie.return_value = {
+        "id": "2",
+        "title": "VideoDir",
+        "tmdb_identifier": "2",
+        "overview": "desc",
+        "poster_path": "",
+    }
+    mock_tmdb_movie.get_movie_by_id.return_value = {
+        "id": "2",
+        "title": "VideoDir",
+        "tmdb_identifier": "2",
+        "overview": "desc",
+        "poster_path": "",
+    }
+    mock_tmdb_movie.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb_movie):
+        library_movies = scan_directories([str(tmp_path)], library_type="movie")
+
+    assert "VideoDir" in library_movies
+    assert "NestedVideoDir" in library_movies
+    assert "EmptyDir" not in library_movies
+    assert "NonVideoDir" not in library_movies

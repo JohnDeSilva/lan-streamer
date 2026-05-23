@@ -171,7 +171,7 @@ class ScanAllLibrariesWorker(QThread):
         scanning begins.  Returns a structure keyed by library name.
         """
         from pathlib import Path as _Path
-        from lan_streamer.scanner import VIDEO_EXTENSIONS
+        from lan_streamer.scanner import VIDEO_EXTENSIONS, has_video_files
 
         tree: Dict[str, Any] = {}
         for library_name, library_configuration in config.libraries.items():
@@ -188,7 +188,9 @@ class ScanAllLibrariesWorker(QThread):
                     [
                         x
                         for x in root_path.iterdir()
-                        if x.is_dir() and not x.name.startswith(".")
+                        if x.is_dir()
+                        and not x.name.startswith(".")
+                        and has_video_files(x)
                     ],
                     key=lambda x: x.stat().st_mtime,
                     reverse=True,
