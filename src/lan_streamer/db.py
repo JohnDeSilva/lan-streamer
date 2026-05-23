@@ -194,9 +194,8 @@ def _apply_movie_fields(movie: "Movie", movie_data: Dict[str, Any]) -> None:
     movie.poster_path = movie_data.get("poster_path") or movie.poster_path
     movie.overview = movie_data.get("overview") or movie.overview
     movie.tmdb_name = movie_data.get("tmdb_name") or movie.tmdb_name
-    movie.locked_metadata = (
-        bool(movie_data.get("locked_metadata")) or movie.locked_metadata
-    )
+    if "locked_metadata" in movie_data:
+        movie.locked_metadata = bool(movie_data["locked_metadata"])
     movie.date_added = movie_data.get("date_added") or movie.date_added or 0
     movie.runtime = movie_data.get("runtime") or movie.runtime or 0
     movie.rating = movie_data.get("rating") or movie.rating or ""
@@ -475,9 +474,8 @@ def _save_series_record(
     series.poster_path = series_metadata.get("poster_path") or series.poster_path
     series.overview = series_metadata.get("overview") or series.overview
     series.tmdb_name = series_metadata.get("tmdb_name") or series.tmdb_name
-    series.locked_metadata = (
-        bool(series_metadata.get("locked_metadata")) or series.locked_metadata
-    )
+    if "locked_metadata" in series_metadata:
+        series.locked_metadata = bool(series_metadata["locked_metadata"])
     series.first_air_date = (
         series_metadata.get("first_air_date") or series.first_air_date
     )
