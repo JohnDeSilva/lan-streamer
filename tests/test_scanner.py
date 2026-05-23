@@ -2108,3 +2108,41 @@ def test_scan_series_warns_on_files_outside_seasons(tmp_path) -> None:
             "Series 'MyShow' has 1 video file(s) outside of season or specials/extras folders. "
             "Example: 'MyShow - S01E01.mkv'"
         )
+
+
+def test_scan_series_warns_on_nested_too_deep_files(tmp_path) -> None:
+    """Verify that scan_series logs a warning when there are video files nested too deeply under season folders."""
+    series_dir = tmp_path / "MyShow"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    # Create an immediate child episode (so it passes normal scanner paths)
+    (season_dir / "MyShow - S01E01.mkv").touch()
+
+    # Create a nested subdirectory and a video file inside it
+    nested_dir = season_dir / "Featurettes"
+    nested_dir.mkdir()
+    (nested_dir / "Menu Art.mkv").touch()
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.search_series.return_value = {
+        "id": "1",
+        "name": "MyShow",
+        "tmdb_identifier": "1",
+        "overview": "desc",
+        "poster_path": "",
+    }
+    mock_tmdb.get_seasons.return_value = []
+
+    with (
+        patch("lan_streamer.scanner.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.logger.warning") as mock_warn,
+    ):
+        scanner.scan_series(series_dir)
+
+        # Verify logger.warning was called for the nested file
+        mock_warn.assert_any_call(
+            "Series 'MyShow' has 1 video file(s) nested too deeply inside season folders. "
+            "These files will not be indexed. "
+            "Example: 'Season 1/Featurettes/Menu Art.mkv'"
+        )
