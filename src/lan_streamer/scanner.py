@@ -87,6 +87,18 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
 # Video file extensions we support
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm"}
 
+
+def has_video_files(directory: Path) -> bool:
+    """Recursively checks if the directory contains any video files."""
+    try:
+        for path in directory.rglob("*"):
+            if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS:
+                return True
+    except OSError:
+        pass
+    return False
+
+
 # Subtitle file extensions we support
 SUBTITLE_EXTENSIONS = {".srt", ".ass", ".vtt", ".sub", ".idx"}
 
@@ -612,7 +624,9 @@ def scan_directories(
             [
                 directory
                 for directory in root_path.iterdir()
-                if directory.is_dir() and not directory.name.startswith(".")
+                if directory.is_dir()
+                and not directory.name.startswith(".")
+                and has_video_files(directory)
             ],
             key=lambda directory: directory.stat().st_mtime,
             reverse=True,
@@ -1056,7 +1070,10 @@ def _process_series_metadata(
 
         if tmdb_identifier and not is_locked:
             if force_refresh or single_item_refresh or not existing_series_data:
-                tmdb_seasons = tmdb_client.get_seasons(tmdb_identifier)
+                if tmdb_series and "seasons" in tmdb_series:
+                    tmdb_seasons = tmdb_series["seasons"]
+                else:
+                    tmdb_seasons = tmdb_client.get_seasons(tmdb_identifier)
 
     if not series_metadata["jellyfin_id"] and jellyfin_data and tmdb_series:
         tmdb_id = str(tmdb_series.get("id") or "")
