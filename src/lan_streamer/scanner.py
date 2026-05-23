@@ -430,7 +430,11 @@ def _detect_new_series_files(
     """
     for file_path in series_directory.rglob("*"):
         if _is_video_file(file_path):
-            if str(file_path.absolute()) not in existing_episodes_by_path:
+            abs_path = str(file_path.absolute())
+            if abs_path not in existing_episodes_by_path:
+                logger.debug(
+                    f"New/unindexed file detected in '{series_directory.name}': '{abs_path}'"
+                )
                 return True
     return False
 
@@ -1324,6 +1328,7 @@ def scan_series(
     """
     # Check for files outside of season or specials/extras folders
     outside_file_paths = []
+    nested_too_deeply = []
     for file_path in series_directory.rglob("*"):
         if file_path.is_file() and _is_video_file(file_path):
             try:
@@ -1345,6 +1350,8 @@ def scan_series(
                     )
                     if not is_valid:
                         outside_file_paths.append(file_path)
+                    elif len(parts) > 2:
+                        nested_too_deeply.append(file_path)
             except Exception:
                 pass
 
@@ -1353,6 +1360,13 @@ def scan_series(
             f"Series '{series_directory.name}' has {len(outside_file_paths)} video file(s) "
             f"outside of season or specials/extras folders. "
             f"Example: '{outside_file_paths[0].name}'"
+        )
+
+    if nested_too_deeply:
+        logger.warning(
+            f"Series '{series_directory.name}' has {len(nested_too_deeply)} video file(s) "
+            f"nested too deeply inside season folders. These files will not be indexed. "
+            f"Example: '{nested_too_deeply[0].relative_to(series_directory)}'"
         )
 
     series_data, is_early_return, tmdb_series, existing_episodes_by_path = (
