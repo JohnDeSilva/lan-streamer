@@ -125,6 +125,7 @@ def _build_episode_dict(episode: "Episode") -> Dict[str, Any]:
         "date_added": episode.date_added or 0,
         "air_date": episode.air_date or "",
         "runtime": episode.runtime or 0,
+        "last_played_at": episode.last_played_at or 0,
     }
 
 
@@ -179,6 +180,7 @@ def _build_movie_dict(movie: "Movie") -> Dict[str, Any]:
         "year": movie.year or 0,
         "watched": bool(movie.watched),
         "last_played_position": movie.last_played_position or 0,
+        "last_played_at": movie.last_played_at or 0,
     }
 
 
@@ -712,10 +714,14 @@ def update_episode_watched_status(path: str, watched: bool) -> None:
             ).first()
             if episode:
                 episode.watched = watched
+                if watched:
+                    episode.last_played_at = int(time.time())
             else:
                 movie = session.scalars(select(Movie).where(Movie.path == path)).first()
                 if movie:
                     movie.watched = watched
+                    if watched:
+                        movie.last_played_at = int(time.time())
     except Exception:
         logger.exception(f"Error updating watched status for {path}")
 
@@ -744,10 +750,12 @@ def update_episode_playback_position(path: str, position: int) -> bool:
             ).first()
             if episode:
                 episode.last_played_position = position
+                episode.last_played_at = int(time.time())
                 return True
             movie = session.scalars(select(Movie).where(Movie.path == path)).first()
             if movie:
                 movie.last_played_position = position
+                movie.last_played_at = int(time.time())
                 return True
     except Exception:
         logger.exception(f"Error updating playback position for {path}")
@@ -1062,3 +1070,205 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
     except Exception:
         logger.exception(f"Error getting next episode for path {current_path}")
     return None
+
+
+def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
+    """
+    For partially watched series (having at least one watched episode or playback position),
+    returns the next unplayed season in the series.
+    Ordered by the max(last_played_at) of any episode in the series (most recently played first).
+    """
+    import re
+
+    def natural_sort_key(s: str) -> list:
+        return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", s)]
+
+    try:
+        logger.debug(f"get_combined_next_up called with libraries={library_names}")
+        with get_session() as session:
+            # Find series that have any episode where watched is True or last_played_at > 0
+            series_stmt = (
+                select(Series)
+                .join(Season)
+                .join(Episode)
+                .where((Episode.watched.is_(True)) | (Episode.last_played_at > 0))
+            )
+            if library_names:
+                series_stmt = series_stmt.where(Series.library_name.in_(library_names))
+            series_list = session.scalars(series_stmt.distinct()).all()
+
+            results = []
+            for series in series_list:
+                # Get all seasons of this series
+                seasons = sorted(
+                    series.seasons, key=lambda s: natural_sort_key(s.name or "")
+                )
+                next_season = None
+
+                # Find the first season that is not fully watched
+                for season in seasons:
+                    episodes = season.episodes
+                    if not episodes:
+                        continue
+                    # Check if all episodes in this season are watched
+                    fully_watched = all(ep.watched for ep in episodes)
+                    if not fully_watched:
+                        next_season = season
+                        break
+
+                if next_season:
+                    # Find max last_played_at across all episodes in the series
+                    max_lp = 0
+                    for s in series.seasons:
+                        for ep in s.episodes:
+                            val = ep.last_played_at or 0
+                            if val > max_lp:
+                                max_lp = val
+
+                    season_episodes = next_season.episodes
+                    watched_count = sum(1 for ep in season_episodes if ep.watched)
+                    total_count = len(season_episodes)
+
+                    results.append(
+                        {
+                            "type": "season",
+                            "series_name": series.name,
+                            "season_name": next_season.name,
+                            "poster_path": next_season.poster_path
+                            or series.poster_path,
+                            "library_name": series.library_name,
+                            "last_played_at": max_lp,
+                            "watched_count": watched_count,
+                            "total_count": total_count,
+                        }
+                    )
+
+            # Sort by last_played_at descending
+            results.sort(key=lambda x: int(x["last_played_at"] or 0), reverse=True)
+            logger.debug(f"get_combined_next_up returning {len(results)} results")
+            return results
+    except Exception:
+        logger.exception("Error in get_combined_next_up")
+        return []
+
+
+def get_combined_recently_added(library_names: List[str]) -> List[Dict[str, Any]]:
+    """
+    Returns series and movies sorted by their date_added (max episode date_added for series, movie date_added for movies).
+    """
+    logger.debug(f"get_combined_recently_added called with libraries={library_names}")
+    return get_combined_smart_row(library_names, "Recently Added", "All")
+
+
+def get_combined_smart_row(
+    library_names: List[str], sort_by: str, filter_mode: str
+) -> List[Dict[str, Any]]:
+    """
+    Returns filtered and sorted series and movies across the specified libraries.
+    """
+    try:
+        logger.debug(
+            f"get_combined_smart_row called with libraries={library_names}, "
+            f"sort_by='{sort_by}', filter_mode='{filter_mode}'"
+        )
+        if sort_by == "Next Up":
+            return get_combined_next_up(library_names)
+
+        with get_session() as session:
+            results = []
+
+            # 1. Fetch Series
+            series_stmt = select(Series)
+            if library_names:
+                series_stmt = series_stmt.where(Series.library_name.in_(library_names))
+            series_list = session.scalars(series_stmt).all()
+
+            for series in series_list:
+                total_episodes = 0
+                watched_episodes = 0
+                max_date_added = 0
+                max_air_date = ""
+
+                for season in series.seasons:
+                    for ep in season.episodes:
+                        total_episodes += 1
+                        if ep.watched:
+                            watched_episodes += 1
+                        val = ep.date_added or 0
+                        if val > max_date_added:
+                            max_date_added = val
+                        air_val = ep.air_date or ""
+                        if air_val > max_air_date:
+                            max_air_date = air_val
+
+                if total_episodes == 0:
+                    continue
+
+                # Check filter
+                keep = True
+                if filter_mode == "Watched":
+                    keep = (
+                        (watched_episodes == total_episodes)
+                        if total_episodes > 0
+                        else False
+                    )
+                elif filter_mode == "Unwatched":
+                    keep = watched_episodes < total_episodes
+
+                if keep:
+                    results.append(
+                        {
+                            "type": "series",
+                            "name": series.name,
+                            "poster_path": series.poster_path,
+                            "library_name": series.library_name,
+                            "date_added": max_date_added,
+                            "air_date": max_air_date or series.first_air_date or "",
+                            "watched_count": watched_episodes,
+                            "total_count": total_episodes,
+                        }
+                    )
+
+            # 2. Fetch Movies
+            movie_stmt = select(Movie)
+            if library_names:
+                movie_stmt = movie_stmt.where(Movie.library_name.in_(library_names))
+            movies = session.scalars(movie_stmt).all()
+
+            for movie in movies:
+                keep = True
+                if filter_mode == "Watched":
+                    keep = bool(movie.watched)
+                elif filter_mode == "Unwatched":
+                    keep = not bool(movie.watched)
+
+                if keep:
+                    results.append(
+                        {
+                            "type": "movie",
+                            "name": movie.name,
+                            "poster_path": movie.poster_path,
+                            "library_name": movie.library_name,
+                            "date_added": movie.date_added or 0,
+                            "air_date": str(movie.year or ""),
+                            "watched_count": 1 if movie.watched else 0,
+                            "total_count": 1,
+                        }
+                    )
+
+            # Apply sorting
+            if sort_by == "Alphabetical":
+                results.sort(key=lambda x: str(x["name"] or "").lower())
+            elif sort_by == "Recently Added":
+                results.sort(key=lambda x: int(x["date_added"] or 0), reverse=True)
+            elif sort_by == "Recently Aired":
+                results.sort(key=lambda x: str(x["air_date"] or ""), reverse=True)
+            else:
+                # Default fallback
+                results.sort(key=lambda x: str(x["name"] or "").lower())
+
+            logger.debug(f"get_combined_smart_row returning {len(results)} results")
+            return results
+    except Exception:
+        logger.exception("Error in get_combined_smart_row")
+        return []

@@ -888,3 +888,120 @@ def test_get_next_episode_natural_sorting(mock_db_file) -> None:
 
     # Next of "Ep 11" should be None (as it is the last episode under natural sorting)
     assert db.get_next_episode("/path/ep11.mkv") is None
+
+
+def test_combined_view_queries(mock_db_file) -> None:
+    from lan_streamer.db import (
+        get_session,
+        get_combined_next_up,
+        get_combined_recently_added,
+        get_combined_smart_row,
+    )
+    from lan_streamer.models import Series, Season, Episode, Movie
+
+    # 1. Setup a mix of TV libraries and Movie libraries
+    with get_session() as session:
+        # Series 1: TV library, watched some episodes (partially watched season 1)
+        s1 = Series(name="TV Series 1", library_name="TV Lib")
+        session.add(s1)
+        session.flush()
+
+        s1_se1 = Season(series_id=s1.id, name="Season 1")
+        session.add(s1_se1)
+        session.flush()
+
+        ep1 = Episode(
+            season_id=s1_se1.id,
+            name="Ep 1",
+            path="/tv1/s1e1.mkv",
+            watched=True,
+            date_added=100,
+            last_played_at=1000,
+        )
+        ep2 = Episode(
+            season_id=s1_se1.id,
+            name="Ep 2",
+            path="/tv1/s1e2.mkv",
+            watched=False,
+            date_added=110,
+            last_played_at=0,
+        )
+        session.add_all([ep1, ep2])
+
+        # Series 2: TV library, completely unwatched
+        s2 = Series(name="TV Series 2", library_name="TV Lib")
+        session.add(s2)
+        session.flush()
+
+        s2_se1 = Season(series_id=s2.id, name="Season 1")
+        session.add(s2_se1)
+        session.flush()
+
+        ep3 = Episode(
+            season_id=s2_se1.id,
+            name="Ep 1",
+            path="/tv2/s1e1.mkv",
+            watched=False,
+            date_added=200,
+            last_played_at=0,
+        )
+        session.add(ep3)
+
+        # Movie 1
+        m1 = Movie(
+            name="Movie 1",
+            library_name="Movie Lib",
+            path="/movies/m1.mkv",
+            watched=True,
+            date_added=300,
+            year=2020,
+        )
+        # Movie 2
+        m2 = Movie(
+            name="Movie 2",
+            library_name="Movie Lib",
+            path="/movies/m2.mkv",
+            watched=False,
+            date_added=400,
+            year=2021,
+        )
+        session.add_all([m1, m2])
+        session.commit()
+
+    # Test get_combined_next_up
+    next_up = get_combined_next_up(["TV Lib"])
+    assert len(next_up) == 1
+    assert next_up[0]["series_name"] == "TV Series 1"
+    assert next_up[0]["season_name"] == "Season 1"
+    assert next_up[0]["last_played_at"] == 1000
+
+    # Test get_combined_recently_added
+    recently_added = get_combined_recently_added(["TV Lib", "Movie Lib"])
+    assert len(recently_added) == 4
+    assert recently_added[0]["name"] == "Movie 2"
+    assert recently_added[1]["name"] == "Movie 1"
+    assert recently_added[2]["name"] == "TV Series 2"
+    assert recently_added[3]["name"] == "TV Series 1"
+
+    # Test get_combined_smart_row
+    unwatched = get_combined_smart_row(
+        ["TV Lib", "Movie Lib"], "Alphabetical", "Unwatched"
+    )
+    assert len(unwatched) == 3
+    names = [x["name"] for x in unwatched]
+    assert "Movie 2" in names
+    assert "TV Series 1" in names
+    assert "TV Series 2" in names
+
+
+def test_combined_view_queries_errors(mock_db_file) -> None:
+    from lan_streamer.db import (
+        get_combined_next_up,
+        get_combined_recently_added,
+        get_combined_smart_row,
+    )
+
+    with patch("lan_streamer.db.get_session", side_effect=Exception("Database error")):
+        assert get_combined_next_up(["TV Lib"]) == []
+        assert get_combined_recently_added(["TV Lib"]) == []
+        assert get_combined_smart_row(["TV Lib"], "Alphabetical", "All") == []
