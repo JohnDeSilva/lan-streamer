@@ -26,8 +26,8 @@ LAN Streamer is built to play your media files directly and natively without any
     *   Downloads posters and overviews from TMDB.
     *   Syncs "Watched" status with Jellyfin servers in real-time.
 *   **🗨️ Subtitle Integration**: Integrated **OpenSubtitles.com** support for searching and downloading subtitles directly within the app.
-*   **📁 Multi-Library Support**: Organize content into multiple libraries with support for multiple root directories per library.
-*   **📅 Air Date Sorting**: Uses TMDB air dates for "Recently Aired" library sorting.
+*   **📁 Multi-Library Support & Combined View**: Organize content into multiple libraries with support for multiple root directories per library. Configure a global **Combined Library View** in the settings menu to aggregate content from all or selected libraries into custom scrollable rows (e.g. Next Up, Recently Added, or custom smart queries).
+*   **📅 Bidirectional & Contextual Sorting**: Sort libraries alphabetically (A-Z or Z-A), by date added (Newest to Oldest or Oldest to Newest), by air date (Recently Aired), or by **Next Up**. Sorting controls adapt contextually (hiding direction selectors for Next Up, and using appropriate directional labels like A-Z/Z-A or Newest to Oldest/Oldest to Newest based on the active sorting mode).
 *   **🏷️ Media Renamer**: Utility to rename local files to match official metadata standards.
 *   **🧹 Library Cleanup**: Tool to remove missing files and stale database entries while maintaining metadata integrity.
 *   **📜 Real-Time Log Viewer**: View streaming logs directly within a dedicated "Running Logs" tab in the Settings dialog, with log level filtering, text searching, auto-scroll toggle, and copy-to-clipboard functionality.
