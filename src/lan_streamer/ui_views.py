@@ -3900,6 +3900,9 @@ class SettingsDialog(QDialog):
         self.enable_hw_accel_checkbox: QCheckBox = QCheckBox(
             "Enable Hardware Acceleration Decoding"
         )
+        self.enable_next_episode_popup_checkbox: QCheckBox = QCheckBox(
+            "Enable Next Episode Autoplay Popup"
+        )
         self.watched_threshold_input: QLineEdit = QLineEdit()
         self.max_cache_size_input: QLineEdit = QLineEdit()
 
@@ -4088,6 +4091,7 @@ class SettingsDialog(QDialog):
         player_layout.addWidget(self.use_embedded_checkbox)
         player_layout.addWidget(self.enable_caching_checkbox)
         player_layout.addWidget(self.enable_hw_accel_checkbox)
+        player_layout.addWidget(self.enable_next_episode_popup_checkbox)
 
         threshold_layout: QHBoxLayout = QHBoxLayout()
         threshold_layout.addWidget(QLabel("Watched Threshold (% of video length):"))
@@ -4396,6 +4400,9 @@ class SettingsDialog(QDialog):
         self.use_embedded_checkbox.setChecked(config.use_embedded_player)
         self.enable_caching_checkbox.setChecked(config.enable_caching)
         self.enable_hw_accel_checkbox.setChecked(config.enable_hw_accel)
+        self.enable_next_episode_popup_checkbox.setChecked(
+            config.enable_next_episode_popup
+        )
         self.watched_threshold_input.setText(str(int(config.watched_threshold * 100)))
         self.max_cache_size_input.setText(str(config.max_cache_size_gb))
 
@@ -4605,6 +4612,9 @@ class SettingsDialog(QDialog):
         config.use_embedded_player = self.use_embedded_checkbox.isChecked()
         config.enable_caching = self.enable_caching_checkbox.isChecked()
         config.enable_hw_accel = self.enable_hw_accel_checkbox.isChecked()
+        config.enable_next_episode_popup = (
+            self.enable_next_episode_popup_checkbox.isChecked()
+        )
         try:
             parsed_threshold = float(self.watched_threshold_input.text().strip())
             if parsed_threshold > 1.0:
