@@ -90,6 +90,7 @@ class Episode(Base):
     air_date: Mapped[Optional[str]] = mapped_column(String)
     runtime: Mapped[Optional[int]] = mapped_column(Integer)
     last_played_position: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    last_played_at: Mapped[Optional[int]] = mapped_column(Integer, default=0)
 
     season: Mapped[Optional["Season"]] = relationship(
         "Season", back_populates="episodes"
@@ -122,6 +123,7 @@ class Movie(Base):
     year: Mapped[Optional[int]] = mapped_column(Integer)
     watched: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     last_played_position: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    last_played_at: Mapped[Optional[int]] = mapped_column(Integer, default=0)
 
     __table_args__ = (
         UniqueConstraint("library_name", "name", name="uq_movies_library_name_name"),
