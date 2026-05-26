@@ -20,6 +20,7 @@ class Config:
         self.sync_history_on_start: bool = True
         self.filter_out_watched: bool = False
         self.sort_mode: str = "Alphabetical"
+        self.sort_descending: bool = False
         self.database_path: str = str(
             Path.home() / ".config" / "lan-streamer" / "library.db"
         )
@@ -46,6 +47,23 @@ class Config:
         self.database_backup_frequency: int = 0
         self.config_backup_retention: int = 7
         self.database_backup_retention: int = 7
+        self.enable_combined_view: bool = False
+        self.combined_views: List[Dict[str, Any]] = [
+            {
+                "name": "All Libraries - Next Up - All",
+                "enabled": True,
+                "libraries": [],
+                "sort_by": "Next Up",
+                "filter_mode": "All",
+            },
+            {
+                "name": "All Libraries - Recently Added - All",
+                "enabled": True,
+                "libraries": [],
+                "sort_by": "Recently Added",
+                "filter_mode": "All",
+            },
+        ]
         self.load()
 
     def load(self) -> None:
@@ -74,6 +92,11 @@ class Config:
                         data.get("filter_unwatched", False),
                     )
                     self.sort_mode = data.get("sort_mode", "Alphabetical")
+                    self.sort_descending = bool(data.get("sort_descending", False))
+                    logger.debug(
+                        f"Loaded sort preferences: mode='{self.sort_mode}', "
+                        f"descending={self.sort_descending}"
+                    )
                     self.database_path = data.get(
                         "database_path",
                         str(Path.home() / ".config" / "lan-streamer" / "library.db"),
@@ -122,6 +145,30 @@ class Config:
                     )
                     self.database_backup_retention = data.get(
                         "database_backup_retention", 7
+                    )
+                    self.enable_combined_view = data.get("enable_combined_view", False)
+                    self.combined_views = data.get(
+                        "combined_views",
+                        [
+                            {
+                                "name": "All Libraries - Next Up - All",
+                                "enabled": True,
+                                "libraries": [],
+                                "sort_by": "Next Up",
+                                "filter_mode": "All",
+                            },
+                            {
+                                "name": "All Libraries - Recently Added - All",
+                                "enabled": True,
+                                "libraries": [],
+                                "sort_by": "Recently Added",
+                                "filter_mode": "All",
+                            },
+                        ],
+                    )
+                    logger.debug(
+                        f"Loaded combined view settings: enabled={self.enable_combined_view}, "
+                        f"row_count={len(self.combined_views)}"
                     )
 
                     if "libraries" in data:
@@ -177,6 +224,7 @@ class Config:
                         "sync_history_on_start": self.sync_history_on_start,
                         "filter_out_watched": self.filter_out_watched,
                         "sort_mode": self.sort_mode,
+                        "sort_descending": self.sort_descending,
                         "database_path": self.database_path,
                         "log_directory": self.log_directory,
                         "log_level": self.log_level,
@@ -197,6 +245,8 @@ class Config:
                         "database_backup_frequency": self.database_backup_frequency,
                         "config_backup_retention": self.config_backup_retention,
                         "database_backup_retention": self.database_backup_retention,
+                        "enable_combined_view": self.enable_combined_view,
+                        "combined_views": self.combined_views,
                     },
                     f,
                     indent=4,
