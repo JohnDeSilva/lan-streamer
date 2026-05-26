@@ -160,6 +160,13 @@ class VideoPlayerWidget(QWidget):
         self.hide_controls_timer.setSingleShot(True)
         self.hide_controls_timer.timeout.connect(self._hide_fullscreen_controls)
 
+        # Timer for next episode popup countdown
+        self.countdown_seconds: int = 20
+        self.popup_countdown_timer = QTimer(self)
+        self.popup_countdown_timer.setInterval(1000)
+        self.popup_countdown_timer.setSingleShot(False)
+        self.popup_countdown_timer.timeout.connect(self._on_popup_countdown_tick)
+
         self._setup_ui()
 
         # Timer for updating UI (seek bar, time labels, watched threshold)
@@ -325,6 +332,12 @@ class VideoPlayerWidget(QWidget):
         self.popup_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.popup_info_label.setWordWrap(True)
         popup_layout.addWidget(self.popup_info_label)
+
+        self.popup_countdown_label = QLabel()
+        self.popup_countdown_label.setFont(QFont("Inter", 12))
+        self.popup_countdown_label.setStyleSheet("color: #888888;")
+        self.popup_countdown_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        popup_layout.addWidget(self.popup_countdown_label)
 
         button_layout = QHBoxLayout()
         button_layout.setSpacing(15)
@@ -551,12 +564,12 @@ class VideoPlayerWidget(QWidget):
         osd_y = v_geom.y() + (v_geom.height() - self.osd_label.height()) // 2
         self.osd_label.move(osd_x, osd_y)
 
-        # Center Next Episode Popup Overlay
+        # Position Next Episode Popup Overlay at the bottom-right corner
         if hasattr(self, "next_episode_popup_frame"):
             popup_size = QSize(500, 200)
             self.next_episode_popup_frame.resize(popup_size)
-            popup_x = v_geom.x() + (v_geom.width() - popup_size.width()) // 2
-            popup_y = v_geom.y() + (v_geom.height() - popup_size.height()) // 2
+            popup_x = v_geom.x() + v_geom.width() - popup_size.width() - 20
+            popup_y = v_geom.y() + v_geom.height() - popup_size.height() - 20
             self.next_episode_popup_frame.move(popup_x, popup_y)
 
         # Position Stats Overlay at top-left
@@ -811,6 +824,7 @@ class VideoPlayerWidget(QWidget):
 
     def stop(self) -> None:
         logger.info("Stopping playback")
+        self.popup_countdown_timer.stop()
         if self.window().isFullScreen() and not getattr(
             self, "is_transitioning_to_next", False
         ):
@@ -1042,11 +1056,11 @@ class VideoPlayerWidget(QWidget):
             self.time_label.setText(time_text)
             self.fs_time_label.setText(time_text)
 
-            # Show next episode popup if playback reaches 95% watched and a next episode exists
+            # Show next episode popup if playback reaches 98% watched and a next episode exists
             if (
                 not self.next_episode_popup_shown
                 and self.next_episode_info is not None
-                and (curr_time / duration) >= 0.95
+                and (curr_time / duration) >= 0.98
             ):
                 self.show_next_episode_popup()
 
@@ -1070,6 +1084,10 @@ class VideoPlayerWidget(QWidget):
         info_text: str = f'{season}, {episode_string}\n"{title}"'
         self.popup_info_label.setText(info_text)
 
+        self.countdown_seconds = 20
+        self.popup_countdown_label.setText("Closing in 20 seconds...")
+        self.popup_countdown_timer.start()
+
         if self.window().isFullScreen():
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
@@ -1080,12 +1098,14 @@ class VideoPlayerWidget(QWidget):
     def ignore_next_episode(self) -> None:
         """Dismisses the next episode popup overlay and continues playing."""
         logger.info("User ignored the next episode popup")
+        self.popup_countdown_timer.stop()
         self.next_episode_popup_frame.hide()
         self.setFocus()
 
     def play_next_episode(self) -> None:
         """Plays the next episode immediately, preserving fullscreen state."""
         logger.info("User requested to play the next episode immediately")
+        self.popup_countdown_timer.stop()
         next_episode_path: Optional[str] = (
             self.next_episode_info.get("path") if self.next_episode_info else None
         )
@@ -1102,6 +1122,20 @@ class VideoPlayerWidget(QWidget):
                 self.play_video(next_episode_path)
         finally:
             self.is_transitioning_to_next = False
+
+    @Slot()
+    def _on_popup_countdown_tick(self) -> None:
+        self.countdown_seconds -= 1
+        logger.debug(
+            f"Popup countdown tick: {self.countdown_seconds} seconds remaining"
+        )
+        self.popup_countdown_label.setText(
+            f"Closing in {self.countdown_seconds} seconds..."
+        )
+        if self.countdown_seconds <= 0:
+            logger.info("Countdown expired. Dismissing next episode popup.")
+            self.popup_countdown_timer.stop()
+            self.ignore_next_episode()
 
     def _format_time(self, seconds: int) -> str:
         m, s = divmod(seconds, 60)

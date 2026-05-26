@@ -174,7 +174,7 @@ The application automatically tracks your playback progress and maintains a "wat
 - **Resume Playback**: If you stop a video after at least 60 seconds of playback, your position is saved. The next time you play the same file, you will be prompted to resume from where you left off.
 - **Automatic "Watched" Status**: Once playback exceeds the `watched_threshold`, the item is marked as watched in the local database. If Jellyfin integration is enabled, this status is immediately synchronized to your Jellyfin server.
 - **Threshold Logic**: If a video is marked as watched (either manually or by reaching the threshold), any saved playback position is cleared.
-- **Autoplay Next Episode**: When the current video progress reaches the completion threshold (matching `watched_threshold`), an on-screen overlay pops up prompting you to play the next episode. Clicking **Play Next** plays the next episode automatically, maintaining the fullscreen status. If you ignore the prompt or close the overlay, you can continue watching.
+- **Autoplay Next Episode**: When the current video progress reaches the completion threshold (matching `watched_threshold`), an on-screen overlay pops up in the bottom-right corner with a 20-second countdown timer. Clicking **Play Next** plays the next episode automatically, maintaining the fullscreen status. If the countdown expires or you click **Ignore**, the overlay is dismissed and you can continue watching.
 
 ---
 
