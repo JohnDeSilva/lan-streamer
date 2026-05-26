@@ -789,6 +789,7 @@ class Controller(QObject):
 
     def set_sort_mode(self, mode: str) -> None:
         if self.sort_mode != mode:
+            logger.info(f"Sort mode changed from '{self.sort_mode}' to '{mode}'")
             self.sort_mode = mode
             config.sort_mode = mode
             config.save()
@@ -796,6 +797,9 @@ class Controller(QObject):
 
     def set_sort_descending(self, descending: bool) -> None:
         if self.sort_descending != descending:
+            logger.info(
+                f"Sort direction changed to {'descending' if descending else 'ascending'}"
+            )
             self.sort_descending = descending
             config.sort_descending = descending
             config.save()
@@ -1834,7 +1838,9 @@ class LibraryGridView(QWidget):
             descending = text == "Z-A"
         else:
             descending = text == "Oldest to Newest"
-
+        logger.debug(
+            f"Order dropdown changed to '{text}', sort_descending={descending}"
+        )
         self.controller.set_sort_descending(descending)
 
     @Slot()
@@ -5011,7 +5017,7 @@ class SettingsDialog(QDialog):
         }
         new_row["name"] = self._get_default_row_name(new_row)
         self.staged_combined_views.append(new_row)
-
+        logger.debug(f"Added combined view row: '{new_row['name']}'")
         self._refresh_combined_views_list()
         self.combined_views_list_widget.setCurrentRow(
             len(self.staged_combined_views) - 1
@@ -5022,9 +5028,9 @@ class SettingsDialog(QDialog):
         row_idx = self.combined_views_list_widget.currentRow()
         if row_idx < 0 or row_idx >= len(self.staged_combined_views):
             return
-
+        deleted_name: str = self.staged_combined_views[row_idx].get("name", "Unnamed")
         del self.staged_combined_views[row_idx]
-
+        logger.debug(f"Deleted combined view row at index {row_idx}: '{deleted_name}'")
         self._refresh_combined_views_list()
 
     @Slot()
@@ -5036,7 +5042,7 @@ class SettingsDialog(QDialog):
             self.staged_combined_views[row_idx - 1],
             self.staged_combined_views[row_idx],
         )
-
+        logger.debug(f"Moved combined view row from index {row_idx} to {row_idx - 1}")
         self._refresh_combined_views_list()
         self.combined_views_list_widget.setCurrentRow(row_idx - 1)
 
@@ -5049,7 +5055,7 @@ class SettingsDialog(QDialog):
             self.staged_combined_views[row_idx + 1],
             self.staged_combined_views[row_idx],
         )
-
+        logger.debug(f"Moved combined view row from index {row_idx} to {row_idx + 1}")
         self._refresh_combined_views_list()
         self.combined_views_list_widget.setCurrentRow(row_idx + 1)
 
