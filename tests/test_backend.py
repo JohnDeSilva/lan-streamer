@@ -496,3 +496,59 @@ def test_series_metadata_embed_worker_exception() -> None:
         worker.run()
 
     assert len(errors_emitted) == 1
+
+
+def test_scan_worker_detail_progress() -> None:
+    from lan_streamer.scanner import LibraryDict
+    from unittest.mock import patch
+
+    lib = LibraryDict({"Cosmos": {}})
+    lib.unavailable_directories = []
+
+    # Mock discover_single_library_tree to return custom structure
+    mock_tree = {"/path": ["Series A", "Series B"]}
+
+    with (
+        patch(
+            "lan_streamer.backend.discover_single_library_tree", return_value=mock_tree
+        ) as mock_discover,
+        patch("lan_streamer.backend.scan_directories", return_value=lib) as mock_scan,
+    ):
+        emitted_details = []
+        worker = ScanWorker(["/path"], "tv", {})
+        worker.detail_progress.connect(
+            lambda ev, payload: emitted_details.append((ev, payload))
+        )
+
+        # We also want to simulate scan_directories calling the detail_callback
+        def fake_scan(*args, **kwargs):
+            detail_cb = kwargs.get("detail_callback")
+            if detail_cb:
+                detail_cb("start_folder", {"root": "/path", "folder": "Series A"})
+                detail_cb(
+                    "finish_folder",
+                    {"root": "/path", "folder": "Series A", "skipped": False},
+                )
+            return lib
+
+        mock_scan.side_effect = fake_scan
+
+        worker.run()
+
+        mock_discover.assert_called_once_with(["/path"], "tv")
+        mock_scan.assert_called_once()
+
+        # Verify the progress signals emitted
+        assert len(emitted_details) == 3
+        assert emitted_details[0] == (
+            "init_library_scan",
+            {"roots": mock_tree, "roots_order": ["/path"]},
+        )
+        assert emitted_details[1] == (
+            "start_folder",
+            {"root": "/path", "folder": "Series A"},
+        )
+        assert emitted_details[2] == (
+            "finish_folder",
+            {"root": "/path", "folder": "Series A", "skipped": False},
+        )

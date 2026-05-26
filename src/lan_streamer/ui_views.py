@@ -651,6 +651,160 @@ class ScanProgressTree(QWidget):
         self._tree.collapseAll()
 
 
+class LibraryScanProgressBar(QWidget):
+    """
+    A custom progress bar divided into labelled root directory segments.
+    Within each root directory segment, series/movie folders are drawn as sub-segments.
+    Progress is filled independently as series/movies are processed.
+    """
+
+    STATE_PENDING = 0
+    STATE_ACTIVE = 1
+    STATE_DONE = 2
+
+    # Colours (harmonious dark theme colors)
+    _COLOR_BG = QColor("#1f2937")
+    _COLOR_BORDER = QColor("#374151")
+    _COLOR_LABEL = QColor("#f3f4f6")
+    _COLOR_PENDING_FILL = QColor("#111827")
+    _COLOR_ACTIVE_ROOT = QColor("#1e3a8a")
+    _COLOR_DONE_ROOT = QColor("#064e3b")
+    _COLOR_ROOT_DIVIDER = QColor("#374151")
+    _COLOR_ACTIVE_FOLDER = QColor("#3b82f6")
+    _COLOR_DONE_FOLDER = QColor("#10b981")
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setMinimumHeight(16)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._roots_order: List[str] = []
+        self._roots: Dict[str, Any] = {}
+
+    def init_from_roots(
+        self, roots: Dict[str, List[str]], roots_order: List[str]
+    ) -> None:
+        """Called with the initial discovery {root_dir: [folder1, folder2, ...]}."""
+        self._roots_order = [r for r in roots_order if r in roots]
+        self._roots = {}
+        for root_dir in self._roots_order:
+            folders = roots[root_dir]
+            self._roots[root_dir] = {
+                "folders": folders,
+                "folder_states": {f: self.STATE_PENDING for f in folders},
+                "state": self.STATE_PENDING,
+            }
+        self.update()
+
+    def mark_folder_active(self, root_dir: str, folder_name: str) -> None:
+        if root_dir in self._roots:
+            self._roots[root_dir]["state"] = self.STATE_ACTIVE
+            if folder_name in self._roots[root_dir]["folder_states"]:
+                self._roots[root_dir]["folder_states"][folder_name] = self.STATE_ACTIVE
+            self.update()
+
+    def mark_folder_done(self, root_dir: str, folder_name: str) -> None:
+        if root_dir in self._roots:
+            if folder_name in self._roots[root_dir]["folder_states"]:
+                self._roots[root_dir]["folder_states"][folder_name] = self.STATE_DONE
+
+            # Check if all folders in this root are done
+            states = self._roots[root_dir]["folder_states"].values()
+            if all(s == self.STATE_DONE for s in states):
+                self._roots[root_dir]["state"] = self.STATE_DONE
+            self.update()
+
+    def paintEvent(self, event: Any) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+        padding = 1
+        bar_top = padding
+        bar_height = h - 2 * padding
+
+        num_roots = len(self._roots_order)
+        if num_roots == 0:
+            painter.fillRect(0, bar_top, w, bar_height, self._COLOR_BG)
+            painter.end()
+            return
+
+        root_width = w / num_roots
+
+        for idx, root_dir in enumerate(self._roots_order):
+            root_data = self._roots.get(root_dir, {})
+            state = root_data.get("state", self.STATE_PENDING)
+            rx = int(idx * root_width)
+            rw = int(root_width) - 1
+
+            # Background for this root segment
+            if state == self.STATE_DONE:
+                bg = self._COLOR_DONE_ROOT
+            elif state == self.STATE_ACTIVE:
+                bg = self._COLOR_ACTIVE_ROOT
+            else:
+                bg = self._COLOR_PENDING_FILL
+            painter.fillRect(rx, bar_top, rw, bar_height, bg)
+
+            # Draw folder sub-segments sorted by state to guarantee left-to-right fill
+            folders = root_data.get("folders", [])
+            num_folders = len(folders)
+            if num_folders > 0:
+                folder_w = rw / num_folders
+
+                # Count counts of each state
+                states_count = {
+                    self.STATE_PENDING: 0,
+                    self.STATE_ACTIVE: 0,
+                    self.STATE_DONE: 0,
+                }
+                for folder_name in folders:
+                    folder_state = root_data.get("folder_states", {}).get(
+                        folder_name, self.STATE_PENDING
+                    )
+                    states_count[folder_state] += 1
+
+                # Create an ordered list of states: DONE first, then ACTIVE, then PENDING
+                ordered_states = (
+                    [self.STATE_DONE] * states_count[self.STATE_DONE]
+                    + [self.STATE_ACTIVE] * states_count[self.STATE_ACTIVE]
+                    + [self.STATE_PENDING] * states_count[self.STATE_PENDING]
+                )
+
+                for fidx, folder_state in enumerate(ordered_states):
+                    fx = rx + int(fidx * folder_w)
+                    fw = int(folder_w) - 1
+
+                    if folder_state == self.STATE_DONE or state == self.STATE_DONE:
+                        painter.fillRect(
+                            fx, bar_top, fw, bar_height, self._COLOR_DONE_FOLDER
+                        )
+                    elif folder_state == self.STATE_ACTIVE:
+                        painter.fillRect(
+                            fx, bar_top, fw, bar_height, self._COLOR_ACTIVE_FOLDER
+                        )
+                    else:
+                        painter.fillRect(
+                            fx, bar_top, fw, bar_height, self._COLOR_PENDING_FILL
+                        )
+
+                    # Folder divider line
+                    if fidx > 0:
+                        painter.setPen(QPen(self._COLOR_ROOT_DIVIDER, 1))
+                        painter.drawLine(fx, bar_top, fx, bar_top + bar_height)
+
+            # Root border
+            painter.setPen(QPen(self._COLOR_BORDER, 1))
+            painter.drawRect(rx, bar_top, rw, bar_height)
+
+            # Root separator line
+            if idx > 0:
+                painter.setPen(QPen(self._COLOR_BORDER, 2))
+                painter.drawLine(rx, bar_top, rx, bar_top + bar_height)
+
+        painter.end()
+
+
 class Controller(QObject):
     """
     Core Application Logic Controller managing native UI synchronization and persistence layer interactions.
@@ -671,6 +825,7 @@ class Controller(QObject):
     episode_metadata_dialog_requested = Signal(str, str)
     global_progress_updated = Signal(str, int, int)
     detail_progress_updated = Signal(str, dict)
+    scan_completed = Signal()
 
     file_system_watcher: QFileSystemWatcher
     debounce_timer: QTimer
@@ -899,6 +1054,9 @@ class Controller(QObject):
         self.scan_worker_instance.finished.connect(self._on_scan_finished)
         self.scan_worker_instance.partial_result.connect(self._on_scan_partial)
         self.scan_worker_instance.error.connect(self._on_worker_error)
+        self.scan_worker_instance.detail_progress.connect(
+            self.detail_progress_updated.emit
+        )
         self.scan_worker_instance.start()
 
     def _on_scan_partial(self, partial_library: Dict[str, Any]) -> None:
@@ -935,6 +1093,7 @@ class Controller(QObject):
                         self.movie_selected.emit(self.selected_series_name)
                     else:
                         self.series_selected.emit(self.selected_series_name)
+        self.scan_completed.emit()
 
     def trigger_cleanup(self) -> None:
         if not self.current_library_name:
@@ -1087,6 +1246,7 @@ class Controller(QObject):
     def _on_worker_error(self, error_message: str) -> None:
         self.status_changed.emit(f"Worker Error: {error_message}")
         logger.error(f"Background execution fault: {error_message}")
+        self.scan_completed.emit()
 
     def _download_provider_artwork(
         self,
@@ -1687,6 +1847,8 @@ class LibraryGridView(QWidget):
         self.filter_watched_checkbox: QCheckBox = QCheckBox("Hide Watched")
         self.cached_icons: Dict[str, QIcon] = {}
         self._last_order_mode: Optional[str] = None
+        self.scan_progress_bar: LibraryScanProgressBar = LibraryScanProgressBar()
+        self.scan_status_label: QLabel = QLabel()
 
         self._setup_ui()
         self._wire_signals()
@@ -1784,6 +1946,16 @@ class LibraryGridView(QWidget):
         self.combined_scroll_area.setWidget(self.combined_scroll_content)
         main_layout.addWidget(self.combined_scroll_area)
 
+        # Add status label and progress bar at the very bottom
+        self.scan_status_label.setStyleSheet(
+            "font-weight: bold; color: #f3f4f6; font-size: 13px;"
+        )
+        self.scan_status_label.setVisible(False)
+        main_layout.addWidget(self.scan_status_label)
+
+        self.scan_progress_bar.setVisible(False)
+        main_layout.addWidget(self.scan_progress_bar)
+
     def _wire_signals(self) -> None:
         self.controller.library_loaded.connect(self.populate_grid)
         self.library_selector.currentTextChanged.connect(self.on_library_changed)
@@ -1793,6 +1965,31 @@ class LibraryGridView(QWidget):
             self.controller.set_filter_out_watched
         )
         self.series_list_widget.itemClicked.connect(self.on_item_clicked)
+        self.controller.detail_progress_updated.connect(self._on_detail_progress)
+        self.controller.scan_completed.connect(self._on_scan_completed)
+
+    @Slot(str, dict)
+    def _on_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
+        root = payload.get("root", "")
+        folder = payload.get("folder", "")
+        if event == "init_library_scan":
+            roots = payload.get("roots", {})
+            roots_order = payload.get("roots_order", [])
+            self.scan_progress_bar.init_from_roots(roots, roots_order)
+            self.scan_progress_bar.setVisible(True)
+            self.scan_status_label.setText("Starting library scan...")
+            self.scan_status_label.setVisible(True)
+        elif event == "start_folder":
+            self.scan_progress_bar.mark_folder_active(root, folder)
+            self.scan_status_label.setText(f"Scanning: {root} > {folder}")
+            self.scan_status_label.setVisible(True)
+        elif event == "finish_folder":
+            self.scan_progress_bar.mark_folder_done(root, folder)
+
+    @Slot()
+    def _on_scan_completed(self) -> None:
+        self.scan_progress_bar.setVisible(False)
+        self.scan_status_label.setVisible(False)
 
     def populate_libraries(self, library_names: List[str]) -> None:
         self.library_selector.blockSignals(True)

@@ -19,12 +19,45 @@ from .scanner import (
 logger = logging.getLogger(__name__)
 
 
+def discover_single_library_tree(
+    root_directories: List[str], library_type: str
+) -> Dict[str, List[str]]:
+    """
+    Pre-walks all library directories to count total folders and files
+    for a single library so the UI can initialize the segmented progress bar
+    before scanning begins. Returns a structure mapping root_dir -> list of folder names.
+    """
+    from pathlib import Path as _Path
+    from lan_streamer.scanner import has_video_files
+
+    roots: Dict[str, List[str]] = {}
+    for root_dir in root_directories:
+        root_path = _Path(root_dir)
+        if not root_path.exists() or not root_path.is_dir():
+            roots[root_dir] = []
+            continue
+        folders = []
+        for series_path in sorted(
+            [
+                x
+                for x in root_path.iterdir()
+                if x.is_dir() and not x.name.startswith(".") and has_video_files(x)
+            ],
+            key=lambda x: x.stat().st_mtime,
+            reverse=True,
+        ):
+            folders.append(series_path.name)
+        roots[root_dir] = folders
+    return roots
+
+
 class ScanWorker(QThread):
     """Scans a single library directory using TMDB for metadata."""
 
     finished = Signal(dict)
     partial_result = Signal(dict)
     error = Signal(str)
+    detail_progress = Signal(str, dict)
 
     def __init__(
         self,
@@ -49,10 +82,23 @@ class ScanWorker(QThread):
                 f"ScanWorker starting run for directories: {self.root_directories}"
             )
             self.unavailable_directories = []
+
+            # Pre-discover the library tree structure and emit init_library_scan
+            tree_structure = discover_single_library_tree(
+                self.root_directories, self.library_type
+            )
+            self.detail_progress.emit(
+                "init_library_scan",
+                {"roots": tree_structure, "roots_order": self.root_directories},
+            )
+
             # Fetch Jellyfin correlation data if configured
             jellyfin_data: Optional[Dict[str, Any]] = None
             if jellyfin_client.is_configured():
                 jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
+
+            def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
+                self.detail_progress.emit(event, payload)
 
             library: LibraryDict = scan_directories(
                 self.root_directories,
@@ -62,6 +108,7 @@ class ScanWorker(QThread):
                 callback=self.partial_result.emit,
                 force_refresh=self.force_refresh,
                 cleanup=self.cleanup,
+                detail_callback=_detail_callback,
             )
             self.unavailable_directories = library.unavailable_directories
             logger.info("ScanWorker finished successfully")
