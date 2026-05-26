@@ -28,6 +28,9 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QTreeWidget,
     QTreeWidgetItem,
+    QScrollArea,
+    QGroupBox,
+    QSpinBox,
 )
 from PySide6.QtCore import (
     Qt,
@@ -678,6 +681,7 @@ class Controller(QObject):
         self.cached_library_data: Dict[str, Any] = {}
         self.selected_series_name: str = ""
         self.sort_mode: str = config.sort_mode
+
         self.filter_out_watched: bool = config.filter_out_watched
         self.scan_worker_instance: Optional[ScanWorker] = None
         self.cleanup_worker_instance: Optional[CleanupWorker] = None
@@ -741,12 +745,14 @@ class Controller(QObject):
                     "watched_episodes": 1 if is_watched else 0,
                     "max_date_added": series_data.get("date_added") or 0,
                     "max_air_date": str(series_data.get("year") or ""),
+                    "last_played_at": series_data.get("last_played_at") or 0,
                 }
             else:
                 total_episodes: int = 0
                 watched_episodes: int = 0
                 max_date_added: int = 0
                 max_air_date: str = ""
+                last_played_at: int = 0
 
                 for season_data in series_data.get("seasons", {}).values():
                     for episode_record in season_data.get("episodes", []):
@@ -759,6 +765,9 @@ class Controller(QObject):
                         air_date_string: str = episode_record.get("air_date") or ""
                         if air_date_string > max_air_date:
                             max_air_date = air_date_string
+                        lp: int = episode_record.get("last_played_at") or 0
+                        if lp > last_played_at:
+                            last_played_at = lp
 
                 series_data["metrics"] = {
                     "total_episodes": total_episodes,
@@ -1659,6 +1668,7 @@ class LibraryGridView(QWidget):
         self.series_list_widget: QListWidget = QListWidget()
         self.library_selector: QComboBox = QComboBox()
         self.sort_selector: QComboBox = QComboBox()
+
         self.filter_watched_checkbox: QCheckBox = QCheckBox("Hide Watched")
         self.cached_icons: Dict[str, QIcon] = {}
 
@@ -1700,7 +1710,9 @@ class LibraryGridView(QWidget):
         main_layout.addLayout(top_toolbar_layout)
 
         # Bottom Actions Row
-        actions_toolbar_layout: QHBoxLayout = QHBoxLayout()
+        self.actions_toolbar_widget = QWidget()
+        actions_toolbar_layout: QHBoxLayout = QHBoxLayout(self.actions_toolbar_widget)
+        actions_toolbar_layout.setContentsMargins(0, 0, 0, 0)
         actions_toolbar_layout.setSpacing(10)
 
         scan_button: QPushButton = QPushButton("Scan New Files")
@@ -1724,7 +1736,7 @@ class LibraryGridView(QWidget):
         actions_toolbar_layout.addWidget(cleanup_button)
 
         actions_toolbar_layout.addStretch()
-        main_layout.addLayout(actions_toolbar_layout)
+        main_layout.addWidget(self.actions_toolbar_widget)
 
         # Series Responsive List/Grid Widget
         self.series_list_widget.setViewMode(QListWidget.ViewMode.IconMode)
@@ -1736,10 +1748,23 @@ class LibraryGridView(QWidget):
 
         main_layout.addWidget(self.series_list_widget)
 
+        # Combined View Scroll Area
+        self.combined_scroll_area: QScrollArea = QScrollArea()
+        self.combined_scroll_area.setWidgetResizable(True)
+        self.combined_scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.combined_scroll_area.setVisible(False)
+        self.combined_scroll_content = QWidget()
+        self.combined_scroll_layout = QVBoxLayout(self.combined_scroll_content)
+        self.combined_scroll_layout.setSpacing(25)
+        self.combined_scroll_layout.setContentsMargins(0, 0, 0, 0)
+        self.combined_scroll_area.setWidget(self.combined_scroll_content)
+        main_layout.addWidget(self.combined_scroll_area)
+
     def _wire_signals(self) -> None:
         self.controller.library_loaded.connect(self.populate_grid)
         self.library_selector.currentTextChanged.connect(self.on_library_changed)
         self.sort_selector.currentTextChanged.connect(self.controller.set_sort_mode)
+
         self.filter_watched_checkbox.toggled.connect(
             self.controller.set_filter_out_watched
         )
@@ -1748,16 +1773,20 @@ class LibraryGridView(QWidget):
     def populate_libraries(self, library_names: List[str]) -> None:
         self.library_selector.blockSignals(True)
         self.library_selector.clear()
-        self.library_selector.addItems(library_names)
-        if (
-            self.controller.current_library_name
-            and self.controller.current_library_name in library_names
-        ):
-            self.library_selector.setCurrentText(self.controller.current_library_name)
-            self.controller.select_library(self.controller.current_library_name)
-        elif library_names:
-            self.controller.select_library(library_names[0])
-            self.library_selector.setCurrentText(library_names[0])
+        options = []
+        if config.enable_combined_view:
+            options.append("Combined View")
+        options.extend(library_names)
+        self.library_selector.addItems(options)
+
+        current = self.controller.current_library_name
+        if current and current in options:
+            self.library_selector.setCurrentText(current)
+            self.on_library_changed(current)
+        else:
+            if options:
+                self.library_selector.setCurrentText(options[0])
+                self.on_library_changed(options[0])
         self.library_selector.blockSignals(False)
 
     @Slot()
@@ -1768,13 +1797,28 @@ class LibraryGridView(QWidget):
 
     @Slot(str)
     def on_library_changed(self, library_name: str) -> None:
-        if library_name:
-            self.controller.select_library(library_name)
+        if library_name == "Combined View":
+            self.controller.current_library_name = "Combined View"
+            self.series_list_widget.setVisible(False)
+            if hasattr(self, "actions_toolbar_widget"):
+                self.actions_toolbar_widget.setVisible(False)
+            self.combined_scroll_area.setVisible(True)
+            self.populate_combined_view()
+        else:
+            self.series_list_widget.setVisible(True)
+            if hasattr(self, "actions_toolbar_widget"):
+                self.actions_toolbar_widget.setVisible(True)
+            self.combined_scroll_area.setVisible(False)
+            if library_name:
+                self.controller.select_library(library_name)
 
     @Slot()
     def populate_grid(self) -> None:
         if getattr(self.controller, "is_video_playing", False):
             return
+        if self.library_selector.currentText() == "Combined View":
+            return
+
         # Build list of displayable series structured records
         series_entries: List[Dict[str, Any]] = []
         for series_name, series_data in self.controller.cached_library_data.items():
@@ -1914,6 +1958,175 @@ class LibraryGridView(QWidget):
                 self.controller.select_movie(title)
             else:
                 self.controller.select_series(title)
+
+    def populate_combined_view(self) -> None:
+        # Clear existing widgets in combined_scroll_layout
+        while self.combined_scroll_layout.count():
+            layout_item = self.combined_scroll_layout.takeAt(0)
+            if layout_item is not None:
+                w = layout_item.widget()
+                if w is not None:
+                    w.deleteLater()
+
+        enabled_rows = [
+            row for row in config.combined_views if row.get("enabled", True)
+        ]
+        if not enabled_rows:
+            empty_label = QLabel(
+                "No rows configured or enabled in Combined View settings."
+            )
+            empty_label.setStyleSheet("font-size: 16px; color: #888888; padding: 20px;")
+            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.combined_scroll_layout.addWidget(empty_label)
+            return
+
+        for row in enabled_rows:
+            libraries = row.get("libraries", [])
+            row_name = row.get("name", "Row")
+            sort_by = row.get("sort_by", "Alphabetical")
+            filter_mode = row.get("filter_mode", "All")
+
+            items = db.get_combined_smart_row(libraries, sort_by, filter_mode)
+            max_items = row.get("max_items", 20)
+            items = items[:max_items]
+
+            if not items:
+                continue
+
+            # Create a row container
+            row_container = QWidget()
+            row_layout = QVBoxLayout(row_container)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(8)
+
+            # Header
+            header_label = QLabel(f"<b>{row_name}</b>")
+            header_label.setStyleSheet("font-size: 18px; color: #2a82da;")
+            row_layout.addWidget(header_label)
+
+            # Horizontal List Widget
+            h_list = QListWidget()
+            h_list.setFlow(QListWidget.Flow.LeftToRight)
+            h_list.setWrapping(False)
+            h_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            h_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            h_list.setViewMode(QListWidget.ViewMode.IconMode)
+            h_list.setIconSize(QSize(120, 165))
+            h_list.setGridSize(QSize(145, 210))
+            h_list.setMovement(QListWidget.Movement.Static)
+            h_list.setResizeMode(QListWidget.ResizeMode.Adjust)
+            h_list.setFixedHeight(225)
+            h_list.setStyleSheet(
+                """
+                QListWidget {
+                    background-color: transparent;
+                    border: none;
+                }
+                QListWidget::item {
+                    border: 1px solid #333333;
+                    border-radius: 6px;
+                    background-color: #222222;
+                    margin-right: 10px;
+                }
+                QListWidget::item:hover {
+                    background-color: #333333;
+                    border: 1px solid #2a82da;
+                }
+                """
+            )
+
+            # Populate items
+            for media_item in items:
+                item_type = media_item.get("type")  # "season", "series", "movie"
+                name = media_item.get("name") or media_item.get("series_name") or ""
+                poster_path = media_item.get("poster_path") or ""
+                watched_count = media_item.get("watched_count", 0)
+                total_count = media_item.get("total_count", 0)
+
+                if item_type == "season":
+                    season_name = media_item.get("season_name") or ""
+                    display_label = (
+                        f"{name}\n{season_name} ({watched_count}/{total_count})"
+                    )
+                elif item_type == "series":
+                    display_label = f"{name}\n({watched_count}/{total_count})"
+                else:  # movie
+                    status_string = "Watched" if watched_count > 0 else "Unwatched"
+                    display_label = f"{name}\n({status_string})"
+
+                list_item = QListWidgetItem(display_label)
+                list_item.setData(Qt.ItemDataRole.UserRole, media_item)
+                list_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                list_item.setToolTip(display_label)
+
+                self._assign_item_icon_with_size(list_item, poster_path, 120, 165)
+                h_list.addItem(list_item)
+
+            h_list.itemClicked.connect(self.on_combined_item_clicked)
+            row_layout.addWidget(h_list)
+            self.combined_scroll_layout.addWidget(row_container)
+
+        self.combined_scroll_layout.addStretch()
+
+    def _assign_item_icon_with_size(
+        self,
+        item_target: QListWidgetItem,
+        poster_path_value: str,
+        width: int,
+        height: int,
+    ) -> None:
+        cache_key = f"{poster_path_value}_{width}_{height}"
+        if cache_key in self.cached_icons:
+            item_target.setIcon(self.cached_icons[cache_key])
+            return
+
+        icon_assigned: bool = False
+        if poster_path_value:
+            poster_path_object = Path(poster_path_value)
+            if poster_path_object.is_file():
+                pixmap_instance = QPixmap(str(poster_path_object))
+                if not pixmap_instance.isNull():
+                    scaled_pixmap = pixmap_instance.scaled(
+                        width,
+                        height,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    loaded_icon = QIcon(scaled_pixmap)
+                    self.cached_icons[cache_key] = loaded_icon
+                    item_target.setIcon(loaded_icon)
+                    icon_assigned = True
+
+        if not icon_assigned:
+            fallback_key = f"fallback_{width}_{height}"
+            if fallback_key not in self.cached_icons:
+                fallback_pixmap = QPixmap(width, height)
+                fallback_pixmap.fill(QColor(40, 40, 40))
+                self.cached_icons[fallback_key] = QIcon(fallback_pixmap)
+            item_target.setIcon(self.cached_icons[fallback_key])
+
+    @Slot(QListWidgetItem)
+    def on_combined_item_clicked(self, item_target: QListWidgetItem) -> None:
+        item_data = item_target.data(Qt.ItemDataRole.UserRole)
+        if not item_data:
+            return
+
+        item_type = item_data.get("type")  # "season", "series", "movie"
+        library_name = item_data.get("library_name")
+
+        if library_name:
+            self.controller.current_library_name = library_name
+
+        if item_type == "movie":
+            movie_name = item_data.get("name")
+            if movie_name:
+                self.controller.select_library(library_name)
+                self.controller.select_movie(movie_name)
+        else:
+            series_name = item_data.get("name") or item_data.get("series_name")
+            if series_name:
+                self.controller.select_library(library_name)
+                self.controller.select_series(series_name)
 
 
 class SeriesDetailView(QWidget):
@@ -3925,6 +4138,20 @@ class SettingsDialog(QDialog):
         self.all_log_records: List[Tuple[str, str]] = []
         self._logging_connected: bool = False
 
+        self.staged_combined_views: List[Dict[str, Any]] = []
+        self.enable_combined_view_checkbox: QCheckBox = QCheckBox(
+            "Enable Combined Library View"
+        )
+        self.combined_views_list_widget: QListWidget = QListWidget()
+        self.row_properties_group: QGroupBox = QGroupBox("Row Properties")
+        self.row_name_input: QLineEdit = QLineEdit()
+        self.row_enabled_checkbox: QCheckBox = QCheckBox("Enabled")
+        self.row_sort_selector: QComboBox = QComboBox()
+        self.row_filter_selector: QComboBox = QComboBox()
+        self.row_max_items_spinbox: QSpinBox = QSpinBox()
+        self.row_libraries_container: QScrollArea = QScrollArea()
+        self.row_libraries_layout: QVBoxLayout = QVBoxLayout()
+
         self._setup_ui()
         self._load_config()
 
@@ -4082,6 +4309,106 @@ class SettingsDialog(QDialog):
         libraries_layout.addLayout(dir_buttons_layout)
 
         tab_container.addTab(libraries_tab, "Libraries Setup")
+
+        # Combined View Setup Pane
+        combined_tab: QWidget = QWidget()
+        combined_tab_main_layout: QVBoxLayout = QVBoxLayout(combined_tab)
+        combined_tab_main_layout.setContentsMargins(10, 10, 10, 10)
+        combined_tab_main_layout.setSpacing(10)
+
+        # Checkbox to enable/disable combined view
+        combined_tab_main_layout.addWidget(self.enable_combined_view_checkbox)
+
+        # Content container
+        combined_content_widget = QWidget()
+        combined_layout: QHBoxLayout = QHBoxLayout(combined_content_widget)
+        combined_layout.setContentsMargins(0, 0, 0, 0)
+        combined_layout.setSpacing(15)
+        combined_tab_main_layout.addWidget(combined_content_widget)
+
+        # Connect enable checkbox to setEnabled of the content container
+        self.enable_combined_view_checkbox.toggled.connect(
+            combined_content_widget.setEnabled
+        )
+
+        # Left Column: List and List Controls
+        left_column = QWidget()
+        left_layout = QVBoxLayout(left_column)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.addWidget(QLabel("Configure rows for Combined Library View:"))
+        left_layout.addWidget(self.combined_views_list_widget)
+
+        list_btn_layout = QHBoxLayout()
+        move_up_btn = QPushButton("Move Up")
+        move_up_btn.clicked.connect(self.move_combined_view_row_up)
+        move_down_btn = QPushButton("Move Down")
+        move_down_btn.clicked.connect(self.move_combined_view_row_down)
+        delete_btn = QPushButton("Delete Row")
+        delete_btn.clicked.connect(self.delete_combined_view_row)
+
+        list_btn_layout.addWidget(move_up_btn)
+        list_btn_layout.addWidget(move_down_btn)
+        list_btn_layout.addWidget(delete_btn)
+        left_layout.addLayout(list_btn_layout)
+
+        add_row_btn = QPushButton("Add New Row")
+        add_row_btn.clicked.connect(self.add_combined_view_row)
+        left_layout.addWidget(add_row_btn)
+
+        combined_layout.addWidget(left_column, 2)
+
+        # Right Column: Properties Group
+        properties_layout = QVBoxLayout(self.row_properties_group)
+        properties_layout.setSpacing(10)
+
+        properties_layout.addWidget(QLabel("Row Display Name:"))
+        properties_layout.addWidget(self.row_name_input)
+        self.row_name_input.textChanged.connect(self._on_row_property_changed)
+
+        properties_layout.addWidget(self.row_enabled_checkbox)
+        self.row_enabled_checkbox.stateChanged.connect(self._on_row_property_changed)
+
+        # Sort and filter settings (all rows are now configured similarly to smart rows)
+        properties_layout.addWidget(QLabel("Sort By:"))
+        self.row_sort_selector.addItems(
+            ["Alphabetical", "Recently Added", "Recently Aired"]
+        )
+        self.row_sort_selector.currentTextChanged.connect(self._on_row_property_changed)
+        properties_layout.addWidget(self.row_sort_selector)
+
+        properties_layout.addWidget(QLabel("Filter Mode:"))
+        self.row_filter_selector.addItems(["All", "Watched", "Unwatched"])
+        self.row_filter_selector.currentTextChanged.connect(
+            self._on_row_property_changed
+        )
+        properties_layout.addWidget(self.row_filter_selector)
+
+        # Max items setting
+        properties_layout.addWidget(QLabel("Max Items:"))
+        self.row_max_items_spinbox.setRange(1, 1000)
+        self.row_max_items_spinbox.setValue(20)
+        self.row_max_items_spinbox.valueChanged.connect(self._on_row_property_changed)
+        properties_layout.addWidget(self.row_max_items_spinbox)
+
+        # Libraries Checklist
+        properties_layout.addWidget(
+            QLabel("Aggregated Libraries (none checked = all):")
+        )
+        libs_widget = QWidget()
+        libs_widget.setLayout(self.row_libraries_layout)
+        self.row_libraries_container.setWidget(libs_widget)
+        self.row_libraries_container.setWidgetResizable(True)
+        self.row_libraries_container.setMinimumHeight(150)
+        properties_layout.addWidget(self.row_libraries_container)
+
+        properties_layout.addStretch()
+        combined_layout.addWidget(self.row_properties_group, 3)
+
+        self.combined_views_list_widget.currentRowChanged.connect(
+            self._on_combined_view_selected
+        )
+
+        tab_container.addTab(combined_tab, "Combined View")
 
         # Video Player Settings Pane
         player_tab: QWidget = QWidget()
@@ -4435,6 +4762,10 @@ class SettingsDialog(QDialog):
         }
         self._refresh_library_selector()
 
+        self.enable_combined_view_checkbox.setChecked(config.enable_combined_view)
+        self.staged_combined_views = [dict(row) for row in config.combined_views]
+        self._refresh_combined_views_list()
+
         # Populate initial logs from the buffer
         from .logging_handler import qt_log_handler
 
@@ -4444,6 +4775,195 @@ class SettingsDialog(QDialog):
         # Connect live log signals
         qt_log_handler.emitter.log_emitted.connect(self._on_log_emitted)
         self._logging_connected = True
+
+    def _refresh_combined_views_list(self) -> None:
+        self.combined_views_list_widget.blockSignals(True)
+        current_idx = self.combined_views_list_widget.currentRow()
+        self.combined_views_list_widget.clear()
+        for idx, row in enumerate(self.staged_combined_views):
+            status = "Enabled" if row.get("enabled", True) else "Disabled"
+            self.combined_views_list_widget.addItem(
+                f"{row.get('name', 'Unnamed')} - {status}"
+            )
+        if current_idx >= 0 and current_idx < len(self.staged_combined_views):
+            self.combined_views_list_widget.setCurrentRow(current_idx)
+        else:
+            if self.staged_combined_views:
+                self.combined_views_list_widget.setCurrentRow(0)
+        self.combined_views_list_widget.blockSignals(False)
+        self._on_combined_view_selected()
+
+    def _get_default_row_name(self, row: Dict[str, Any]) -> str:
+        libs = row.get("libraries", [])
+        lib_str = ", ".join(libs) if libs else "All Libraries"
+        sort_str = row.get("sort_by", "Alphabetical")
+        filter_str = row.get("filter_mode", "All")
+        return f"{lib_str} - {sort_str} - {filter_str}"
+
+    @Slot()
+    def _on_combined_view_selected(self) -> None:
+        row_idx = self.combined_views_list_widget.currentRow()
+        if row_idx < 0 or row_idx >= len(self.staged_combined_views):
+            self.row_properties_group.setEnabled(False)
+            return
+
+        self.row_properties_group.setEnabled(True)
+        row = self.staged_combined_views[row_idx]
+
+        self.row_name_input.blockSignals(True)
+        self.row_enabled_checkbox.blockSignals(True)
+        self.row_sort_selector.blockSignals(True)
+        self.row_filter_selector.blockSignals(True)
+        self.row_max_items_spinbox.blockSignals(True)
+
+        self.row_name_input.setText(row.get("name", ""))
+        self.row_enabled_checkbox.setChecked(row.get("enabled", True))
+
+        self.row_sort_selector.setCurrentText(row.get("sort_by", "Alphabetical"))
+        self.row_filter_selector.setCurrentText(row.get("filter_mode", "All"))
+        self.row_max_items_spinbox.setValue(row.get("max_items", 20))
+
+        self.row_name_input.blockSignals(False)
+        self.row_enabled_checkbox.blockSignals(False)
+        self.row_sort_selector.blockSignals(False)
+        self.row_filter_selector.blockSignals(False)
+        self.row_max_items_spinbox.blockSignals(False)
+
+        # Clear libraries list layout
+        while self.row_libraries_layout.count():
+            layout_item = self.row_libraries_layout.takeAt(0)
+            if layout_item is not None:
+                w = layout_item.widget()
+                if w is not None:
+                    w.deleteLater()
+
+        selected_libs = row.get("libraries", [])
+        for lib_name in sorted(self.staged_libraries.keys()):
+            cb = QCheckBox(lib_name)
+            cb.setChecked(lib_name in selected_libs)
+            cb.stateChanged.connect(self._on_row_library_toggled)
+            self.row_libraries_layout.addWidget(cb)
+
+    @Slot()
+    def _on_row_property_changed(self) -> None:
+        row_idx = self.combined_views_list_widget.currentRow()
+        if row_idx < 0 or row_idx >= len(self.staged_combined_views):
+            return
+
+        row = self.staged_combined_views[row_idx]
+        old_default = self._get_default_row_name(row)
+        current_name = self.row_name_input.text().strip()
+
+        row["enabled"] = self.row_enabled_checkbox.isChecked()
+        row["sort_by"] = self.row_sort_selector.currentText()
+        row["filter_mode"] = self.row_filter_selector.currentText()
+        row["max_items"] = self.row_max_items_spinbox.value()
+
+        new_default = self._get_default_row_name(row)
+        if (
+            current_name == ""
+            or current_name == old_default
+            or current_name == "New Smart Row"
+        ):
+            row["name"] = new_default
+            self.row_name_input.blockSignals(True)
+            self.row_name_input.setText(new_default)
+            self.row_name_input.blockSignals(False)
+        else:
+            row["name"] = current_name
+
+        status = "Enabled" if row["enabled"] else "Disabled"
+        item = self.combined_views_list_widget.item(row_idx)
+        if item:
+            item.setText(f"{row['name']} - {status}")
+
+    @Slot()
+    def _on_row_library_toggled(self) -> None:
+        row_idx = self.combined_views_list_widget.currentRow()
+        if row_idx < 0 or row_idx >= len(self.staged_combined_views):
+            return
+        row = self.staged_combined_views[row_idx]
+        old_default = self._get_default_row_name(row)
+        current_name = self.row_name_input.text().strip()
+
+        selected_libs = []
+        for i in range(self.row_libraries_layout.count()):
+            layout_item = self.row_libraries_layout.itemAt(i)
+            if layout_item is not None:
+                widget = layout_item.widget()
+                if isinstance(widget, QCheckBox) and widget.isChecked():
+                    selected_libs.append(widget.text())
+        row["libraries"] = selected_libs
+
+        new_default = self._get_default_row_name(row)
+        if (
+            current_name == ""
+            or current_name == old_default
+            or current_name == "New Smart Row"
+        ):
+            row["name"] = new_default
+            self.row_name_input.blockSignals(True)
+            self.row_name_input.setText(new_default)
+            self.row_name_input.blockSignals(False)
+
+            # Update item list text
+            status = "Enabled" if row.get("enabled", True) else "Disabled"
+            item = self.combined_views_list_widget.item(row_idx)
+            if item:
+                item.setText(f"{row['name']} - {status}")
+
+    @Slot()
+    def add_combined_view_row(self) -> None:
+        new_row = {
+            "enabled": True,
+            "libraries": [],
+            "sort_by": "Alphabetical",
+            "filter_mode": "All",
+            "max_items": 20,
+        }
+        new_row["name"] = self._get_default_row_name(new_row)
+        self.staged_combined_views.append(new_row)
+
+        self._refresh_combined_views_list()
+        self.combined_views_list_widget.setCurrentRow(
+            len(self.staged_combined_views) - 1
+        )
+
+    @Slot()
+    def delete_combined_view_row(self) -> None:
+        row_idx = self.combined_views_list_widget.currentRow()
+        if row_idx < 0 or row_idx >= len(self.staged_combined_views):
+            return
+
+        del self.staged_combined_views[row_idx]
+
+        self._refresh_combined_views_list()
+
+    @Slot()
+    def move_combined_view_row_up(self) -> None:
+        row_idx = self.combined_views_list_widget.currentRow()
+        if row_idx <= 0 or row_idx >= len(self.staged_combined_views):
+            return
+        self.staged_combined_views[row_idx], self.staged_combined_views[row_idx - 1] = (
+            self.staged_combined_views[row_idx - 1],
+            self.staged_combined_views[row_idx],
+        )
+
+        self._refresh_combined_views_list()
+        self.combined_views_list_widget.setCurrentRow(row_idx - 1)
+
+    @Slot()
+    def move_combined_view_row_down(self) -> None:
+        row_idx = self.combined_views_list_widget.currentRow()
+        if row_idx < 0 or row_idx >= len(self.staged_combined_views) - 1:
+            return
+        self.staged_combined_views[row_idx], self.staged_combined_views[row_idx + 1] = (
+            self.staged_combined_views[row_idx + 1],
+            self.staged_combined_views[row_idx],
+        )
+
+        self._refresh_combined_views_list()
+        self.combined_views_list_widget.setCurrentRow(row_idx + 1)
 
     def _refresh_library_selector(self) -> None:
         self.library_selector.blockSignals(True)
@@ -4676,6 +5196,8 @@ class SettingsDialog(QDialog):
             pass
 
         config.libraries = self.staged_libraries
+        config.enable_combined_view = self.enable_combined_view_checkbox.isChecked()
+        config.combined_views = self.staged_combined_views
         config.save()
         self.accept()
 

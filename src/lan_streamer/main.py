@@ -258,6 +258,8 @@ def main() -> None:
     series_detail_view.back_requested.connect(on_grid_back_requested)
     movie_detail_view.back_requested.connect(on_grid_back_requested)
 
+    previous_layout_index: list[Optional[int]] = [None]
+
     def on_playback_requested(file_path: str) -> None:
         logger.info(
             f"Playback requested for: '{file_path}' (Embedded Player: {config.use_embedded_player})"
@@ -265,6 +267,7 @@ def main() -> None:
         if config.use_embedded_player:
             if hasattr(controller, "set_video_playing"):
                 controller.set_video_playing(True)
+            previous_layout_index[0] = stacked_layout.currentIndex()
             player_view.play_video(file_path)
             stacked_layout.setCurrentIndex(3)
         else:
@@ -279,12 +282,15 @@ def main() -> None:
         logger.info("Playback exit requested, returning to previous details view")
         if hasattr(controller, "set_video_playing"):
             controller.set_video_playing(False)
-        # Determine whether to go back to movie or series detail view
-        library_config = config.libraries.get(controller.current_library_name, {})
-        if library_config.get("type") == "movie":
-            stacked_layout.setCurrentIndex(2)
-        else:
-            stacked_layout.setCurrentIndex(1)
+
+        index = previous_layout_index[0]
+        if not isinstance(index, int):
+            library_config = config.libraries.get(controller.current_library_name, {})
+            if library_config.get("type") == "movie":
+                index = 2
+            else:
+                index = 1
+        stacked_layout.setCurrentIndex(index)
 
     player_view.back_requested.connect(on_player_back_requested)
 
