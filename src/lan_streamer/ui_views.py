@@ -1679,9 +1679,11 @@ class LibraryGridView(QWidget):
         self.controller: Controller = controller_instance
         self.series_list_widget: QListWidget = QListWidget()
         self.library_selector: QComboBox = QComboBox()
+        self.sort_label: QLabel = QLabel("Sort By:")
         self.sort_selector: QComboBox = QComboBox()
         self.order_label: QLabel = QLabel("Order:")
         self.order_selector: QComboBox = QComboBox()
+        self.sort_order_container: QWidget = QWidget()
         self.filter_watched_checkbox: QCheckBox = QCheckBox("Hide Watched")
         self.cached_icons: Dict[str, QIcon] = {}
         self._last_order_mode: Optional[str] = None
@@ -1702,19 +1704,23 @@ class LibraryGridView(QWidget):
         self.library_selector.setMinimumWidth(150)
         top_toolbar_layout.addWidget(self.library_selector)
 
-        top_toolbar_layout.addSpacing(15)
-        top_toolbar_layout.addWidget(QLabel("Sort By:"))
+        # Sort & Order Container to easily hide them in Combined View
+        sort_order_layout: QHBoxLayout = QHBoxLayout(self.sort_order_container)
+        sort_order_layout.setContentsMargins(15, 0, 15, 0)
+        sort_order_layout.setSpacing(10)
+
+        sort_order_layout.addWidget(self.sort_label)
         self.sort_selector.addItems(
             ["Alphabetical", "Recently Added", "Recently Aired", "Next Up"]
         )
         self.sort_selector.setCurrentText(self.controller.sort_mode)
-        top_toolbar_layout.addWidget(self.sort_selector)
+        sort_order_layout.addWidget(self.sort_selector)
 
-        top_toolbar_layout.addSpacing(10)
-        top_toolbar_layout.addWidget(self.order_label)
-        top_toolbar_layout.addWidget(self.order_selector)
+        sort_order_layout.addWidget(self.order_label)
+        sort_order_layout.addWidget(self.order_selector)
 
-        top_toolbar_layout.addSpacing(15)
+        top_toolbar_layout.addWidget(self.sort_order_container)
+
         self.filter_watched_checkbox.setChecked(self.controller.filter_out_watched)
         top_toolbar_layout.addWidget(self.filter_watched_checkbox)
 
@@ -1820,12 +1826,14 @@ class LibraryGridView(QWidget):
             self.series_list_widget.setVisible(False)
             if hasattr(self, "actions_toolbar_widget"):
                 self.actions_toolbar_widget.setVisible(False)
+            self.sort_order_container.setVisible(False)
             self.combined_scroll_area.setVisible(True)
             self.populate_combined_view()
         else:
             self.series_list_widget.setVisible(True)
             if hasattr(self, "actions_toolbar_widget"):
                 self.actions_toolbar_widget.setVisible(True)
+            self.sort_order_container.setVisible(True)
             self.combined_scroll_area.setVisible(False)
             if library_name:
                 self.controller.select_library(library_name)
@@ -2060,6 +2068,7 @@ class LibraryGridView(QWidget):
             if layout_item is not None:
                 w = layout_item.widget()
                 if w is not None:
+                    w.setParent(None)
                     w.deleteLater()
 
         enabled_rows = [
