@@ -774,6 +774,7 @@ class Controller(QObject):
                     "watched_episodes": watched_episodes,
                     "max_date_added": max_date_added,
                     "max_air_date": max_air_date,
+                    "last_played_at": last_played_at,
                 }
 
     def select_series(self, series_name: str) -> None:
@@ -1691,7 +1692,7 @@ class LibraryGridView(QWidget):
         top_toolbar_layout.addSpacing(15)
         top_toolbar_layout.addWidget(QLabel("Sort By:"))
         self.sort_selector.addItems(
-            ["Alphabetical", "Recently Added", "Recently Aired"]
+            ["Alphabetical", "Recently Added", "Recently Aired", "Next Up"]
         )
         self.sort_selector.setCurrentText(self.controller.sort_mode)
         top_toolbar_layout.addWidget(self.sort_selector)
@@ -1847,6 +1848,12 @@ class LibraryGridView(QWidget):
             effective_air_date: str = max(max_air_date, first_air_date)
             poster_path_string: str = metadata_dictionary.get("poster_path", "")
 
+            last_played_at = metrics_dictionary.get("last_played_at", 0)
+            is_next_up_candidate = False
+            if total_episodes > 0 and not is_fully_watched:
+                if watched_episodes > 0 or last_played_at > 0:
+                    is_next_up_candidate = True
+
             series_entries.append(
                 {
                     "name": series_name,
@@ -1856,6 +1863,9 @@ class LibraryGridView(QWidget):
                     "watched_count": watched_episodes,
                     "total_count": total_episodes,
                     "is_movie": is_movie,
+                    "last_played_at": last_played_at,
+                    "is_fully_watched": is_fully_watched,
+                    "is_next_up_candidate": is_next_up_candidate,
                 }
             )
 
@@ -1866,6 +1876,14 @@ class LibraryGridView(QWidget):
         elif sort_mode_value == "Recently Aired":
             series_entries.sort(
                 key=lambda entry: entry["effective_air_date"], reverse=True
+            )
+        elif sort_mode_value == "Next Up":
+            series_entries.sort(
+                key=lambda entry: (
+                    not entry["is_next_up_candidate"],
+                    -entry["last_played_at"],
+                    entry["name"].lower(),
+                )
             )
         else:
             series_entries.sort(key=lambda entry: entry["name"].lower())
@@ -4371,7 +4389,7 @@ class SettingsDialog(QDialog):
         # Sort and filter settings (all rows are now configured similarly to smart rows)
         properties_layout.addWidget(QLabel("Sort By:"))
         self.row_sort_selector.addItems(
-            ["Alphabetical", "Recently Added", "Recently Aired"]
+            ["Alphabetical", "Recently Added", "Recently Aired", "Next Up"]
         )
         self.row_sort_selector.currentTextChanged.connect(self._on_row_property_changed)
         properties_layout.addWidget(self.row_sort_selector)
