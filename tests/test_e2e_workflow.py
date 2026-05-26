@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QListWidgetItem,
     QMessageBox,
+    QCheckBox,
 )
 
 from lan_streamer.ui_views import (
@@ -153,6 +154,9 @@ def test_controller_jellyfin_sync_triggers() -> None:
 def test_library_grid_view_rendering(
     sample_library_dictionary: Dict[str, Any], qtbot: Any
 ) -> None:
+    from lan_streamer.config import config
+
+    config.enable_combined_view = True
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
     controller_instance._cache_series_metrics()
@@ -162,9 +166,10 @@ def test_library_grid_view_rendering(
         qtbot.addWidget(grid_view)
 
         grid_view.populate_libraries(["Test Lib 1", "Test Lib 2"])
-        assert grid_view.library_selector.count() == 2
+        assert grid_view.library_selector.count() == 3
 
         # Populate items
+        grid_view.library_selector.setCurrentText("Test Lib 1")
         grid_view.populate_grid()
         assert grid_view.series_list_widget.count() == 1
 
@@ -189,6 +194,171 @@ def test_library_grid_view_rendering(
         with patch("lan_streamer.ui_views.SettingsDialog.exec") as mock_exec:
             settings_button_instance.click()
             mock_exec.assert_called_once()
+
+
+def test_library_grid_view_combined_view(qtbot: Any) -> None:
+    from PySide6.QtWidgets import QLabel, QListWidget
+    from lan_streamer.config import config
+
+    controller_instance = Controller()
+
+    # Configure combined views
+    config.enable_combined_view = True
+    config.combined_views = [
+        {
+            "name": "My Next Up",
+            "enabled": True,
+            "libraries": ["Test Lib 1"],
+            "sort_by": "Next Up",
+            "filter_mode": "All",
+            "max_items": 10,
+        },
+        {
+            "name": "My Recently Added",
+            "enabled": True,
+            "libraries": ["Test Lib 1"],
+            "sort_by": "Recently Added",
+            "filter_mode": "All",
+            "max_items": 10,
+        },
+    ]
+
+    import tempfile
+    from pathlib import Path
+
+    # Write a tiny valid GIF file
+    gif_data = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+    temp_dir = tempfile.mkdtemp()
+    valid_img_path = str(Path(temp_dir) / "test.gif")
+    with open(valid_img_path, "wb") as f:
+        f.write(gif_data)
+
+    next_up_mock = [
+        {
+            "type": "season",
+            "series_name": "Cosmos",
+            "season_name": "Season 1",
+            "poster_path": valid_img_path,
+            "library_name": "Test Lib 1",
+            "last_played_at": 1000,
+            "watched_count": 1,
+            "total_count": 5,
+        }
+    ]
+
+    recently_added_mock = [
+        {
+            "type": "movie",
+            "name": "Avatar",
+            "poster_path": "invalid_path.jpg",  # should fall back
+            "library_name": "Test Lib 1",
+            "date_added": 2000,
+            "watched_count": 1,
+            "total_count": 1,
+        },
+        {
+            "type": "series",
+            "name": "Breaking Bad",
+            "poster_path": "",  # empty path fallback
+            "library_name": "Test Lib 1",
+            "date_added": 1500,
+            "watched_count": 0,
+            "total_count": 10,
+        },
+    ]
+
+    def mock_get_combined_smart_row(libraries, sort_by, filter_mode):
+        if sort_by == "Next Up":
+            return next_up_mock
+        elif sort_by == "Recently Added":
+            return recently_added_mock
+        return []
+
+    with (
+        patch(
+            "lan_streamer.db.get_combined_smart_row",
+            side_effect=mock_get_combined_smart_row,
+        ),
+        patch("lan_streamer.db.load_library", return_value={}),
+    ):
+        grid_view = LibraryGridView(controller_instance)
+        qtbot.addWidget(grid_view)
+
+        grid_view.populate_libraries(["Test Lib 1"])
+
+        # Verify Combined View is selected and visible
+        assert grid_view.library_selector.currentText() == "Combined View"
+        assert grid_view.combined_scroll_area.isHidden() is False
+        assert grid_view.series_list_widget.isHidden() is True
+
+        # We should find two headers and lists rendered
+        headers = grid_view.combined_scroll_content.findChildren(QLabel)
+        header_texts = [h.text() for h in headers]
+        assert "<b>My Next Up</b>" in header_texts
+        assert "<b>My Recently Added</b>" in header_texts
+
+        list_widgets = grid_view.combined_scroll_content.findChildren(QListWidget)
+        assert len(list_widgets) == 2
+
+        # Next Up list should have 1 item
+        next_up_list = list_widgets[0]
+        assert next_up_list.count() == 1
+        item_season = next_up_list.item(0)
+        assert "Cosmos\nSeason 1 (1/5)" in item_season.text()
+
+        # Recently Added list should have 2 items
+        rec_added_list = list_widgets[1]
+        assert rec_added_list.count() == 2
+        item_movie = rec_added_list.item(0)
+        assert "Avatar\n(Watched)" in item_movie.text()
+        item_series = rec_added_list.item(1)
+        assert "Breaking Bad\n(0/10)" in item_series.text()
+
+        # Test item clicks
+        selected_series_emitted = []
+        selected_movies_emitted = []
+        controller_instance.series_selected.connect(selected_series_emitted.append)
+        controller_instance.movie_selected.connect(selected_movies_emitted.append)
+
+        # 1. Season click (shows series detail)
+        config.libraries["Test Lib 1"] = {"type": "tv"}
+        with patch("lan_streamer.db.load_library", return_value={"Cosmos": {}}):
+            next_up_list.itemClicked.emit(item_season)
+            assert controller_instance.current_library_name == "Test Lib 1"
+            assert selected_series_emitted == ["Cosmos"]
+
+        # 2. Movie click (shows movie detail)
+        selected_series_emitted.clear()
+        selected_movies_emitted.clear()
+        config.libraries["Test Lib 1"] = {"type": "movie"}
+        with patch("lan_streamer.db.load_movie_library", return_value={"Avatar": {}}):
+            rec_added_list.itemClicked.emit(item_movie)
+            assert controller_instance.current_library_name == "Test Lib 1"
+            assert selected_movies_emitted == ["Avatar"]
+
+        # 3. Series click (shows series detail)
+        selected_series_emitted.clear()
+        selected_movies_emitted.clear()
+        config.libraries["Test Lib 1"] = {"type": "tv"}
+        with patch("lan_streamer.db.load_library", return_value={"Breaking Bad": {}}):
+            rec_added_list.itemClicked.emit(item_series)
+            assert controller_instance.current_library_name == "Test Lib 1"
+            assert selected_series_emitted == ["Breaking Bad"]
+
+        # Test icon caching (calling _assign_item_icon_with_size again with same cache key)
+        from PySide6.QtWidgets import QListWidgetItem
+
+        test_item = QListWidgetItem("Test Cache")
+        grid_view._assign_item_icon_with_size(test_item, valid_img_path, 120, 165)
+        # Verify icon has been assigned from cache
+        assert test_item.icon() is not None
+
+    # Clean up temp dir
+    try:
+        Path(valid_img_path).unlink()
+        Path(temp_dir).rmdir()
+    except Exception:
+        pass
 
 
 def test_series_detail_view_rendering(
@@ -1549,3 +1719,396 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
         ):
             movie_dialog._on_download_clicked()
             mock_crit.assert_called_once()
+
+
+def test_settings_dialog_combined_views(qtbot: Any) -> None:
+    from lan_streamer.config import config
+    from lan_streamer.ui_views import SettingsDialog
+
+    config.enable_combined_view = False
+    controller_instance = Controller()
+    dialog_instance = SettingsDialog(controller_instance)
+    qtbot.addWidget(dialog_instance)
+
+    # 1. Initial State Checks
+    assert not dialog_instance.enable_combined_view_checkbox.isChecked()
+
+    # 2. Toggle Combined View Checkbox
+    dialog_instance.enable_combined_view_checkbox.setChecked(True)
+    assert dialog_instance.enable_combined_view_checkbox.isChecked()
+
+    # 3. Add and Configure Combined View Row
+    initial_row_count = len(dialog_instance.staged_combined_views)
+    dialog_instance.add_combined_view_row()
+    assert len(dialog_instance.staged_combined_views) == initial_row_count + 1
+
+    # Get the added row index
+    new_row_idx = len(dialog_instance.staged_combined_views) - 1
+    dialog_instance.combined_views_list_widget.setCurrentRow(new_row_idx)
+
+    # Modify properties
+    dialog_instance.row_name_input.setText("Custom Row Name")
+    dialog_instance.row_enabled_checkbox.setChecked(True)
+    dialog_instance.row_sort_selector.setCurrentText("Next Up")
+    dialog_instance.row_filter_selector.setCurrentText("Unwatched")
+    dialog_instance.row_max_items_spinbox.setValue(15)
+
+    # Trigger property change logic
+    dialog_instance._on_row_property_changed()
+
+    # Check updated row values
+    row = dialog_instance.staged_combined_views[new_row_idx]
+    assert row["name"] == "Custom Row Name"
+    assert row["enabled"] is True
+    assert row["sort_by"] == "Next Up"
+    assert row["filter_mode"] == "Unwatched"
+    assert row["max_items"] == 15
+
+    # 4. Save Config
+    with (
+        patch("lan_streamer.config.config.save") as mock_save,
+        patch(
+            "lan_streamer.ui_views.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+    ):
+        dialog_instance.save_config()
+        mock_save.assert_called_once()
+        assert config.enable_combined_view is True
+        assert config.combined_views[-1]["name"] == "Custom Row Name"
+        assert config.combined_views[-1]["max_items"] == 15
+
+
+def test_library_grid_view_next_up_sorting(qtbot: Any) -> None:
+    # 1. Prepare sample data with different watched/play status
+    # Cosmos: Partially Watched (watched_episodes=1, total=2, last_played_at=3000) -> Candidate!
+    # Star Trek: Fully Watched (watched_episodes=1, total=1, last_played_at=5000) -> Non-candidate!
+    # Doctor Who: Unwatched (watched_episodes=0, total=1, last_played_at=0) -> Non-candidate!
+    library_data = {
+        "Cosmos": {
+            "metadata": {
+                "first_air_date": "1980-09-28",
+                "poster_path": "/cosmos.jpg",
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {"watched": False, "last_played_at": 3000, "date_added": 1000},
+                        {"watched": True, "last_played_at": 1000, "date_added": 1000},
+                    ]
+                }
+            },
+        },
+        "Star Trek": {
+            "metadata": {
+                "first_air_date": "1966-09-08",
+                "poster_path": "/trek.jpg",
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {"watched": True, "last_played_at": 5000, "date_added": 1000},
+                    ]
+                }
+            },
+        },
+        "Doctor Who": {
+            "metadata": {
+                "first_air_date": "1963-11-23",
+                "poster_path": "/who.jpg",
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {"watched": False, "last_played_at": 0, "date_added": 1000},
+                    ]
+                }
+            },
+        },
+    }
+
+    controller_instance = Controller()
+    controller_instance.cached_library_data = library_data
+    controller_instance._cache_series_metrics()
+
+    # Verify that metrics caching correctly extracted last_played_at
+    assert library_data["Cosmos"]["metrics"]["last_played_at"] == 3000
+    assert library_data["Star Trek"]["metrics"]["last_played_at"] == 5000
+    assert library_data["Doctor Who"]["metrics"]["last_played_at"] == 0
+
+    with patch("lan_streamer.db.load_library", return_value=library_data):
+        grid_view = LibraryGridView(controller_instance)
+        qtbot.addWidget(grid_view)
+
+        # Set sort mode to Next Up
+        controller_instance.filter_out_watched = False
+        controller_instance.sort_mode = "Next Up"
+        grid_view.populate_grid()
+
+        # Check results in list widget
+        # Candidate (Cosmos) should be first
+        # Non-candidate (Star Trek, last_played_at=5000) should be second
+        # Non-candidate (Doctor Who, last_played_at=0) should be third
+        assert grid_view.series_list_widget.count() == 3
+        assert "Cosmos" in grid_view.series_list_widget.item(0).text()
+        assert "Star Trek" in grid_view.series_list_widget.item(1).text()
+        assert "Doctor Who" in grid_view.series_list_widget.item(2).text()
+
+
+def test_library_grid_view_bidirectional_sorting(qtbot: Any) -> None:
+    library_data = {
+        "A Series": {
+            "metadata": {"first_air_date": "2020-01-01"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {"watched": False, "last_played_at": 1000, "date_added": 1000},
+                    ]
+                }
+            },
+        },
+        "Z Series": {
+            "metadata": {"first_air_date": "2021-01-01"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {"watched": False, "last_played_at": 2000, "date_added": 2000},
+                    ]
+                }
+            },
+        },
+    }
+
+    controller_instance = Controller()
+    controller_instance.cached_library_data = library_data
+    controller_instance._cache_series_metrics()
+
+    with patch("lan_streamer.db.load_library", return_value=library_data):
+        grid_view = LibraryGridView(controller_instance)
+        qtbot.addWidget(grid_view)
+        grid_view.populate_grid()
+
+        # 1. Alphabetical sorting
+        grid_view.sort_selector.setCurrentText("Alphabetical")
+        assert not grid_view.order_label.isHidden()
+        assert not grid_view.order_selector.isHidden()
+
+        # Ascending (A-Z)
+        grid_view.order_selector.setCurrentText("A-Z")
+        assert controller_instance.sort_descending is False
+        assert "A Series" in grid_view.series_list_widget.item(0).text()
+        assert "Z Series" in grid_view.series_list_widget.item(1).text()
+
+        # Descending (Z-A)
+        grid_view.order_selector.setCurrentText("Z-A")
+        assert controller_instance.sort_descending is True
+        assert "Z Series" in grid_view.series_list_widget.item(0).text()
+        assert "A Series" in grid_view.series_list_widget.item(1).text()
+
+        # 2. Recently Added sorting
+        grid_view.sort_selector.setCurrentText("Recently Added")
+        assert not grid_view.order_label.isHidden()
+        assert not grid_view.order_selector.isHidden()
+
+        # Descending (Newest first, Z Series is 2000, A Series is 1000)
+        grid_view.order_selector.setCurrentText("Newest to Oldest")
+        assert (
+            controller_instance.sort_descending is False
+        )  # mapped from "Newest to Oldest" for Recently Added
+        assert "Z Series" in grid_view.series_list_widget.item(0).text()
+        assert "A Series" in grid_view.series_list_widget.item(1).text()
+
+        # Ascending (Oldest first, A Series is 1000, Z Series is 2000)
+        grid_view.order_selector.setCurrentText("Oldest to Newest")
+        assert (
+            controller_instance.sort_descending is True
+        )  # mapped from "Oldest to Newest" for Recently Added
+        assert "A Series" in grid_view.series_list_widget.item(0).text()
+        assert "Z Series" in grid_view.series_list_widget.item(1).text()
+
+        # 3. Next Up sorting
+        grid_view.sort_selector.setCurrentText("Next Up")
+        assert grid_view.order_label.isHidden()
+        assert grid_view.order_selector.isHidden()
+
+
+def test_controller_set_sort_descending(qtbot: Any) -> None:
+    controller_instance = Controller()
+    controller_instance.cached_library_data = {}
+
+    # Initial state
+    assert controller_instance.sort_descending is False
+
+    # Set to descending
+    with patch("lan_streamer.config.config.save"):
+        controller_instance.set_sort_descending(True)
+    assert controller_instance.sort_descending is True
+
+    # Set to same value (no-op, should not emit)
+    with patch("lan_streamer.config.config.save") as mock_save:
+        controller_instance.set_sort_descending(True)
+    mock_save.assert_not_called()
+
+    # Set back to ascending
+    with patch("lan_streamer.config.config.save"):
+        controller_instance.set_sort_descending(False)
+    assert controller_instance.sort_descending is False
+
+
+def test_on_order_changed_empty_text(qtbot: Any) -> None:
+    controller_instance = Controller()
+    controller_instance.cached_library_data = {}
+
+    with patch("lan_streamer.db.load_library", return_value={}):
+        grid_view = LibraryGridView(controller_instance)
+        qtbot.addWidget(grid_view)
+
+        # Empty text should not change sort direction
+        original_descending = controller_instance.sort_descending
+        grid_view.on_order_changed("")
+        assert controller_instance.sort_descending == original_descending
+
+
+def test_library_grid_view_recently_aired_sorting(qtbot: Any) -> None:
+    library_data = {
+        "Old Show": {
+            "metadata": {"first_air_date": "2000-01-01"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "watched": False,
+                            "last_played_at": 0,
+                            "date_added": 1000,
+                            "air_date": "2000-06-15",
+                        },
+                    ]
+                }
+            },
+        },
+        "New Show": {
+            "metadata": {"first_air_date": "2024-01-01"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "watched": False,
+                            "last_played_at": 0,
+                            "date_added": 2000,
+                            "air_date": "2024-06-15",
+                        },
+                    ]
+                }
+            },
+        },
+    }
+
+    controller_instance = Controller()
+    controller_instance.cached_library_data = library_data
+    controller_instance._cache_series_metrics()
+
+    with patch("lan_streamer.db.load_library", return_value=library_data):
+        grid_view = LibraryGridView(controller_instance)
+        qtbot.addWidget(grid_view)
+        grid_view.populate_grid()
+
+        # Sort by Recently Aired
+        grid_view.sort_selector.setCurrentText("Recently Aired")
+
+        # Default: Newest to Oldest
+        grid_view.order_selector.setCurrentText("Newest to Oldest")
+        assert "New Show" in grid_view.series_list_widget.item(0).text()
+        assert "Old Show" in grid_view.series_list_widget.item(1).text()
+
+        # Reversed: Oldest to Newest
+        grid_view.order_selector.setCurrentText("Oldest to Newest")
+        assert "Old Show" in grid_view.series_list_widget.item(0).text()
+        assert "New Show" in grid_view.series_list_widget.item(1).text()
+
+
+def test_combined_view_row_management(qtbot: Any) -> None:
+    controller_instance = Controller()
+    config.libraries["TestLib"] = {"type": "tv", "paths": ["/test"]}
+
+    with patch("lan_streamer.db.load_movie_library", return_value={}):
+        dialog_instance = SettingsDialog(controller_instance)
+        qtbot.addWidget(dialog_instance)
+
+        # Start with default rows
+        initial_count = len(dialog_instance.staged_combined_views)
+
+        # Add a row
+        dialog_instance.add_combined_view_row()
+        assert len(dialog_instance.staged_combined_views) == initial_count + 1
+
+        # Add another row
+        dialog_instance.add_combined_view_row()
+        assert len(dialog_instance.staged_combined_views) == initial_count + 2
+
+        last_idx = len(dialog_instance.staged_combined_views) - 1
+        second_last_idx = last_idx - 1
+
+        # Save the names for move verification
+        name_before_last = dialog_instance.staged_combined_views[second_last_idx][
+            "name"
+        ]
+        name_last = dialog_instance.staged_combined_views[last_idx]["name"]
+
+        # Move last row up
+        dialog_instance.combined_views_list_widget.setCurrentRow(last_idx)
+        dialog_instance.move_combined_view_row_up()
+        assert (
+            dialog_instance.staged_combined_views[second_last_idx]["name"] == name_last
+        )
+        assert (
+            dialog_instance.staged_combined_views[last_idx]["name"] == name_before_last
+        )
+
+        # Move it back down
+        dialog_instance.combined_views_list_widget.setCurrentRow(second_last_idx)
+        dialog_instance.move_combined_view_row_down()
+        assert (
+            dialog_instance.staged_combined_views[second_last_idx]["name"]
+            == name_before_last
+        )
+        assert dialog_instance.staged_combined_views[last_idx]["name"] == name_last
+
+        # Move at boundary (first row can't go up)
+        dialog_instance.combined_views_list_widget.setCurrentRow(0)
+        dialog_instance.move_combined_view_row_up()  # should be no-op
+        assert len(dialog_instance.staged_combined_views) == initial_count + 2
+
+        # Move at boundary (last row can't go down)
+        dialog_instance.combined_views_list_widget.setCurrentRow(
+            len(dialog_instance.staged_combined_views) - 1
+        )
+        dialog_instance.move_combined_view_row_down()  # should be no-op
+        assert len(dialog_instance.staged_combined_views) == initial_count + 2
+
+        # Delete a row
+        dialog_instance.combined_views_list_widget.setCurrentRow(last_idx)
+        dialog_instance.delete_combined_view_row()
+        assert len(dialog_instance.staged_combined_views) == initial_count + 1
+
+        # Delete with invalid selection (no-op)
+        dialog_instance.combined_views_list_widget.setCurrentRow(-1)
+        dialog_instance.delete_combined_view_row()
+        assert len(dialog_instance.staged_combined_views) == initial_count + 1
+
+        # Test library toggle
+        if dialog_instance.staged_combined_views:
+            dialog_instance.combined_views_list_widget.setCurrentRow(0)
+            dialog_instance._on_combined_view_selected()
+
+            # Toggle a library checkbox if any exist
+            for layout_index in range(dialog_instance.row_libraries_layout.count()):
+                layout_item = dialog_instance.row_libraries_layout.itemAt(layout_index)
+                if layout_item is not None:
+                    widget = layout_item.widget()
+                    if isinstance(widget, QCheckBox):
+                        widget.setChecked(True)
+                        break
+
+            dialog_instance._on_row_library_toggled()
+            row = dialog_instance.staged_combined_views[0]
+            assert isinstance(row.get("libraries"), list)
