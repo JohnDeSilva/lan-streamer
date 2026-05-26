@@ -45,6 +45,8 @@ def protect_user_dirs(tmp_path) -> None:
         lan_streamer.config.config.database_path = str(db_file)
         lan_streamer.config.config.log_directory = str(tmp_path / "logs")
         lan_streamer.config.config.divide_logs_by_service = False
+        lan_streamer.config.config.sort_mode = "Alphabetical"
+        lan_streamer.config.config.sort_descending = False
 
         yield
 
