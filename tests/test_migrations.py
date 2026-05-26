@@ -264,3 +264,91 @@ def test_episodes_runtime_migration_with_fake_data(tmp_path) -> None:
         )
 
     engine.dispose()
+
+
+def test_last_played_at_migration_with_fake_data(tmp_path) -> None:
+    """
+    Robustly test Alembic migration fa4ad8226f3a -> ce128c6d8aec and downgrade
+    verifying clean addition, default value, update preservation, and column drop of last_played_at.
+    """
+    db_path = tmp_path / "test_migration_fake_data_last_played_at.db"
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    # 1. Upgrade to previous revision fa4ad8226f3a
+    command.upgrade(alembic_cfg, "fa4ad8226f3a")
+
+    # 2. Insert fake data representing user records before migration
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO series (library_name, name) VALUES ('Lib', 'Fake Series')"
+            )
+        )
+        conn.execute(
+            sa.text("INSERT INTO seasons (series_id, name) VALUES (1, 'Season 1')")
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO episodes (season_id, name, path) VALUES (1, 'Ep 1', '/fake/path/lp_ep')"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO movies (library_name, name, path) VALUES ('Movies', 'Fake Movie', '/fake/path/lp_mv')"
+            )
+        )
+
+    # 3. Upgrade to our target revision ce128c6d8aec
+    command.upgrade(alembic_cfg, "ce128c6d8aec")
+
+    # 4. Verify fake data preservation and confirm new column exists with default 0
+    with engine.connect() as conn:
+        ep_row = conn.execute(
+            sa.text("SELECT name, last_played_at FROM episodes WHERE id=1")
+        ).fetchone()
+        assert ep_row[0] == "Ep 1"
+        assert ep_row[1] == 0 or ep_row[1] is None
+
+        mv_row = conn.execute(
+            sa.text("SELECT name, last_played_at FROM movies WHERE id=1")
+        ).fetchone()
+        assert mv_row[0] == "Fake Movie"
+        assert mv_row[1] == 0 or mv_row[1] is None
+
+        conn.execute(sa.text("UPDATE episodes SET last_played_at=12345 WHERE id=1"))
+        conn.execute(sa.text("UPDATE movies SET last_played_at=67890 WHERE id=1"))
+        conn.commit()
+
+        assert (
+            conn.execute(
+                sa.text("SELECT last_played_at FROM episodes WHERE id=1")
+            ).scalar()
+            == 12345
+        )
+        assert (
+            conn.execute(
+                sa.text("SELECT last_played_at FROM movies WHERE id=1")
+            ).scalar()
+            == 67890
+        )
+
+    # 5. Verify downgrade functionality cleanly strips the column
+    command.downgrade(alembic_cfg, "fa4ad8226f3a")
+    with engine.connect() as conn:
+        with pytest.raises(sa.exc.OperationalError):
+            conn.execute(sa.text("SELECT last_played_at FROM episodes")).fetchall()
+        with pytest.raises(sa.exc.OperationalError):
+            conn.execute(sa.text("SELECT last_played_at FROM movies")).fetchall()
+
+        assert (
+            conn.execute(sa.text("SELECT name FROM episodes WHERE id=1")).scalar()
+            == "Ep 1"
+        )
+        assert (
+            conn.execute(sa.text("SELECT name FROM movies WHERE id=1")).scalar()
+            == "Fake Movie"
+        )
+
+    engine.dispose()
