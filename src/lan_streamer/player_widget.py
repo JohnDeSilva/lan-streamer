@@ -1058,7 +1058,8 @@ class VideoPlayerWidget(QWidget):
 
             # Show next episode popup if playback reaches 98% watched and a next episode exists
             if (
-                not self.next_episode_popup_shown
+                config.enable_next_episode_popup
+                and not self.next_episode_popup_shown
                 and self.next_episode_info is not None
                 and (curr_time / duration) >= 0.98
             ):

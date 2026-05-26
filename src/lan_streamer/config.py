@@ -37,6 +37,7 @@ class Config:
         self.player_overlay_opacity: float = 0.4
         self.player_overlay_color: str = "white"
         self.max_cache_size_gb: float = 15.0
+        self.enable_next_episode_popup: bool = True
         self.max_log_retention_days: int = 7
         self.backup_directory: str = str(
             Path.home() / ".config" / "lan-streamer" / "backups"
@@ -102,6 +103,9 @@ class Config:
                         "player_overlay_color", "white"
                     )
                     self.max_cache_size_gb = data.get("max_cache_size_gb", 15.0)
+                    self.enable_next_episode_popup = data.get(
+                        "enable_next_episode_popup", True
+                    )
                     self.max_log_retention_days = data.get("max_log_retention_days", 7)
                     self.backup_directory = data.get(
                         "backup_directory",
@@ -186,6 +190,7 @@ class Config:
                         "player_overlay_opacity": self.player_overlay_opacity,
                         "player_overlay_color": self.player_overlay_color,
                         "max_cache_size_gb": self.max_cache_size_gb,
+                        "enable_next_episode_popup": self.enable_next_episode_popup,
                         "max_log_retention_days": self.max_log_retention_days,
                         "backup_directory": self.backup_directory,
                         "config_backup_frequency": self.config_backup_frequency,

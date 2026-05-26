@@ -1015,3 +1015,40 @@ def test_next_episode_popup_video_ends_before_countdown_completes(qtbot: Any) ->
             widget._handle_playback_finished()
             assert widget.popup_countdown_timer.isActive() is False
             assert widget.next_episode_popup_frame.isHidden() is True
+
+
+def test_next_episode_popup_setting(qtbot: Any) -> None:
+    """Test that next episode popup triggers only when enable_next_episode_popup is True."""
+    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+        mock_vlc_module.Instance.return_value = MagicMock()
+        mock_vlc_module.EventType = MagicMock()
+
+        widget = VideoPlayerWidget()
+        qtbot.addWidget(widget)
+
+        widget.next_episode_info = {
+            "title": "Episode 2 Title",
+            "season": "Season 1",
+            "episode_number": 2,
+            "path": "/path/s1e2.mkv",
+        }
+        widget.current_media_path = "/path/s1e1.mkv"
+
+        widget.mediaplayer.get_media.return_value = MagicMock()
+        widget.mediaplayer.get_time.return_value = 98000
+        widget.mediaplayer.get_length.return_value = 100000
+        widget.mediaplayer.get_position.return_value = 0.98
+
+        # Case 1: config setting is False -> should not trigger
+        config.enable_next_episode_popup = False
+        widget.next_episode_popup_shown = False
+        widget.update_ui()
+        assert widget.next_episode_popup_frame.isHidden() is True
+        assert widget.next_episode_popup_shown is False
+
+        # Case 2: config setting is True -> should trigger
+        config.enable_next_episode_popup = True
+        widget.next_episode_popup_shown = False
+        widget.update_ui()
+        assert widget.next_episode_popup_frame.isHidden() is False
+        assert widget.next_episode_popup_shown is True

@@ -169,6 +169,7 @@ The application automatically tracks your playback progress and maintains a "wat
 #### Configuration Keys
 - `watched_threshold`: The completion percentage required to mark an item as watched. Default: `0.95` (95%).
 - `sync_history_on_start`: Automatically pulls watch history from Jellyfin on application startup (if configured).
+- `enable_next_episode_popup`: Enables or disables the "Next Episode" autoplay popup. Default: `true`.
 
 #### Features
 - **Resume Playback**: If you stop a video after at least 60 seconds of playback, your position is saved. The next time you play the same file, you will be prompted to resume from where you left off.
