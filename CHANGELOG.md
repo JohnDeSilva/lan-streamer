@@ -289,6 +289,30 @@
 
 - initial commit
 
+## v0.18.0 (2026-05-26)
+
+### Feat
+
+- **ui,scanner**: display progress bar on libraray view when scanning library and refreshing metadata
+- **ui**: hide sort and order dropdowns in Combined View
+- **ui**: add bidirectional sort order with contextual labels
+- **ui**: add next up sorting to library grid
+- **ui**: add combined library view and settings
+- **config**: add combined view and sort direction settings
+- **db**: add combined view query functions
+- **db**: add last_played_at column to episodes and movies
+
+### Fix
+
+- **dev-dependency**: bump ruff from 0.15.13 to 0.15.14
+- **dev-dependency**: bump types-requests
+- **player**: make next playing popup window configurable in settings
+- **player**: moves next playing popup to bottom right corner and adds countdown/dismissal behavior
+
+### Refactor
+
+- improve efficiency in order selector and combined views
+
 ## v0.17.0 (2026-05-22)
 
 ### Feat
