@@ -12,26 +12,34 @@ LAN Streamer is built to play your media files directly and natively without any
 
 ## 🚀 Key Features
 
+### 🎬 Playing Videos
 *   **📺 Embedded Playback**: Uses **VLC** for playback directly within the application. Supports audio and subtitle track selection, seeking, and volume control.
 *   **🎭 Theatre Mode**: Hides UI elements during fullscreen playback for an unobstructed view. A minimal control bar provides essential playback actions.
-*   **💾 Local Caching**: Optional pre-playback caching of media files to local storage to eliminate network-related buffering.
 *   **🧠 Progress Tracking**: Automatically marks media as watched based on a configurable threshold, supports resuming playback from saved positions, and displays an on-screen overlay to automatically play the next episode in a series once the completion threshold is reached.
-*   **⚡ Library Scanning**: Uses SQLite `UPSERT` logic for incremental scanning, preserving manual metadata corrections. Gracefully handles unavailable root directories during a scan. Displays a detailed, real-time scan progress dashboard in the settings menu:
-    *   **Segmented Progress Bar**: A custom visual progress bar divided into labeled library segments, with sub-segments for each root directory.
-    *   **Collapsible Tree Display**: Displays the scan progress hierarchically (Library → Root Directory Path → TV Show → Season → Episode). TV seasons default to a collapsed state for interactive visibility toggling, while movie libraries skip file-level nodes for clean viewing.
-    *   **Status Indicators**: Every item in the tree features status icons (⏳ pending, ⚙ processing, ✓ done, ⊘ skipped).
+*   **💾 Local Caching**: Optional pre-playback caching of media files to local storage to eliminate network-related buffering.
+
+### 🔍 Metadata Management
 *   **🔍 Metadata Matching**: Multi-stage search strategy to link local media to TMDB and Jellyfin entries. Includes metadata locking capabilities to prevent automatic updates during library scans, alongside targeted metadata refresh controls in details windows to manually refresh individual series or episodes.
-*   **📛 Naming Support**: Uses official **TMDB** episode and series names, with filename fallbacks for unmatched items.
-*   **🔄 Bidirectional Sync**:
-    *   Downloads posters and overviews from TMDB.
-    *   Syncs "Watched" status with Jellyfin servers in real-time.
-*   **🗨️ Subtitle Integration**: Integrated **OpenSubtitles.com** support for searching and downloading subtitles directly within the app.
-*   **📁 Multi-Library Support & Combined View**: Organize content into multiple libraries with support for multiple root directories per library. Configure a global **Combined Library View** in the settings menu to aggregate content from all or selected libraries into custom scrollable rows (e.g. Next Up, Recently Added, or custom smart queries). The main toolbar's sort and order selector dropdowns are automatically hidden when viewing the Combined Library View to prevent layout clutter.
-*   **📅 Bidirectional & Contextual Sorting**: Sort libraries alphabetically (A-Z or Z-A), by date added (Newest to Oldest or Oldest to Newest), by air date (Recently Aired), or by **Next Up**. Sorting controls adapt contextually (hiding direction selectors for Next Up, and using appropriate directional labels like A-Z/Z-A or Newest to Oldest/Oldest to Newest based on the active sorting mode).
+*   **📛 TMDB & Naming Support**: Uses official **TMDB** episode and series names, with filename fallbacks for unmatched items. Downloads posters and overviews from TMDB.
+*   **⚡ API Optimization**: Proactively identifies, logs, and ignores deeply nested or non-compliant subdirectory structures within TV libraries to minimize unnecessary TMDB API calls.
+*   **🔄 Bidirectional Sync**: Syncs "Watched" status with Jellyfin servers in real-time.
+*   **🗨️ Subtitle Search**: Integrated **OpenSubtitles.com** support for searching and downloading subtitles directly within the app.
+
+### 📁 File Management
+*   **⚡ Library Scanning**: Uses SQLite `UPSERT` logic for incremental scanning, preserving manual metadata corrections. Displays a detailed, real-time scan progress dashboard in the settings menu:
 *   **🏷️ Media Renamer**: Utility to rename local files to match official metadata standards.
+*   **📦 Metadata Embedding**: Background FFmpeg integration to write and embed metadata directly into the video containers of individual movies, episodes, or entire TV series.
+*   **💬 Subtitle Embedding**: Merges downloaded or external subtitle files directly into the video container using background FFmpeg workers.
 *   **🧹 Library Cleanup**: Tool to remove missing files and stale database entries while maintaining metadata integrity.
-*   **📜 Real-Time Log Viewer**: View streaming logs directly within a dedicated "Running Logs" tab in the Settings dialog, with log level filtering, text searching, auto-scroll toggle, and copy-to-clipboard functionality.
+*   **🛡️ Graceful Offline Handling**: Gracefully handles temporarily unavailable files and root directories (e.g. disconnected NAS or external drives) during a scan, preventing data loss or premature library cleanup.
+
+### 🎨 UI & Settings Features
+*   **📁 Multi-Library Support**: Organize content into multiple libraries with support for multiple root directories per library.
+*   **🏠 Combined View**: Configure a global **Combined Library View** in the settings menu to aggregate content from all or selected libraries into custom scrollable rows (e.g. Next Up, Recently Added, or custom smart queries). The main toolbar's sort and order selector dropdowns are automatically hidden when viewing the Combined Library View to prevent layout clutter.
+*   **📅 Contextual Sorting & Custom Smart Rows**: Sort libraries alphabetically (A-Z or Z-A), by date added (Newest to Oldest or Oldest to Newest), by air date (Recently Aired), or by **Next Up**. Sorting controls adapt contextually (hiding direction selectors for Next Up, and using appropriate directional labels like A-Z/Z-A or Newest to Oldest/Oldest to Newest based on the active sorting mode).
 *   **🎨 Responsive UI**: Native dark mode interface built with PySide6 (QtWidgets). Employs color-coded text (blue for unwatched, grey for watched) and a right-click context menu to quickly mark/track series, seasons, and episodes.
+*   **📊 Segmented Library Scan Progress Bar**: Displays a persistent progress bar at the very bottom of the library view during scans, segmenting by root directories and folders/series. The sub-segments dynamically sort and fill from left to right as progress is made, and a detailed status label directly above the bar displays the full root directory path and series name currently being scanned.
+*   **📜 Real-Time Log Viewer**: View streaming logs directly within a dedicated "Running Logs" tab in the Settings dialog, with log level filtering, text searching, auto-scroll toggle, clipboard copying, and compressed ZIP export functionality.
 
 ---
 
