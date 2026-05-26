@@ -1680,6 +1680,7 @@ class LibraryGridView(QWidget):
         self.order_selector: QComboBox = QComboBox()
         self.filter_watched_checkbox: QCheckBox = QCheckBox("Hide Watched")
         self.cached_icons: Dict[str, QIcon] = {}
+        self._last_order_mode: Optional[str] = None
 
         self._setup_ui()
         self._wire_signals()
@@ -1848,11 +1849,15 @@ class LibraryGridView(QWidget):
         self.order_label.setVisible(show_order)
         self.order_selector.setVisible(show_order)
         if show_order:
-            self.order_selector.clear()
-            if current_sort_mode == "Alphabetical":
-                self.order_selector.addItems(["A-Z", "Z-A"])
-            else:
-                self.order_selector.addItems(["Newest to Oldest", "Oldest to Newest"])
+            if current_sort_mode != self._last_order_mode:
+                self.order_selector.clear()
+                if current_sort_mode == "Alphabetical":
+                    self.order_selector.addItems(["A-Z", "Z-A"])
+                else:
+                    self.order_selector.addItems(
+                        ["Newest to Oldest", "Oldest to Newest"]
+                    )
+                self._last_order_mode = current_sort_mode
             if current_sort_mode == "Alphabetical":
                 self.order_selector.setCurrentText(
                     "Z-A" if self.controller.sort_descending else "A-Z"
@@ -1863,6 +1868,8 @@ class LibraryGridView(QWidget):
                     if self.controller.sort_descending
                     else "Newest to Oldest"
                 )
+        else:
+            self._last_order_mode = None
         self.order_selector.blockSignals(False)
         # Build list of displayable series structured records
         series_entries: List[Dict[str, Any]] = []
