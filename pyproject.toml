@@ -22,7 +22,7 @@ dev = [
     "pytest-qt>=4.4.0",
     "ruff>=0.15.13",
     "mypy>=1.9.0",
-    "types-requests>=2.33.0.20260513",
+    "types-requests>=2.33.0.20260518",
 ]
 [project.scripts]
 lan-streamer = "lan_streamer.main:main"
