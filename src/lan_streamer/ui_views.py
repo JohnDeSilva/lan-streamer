@@ -681,7 +681,7 @@ class Controller(QObject):
         self.cached_library_data: Dict[str, Any] = {}
         self.selected_series_name: str = ""
         self.sort_mode: str = config.sort_mode
-
+        self.sort_descending: bool = config.sort_descending
         self.filter_out_watched: bool = config.filter_out_watched
         self.scan_worker_instance: Optional[ScanWorker] = None
         self.cleanup_worker_instance: Optional[CleanupWorker] = None
@@ -791,6 +791,13 @@ class Controller(QObject):
         if self.sort_mode != mode:
             self.sort_mode = mode
             config.sort_mode = mode
+            config.save()
+            self.library_loaded.emit()
+
+    def set_sort_descending(self, descending: bool) -> None:
+        if self.sort_descending != descending:
+            self.sort_descending = descending
+            config.sort_descending = descending
             config.save()
             self.library_loaded.emit()
 
@@ -1669,7 +1676,8 @@ class LibraryGridView(QWidget):
         self.series_list_widget: QListWidget = QListWidget()
         self.library_selector: QComboBox = QComboBox()
         self.sort_selector: QComboBox = QComboBox()
-
+        self.order_label: QLabel = QLabel("Order:")
+        self.order_selector: QComboBox = QComboBox()
         self.filter_watched_checkbox: QCheckBox = QCheckBox("Hide Watched")
         self.cached_icons: Dict[str, QIcon] = {}
 
@@ -1696,6 +1704,10 @@ class LibraryGridView(QWidget):
         )
         self.sort_selector.setCurrentText(self.controller.sort_mode)
         top_toolbar_layout.addWidget(self.sort_selector)
+
+        top_toolbar_layout.addSpacing(10)
+        top_toolbar_layout.addWidget(self.order_label)
+        top_toolbar_layout.addWidget(self.order_selector)
 
         top_toolbar_layout.addSpacing(15)
         self.filter_watched_checkbox.setChecked(self.controller.filter_out_watched)
@@ -1765,7 +1777,7 @@ class LibraryGridView(QWidget):
         self.controller.library_loaded.connect(self.populate_grid)
         self.library_selector.currentTextChanged.connect(self.on_library_changed)
         self.sort_selector.currentTextChanged.connect(self.controller.set_sort_mode)
-
+        self.order_selector.currentTextChanged.connect(self.on_order_changed)
         self.filter_watched_checkbox.toggled.connect(
             self.controller.set_filter_out_watched
         )
@@ -1813,13 +1825,45 @@ class LibraryGridView(QWidget):
             if library_name:
                 self.controller.select_library(library_name)
 
+    @Slot(str)
+    def on_order_changed(self, text: str) -> None:
+        if not text:
+            return
+        if self.controller.sort_mode == "Alphabetical":
+            descending = text == "Z-A"
+        else:
+            descending = text == "Oldest to Newest"
+
+        self.controller.set_sort_descending(descending)
+
     @Slot()
     def populate_grid(self) -> None:
         if getattr(self.controller, "is_video_playing", False):
             return
         if self.library_selector.currentText() == "Combined View":
             return
-
+        self.order_selector.blockSignals(True)
+        current_sort_mode: str = self.controller.sort_mode
+        show_order: bool = current_sort_mode != "Next Up"
+        self.order_label.setVisible(show_order)
+        self.order_selector.setVisible(show_order)
+        if show_order:
+            self.order_selector.clear()
+            if current_sort_mode == "Alphabetical":
+                self.order_selector.addItems(["A-Z", "Z-A"])
+            else:
+                self.order_selector.addItems(["Newest to Oldest", "Oldest to Newest"])
+            if current_sort_mode == "Alphabetical":
+                self.order_selector.setCurrentText(
+                    "Z-A" if self.controller.sort_descending else "A-Z"
+                )
+            else:
+                self.order_selector.setCurrentText(
+                    "Oldest to Newest"
+                    if self.controller.sort_descending
+                    else "Newest to Oldest"
+                )
+        self.order_selector.blockSignals(False)
         # Build list of displayable series structured records
         series_entries: List[Dict[str, Any]] = []
         for series_name, series_data in self.controller.cached_library_data.items():
@@ -1871,22 +1915,41 @@ class LibraryGridView(QWidget):
 
         # Apply sorting logic
         sort_mode_value: str = self.controller.sort_mode
+        sort_descending: bool = self.controller.sort_descending
+        logger.debug(
+            f"Sorting {len(series_entries)} entries by '{sort_mode_value}' "
+            f"(descending={sort_descending})"
+        )
         if sort_mode_value == "Recently Added":
-            series_entries.sort(key=lambda entry: entry["date_added"], reverse=True)
+            series_entries.sort(
+                key=lambda entry: entry["date_added"], reverse=not sort_descending
+            )
         elif sort_mode_value == "Recently Aired":
             series_entries.sort(
-                key=lambda entry: entry["effective_air_date"], reverse=True
+                key=lambda entry: entry["effective_air_date"],
+                reverse=not sort_descending,
             )
         elif sort_mode_value == "Next Up":
-            series_entries.sort(
-                key=lambda entry: (
-                    not entry["is_next_up_candidate"],
-                    -entry["last_played_at"],
-                    entry["name"].lower(),
+            if not sort_descending:
+                series_entries.sort(
+                    key=lambda entry: (
+                        not entry["is_next_up_candidate"],
+                        -entry["last_played_at"],
+                        entry["name"].lower(),
+                    )
                 )
-            )
+            else:
+                series_entries.sort(
+                    key=lambda entry: (
+                        not entry["is_next_up_candidate"],
+                        entry["last_played_at"],
+                        entry["name"].lower(),
+                    )
+                )
         else:
-            series_entries.sort(key=lambda entry: entry["name"].lower())
+            series_entries.sort(
+                key=lambda entry: entry["name"].lower(), reverse=sort_descending
+            )
 
         current_item_count: int = self.series_list_widget.count()
         target_item_count: int = len(series_entries)
