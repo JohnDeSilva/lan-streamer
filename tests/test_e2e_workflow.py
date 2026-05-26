@@ -170,6 +170,7 @@ def test_library_grid_view_rendering(
 
         # Populate items
         grid_view.library_selector.setCurrentText("Test Lib 1")
+        assert grid_view.sort_order_container.isHidden() is False
         grid_view.populate_grid()
         assert grid_view.series_list_widget.count() == 1
 
@@ -290,6 +291,19 @@ def test_library_grid_view_combined_view(qtbot: Any) -> None:
         assert grid_view.library_selector.currentText() == "Combined View"
         assert grid_view.combined_scroll_area.isHidden() is False
         assert grid_view.series_list_widget.isHidden() is True
+        assert grid_view.sort_order_container.isHidden() is True
+
+        # Test switching library back to a normal one shows the sort/order container
+        grid_view.library_selector.setCurrentText("Test Lib 1")
+        assert grid_view.sort_order_container.isHidden() is False
+
+        # Switch back to Combined View for the remainder of the test
+        grid_view.library_selector.setCurrentText("Combined View")
+        assert grid_view.sort_order_container.isHidden() is True
+
+        from PySide6.QtCore import QCoreApplication
+
+        QCoreApplication.processEvents()
 
         # We should find two headers and lists rendered
         headers = grid_view.combined_scroll_content.findChildren(QLabel)
@@ -1784,7 +1798,7 @@ def test_library_grid_view_next_up_sorting(qtbot: Any) -> None:
     # Cosmos: Partially Watched (watched_episodes=1, total=2, last_played_at=3000) -> Candidate!
     # Star Trek: Fully Watched (watched_episodes=1, total=1, last_played_at=5000) -> Non-candidate!
     # Doctor Who: Unwatched (watched_episodes=0, total=1, last_played_at=0) -> Non-candidate!
-    library_data = {
+    library_data: Dict[str, Any] = {
         "Cosmos": {
             "metadata": {
                 "first_air_date": "1980-09-28",
