@@ -1192,7 +1192,11 @@ class Controller(QObject):
                 "Global multi-library scan completed successfully."
             )
         if self.current_library_name:
-            self.select_library(self.current_library_name)
+            if self.current_library_name == "Combined View":
+                self.library_loaded.emit()
+            else:
+                self.select_library(self.current_library_name)
+        self.scan_completed.emit()
 
     def trigger_cleanup_all(self) -> None:
         if (
@@ -1924,6 +1928,22 @@ class LibraryGridView(QWidget):
         actions_toolbar_layout.addStretch()
         main_layout.addWidget(self.actions_toolbar_widget)
 
+        # Combined Actions Row
+        self.combined_actions_toolbar_widget: QWidget = QWidget()
+        combined_actions_toolbar_layout: QHBoxLayout = QHBoxLayout(
+            self.combined_actions_toolbar_widget
+        )
+        combined_actions_toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        combined_actions_toolbar_layout.setSpacing(10)
+
+        combined_scan_button: QPushButton = QPushButton("Scan New Files")
+        combined_scan_button.clicked.connect(self.trigger_combined_scan)
+        combined_actions_toolbar_layout.addWidget(combined_scan_button)
+
+        combined_actions_toolbar_layout.addStretch()
+        self.combined_actions_toolbar_widget.setVisible(False)
+        main_layout.addWidget(self.combined_actions_toolbar_widget)
+
         # Series Responsive List/Grid Widget
         self.series_list_widget.setViewMode(QListWidget.ViewMode.IconMode)
         self.series_list_widget.setResizeMode(QListWidget.ResizeMode.Adjust)
@@ -1979,9 +1999,26 @@ class LibraryGridView(QWidget):
             self.scan_progress_bar.setVisible(True)
             self.scan_status_label.setText("Starting library scan...")
             self.scan_status_label.setVisible(True)
+        elif event == "init_tree":
+            roots_dict: Dict[str, List[str]] = {}
+            roots_order: List[str] = []
+            tree = payload.get("tree", {})
+            for lib_name, lib_data in tree.items():
+                roots_data = lib_data.get("roots", {})
+                for root_dir, folders_dict in roots_data.items():
+                    roots_order.append(root_dir)
+                    roots_dict[root_dir] = list(folders_dict.keys())
+            self.scan_progress_bar.init_from_roots(roots_dict, roots_order)
+            self.scan_progress_bar.setVisible(True)
+            self.scan_status_label.setText("Starting global library scan...")
+            self.scan_status_label.setVisible(True)
         elif event == "start_folder":
             self.scan_progress_bar.mark_folder_active(root, folder)
-            self.scan_status_label.setText(f"Scanning: {root} > {folder}")
+            library_name: str = payload.get("library", "")
+            library_prefix: str = f" [{library_name}]" if library_name else ""
+            self.scan_status_label.setText(
+                f"Scanning{library_prefix}: {root} > {folder}"
+            )
             self.scan_status_label.setVisible(True)
         elif event == "finish_folder":
             self.scan_progress_bar.mark_folder_done(root, folder)
@@ -2023,6 +2060,8 @@ class LibraryGridView(QWidget):
             self.series_list_widget.setVisible(False)
             if hasattr(self, "actions_toolbar_widget"):
                 self.actions_toolbar_widget.setVisible(False)
+            if hasattr(self, "combined_actions_toolbar_widget"):
+                self.combined_actions_toolbar_widget.setVisible(True)
             self.sort_order_container.setVisible(False)
             self.combined_scroll_area.setVisible(True)
             self.populate_combined_view()
@@ -2030,10 +2069,16 @@ class LibraryGridView(QWidget):
             self.series_list_widget.setVisible(True)
             if hasattr(self, "actions_toolbar_widget"):
                 self.actions_toolbar_widget.setVisible(True)
+            if hasattr(self, "combined_actions_toolbar_widget"):
+                self.combined_actions_toolbar_widget.setVisible(False)
             self.sort_order_container.setVisible(True)
             self.combined_scroll_area.setVisible(False)
             if library_name:
                 self.controller.select_library(library_name)
+
+    @Slot()
+    def trigger_combined_scan(self) -> None:
+        self.controller.trigger_scan_all(False)
 
     @Slot(str)
     def on_order_changed(self, text: str) -> None:
@@ -2053,6 +2098,7 @@ class LibraryGridView(QWidget):
         if getattr(self.controller, "is_video_playing", False):
             return
         if self.library_selector.currentText() == "Combined View":
+            self.populate_combined_view()
             return
         self.order_selector.blockSignals(True)
         current_sort_mode: str = self.controller.sort_mode
