@@ -4551,7 +4551,6 @@ class SettingsDialog(QDialog):
         connectivity_layout.addWidget(self.opensubtitles_api_key_input, 8, 1)
 
         connectivity_layout.setRowStretch(9, 1)
-        tab_container.addTab(connectivity_tab, "Remote APIs")
 
         # Libraries Management Pane
         libraries_tab: QWidget = QWidget()
@@ -4607,8 +4606,6 @@ class SettingsDialog(QDialog):
         dir_buttons_layout.addWidget(remove_dir_button)
         dir_buttons_layout.addStretch()
         libraries_layout.addLayout(dir_buttons_layout)
-
-        tab_container.addTab(libraries_tab, "Libraries Setup")
 
         # Combined View Setup Pane
         combined_tab: QWidget = QWidget()
@@ -4708,8 +4705,6 @@ class SettingsDialog(QDialog):
             self._on_combined_view_selected
         )
 
-        tab_container.addTab(combined_tab, "Combined View")
-
         # Video Player Settings Pane
         player_tab: QWidget = QWidget()
         player_layout: QVBoxLayout = QVBoxLayout(player_tab)
@@ -4735,8 +4730,6 @@ class SettingsDialog(QDialog):
         player_layout.addLayout(cache_size_layout)
 
         player_layout.addStretch()
-
-        tab_container.addTab(player_tab, "Video Player")
 
         # Advanced Settings Pane
         advanced_tab: QWidget = QWidget()
@@ -4867,7 +4860,6 @@ class SettingsDialog(QDialog):
         advanced_layout.addWidget(config_frame)
 
         advanced_layout.addStretch()
-        tab_container.addTab(advanced_tab, "Advanced")
 
         # Library Management Pane
         management_tab: QWidget = QWidget()
@@ -4935,7 +4927,6 @@ class SettingsDialog(QDialog):
         management_layout.addWidget(self.scan_progress_tree)
 
         management_layout.addStretch()
-        tab_container.addTab(management_tab, "Library Management")
 
         # Running Logs Tab
         logs_tab: QWidget = QWidget()
@@ -4997,7 +4988,14 @@ class SettingsDialog(QDialog):
         )
         logs_layout.addWidget(self.log_display)
 
-        tab_container.addTab(logs_tab, "Running Logs")
+        # Add tabs in the requested order
+        tab_container.addTab(management_tab, "Library Management")
+        tab_container.addTab(player_tab, "Video Player")
+        tab_container.addTab(libraries_tab, "Libraries Setup")
+        tab_container.addTab(combined_tab, "Combined View")
+        tab_container.addTab(connectivity_tab, "Remote API's")
+        tab_container.addTab(advanced_tab, "Advanced")
+        tab_container.addTab(logs_tab, "Logs")
 
         main_layout.addWidget(tab_container)
 

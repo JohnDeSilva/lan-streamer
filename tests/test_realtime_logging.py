@@ -391,3 +391,26 @@ def test_set_application_log_level() -> None:
         root_logger.setLevel(original_root_level)
         for name in SERVICE_LOGGERS:
             logging.getLogger(name).setLevel(original_service_levels[name])
+
+
+def test_settings_dialog_tab_order(qtbot) -> None:
+    from lan_streamer.ui_views import SettingsDialog
+    from PySide6.QtWidgets import QTabWidget
+
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    tab_widget = dialog.findChild(QTabWidget)
+    assert tab_widget is not None
+
+    expected_tabs = [
+        "Library Management",
+        "Video Player",
+        "Libraries Setup",
+        "Combined View",
+        "Remote API's",
+        "Advanced",
+        "Logs",
+    ]
+    actual_tabs = [tab_widget.tabText(i) for i in range(tab_widget.count())]
+    assert actual_tabs == expected_tabs
