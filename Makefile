@@ -82,12 +82,10 @@ load-test: migrate
 
 
 build:
+	$(PYTHON) -m PyInstaller --noconfirm lan-streamer.spec
 ifeq ($(UNAME_S),Darwin)
-	$(PYTHON) -m PyInstaller --noconfirm --windowed --paths src src/entrypoint.py --name lan-streamer
 	rm -rf dist/lan-streamer
 	ln -sf lan-streamer.app/Contents/MacOS/lan-streamer dist/lan-streamer
-else
-	$(PYTHON) -m PyInstaller --noconfirm --onefile --windowed --paths src src/entrypoint.py --name lan-streamer
 endif
 
 validate-executable:
@@ -105,7 +103,7 @@ else
 endif
 
 clean:
-	rm -rf build/ dist/ *.spec .pytest_cache .ruff_cache *.log *.db*
+	rm -rf build/ dist/ .pytest_cache .ruff_cache *.log *.db*
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 
 revision:

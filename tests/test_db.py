@@ -12,6 +12,7 @@ def mock_db_file(tmp_path) -> None:
 
 
 def test_init_db(mock_db_file) -> None:
+    db._db_initialized = False
     db.init_db()
     assert mock_db_file.parent.exists()
 
@@ -773,6 +774,8 @@ def test_db_edge_cases() -> None:
     # natural_sort_key with None
     assert db.natural_sort_key(None) == []
 
+    # Reset initialized flag to test full init_db path
+    db._db_initialized = False
     # init_db with mkdir exception
     with patch("pathlib.Path.mkdir", side_effect=OSError("Write error")):
         assert db.init_db() is False

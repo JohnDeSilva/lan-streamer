@@ -28,6 +28,7 @@ def protect_user_dirs(tmp_path) -> None:
     # Reset lazy database objects
     lan_streamer.db._engine = None
     lan_streamer.db._SessionLocal = None
+    lan_streamer.db._db_initialized = False
 
     with (
         patch("lan_streamer.config.CONFIG_FILE", config_file),
@@ -35,7 +36,7 @@ def protect_user_dirs(tmp_path) -> None:
         patch("lan_streamer.tmdb.CACHE_DIR", cache_dir),
     ):
         # Initialize schema for tests
-        lan_streamer.db.Base.metadata.create_all(lan_streamer.db.get_engine())
+        lan_streamer.db.init_db()
 
         # Reload config instance so it points to the new path
         lan_streamer.config.config.libraries = {}

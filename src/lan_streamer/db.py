@@ -30,6 +30,7 @@ DB_FILE = Path(os.getenv("LAN_STREAMER_DB", config.database_path))
 # Database setup logic
 _engine = None
 _SessionLocal = None
+_db_initialized: bool = False
 
 
 def get_engine() -> Engine:
@@ -94,16 +95,53 @@ def natural_sort_key(s: Optional[str]) -> List[Any]:
 
 def init_db() -> bool:
     """
-    Initializes the database.
+    Initializes the database by running Alembic migrations.
     Ensures the DB directory exists.
-    Returns True if the database was recreated.
+    Returns True if the database was successfully initialized/upgraded.
     """
+    global _db_initialized
+    if _db_initialized:
+        logger.debug(
+            "Database already initialized in this session; skipping migration check."
+        )
+        return False
+
     logger.info(f"Initializing database at: '{DB_FILE}'")
     try:
         DB_FILE.parent.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
         logger.warning(f"Could not create database directory {DB_FILE.parent}: {exc}")
-    return False
+        return False
+
+    try:
+        import sys
+        from alembic.config import Config
+        from alembic import command
+
+        if getattr(sys, "frozen", False):
+            base_path: Path = Path(getattr(sys, "_MEIPASS"))
+        else:
+            base_path = Path(__file__).parent.parent.parent
+
+        alembic_ini_path: Path = base_path / "alembic.ini"
+        alembic_directory_path: Path = base_path / "alembic"
+
+        logger.info(f"Loading Alembic configuration from: '{alembic_ini_path}'")
+        alembic_config: Config = Config(str(alembic_ini_path))
+
+        # Dynamically set options to reference the absolute runtime paths
+        alembic_config.set_main_option("script_location", str(alembic_directory_path))
+        alembic_config.set_main_option("sqlalchemy.url", f"sqlite:///{DB_FILE}")
+
+        logger.info("Executing database migration to latest revision (head)...")
+        command.upgrade(alembic_config, "head")
+        logger.info("Database migration completed successfully.")
+
+        _db_initialized = True
+        return True
+    except Exception as exc:
+        logger.error(f"Failed to run database migrations: {exc}", exc_info=True)
+        return False
 
 
 # ---------------------------------------------------------------------------
