@@ -97,13 +97,30 @@ class Config:
                         f"Loaded sort preferences: mode='{self.sort_mode}', "
                         f"descending={self.sort_descending}"
                     )
-                    self.database_path = data.get(
-                        "database_path",
-                        str(Path.home() / ".config" / "lan-streamer" / "library.db"),
+                    self.database_path = str(
+                        Path(
+                            data.get(
+                                "database_path",
+                                str(
+                                    Path.home()
+                                    / ".config"
+                                    / "lan-streamer"
+                                    / "library.db"
+                                ),
+                            )
+                        )
+                        .expanduser()
+                        .absolute()
                     )
-                    self.log_directory = data.get(
-                        "log_directory",
-                        str(Path.home() / ".config" / "lan-streamer" / "logs"),
+                    self.log_directory = str(
+                        Path(
+                            data.get(
+                                "log_directory",
+                                str(Path.home() / ".config" / "lan-streamer" / "logs"),
+                            )
+                        )
+                        .expanduser()
+                        .absolute()
                     )
                     self.log_level = data.get("log_level", "INFO")
                     self.divide_logs_by_service = data.get(
@@ -112,9 +129,15 @@ class Config:
                     )
                     self.enable_caching = data.get("enable_caching", False)
                     self.watched_threshold = data.get("watched_threshold", 0.95)
-                    self.cache_directory = data.get(
-                        "cache_directory",
-                        str(Path.home() / ".config" / "lan-streamer" / "cache"),
+                    self.cache_directory = str(
+                        Path(
+                            data.get(
+                                "cache_directory",
+                                str(Path.home() / ".config" / "lan-streamer" / "cache"),
+                            )
+                        )
+                        .expanduser()
+                        .absolute()
                     )
                     self.use_embedded_player = data.get("use_embedded_player", True)
                     self.enable_hw_accel = data.get("enable_hw_accel", True)
@@ -130,9 +153,17 @@ class Config:
                         "enable_next_episode_popup", True
                     )
                     self.max_log_retention_days = data.get("max_log_retention_days", 7)
-                    self.backup_directory = data.get(
-                        "backup_directory",
-                        str(Path.home() / ".config" / "lan-streamer" / "backups"),
+                    self.backup_directory = str(
+                        Path(
+                            data.get(
+                                "backup_directory",
+                                str(
+                                    Path.home() / ".config" / "lan-streamer" / "backups"
+                                ),
+                            )
+                        )
+                        .expanduser()
+                        .absolute()
                     )
                     self.config_backup_frequency = data.get(
                         "config_backup_frequency", 0

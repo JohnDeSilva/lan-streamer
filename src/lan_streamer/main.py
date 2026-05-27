@@ -1,7 +1,7 @@
 import sys
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedLayout
 from PySide6.QtGui import QPalette, QColor, QFont
 from PySide6.QtCore import Qt
@@ -71,13 +71,15 @@ def main() -> None:
     )
     root_logger = logging.getLogger()
 
-    # Map string log level to logging constant
-    log_level = getattr(logging, config.log_level.upper(), logging.INFO)
-    root_logger.setLevel(log_level)
+    from .logging_handler import set_application_log_level
+
+    set_application_log_level(config.log_level)
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
     root_logger.addHandler(console_handler)
+
+    file_handlers: Dict[str, logging.Handler] = {}
 
     def add_file_handler(
         logger_object: logging.Logger,
@@ -88,15 +90,21 @@ def main() -> None:
         try:
             from logging.handlers import TimedRotatingFileHandler
 
-            handler = TimedRotatingFileHandler(
-                filename,
-                when="midnight",
-                interval=1,
-                backupCount=config.max_log_retention_days,
-            )
-            handler.suffix = "%Y-%m-%d"
-            handler.namer = lambda name: name.replace(".log.", "_") + ".log"
-            handler.setFormatter(formatter)
+            handler: logging.Handler
+            if filename not in file_handlers:
+                handler = TimedRotatingFileHandler(
+                    filename,
+                    when="midnight",
+                    interval=1,
+                    backupCount=config.max_log_retention_days,
+                )
+                handler.suffix = "%Y-%m-%d"
+                handler.namer = lambda name: name.replace(".log.", "_") + ".log"
+                handler.setFormatter(formatter)
+                file_handlers[filename] = handler
+            else:
+                handler = file_handlers[filename]
+
             logger_object.addHandler(handler)
             if logger_object != logging.getLogger():
                 logger_object.propagate = False
@@ -105,7 +113,7 @@ def main() -> None:
         except Exception as exc:
             logging.error(f"Could not create log file {filename}: {exc}")
 
-    log_directory = Path(config.log_directory)
+    log_directory = Path(config.log_directory).expanduser().absolute()
     try:
         log_directory.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
@@ -124,6 +132,8 @@ def main() -> None:
     except Exception as exc:
         logging.debug(f"Error cleaning old logs: {exc}")
 
+    from .logging_handler import SERVICE_LOGGERS, setup_qt_logging
+
     if not config.divide_logs_by_service:
         add_file_handler(
             root_logger,
@@ -133,73 +143,29 @@ def main() -> None:
         )
     else:
         logging.info("Logging divided into individual service log files")
-        add_file_handler(
-            logging.getLogger("lan_streamer.db"),
-            str(log_directory / "db.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.backend"),
-            str(log_directory / "backend.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.scanner"),
-            str(log_directory / "scanner.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.jellyfin"),
-            str(log_directory / "jellyfin.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.tmdb"),
-            str(log_directory / "tmdb.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.player_widget"),
-            str(log_directory / "player.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.player"),
-            str(log_directory / "player.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.backup"),
-            str(log_directory / "backup.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.opensubtitles"),
-            str(log_directory / "opensubtitles.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.wakelock"),
-            str(log_directory / "wakelock.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.ui_views"),
-            str(log_directory / "ui.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.main"),
-            str(log_directory / "ui.log"),
-            log_formatter,
-        )
-        add_file_handler(
-            logging.getLogger("lan_streamer.renamer"),
-            str(log_directory / "renamer.log"),
-            log_formatter,
-        )
-
-    from .logging_handler import setup_qt_logging
+        # Map logger names to their respective file names
+        logger_to_filename = {
+            "lan_streamer.db": "db.log",
+            "lan_streamer.backend": "backend.log",
+            "lan_streamer.scanner": "scanner.log",
+            "lan_streamer.jellyfin": "jellyfin.log",
+            "lan_streamer.tmdb": "tmdb.log",
+            "lan_streamer.player_widget": "player.log",
+            "lan_streamer.player": "player.log",
+            "lan_streamer.backup": "backup.log",
+            "lan_streamer.opensubtitles": "opensubtitles.log",
+            "lan_streamer.wakelock": "wakelock.log",
+            "lan_streamer.ui_views": "ui.log",
+            "lan_streamer.main": "ui.log",
+            "lan_streamer.renamer": "renamer.log",
+        }
+        for logger_name in SERVICE_LOGGERS:
+            filename = logger_to_filename.get(logger_name, "app.log")
+            add_file_handler(
+                logging.getLogger(logger_name),
+                str(log_directory / filename),
+                log_formatter,
+            )
 
     setup_qt_logging(log_formatter)
 

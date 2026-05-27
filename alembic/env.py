@@ -22,15 +22,17 @@ except Exception:
 # access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
 if config.config_file_name is not None:
-    try:
-        from logging.config import fileConfig
+    import logging
 
-        fileConfig(config.config_file_name)
-    except Exception:
-        pass
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        try:
+            from logging.config import fileConfig
+
+            fileConfig(config.config_file_name, disable_existing_loggers=False)
+        except Exception:
+            pass
 
 # add your model's MetaData object here
 # for 'autogenerate' support
