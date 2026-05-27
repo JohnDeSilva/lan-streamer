@@ -5499,6 +5499,9 @@ class SettingsDialog(QDialog):
         config.enable_combined_view = self.enable_combined_view_checkbox.isChecked()
         config.combined_views = self.staged_combined_views
         config.save()
+        from .logging_handler import set_application_log_level
+
+        set_application_log_level(config.log_level)
         self.accept()
 
     @Slot()

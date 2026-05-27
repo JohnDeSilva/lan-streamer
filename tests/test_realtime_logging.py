@@ -191,3 +191,203 @@ def test_settings_dialog_export_logs(qtbot: QtBot, tmp_path, monkeypatch) -> Non
     assert "Log directory does not exist" in warning_calls[1][1]
 
     dialog.reject()
+
+
+def test_config_path_expansion(tmp_path, monkeypatch) -> None:
+    import json
+    import importlib
+    from pathlib import Path
+
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    config_dir = fake_home / ".config" / "lan-streamer"
+    config_dir.mkdir(parents=True)
+    temp_config_file = config_dir / "config.json"
+
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    config_data = {
+        "database_path": "~/library.db",
+        "log_directory": "~/logs",
+        "cache_directory": "~/cache",
+        "backup_directory": "~/backups",
+    }
+    with open(temp_config_file, "w") as f:
+        json.dump(config_data, f)
+
+    import lan_streamer.config
+
+    try:
+        importlib.reload(lan_streamer.config)
+        cfg = lan_streamer.config.config
+
+        expected_db = str(fake_home / "library.db")
+        expected_log = str(fake_home / "logs")
+        expected_cache = str(fake_home / "cache")
+        expected_backup = str(fake_home / "backups")
+
+        assert cfg.database_path == expected_db
+        assert cfg.log_directory == expected_log
+        assert cfg.cache_directory == expected_cache
+        assert cfg.backup_directory == expected_backup
+    finally:
+        monkeypatch.undo()
+        importlib.reload(lan_streamer.config)
+
+
+def test_divided_service_logging_realtime_flow(tmp_path) -> None:
+    import logging
+    from lan_streamer.config import config
+    from lan_streamer.logging_handler import (
+        setup_qt_logging,
+        qt_log_handler,
+        SERVICE_LOGGERS,
+    )
+
+    # Use temporary directory for logs
+    config.log_directory = str(tmp_path)
+    config.divide_logs_by_service = True
+
+    # Setup the logger configuration
+    log_formatter = logging.Formatter("[%(levelname)s] %(name)s: %(message)s")
+
+    # Save original handlers and propagate settings to restore later
+    original_handlers = {}
+    original_propagate = {}
+
+    # Clear existing handlers from root and service loggers
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    for logger_name in SERVICE_LOGGERS:
+        lg = logging.getLogger(logger_name)
+        original_handlers[logger_name] = lg.handlers[:]
+        original_propagate[logger_name] = lg.propagate
+        lg.handlers.clear()
+
+    qt_log_handler.buffer.clear()
+
+    try:
+        # Re-run file configuration helper setup from main.py
+        # To simulate main.py behavior without initializing whole QApplication
+        logger_to_filename = {
+            "lan_streamer.db": "db.log",
+            "lan_streamer.backend": "backend.log",
+            "lan_streamer.scanner": "scanner.log",
+            "lan_streamer.jellyfin": "jellyfin.log",
+            "lan_streamer.tmdb": "tmdb.log",
+            "lan_streamer.player_widget": "player.log",
+            "lan_streamer.player": "player.log",
+            "lan_streamer.backup": "backup.log",
+            "lan_streamer.opensubtitles": "opensubtitles.log",
+            "lan_streamer.wakelock": "wakelock.log",
+            "lan_streamer.ui_views": "ui.log",
+            "lan_streamer.main": "ui.log",
+            "lan_streamer.renamer": "renamer.log",
+        }
+
+        file_handlers = {}
+
+        def add_file_handler(
+            logger_object: logging.Logger,
+            filename: str,
+            formatter: logging.Formatter,
+        ) -> None:
+            from logging.handlers import TimedRotatingFileHandler
+
+            if filename not in file_handlers:
+                handler = TimedRotatingFileHandler(
+                    filename,
+                    when="midnight",
+                    interval=1,
+                    backupCount=config.max_log_retention_days,
+                )
+                handler.setFormatter(formatter)
+                file_handlers[filename] = handler
+            else:
+                handler = file_handlers[filename]
+            logger_object.addHandler(handler)
+            logger_object.propagate = False
+
+        for logger_name in SERVICE_LOGGERS:
+            filename = logger_to_filename.get(logger_name, "app.log")
+            add_file_handler(
+                logging.getLogger(logger_name),
+                str(tmp_path / filename),
+                log_formatter,
+            )
+
+        setup_qt_logging(log_formatter)
+
+        # 1. Test standard service logger (e.g. lan_streamer.main)
+        main_logger = logging.getLogger("lan_streamer.main")
+        main_logger.setLevel(logging.INFO)
+        main_logger.info("Test message main")
+
+        # 2. Test sub-logger of a service logger (e.g. lan_streamer.db.session)
+        db_sub_logger = logging.getLogger("lan_streamer.db.session")
+        db_sub_logger.setLevel(logging.WARNING)
+        db_sub_logger.warning("Test message db session")
+
+        db_log_file = tmp_path / "db.log"
+        ui_log_file = tmp_path / "ui.log"
+
+        # Explicitly close file handlers to flush to disk
+        for handler in file_handlers.values():
+            handler.close()
+
+        assert db_log_file.exists()
+        assert ui_log_file.exists()
+
+        with open(db_log_file, "r") as f:
+            db_content = f.read()
+            assert "Test message db session" in db_content
+
+        with open(ui_log_file, "r") as f:
+            ui_content = f.read()
+            assert "Test message main" in ui_content
+
+        # Assertions for qt_log_handler buffer
+        buffer_records = list(qt_log_handler.buffer)
+        assert len(buffer_records) == 2
+        assert any("Test message main" in record[0] for record in buffer_records)
+        assert any("Test message db session" in record[0] for record in buffer_records)
+
+    finally:
+        # Restore original handlers and propagate settings
+        for logger_name in SERVICE_LOGGERS:
+            lg = logging.getLogger(logger_name)
+            for h in lg.handlers[:]:
+                h.close()
+                lg.removeHandler(h)
+            for h in original_handlers[logger_name]:
+                lg.addHandler(h)
+            lg.propagate = original_propagate[logger_name]
+
+
+def test_set_application_log_level() -> None:
+    import logging
+    from lan_streamer.logging_handler import set_application_log_level, SERVICE_LOGGERS
+
+    root_logger = logging.getLogger()
+    original_root_level = root_logger.level
+    original_service_levels = {
+        name: logging.getLogger(name).level for name in SERVICE_LOGGERS
+    }
+
+    try:
+        set_application_log_level("DEBUG")
+        assert root_logger.level == logging.DEBUG
+        for name in SERVICE_LOGGERS:
+            assert logging.getLogger(name).level == logging.DEBUG
+
+        set_application_log_level("WARNING")
+        assert root_logger.level == logging.WARNING
+        for name in SERVICE_LOGGERS:
+            assert logging.getLogger(name).level == logging.WARNING
+    finally:
+        root_logger.setLevel(original_root_level)
+        for name in SERVICE_LOGGERS:
+            logging.getLogger(name).setLevel(original_service_levels[name])
