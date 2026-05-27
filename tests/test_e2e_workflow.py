@@ -2126,3 +2126,65 @@ def test_combined_view_row_management(qtbot: Any) -> None:
             dialog_instance._on_row_library_toggled()
             row = dialog_instance.staged_combined_views[0]
             assert isinstance(row.get("libraries"), list)
+
+
+def test_combined_view_scan_button(qtbot: Any) -> None:
+    controller_instance = Controller()
+
+    with patch("lan_streamer.db.get_combined_smart_row", return_value=[]):
+        grid_view = LibraryGridView(controller_instance)
+        grid_view.populate_libraries(["TV Library"])
+        qtbot.addWidget(grid_view)
+
+        # 1. Switch to Combined View
+        grid_view.library_selector.setCurrentText("Combined View")
+        # Verify combined actions toolbar is visible and standard actions toolbar is hidden
+        assert grid_view.combined_actions_toolbar_widget.isHidden() is False
+        assert grid_view.actions_toolbar_widget.isHidden() is True
+
+        # 2. Click the Scan New Files button in Combined View
+        with patch.object(controller_instance, "trigger_scan_all") as mock_scan_all:
+            combined_scan_button = grid_view.combined_actions_toolbar_widget.findChild(
+                QPushButton
+            )
+            assert combined_scan_button is not None
+            assert combined_scan_button.text() == "Scan New Files"
+            combined_scan_button.click()
+            mock_scan_all.assert_called_once_with(False)
+
+        # 3. Simulate scan progress signals
+        tree_payload = {
+            "tree": {
+                "TV Library": {"type": "tv", "roots": {"/media/tv": {"Cosmos": {}}}}
+            }
+        }
+        controller_instance.detail_progress_updated.emit("init_tree", tree_payload)
+        # Check that progress bar and label became visible
+        assert grid_view.scan_progress_bar.isHidden() is False
+        assert grid_view.scan_status_label.isHidden() is False
+        assert grid_view.scan_status_label.text() == "Starting global library scan..."
+
+        # Emit start_folder signal
+        folder_payload = {
+            "library": "TV Library",
+            "root": "/media/tv",
+            "folder": "Cosmos",
+        }
+        controller_instance.detail_progress_updated.emit("start_folder", folder_payload)
+        assert (
+            grid_view.scan_status_label.text()
+            == "Scanning [TV Library]: /media/tv > Cosmos"
+        )
+
+        # Emit scan_completed signal
+        controller_instance.scan_completed.emit()
+        assert grid_view.scan_progress_bar.isHidden() is True
+        assert grid_view.scan_status_label.isHidden() is True
+
+        # 4. Simulate _on_scan_all_finished when in Combined View
+        controller_instance.current_library_name = "Combined View"
+        with patch.object(controller_instance, "select_library") as mock_select:
+            with patch.object(grid_view, "populate_combined_view") as mock_populate:
+                controller_instance._on_scan_all_finished()
+                mock_select.assert_not_called()
+                mock_populate.assert_called_once()
