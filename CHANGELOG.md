@@ -289,6 +289,12 @@
 
 - initial commit
 
+## v0.18.1 (2026-05-26)
+
+### Fix
+
+- **executables**: fix missed alembic migrations in executables
+
 ## v0.18.0 (2026-05-26)
 
 ### Feat
