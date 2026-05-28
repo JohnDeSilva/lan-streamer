@@ -857,7 +857,7 @@ class Controller(QObject):
         self.file_system_watcher = QFileSystemWatcher(self)
         self.file_system_watcher.directoryChanged.connect(self._on_directory_changed)
 
-    def select_library(self, library_name: str) -> None:
+    def select_library(self, library_name: str, reset_selection: bool = True) -> None:
         logger.info(f"Controller loading library: {library_name}")
         self.current_library_name = library_name
         self.status_changed.emit(f"Loading library: {library_name}...")
@@ -878,7 +878,9 @@ class Controller(QObject):
         else:
             self.cached_library_data = db.load_library(library_name)
         self._cache_series_metrics()
-        self.selected_series_name = ""
+
+        if reset_selection:
+            self.selected_series_name = ""
 
         self.status_changed.emit("Library loaded successfully.")
         self.library_loaded.emit()
@@ -1050,6 +1052,7 @@ class Controller(QObject):
             existing_library=self.cached_library_data,
             force_refresh=force_refresh,
             cleanup=False,
+            library_name=self.current_library_name,
         )
         self.scan_worker_instance.finished.connect(self._on_scan_finished)
         self.scan_worker_instance.partial_result.connect(self._on_scan_partial)
@@ -1068,14 +1071,22 @@ class Controller(QObject):
                 self.library_loaded.emit()
 
     def _on_scan_finished(self, updated_library: Dict[str, Any]) -> None:
-        if self.current_library_name:
-            library_config = config.libraries.get(self.current_library_name, {})
+        scanned_library_name = (
+            self.scan_worker_instance.library_name
+            if self.scan_worker_instance
+            else self.current_library_name
+        )
+        if scanned_library_name:
+            library_config = config.libraries.get(scanned_library_name, {})
             if library_config.get("type", "tv") == "movie":
-                db.save_movie_library(self.current_library_name, updated_library)
+                db.save_movie_library(scanned_library_name, updated_library)
             else:
-                db.save_library(self.current_library_name, updated_library)
-            self.cached_library_data = updated_library
-            self._cache_series_metrics()
+                db.save_library(scanned_library_name, updated_library)
+
+            if self.current_library_name == scanned_library_name:
+                self.cached_library_data = updated_library
+                self._cache_series_metrics()
+
             if (
                 self.scan_worker_instance
                 and self.scan_worker_instance.unavailable_directories
@@ -1085,14 +1096,15 @@ class Controller(QObject):
                         f"root directory {directory_name} is unavailable check connection to {directory_name}"
                     )
             else:
-                self.status_changed.emit("Library scan completed successfully.")
-            if not self.is_video_playing:
+                self.status_changed.emit(
+                    f"Library scan for '{scanned_library_name}' completed successfully."
+                )
+
+            if (
+                self.current_library_name == scanned_library_name
+                and not self.is_video_playing
+            ):
                 self.library_loaded.emit()
-                if self.selected_series_name:
-                    if library_config.get("type", "tv") == "movie":
-                        self.movie_selected.emit(self.selected_series_name)
-                    else:
-                        self.series_selected.emit(self.selected_series_name)
         self.scan_completed.emit()
 
     def trigger_cleanup(self) -> None:
@@ -1114,7 +1126,7 @@ class Controller(QObject):
         self.cleanup_worker_instance.start()
 
     def _on_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
-        self.select_library(self.current_library_name)
+        self.select_library(self.current_library_name, reset_selection=False)
         series_removed: int = statistics.get("series", 0)
         seasons_removed: int = statistics.get("seasons", 0)
         episodes_removed: int = statistics.get("episodes", 0)
@@ -1135,7 +1147,7 @@ class Controller(QObject):
 
     def _on_pull_finished(self, updated_count: int) -> None:
         if self.current_library_name:
-            self.select_library(self.current_library_name)
+            self.select_library(self.current_library_name, reset_selection=False)
         self.status_changed.emit(
             f"Watch history pulled successfully: updated {updated_count} episodes."
         )
@@ -1195,7 +1207,7 @@ class Controller(QObject):
             if self.current_library_name == "Combined View":
                 self.library_loaded.emit()
             else:
-                self.select_library(self.current_library_name)
+                self.select_library(self.current_library_name, reset_selection=False)
         self.scan_completed.emit()
 
     def trigger_cleanup_all(self) -> None:
@@ -1218,7 +1230,7 @@ class Controller(QObject):
     def _on_cleanup_all_finished(self) -> None:
         self.status_changed.emit("Global multi-library cleanup completed successfully.")
         if self.current_library_name:
-            self.select_library(self.current_library_name)
+            self.select_library(self.current_library_name, reset_selection=False)
 
     def trigger_runtime_extraction(self) -> None:
         if (
@@ -1245,7 +1257,7 @@ class Controller(QObject):
             f"Runtime extraction completed: updated {updated_count} videos."
         )
         if self.current_library_name:
-            self.select_library(self.current_library_name)
+            self.select_library(self.current_library_name, reset_selection=False)
 
     def _on_worker_error(self, error_message: str) -> None:
         self.status_changed.emit(f"Worker Error: {error_message}")
@@ -1582,18 +1594,27 @@ class Controller(QObject):
         self.refresh_worker_instance.start()
 
     def _on_refresh_finished(self, updated_library: Dict[str, Any]) -> None:
-        if self.current_library_name:
-            self.cached_library_data = updated_library
-            self._cache_series_metrics()
-            self.status_changed.emit("Metadata refresh completed successfully.")
-            if not self.is_video_playing:
-                self.library_loaded.emit()
-                if self.selected_series_name:
-                    library_config = config.libraries.get(self.current_library_name, {})
-                    if library_config.get("type", "tv") == "movie":
-                        self.movie_selected.emit(self.selected_series_name)
-                    else:
-                        self.series_selected.emit(self.selected_series_name)
+        scanned_library_name = (
+            self.refresh_worker_instance.library_name
+            if self.refresh_worker_instance
+            else self.current_library_name
+        )
+        if scanned_library_name:
+            if self.current_library_name == scanned_library_name:
+                self.cached_library_data = updated_library
+                self._cache_series_metrics()
+                self.status_changed.emit("Metadata refresh completed successfully.")
+                if not self.is_video_playing:
+                    self.library_loaded.emit()
+            else:
+                item_name = (
+                    self.refresh_worker_instance.item_name
+                    if self.refresh_worker_instance
+                    else "item"
+                )
+                self.status_changed.emit(
+                    f"Background refresh for '{item_name}' completed successfully."
+                )
 
     def refresh_episode_metadata(self, series_name: str, episode_path: str) -> None:
         """
@@ -2497,6 +2518,7 @@ class SeriesDetailView(QWidget):
 
         self._setup_ui()
         self.controller.series_selected.connect(self.populate_series_details)
+        self.controller.library_loaded.connect(self.on_library_loaded)
 
     def _setup_ui(self) -> None:
         main_layout: QVBoxLayout = QVBoxLayout(self)
@@ -2560,6 +2582,14 @@ class SeriesDetailView(QWidget):
 
         # Seasons Table Container Tabs
         main_layout.addWidget(self.seasons_tab_widget)
+
+    @Slot()
+    def on_library_loaded(self) -> None:
+        if (
+            self._current_series_name
+            and self._current_series_name in self.controller.cached_library_data
+        ):
+            self.populate_series_details(self._current_series_name)
 
     @Slot()
     def _on_mark_series_watched(self) -> None:
@@ -5922,6 +5952,7 @@ class MovieDetailView(QWidget):
 
         self._setup_ui()
         self.controller.movie_selected.connect(self.populate_movie_details)
+        self.controller.library_loaded.connect(self.on_library_loaded)
         self._current_movie_path: str = ""
 
     def _setup_ui(self) -> None:
@@ -6046,6 +6077,18 @@ class MovieDetailView(QWidget):
         if not pixmap_assigned:
             self.poster_label.clear()
             self.poster_label.setText("No Poster")
+
+    @Slot()
+    def on_library_loaded(self) -> None:
+        library_config = config.libraries.get(self.controller.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+        if (
+            is_movie
+            and self.controller.selected_series_name
+            and self.controller.selected_series_name
+            in self.controller.cached_library_data
+        ):
+            self.populate_movie_details(self.controller.selected_series_name)
 
     @Slot()
     def _on_play_clicked(self) -> None:

@@ -67,6 +67,7 @@ class ScanWorker(QThread):
         force_refresh: bool = False,
         cleanup: bool = False,
         parent: Optional[QObject] = None,
+        library_name: str = "",
     ) -> None:
         super().__init__(parent)
         self.root_directories: List[str] = root_directories
@@ -75,6 +76,7 @@ class ScanWorker(QThread):
         self.force_refresh: bool = force_refresh
         self.cleanup: bool = cleanup
         self.unavailable_directories: List[str] = []
+        self.library_name: str = library_name
 
     def run(self) -> None:
         try:

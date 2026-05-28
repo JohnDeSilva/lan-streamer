@@ -736,11 +736,11 @@ def test_controller_worker_slots(sample_library_dictionary: Dict[str, Any]) -> N
 
     with patch("lan_streamer.ui_views.Controller.select_library") as mock_select:
         controller_instance._on_cleanup_finished({"series": 1})
-        mock_select.assert_called_once_with("Cosmos")
+        mock_select.assert_called_once_with("Cosmos", reset_selection=False)
 
     with patch("lan_streamer.ui_views.Controller.select_library") as mock_select:
         controller_instance._on_pull_finished(5)
-        mock_select.assert_called_once_with("Cosmos")
+        mock_select.assert_called_once_with("Cosmos", reset_selection=False)
 
     controller_instance._on_push_finished(10)
     controller_instance._on_worker_error("Test Worker Exception")
@@ -991,7 +991,7 @@ def test_controller_global_triggers() -> None:
         # Test finished callback
         with patch.object(controller_instance, "select_library") as mock_select:
             controller_instance._on_scan_all_finished()
-            mock_select.assert_called_once_with("CosmosLib")
+            mock_select.assert_called_once_with("CosmosLib", reset_selection=False)
 
     with patch("lan_streamer.ui_views.CleanupAllLibrariesWorker") as mock_cleanup_all:
         controller_instance.trigger_cleanup_all()
@@ -1008,7 +1008,7 @@ def test_controller_global_triggers() -> None:
         # Test finished callback
         with patch.object(controller_instance, "select_library") as mock_select:
             controller_instance._on_cleanup_all_finished()
-            mock_select.assert_called_once_with("CosmosLib")
+            mock_select.assert_called_once_with("CosmosLib", reset_selection=False)
 
 
 def test_settings_dialog_global_actions(qtbot: Any) -> None:
@@ -1327,7 +1327,7 @@ def test_controller_additional_coverage() -> None:
         # finished callback
         with patch.object(controller_instance, "select_library") as mock_select:
             controller_instance._on_runtime_finished(3)
-            mock_select.assert_called_once_with("MovieLib")
+            mock_select.assert_called_once_with("MovieLib", reset_selection=False)
 
     # 7. update_movie_metadata
     controller_instance.cached_library_data = {
