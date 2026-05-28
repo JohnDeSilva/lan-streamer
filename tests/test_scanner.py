@@ -2150,3 +2150,132 @@ def test_scan_series_warns_on_nested_too_deep_files(tmp_path) -> None:
         mock_warn.assert_any_call(
             "Ignoring subdirectory in season folder: 'Season 1/Featurettes'"
         )
+
+
+def test_get_detailed_file_info_and_runtime_worker(tmp_path) -> None:
+    """Verify that get_detailed_file_info parses technical metadata and RuntimeExtractionWorker saves it to the DB."""
+    import json
+    from lan_streamer.scanner import get_detailed_file_info
+    from lan_streamer.backend import RuntimeExtractionWorker
+    import lan_streamer.db as db
+
+    video_file = tmp_path / "detailed_video.mkv"
+    video_file.touch()
+
+    # Mock ffprobe JSON output
+    mock_ffprobe_data = {
+        "format": {
+            "duration": "3600.00"  # 60 minutes
+        },
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "hevc",
+                "width": 3840,
+                "height": 2160,
+            },
+            {
+                "codec_type": "audio",
+                "codec_name": "ac3",
+                "index": 1,
+                "tags": {"language": "eng", "title": "Surround 5.1"},
+            },
+            {
+                "codec_type": "subtitle",
+                "codec_name": "subrip",
+                "index": 2,
+                "tags": {"language": "eng", "title": "English SDH"},
+            },
+        ],
+    }
+
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = json.dumps(mock_ffprobe_data)
+
+    with patch("subprocess.run", return_value=mock_process) as mock_run:
+        info = get_detailed_file_info(str(video_file.absolute()))
+        assert info["runtime"] == 60
+        assert info["video_codec"] == "hevc"
+        assert info["resolution"] == "3840x2160"
+        assert len(info["audio_tracks"]) == 1
+        assert info["audio_tracks"][0]["codec"] == "ac3"
+        assert len(info["subtitle_tracks"]) == 1
+        assert info["subtitle_tracks"][0]["language"] == "eng"
+        mock_run.assert_called_once()
+
+    # Now let's test that the RuntimeExtractionWorker updates the database with these fields
+    # First, insert a movie and an episode missing runtime
+    with db.get_session() as session:
+        # Clear any existing movies/episodes
+        session.query(db.Episode).delete()
+        session.query(db.Movie).delete()
+        session.query(db.Season).delete()
+        session.query(db.Series).delete()
+
+        series = db.Series(library_name="TV Shows", name="Test Show")
+        session.add(series)
+        session.flush()
+
+        season = db.Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+
+        episode = db.Episode(
+            season_id=season.id,
+            name="S01E01",
+            path=str(video_file.absolute()),
+            runtime=0,
+        )
+        session.add(episode)
+
+        movie = db.Movie(
+            library_name="Movies",
+            name="Test Movie",
+            path=str(video_file.absolute()) + ".movie.mkv",
+            runtime=0,
+        )
+        session.add(movie)
+        session.commit()
+
+        episode_id = episode.id
+        movie_id = movie.id
+
+    # Touch the movie file too so it exists
+    Path(str(video_file.absolute()) + ".movie.mkv").touch()
+
+    # Mock get_items_missing_runtime to return our test items
+    with patch("lan_streamer.db.get_items_missing_runtime") as mock_get_missing:
+        mock_get_missing.return_value = [
+            {"id": episode_id, "path": str(video_file.absolute()), "type": "episode"},
+            {
+                "id": movie_id,
+                "path": str(video_file.absolute()) + ".movie.mkv",
+                "type": "movie",
+            },
+        ]
+
+        worker = RuntimeExtractionWorker()
+
+        # Mock subprocess.run inside the worker's run thread
+        with patch("subprocess.run", return_value=mock_process):
+            worker.run()
+
+    # Verify that the database now has the runtime and technical metadata populated
+    with db.get_session() as session:
+        db_episode = session.get(db.Episode, episode_id)
+        assert db_episode.runtime == 60
+        assert db_episode.video_codec == "hevc"
+        assert db_episode.resolution == "3840x2160"
+
+        db_movie = session.get(db.Movie, movie_id)
+        assert db_movie.runtime == 60
+        assert db_movie.video_codec == "hevc"
+        assert db_movie.resolution == "3840x2160"
+
+        # Verify JSON decoding
+        ep_dict = db._build_episode_dict(db_episode)
+        assert len(ep_dict["audio_tracks"]) == 1
+        assert ep_dict["audio_tracks"][0]["title"] == "Surround 5.1"
+        assert len(ep_dict["subtitle_tracks"]) == 1
+        assert ep_dict["subtitle_tracks"][0]["title"] == "English SDH"

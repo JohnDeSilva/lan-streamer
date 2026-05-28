@@ -152,6 +152,19 @@ def init_db() -> bool:
 
 def _build_episode_dict(episode: "Episode") -> Dict[str, Any]:
     """Maps a single Episode ORM row to its plain dictionary representation."""
+    import json
+
+    try:
+        audio_tracks = json.loads(episode.audio_tracks) if episode.audio_tracks else []
+    except Exception:
+        audio_tracks = []
+    try:
+        subtitle_tracks = (
+            json.loads(episode.subtitle_tracks) if episode.subtitle_tracks else []
+        )
+    except Exception:
+        subtitle_tracks = []
+
     return {
         "name": episode.name,
         "path": episode.path,
@@ -164,6 +177,10 @@ def _build_episode_dict(episode: "Episode") -> Dict[str, Any]:
         "air_date": episode.air_date or "",
         "runtime": episode.runtime or 0,
         "last_played_at": episode.last_played_at or 0,
+        "video_codec": episode.video_codec or "",
+        "resolution": episode.resolution or "",
+        "audio_tracks": audio_tracks,
+        "subtitle_tracks": subtitle_tracks,
     }
 
 
@@ -202,6 +219,19 @@ def _build_series_dict(series: "Series") -> Dict[str, Any]:
 
 def _build_movie_dict(movie: "Movie") -> Dict[str, Any]:
     """Maps a single Movie ORM row to its plain dictionary representation."""
+    import json
+
+    try:
+        audio_tracks = json.loads(movie.audio_tracks) if movie.audio_tracks else []
+    except Exception:
+        audio_tracks = []
+    try:
+        subtitle_tracks = (
+            json.loads(movie.subtitle_tracks) if movie.subtitle_tracks else []
+        )
+    except Exception:
+        subtitle_tracks = []
+
     return {
         "name": movie.name,
         "path": movie.path,
@@ -219,6 +249,10 @@ def _build_movie_dict(movie: "Movie") -> Dict[str, Any]:
         "watched": bool(movie.watched),
         "last_played_position": movie.last_played_position or 0,
         "last_played_at": movie.last_played_at or 0,
+        "video_codec": movie.video_codec or "",
+        "resolution": movie.resolution or "",
+        "audio_tracks": audio_tracks,
+        "subtitle_tracks": subtitle_tracks,
     }
 
 
@@ -245,6 +279,24 @@ def _apply_movie_fields(movie: "Movie", movie_data: Dict[str, Any]) -> None:
     movie.last_played_position = (
         movie_data.get("last_played_position") or movie.last_played_position or 0
     )
+    if "video_codec" in movie_data:
+        movie.video_codec = movie_data.get("video_codec") or movie.video_codec
+    if "resolution" in movie_data:
+        movie.resolution = movie_data.get("resolution") or movie.resolution
+    import json
+
+    if "audio_tracks" in movie_data:
+        movie.audio_tracks = (
+            json.dumps(movie_data["audio_tracks"])
+            if movie_data["audio_tracks"]
+            else movie.audio_tracks
+        )
+    if "subtitle_tracks" in movie_data:
+        movie.subtitle_tracks = (
+            json.dumps(movie_data["subtitle_tracks"])
+            if movie_data["subtitle_tracks"]
+            else movie.subtitle_tracks
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -567,6 +619,24 @@ def _save_episode_record(
     episode.date_added = episode_data.get("date_added") or episode.date_added or 0
     episode.air_date = episode_data.get("air_date") or episode.air_date
     episode.runtime = episode_data.get("runtime") or episode.runtime or 0
+    if "video_codec" in episode_data:
+        episode.video_codec = episode_data.get("video_codec") or episode.video_codec
+    if "resolution" in episode_data:
+        episode.resolution = episode_data.get("resolution") or episode.resolution
+    import json
+
+    if "audio_tracks" in episode_data:
+        episode.audio_tracks = (
+            json.dumps(episode_data["audio_tracks"])
+            if episode_data["audio_tracks"]
+            else episode.audio_tracks
+        )
+    if "subtitle_tracks" in episode_data:
+        episode.subtitle_tracks = (
+            json.dumps(episode_data["subtitle_tracks"])
+            if episode_data["subtitle_tracks"]
+            else episode.subtitle_tracks
+        )
     return episode
 
 
@@ -1012,9 +1082,17 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
 
 
 def update_item_runtime(
-    item_identifier: int, item_type: str, runtime_minutes: int
+    item_identifier: int,
+    item_type: str,
+    runtime_minutes: int,
+    video_codec: Optional[str] = None,
+    resolution: Optional[str] = None,
+    audio_tracks: Optional[List[Dict[str, Any]]] = None,
+    subtitle_tracks: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
-    """Updates the runtime field for a given episode or movie."""
+    """Updates the runtime and technical info fields for a given episode or movie."""
+    import json
+
     try:
         with get_session() as session:
             if item_type == "episode":
@@ -1023,14 +1101,32 @@ def update_item_runtime(
                 ).first()
                 if episode:
                     episode.runtime = runtime_minutes
+                    if video_codec:
+                        episode.video_codec = video_codec
+                    if resolution:
+                        episode.resolution = resolution
+                    if audio_tracks is not None:
+                        episode.audio_tracks = json.dumps(audio_tracks)
+                    if subtitle_tracks is not None:
+                        episode.subtitle_tracks = json.dumps(subtitle_tracks)
             elif item_type == "movie":
                 movie = session.scalars(
                     select(Movie).where(Movie.id == item_identifier)
                 ).first()
                 if movie:
                     movie.runtime = runtime_minutes
+                    if video_codec:
+                        movie.video_codec = video_codec
+                    if resolution:
+                        movie.resolution = resolution
+                    if audio_tracks is not None:
+                        movie.audio_tracks = json.dumps(audio_tracks)
+                    if subtitle_tracks is not None:
+                        movie.subtitle_tracks = json.dumps(subtitle_tracks)
     except Exception:
-        logger.exception(f"Error updating runtime for {item_type} ID {item_identifier}")
+        logger.exception(
+            f"Error updating runtime and technical info for {item_type} ID {item_identifier}"
+        )
 
 
 def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:

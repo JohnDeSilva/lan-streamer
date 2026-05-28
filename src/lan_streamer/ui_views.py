@@ -3496,7 +3496,24 @@ class EpisodeDetailsDialog(QDialog):
     def _refresh_file_info(self) -> None:
         from .scanner import get_detailed_file_info, SUBTITLE_EXTENSIONS
 
-        info = get_detailed_file_info(self.episode_path)
+        # Check if we have cached technical metadata in the episode record
+        info: Dict[str, Any]
+        has_db_info = bool(self.episode_record.get("video_codec"))
+        if has_db_info:
+            info = {
+                "path": self.episode_path,
+                "video_codec": self.episode_record.get("video_codec"),
+                "resolution": self.episode_record.get("resolution") or "Unknown",
+                "audio_tracks": self.episode_record.get("audio_tracks") or [],
+                "subtitle_tracks": self.episode_record.get("subtitle_tracks") or [],
+            }
+            try:
+                info["size_bytes"] = Path(self.episode_path).stat().st_size
+            except Exception:
+                info["size_bytes"] = 0
+            info["video_type"] = Path(self.episode_path).suffix.upper().replace(".", "")
+        else:
+            info = get_detailed_file_info(self.episode_path)
 
         self.path_label.setText(self.episode_path)
         size_mb = info["size_bytes"] / (1024 * 1024)
@@ -3809,7 +3826,24 @@ class MovieDetailsDialog(QDialog):
     def _refresh_file_info(self) -> None:
         from .scanner import get_detailed_file_info, SUBTITLE_EXTENSIONS
 
-        info = get_detailed_file_info(self.movie_path)
+        # Check if we have cached technical metadata in the movie record
+        info: Dict[str, Any]
+        has_db_info = bool(self.movie_record.get("video_codec"))
+        if has_db_info:
+            info = {
+                "path": self.movie_path,
+                "video_codec": self.movie_record.get("video_codec"),
+                "resolution": self.movie_record.get("resolution") or "Unknown",
+                "audio_tracks": self.movie_record.get("audio_tracks") or [],
+                "subtitle_tracks": self.movie_record.get("subtitle_tracks") or [],
+            }
+            try:
+                info["size_bytes"] = Path(self.movie_path).stat().st_size
+            except Exception:
+                info["size_bytes"] = 0
+            info["video_type"] = Path(self.movie_path).suffix.upper().replace(".", "")
+        else:
+            info = get_detailed_file_info(self.movie_path)
 
         self.path_label.setText(self.movie_path)
         size_mb = info["size_bytes"] / (1024 * 1024)

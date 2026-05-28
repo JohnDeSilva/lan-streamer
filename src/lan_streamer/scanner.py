@@ -14,15 +14,17 @@ logger = logging.getLogger(__name__)
 def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
     """
     Extracts exhaustive technical metadata from a video file using ffprobe.
-    Returns a dictionary containing resolution, codecs, and track listings.
+    Returns a dictionary containing resolution, codecs, track listings, and runtime.
     """
     info: Dict[str, Any] = {
         "path": file_path,
         "size_bytes": 0,
         "video_type": "Unknown",
         "resolution": "Unknown",
+        "video_codec": "Unknown",
         "audio_tracks": [],
         "subtitle_tracks": [],
+        "runtime": 0,
     }
 
     if not file_path or not os.path.exists(file_path):
@@ -51,6 +53,16 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
         if process_result.returncode == 0:
             data = json.loads(process_result.stdout)
             streams = data.get("streams", [])
+            format_data = data.get("format", {})
+
+            # Extract runtime from duration
+            duration_str = format_data.get("duration")
+            if duration_str:
+                try:
+                    duration_seconds = float(duration_str)
+                    info["runtime"] = int(round(duration_seconds / 60.0))
+                except ValueError:
+                    pass
 
             for stream in streams:
                 codec_type = stream.get("codec_type")
@@ -71,7 +83,7 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
                     height = stream.get("height")
                     if width and height:
                         info["resolution"] = f"{width}x{height}"
-                    if not info.get("video_codec"):
+                    if info["video_codec"] == "Unknown" or not info.get("video_codec"):
                         info["video_codec"] = codec_name
                 elif codec_type == "audio":
                     info["audio_tracks"].append(track_info)
@@ -80,6 +92,9 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
 
     except Exception as exc:
         logger.error(f"Failed to extract detailed info for {file_path}: {exc}")
+
+    if info["runtime"] == 0:
+        info["runtime"] = _extract_video_runtime(file_path)
 
     return info
 
@@ -966,6 +981,12 @@ def scan_movie(
         else 0,
     }
 
+    if existing_movie_data:
+        movie_data["video_codec"] = existing_movie_data.get("video_codec")
+        movie_data["resolution"] = existing_movie_data.get("resolution")
+        movie_data["audio_tracks"] = existing_movie_data.get("audio_tracks")
+        movie_data["subtitle_tracks"] = existing_movie_data.get("subtitle_tracks")
+
     if detail_callback:
         detail_callback(
             "finish_file", {"file": str(video_file), "folder": movie_directory.name}
@@ -1312,7 +1333,7 @@ def _process_episode_file(
             str(series_data["_tmdb_series_id"]), ""
         )
 
-    return {
+    res = {
         "name": episode_name,
         "path": episode_path,
         "tmdb_identifier": tmdb_episode_identifier,
@@ -1327,6 +1348,14 @@ def _process_episode_file(
         else False,
         "date_added": ctime,
     }
+
+    if existing_episode:
+        res["video_codec"] = existing_episode.get("video_codec")
+        res["resolution"] = existing_episode.get("resolution")
+        res["audio_tracks"] = existing_episode.get("audio_tracks")
+        res["subtitle_tracks"] = existing_episode.get("subtitle_tracks")
+
+    return res
 
 
 def scan_series(

@@ -371,7 +371,7 @@ class CleanupAllLibrariesWorker(QThread):
 
 
 class RuntimeExtractionWorker(QThread):
-    """Processes videos sequentially in the background to extract missing runtimes."""
+    """Processes videos sequentially in the background to extract missing runtimes and technical metadata."""
 
     progress_updated = Signal(int, int)
     finished = Signal(int)
@@ -380,7 +380,7 @@ class RuntimeExtractionWorker(QThread):
     def run(self) -> None:
         try:
             logger.info("RuntimeExtractionWorker starting run")
-            from .scanner import _extract_video_runtime
+            from .scanner import get_detailed_file_info
 
             items_list: List[Dict[str, Any]] = db.get_items_missing_runtime()
             total_count: int = len(items_list)
@@ -389,12 +389,17 @@ class RuntimeExtractionWorker(QThread):
 
             for item_dictionary in items_list:
                 file_path: str = item_dictionary["path"]
-                extracted_runtime: int = _extract_video_runtime(file_path)
+                info = get_detailed_file_info(file_path)
+                extracted_runtime = info.get("runtime", 0)
                 if extracted_runtime > 0:
                     db.update_item_runtime(
-                        item_dictionary["id"],
-                        item_dictionary["type"],
-                        extracted_runtime,
+                        item_identifier=item_dictionary["id"],
+                        item_type=item_dictionary["type"],
+                        runtime_minutes=extracted_runtime,
+                        video_codec=info.get("video_codec"),
+                        resolution=info.get("resolution"),
+                        audio_tracks=info.get("audio_tracks"),
+                        subtitle_tracks=info.get("subtitle_tracks"),
                     )
                     updated_count += 1
 
