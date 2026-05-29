@@ -1,3 +1,14 @@
+## v0.19.0 (2026-05-28)
+
+### Feat
+
+- extract and store technical video metadata (codec, audio tracks, subtitles) during video runtime extraction
+
+### Fix
+
+- **dependency**: bump sqlalchemy from 2.0.49 to 2.0.50
+- **ui**: prevent view transitions/jumps during or after scans
+
 ## v0.18.2 (2026-05-27)
 
 ### Fix
