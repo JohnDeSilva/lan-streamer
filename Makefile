@@ -76,7 +76,7 @@ else
 test: test-local
 endif
 
-load-test: migrate
+load-test:
 	PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -m "load" -s --no-cov tests/
 
 

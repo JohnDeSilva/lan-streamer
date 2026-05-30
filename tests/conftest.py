@@ -16,6 +16,13 @@ def protect_user_dirs(tmp_path) -> None:
     from lan_streamer.system.config import config
     import lan_streamer.db
     import lan_streamer.providers.tmdb
+    from lan_streamer.providers.jellyfin import jellyfin_client
+    from lan_streamer.providers.tmdb import tmdb_client
+
+    # Save original state
+    config_dict = dict(config.__dict__)
+    jellyfin_dict = dict(jellyfin_client.__dict__)
+    tmdb_dict = dict(tmdb_client.__dict__)
 
     config_file = tmp_path / "config.json"
     db_file = tmp_path / "library.db"
@@ -32,6 +39,8 @@ def protect_user_dirs(tmp_path) -> None:
 
     with (
         patch("lan_streamer.system.config.CONFIG_FILE", config_file),
+        patch("lan_streamer.system.backup.CONFIG_FILE", config_file),
+        patch("lan_streamer.system.CONFIG_FILE", config_file),
         patch("lan_streamer.db.DB_FILE", db_file),
         patch("lan_streamer.providers.tmdb.CACHE_DIR", cache_dir),
     ):
@@ -48,12 +57,21 @@ def protect_user_dirs(tmp_path) -> None:
         config.divide_logs_by_service = False
         config.sort_mode = "Alphabetical"
         config.sort_descending = False
+        config.log_level = "INFO"
 
         yield
 
         # Dispose engine after test too
         if lan_streamer.db._engine is not None:
             lan_streamer.db._engine.dispose()
+
+    # Restore original state
+    config.__dict__.clear()
+    config.__dict__.update(config_dict)
+    jellyfin_client.__dict__.clear()
+    jellyfin_client.__dict__.update(jellyfin_dict)
+    tmdb_client.__dict__.clear()
+    tmdb_client.__dict__.update(tmdb_dict)
 
 
 @pytest.fixture(scope="session")

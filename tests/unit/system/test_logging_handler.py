@@ -195,8 +195,8 @@ def test_settings_dialog_export_logs(qtbot: QtBot, tmp_path, monkeypatch) -> Non
 
 def test_config_path_expansion(tmp_path, monkeypatch) -> None:
     import json
-    import importlib
     from pathlib import Path
+    from lan_streamer.system.config import Config
 
     fake_home = tmp_path / "fake_home"
     fake_home.mkdir()
@@ -218,22 +218,19 @@ def test_config_path_expansion(tmp_path, monkeypatch) -> None:
 
     import sys
 
-    try:
-        importlib.reload(sys.modules["lan_streamer.system.config"])
-        cfg = sys.modules["lan_streamer.system.config"].config
+    config_module = sys.modules["lan_streamer.system.config"]
+    monkeypatch.setattr(config_module, "CONFIG_FILE", temp_config_file)
+    cfg = Config()
 
-        expected_db = str(fake_home / "library.db")
-        expected_log = str(fake_home / "logs")
-        expected_cache = str(fake_home / "cache")
-        expected_backup = str(fake_home / "backups")
+    expected_db = str(fake_home / "library.db")
+    expected_log = str(fake_home / "logs")
+    expected_cache = str(fake_home / "cache")
+    expected_backup = str(fake_home / "backups")
 
-        assert cfg.database_path == expected_db
-        assert cfg.log_directory == expected_log
-        assert cfg.cache_directory == expected_cache
-        assert cfg.backup_directory == expected_backup
-    finally:
-        monkeypatch.undo()
-        importlib.reload(sys.modules["lan_streamer.system.config"])
+    assert cfg.database_path == expected_db
+    assert cfg.log_directory == expected_log
+    assert cfg.cache_directory == expected_cache
+    assert cfg.backup_directory == expected_backup
 
 
 def test_divided_service_logging_realtime_flow(tmp_path) -> None:

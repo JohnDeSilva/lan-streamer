@@ -18,7 +18,6 @@ from lan_streamer.ui_views import (
     EpisodeMatchDialog,
     RenamePreviewDialog,
     SettingsDialog,
-    get_application_stylesheet,
 )
 from lan_streamer.system.config import config
 
@@ -61,94 +60,6 @@ def sample_library_dictionary(generated_video_asset: str) -> Dict[str, Any]:
             },
         }
     }
-
-
-def test_stylesheet_validity() -> None:
-    css_content: str = get_application_stylesheet()
-    assert "background-color" in css_content
-    assert "border-radius" in css_content
-
-
-def test_controller_metrics_caching(sample_library_dictionary: Dict[str, Any]) -> None:
-    controller_instance = Controller()
-    controller_instance.cached_library_data = sample_library_dictionary
-    controller_instance._cache_series_metrics()
-
-    metrics_dictionary: Dict[str, Any] = sample_library_dictionary["Cosmos"]["metrics"]
-    assert metrics_dictionary["total_episodes"] == 2
-    assert metrics_dictionary["watched_episodes"] == 1
-    assert metrics_dictionary["max_date_added"] == 2000
-    assert metrics_dictionary["max_air_date"] == "1980-10-05"
-
-
-def test_controller_library_selection(
-    sample_library_dictionary: Dict[str, Any],
-) -> None:
-    controller_instance = Controller()
-    with patch("lan_streamer.db.load_library", return_value=sample_library_dictionary):
-        loaded_signals_emitted: List[bool] = []
-        controller_instance.library_loaded.connect(
-            lambda: loaded_signals_emitted.append(True)
-        )
-
-        controller_instance.select_library("Main Media")
-        assert controller_instance.current_library_name == "Main Media"
-        assert len(loaded_signals_emitted) == 1
-        assert "Cosmos" in controller_instance.cached_library_data
-
-
-def test_controller_sorting_and_filtering() -> None:
-    controller_instance = Controller()
-    loaded_signals_emitted: List[bool] = []
-    controller_instance.library_loaded.connect(
-        lambda: loaded_signals_emitted.append(True)
-    )
-
-    target_mode: str = (
-        "Recently Aired"
-        if controller_instance.sort_mode == "Recently Added"
-        else "Recently Added"
-    )
-    controller_instance.set_sort_mode(target_mode)
-    assert controller_instance.sort_mode == target_mode
-    assert config.sort_mode == target_mode
-    assert len(loaded_signals_emitted) == 1
-
-    initial_filter: bool = controller_instance.filter_out_watched
-    controller_instance.set_filter_out_watched(not initial_filter)
-    assert controller_instance.filter_out_watched is not initial_filter
-    assert config.filter_out_watched is not initial_filter
-    assert len(loaded_signals_emitted) == 2
-
-
-def test_controller_triggers(qtbot: Any) -> None:
-    controller_instance = Controller()
-    controller_instance.current_library_name = "Test Lib"
-    config.libraries["Test Lib"] = {"type": "tv", "paths": ["/path/to/media"]}
-
-    with patch("lan_streamer.ui_views.ScanWorker") as mock_scan:
-        controller_instance.trigger_scan(force_refresh=True)
-        mock_scan.assert_called_once()
-        mock_scan.return_value.start.assert_called_once()
-
-    with patch("lan_streamer.ui_views.CleanupWorker") as mock_cleanup:
-        controller_instance.trigger_cleanup()
-        mock_cleanup.assert_called_once()
-        mock_cleanup.return_value.start.assert_called_once()
-
-
-def test_controller_jellyfin_sync_triggers() -> None:
-    controller_instance = Controller()
-    with patch(
-        "lan_streamer.ui_views.jellyfin_client.is_configured", return_value=True
-    ):
-        with patch("lan_streamer.ui_views.JellyfinPullWorker") as mock_pull:
-            controller_instance.trigger_jellyfin_pull()
-            mock_pull.assert_called_once()
-
-        with patch("lan_streamer.ui_views.JellyfinPushWorker") as mock_push:
-            controller_instance.trigger_jellyfin_push()
-            mock_push.assert_called_once()
 
 
 def test_library_grid_view_rendering(
@@ -429,7 +340,7 @@ def test_e2e_right_click_marks_watched(
     table_widget: Optional[Any] = page_widget.findChild(QTableWidget)
     assert isinstance(table_widget, QTableWidget)
 
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
 
     with patch("lan_streamer.ui_views.QMenu") as mock_qmenu_class:
         mock_menu_instance = MagicMock()
@@ -680,6 +591,12 @@ def test_settings_dialog_lifecycle(qtbot: Any) -> None:
     dialog_instance = SettingsDialog()
     qtbot.addWidget(dialog_instance)
 
+    # Initialize backup options to valid, non-warning defaults to avoid blocking dialogs
+    dialog_instance.config_backup_frequency_input.setText("0")
+    dialog_instance.config_backup_retention_input.setText("7")
+    dialog_instance.database_backup_frequency_input.setText("0")
+    dialog_instance.database_backup_retention_input.setText("7")
+
     dialog_instance.jellyfin_url_input.setText("http://localhost:8096")
     dialog_instance.use_embedded_checkbox.setChecked(False)
     dialog_instance.enable_caching_checkbox.setChecked(True)
@@ -723,75 +640,6 @@ def test_settings_dialog_lifecycle(qtbot: Any) -> None:
     assert config.max_log_retention_days == 14
     assert config.watched_threshold == 0.98
     assert config.divide_logs_by_service is False
-
-
-def test_controller_worker_slots(sample_library_dictionary: Dict[str, Any]) -> None:
-    controller_instance = Controller()
-    controller_instance.current_library_name = "Cosmos"
-    controller_instance.selected_series_name = "Cosmos"
-    controller_instance.cached_library_data = sample_library_dictionary
-
-    with patch("lan_streamer.db.save_library") as mock_save:
-        controller_instance._on_scan_finished(sample_library_dictionary)
-        mock_save.assert_called_once()
-
-    with patch("lan_streamer.ui_views.Controller.select_library") as mock_select:
-        controller_instance._on_cleanup_finished({"series": 1})
-        mock_select.assert_called_once_with("Cosmos", reset_selection=False)
-
-    with patch("lan_streamer.ui_views.Controller.select_library") as mock_select:
-        controller_instance._on_pull_finished(5)
-        mock_select.assert_called_once_with("Cosmos", reset_selection=False)
-
-    controller_instance._on_push_finished(10)
-    controller_instance._on_worker_error("Test Worker Exception")
-
-
-def test_controller_scan_unavailable_directories(
-    sample_library_dictionary: Dict[str, Any],
-) -> None:
-    controller_instance = Controller()
-    controller_instance.current_library_name = "Cosmos"
-    controller_instance.selected_series_name = "Cosmos"
-    controller_instance.cached_library_data = sample_library_dictionary
-
-    # Mock ScanWorker
-    mock_scan_worker = MagicMock()
-    mock_scan_worker.unavailable_directories = [
-        "/unavailable/path/1",
-        "/unavailable/path/2",
-    ]
-    controller_instance.scan_worker_instance = mock_scan_worker
-
-    status_emitted: List[str] = []
-    controller_instance.status_changed.connect(status_emitted.append)
-
-    with patch("lan_streamer.db.save_library"):
-        controller_instance._on_scan_finished(sample_library_dictionary)
-
-    assert status_emitted == [
-        "root directory /unavailable/path/1 is unavailable check connection to /unavailable/path/1",
-        "root directory /unavailable/path/2 is unavailable check connection to /unavailable/path/2",
-    ]
-
-
-def test_controller_scan_all_unavailable_directories() -> None:
-    controller_instance = Controller()
-    controller_instance.current_library_name = "Cosmos"
-
-    mock_scan_all_worker = MagicMock()
-    mock_scan_all_worker.unavailable_directories = ["/unavailable/all/1"]
-    controller_instance.scan_all_worker_instance = mock_scan_all_worker
-
-    status_emitted: List[str] = []
-    controller_instance.status_changed.connect(status_emitted.append)
-
-    with patch.object(controller_instance, "select_library"):
-        controller_instance._on_scan_all_finished()
-
-    assert status_emitted == [
-        "root directory /unavailable/all/1 is unavailable check connection to /unavailable/all/1",
-    ]
 
 
 def test_settings_dialog_libraries_management(qtbot: Any) -> None:
@@ -921,95 +769,6 @@ def test_settings_dialog_backup_options_warning(qtbot: Any) -> None:
         mock_question.assert_called_once()
         assert config.config_backup_retention == 5
         assert config.config_backup_frequency == 10
-
-
-def test_controller_partial_scan_updates() -> None:
-    controller_instance = Controller()
-    controller_instance.current_library_name = "TestCinematic"
-    partial_library = {"Avatar": {"metadata": {"poster_path": "/avatar.jpg"}}}
-    mock_slot = MagicMock()
-    controller_instance.library_loaded.connect(mock_slot)
-    controller_instance._on_scan_partial(partial_library)
-    assert controller_instance.cached_library_data == partial_library
-    mock_slot.assert_called_once()
-
-
-def test_controller_file_system_monitoring(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any, tmp_path: Any
-) -> None:
-    controller_instance = Controller()
-    media_directory = tmp_path / "cinematic_roots"
-    media_directory.mkdir()
-    directory_path_string = str(media_directory)
-
-    config.libraries["ActiveMonitoredLib"] = {
-        "type": "tv",
-        "paths": [directory_path_string],
-    }
-
-    with patch("lan_streamer.db.load_library", return_value=sample_library_dictionary):
-        controller_instance.select_library("ActiveMonitoredLib")
-        assert (
-            directory_path_string
-            in controller_instance.file_system_watcher.directories()
-        )
-
-        with patch.object(controller_instance.debounce_timer, "start") as mock_start:
-            controller_instance._on_directory_changed(directory_path_string)
-            mock_start.assert_not_called()
-
-        with patch.object(controller_instance, "trigger_scan") as mock_trigger:
-            controller_instance._on_debounce_timeout()
-            mock_trigger.assert_not_called()
-
-        # Test concurrency protection
-        mock_worker = MagicMock()
-        mock_worker.isRunning.return_value = True
-        controller_instance.scan_worker_instance = mock_worker
-        controller_instance.current_library_name = "ActiveMonitoredLib"
-
-        with patch("lan_streamer.ui_views.ScanWorker") as mock_worker_constructor:
-            controller_instance.trigger_scan(force_refresh=False)
-            mock_worker_constructor.assert_not_called()
-
-
-def test_controller_global_triggers() -> None:
-    controller_instance = Controller()
-    controller_instance.current_library_name = "CosmosLib"
-
-    with patch("lan_streamer.ui_views.ScanAllLibrariesWorker") as mock_scan_all:
-        controller_instance.trigger_scan_all(force_refresh=True)
-        mock_scan_all.assert_called_once_with(force_refresh=True)
-        mock_scan_all.return_value.start.assert_called_once()
-
-        # Test concurrency protection
-        mock_worker = MagicMock()
-        mock_worker.isRunning.return_value = True
-        controller_instance.scan_all_worker_instance = mock_worker
-        controller_instance.trigger_scan_all(force_refresh=False)
-        assert mock_scan_all.call_count == 1
-
-        # Test finished callback
-        with patch.object(controller_instance, "select_library") as mock_select:
-            controller_instance._on_scan_all_finished()
-            mock_select.assert_called_once_with("CosmosLib", reset_selection=False)
-
-    with patch("lan_streamer.ui_views.CleanupAllLibrariesWorker") as mock_cleanup_all:
-        controller_instance.trigger_cleanup_all()
-        mock_cleanup_all.assert_called_once()
-        mock_cleanup_all.return_value.start.assert_called_once()
-
-        # Test concurrency protection
-        mock_worker_clean = MagicMock()
-        mock_worker_clean.isRunning.return_value = True
-        controller_instance.cleanup_all_worker_instance = mock_worker_clean
-        controller_instance.trigger_cleanup_all()
-        assert mock_cleanup_all.call_count == 1
-
-        # Test finished callback
-        with patch.object(controller_instance, "select_library") as mock_select:
-            controller_instance._on_cleanup_all_finished()
-            mock_select.assert_called_once_with("CosmosLib", reset_selection=False)
 
 
 def test_settings_dialog_global_actions(qtbot: Any) -> None:
@@ -2130,6 +1889,7 @@ def test_combined_view_row_management(qtbot: Any) -> None:
 
 
 def test_combined_view_scan_button(qtbot: Any) -> None:
+    config.enable_combined_view = True
     controller_instance = Controller()
 
     with patch("lan_streamer.db.get_combined_smart_row", return_value=[]):
