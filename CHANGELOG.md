@@ -1,3 +1,9 @@
+## v0.20.1 (2026-05-30)
+
+### Fix
+
+- **scanner**: auto-resolve ffprobe path with caching/logging and add tests
+
 ## v0.20.0 (2026-05-30)
 
 ### Feat
