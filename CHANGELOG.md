@@ -1,3 +1,13 @@
+## v0.20.0 (2026-05-30)
+
+### Feat
+
+- **ui**: implement library scan order and fix progress bar segment ordering
+
+### Refactor
+
+- Restructure codebase to sub-packages and update absolute imports (Option B)
+
 ## v0.19.0 (2026-05-28)
 
 ### Feat
