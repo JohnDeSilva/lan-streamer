@@ -415,11 +415,35 @@ class Controller(QObject):
             self.global_progress_updated.emit
         )
         self.scan_all_worker_instance.detail_progress.connect(
-            self.detail_progress_updated.emit
+            self._on_scan_all_detail_progress
         )
         self.scan_all_worker_instance.finished.connect(self._on_scan_all_finished)
         self.scan_all_worker_instance.error.connect(self._on_worker_error)
         self.scan_all_worker_instance.start()
+
+    def _on_scan_all_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
+        self.detail_progress_updated.emit(event, payload)
+
+        if event == "finish_root":
+            scanned_library = payload.get("library")
+            if scanned_library and (
+                self.current_library_name == scanned_library
+                or self.current_library_name == "Combined View"
+            ):
+                if self.current_library_name == "Combined View":
+                    self.library_loaded.emit()
+                else:
+                    library_config = config.libraries.get(self.current_library_name, {})
+                    if library_config.get("type", "tv") == "movie":
+                        self.cached_library_data = db.load_movie_library(
+                            self.current_library_name
+                        )
+                    else:
+                        self.cached_library_data = db.load_library(
+                            self.current_library_name
+                        )
+                    self._cache_series_metrics()
+                    self.library_loaded.emit()
 
     def _on_scan_all_finished(self) -> None:
         if (

@@ -183,6 +183,11 @@ class SeriesDetailView(QWidget):
             self.poster_label.clear()
             self.poster_label.setText("No Poster")
 
+        # Save active tab text to restore it later and prevent tab jumping
+        current_tab_name: Optional[str] = None
+        if self.seasons_tab_widget.count() > 0:
+            current_tab_name = self.seasons_tab_widget.tabText(self.seasons_tab_widget.currentIndex())
+
         # Clear and repopulate Season Tabs
         self.seasons_tab_widget.clear()
         seasons_dictionary: Dict[str, Any] = series_record.get("seasons", {})
@@ -372,7 +377,16 @@ class SeriesDetailView(QWidget):
 
             self.seasons_tab_widget.addTab(season_page, season_name)
 
-        if is_opening and sorted_season_names:
+        # Restore previous tab if it exists, otherwise select first unwatched tab on first load
+        restored_tab = False
+        if not is_opening and current_tab_name:
+            for idx in range(self.seasons_tab_widget.count()):
+                if self.seasons_tab_widget.tabText(idx) == current_tab_name:
+                    self.seasons_tab_widget.setCurrentIndex(idx)
+                    restored_tab = True
+                    break
+
+        if not restored_tab and sorted_season_names:
             target_tab_index: int = 0
             for index_position, season_name in enumerate(sorted_season_names):
                 season_data_record = seasons_dictionary.get(season_name, {})

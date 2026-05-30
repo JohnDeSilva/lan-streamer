@@ -79,6 +79,7 @@ class SettingsDialog(QDialog):
         self.library_type_input: QComboBox = QComboBox()
         self.library_selector: QComboBox = QComboBox()
         self.directory_list_widget: QListWidget = QListWidget()
+        self.library_order_list_widget: QListWidget = QListWidget()
 
         self.use_embedded_checkbox: QCheckBox = QCheckBox(
             "Use Embedded Video Player (uncheck for Standalone VLC)"
@@ -230,7 +231,14 @@ class SettingsDialog(QDialog):
 
         # Libraries Management Pane
         libraries_tab: QWidget = QWidget()
-        libraries_layout: QVBoxLayout = QVBoxLayout(libraries_tab)
+        libraries_main_layout: QHBoxLayout = QHBoxLayout(libraries_tab)
+        libraries_main_layout.setSpacing(15)
+        libraries_main_layout.setContentsMargins(10, 10, 10, 10)
+
+        # Left Column: Existing Library Setup
+        left_column = QWidget()
+        libraries_layout: QVBoxLayout = QVBoxLayout(left_column)
+        libraries_layout.setContentsMargins(0, 0, 0, 0)
         libraries_layout.setSpacing(12)
 
         # Create Library Group
@@ -282,6 +290,28 @@ class SettingsDialog(QDialog):
         dir_buttons_layout.addWidget(remove_dir_button)
         dir_buttons_layout.addStretch()
         libraries_layout.addLayout(dir_buttons_layout)
+
+        libraries_main_layout.addWidget(left_column, 2)
+
+        # Right Column: Scan Order Setup
+        right_column = QWidget()
+        right_layout = QVBoxLayout(right_column)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(12)
+
+        right_layout.addWidget(QLabel("Library Scan Order (Left to Right):"))
+        right_layout.addWidget(self.library_order_list_widget)
+
+        order_btns_layout = QHBoxLayout()
+        move_up_order_btn = QPushButton("Move Up")
+        move_up_order_btn.clicked.connect(self.move_library_order_up)
+        move_down_order_btn = QPushButton("Move Down")
+        move_down_order_btn.clicked.connect(self.move_library_order_down)
+        order_btns_layout.addWidget(move_up_order_btn)
+        order_btns_layout.addWidget(move_down_order_btn)
+        right_layout.addLayout(order_btns_layout)
+
+        libraries_main_layout.addWidget(right_column, 1)
 
         # Combined View Setup Pane
         combined_tab: QWidget = QWidget()
@@ -939,12 +969,60 @@ class SettingsDialog(QDialog):
         self._refresh_combined_views_list()
         self.combined_views_list_widget.setCurrentRow(row_idx + 1)
 
+    def _refresh_library_order_list(self) -> None:
+        self.library_order_list_widget.blockSignals(True)
+        current_idx = self.library_order_list_widget.currentRow()
+        self.library_order_list_widget.clear()
+        for lib_name in self.staged_libraries.keys():
+            self.library_order_list_widget.addItem(lib_name)
+        if current_idx >= 0 and current_idx < len(self.staged_libraries):
+            self.library_order_list_widget.setCurrentRow(current_idx)
+        else:
+            if self.staged_libraries:
+                self.library_order_list_widget.setCurrentRow(0)
+        self.library_order_list_widget.blockSignals(False)
+
+    @Slot()
+    def move_library_order_up(self) -> None:
+        row_idx = self.library_order_list_widget.currentRow()
+        if row_idx <= 0 or row_idx >= len(self.staged_libraries):
+            return
+
+        keys = list(self.staged_libraries.keys())
+        keys[row_idx], keys[row_idx - 1] = keys[row_idx - 1], keys[row_idx]
+
+        new_staged = {}
+        for key in keys:
+            new_staged[key] = self.staged_libraries[key]
+        self.staged_libraries = new_staged
+
+        self._refresh_library_order_list()
+        self.library_order_list_widget.setCurrentRow(row_idx - 1)
+
+    @Slot()
+    def move_library_order_down(self) -> None:
+        row_idx = self.library_order_list_widget.currentRow()
+        if row_idx < 0 or row_idx >= len(self.staged_libraries) - 1:
+            return
+
+        keys = list(self.staged_libraries.keys())
+        keys[row_idx], keys[row_idx + 1] = keys[row_idx + 1], keys[row_idx]
+
+        new_staged = {}
+        for key in keys:
+            new_staged[key] = self.staged_libraries[key]
+        self.staged_libraries = new_staged
+
+        self._refresh_library_order_list()
+        self.library_order_list_widget.setCurrentRow(row_idx + 1)
+
     def _refresh_library_selector(self) -> None:
         self.library_selector.blockSignals(True)
         self.library_selector.clear()
         self.library_selector.addItems(sorted(self.staged_libraries.keys()))
         self.library_selector.blockSignals(False)
         self._refresh_directory_list()
+        self._refresh_library_order_list()
 
     @Slot(str)
     def _on_library_selected(self, library_name: str) -> None:
@@ -1255,8 +1333,13 @@ class SettingsDialog(QDialog):
 
         if event == "init_tree":
             tree = payload.get("tree", {})
-            self.global_progress_bar.init_from_tree(tree)
-            self.scan_progress_tree.init_from_tree(tree)
+            library_order = payload.get("library_order") or list(self.staged_libraries.keys())
+            self.global_progress_bar.init_from_tree(
+                tree, library_order, self.staged_libraries
+            )
+            self.scan_progress_tree.init_from_tree(
+                tree, library_order, self.staged_libraries
+            )
             self.global_progress_bar.setVisible(True)
             self.scan_progress_tree.setVisible(True)
 

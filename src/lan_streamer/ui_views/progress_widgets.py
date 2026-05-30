@@ -54,13 +54,33 @@ class SegmentedProgressBar(QWidget):
         # {root_dir: state}
         self._root_states: Dict[str, int] = {}
 
-    def init_from_tree(self, tree: Dict[str, Any]) -> None:
+    def init_from_tree(
+        self,
+        tree: Dict[str, Any],
+        library_order: Optional[List[str]] = None,
+        library_config_source: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> None:
         """Called once with the pre-discovery tree structure."""
-        self._library_order = list(tree.keys())
+        self._library_order = [lib for lib in library_order if lib in tree] if library_order is not None else list(tree.keys())
         self._libraries = {}
         self._root_states = {}
-        for lib_name, lib_data in tree.items():
-            roots = list(lib_data.get("roots", {}).keys())
+
+        if library_config_source is None:
+            from lan_streamer.system.config import config
+            library_config_source = config.libraries
+
+        for lib_name in self._library_order:
+            lib_data = tree[lib_name]
+            raw_roots = lib_data.get("roots", {})
+            config_paths = library_config_source.get(lib_name, {}).get("paths", [])
+            roots = []
+            for path in config_paths:
+                if path in raw_roots:
+                    roots.append(path)
+            for path in raw_roots.keys():
+                if path not in roots:
+                    roots.append(path)
+
             self._libraries[lib_name] = {
                 "roots": roots,
                 "root_totals": {r: len(lib_data["roots"][r]) for r in roots},
@@ -256,7 +276,12 @@ class ScanProgressTree(QWidget):
     # Initialisation
     # ------------------------------------------------------------------
 
-    def init_from_tree(self, tree: Dict[str, Any]) -> None:
+    def init_from_tree(
+        self,
+        tree: Dict[str, Any],
+        library_order: Optional[List[str]] = None,
+        library_config_source: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> None:
         """Builds the initial tree with all folder, season, and file nodes in pending state."""
         self._tree.clear()
         self._lib_nodes.clear()
@@ -265,7 +290,14 @@ class ScanProgressTree(QWidget):
         self._season_nodes.clear()
         self._file_nodes.clear()
 
-        for lib_name, lib_data in tree.items():
+        self._library_order = [lib for lib in library_order if lib in tree] if library_order is not None else list(tree.keys())
+
+        if library_config_source is None:
+            from lan_streamer.system.config import config
+            library_config_source = config.libraries
+
+        for lib_name in self._library_order:
+            lib_data = tree[lib_name]
             lib_type: str = lib_data.get("type", "tv")
             self._lib_types[lib_name] = lib_type
 
@@ -277,7 +309,18 @@ class ScanProgressTree(QWidget):
             lib_item.setFont(0, lib_font)
             self._lib_nodes[lib_name] = lib_item
 
-            for root_dir, folders_dict in lib_data.get("roots", {}).items():
+            raw_roots = lib_data.get("roots", {})
+            config_paths = library_config_source.get(lib_name, {}).get("paths", [])
+            roots = []
+            for path in config_paths:
+                if path in raw_roots:
+                    roots.append(path)
+            for path in raw_roots.keys():
+                if path not in roots:
+                    roots.append(path)
+
+            for root_dir in roots:
+                folders_dict = raw_roots[root_dir]
                 root_label = root_dir
                 root_item = QTreeWidgetItem(
                     lib_item, [f"{self._ICON_PENDING}  {root_label}"]

@@ -223,7 +223,13 @@ class ScanAllLibrariesWorker(QThread):
 
             # Pre-discover tree structure and tell the UI to initialise it
             tree_structure = self._discover_tree()
-            self.detail_progress.emit("init_tree", {"tree": tree_structure})
+            self.detail_progress.emit(
+                "init_tree",
+                {
+                    "tree": tree_structure,
+                    "library_order": list(config.libraries.keys()),
+                },
+            )
 
             jellyfin_data: Optional[Dict[str, Any]] = None
             if jellyfin_client.is_configured():
@@ -253,24 +259,56 @@ class ScanAllLibrariesWorker(QThread):
 
                     return _detail_callback
 
-                updated_library_data: LibraryDict = scan_directories(
-                    root_directories,
-                    library_type=library_type,
-                    existing_library=existing_library_data,
-                    jellyfin_data=jellyfin_data,
-                    callback=None,
-                    force_refresh=self.force_refresh,
-                    cleanup=False,
-                    detail_callback=_make_detail_callback(library_name),
-                )
-                self.unavailable_directories.extend(
-                    updated_library_data.unavailable_directories
-                )
+                # Scan root directories one by one
+                if not root_directories:
+                    updated_library_data: LibraryDict = scan_directories(
+                        [],
+                        library_type=library_type,
+                        existing_library=existing_library_data,
+                        jellyfin_data=jellyfin_data,
+                        callback=None,
+                        force_refresh=self.force_refresh,
+                        cleanup=False,
+                        detail_callback=_make_detail_callback(library_name),
+                    )
+                    self.unavailable_directories.extend(
+                        updated_library_data.unavailable_directories
+                    )
+                    existing_library_data = updated_library_data
 
-                if library_type == "movie":
-                    db.save_movie_library(library_name, updated_library_data)
+                    if library_type == "movie":
+                        db.save_movie_library(library_name, existing_library_data)
+                    else:
+                        db.save_library(library_name, existing_library_data)
                 else:
-                    db.save_library(library_name, updated_library_data)
+                    for root_dir in root_directories:
+                        self.detail_progress.emit(
+                            "start_root", {"library": library_name, "root": root_dir}
+                        )
+
+                        updated_library_data: LibraryDict = scan_directories(
+                            [root_dir],
+                            library_type=library_type,
+                            existing_library=existing_library_data,
+                            jellyfin_data=jellyfin_data,
+                            callback=None,
+                            force_refresh=self.force_refresh,
+                            cleanup=False,
+                            detail_callback=_make_detail_callback(library_name),
+                        )
+                        self.unavailable_directories.extend(
+                            updated_library_data.unavailable_directories
+                        )
+                        existing_library_data = updated_library_data
+
+                        if library_type == "movie":
+                            db.save_movie_library(library_name, existing_library_data)
+                        else:
+                            db.save_library(library_name, existing_library_data)
+
+                        self.detail_progress.emit(
+                            "finish_root", {"library": library_name, "root": root_dir}
+                        )
 
                 completed_count += 1
                 self.detail_progress.emit("finish_library", {"library": library_name})
