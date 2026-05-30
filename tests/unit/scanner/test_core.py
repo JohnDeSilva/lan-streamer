@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from lan_streamer.scanner import scan_directories
 import lan_streamer.scanner as scanner
@@ -2279,3 +2280,318 @@ def test_get_detailed_file_info_and_runtime_worker(tmp_path) -> None:
         assert ep_dict["audio_tracks"][0]["title"] == "Surround 5.1"
         assert len(ep_dict["subtitle_tracks"]) == 1
         assert ep_dict["subtitle_tracks"][0]["title"] == "English SDH"
+
+
+# ---------------------------------------------------------------------------
+# Movie Scanner Tests (from tests/test_movies.py)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_movie_folder() -> None:
+    from lan_streamer.scanner.core import _parse_movie_folder
+
+    assert _parse_movie_folder("Avatar (2009)") == ("Avatar", 2009)
+    assert _parse_movie_folder("The Godfather (1972)") == ("The Godfather", 1972)
+    assert _parse_movie_folder("No Year Movie") == ("No Year Movie", None)
+
+
+def test_scan_movie_no_video(tmp_path: Path) -> None:
+    from lan_streamer.scanner.core import scan_movie
+
+    movie_dir = tmp_path / "Empty Movie (2020)"
+    movie_dir.mkdir()
+    assert scan_movie(movie_dir) is None
+
+
+def test_scan_movie_success(tmp_path: Path) -> None:
+    from lan_streamer.scanner.core import scan_movie
+
+    movie_dir = tmp_path / "Avatar (2009)"
+    movie_dir.mkdir()
+    video_file = movie_dir / "Avatar.mkv"
+    video_file.touch()
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.search_movie.return_value = {
+        "id": 19995,
+        "title": "Avatar",
+        "overview": "On the lush alien world of Pandora...",
+        "poster_path": "/avatar.jpg",
+        "release_date": "2009-12-15",
+        "runtime": 162,
+        "vote_average": 7.9,
+        "genres": [{"name": "Action"}, {"name": "Adventure"}],
+    }
+    mock_tmdb.download_image.return_value = "/cached/avatar.jpg"
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        res = scan_movie(movie_dir)
+
+    assert res is not None
+    assert res["name"] == "Avatar (2009)"
+    assert res["path"] == str(video_file.absolute())
+    assert res["tmdb_identifier"] == "19995"
+    assert res["tmdb_name"] == "Avatar"
+    assert res["overview"] == "On the lush alien world of Pandora..."
+    assert res["poster_path"] == "/cached/avatar.jpg"
+    assert res["runtime"] == 162
+    assert res["rating"] == "7.9"
+    assert res["genre"] == "Action, Adventure"
+    assert res["year"] == 2009
+    assert res["watched"] is False
+
+
+def test_scan_movie_reuse_existing(tmp_path: Path) -> None:
+    from lan_streamer.scanner.core import scan_movie
+
+    movie_dir = tmp_path / "Pulp Fiction (1994)"
+    movie_dir.mkdir()
+    video_file = movie_dir / "Pulp Fiction.mkv"
+    video_file.touch()
+
+    existing_data = {
+        "tmdb_identifier": "680",
+        "tmdb_name": "Pulp Fiction",
+        "overview": "A burger-loving hit man...",
+        "poster_path": "/pulp.jpg",
+        "runtime": 154,
+        "rating": "8.5",
+        "genre": "Crime",
+        "year": 1994,
+        "watched": True,
+        "last_played_position": 500,
+        "locked_metadata": True,
+    }
+
+    with patch("lan_streamer.scanner.tmdb_client") as mock_tmdb:
+        res = scan_movie(
+            movie_dir, existing_movie_data=existing_data, force_refresh=False
+        )
+
+        assert res is not None
+        assert res["tmdb_identifier"] == "680"
+        assert res["tmdb_name"] == "Pulp Fiction"
+        assert res["watched"] is True
+        assert res["last_played_position"] == 500
+        assert res["locked_metadata"] is True
+        mock_tmdb.search_movie.assert_not_called()
+
+
+def test_scan_movie_jellyfin_correlation(tmp_path: Path) -> None:
+    from lan_streamer.scanner.core import scan_movie
+
+    movie_dir = tmp_path / "Correlated Movie (2021)"
+    movie_dir.mkdir()
+    video_file = movie_dir / "Movie.mp4"
+    video_file.touch()
+
+    jellyfin_data = {"path_map": {str(video_file.absolute()): {"id": "jf_movie_123"}}}
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.search_movie.return_value = {"id": 101, "title": "Correlated Movie"}
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        res = scan_movie(movie_dir, jellyfin_data=jellyfin_data)
+
+    assert res is not None
+    assert res["jellyfin_id"] == "jf_movie_123"
+
+
+def test_scan_movie_uses_cached_image(tmp_path: Path) -> None:
+    """Verify that scan_movie prioritizes cached movie posters."""
+    from lan_streamer.scanner.core import scan_movie
+
+    movie_dir = tmp_path / "Cached Movie (2026)"
+    movie_dir.mkdir()
+    (movie_dir / "video.mkv").touch()
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.search_movie.return_value = {
+        "id": 999,
+        "title": "Cached Movie",
+        "poster_path": "/remote_movie.jpg",
+    }
+    mock_tmdb.get_cached_image.return_value = "/local_cache/movie.jpg"
+    mock_tmdb.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        res = scan_movie(movie_dir)
+
+    assert res["poster_path"] == "/local_cache/movie.jpg"
+    mock_tmdb.download_image.assert_not_called()
+
+
+def test_movie_scanner_flat_dict_integration() -> None:
+    from lan_streamer.scanner.core import scan_directories
+    from lan_streamer.system.config import config
+    from lan_streamer.ui_views import Controller
+
+    config.libraries["TestMovieLibrary"] = {"type": "movie", "paths": []}
+
+    # Simulate flat structure generated by scan_movie
+    simulated_library: dict[str, Any] = {
+        "Inception (2010)": {
+            "name": "Inception (2010)",
+            "path": "/movies/Inception/Inception.mkv",
+            "jellyfin_id": "jf_inc",
+            "tmdb_identifier": "27205",
+            "poster_path": "/posters/inc.jpg",
+            "overview": "A thief who steals corporate secrets...",
+            "tmdb_name": "Inception",
+            "locked_metadata": True,
+            "date_added": 123456,
+            "runtime": 148,
+            "rating": "8.8",
+            "genre": "Action, Sci-Fi",
+            "year": 2010,
+            "watched": True,
+            "last_played_position": 0,
+        }
+    }
+
+    res: dict[str, Any] = scan_directories(
+        root_directories=[],
+        library_type="movie",
+        existing_library=simulated_library,
+        force_refresh=False,
+    )
+
+    assert "Inception (2010)" in res
+    assert res["Inception (2010)"]["locked_metadata"] is True
+    assert "seasons" not in res["Inception (2010)"]
+
+    controller = Controller()
+    controller.current_library_name = "TestMovieLibrary"
+    controller.cached_library_data = res
+    controller._cache_series_metrics()
+
+    metrics: dict[str, Any] = res["Inception (2010)"]["metrics"]
+    assert metrics["total_episodes"] == 1
+    assert metrics["watched_episodes"] == 1
+    assert metrics["max_air_date"] == "2010"
+
+    emitted_movies: list[str] = []
+    controller.movie_selected.connect(emitted_movies.append)
+    controller.selected_series_name = "Inception (2010)"
+
+    with patch("lan_streamer.db.update_episode_watched_status"):
+        controller.mark_episode_watched("/movies/Inception/Inception.mkv", False)
+
+    assert emitted_movies == []
+    assert res["Inception (2010)"]["watched"] is False
+
+
+# ---------------------------------------------------------------------------
+# Scanner Lock / Optimization Tests (from tests/test_metadata_optimization.py)
+# ---------------------------------------------------------------------------
+
+
+def test_scanner_respects_lock_metadata(tmp_path):
+    from lan_streamer.scanner.core import scan_directories
+
+    series_dir = tmp_path / "Locked Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    (season_dir / "S01E01.mkv").touch()
+
+    existing_library = {
+        "Locked Show": {
+            "metadata": {
+                "tmdb_identifier": "locked_id",
+                "tmdb_name": "Locked Title",
+                "locked_metadata": True,
+            },
+            "seasons": {},
+        }
+    }
+
+    with patch("lan_streamer.scanner.tmdb_client") as mock_tmdb:
+        mock_tmdb.get_seasons.return_value = []
+        res = scan_directories(
+            [str(tmp_path)], existing_library=existing_library, force_refresh=True
+        )
+
+        assert res["Locked Show"]["metadata"]["tmdb_name"] == "Locked Title"
+        mock_tmdb.search_series.assert_not_called()
+        mock_tmdb.get_series_by_id.assert_not_called()
+
+
+def test_scanner_skips_tmdb_during_global_scan(tmp_path):
+    from lan_streamer.scanner.core import scan_directories
+
+    series_dir = tmp_path / "Existing Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    (season_dir / "S01E01.mkv").touch()
+
+    existing_library = {
+        "Existing Show": {
+            "metadata": {
+                "tmdb_identifier": "existing_id",
+                "tmdb_name": "Existing Title",
+                "locked_metadata": False,
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "S01E01.mkv",
+                            "path": str(season_dir / "S01E01.mkv"),
+                        }
+                    ]
+                }
+            },
+        }
+    }
+
+    with patch("lan_streamer.scanner.tmdb_client") as mock_tmdb:
+        res = scan_directories(
+            [str(tmp_path)],
+            existing_library=existing_library,
+            force_refresh=True,
+            single_item_refresh=False,
+        )
+
+        assert res["Existing Show"]["metadata"]["tmdb_name"] == "Existing Title"
+        mock_tmdb.search_series.assert_not_called()
+        mock_tmdb.get_series_by_id.assert_not_called()
+
+
+def test_scanner_queries_tmdb_when_single_item_refresh_true(tmp_path):
+    from lan_streamer.scanner.core import scan_directories
+
+    series_dir = tmp_path / "Refresh Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    (season_dir / "S01E01.mkv").touch()
+
+    existing_library = {
+        "Refresh Show": {
+            "metadata": {
+                "tmdb_identifier": "refresh_id",
+                "tmdb_name": "Old Title",
+                "locked_metadata": False,
+            },
+            "seasons": {},
+        }
+    }
+
+    with patch("lan_streamer.scanner.tmdb_client") as mock_tmdb:
+        mock_tmdb.get_series_by_id.return_value = {
+            "id": "refresh_id",
+            "name": "Fresh Title",
+            "overview": "Fresh overview",
+        }
+        mock_tmdb.get_seasons.return_value = []
+        res = scan_directories(
+            [str(tmp_path)],
+            existing_library=existing_library,
+            force_refresh=True,
+            single_item_refresh=True,
+        )
+
+        assert res["Refresh Show"]["metadata"]["tmdb_name"] == "Fresh Title"
+        mock_tmdb.get_series_by_id.assert_called_once_with("refresh_id")
