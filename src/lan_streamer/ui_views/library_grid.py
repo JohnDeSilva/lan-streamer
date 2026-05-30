@@ -201,11 +201,24 @@ class LibraryGridView(QWidget):
             roots_dict: Dict[str, List[str]] = {}
             roots_order: List[str] = []
             tree = payload.get("tree", {})
-            for lib_name, lib_data in tree.items():
-                roots_data = lib_data.get("roots", {})
-                for root_dir, folders_dict in roots_data.items():
-                    roots_order.append(root_dir)
-                    roots_dict[root_dir] = list(folders_dict.keys())
+            library_order = payload.get("library_order") or list(config.libraries.keys())
+            for lib_name in library_order:
+                if lib_name in tree:
+                    lib_data = tree[lib_name]
+                    raw_roots = lib_data.get("roots", {})
+                    config_paths = config.libraries.get(lib_name, {}).get("paths", [])
+                    ordered_roots = []
+                    for path in config_paths:
+                        if path in raw_roots:
+                            ordered_roots.append(path)
+                    for path in raw_roots.keys():
+                        if path not in ordered_roots:
+                            ordered_roots.append(path)
+
+                    for root_dir in ordered_roots:
+                        folders_dict = raw_roots[root_dir]
+                        roots_order.append(root_dir)
+                        roots_dict[root_dir] = list(folders_dict.keys())
             self.scan_progress_bar.init_from_roots(roots_dict, roots_order)
             self.scan_progress_bar.setVisible(True)
             self.scan_status_label.setText("Starting global library scan...")
@@ -249,7 +262,7 @@ class LibraryGridView(QWidget):
     def open_settings_dialog(self) -> None:
         dialog_instance = SettingsDialog(self.controller, self)
         dialog_instance.exec()
-        self.populate_libraries(sorted(config.libraries.keys()))
+        self.populate_libraries(list(config.libraries.keys()))
 
     @Slot(str)
     def on_library_changed(self, library_name: str) -> None:

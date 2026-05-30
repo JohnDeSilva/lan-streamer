@@ -104,11 +104,15 @@ def test_scan_all_libraries_worker_execution() -> None:
             "Movie_Lib": {"paths": ["/movie_path"], "type": "movie"},
         }
         progress_emitted: List[tuple] = []
+        detail_emitted: List[tuple] = []
         finished_emitted: List[bool] = []
 
         worker = ScanAllLibrariesWorker(force_refresh=True)
         worker.library_progress.connect(
             lambda name, comp, tot: progress_emitted.append((name, comp, tot))
+        )
+        worker.detail_progress.connect(
+            lambda ev, payload: detail_emitted.append((ev, payload))
         )
         worker.finished.connect(lambda: finished_emitted.append(True))
         worker.run()
@@ -122,6 +126,10 @@ def test_scan_all_libraries_worker_execution() -> None:
             "/unavailable_tv",
             "/unavailable_movie",
         ]
+        assert ("start_root", {"library": "TV_Lib", "root": "/tv_path"}) in detail_emitted
+        assert ("finish_root", {"library": "TV_Lib", "root": "/tv_path"}) in detail_emitted
+        assert ("start_root", {"library": "Movie_Lib", "root": "/movie_path"}) in detail_emitted
+        assert ("finish_root", {"library": "Movie_Lib", "root": "/movie_path"}) in detail_emitted
 
     # Exception run
     with patch("lan_streamer.backend.scan_workers.config") as mock_config:
