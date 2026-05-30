@@ -20,7 +20,7 @@ from lan_streamer.ui_views import (
     SettingsDialog,
     get_application_stylesheet,
 )
-from lan_streamer.config import config
+from lan_streamer.system.config import config
 
 
 @pytest.fixture
@@ -154,7 +154,7 @@ def test_controller_jellyfin_sync_triggers() -> None:
 def test_library_grid_view_rendering(
     sample_library_dictionary: Dict[str, Any], qtbot: Any
 ) -> None:
-    from lan_streamer.config import config
+    from lan_streamer.system.config import config
 
     config.enable_combined_view = True
     controller_instance = Controller()
@@ -199,7 +199,7 @@ def test_library_grid_view_rendering(
 
 def test_library_grid_view_combined_view(qtbot: Any) -> None:
     from PySide6.QtWidgets import QLabel, QListWidget
-    from lan_streamer.config import config
+    from lan_streamer.system.config import config
 
     controller_instance = Controller()
 
@@ -639,7 +639,7 @@ def test_rename_preview_dialog_workflow(
     controller_instance.cached_library_data = sample_library_dictionary
     controller_instance.current_library_name = "Test Lib"
 
-    with patch("lan_streamer.renamer.get_rename_preview") as mock_preview:
+    with patch("lan_streamer.scanner.renamer.get_rename_preview") as mock_preview:
         mock_preview.return_value = [
             {
                 "old_name": "test_video.mkv",
@@ -669,7 +669,8 @@ def test_rename_preview_dialog_workflow(
                 )
 
         with patch(
-            "lan_streamer.renamer.perform_rename", side_effect=side_effect_perform
+            "lan_streamer.scanner.renamer.perform_rename",
+            side_effect=side_effect_perform,
         ) as mock_perform:
             dialog_instance.apply_renames()
             mock_perform.assert_called_once()
@@ -873,7 +874,7 @@ def test_settings_dialog_backup_options(qtbot: Any) -> None:
             "lan_streamer.ui_views.QFileDialog.getOpenFileName",
             return_value=("/path/to/backup.json", ""),
         ),
-        patch("lan_streamer.backup.restore_config_backup", return_value=True),
+        patch("lan_streamer.system.backup.restore_config_backup", return_value=True),
         patch("lan_streamer.ui_views.QMessageBox.information") as mock_info,
     ):
         dialog_instance.trigger_restore_config()
@@ -884,7 +885,7 @@ def test_settings_dialog_backup_options(qtbot: Any) -> None:
             "lan_streamer.ui_views.QFileDialog.getOpenFileName",
             return_value=("/path/to/backup.db", ""),
         ),
-        patch("lan_streamer.backup.restore_database_backup", return_value=True),
+        patch("lan_streamer.system.backup.restore_database_backup", return_value=True),
         patch("lan_streamer.ui_views.QMessageBox.information") as mock_info,
     ):
         dialog_instance.trigger_restore_database()
@@ -1583,7 +1584,7 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
     # Search with no results
     with (
         patch(
-            "lan_streamer.opensubtitles.opensubtitles_client.search_subtitles",
+            "lan_streamer.providers.opensubtitles.opensubtitles_client.search_subtitles",
             return_value=[],
         ) as mock_search,
         patch("lan_streamer.ui_views.QMessageBox.information") as mock_info,
@@ -1618,7 +1619,7 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
         }
     ]
     with patch(
-        "lan_streamer.opensubtitles.opensubtitles_client.search_subtitles",
+        "lan_streamer.providers.opensubtitles.opensubtitles_client.search_subtitles",
         return_value=sub_results,
     ):
         movie_dialog._on_search_clicked()
@@ -1633,7 +1634,7 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
         {"attributes": {"language": "en", "release": "NoFileId", "files": [{}]}}
     ]
     with patch(
-        "lan_streamer.opensubtitles.opensubtitles_client.search_subtitles",
+        "lan_streamer.providers.opensubtitles.opensubtitles_client.search_subtitles",
         return_value=no_file_id_results,
     ):
         movie_dialog._on_search_clicked()
@@ -1646,7 +1647,7 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
 
     # Restore valid results
     with patch(
-        "lan_streamer.opensubtitles.opensubtitles_client.search_subtitles",
+        "lan_streamer.providers.opensubtitles.opensubtitles_client.search_subtitles",
         return_value=sub_results,
     ):
         movie_dialog._on_search_clicked()
@@ -1655,7 +1656,7 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
         # B. No download URL
         with (
             patch(
-                "lan_streamer.opensubtitles.opensubtitles_client.get_download_link",
+                "lan_streamer.providers.opensubtitles.opensubtitles_client.get_download_link",
                 return_value=None,
             ) as mock_link,
             patch("lan_streamer.ui_views.QMessageBox.warning") as mock_warn,
@@ -1667,11 +1668,11 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
         # C. Failed to download content
         with (
             patch(
-                "lan_streamer.opensubtitles.opensubtitles_client.get_download_link",
+                "lan_streamer.providers.opensubtitles.opensubtitles_client.get_download_link",
                 return_value="http://download.url",
             ) as mock_link,
             patch(
-                "lan_streamer.opensubtitles.opensubtitles_client.download_subtitle",
+                "lan_streamer.providers.opensubtitles.opensubtitles_client.download_subtitle",
                 return_value=None,
             ),
             patch("lan_streamer.ui_views.QMessageBox.warning") as mock_warn,
@@ -1684,11 +1685,11 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
         # D. Video file not found on disk
         with (
             patch(
-                "lan_streamer.opensubtitles.opensubtitles_client.get_download_link",
+                "lan_streamer.providers.opensubtitles.opensubtitles_client.get_download_link",
                 return_value="http://download.url",
             ),
             patch(
-                "lan_streamer.opensubtitles.opensubtitles_client.download_subtitle",
+                "lan_streamer.providers.opensubtitles.opensubtitles_client.download_subtitle",
                 return_value=b"subtitle data",
             ),
             patch("lan_streamer.ui_views.QMessageBox.warning") as mock_warn,
@@ -1703,11 +1704,11 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
         video_file.touch()
         with (
             patch(
-                "lan_streamer.opensubtitles.opensubtitles_client.get_download_link",
+                "lan_streamer.providers.opensubtitles.opensubtitles_client.get_download_link",
                 return_value="http://download.url",
             ),
             patch(
-                "lan_streamer.opensubtitles.opensubtitles_client.download_subtitle",
+                "lan_streamer.providers.opensubtitles.opensubtitles_client.download_subtitle",
                 return_value=b"subtitle data",
             ),
             patch("lan_streamer.ui_views.QMessageBox.information") as mock_info,
@@ -1721,11 +1722,11 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
         # F. Error saving (file write exception)
         with (
             patch(
-                "lan_streamer.opensubtitles.opensubtitles_client.get_download_link",
+                "lan_streamer.providers.opensubtitles.opensubtitles_client.get_download_link",
                 return_value="http://download.url",
             ),
             patch(
-                "lan_streamer.opensubtitles.opensubtitles_client.download_subtitle",
+                "lan_streamer.providers.opensubtitles.opensubtitles_client.download_subtitle",
                 return_value=b"subtitle data",
             ),
             patch("builtins.open", side_effect=IOError("Write permission denied")),
@@ -1736,7 +1737,7 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
 
 
 def test_settings_dialog_combined_views(qtbot: Any) -> None:
-    from lan_streamer.config import config
+    from lan_streamer.system.config import config
     from lan_streamer.ui_views import SettingsDialog
 
     config.enable_combined_view = False
@@ -1780,7 +1781,7 @@ def test_settings_dialog_combined_views(qtbot: Any) -> None:
 
     # 4. Save Config
     with (
-        patch("lan_streamer.config.config.save") as mock_save,
+        patch("lan_streamer.system.config.config.save") as mock_save,
         patch(
             "lan_streamer.ui_views.QMessageBox.question",
             return_value=QMessageBox.StandardButton.Yes,
@@ -1954,17 +1955,17 @@ def test_controller_set_sort_descending(qtbot: Any) -> None:
     assert controller_instance.sort_descending is False
 
     # Set to descending
-    with patch("lan_streamer.config.config.save"):
+    with patch("lan_streamer.system.config.config.save"):
         controller_instance.set_sort_descending(True)
     assert controller_instance.sort_descending is True
 
     # Set to same value (no-op, should not emit)
-    with patch("lan_streamer.config.config.save") as mock_save:
+    with patch("lan_streamer.system.config.config.save") as mock_save:
         controller_instance.set_sort_descending(True)
     mock_save.assert_not_called()
 
     # Set back to ascending
-    with patch("lan_streamer.config.config.save"):
+    with patch("lan_streamer.system.config.config.save"):
         controller_instance.set_sort_descending(False)
     assert controller_instance.sort_descending is False
 

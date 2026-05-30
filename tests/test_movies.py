@@ -199,7 +199,9 @@ def test_movie_detail_view(qtbot: Any) -> None:
 
 
 def test_db_movie_exceptions() -> None:
-    with patch("lan_streamer.db.get_session", side_effect=Exception("DB Fault")):
+    with patch(
+        "lan_streamer.db.connection.get_session", side_effect=Exception("DB Fault")
+    ):
         assert db.load_movie_library("Cinematic Movies") == {}
         db.save_movie_library("Cinematic Movies", {"m": {}})
 
@@ -289,7 +291,7 @@ def test_db_movie_save_stale_name_collision() -> None:
 
 def test_movie_scanner_flat_dict_integration() -> None:
     from lan_streamer.scanner import scan_directories
-    from lan_streamer.config import config
+    from lan_streamer.system.config import config
 
     config.libraries["TestMovieLibrary"] = {"type": "movie", "paths": []}
 

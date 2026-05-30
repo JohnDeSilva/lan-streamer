@@ -9,7 +9,7 @@ from typing import Optional, List, Tuple
 
 from sqlalchemy import create_engine, text
 
-from .config import config, CONFIG_FILE
+from lan_streamer.system.config import config, CONFIG_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -291,7 +291,7 @@ def restore_database_backup(backup_file_path: str) -> bool:
         os.getenv("LAN_STREAMER_DB", config.database_path)
     )
     try:
-        from .db import get_engine
+        from lan_streamer.db import get_engine
 
         # Explicitly terminate shared connection pool to release operational file handles
         get_engine().dispose()

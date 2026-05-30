@@ -5,8 +5,8 @@ import time
 from PySide6.QtCore import Qt
 from typing import Any
 
-from lan_streamer.player_widget import VideoPlayerWidget, CacheWorker
-from lan_streamer.config import config
+from lan_streamer.playback import VideoPlayerWidget, CacheWorker
+from lan_streamer.system.config import config
 
 
 @pytest.fixture
@@ -124,7 +124,7 @@ def test_play_video_already_cached(player_widget, tmp_path) -> None:
     dest_file.write_text("content")
 
     with patch.object(player_widget, "_load_and_play") as mock_load:
-        with patch("lan_streamer.player_widget.CacheWorker") as mock_worker:
+        with patch("lan_streamer.playback.cache.CacheWorker") as mock_worker:
             player_widget.play_video(str(src_file))
             mock_worker.assert_not_called()
             mock_load.assert_called_once_with(str(dest_file))
@@ -789,7 +789,7 @@ def test_vlc_instance_fallback_swscale_mode(qtbot) -> None:
     # We will mock vlc.Instance so that it returns None the FIRST time it's called with --swscale-mode=2
     # And returns a valid mock instance the second time (when the flag is removed).
 
-    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+    with patch("lan_streamer.playback.vlc") as mock_vlc_module:
         mock_vlc_module.Instance.side_effect = lambda args: (
             None if "--swscale-mode=2" in args else MagicMock()
         )
@@ -811,7 +811,7 @@ def test_vlc_instance_fallback_swscale_mode(qtbot) -> None:
 
 def test_vlc_instance_complete_failure(qtbot) -> None:
     """Test when VLC fails to initialize completely even after fallback."""
-    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+    with patch("lan_streamer.playback.vlc") as mock_vlc_module:
         mock_vlc_module.Instance.return_value = None
         mock_vlc_module.EventType = MagicMock()
 
@@ -822,7 +822,7 @@ def test_vlc_instance_complete_failure(qtbot) -> None:
 
 def test_next_episode_popup_triggers_and_interactions(qtbot) -> None:
     """Test that the next episode popup triggers at >=95% playback progress and interactions function properly."""
-    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+    with patch("lan_streamer.playback.vlc") as mock_vlc_module:
         mock_vlc_module.Instance.return_value = MagicMock()
         mock_vlc_module.EventType = MagicMock()
 
@@ -884,7 +884,7 @@ def test_next_episode_popup_triggers_and_interactions(qtbot) -> None:
 
 def test_next_episode_popup_fullscreen_and_cursor(qtbot) -> None:
     """Test that cursor visibility and fullscreen transitions are handled properly."""
-    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+    with patch("lan_streamer.playback.vlc") as mock_vlc_module:
         mock_vlc_module.Instance.return_value = MagicMock()
         mock_vlc_module.EventType = MagicMock()
 
@@ -925,7 +925,7 @@ def test_next_episode_popup_fullscreen_and_cursor(qtbot) -> None:
 
 def test_next_episode_popup_positioning(qtbot: Any) -> None:
     """Test that the next episode popup is correctly positioned in the bottom-right corner."""
-    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+    with patch("lan_streamer.playback.vlc") as mock_vlc_module:
         mock_vlc_module.Instance.return_value = MagicMock()
         mock_vlc_module.EventType = MagicMock()
 
@@ -950,7 +950,7 @@ def test_next_episode_popup_positioning(qtbot: Any) -> None:
 
 def test_next_episode_popup_countdown_flow(qtbot: Any) -> None:
     """Test that the next episode popup countdown timer ticks down and auto-dismisses the popup."""
-    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+    with patch("lan_streamer.playback.vlc") as mock_vlc_module:
         mock_vlc_module.Instance.return_value = MagicMock()
         mock_vlc_module.EventType = MagicMock()
 
@@ -992,7 +992,7 @@ def test_next_episode_popup_countdown_flow(qtbot: Any) -> None:
 
 def test_next_episode_popup_video_ends_before_countdown_completes(qtbot: Any) -> None:
     """Test that the countdown timer is stopped and popup is hidden if the video ends early."""
-    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+    with patch("lan_streamer.playback.vlc") as mock_vlc_module:
         mock_vlc_module.Instance.return_value = MagicMock()
         mock_vlc_module.EventType = MagicMock()
 
@@ -1019,7 +1019,7 @@ def test_next_episode_popup_video_ends_before_countdown_completes(qtbot: Any) ->
 
 def test_next_episode_popup_setting(qtbot: Any) -> None:
     """Test that next episode popup triggers only when enable_next_episode_popup is True."""
-    with patch("lan_streamer.player_widget.vlc") as mock_vlc_module:
+    with patch("lan_streamer.playback.vlc") as mock_vlc_module:
         mock_vlc_module.Instance.return_value = MagicMock()
         mock_vlc_module.EventType = MagicMock()
 

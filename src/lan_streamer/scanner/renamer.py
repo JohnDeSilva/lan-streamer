@@ -2,7 +2,7 @@ import re
 import logging
 from pathlib import Path
 from typing import Dict, List, Any
-from .scanner import SUBTITLE_EXTENSIONS
+from lan_streamer.scanner.parser import SUBTITLE_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 

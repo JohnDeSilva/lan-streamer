@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch
 from lan_streamer import db
-from lan_streamer.models import Series, Season, Episode
+from lan_streamer.db.models import Series, Season, Episode
 
 
 @pytest.fixture
@@ -95,7 +95,7 @@ def test_update_watched_status(mock_db_file) -> None:
 
 def test_db_error_handling(mock_db_file) -> None:
     # Mocking get_session to raise an exception
-    with patch("lan_streamer.db.get_session") as mock_session:
+    with patch("lan_streamer.db.connection.get_session") as mock_session:
         mock_session.side_effect = Exception("Mocked error")
 
         # These should catch the error and log it, not crash
@@ -295,7 +295,7 @@ def test_update_episode_path_missing(mock_db_file) -> None:
 
 
 def test_db_error_handling_extended(mock_db_file) -> None:
-    with patch("lan_streamer.db.get_session") as mock_session:
+    with patch("lan_streamer.db.connection.get_session") as mock_session:
         mock_session.side_effect = Exception("Mocked error")
         # Test get_all_episodes_with_jellyfin_id error path
         assert db.get_all_episodes_with_jellyfin_id() == []
@@ -333,7 +333,7 @@ def test_update_and_get_playback_position(mock_db_file) -> None:
 
 def test_runtime_management_functions(mock_db_file) -> None:
     from lan_streamer.db import get_session
-    from lan_streamer.models import Movie
+    from lan_streamer.db.models import Movie
 
     with get_session() as session:
         series = Series(name="RuntimeShow", library_name="RuntimeLib")
@@ -391,7 +391,7 @@ def test_runtime_management_functions(mock_db_file) -> None:
 
 def test_build_episode_dict(mock_db_file) -> None:
     from lan_streamer.db import _build_episode_dict, get_session
-    from lan_streamer.models import Series, Season, Episode
+    from lan_streamer.db.models import Series, Season, Episode
 
     with get_session() as session:
         series = Series(name="S", library_name="L")
@@ -428,7 +428,7 @@ def test_build_episode_dict(mock_db_file) -> None:
 
 def test_build_episode_dict_defaults(mock_db_file) -> None:
     from lan_streamer.db import _build_episode_dict, get_session
-    from lan_streamer.models import Series, Season, Episode
+    from lan_streamer.db.models import Series, Season, Episode
 
     with get_session() as session:
         series = Series(name="S", library_name="L")
@@ -449,7 +449,7 @@ def test_build_episode_dict_defaults(mock_db_file) -> None:
 
 def test_build_season_dict(mock_db_file) -> None:
     from lan_streamer.db import _build_season_dict, get_session
-    from lan_streamer.models import Series, Season, Episode
+    from lan_streamer.db.models import Series, Season, Episode
 
     with get_session() as session:
         series = Series(name="S", library_name="L")
@@ -478,7 +478,7 @@ def test_build_season_dict(mock_db_file) -> None:
 
 def test_build_series_dict(mock_db_file) -> None:
     from lan_streamer.db import _build_series_dict, get_session
-    from lan_streamer.models import Series, Season, Episode
+    from lan_streamer.db.models import Series, Season, Episode
 
     with get_session() as session:
         series = Series(
@@ -511,7 +511,7 @@ def test_build_series_dict(mock_db_file) -> None:
 
 def test_build_movie_dict(mock_db_file) -> None:
     from lan_streamer.db import _build_movie_dict, get_session
-    from lan_streamer.models import Movie
+    from lan_streamer.db.models import Movie
 
     with get_session() as session:
         movie = Movie(
@@ -547,7 +547,7 @@ def test_build_movie_dict(mock_db_file) -> None:
 
 def test_apply_movie_fields_sets_all_values(mock_db_file) -> None:
     from lan_streamer.db import _apply_movie_fields, get_session
-    from lan_streamer.models import Movie
+    from lan_streamer.db.models import Movie
 
     with get_session() as session:
         movie = Movie(name="EmptyMovie", library_name="L", path="/old.mkv")
@@ -581,7 +581,7 @@ def test_apply_movie_fields_sets_all_values(mock_db_file) -> None:
 
 def test_apply_movie_fields_does_not_overwrite_with_falsy(mock_db_file) -> None:
     from lan_streamer.db import _apply_movie_fields, get_session
-    from lan_streamer.models import Movie
+    from lan_streamer.db.models import Movie
 
     with get_session() as session:
         movie = Movie(
@@ -596,7 +596,7 @@ def test_apply_movie_fields_does_not_overwrite_with_falsy(mock_db_file) -> None:
 
 def test_sync_watched_by_ids(mock_db_file) -> None:
     from lan_streamer.db import _sync_watched_by_ids, get_session
-    from lan_streamer.models import Series, Season, Episode
+    from lan_streamer.db.models import Series, Season, Episode
 
     with get_session() as session:
         series = Series(name="S", library_name="L")
@@ -643,7 +643,7 @@ def test_sync_watched_by_ids_empty(mock_db_file) -> None:
 
 def test_sync_watched_by_paths(mock_db_file) -> None:
     from lan_streamer.db import _sync_watched_by_paths, get_session
-    from lan_streamer.models import Series, Season, Episode
+    from lan_streamer.db.models import Series, Season, Episode
 
     with get_session() as session:
         series = Series(name="S", library_name="L")
@@ -669,7 +669,7 @@ def test_sync_watched_by_paths_empty(mock_db_file) -> None:
 
 def test_sync_watched_by_names(mock_db_file) -> None:
     from lan_streamer.db import _sync_watched_by_names, get_session
-    from lan_streamer.models import Series, Season, Episode
+    from lan_streamer.db.models import Series, Season, Episode
 
     with get_session() as session:
         series = Series(name="Cool Show", library_name="L")
@@ -695,7 +695,7 @@ def test_sync_watched_by_names_empty(mock_db_file) -> None:
 
 def test_cleanup_movie_library_removes_missing(mock_db_file, tmp_path) -> None:
     from lan_streamer.db import _cleanup_movie_library, get_session
-    from lan_streamer.models import Movie
+    from lan_streamer.db.models import Movie
 
     real_file = tmp_path / "present.mkv"
     real_file.touch()
@@ -722,7 +722,7 @@ def test_cleanup_movie_library_removes_missing(mock_db_file, tmp_path) -> None:
 
 def test_cleanup_tv_library_removes_missing_series(mock_db_file, tmp_path) -> None:
     from lan_streamer.db import _cleanup_tv_library, get_session
-    from lan_streamer.models import Series, Season, Episode
+    from lan_streamer.db.models import Series, Season, Episode
 
     real_series_dir = tmp_path / "ActiveShow"
     season_dir = real_series_dir / "Season 1"
@@ -748,7 +748,7 @@ def test_cleanup_tv_library_removes_missing_series(mock_db_file, tmp_path) -> No
 
 def test_cleanup_tv_library_removes_missing_episode(mock_db_file, tmp_path) -> None:
     from lan_streamer.db import _cleanup_tv_library, get_session
-    from lan_streamer.models import Series, Season, Episode
+    from lan_streamer.db.models import Series, Season, Episode
 
     series_dir = tmp_path / "ShowWithMissingEp"
     season_dir = series_dir / "Season 1"
@@ -782,7 +782,7 @@ def test_db_edge_cases() -> None:
 
 
 def test_db_more_error_paths() -> None:
-    with patch("lan_streamer.db.get_session") as mock_session:
+    with patch("lan_streamer.db.connection.get_session") as mock_session:
         mock_session.side_effect = Exception("General DB Error")
         # Ensure these functions don't raise but log exceptions
         db.update_season_watched_status("Lib", "Show", "S1", True)
@@ -900,7 +900,7 @@ def test_combined_view_queries(mock_db_file) -> None:
         get_combined_recently_added,
         get_combined_smart_row,
     )
-    from lan_streamer.models import Series, Season, Episode, Movie
+    from lan_streamer.db.models import Series, Season, Episode, Movie
 
     # 1. Setup a mix of TV libraries and Movie libraries
     with get_session() as session:
@@ -1004,7 +1004,10 @@ def test_combined_view_queries_errors(mock_db_file) -> None:
         get_combined_smart_row,
     )
 
-    with patch("lan_streamer.db.get_session", side_effect=Exception("Database error")):
+    with patch(
+        "lan_streamer.db.connection.get_session",
+        side_effect=Exception("Database error"),
+    ):
         assert get_combined_next_up(["TV Lib"]) == []
         assert get_combined_recently_added(["TV Lib"]) == []
         assert get_combined_smart_row(["TV Lib"], "Alphabetical", "All") == []

@@ -14,15 +14,15 @@ def cleanup_logging_handlers() -> Any:
             "lan_streamer.db",
             "lan_streamer.backend",
             "lan_streamer.scanner",
-            "lan_streamer.jellyfin",
-            "lan_streamer.tmdb",
-            "lan_streamer.player_widget",
-            "lan_streamer.player",
-            "lan_streamer.backup",
-            "lan_streamer.opensubtitles",
-            "lan_streamer.wakelock",
+            "lan_streamer.providers.jellyfin",
+            "lan_streamer.providers.tmdb",
+            "lan_streamer.playback",
+            "lan_streamer.playback.player",
+            "lan_streamer.system.backup",
+            "lan_streamer.providers.opensubtitles",
+            "lan_streamer.playback.wakelock",
             "lan_streamer.ui_views",
-            "lan_streamer.renamer",
+            "lan_streamer.scanner.renamer",
         ]:
             target_logger = (
                 logging.getLogger(logger_name) if logger_name else logging.getLogger()
@@ -46,7 +46,7 @@ def test_setup_dark_theme(qtbot: Any) -> None:
 
 
 def test_main_execution() -> None:
-    from lan_streamer.config import config
+    from lan_streamer.system.config import config
 
     config.sync_history_on_start = True
     with (
@@ -62,7 +62,7 @@ def test_main_execution() -> None:
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch(
-            "lan_streamer.backup.perform_scheduled_backups", MagicMock()
+            "lan_streamer.system.backup.perform_scheduled_backups", MagicMock()
         ) as mock_backup,
     ):
         mock_application_instance = mock_application_class.return_value
@@ -95,14 +95,14 @@ def test_main_logging_setup(tmp_path: Any) -> None:
             patch("lan_streamer.main.MovieDetailView", MagicMock()),
             patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
             patch("lan_streamer.main.db.init_db", MagicMock()),
-            patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+            patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
             patch("sys.exit", MagicMock()),
         ):
             root_logger = logging.getLogger()
             for handler_object in root_logger.handlers[:]:
                 root_logger.removeHandler(handler_object)
 
-            from lan_streamer.config import config
+            from lan_streamer.system.config import config
 
             config.divide_logs_by_service = False
             main.main()
@@ -165,7 +165,7 @@ def test_main_logging_failure() -> None:
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
-        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", lambda exit_code: None),
     ):
         main.main()
@@ -174,7 +174,7 @@ def test_main_logging_failure() -> None:
 
 def test_main_proactive_log_cleanup(tmp_path: Any) -> None:
     import time
-    from lan_streamer.config import config
+    from lan_streamer.system.config import config
 
     config.log_directory = str(tmp_path / "logs")
     log_directory_object = tmp_path / "logs"
@@ -201,7 +201,7 @@ def test_main_proactive_log_cleanup(tmp_path: Any) -> None:
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
-        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", MagicMock()),
     ):
         main.main()
@@ -211,7 +211,7 @@ def test_main_proactive_log_cleanup(tmp_path: Any) -> None:
 
 
 def test_main_signal_routing() -> None:
-    from lan_streamer.config import config
+    from lan_streamer.system.config import config
 
     config.use_embedded_player = True
     with (
@@ -228,7 +228,7 @@ def test_main_signal_routing() -> None:
         ) as mock_movie_detail_class,
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
         patch("lan_streamer.main.db.init_db", MagicMock()),
-        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("lan_streamer.main.MetadataMatchDialog", MagicMock()) as mock_meta_dialog,
         patch(
             "lan_streamer.main.RenamePreviewDialog", MagicMock()
@@ -313,7 +313,7 @@ def test_main_signal_routing() -> None:
 
 
 def test_main_playback_requested_external() -> None:
-    from lan_streamer.config import config
+    from lan_streamer.system.config import config
 
     config.use_embedded_player = False
     with (
@@ -328,7 +328,7 @@ def test_main_playback_requested_external() -> None:
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
         patch("lan_streamer.main.db.init_db", MagicMock()),
-        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("lan_streamer.main.play_video", MagicMock()) as mock_external_play,
     ):
         main.main()
@@ -345,7 +345,7 @@ def test_main_playback_requested_external() -> None:
 
 
 def test_main_playback_requested_external_exception() -> None:
-    from lan_streamer.config import config
+    from lan_streamer.system.config import config
 
     config.use_embedded_player = False
     with (
@@ -360,7 +360,7 @@ def test_main_playback_requested_external_exception() -> None:
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
-        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch(
             "lan_streamer.main.play_video",
             side_effect=Exception("External player launch fault"),
@@ -412,7 +412,7 @@ def test_main_log_cleanup_unlink_exception() -> None:
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
-        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", MagicMock()),
     ):
         # We need a dummy log file that looks old to trigger unlink
@@ -443,7 +443,7 @@ def test_main_wayland_platform() -> None:
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
-        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
     ):
         main.main()
         assert os.environ.get("QT_QPA_PLATFORM") == "xcb"
@@ -462,7 +462,7 @@ def test_main_log_directory_creation_failure() -> None:
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
-        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", MagicMock()),
     ):
         main.main()
@@ -481,14 +481,14 @@ def test_main_log_cleanup_exception() -> None:
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
-        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", MagicMock()),
     ):
         main.main()
 
 
 def test_main_more_signal_routings() -> None:
-    from lan_streamer.config import config
+    from lan_streamer.system.config import config
 
     config.libraries = {"LibMovie": {"type": "movie"}}
 
@@ -504,7 +504,7 @@ def test_main_more_signal_routings() -> None:
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
         patch("lan_streamer.main.db.init_db", MagicMock()),
-        patch("lan_streamer.backup.perform_scheduled_backups", MagicMock()),
+        patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         # Dialog patches
         patch("lan_streamer.main.JellyfinMatchDialog", MagicMock()) as mock_jf_dialog,
         patch(

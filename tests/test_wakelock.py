@@ -5,7 +5,7 @@ import sys
 mock_ctypes = MagicMock()
 sys.modules["ctypes"] = mock_ctypes
 
-from lan_streamer.wakelock import WakeLock  # noqa: E402
+from lan_streamer.playback.wakelock import WakeLock  # noqa: E402
 
 
 def test_wakelock_linux_gdbus() -> None:

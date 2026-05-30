@@ -65,7 +65,7 @@ def test_jellyfin_pull_worker_execution() -> None:
     # Successful run
     with (
         patch(
-            "lan_streamer.jellyfin.jellyfin_client.fetch_watched_episodes",
+            "lan_streamer.providers.jellyfin.jellyfin_client.fetch_watched_episodes",
             return_value=(["id1"], ["/path"], ["ep1"]),
         ),
         patch(
@@ -81,7 +81,7 @@ def test_jellyfin_pull_worker_execution() -> None:
 
     # Exception run
     with patch(
-        "lan_streamer.jellyfin.jellyfin_client.fetch_watched_episodes",
+        "lan_streamer.providers.jellyfin.jellyfin_client.fetch_watched_episodes",
         side_effect=Exception("Pull error"),
     ):
         emitted_errors: List[str] = []
@@ -98,7 +98,9 @@ def test_jellyfin_push_worker_execution() -> None:
             "lan_streamer.db.get_all_episodes_with_jellyfin_id",
             return_value=[{"jellyfin_id": "jf1", "watched": True}],
         ),
-        patch("lan_streamer.jellyfin.jellyfin_client.set_watched_status") as mock_set,
+        patch(
+            "lan_streamer.providers.jellyfin.jellyfin_client.set_watched_status"
+        ) as mock_set,
     ):
         emitted_results: List[int] = []
         worker = JellyfinPushWorker()

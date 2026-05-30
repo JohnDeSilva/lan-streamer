@@ -11,7 +11,7 @@ from lan_streamer.ui_views import (
     EpisodeDetailsDialog,
     MovieDetailsDialog,
 )
-from lan_streamer.config import config
+from lan_streamer.system.config import config
 
 
 @pytest.fixture

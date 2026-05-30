@@ -4,11 +4,11 @@ from PySide6.QtWidgets import QApplication
 
 # Mock the modules before importing ui
 sys.modules["lan_streamer.db"] = MagicMock()
-sys.modules["lan_streamer.config"] = MagicMock()
+sys.modules["lan_streamer.system.config"] = MagicMock()
 sys.modules["lan_streamer.scanner"] = MagicMock()
-sys.modules["lan_streamer.player"] = MagicMock()
-sys.modules["lan_streamer.jellyfin"] = MagicMock()
-sys.modules["lan_streamer.tmdb"] = MagicMock()
+sys.modules["lan_streamer.playback.player"] = MagicMock()
+sys.modules["lan_streamer.providers.jellyfin"] = MagicMock()
+sys.modules["lan_streamer.providers.tmdb"] = MagicMock()
 sys.modules["lan_streamer.delegates"] = MagicMock()
 
 
