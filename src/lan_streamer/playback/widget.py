@@ -3,6 +3,8 @@ import time
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
+import sys
+
 from PySide6.QtWidgets import (
     QWidget,
     QMainWindow,
@@ -17,59 +19,15 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QMessageBox,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, Slot, QEvent, QSize
+from PySide6.QtCore import Qt, QTimer, Signal, Slot, QEvent, QSize
 from PySide6.QtGui import QFont
-import sys
-from .config import config
-from . import db
-from .wakelock import WakeLock
 
-logger = logging.getLogger(__name__)
+from lan_streamer.system.config import config
+from lan_streamer import db
+from lan_streamer.playback.wakelock import WakeLock
+from lan_streamer.playback.proxy import vlc, CacheWorker
 
-try:
-    import vlc
-except (ImportError, OSError) as e:
-    logger.warning(f"VLC library could not be loaded: {e}")
-    vlc = None
-
-
-class CacheWorker(QThread):
-    """Thread for copying media files to local cache."""
-
-    progress = Signal(int)
-    finished = Signal(str)
-    error = Signal(str)
-
-    def __init__(self, src_path: str, dest_path: str) -> None:
-        super().__init__()
-        self.src_path = Path(src_path)
-        self.dest_path = Path(dest_path)
-
-    def run(self) -> None:
-        logger.info(f"Starting cache of {self.src_path} to {self.dest_path}")
-        try:
-            self.dest_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Use a simple copy for now, could be improved with progress
-            total_size = self.src_path.stat().st_size
-            copied = 0
-            chunk_size = 1024 * 1024  # 1MB
-
-            with open(self.src_path, "rb") as fsrc:
-                with open(self.dest_path, "wb") as fdst:
-                    while True:
-                        buf = fsrc.read(chunk_size)
-                        if not buf:
-                            break
-                        fdst.write(buf)
-                        copied += len(buf)
-                        self.progress.emit(int((copied / total_size) * 100))
-
-            self.finished.emit(str(self.dest_path))
-            logger.info(f"Caching finished: {self.dest_path}")
-        except Exception as e:
-            logger.exception("Caching failed")
-            self.error.emit(str(e))
+logger = logging.getLogger("lan_streamer.player_widget")
 
 
 class VideoPlayerWidget(QWidget):

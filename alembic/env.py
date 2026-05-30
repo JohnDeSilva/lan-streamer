@@ -9,7 +9,7 @@ from alembic import context
 # Add src to sys.path to import our models
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from lan_streamer.models import Base
+from lan_streamer.db.models import Base
 from lan_streamer.db import DB_FILE
 
 # Ensure the database directory exists before Alembic attempts to connect

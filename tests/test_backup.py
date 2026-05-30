@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 from sqlalchemy import create_engine, text
 
-from lan_streamer.config import config
-from lan_streamer import backup
+from lan_streamer.system.config import config
+from lan_streamer.system import backup
 
 
 @pytest.fixture
@@ -31,8 +31,8 @@ def backup_environment(tmp_path: Path) -> Generator[Path, None, None]:
     test_backup_directory.mkdir(parents=True, exist_ok=True)
 
     with (
-        patch("lan_streamer.backup.CONFIG_FILE", test_config_file),
-        patch("lan_streamer.config.CONFIG_FILE", test_config_file),
+        patch("lan_streamer.system.backup.CONFIG_FILE", test_config_file),
+        patch("lan_streamer.system.config.CONFIG_FILE", test_config_file),
         patch.object(config, "backup_directory", str(test_backup_directory)),
         patch.object(config, "database_path", str(test_database_file)),
         patch.dict(os.environ, {"LAN_STREAMER_DB": str(test_database_file)}),
@@ -221,7 +221,8 @@ def test_restore_database_backup_invalid(backup_environment: Path) -> None:
 def test_create_config_backup_missing_source(backup_environment: Path) -> None:
     """create_config_backup returns False when the config file does not exist."""
     with patch(
-        "lan_streamer.backup.CONFIG_FILE", backup_environment / "nonexistent.json"
+        "lan_streamer.system.backup.CONFIG_FILE",
+        backup_environment / "nonexistent.json",
     ):
         result = backup.create_config_backup()
     assert result is False

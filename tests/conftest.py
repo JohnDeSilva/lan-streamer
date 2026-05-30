@@ -13,9 +13,9 @@ def protect_user_dirs(tmp_path) -> None:
     Ensure no test can ever overwrite the user's actual config or DB.
     We patch all the paths to point to tmp_path.
     """
-    import lan_streamer.config
+    from lan_streamer.system.config import config
     import lan_streamer.db
-    import lan_streamer.tmdb
+    import lan_streamer.providers.tmdb
 
     config_file = tmp_path / "config.json"
     db_file = tmp_path / "library.db"
@@ -31,23 +31,23 @@ def protect_user_dirs(tmp_path) -> None:
     lan_streamer.db._db_initialized = False
 
     with (
-        patch("lan_streamer.config.CONFIG_FILE", config_file),
+        patch("lan_streamer.system.config.CONFIG_FILE", config_file),
         patch("lan_streamer.db.DB_FILE", db_file),
-        patch("lan_streamer.tmdb.CACHE_DIR", cache_dir),
+        patch("lan_streamer.providers.tmdb.CACHE_DIR", cache_dir),
     ):
         # Initialize schema for tests
         lan_streamer.db.init_db()
 
         # Reload config instance so it points to the new path
-        lan_streamer.config.config.libraries = {}
-        lan_streamer.config.config.jellyfin_url = ""
-        lan_streamer.config.config.jellyfin_api_key = ""
-        lan_streamer.config.config.tmdb_api_key = ""
-        lan_streamer.config.config.database_path = str(db_file)
-        lan_streamer.config.config.log_directory = str(tmp_path / "logs")
-        lan_streamer.config.config.divide_logs_by_service = False
-        lan_streamer.config.config.sort_mode = "Alphabetical"
-        lan_streamer.config.config.sort_descending = False
+        config.libraries = {}
+        config.jellyfin_url = ""
+        config.jellyfin_api_key = ""
+        config.tmdb_api_key = ""
+        config.database_path = str(db_file)
+        config.log_directory = str(tmp_path / "logs")
+        config.divide_logs_by_service = False
+        config.sort_mode = "Alphabetical"
+        config.sort_descending = False
 
         yield
 

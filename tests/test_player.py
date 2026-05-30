@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch
-from lan_streamer.player import play_video
+from lan_streamer.playback.player import play_video
 
 
 def test_play_video_success(tmp_path) -> None:

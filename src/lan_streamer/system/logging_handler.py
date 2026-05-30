@@ -64,7 +64,7 @@ def setup_qt_logging(formatter: logging.Formatter) -> None:
     if qt_log_handler not in root_logger.handlers:
         root_logger.addHandler(qt_log_handler)
 
-    from .config import config
+    from lan_streamer.system.config import config
 
     if config.divide_logs_by_service:
         for logger_name in SERVICE_LOGGERS:

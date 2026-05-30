@@ -9,7 +9,7 @@ def setup_vlc_environment() -> None:
 
     logger = logging.getLogger("lan_streamer.entrypoint")
     try:
-        from lan_streamer.config import config
+        from lan_streamer.system.config import config
 
         log_level_string = config.log_level.upper()
     except Exception:

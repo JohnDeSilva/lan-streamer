@@ -1,13 +1,13 @@
 import json
 import pytest
 from unittest.mock import patch
-from lan_streamer.config import Config
+from lan_streamer.system.config import Config
 
 
 @pytest.fixture
 def mock_config_file(tmp_path) -> None:
     test_config_path = tmp_path / "config.json"
-    with patch("lan_streamer.config.CONFIG_FILE", test_config_path):
+    with patch("lan_streamer.system.config.CONFIG_FILE", test_config_path):
         yield test_config_path
 
 

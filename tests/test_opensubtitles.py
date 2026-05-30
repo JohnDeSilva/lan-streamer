@@ -3,7 +3,7 @@
 from unittest.mock import patch, MagicMock
 from typing import Optional
 
-from lan_streamer.opensubtitles import OpenSubtitlesClient
+from lan_streamer.providers.opensubtitles import OpenSubtitlesClient
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ def _mock_config(
 
 def test_get_headers_without_token() -> None:
     client = _make_client()
-    with patch("lan_streamer.opensubtitles.config", _mock_config()):
+    with patch("lan_streamer.providers.opensubtitles.config", _mock_config()):
         headers = client._get_headers()
 
     assert headers["Api-Key"] == "test_api_key"
@@ -53,7 +53,7 @@ def test_get_headers_without_token() -> None:
 
 def test_get_headers_with_token() -> None:
     client = _make_client(token="my_jwt_token")
-    with patch("lan_streamer.opensubtitles.config", _mock_config()):
+    with patch("lan_streamer.providers.opensubtitles.config", _mock_config()):
         headers = client._get_headers()
 
     assert headers["Authorization"] == "Bearer my_jwt_token"
@@ -67,7 +67,7 @@ def test_get_headers_with_token() -> None:
 def test_login_missing_credentials_returns_false() -> None:
     client = _make_client()
     mock_cfg = _mock_config(username="", password="")
-    with patch("lan_streamer.opensubtitles.config", mock_cfg):
+    with patch("lan_streamer.providers.opensubtitles.config", mock_cfg):
         result = client.login()
 
     assert result is False
@@ -77,7 +77,7 @@ def test_login_missing_credentials_returns_false() -> None:
 def test_login_missing_username_only() -> None:
     client = _make_client()
     mock_cfg = _mock_config(username="", password="secret")
-    with patch("lan_streamer.opensubtitles.config", mock_cfg):
+    with patch("lan_streamer.providers.opensubtitles.config", mock_cfg):
         result = client.login()
     assert result is False
 
@@ -89,7 +89,7 @@ def test_login_success() -> None:
     mock_response.json.return_value = {"token": "jwt_abc123"}
 
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.post", return_value=mock_response) as mock_post,
     ):
         result = client.login()
@@ -106,7 +106,7 @@ def test_login_http_error_returns_false() -> None:
     mock_response.text = "Unauthorized"
 
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.post", return_value=mock_response),
     ):
         result = client.login()
@@ -118,7 +118,7 @@ def test_login_http_error_returns_false() -> None:
 def test_login_network_exception_returns_false() -> None:
     client = _make_client()
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.post", side_effect=ConnectionError("Network failure")),
     ):
         result = client.login()
@@ -135,7 +135,7 @@ def test_login_network_exception_returns_false() -> None:
 def test_search_subtitles_missing_api_key_returns_empty() -> None:
     client = _make_client()
     mock_cfg = _mock_config(api_key="")
-    with patch("lan_streamer.opensubtitles.config", mock_cfg):
+    with patch("lan_streamer.providers.opensubtitles.config", mock_cfg):
         results = client.search_subtitles(query="The Matrix")
 
     assert results == []
@@ -148,7 +148,7 @@ def test_search_subtitles_by_tmdb_id_success() -> None:
     mock_response.json.return_value = {"data": [{"id": "sub1"}, {"id": "sub2"}]}
 
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.get", return_value=mock_response) as mock_get,
     ):
         results = client.search_subtitles(
@@ -172,7 +172,7 @@ def test_search_subtitles_by_tmdb_id_no_season_episode() -> None:
     mock_response.json.return_value = {"data": []}
 
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.get", return_value=mock_response) as mock_get,
     ):
         client.search_subtitles(tmdb_id=603)
@@ -189,7 +189,7 @@ def test_search_subtitles_by_query_success() -> None:
     mock_response.json.return_value = {"data": [{"id": "sub99"}]}
 
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.get", return_value=mock_response) as mock_get,
     ):
         results = client.search_subtitles(query="some movie")
@@ -206,7 +206,7 @@ def test_search_subtitles_http_error_returns_empty() -> None:
     mock_response.text = "Too Many Requests"
 
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.get", return_value=mock_response),
     ):
         results = client.search_subtitles(query="test")
@@ -217,7 +217,7 @@ def test_search_subtitles_http_error_returns_empty() -> None:
 def test_search_subtitles_network_exception_returns_empty() -> None:
     client = _make_client()
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.get", side_effect=TimeoutError("timed out")),
     ):
         results = client.search_subtitles(query="test")
@@ -237,7 +237,7 @@ def test_get_download_link_already_authenticated() -> None:
     mock_response.json.return_value = {"link": "https://cdn.example.com/sub.srt"}
 
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.post", return_value=mock_response),
     ):
         link = client.get_download_link(file_id=98765)
@@ -258,7 +258,7 @@ def test_get_download_link_triggers_login_when_no_token() -> None:
     download_response.json.return_value = {"link": "https://example.com/file.srt"}
 
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.post", side_effect=[login_response, download_response]),
     ):
         link = client.get_download_link(file_id=111)
@@ -273,7 +273,8 @@ def test_get_download_link_login_fails_returns_none() -> None:
 
     with (
         patch(
-            "lan_streamer.opensubtitles.config", _mock_config(username="", password="")
+            "lan_streamer.providers.opensubtitles.config",
+            _mock_config(username="", password=""),
         ),
     ):
         link = client.get_download_link(file_id=222)
@@ -288,7 +289,7 @@ def test_get_download_link_http_error_returns_none() -> None:
     mock_response.text = "Download quota exceeded"
 
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.post", return_value=mock_response),
     ):
         link = client.get_download_link(file_id=333)
@@ -299,7 +300,7 @@ def test_get_download_link_http_error_returns_none() -> None:
 def test_get_download_link_network_exception_returns_none() -> None:
     client = _make_client(token="tok")
     with (
-        patch("lan_streamer.opensubtitles.config", _mock_config()),
+        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
         patch("requests.post", side_effect=RuntimeError("network dead")),
     ):
         link = client.get_download_link(file_id=444)

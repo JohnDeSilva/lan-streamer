@@ -1,0 +1,100 @@
+import os
+from pathlib import Path
+from lan_streamer.system.config import config
+
+from lan_streamer.db.connection import (
+    get_engine,
+    get_session_factory,
+    get_session,
+    init_db,
+)
+from lan_streamer.db.queries import (
+    natural_sort_key,
+    _build_episode_dict,
+    _build_season_dict,
+    _build_series_dict,
+    _build_movie_dict,
+    update_episode_watched_status,
+    update_episode_path,
+    update_episode_playback_position,
+    get_episode_playback_position,
+    update_season_watched_status,
+    update_series_watched_status,
+    get_items_missing_runtime,
+    update_item_runtime,
+    get_next_episode,
+    get_combined_next_up,
+    get_combined_recently_added,
+    get_combined_smart_row,
+)
+from lan_streamer.db.library import (
+    load_library,
+    save_library,
+    load_movie_library,
+    save_movie_library,
+    cleanup_library,
+    _apply_movie_fields,
+    _cleanup_movie_library,
+    _cleanup_tv_library,
+)
+from lan_streamer.db.sync import (
+    sync_watched_from_jellyfin_data,
+    get_all_episodes_with_jellyfin_id,
+    _sync_watched_by_ids,
+    _sync_watched_by_paths,
+    _sync_watched_by_names,
+)
+from lan_streamer.db.models import Base, Series, Season, Episode, Movie
+
+DB_FILE = Path(os.getenv("LAN_STREAMER_DB", config.database_path))
+
+# Shared connection state variables accessed directly by conftest.py
+_engine = None
+_SessionLocal = None
+_db_initialized = False
+
+__all__ = [
+    "get_engine",
+    "get_session_factory",
+    "get_session",
+    "init_db",
+    "DB_FILE",
+    "natural_sort_key",
+    "_build_episode_dict",
+    "_build_season_dict",
+    "_build_series_dict",
+    "_build_movie_dict",
+    "update_episode_watched_status",
+    "update_episode_path",
+    "update_episode_playback_position",
+    "get_episode_playback_position",
+    "update_season_watched_status",
+    "update_series_watched_status",
+    "get_items_missing_runtime",
+    "update_item_runtime",
+    "get_next_episode",
+    "get_combined_next_up",
+    "get_combined_recently_added",
+    "get_combined_smart_row",
+    "load_library",
+    "save_library",
+    "load_movie_library",
+    "save_movie_library",
+    "cleanup_library",
+    "_apply_movie_fields",
+    "_cleanup_movie_library",
+    "_cleanup_tv_library",
+    "sync_watched_from_jellyfin_data",
+    "get_all_episodes_with_jellyfin_id",
+    "_sync_watched_by_ids",
+    "_sync_watched_by_paths",
+    "_sync_watched_by_names",
+    "_engine",
+    "_SessionLocal",
+    "_db_initialized",
+    "Base",
+    "Series",
+    "Season",
+    "Episode",
+    "Movie",
+]

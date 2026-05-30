@@ -1,0 +1,1080 @@
+import logging
+import re
+from pathlib import Path
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
+
+from PySide6.QtCore import QObject, Signal, QFileSystemWatcher, QTimer
+
+from lan_streamer.system.config import config
+from lan_streamer import db
+
+if TYPE_CHECKING:
+    from lan_streamer.providers.jellyfin import jellyfin_client
+    from lan_streamer.providers.tmdb import tmdb_client
+    from lan_streamer.backend import (
+        ScanWorker,
+        CleanupWorker,
+        JellyfinPullWorker,
+        JellyfinPushWorker,
+        ScanAllLibrariesWorker,
+        CleanupAllLibrariesWorker,
+        RuntimeExtractionWorker,
+    )
+else:
+    from lan_streamer.ui_views.proxy import (
+        jellyfin_client,
+        tmdb_client,
+        ScanWorker,
+        CleanupWorker,
+        JellyfinPullWorker,
+        JellyfinPushWorker,
+        ScanAllLibrariesWorker,
+        CleanupAllLibrariesWorker,
+        RuntimeExtractionWorker,
+    )
+
+logger = logging.getLogger(__name__)
+
+
+class Controller(QObject):
+    """
+    Core Application Logic Controller managing native UI synchronization and persistence layer interactions.
+    Enforces strict zero-abbreviation variable naming standard.
+    """
+
+    library_loaded = Signal()
+    series_selected = Signal(str)
+    movie_selected = Signal(str)
+    status_changed = Signal(str)
+    playback_requested = Signal(str)
+    metadata_dialog_requested = Signal(str)
+    rename_dialog_requested = Signal(str)
+    jellyfin_dialog_requested = Signal(str)
+    series_details_requested = Signal(str)
+    episode_details_requested = Signal(str, str)
+    movie_details_requested = Signal(str, str)
+    episode_metadata_dialog_requested = Signal(str, str)
+    global_progress_updated = Signal(str, int, int)
+    detail_progress_updated = Signal(str, dict)
+    scan_completed = Signal()
+
+    file_system_watcher: QFileSystemWatcher
+    debounce_timer: QTimer
+
+    def __init__(self, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self.current_library_name: str = ""
+        self.cached_library_data: Dict[str, Any] = {}
+        self.selected_series_name: str = ""
+        self.sort_mode: str = config.sort_mode
+        self.sort_descending: bool = config.sort_descending
+        self.filter_out_watched: bool = config.filter_out_watched
+        self.scan_worker_instance: Optional[ScanWorker] = None
+        self.cleanup_worker_instance: Optional[CleanupWorker] = None
+        self.pull_worker_instance: Optional[JellyfinPullWorker] = None
+        self.push_worker_instance: Optional[JellyfinPushWorker] = None
+        self.scan_all_worker_instance: Optional[ScanAllLibrariesWorker] = None
+        self.cleanup_all_worker_instance: Optional[CleanupAllLibrariesWorker] = None
+        self.runtime_worker_instance: Optional[RuntimeExtractionWorker] = None
+        self.merge_subtitle_worker_instance: Optional[Any] = None
+        self.embed_metadata_worker_instance: Optional[Any] = None
+        self.is_video_playing: bool = False
+
+        self.debounce_timer = QTimer(self)
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.setInterval(2000)
+        self.debounce_timer.timeout.connect(self._on_debounce_timeout)
+
+        self.file_system_watcher = QFileSystemWatcher(self)
+        self.file_system_watcher.directoryChanged.connect(self._on_directory_changed)
+
+    def select_library(self, library_name: str, reset_selection: bool = True) -> None:
+        logger.info(f"Controller loading library: {library_name}")
+        self.current_library_name = library_name
+        self.status_changed.emit(f"Loading library: {library_name}...")
+
+        library_config = config.libraries.get(library_name, {})
+
+        existing_directories = self.file_system_watcher.directories()
+        if existing_directories:
+            self.file_system_watcher.removePaths(existing_directories)
+
+        root_directories: List[str] = library_config.get("paths", [])
+        for directory_path in root_directories:
+            if Path(directory_path).is_dir():
+                self.file_system_watcher.addPath(directory_path)
+
+        if library_config.get("type", "tv") == "movie":
+            self.cached_library_data = db.load_movie_library(library_name)
+        else:
+            self.cached_library_data = db.load_library(library_name)
+        self._cache_series_metrics()
+
+        if reset_selection:
+            self.selected_series_name = ""
+
+        self.status_changed.emit("Library loaded successfully.")
+        self.library_loaded.emit()
+
+    def _on_directory_changed(self, path_string: str) -> None:
+        logger.info(
+            f"Directory modification detected on '{path_string}'. Automated background scanning disabled."
+        )
+
+    def _on_debounce_timeout(self) -> None:
+        pass
+
+    def _cache_series_metrics(self) -> None:
+        for series_name, series_data in self.cached_library_data.items():
+            if "seasons" not in series_data:
+                is_watched = bool(series_data.get("watched"))
+                series_data["metrics"] = {
+                    "total_episodes": 1,
+                    "watched_episodes": 1 if is_watched else 0,
+                    "max_date_added": series_data.get("date_added") or 0,
+                    "max_air_date": str(series_data.get("year") or ""),
+                    "last_played_at": series_data.get("last_played_at") or 0,
+                }
+            else:
+                total_episodes: int = 0
+                watched_episodes: int = 0
+                max_date_added: int = 0
+                max_air_date: str = ""
+                last_played_at: int = 0
+
+                for season_data in series_data.get("seasons", {}).values():
+                    for episode_record in season_data.get("episodes", []):
+                        total_episodes += 1
+                        if episode_record.get("watched"):
+                            watched_episodes += 1
+                        added_timestamp: int = episode_record.get("date_added") or 0
+                        if added_timestamp > max_date_added:
+                            max_date_added = added_timestamp
+                        air_date_string: str = episode_record.get("air_date") or ""
+                        if air_date_string > max_air_date:
+                            max_air_date = air_date_string
+                        lp: int = episode_record.get("last_played_at") or 0
+                        if lp > last_played_at:
+                            last_played_at = lp
+
+                series_data["metrics"] = {
+                    "total_episodes": total_episodes,
+                    "watched_episodes": watched_episodes,
+                    "max_date_added": max_date_added,
+                    "max_air_date": max_air_date,
+                    "last_played_at": last_played_at,
+                }
+
+    def select_series(self, series_name: str) -> None:
+        if series_name in self.cached_library_data:
+            self.selected_series_name = series_name
+            self.series_selected.emit(series_name)
+
+    def select_movie(self, movie_name: str) -> None:
+        if movie_name in self.cached_library_data:
+            self.selected_series_name = movie_name
+            self.movie_selected.emit(movie_name)
+
+    def set_sort_mode(self, mode: str) -> None:
+        if self.sort_mode != mode:
+            logger.info(f"Sort mode changed from '{self.sort_mode}' to '{mode}'")
+            self.sort_mode = mode
+            config.sort_mode = mode
+            config.save()
+            self.library_loaded.emit()
+
+    def set_sort_descending(self, descending: bool) -> None:
+        if self.sort_descending != descending:
+            logger.info(
+                f"Sort direction changed to {'descending' if descending else 'ascending'}"
+            )
+            self.sort_descending = descending
+            config.sort_descending = descending
+            config.save()
+            self.library_loaded.emit()
+
+    def set_filter_out_watched(self, enabled: bool) -> None:
+        if self.filter_out_watched != enabled:
+            self.filter_out_watched = enabled
+            config.filter_out_watched = enabled
+            config.save()
+            self.library_loaded.emit()
+
+    def mark_episode_watched(self, absolute_path: str, watched: bool) -> None:
+        logger.info(
+            f"Controller marking episode watched={watched} for path: {absolute_path}"
+        )
+        db.update_episode_watched_status(absolute_path, watched)
+
+        # Update cached state in memory
+        for series_data in self.cached_library_data.values():
+            if "seasons" not in series_data:
+                if series_data.get("path") == absolute_path:
+                    series_data["watched"] = watched
+                    break
+            else:
+                for season_data in series_data.get("seasons", {}).values():
+                    for episode_record in season_data.get("episodes", []):
+                        if episode_record.get("path") == absolute_path:
+                            episode_record["watched"] = watched
+                            break
+
+        self._cache_series_metrics()
+
+        if not self.is_video_playing:
+            self.library_loaded.emit()
+
+    def mark_season_watched(self, series_name: str, season_name: str) -> None:
+        logger.info(
+            f"Controller marking season watched for series '{series_name}', season '{season_name}'"
+        )
+        db.update_season_watched_status(
+            self.current_library_name, series_name, season_name, True
+        )
+
+        series_data: Dict[str, Any] = self.cached_library_data.get(series_name, {})
+        season_data: Dict[str, Any] = series_data.get("seasons", {}).get(
+            season_name, {}
+        )
+        for episode_record in season_data.get("episodes", []):
+            episode_record["watched"] = True
+
+        self._cache_series_metrics()
+        if not self.is_video_playing:
+            self.library_loaded.emit()
+
+    def mark_series_watched(self, series_name: str) -> None:
+        logger.info(f"Controller marking entire series watched: '{series_name}'")
+        db.update_series_watched_status(self.current_library_name, series_name, True)
+
+        series_data: Dict[str, Any] = self.cached_library_data.get(series_name, {})
+        for season_data in series_data.get("seasons", {}).values():
+            for episode_record in season_data.get("episodes", []):
+                episode_record["watched"] = True
+
+        self._cache_series_metrics()
+        if not self.is_video_playing:
+            self.library_loaded.emit()
+
+    def trigger_scan(self, force_refresh: bool = False) -> None:
+        if not self.current_library_name:
+            self.status_changed.emit("Select a library first.")
+            return
+
+        if (
+            self.scan_worker_instance is not None
+            and self.scan_worker_instance.isRunning()
+        ):
+            logger.info(
+                "ScanWorker is already actively running. Skipping redundant automatic scan trigger."
+            )
+            return
+
+        library_config = config.libraries.get(self.current_library_name, {})
+        root_directories: List[str] = library_config.get("paths", [])
+        library_type: str = library_config.get("type", "tv")
+        self.status_changed.emit(
+            f"Scanning library '{self.current_library_name}' (force={force_refresh})..."
+        )
+
+        self.scan_worker_instance = ScanWorker(
+            root_directories=root_directories,
+            library_type=library_type,
+            existing_library=self.cached_library_data,
+            force_refresh=force_refresh,
+            cleanup=False,
+            library_name=self.current_library_name,
+        )
+        self.scan_worker_instance.finished.connect(self._on_scan_finished)
+        self.scan_worker_instance.partial_result.connect(self._on_scan_partial)
+        self.scan_worker_instance.error.connect(self._on_worker_error)
+        self.scan_worker_instance.detail_progress.connect(
+            self.detail_progress_updated.emit
+        )
+        self.scan_worker_instance.start()
+
+    def _on_scan_partial(self, partial_library: Dict[str, Any]) -> None:
+        if self.current_library_name:
+            # We create a shallow copy/update of cached data to not lose references while UI re-renders
+            self.cached_library_data = partial_library
+            self._cache_series_metrics()
+            if not self.is_video_playing:
+                self.library_loaded.emit()
+
+    def _on_scan_finished(self, updated_library: Dict[str, Any]) -> None:
+        scanned_library_name = (
+            self.scan_worker_instance.library_name
+            if self.scan_worker_instance
+            else self.current_library_name
+        )
+        if scanned_library_name:
+            library_config = config.libraries.get(scanned_library_name, {})
+            if library_config.get("type", "tv") == "movie":
+                db.save_movie_library(scanned_library_name, updated_library)
+            else:
+                db.save_library(scanned_library_name, updated_library)
+
+            if self.current_library_name == scanned_library_name:
+                self.cached_library_data = updated_library
+                self._cache_series_metrics()
+
+            if (
+                self.scan_worker_instance
+                and self.scan_worker_instance.unavailable_directories
+            ):
+                for directory_name in self.scan_worker_instance.unavailable_directories:
+                    self.status_changed.emit(
+                        f"root directory {directory_name} is unavailable check connection to {directory_name}"
+                    )
+            else:
+                self.status_changed.emit(
+                    f"Library scan for '{scanned_library_name}' completed successfully."
+                )
+
+            if (
+                self.current_library_name == scanned_library_name
+                and not self.is_video_playing
+            ):
+                self.library_loaded.emit()
+        self.scan_completed.emit()
+
+    def trigger_cleanup(self) -> None:
+        if not self.current_library_name:
+            self.status_changed.emit("Select a library first.")
+            return
+
+        library_config = config.libraries.get(self.current_library_name, {})
+        root_directories: List[str] = library_config.get("paths", [])
+        self.status_changed.emit(
+            f"Cleaning up missing files in '{self.current_library_name}'..."
+        )
+
+        self.cleanup_worker_instance = CleanupWorker(
+            library_name=self.current_library_name, root_directories=root_directories
+        )
+        self.cleanup_worker_instance.finished.connect(self._on_cleanup_finished)
+        self.cleanup_worker_instance.error.connect(self._on_worker_error)
+        self.cleanup_worker_instance.start()
+
+    def _on_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
+        self.select_library(self.current_library_name, reset_selection=False)
+        series_removed: int = statistics.get("series", 0)
+        seasons_removed: int = statistics.get("seasons", 0)
+        episodes_removed: int = statistics.get("episodes", 0)
+        self.status_changed.emit(
+            f"Cleanup finished: removed {series_removed} series, {seasons_removed} seasons, {episodes_removed} episodes."
+        )
+
+    def trigger_jellyfin_pull(self) -> None:
+        if not jellyfin_client.is_configured():
+            self.status_changed.emit("Jellyfin is not configured.")
+            return
+
+        self.status_changed.emit("Pulling watch history from Jellyfin...")
+        self.pull_worker_instance = JellyfinPullWorker()
+        self.pull_worker_instance.finished.connect(self._on_pull_finished)
+        self.pull_worker_instance.error.connect(self._on_worker_error)
+        self.pull_worker_instance.start()
+
+    def _on_pull_finished(self, updated_count: int) -> None:
+        if self.current_library_name:
+            self.select_library(self.current_library_name, reset_selection=False)
+        self.status_changed.emit(
+            f"Watch history pulled successfully: updated {updated_count} episodes."
+        )
+
+    def trigger_jellyfin_push(self) -> None:
+        if not jellyfin_client.is_configured():
+            self.status_changed.emit("Jellyfin is not configured.")
+            return
+
+        self.status_changed.emit("Pushing local watch history to Jellyfin...")
+        self.push_worker_instance = JellyfinPushWorker()
+        self.push_worker_instance.finished.connect(self._on_push_finished)
+        self.push_worker_instance.error.connect(self._on_worker_error)
+        self.push_worker_instance.start()
+
+    def _on_push_finished(self, pushed_count: int) -> None:
+        self.status_changed.emit(
+            f"Watch history pushed successfully: synchronized {pushed_count} episodes."
+        )
+
+    def trigger_scan_all(self, force_refresh: bool = False) -> None:
+        if (
+            self.scan_all_worker_instance is not None
+            and self.scan_all_worker_instance.isRunning()
+        ):
+            logger.info("ScanAllLibrariesWorker is already running.")
+            return
+
+        self.status_changed.emit("Scanning all libraries...")
+        self.scan_all_worker_instance = ScanAllLibrariesWorker(
+            force_refresh=force_refresh
+        )
+        self.scan_all_worker_instance.library_progress.connect(
+            self.global_progress_updated.emit
+        )
+        self.scan_all_worker_instance.detail_progress.connect(
+            self.detail_progress_updated.emit
+        )
+        self.scan_all_worker_instance.finished.connect(self._on_scan_all_finished)
+        self.scan_all_worker_instance.error.connect(self._on_worker_error)
+        self.scan_all_worker_instance.start()
+
+    def _on_scan_all_finished(self) -> None:
+        if (
+            self.scan_all_worker_instance
+            and self.scan_all_worker_instance.unavailable_directories
+        ):
+            for directory_name in self.scan_all_worker_instance.unavailable_directories:
+                self.status_changed.emit(
+                    f"root directory {directory_name} is unavailable check connection to {directory_name}"
+                )
+        else:
+            self.status_changed.emit(
+                "Global multi-library scan completed successfully."
+            )
+        if self.current_library_name:
+            if self.current_library_name == "Combined View":
+                self.library_loaded.emit()
+            else:
+                self.select_library(self.current_library_name, reset_selection=False)
+        self.scan_completed.emit()
+
+    def trigger_cleanup_all(self) -> None:
+        if (
+            self.cleanup_all_worker_instance is not None
+            and self.cleanup_all_worker_instance.isRunning()
+        ):
+            logger.info("CleanupAllLibrariesWorker is already running.")
+            return
+
+        self.status_changed.emit("Cleaning up all libraries...")
+        self.cleanup_all_worker_instance = CleanupAllLibrariesWorker()
+        self.cleanup_all_worker_instance.library_progress.connect(
+            self.global_progress_updated.emit
+        )
+        self.cleanup_all_worker_instance.finished.connect(self._on_cleanup_all_finished)
+        self.cleanup_all_worker_instance.error.connect(self._on_worker_error)
+        self.cleanup_all_worker_instance.start()
+
+    def _on_cleanup_all_finished(self) -> None:
+        self.status_changed.emit("Global multi-library cleanup completed successfully.")
+        if self.current_library_name:
+            self.select_library(self.current_library_name, reset_selection=False)
+
+    def trigger_runtime_extraction(self) -> None:
+        if (
+            self.runtime_worker_instance is not None
+            and self.runtime_worker_instance.isRunning()
+        ):
+            logger.info("RuntimeExtractionWorker is already running.")
+            return
+
+        self.status_changed.emit("Extracting missing video runtimes in background...")
+        self.runtime_worker_instance = RuntimeExtractionWorker()
+        self.runtime_worker_instance.progress_updated.connect(self._on_runtime_progress)
+        self.runtime_worker_instance.finished.connect(self._on_runtime_finished)
+        self.runtime_worker_instance.error.connect(self._on_worker_error)
+        self.runtime_worker_instance.start()
+
+    def _on_runtime_progress(self, completed_count: int, total_count: int) -> None:
+        self.global_progress_updated.emit(
+            "Extracting Runtimes", completed_count, total_count
+        )
+
+    def _on_runtime_finished(self, updated_count: int) -> None:
+        self.status_changed.emit(
+            f"Runtime extraction completed: updated {updated_count} videos."
+        )
+        if self.current_library_name:
+            self.select_library(self.current_library_name, reset_selection=False)
+
+    def _on_worker_error(self, error_message: str) -> None:
+        self.status_changed.emit(f"Worker Error: {error_message}")
+        logger.error(f"Background execution fault: {error_message}")
+        self.scan_completed.emit()
+
+    def _download_provider_artwork(
+        self,
+        target_dict: Dict[str, Any],
+        match_dictionary: Dict[str, Any],
+        is_movie: bool,
+    ) -> None:
+        if match_dictionary.get("poster_path"):
+            raw_poster_path: str = match_dictionary.get("poster_path", "")
+            tmdb_identifier_value: str = target_dict.get("tmdb_identifier", "")
+            if raw_poster_path and tmdb_identifier_value:
+                prefix = "tmdb_movie_" if is_movie else "tmdb_series_"
+                cached_image_path: Optional[str] = tmdb_client.download_image(
+                    raw_poster_path, f"{prefix}{tmdb_identifier_value}"
+                )
+                target_dict["poster_path"] = cached_image_path or raw_poster_path
+            else:
+                target_dict["poster_path"] = raw_poster_path
+
+    def _sync_tmdb_episodes_for_series(
+        self, series_record: Dict[str, Any], new_tmdb_identifier: str
+    ) -> None:
+        for season_folder_name, season_data_dict in series_record.get(
+            "seasons", {}
+        ).items():
+            if season_folder_name.lower() == "specials":
+                target_season_number: int = 0
+            else:
+                parsed_season_match = re.search(r"\d+", season_folder_name)
+                target_season_number = (
+                    int(parsed_season_match.group()) if parsed_season_match else -1
+                )
+
+            if target_season_number >= 0:
+                fetched_episodes_list = tmdb_client.get_episodes(
+                    new_tmdb_identifier, target_season_number
+                )
+                for episode_item_dict in season_data_dict.get("episodes", []):
+                    episode_filename: str = str(
+                        episode_item_dict.get("name")
+                        or Path(str(episode_item_dict.get("path", ""))).name
+                    )
+                    matched_tmdb_episode: Optional[Dict[str, Any]] = None
+
+                    episode_number_match = re.search(
+                        r"[Ss]\d+[Ee](\d+)", episode_filename
+                    )
+                    if episode_number_match:
+                        target_episode_number: int = int(episode_number_match.group(1))
+                        for candidate_episode in fetched_episodes_list:
+                            if (
+                                candidate_episode.get("episode_number")
+                                == target_episode_number
+                            ):
+                                matched_tmdb_episode = candidate_episode
+                                break
+                    else:
+                        stem_lower: str = Path(episode_filename).stem.lower()
+                        for candidate_episode in fetched_episodes_list:
+                            candidate_name: str = str(
+                                candidate_episode.get("name") or ""
+                            ).lower()
+                            if candidate_name and candidate_name in stem_lower:
+                                matched_tmdb_episode = candidate_episode
+                                break
+
+                    if matched_tmdb_episode:
+                        matched_id_str: str = str(matched_tmdb_episode.get("id", ""))
+                        episode_item_dict["tmdb_identifier"] = matched_id_str
+                        episode_item_dict["tmdb_episode_identifier"] = matched_id_str
+                        if matched_tmdb_episode.get("name"):
+                            episode_item_dict["tmdb_name"] = matched_tmdb_episode.get(
+                                "name", ""
+                            )
+                        if matched_tmdb_episode.get("episode_number") is not None:
+                            episode_item_dict["tmdb_number"] = matched_tmdb_episode.get(
+                                "episode_number"
+                            )
+                        if matched_tmdb_episode.get("air_date"):
+                            episode_item_dict["air_date"] = matched_tmdb_episode.get(
+                                "air_date", ""
+                            )
+                        if matched_tmdb_episode.get("runtime"):
+                            episode_item_dict["runtime"] = matched_tmdb_episode.get(
+                                "runtime", 0
+                            )
+
+    def apply_metadata_match(
+        self, series_name: str, match_dictionary: Dict[str, Any]
+    ) -> None:
+        logger.info(
+            f"Controller applying metadata match for '{series_name}': {match_dictionary}"
+        )
+        if series_name not in self.cached_library_data:
+            return
+
+        library_config = config.libraries.get(self.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+
+        series_record: Dict[str, Any] = self.cached_library_data[series_name]
+        target_dict: Dict[str, Any] = (
+            series_record if is_movie else series_record.get("metadata", {})
+        )
+
+        provider_name: str = match_dictionary.get("provider", "TMDB")
+        target_identifier: str = match_dictionary.get("id", "")
+
+        if provider_name == "Jellyfin":
+            target_dict["jellyfin_id"] = target_identifier
+            tmdb_id_mapped: str = match_dictionary.get("tmdb_id", "")
+            if tmdb_id_mapped:
+                target_dict["tmdb_identifier"] = tmdb_id_mapped
+        else:
+            target_dict["tmdb_identifier"] = target_identifier
+
+        if match_dictionary.get("name"):
+            target_dict["tmdb_name"] = match_dictionary.get("name", "")
+        if match_dictionary.get("overview"):
+            target_dict["overview"] = match_dictionary.get("overview", "")
+
+        self._download_provider_artwork(target_dict, match_dictionary, is_movie)
+
+        if not is_movie and match_dictionary.get("first_air_date"):
+            target_dict["first_air_date"] = match_dictionary.get("first_air_date", "")
+        elif is_movie and match_dictionary.get("first_air_date"):
+            air_date_str = match_dictionary.get("first_air_date", "")
+            if air_date_str:
+                try:
+                    target_dict["year"] = int(air_date_str.split("-")[0])
+                except ValueError:
+                    pass
+
+        target_dict["locked_metadata"] = True
+        if not is_movie:
+            series_record["metadata"] = target_dict
+
+            new_tmdb_identifier: str = target_dict.get("tmdb_identifier", "")
+            if new_tmdb_identifier:
+                self._sync_tmdb_episodes_for_series(series_record, new_tmdb_identifier)
+
+        if self.current_library_name:
+            if is_movie:
+                db.save_movie_library(
+                    self.current_library_name, self.cached_library_data
+                )
+            else:
+                db.save_library(self.current_library_name, self.cached_library_data)
+
+        self.status_changed.emit(
+            f"Successfully applied metadata match to '{series_name}'."
+        )
+        self.library_loaded.emit()
+        if self.selected_series_name == series_name:
+            if is_movie:
+                self.movie_selected.emit(series_name)
+            else:
+                self.series_selected.emit(series_name)
+
+    def apply_jellyfin_watch_match(
+        self, series_name: str, match_dictionary: Dict[str, Any]
+    ) -> None:
+        logger.info(
+            f"Controller applying Jellyfin watch history match for '{series_name}': {match_dictionary}"
+        )
+        if series_name not in self.cached_library_data:
+            return
+
+        library_config = config.libraries.get(self.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+
+        series_record: Dict[str, Any] = self.cached_library_data[series_name]
+        target_dict: Dict[str, Any] = (
+            series_record if is_movie else series_record.get("metadata", {})
+        )
+
+        target_identifier: str = match_dictionary.get("id", "")
+        target_dict["jellyfin_id"] = target_identifier
+
+        if self.current_library_name:
+            if is_movie:
+                db.save_movie_library(
+                    self.current_library_name, self.cached_library_data
+                )
+            else:
+                db.save_library(self.current_library_name, self.cached_library_data)
+
+        self.status_changed.emit(
+            f"Successfully linked Jellyfin watch history for '{series_name}'."
+        )
+        self.library_loaded.emit()
+        if self.selected_series_name == series_name:
+            if is_movie:
+                self.movie_selected.emit(series_name)
+            else:
+                self.series_selected.emit(series_name)
+
+    def apply_episode_metadata_match(
+        self, series_name: str, episode_path: str, match_dictionary: Dict[str, Any]
+    ) -> None:
+        logger.info(
+            f"Controller applying episode metadata match for '{series_name}' at '{episode_path}': {match_dictionary}"
+        )
+        if series_name not in self.cached_library_data:
+            return
+
+        series_record: Dict[str, Any] = self.cached_library_data[series_name]
+        episode_found: bool = False
+
+        for season_data in series_record.get("seasons", {}).values():
+            for episode_record in season_data.get("episodes", []):
+                if episode_record.get("path") == episode_path:
+                    target_identifier: str = str(match_dictionary.get("id", ""))
+                    episode_record["tmdb_identifier"] = target_identifier
+                    episode_record["tmdb_episode_identifier"] = target_identifier
+                    if match_dictionary.get("name"):
+                        episode_record["tmdb_name"] = match_dictionary.get("name", "")
+                    if match_dictionary.get("episode_number") is not None:
+                        episode_record["tmdb_number"] = match_dictionary.get(
+                            "episode_number"
+                        )
+                    if match_dictionary.get("air_date"):
+                        episode_record["air_date"] = match_dictionary.get(
+                            "air_date", ""
+                        )
+                    if match_dictionary.get("runtime"):
+                        episode_record["runtime"] = match_dictionary.get("runtime", 0)
+                    episode_found = True
+                    break
+            if episode_found:
+                break
+
+        if episode_found:
+            if self.current_library_name:
+                db.save_library(self.current_library_name, self.cached_library_data)
+
+            self.status_changed.emit(
+                f"Successfully applied episode metadata match to '{series_name}'."
+            )
+            self.library_loaded.emit()
+            if self.selected_series_name == series_name:
+                self.series_selected.emit(series_name)
+
+    def update_episode_metadata(
+        self, series_name: str, episode_path: str, metadata_dictionary: Dict[str, Any]
+    ) -> None:
+        """Persists manual metadata overrides for a specific episode."""
+        logger.info(
+            f"Controller updating episode metadata for '{series_name}' at '{episode_path}'"
+        )
+        if series_name not in self.cached_library_data:
+            return
+
+        series_record: Dict[str, Any] = self.cached_library_data[series_name]
+        episode_found: bool = False
+
+        for season_data in series_record.get("seasons", {}).values():
+            for episode_record in season_data.get("episodes", []):
+                if episode_record.get("path") == episode_path:
+                    for key, value in metadata_dictionary.items():
+                        episode_record[key] = value
+                    episode_found = True
+                    break
+            if episode_found:
+                break
+
+        if episode_found:
+            if self.current_library_name:
+                db.save_library(self.current_library_name, self.cached_library_data)
+            self.library_loaded.emit()
+            if self.selected_series_name == series_name:
+                self.series_selected.emit(series_name)
+
+    def toggle_series_lock(self, series_name: str, locked: bool) -> None:
+        """
+        Updates the locked_metadata flag for a series or movie and persists it to the database.
+        """
+        logger.info(f"Controller toggling lock for '{series_name}' to {locked}")
+        if series_name not in self.cached_library_data:
+            return
+
+        library_config = config.libraries.get(self.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+
+        series_record: Dict[str, Any] = self.cached_library_data[series_name]
+        if is_movie:
+            series_record["locked_metadata"] = locked
+            if self.current_library_name:
+                db.save_movie_library(
+                    self.current_library_name, self.cached_library_data
+                )
+            self.movie_selected.emit(series_name)
+        else:
+            if "metadata" not in series_record:
+                series_record["metadata"] = {}
+            series_record["metadata"]["locked_metadata"] = locked
+            if self.current_library_name:
+                db.save_library(self.current_library_name, self.cached_library_data)
+            self.series_selected.emit(series_name)
+
+        self.library_loaded.emit()
+
+    def trigger_series_refresh(self, series_name: str) -> None:
+        """Triggers a background RefreshSeriesWorker for the specified series or movie."""
+        if not self.current_library_name:
+            self.status_changed.emit("Select a library first.")
+            return
+
+        if self.scan_worker_instance and self.scan_worker_instance.isRunning():
+            self.status_changed.emit("A scan is already in progress.")
+            return
+
+        library_config = config.libraries.get(self.current_library_name, {})
+        library_type = library_config.get("type", "tv")
+        root_directories = library_config.get("paths", [])
+
+        self.status_changed.emit(f"Refreshing metadata for '{series_name}'...")
+
+        from lan_streamer.backend import RefreshSeriesWorker
+
+        self.refresh_worker_instance = RefreshSeriesWorker(
+            library_name=self.current_library_name,
+            item_name=series_name,
+            library_type=library_type,
+            root_directories=root_directories,
+            existing_library=self.cached_library_data,
+        )
+        self.refresh_worker_instance.finished.connect(self._on_refresh_finished)
+        self.refresh_worker_instance.error.connect(self._on_worker_error)
+        self.refresh_worker_instance.start()
+
+    def _on_refresh_finished(self, updated_library: Dict[str, Any]) -> None:
+        scanned_library_name = (
+            self.refresh_worker_instance.library_name
+            if self.refresh_worker_instance
+            else self.current_library_name
+        )
+        if scanned_library_name:
+            if self.current_library_name == scanned_library_name:
+                self.cached_library_data = updated_library
+                self._cache_series_metrics()
+                self.status_changed.emit("Metadata refresh completed successfully.")
+                if not self.is_video_playing:
+                    self.library_loaded.emit()
+            else:
+                item_name = (
+                    self.refresh_worker_instance.item_name
+                    if self.refresh_worker_instance
+                    else "item"
+                )
+                self.status_changed.emit(
+                    f"Background refresh for '{item_name}' completed successfully."
+                )
+
+    def refresh_episode_metadata(self, series_name: str, episode_path: str) -> None:
+        """
+        Queries TMDB directly for the specific episode's metadata and updates it,
+        bypassing lock status (since targeted).
+        """
+        logger.info(
+            f"Controller refreshing episode metadata for '{series_name}' at '{episode_path}'"
+        )
+        if series_name not in self.cached_library_data:
+            return
+
+        series_record = self.cached_library_data[series_name]
+        series_tmdb_id = series_record.get("metadata", {}).get("tmdb_identifier")
+        if not series_tmdb_id:
+            logger.warning(
+                "Cannot refresh episode metadata because series has no TMDB identifier"
+            )
+            return
+
+        target_episode: Optional[Dict[str, Any]] = None
+        target_season_name: Optional[str] = None
+        for season_name, season_data in series_record.get("seasons", {}).items():
+            for ep in season_data.get("episodes", []):
+                if ep.get("path") == episode_path:
+                    target_episode = ep
+                    target_season_name = season_name
+                    break
+            if target_episode:
+                break
+
+        if not target_episode or target_season_name is None:
+            logger.warning("Episode not found in cache")
+            return
+
+        if target_season_name.lower() == "specials":
+            season_index = 0
+        else:
+            m = re.search(r"\d+", target_season_name)
+            season_index = int(m.group()) if m else 1
+
+        episode_num = target_episode.get("episode_number") or target_episode.get(
+            "tmdb_number"
+        )
+        if episode_num is None:
+            logger.warning("Episode has no episode number")
+            return
+
+        try:
+            tmdb_episodes = tmdb_client.get_episodes(series_tmdb_id, season_index)
+            matched_ep = None
+            for ep in tmdb_episodes:
+                if ep.get("episode_number") == episode_num:
+                    matched_ep = ep
+                    break
+
+            if matched_ep:
+                target_episode["tmdb_name"] = matched_ep.get("name", "")
+                target_episode["name"] = matched_ep.get("name", "")
+                target_episode["overview"] = matched_ep.get("overview", "")
+                target_episode["air_date"] = matched_ep.get("air_date", "")
+                target_episode["runtime"] = matched_ep.get("runtime", 0)
+
+                db.save_library(self.current_library_name, self.cached_library_data)
+                self.library_loaded.emit()
+                if self.selected_series_name == series_name:
+                    self.series_selected.emit(series_name)
+                logger.info("Successfully refreshed episode metadata from TMDB")
+            else:
+                logger.warning(
+                    f"Could not find episode {episode_num} in TMDB season {season_index}"
+                )
+        except Exception:
+            logger.exception("Failed to refresh episode metadata from TMDB")
+
+    def update_movie_metadata(
+        self, movie_name: str, movie_path: str, metadata: Dict[str, Any]
+    ) -> None:
+        """
+        Updates movie metadata in the database and refreshes local cache.
+        Strictly typed with no abbreviations.
+        """
+        if movie_name not in self.cached_library_data:
+            return
+
+        movie_data = self.cached_library_data[movie_name]
+        movie_data.update(metadata)
+
+        # Persistence
+        db.save_library(self.current_library_name, self.cached_library_data)
+        self._cache_series_metrics()
+        self.library_loaded.emit()
+
+    def merge_subtitles(self, video_path: str, subtitle_paths: List[str]) -> None:
+        """Triggers background ffmpeg worker to merge external subtitles into video file."""
+        if (
+            self.merge_subtitle_worker_instance
+            and self.merge_subtitle_worker_instance.isRunning()
+        ):
+            self.status_changed.emit("Subtitle merge already in progress.")
+            return
+
+        from lan_streamer.backend import SubtitleMergeWorker
+
+        self.status_changed.emit("Merging external subtitles into video file...")
+        self.merge_subtitle_worker_instance = SubtitleMergeWorker(
+            video_path, subtitle_paths
+        )
+        self.merge_subtitle_worker_instance.finished.connect(
+            self._on_subtitle_merge_finished
+        )
+        self.merge_subtitle_worker_instance.error.connect(self._on_worker_error)
+        self.merge_subtitle_worker_instance.start()
+
+    def _on_subtitle_merge_finished(self, final_path: str) -> None:
+        self.status_changed.emit("Subtitles merged successfully.")
+        # Trigger scan to update metadata/details if needed
+        self.trigger_scan(force_refresh=False)
+
+    def embed_metadata(self, video_path: str, metadata: Dict[str, str]) -> None:
+        """Triggers background ffmpeg worker to embed metadata into video file."""
+        if (
+            self.embed_metadata_worker_instance
+            and self.embed_metadata_worker_instance.isRunning()
+        ):
+            self.status_changed.emit("Metadata embedding already in progress.")
+            return
+
+        from lan_streamer.backend import MetadataEmbedWorker
+
+        self.status_changed.emit("Embedding metadata into video file...")
+        self.embed_metadata_worker_instance = MetadataEmbedWorker(video_path, metadata)
+        self.embed_metadata_worker_instance.finished.connect(
+            self._on_metadata_embed_finished
+        )
+        self.embed_metadata_worker_instance.error.connect(self._on_worker_error)
+        self.embed_metadata_worker_instance.start()
+
+    def _on_metadata_embed_finished(self, final_path: str) -> None:
+        self.status_changed.emit("Metadata embedded successfully.")
+        self.trigger_scan(force_refresh=False)
+
+    def embed_metadata_series(self, series_name: str) -> None:
+        """Triggers background worker to embed metadata for all episodes in a series."""
+        if (
+            self.embed_metadata_worker_instance
+            and self.embed_metadata_worker_instance.isRunning()
+        ):
+            self.status_changed.emit("Metadata embedding already in progress.")
+            return
+
+        if series_name not in self.cached_library_data:
+            return
+
+        series_record = self.cached_library_data[series_name]
+        all_episodes = []
+        for season in series_record.get("seasons", {}).values():
+            for ep in season.get("episodes", []):
+                all_episodes.append(ep)
+
+        if not all_episodes:
+            self.status_changed.emit("No episodes found in series.")
+            return
+
+        from lan_streamer.backend import SeriesMetadataEmbedWorker
+
+        self.status_changed.emit(f"Embedding metadata for series '{series_name}'...")
+        self.embed_metadata_worker_instance = SeriesMetadataEmbedWorker(
+            series_name, all_episodes
+        )
+        self.embed_metadata_worker_instance.progress_updated.connect(
+            self.global_progress_updated.emit
+        )
+        self.embed_metadata_worker_instance.finished.connect(
+            lambda: self.status_changed.emit("Series metadata embedding finished.")
+        )
+        self.embed_metadata_worker_instance.error.connect(self._on_worker_error)
+        self.embed_metadata_worker_instance.start()
+
+    def update_series_name(self, old_name: str, new_name: str) -> None:
+        """Renames a series in the database and updates cache."""
+        if old_name not in self.cached_library_data or not new_name:
+            return
+
+        series_data = self.cached_library_data.pop(old_name)
+        self.cached_library_data[new_name] = series_data
+
+        db.save_library(self.current_library_name, self.cached_library_data)
+        self._cache_series_metrics()
+        self.library_loaded.emit()
+        # Trigger re-selection to update UI
+        self.selected_series_name = new_name
+        self.series_selected.emit(new_name)
+
+    def apply_rename_batch(self, preview_results: List[Dict[str, Any]]) -> None:
+        logger.info(
+            f"Controller executing batch renames for {len(preview_results)} files."
+        )
+        from lan_streamer.scanner.renamer import perform_rename
+
+        def on_rename_success(old_path_string: str, new_path_string: str) -> None:
+            db.update_episode_path(old_path_string, new_path_string)
+            for series_dictionary in self.cached_library_data.values():
+                for season_dictionary in series_dictionary.get("seasons", {}).values():
+                    for episode_dictionary in season_dictionary.get("episodes", []):
+                        if episode_dictionary.get("path") == old_path_string:
+                            episode_dictionary["path"] = new_path_string
+                            path_instance = Path(new_path_string)
+                            episode_dictionary["name"] = path_instance.name
+                            break
+
+        perform_rename(preview_results, on_rename_success)
+
+        if self.current_library_name:
+            db.save_library(self.current_library_name, self.cached_library_data)
+
+        self.status_changed.emit("Batch renaming completed successfully.")
+        self.library_loaded.emit()
+        if self.selected_series_name:
+            self.series_selected.emit(self.selected_series_name)
+
+    def set_video_playing(self, is_playing: bool) -> None:
+        logger.info(f"Controller setting video playing state: {is_playing}")
+        self.is_video_playing = is_playing
+        if not is_playing:
+            self.library_loaded.emit()
+            if self.selected_series_name:
+                library_config = config.libraries.get(self.current_library_name, {})
+                if library_config.get("type", "tv") == "movie":
+                    self.movie_selected.emit(self.selected_series_name)
+                else:
+                    self.series_selected.emit(self.selected_series_name)

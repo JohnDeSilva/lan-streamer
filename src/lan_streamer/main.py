@@ -6,9 +6,9 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedLayout
 from PySide6.QtGui import QPalette, QColor, QFont
 from PySide6.QtCore import Qt
 
-from . import db, __version__
-from .config import config
-from .ui_views import (
+from lan_streamer import db, __version__
+from lan_streamer.system.config import config
+from lan_streamer.ui_views import (
     Controller,
     LibraryGridView,
     SeriesDetailView,
@@ -22,8 +22,8 @@ from .ui_views import (
     RenamePreviewDialog,
     get_application_stylesheet,
 )
-from .player_widget import VideoPlayerWidget
-from .player import play_video
+from lan_streamer.playback import VideoPlayerWidget
+from lan_streamer.playback import play_video
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ def main() -> None:
     )
     root_logger = logging.getLogger()
 
-    from .logging_handler import set_application_log_level
+    from lan_streamer.system.logging_handler import set_application_log_level
 
     set_application_log_level(config.log_level)
 
@@ -132,7 +132,7 @@ def main() -> None:
     except Exception as exc:
         logging.debug(f"Error cleaning old logs: {exc}")
 
-    from .logging_handler import SERVICE_LOGGERS, setup_qt_logging
+    from lan_streamer.system.logging_handler import SERVICE_LOGGERS, setup_qt_logging
 
     if not config.divide_logs_by_service:
         add_file_handler(
@@ -169,7 +169,7 @@ def main() -> None:
 
     setup_qt_logging(log_formatter)
 
-    from .backup import perform_scheduled_backups
+    from lan_streamer.system.backup import perform_scheduled_backups
 
     perform_scheduled_backups()
 

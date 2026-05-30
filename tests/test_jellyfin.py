@@ -1,8 +1,8 @@
 import pytest
 import requests
 from unittest.mock import MagicMock, patch
-from lan_streamer.jellyfin import JellyfinClient
-from lan_streamer.config import config
+from lan_streamer.providers.jellyfin import JellyfinClient
+from lan_streamer.system.config import config
 
 
 @pytest.fixture

@@ -10,7 +10,7 @@ Jellyfin is used only to:
 import logging
 import requests
 import socket
-from .config import config
+from lan_streamer.system.config import config
 
 logger = logging.getLogger(__name__)
 

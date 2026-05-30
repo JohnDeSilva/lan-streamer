@@ -1,4 +1,4 @@
-from lan_streamer.renamer import (
+from lan_streamer.scanner.renamer import (
     format_name,
     get_rename_preview,
     sanitize_filename,

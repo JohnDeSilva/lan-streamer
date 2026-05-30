@@ -2,7 +2,7 @@ import logging
 from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
-from lan_streamer.logging_handler import qt_log_handler
+from lan_streamer.system.logging_handler import qt_log_handler
 from lan_streamer.ui_views import SettingsDialog
 
 
@@ -113,7 +113,7 @@ def test_settings_dialog_export_logs(qtbot: QtBot, tmp_path, monkeypatch) -> Non
     import zipfile
     from pathlib import Path
     from PySide6.QtWidgets import QMessageBox
-    from lan_streamer.config import config
+    from lan_streamer.system.config import config
 
     # 1. Setup temporary directories for logs and home
     temp_log_dir = tmp_path / "logs"
@@ -216,11 +216,11 @@ def test_config_path_expansion(tmp_path, monkeypatch) -> None:
     with open(temp_config_file, "w") as f:
         json.dump(config_data, f)
 
-    import lan_streamer.config
+    import sys
 
     try:
-        importlib.reload(lan_streamer.config)
-        cfg = lan_streamer.config.config
+        importlib.reload(sys.modules["lan_streamer.system.config"])
+        cfg = sys.modules["lan_streamer.system.config"].config
 
         expected_db = str(fake_home / "library.db")
         expected_log = str(fake_home / "logs")
@@ -233,13 +233,13 @@ def test_config_path_expansion(tmp_path, monkeypatch) -> None:
         assert cfg.backup_directory == expected_backup
     finally:
         monkeypatch.undo()
-        importlib.reload(lan_streamer.config)
+        importlib.reload(sys.modules["lan_streamer.system.config"])
 
 
 def test_divided_service_logging_realtime_flow(tmp_path) -> None:
     import logging
-    from lan_streamer.config import config
-    from lan_streamer.logging_handler import (
+    from lan_streamer.system.config import config
+    from lan_streamer.system.logging_handler import (
         setup_qt_logging,
         qt_log_handler,
         SERVICE_LOGGERS,
@@ -276,16 +276,16 @@ def test_divided_service_logging_realtime_flow(tmp_path) -> None:
             "lan_streamer.db": "db.log",
             "lan_streamer.backend": "backend.log",
             "lan_streamer.scanner": "scanner.log",
-            "lan_streamer.jellyfin": "jellyfin.log",
-            "lan_streamer.tmdb": "tmdb.log",
-            "lan_streamer.player_widget": "player.log",
-            "lan_streamer.player": "player.log",
-            "lan_streamer.backup": "backup.log",
-            "lan_streamer.opensubtitles": "opensubtitles.log",
-            "lan_streamer.wakelock": "wakelock.log",
+            "lan_streamer.providers.jellyfin": "jellyfin.log",
+            "lan_streamer.providers.tmdb": "tmdb.log",
+            "lan_streamer.playback": "player.log",
+            "lan_streamer.playback.player": "player.log",
+            "lan_streamer.system.backup": "backup.log",
+            "lan_streamer.providers.opensubtitles": "opensubtitles.log",
+            "lan_streamer.playback.wakelock": "wakelock.log",
             "lan_streamer.ui_views": "ui.log",
             "lan_streamer.main": "ui.log",
-            "lan_streamer.renamer": "renamer.log",
+            "lan_streamer.scanner.renamer": "renamer.log",
         }
 
         file_handlers = {}
@@ -369,7 +369,10 @@ def test_divided_service_logging_realtime_flow(tmp_path) -> None:
 
 def test_set_application_log_level() -> None:
     import logging
-    from lan_streamer.logging_handler import set_application_log_level, SERVICE_LOGGERS
+    from lan_streamer.system.logging_handler import (
+        set_application_log_level,
+        SERVICE_LOGGERS,
+    )
 
     root_logger = logging.getLogger()
     original_root_level = root_logger.level

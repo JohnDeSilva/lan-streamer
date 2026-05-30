@@ -1,15 +1,15 @@
 import pytest
 import requests
 from unittest.mock import MagicMock, patch
-from lan_streamer.tmdb import TMDBClient
-from lan_streamer.config import config
+from lan_streamer.providers.tmdb import TMDBClient
+from lan_streamer.system.config import config
 
 
 @pytest.fixture
 def tmdb(tmp_path) -> None:
     with (
         patch.object(config, "tmdb_api_key", "test-tmdb-key"),
-        patch("lan_streamer.tmdb.CACHE_DIR", tmp_path),
+        patch("lan_streamer.providers.tmdb.CACHE_DIR", tmp_path),
     ):
         client = TMDBClient()
         yield client
@@ -272,7 +272,7 @@ def test_get_episodes_error(tmdb) -> None:
 
 def test_download_image_full_url(tmdb, tmp_path) -> None:
 
-    with patch("lan_streamer.tmdb.CACHE_DIR", tmp_path):
+    with patch("lan_streamer.providers.tmdb.CACHE_DIR", tmp_path):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.content = b"fake-image-data"
@@ -296,7 +296,7 @@ def test_download_image_full_url(tmdb, tmp_path) -> None:
 def test_download_image_bare_path(tmdb, tmp_path) -> None:
     """TMDB returns /abc.jpg — client should prepend the CDN base URL."""
 
-    with patch("lan_streamer.tmdb.CACHE_DIR", tmp_path):
+    with patch("lan_streamer.providers.tmdb.CACHE_DIR", tmp_path):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.content = b"poster-bytes"
@@ -316,7 +316,7 @@ def test_download_image_empty(tmdb) -> None:
 
 def test_download_image_error(tmdb, tmp_path) -> None:
 
-    with patch("lan_streamer.tmdb.CACHE_DIR", tmp_path):
+    with patch("lan_streamer.providers.tmdb.CACHE_DIR", tmp_path):
         tmdb.session.get = MagicMock(side_effect=Exception("Download failed"))
         path = tmdb.download_image("/abc.jpg", "error_key")
         assert path == ""
