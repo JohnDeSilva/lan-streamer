@@ -19,3 +19,12 @@ updates:
     commit-message:
       prefix: "fix(dependency): "
       prefix-development: "fix(dev-dependency): "
+
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "pre-commit hooks"
+    commit-message:
+      prefix: "chore(pre-commit): "

@@ -1333,7 +1333,9 @@ class SettingsDialog(QDialog):
 
         if event == "init_tree":
             tree = payload.get("tree", {})
-            library_order = payload.get("library_order") or list(self.staged_libraries.keys())
+            library_order = payload.get("library_order") or list(
+                self.staged_libraries.keys()
+            )
             self.global_progress_bar.init_from_tree(
                 tree, library_order, self.staged_libraries
             )

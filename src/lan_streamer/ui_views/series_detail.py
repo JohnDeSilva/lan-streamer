@@ -186,7 +186,9 @@ class SeriesDetailView(QWidget):
         # Save active tab text to restore it later and prevent tab jumping
         current_tab_name: Optional[str] = None
         if self.seasons_tab_widget.count() > 0:
-            current_tab_name = self.seasons_tab_widget.tabText(self.seasons_tab_widget.currentIndex())
+            current_tab_name = self.seasons_tab_widget.tabText(
+                self.seasons_tab_widget.currentIndex()
+            )
 
         # Clear and repopulate Season Tabs
         self.seasons_tab_widget.clear()
