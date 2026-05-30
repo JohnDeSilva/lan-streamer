@@ -1245,6 +1245,47 @@ def test_extract_video_runtime_failure(tmp_path) -> None:
         assert _extract_video_runtime(str(video_file.absolute())) == 0
 
 
+def test_get_ffprobe_command_path_resolved() -> None:
+    from lan_streamer.scanner.runtime import _get_ffprobe_command
+
+    _get_ffprobe_command.cache_clear()
+
+    with patch("shutil.which", return_value="/usr/bin/ffprobe"):
+        cmd = _get_ffprobe_command()
+        assert cmd == "/usr/bin/ffprobe"
+
+
+def test_get_ffprobe_command_mac_fallback() -> None:
+    from lan_streamer.scanner.runtime import _get_ffprobe_command
+
+    _get_ffprobe_command.cache_clear()
+
+    # Mocks for os.path.exists
+    def mock_exists(path: str) -> bool:
+        return path == "/opt/homebrew/bin/ffprobe"
+
+    with (
+        patch("shutil.which", return_value=None),
+        patch("os.path.exists", side_effect=mock_exists),
+        patch("os.access", return_value=True),
+    ):
+        cmd = _get_ffprobe_command()
+        assert cmd == "/opt/homebrew/bin/ffprobe"
+
+
+def test_get_ffprobe_command_default() -> None:
+    from lan_streamer.scanner.runtime import _get_ffprobe_command
+
+    _get_ffprobe_command.cache_clear()
+
+    with (
+        patch("shutil.which", return_value=None),
+        patch("os.path.exists", return_value=False),
+    ):
+        cmd = _get_ffprobe_command()
+        assert cmd == "ffprobe"
+
+
 # ---------------------------------------------------------------------------
 # Granular unit tests for extracted scanner helper functions
 # ---------------------------------------------------------------------------

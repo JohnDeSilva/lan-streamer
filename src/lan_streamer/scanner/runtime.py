@@ -1,5 +1,7 @@
 import logging
 import os
+import shutil
+import functools
 import json
 import subprocess
 from pathlib import Path
@@ -7,6 +9,36 @@ from typing import Dict, Any
 
 
 logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache(maxsize=1)
+def _get_ffprobe_command() -> str:
+    """
+    Resolves the ffprobe command or path, checking standard PATH and typical fallback locations.
+    """
+    logger.debug("Resolving ffprobe command path...")
+    # 1. Check standard PATH
+    path_resolved = shutil.which("ffprobe")
+    if path_resolved:
+        logger.info(f"Resolved ffprobe command in system PATH: '{path_resolved}'")
+        return path_resolved
+
+    # 2. Check common installation directories on macOS/Linux
+    common_paths = [
+        "/opt/homebrew/bin/ffprobe",  # Apple Silicon Homebrew
+        "/usr/local/bin/ffprobe",  # Intel Homebrew / standard Unix install
+        "/opt/local/bin/ffprobe",  # MacPorts
+    ]
+    for path_str in common_paths:
+        if os.path.exists(path_str) and os.access(path_str, os.X_OK):
+            logger.info(f"Resolved ffprobe command via fallback path: '{path_str}'")
+            return path_str
+
+    # 3. Default back to 'ffprobe' and let the system attempt to resolve it
+    logger.warning(
+        "ffprobe command not found in PATH or standard installation locations. Defaulting to 'ffprobe'."
+    )
+    return "ffprobe"
 
 
 def _extract_video_runtime(file_path: str) -> int:
@@ -21,7 +53,7 @@ def _extract_video_runtime(file_path: str) -> int:
     try:
         process_result: subprocess.CompletedProcess[str] = subprocess.run(
             [
-                "ffprobe",
+                _get_ffprobe_command(),
                 "-v",
                 "error",
                 "-show_entries",
@@ -81,7 +113,7 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
     try:
         process_result = subprocess.run(
             [
-                "ffprobe",
+                _get_ffprobe_command(),
                 "-v",
                 "quiet",
                 "-print_format",
