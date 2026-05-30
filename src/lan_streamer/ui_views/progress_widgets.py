@@ -61,12 +61,17 @@ class SegmentedProgressBar(QWidget):
         library_config_source: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
         """Called once with the pre-discovery tree structure."""
-        self._library_order = [lib for lib in library_order if lib in tree] if library_order is not None else list(tree.keys())
+        self._library_order = (
+            [lib for lib in library_order if lib in tree]
+            if library_order is not None
+            else list(tree.keys())
+        )
         self._libraries = {}
         self._root_states = {}
 
         if library_config_source is None:
             from lan_streamer.system.config import config
+
             library_config_source = config.libraries
 
         for lib_name in self._library_order:
@@ -290,10 +295,15 @@ class ScanProgressTree(QWidget):
         self._season_nodes.clear()
         self._file_nodes.clear()
 
-        self._library_order = [lib for lib in library_order if lib in tree] if library_order is not None else list(tree.keys())
+        self._library_order = (
+            [lib for lib in library_order if lib in tree]
+            if library_order is not None
+            else list(tree.keys())
+        )
 
         if library_config_source is None:
             from lan_streamer.system.config import config
+
             library_config_source = config.libraries
 
         for lib_name in self._library_order:

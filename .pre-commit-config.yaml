@@ -19,10 +19,10 @@ repos:
       - id: yamllint
         args: [-d, "{extends: relaxed, rules: {line-length: disable}}"]
 
-  - repo: https://github.com/AleksaC/hadolint-py
-    rev: v2.12.0.3
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
     hooks:
-      - id: hadolint
+      - id: hadolint-docker
         args: ["--ignore", "DL3008", "--ignore", "DL3007", "--ignore", "DL3041", "--ignore", "DL3013", "--ignore", "DL4006", "--ignore", "DL3059"]
 
   - repo: https://github.com/rhysd/actionlint

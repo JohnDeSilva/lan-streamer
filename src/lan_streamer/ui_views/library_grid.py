@@ -201,7 +201,9 @@ class LibraryGridView(QWidget):
             roots_dict: Dict[str, List[str]] = {}
             roots_order: List[str] = []
             tree = payload.get("tree", {})
-            library_order = payload.get("library_order") or list(config.libraries.keys())
+            library_order = payload.get("library_order") or list(
+                config.libraries.keys()
+            )
             for lib_name in library_order:
                 if lib_name in tree:
                     lib_data = tree[lib_name]
