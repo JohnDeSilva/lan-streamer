@@ -13,8 +13,8 @@ LAN Streamer is built to play your media files directly and natively without any
 ## 🚀 Key Features
 
 ### 🎬 Playing Videos
-*   **📺 Embedded Playback**: Uses **VLC** for playback directly within the application. Supports audio and subtitle track selection, seeking, and volume control.
-*   **🎭 Theatre Mode**: Hides UI elements during fullscreen playback for an unobstructed view. A minimal control bar provides essential playback actions.
+*   **📺 Embedded Playback**: Uses **VLC** for playback directly within the application. Supports audio and subtitle track selection, seeking, volume controls, and playback speed/rate controls (1.0x, 1.5x, 2.0x).
+*   **🎭 Theatre Mode**: Hides UI elements during fullscreen playback for an unobstructed view. A minimal control bar provides essential playback actions, dynamically hiding the previous/next episode navigation buttons (`⏮` / `⏭`) when playing a movie.
 *   **🧠 Progress Tracking**: Automatically marks media as watched based on a configurable threshold, supports resuming playback from saved positions, and displays an on-screen overlay to automatically play the next episode in a series once the completion threshold is reached.
 *   **💾 Local Caching**: Optional pre-playback caching of media files to local storage to eliminate network-related buffering.
 
@@ -108,14 +108,19 @@ make run
 
 | Shortcut | Action |
 | :--- | :--- |
-| **`Space`** | Toggle Play/Pause |
+| **`Space`** or **`K`** | Toggle Play/Pause |
 | **`F`** | Toggle Fullscreen |
 | **`Esc`** | Exit Fullscreen |
 | **`Double-Click`** | Toggle Fullscreen (Video area) |
 | **`Up`** | Increase volume |
 | **`Down`** | Decrease volume |
 | **`M`** | Toggle Mute |
-| **`←` (Back)** | Stop playback and return to details view |
+| **`←`** or **`J`** | Skip backward 10 seconds |
+| **`→`** or **`L`** | Skip forward 10 seconds |
+| **`S`** | Cycle playback speed (1.0x, 1.5x, 2.0x) |
+| **`I`** | Toggle playback statistics overlay |
+| **`Backspace`** | Stop playback and return to details view |
+
 
 ---
 
