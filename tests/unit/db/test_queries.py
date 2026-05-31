@@ -405,6 +405,26 @@ def test_build_movie_dict(mock_db_file) -> None:
     assert result["last_played_position"] == 60
 
 
+def test_is_movie(mock_db_file) -> None:
+    from lan_streamer.db import is_movie, get_session
+    from lan_streamer.db.models import Movie
+
+    # Initially, it should return False
+    assert is_movie("/movies/inception.mkv") is False
+
+    with get_session() as session:
+        movie = Movie(
+            name="Inception",
+            library_name="Movies",
+            path="/movies/inception.mkv",
+        )
+        session.add(movie)
+        session.flush()
+
+    assert is_movie("/movies/inception.mkv") is True
+    assert is_movie("/movies/other.mkv") is False
+
+
 def test_db_edge_cases() -> None:
     # natural_sort_key with None
     assert db.natural_sort_key(None) == []
@@ -418,3 +438,48 @@ def test_db_more_error_paths() -> None:
         db.update_series_watched_status("Lib", "Show", True)
         db.update_item_runtime(1, "episode", 30)
         db.sync_watched_from_jellyfin_data({"id1"}, {"/path1"}, {("Show", "Ep1")})
+
+
+def test_get_next_episode(mock_db_file) -> None:
+    from lan_streamer.db import get_session, get_next_episode
+
+    with get_session() as session:
+        series = Series(name="Show", library_name="Lib", poster_path="/sp.jpg")
+        session.add(series)
+        session.flush()
+
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+
+        ep1 = Episode(
+            season_id=season.id,
+            name="S01E01.mkv",
+            path="/p/S01E01.mkv",
+            tmdb_name="Ep 1",
+            tmdb_number=1,
+            runtime=45,
+        )
+        ep2 = Episode(
+            season_id=season.id,
+            name="S01E02.mkv",
+            path="/p/S01E02.mkv",
+            tmdb_name="Ep 2",
+            tmdb_number=2,
+            runtime=45,
+        )
+        session.add_all([ep1, ep2])
+        session.commit()
+
+    # Call get_next_episode on ep1 path
+    result = get_next_episode("/p/S01E01.mkv")
+    assert result is not None
+    assert result["title"] == "Ep 2"
+    assert result["season"] == "Season 1"
+    assert result["episode_number"] == 2
+    assert result["path"] == "/p/S01E02.mkv"
+    assert result["poster_path"] == "/sp.jpg"
+    assert result["runtime"] == 45
+
+    # Call get_next_episode on ep2 path (which is the last episode)
+    assert get_next_episode("/p/S01E02.mkv") is None

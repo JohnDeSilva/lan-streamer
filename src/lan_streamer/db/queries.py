@@ -217,6 +217,17 @@ def get_episode_playback_position(path: str) -> int:
     return 0
 
 
+def is_movie(path: str) -> bool:
+    """Returns True if the given path corresponds to a movie in the database."""
+    try:
+        with get_session() as session:
+            movie = session.scalars(select(Movie).where(Movie.path == path)).first()
+            return movie is not None
+    except Exception:
+        logger.exception(f"Error checking if path is movie: {path}")
+        return False
+
+
 def update_season_watched_status(
     library_name: str, series_name: str, season_name: str, watched: bool
 ) -> None:
@@ -420,6 +431,8 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
                 if next_episode.tmdb_number is not None
                 else calculated_episode_number,
                 "path": next_episode.path,
+                "poster_path": series.poster_path if series.poster_path else "",
+                "runtime": next_episode.runtime or 0,
             }
             logger.info(
                 f"Resolved next episode: '{result['title']}' (S: '{result['season']}', E: {result['episode_number']}) at path '{result['path']}'"

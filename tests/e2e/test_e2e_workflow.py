@@ -313,15 +313,68 @@ def test_series_detail_view_rendering(
     assert isinstance(table_widget, QTableWidget)
     assert table_widget.columnCount() == 5
     assert table_widget.rowCount() == 2
-    table_item = table_widget.item(0, 2)
+    table_item = table_widget.item(0, 1)
     assert table_item is not None
     assert table_item.text() == "The Shores of the Cosmic Ocean"
-    air_date_item = table_widget.item(0, 3)
+    air_date_item = table_widget.item(0, 2)
     assert air_date_item is not None
     assert air_date_item.text() == "1980-09-28"
-    runtime_item = table_widget.item(0, 4)
+    runtime_item = table_widget.item(0, 3)
     assert runtime_item is not None
     assert runtime_item.text() == "60 min"
+
+
+def test_series_detail_view_play_next_button(
+    sample_library_dictionary: Dict[str, Any], qtbot: Any
+) -> None:
+    controller_instance = Controller()
+    controller_instance.cached_library_data = sample_library_dictionary
+    controller_instance._cache_series_metrics()
+
+    detail_view = SeriesDetailView(controller_instance)
+    qtbot.addWidget(detail_view)
+
+    # Initially, episode 1 is unwatched (watched=False) and episode 2 is watched (watched=True)
+    # The first unwatched episode in natural order should be S1:E1.
+    detail_view.populate_series_details("Cosmos")
+
+    # Assert play next button is visible and formatted correctly
+    assert detail_view.play_next_button.isHidden() is False
+    assert detail_view.play_next_button.text() == "▶ PLAY S1:E1"
+    assert (
+        detail_view._next_episode_path
+        == sample_library_dictionary["Cosmos"]["seasons"]["Season 1"]["episodes"][0][
+            "path"
+        ]
+    )
+
+    # Trigger play next button click and assert playback is requested
+    playback_paths = []
+    controller_instance.playback_requested.connect(playback_paths.append)
+    detail_view.play_next_button.click()
+    assert playback_paths == [detail_view._next_episode_path]
+
+    # Now let's mark episode 1 as watched, so next unwatched is none (since ep 2 is already watched)
+    sample_library_dictionary["Cosmos"]["seasons"]["Season 1"]["episodes"][0][
+        "watched"
+    ] = True
+    detail_view.populate_series_details("Cosmos")
+    assert detail_view.play_next_button.isHidden() is True
+    assert detail_view._next_episode_path == ""
+
+    # Now let's make episode 2 unwatched, so next unwatched is S1:E2
+    sample_library_dictionary["Cosmos"]["seasons"]["Season 1"]["episodes"][1][
+        "watched"
+    ] = False
+    detail_view.populate_series_details("Cosmos")
+    assert detail_view.play_next_button.isHidden() is False
+    assert detail_view.play_next_button.text() == "▶ PLAY S1:E2"
+    assert (
+        detail_view._next_episode_path
+        == sample_library_dictionary["Cosmos"]["seasons"]["Season 1"]["episodes"][1][
+            "path"
+        ]
+    )
 
 
 def test_e2e_right_click_marks_watched(
@@ -346,7 +399,7 @@ def test_e2e_right_click_marks_watched(
         mock_menu_instance = MagicMock()
         mock_qmenu_class.return_value = mock_menu_instance
 
-        item = table_widget.item(0, 2)
+        item = table_widget.item(0, 1)
         assert item is not None
         pos = table_widget.visualItemRect(item).center()
         table_widget.customContextMenuRequested.emit(pos)
@@ -369,7 +422,7 @@ def test_e2e_right_click_marks_watched(
         mock_menu_instance = MagicMock()
         mock_qmenu_class.return_value = mock_menu_instance
 
-        item = table_widget.item(1, 2)
+        item = table_widget.item(1, 1)
         assert item is not None
         pos = table_widget.visualItemRect(item).center()
         table_widget.customContextMenuRequested.emit(pos)

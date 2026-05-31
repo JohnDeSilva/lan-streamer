@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QScrollArea,
     QFrame,
+    QTabBar,
 )
 from PySide6.QtCore import Qt, Slot, QSize
 from PySide6.QtGui import QIcon, QColor
@@ -40,7 +41,10 @@ class LibraryGridView(QWidget):
         super().__init__(parent)
         self.controller: Controller = controller_instance
         self.series_list_widget: QListWidget = QListWidget()
-        self.library_selector: QComboBox = QComboBox()
+        self.library_tab_bar: QTabBar = QTabBar()
+        self.library_selector: QComboBox = QComboBox(self)
+        self.library_selector.hide()
+        self.library_names_list: List[str] = []
         self.sort_label: QLabel = QLabel("Sort By:")
         self.sort_selector: QComboBox = QComboBox()
         self.order_label: QLabel = QLabel("Order:")
@@ -64,9 +68,8 @@ class LibraryGridView(QWidget):
         top_toolbar_layout: QHBoxLayout = QHBoxLayout()
         top_toolbar_layout.setSpacing(10)
 
-        top_toolbar_layout.addWidget(QLabel("Library:"))
-        self.library_selector.setMinimumWidth(150)
-        top_toolbar_layout.addWidget(self.library_selector)
+        self.library_tab_bar.setDrawBase(False)
+        top_toolbar_layout.addWidget(self.library_tab_bar)
 
         # Sort & Order Container to easily hide them in Combined View
         sort_order_layout: QHBoxLayout = QHBoxLayout(self.sort_order_container)
@@ -176,7 +179,8 @@ class LibraryGridView(QWidget):
 
     def _wire_signals(self) -> None:
         self.controller.library_loaded.connect(self.populate_grid)
-        self.library_selector.currentTextChanged.connect(self.on_library_changed)
+        self.library_tab_bar.currentChanged.connect(self.on_library_tab_changed)
+        self.library_selector.currentTextChanged.connect(self._on_selector_text_changed)
         self.sort_selector.currentTextChanged.connect(self.controller.set_sort_mode)
         self.order_selector.currentTextChanged.connect(self.on_order_changed)
         self.filter_watched_checkbox.toggled.connect(
@@ -241,23 +245,51 @@ class LibraryGridView(QWidget):
         self.scan_progress_bar.setVisible(False)
         self.scan_status_label.setVisible(False)
 
+    def _on_selector_text_changed(self, text: str) -> None:
+        if text in self.library_names_list:
+            idx = self.library_names_list.index(text)
+            self.library_tab_bar.blockSignals(True)
+            self.library_tab_bar.setCurrentIndex(idx)
+            self.library_tab_bar.blockSignals(False)
+            self.on_library_changed(text)
+
+    @Slot(int)
+    def on_library_tab_changed(self, index: int) -> None:
+        if 0 <= index < len(self.library_names_list):
+            library_name = self.library_names_list[index]
+            self.library_selector.blockSignals(True)
+            self.library_selector.setCurrentText(library_name)
+            self.library_selector.blockSignals(False)
+            self.on_library_changed(library_name)
+
     def populate_libraries(self, library_names: List[str]) -> None:
         self.library_selector.blockSignals(True)
         self.library_selector.clear()
-        options = []
+        self.library_tab_bar.blockSignals(True)
+        while self.library_tab_bar.count() > 0:
+            self.library_tab_bar.removeTab(0)
+
+        self.library_names_list = []
         if config.enable_combined_view:
-            options.append("Combined View")
-        options.extend(library_names)
-        self.library_selector.addItems(options)
+            self.library_names_list.append("Combined View")
+        self.library_names_list.extend(library_names)
+
+        for name in self.library_names_list:
+            self.library_tab_bar.addTab(name)
+            self.library_selector.addItem(name)
 
         current = self.controller.current_library_name
-        if current and current in options:
+        if current and current in self.library_names_list:
+            idx = self.library_names_list.index(current)
+            self.library_tab_bar.setCurrentIndex(idx)
             self.library_selector.setCurrentText(current)
             self.on_library_changed(current)
         else:
-            if options:
-                self.library_selector.setCurrentText(options[0])
-                self.on_library_changed(options[0])
+            if self.library_names_list:
+                self.library_tab_bar.setCurrentIndex(0)
+                self.library_selector.setCurrentText(self.library_names_list[0])
+                self.on_library_changed(self.library_names_list[0])
+        self.library_tab_bar.blockSignals(False)
         self.library_selector.blockSignals(False)
 
     @Slot()
@@ -310,7 +342,7 @@ class LibraryGridView(QWidget):
     def populate_grid(self) -> None:
         if getattr(self.controller, "is_video_playing", False):
             return
-        if self.library_selector.currentText() == "Combined View":
+        if self.controller.current_library_name == "Combined View":
             self.populate_combined_view()
             return
         self.order_selector.blockSignals(True)
