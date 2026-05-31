@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 class JellyfinClient:
+    """Client for interacting with the Jellyfin server API to sync played/unplayed watched history states."""
+
     def __init__(self) -> None:
         self.session = requests.Session()
         self.session.headers.update(

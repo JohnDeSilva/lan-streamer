@@ -8,7 +8,13 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 
 class Config:
+    """
+    Manages system configurations, loads preferences from, and saves settings to
+    the user's config directory JSON file.
+    """
+
     def __init__(self) -> None:
+        """Initialize the configuration with default values and load from file."""
         self.libraries: Dict[str, Dict[str, Any]] = {}
         self.jellyfin_url: str = ""
         self.jellyfin_api_key: str = ""

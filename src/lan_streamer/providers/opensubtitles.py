@@ -10,10 +10,14 @@ USER_AGENT = "LAN-Streamer/0.14.1"
 
 
 class OpenSubtitlesClient:
+    """Client for interacting with the OpenSubtitles.com REST API."""
+
     def __init__(self) -> None:
+        """Initialize the OpenSubtitles client with no active token."""
         self.token: Optional[str] = None
 
     def _get_headers(self) -> Dict[str, str]:
+        """Generate API headers including authentication token and API Key."""
         headers = {
             "Api-Key": config.opensubtitles_api_key,
             "User-Agent": USER_AGENT,
