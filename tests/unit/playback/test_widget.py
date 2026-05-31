@@ -1052,3 +1052,115 @@ def test_next_episode_popup_setting(qtbot: Any) -> None:
         widget.update_ui()
         assert widget.next_episode_popup_frame.isHidden() is False
         assert widget.next_episode_popup_shown is True
+
+
+def test_show_subtitles_audio_menu(player_widget) -> None:
+    """Test that _show_subtitles_audio_menu refreshes tracks, updates pane text, and displays the menu."""
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = [
+        (1, b"English Dolby Digital 5.1"),
+        (2, b"French Stereo"),
+    ]
+    player_widget.mediaplayer.video_get_spu_description.return_value = [
+        (-1, b"Disable"),
+        (10, b"English [CC]"),
+        (11, b"Spanish"),
+    ]
+    player_widget.mediaplayer.audio_get_track.return_value = 1
+    player_widget.mediaplayer.video_get_spu.return_value = 10
+
+    with patch("lan_streamer.playback.widget.QMenu") as MockQMenu:
+        mock_menu_instance = MagicMock()
+        MockQMenu.return_value = mock_menu_instance
+
+        # We also mock sub-menus returned by addMenu
+        mock_sub_menu = MagicMock()
+        mock_menu_instance.addMenu.return_value = mock_sub_menu
+
+        player_widget._show_subtitles_audio_menu()
+
+        # Verify that _refresh_tracks was called and combos are populated
+        assert player_widget.audio_combo.count() == 2
+        assert player_widget.subtitle_combo.count() == 3
+
+        # Verify that the text displayed in the pane is correct
+        assert "English Dolby" in player_widget.subtitles_audio_button.text()
+        assert "English [CC]" in player_widget.subtitles_audio_button.text()
+
+        mock_menu_instance.exec.assert_called_once()
+
+
+def test_select_track_from_menu(player_widget) -> None:
+    """Test that selecting audio/subtitle tracks from menu index correctly updates comboboxes and calls VLC."""
+    player_widget.mediaplayer = MagicMock()
+    player_widget.audio_combo.addItem("Track 1", 1)
+    player_widget.audio_combo.addItem("Track 2", 2)
+    player_widget.subtitle_combo.addItem("Sub 1", 10)
+    player_widget.subtitle_combo.addItem("Sub 2", 11)
+
+    player_widget._select_audio_track_from_menu(1)
+    player_widget.mediaplayer.audio_set_track.assert_called_once_with(2)
+
+    player_widget._select_subtitle_track_from_menu(1)
+    player_widget.mediaplayer.video_set_spu.assert_called_once_with(11)
+
+
+def test_movie_vs_episode_navigation_buttons(player_widget) -> None:
+    """Test that next/prev episode buttons are hidden for movies and shown for episodes."""
+    config.enable_caching = False
+    player_widget._load_and_play = MagicMock()
+
+    # Case 1: Playing a movie
+    with patch("lan_streamer.db.is_movie", return_value=True):
+        player_widget.play_video("/movies/some_movie.mkv")
+
+        assert player_widget.new_prev_btn.isHidden() is True
+        assert player_widget.new_next_btn.isHidden() is True
+        assert player_widget.fs_new_prev_btn.isHidden() is True
+        assert player_widget.fs_new_next_btn.isHidden() is True
+
+    # Case 2: Playing a TV episode (not a movie)
+    with patch("lan_streamer.db.is_movie", return_value=False):
+        player_widget.play_video("/tv/some_episode.mkv")
+
+        assert player_widget.new_prev_btn.isHidden() is False
+        assert player_widget.new_next_btn.isHidden() is False
+        assert player_widget.fs_new_prev_btn.isHidden() is False
+        assert player_widget.fs_new_next_btn.isHidden() is False
+
+
+def test_playback_speed_toggling(player_widget) -> None:
+    """Test that speed buttons correctly cycle through playback rates (1.0x -> 1.5x -> 2.0x -> 1.0x)."""
+    player_widget.mediaplayer = MagicMock()
+
+    # Initial text verification
+    assert player_widget.new_rate_btn.button.text() == "1.0x"
+    assert player_widget.fs_new_rate_btn.button.text() == "1.0x"
+
+    # Cycle 1: 1.0 -> 1.5
+    player_widget.mediaplayer.get_rate.return_value = 1.0
+    player_widget.toggle_fast_forward()
+    player_widget.mediaplayer.set_rate.assert_called_with(1.5)
+    assert player_widget.new_rate_btn.button.text() == "1.5x"
+    assert player_widget.fs_new_rate_btn.button.text() == "1.5x"
+
+    # Cycle 2: 1.5 -> 2.0
+    player_widget.mediaplayer.get_rate.return_value = 1.5
+    player_widget.toggle_fast_forward()
+    player_widget.mediaplayer.set_rate.assert_called_with(2.0)
+    assert player_widget.new_rate_btn.button.text() == "2.0x"
+    assert player_widget.fs_new_rate_btn.button.text() == "2.0x"
+
+    # Cycle 3: 2.0 -> 1.0
+    player_widget.mediaplayer.get_rate.return_value = 2.0
+    player_widget.toggle_fast_forward()
+    player_widget.mediaplayer.set_rate.assert_called_with(1.0)
+    assert player_widget.new_rate_btn.button.text() == "1.0x"
+    assert player_widget.fs_new_rate_btn.button.text() == "1.0x"
+
+    # Verify stop resets back to 1.0x
+    player_widget.new_rate_btn.button.setText("2.0x")
+    player_widget.fs_new_rate_btn.button.setText("2.0x")
+    player_widget.stop()
+    assert player_widget.new_rate_btn.button.text() == "1.0x"
+    assert player_widget.fs_new_rate_btn.button.text() == "1.0x"

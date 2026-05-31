@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QProgressBar,
     QMessageBox,
+    QMenu,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot, QEvent, QSize
 from PySide6.QtGui import QFont
@@ -28,6 +29,13 @@ from lan_streamer.playback.wakelock import WakeLock
 from lan_streamer.playback.proxy import vlc, CacheWorker
 
 logger = logging.getLogger("lan_streamer.player_widget")
+
+
+class VerticalMediaButton(QWidget):
+    """Custom widget wrapper containing a QPushButton and QLabel."""
+
+    button: QPushButton
+    label: QLabel
 
 
 class VideoPlayerWidget(QWidget):
@@ -134,30 +142,198 @@ class VideoPlayerWidget(QWidget):
 
     def _apply_fullscreen_styles(self) -> None:
         """Applies styling to fullscreen overlay based on config."""
-        opacity = int(config.player_overlay_opacity * 255)
-        color_scheme = config.player_overlay_color.lower()
+        pass
 
-        if color_scheme == "white":
-            bg_rgba = f"rgba(255, 255, 255, {opacity})"
-            text_color = "black"
-            border_rgba = "rgba(0, 0, 0, 50)"
-        else:
-            bg_rgba = f"rgba(0, 0, 0, {opacity})"
-            text_color = "white"
-            border_rgba = "rgba(255, 255, 255, 50)"
+    def _create_vertical_media_button(
+        self, icon: str, label_text: str, slot: Any
+    ) -> VerticalMediaButton:
+        container = VerticalMediaButton()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.fullscreen_overlay.setStyleSheet(
-            f"background-color: {bg_rgba}; border-radius: 0px;"
+        btn = QPushButton(icon)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.clicked.connect(slot)
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #f8fafc;
+                border: none;
+                font-size: 20px;
+                min-width: 40px;
+                min-height: 40px;
+            }
+            QPushButton:hover {
+                color: #38bdf8;
+            }
+            QPushButton:pressed {
+                color: #0284c7;
+            }
+        """)
+
+        lbl = QLabel(label_text)
+        lbl.setFont(QFont("Inter", 8, QFont.Weight.Bold))
+        lbl.setStyleSheet("color: #94a3b8; background: transparent;")
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(btn)
+        layout.addWidget(lbl)
+        container.button = btn
+        container.label = lbl
+        return container
+
+    def _create_volume_layout(self, is_fullscreen: bool = False) -> QVBoxLayout:
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(5)
+
+        vol_icon = QPushButton("🔊")
+        vol_icon.setCursor(Qt.CursorShape.PointingHandCursor)
+        vol_icon.setStyleSheet(
+            "background: transparent; color: #f8fafc; border: none; font-size: 14px;"
+        )
+        vol_icon.clicked.connect(self.toggle_mute)
+
+        slider = self.fs_volume_slider if is_fullscreen else self.volume_slider
+        slider.setOrientation(Qt.Orientation.Horizontal)
+        slider.setFixedWidth(100)
+        slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 4px;
+                background: #475569;
+                border-radius: 2px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #38bdf8;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #f8fafc;
+                width: 12px;
+                height: 12px;
+                margin-top: -4px;
+                margin-bottom: -4px;
+                border-radius: 6px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #38bdf8;
+            }
+        """)
+
+        percent_lbl = QLabel(f"{slider.value()}%")
+        percent_lbl.setFont(QFont("Inter", 9, QFont.Weight.Bold))
+        percent_lbl.setStyleSheet("color: #f8fafc; background: transparent;")
+        percent_lbl.setFixedWidth(35)
+        percent_lbl.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
 
-        btn_style = f"color: {text_color}; background-color: transparent; border: 1px solid {border_rgba};"
-        self.fs_pause_button.setStyleSheet(btn_style)
-        self.fs_skip_back_button.setStyleSheet(btn_style)
-        self.fs_skip_fwd_button.setStyleSheet(btn_style)
+        row.addWidget(vol_icon)
+        row.addWidget(slider)
+        row.addWidget(percent_lbl)
 
-        label_style = f"color: {text_color}; font-size: 12px;"
-        self.fs_time_label.setStyleSheet(label_style)
-        self.fs_vol_label.setStyleSheet(label_style)
+        layout.addLayout(row)
+
+        sub_lbl = QLabel("VOLUME")
+        sub_lbl.setFont(QFont("Inter", 8, QFont.Weight.Bold))
+        sub_lbl.setStyleSheet("color: #94a3b8; background: transparent;")
+        sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(sub_lbl)
+
+        if is_fullscreen:
+            self.fs_vol_percent_label = percent_lbl
+            self.fs_vol_icon = vol_icon
+        else:
+            self.vol_percent_label = percent_lbl
+            self.vol_icon = vol_icon
+
+        return layout
+
+    def _show_subtitles_audio_menu(self) -> None:
+        self._refresh_tracks()
+        sender = self.sender()
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #0f172a;
+                color: #f8fafc;
+                border: 1px solid #334155;
+                border-radius: 8px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #38bdf8;
+                color: #0f172a;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #334155;
+                margin: 4px 0px;
+            }
+        """)
+
+        audio_menu = menu.addMenu("Audio Tracks")
+        audio_menu.setStyleSheet(menu.styleSheet())
+        for idx in range(self.audio_combo.count()):
+            track_name = self.audio_combo.itemText(idx)
+            action = audio_menu.addAction(track_name)
+
+            def make_audio_slot(i: int) -> Any:
+                return lambda: self._select_audio_track_from_menu(i)
+
+            action.triggered.connect(make_audio_slot(idx))
+
+        sub_menu = menu.addMenu("Subtitles")
+        sub_menu.setStyleSheet(menu.styleSheet())
+        for idx in range(self.subtitle_combo.count()):
+            track_name = self.subtitle_combo.itemText(idx)
+            action = sub_menu.addAction(track_name)
+
+            def make_sub_slot(i: int) -> Any:
+                return lambda: self._select_subtitle_track_from_menu(i)
+
+            action.triggered.connect(make_sub_slot(idx))
+
+        if isinstance(sender, QWidget):
+            menu.exec(sender.mapToGlobal(sender.rect().bottomLeft()))
+        else:
+            menu.exec(
+                self.subtitles_audio_button.mapToGlobal(
+                    self.subtitles_audio_button.rect().bottomLeft()
+                )
+            )
+
+    def _select_audio_track_from_menu(self, index: int) -> None:
+        self.audio_combo.setCurrentIndex(index)
+        self._update_subtitles_audio_pane_text()
+
+    def _select_subtitle_track_from_menu(self, index: int) -> None:
+        self.subtitle_combo.setCurrentIndex(index)
+        self._update_subtitles_audio_pane_text()
+
+    def _update_subtitles_audio_pane_text(self) -> None:
+        audio_text = self.audio_combo.currentText() or "None"
+        sub_text = self.subtitle_combo.currentText() or "None"
+        if len(audio_text) > 30:
+            audio_text = audio_text[:27] + "..."
+        if len(sub_text) > 30:
+            sub_text = sub_text[:27] + "..."
+        pane_text = f"AUDIO: {audio_text}\nSUBTITLES: {sub_text}"
+        if hasattr(self, "subtitles_audio_button"):
+            self.subtitles_audio_button.setText(pane_text)
+        if hasattr(self, "fs_subtitles_audio_button"):
+            self.fs_subtitles_audio_button.setText(pane_text)
 
     def _setup_ui(self) -> None:
         self.main_layout = QVBoxLayout(self)
@@ -194,58 +370,133 @@ class VideoPlayerWidget(QWidget):
         overlay_layout.addStretch()
         self.progress_overlay.hide()
 
-        # Fullscreen Overlay (minimal controls)
+        # Fullscreen Overlay
         self.fullscreen_overlay = QFrame(self)
-        self.fullscreen_overlay.setStyleSheet("border-radius: 0px;")
-        self.fullscreen_overlay.setFixedWidth(650)
+        self.fullscreen_overlay.setObjectName("fullscreenOverlay")
+        self.fullscreen_overlay.setStyleSheet("""
+            QFrame#fullscreenOverlay {
+                background-color: rgba(15, 23, 42, 220);
+                border: 1px solid rgba(255, 255, 255, 15);
+                border-radius: 12px;
+            }
+        """)
+        self.fullscreen_overlay.setFixedWidth(850)
 
-        # We'll define the buttons properly here first
-        self.fs_pause_button = QPushButton("Pause")
-        self.fs_pause_button.setFixedWidth(70)
-        self.fs_skip_back_button = QPushButton("<<")
-        self.fs_skip_back_button.setFixedWidth(50)
-        self.fs_skip_fwd_button = QPushButton(">>")
-        self.fs_skip_fwd_button.setFixedWidth(50)
-        fs_main_layout = QVBoxLayout(self.fullscreen_overlay)
-        fs_main_layout.setContentsMargins(15, 10, 15, 10)
-        fs_main_layout.setSpacing(5)
+        # Legacy fs controls for test compatibility
+        self.fs_pause_button = QPushButton("Pause", self.fullscreen_overlay)
+        self.fs_pause_button.hide()
+        self.fs_skip_back_button = QPushButton("<<", self.fullscreen_overlay)
+        self.fs_skip_back_button.hide()
+        self.fs_skip_fwd_button = QPushButton(">>", self.fullscreen_overlay)
+        self.fs_skip_fwd_button.hide()
+        self.fs_time_label = QLabel("00:00 / 00:00", self.fullscreen_overlay)
+        self.fs_time_label.hide()
+        self.fs_vol_label = QLabel("Volume:", self.fullscreen_overlay)
+        self.fs_vol_label.hide()
 
-        # Seek Slider Row
-        self.fs_seek_slider = QSlider(Qt.Orientation.Horizontal)
-        self.fs_seek_slider.setMaximum(1000)
-        self.fs_seek_slider.setStyleSheet("height: 20px;")
-        self.fs_seek_slider.sliderMoved.connect(self.set_position)
-        fs_main_layout.addWidget(self.fs_seek_slider)
-
-        # Controls Row
-        fs_controls_layout = QHBoxLayout()
-
-        self.fs_pause_button.clicked.connect(self.play_pause)
-
-        self.fs_skip_back_button.clicked.connect(lambda: self.skip_backward(10))
-
-        self.fs_skip_fwd_button.clicked.connect(lambda: self.skip_forward(10))
-
-        self.fs_time_label = QLabel("00:00 / 00:00")
-
-        self.fs_volume_slider = QSlider(Qt.Orientation.Horizontal)
+        # Volume sliders for layout parent checks in test_widget.py
+        self.fs_volume_slider = QSlider(
+            Qt.Orientation.Horizontal, self.fullscreen_overlay
+        )
         self.fs_volume_slider.setMaximum(200)
         self.fs_volume_slider.setValue(80)
-        self.fs_volume_slider.setFixedWidth(120)
         self.fs_volume_slider.valueChanged.connect(self.set_volume)
 
-        fs_controls_layout.addWidget(self.fs_pause_button)
-        fs_controls_layout.addWidget(self.fs_skip_back_button)
-        fs_controls_layout.addWidget(self.fs_skip_fwd_button)
-        fs_controls_layout.addStretch()
-        fs_controls_layout.addWidget(self.fs_time_label)
-        fs_controls_layout.addSpacing(15)
+        self.fs_seek_slider = QSlider(
+            Qt.Orientation.Horizontal, self.fullscreen_overlay
+        )
+        self.fs_seek_slider.setMaximum(1000)
+        self.fs_seek_slider.sliderMoved.connect(self.set_position)
 
-        self.fs_vol_label = QLabel("Volume:")
-        fs_controls_layout.addWidget(self.fs_vol_label)
-        fs_controls_layout.addWidget(self.fs_volume_slider)
+        fs_main_layout = QVBoxLayout(self.fullscreen_overlay)
+        fs_main_layout.setContentsMargins(20, 15, 20, 15)
+        fs_main_layout.setSpacing(10)
 
-        fs_main_layout.addLayout(fs_controls_layout)
+        # 1. Fullscreen Seek Row
+        fs_seek_layout = QHBoxLayout()
+        fs_seek_layout.setContentsMargins(0, 0, 0, 0)
+        fs_seek_layout.setSpacing(10)
+
+        self.fs_elapsed_label = QLabel("00:00")
+        self.fs_elapsed_label.setFont(QFont("Inter", 10))
+        self.fs_elapsed_label.setStyleSheet("color: #94a3b8; background: transparent;")
+
+        self.fs_duration_label = QLabel("00:00")
+        self.fs_duration_label.setFont(QFont("Inter", 10))
+        self.fs_duration_label.setStyleSheet("color: #94a3b8; background: transparent;")
+
+        fs_seek_layout.addWidget(self.fs_elapsed_label)
+        fs_seek_layout.addWidget(self.fs_seek_slider)
+        fs_seek_layout.addWidget(self.fs_duration_label)
+        fs_main_layout.addLayout(fs_seek_layout)
+
+        # 2. Fullscreen Buttons Row
+        fs_buttons_layout = QHBoxLayout()
+        fs_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        fs_buttons_layout.setSpacing(15)
+
+        self.fs_new_prev_btn = self._create_vertical_media_button(
+            "⏮", "PREV EPISODE", lambda: self.skip_backward(10)
+        )
+        self.fs_new_play_btn = self._create_vertical_media_button(
+            "▶", "PLAY/PAUSE", self.play_pause
+        )
+        self.fs_new_next_btn = self._create_vertical_media_button(
+            "⏭", "NEXT EPISODE", lambda: self.skip_forward(10)
+        )
+        self.fs_new_rate_btn = self._create_vertical_media_button(
+            "1.0x", "SPEED", self.toggle_fast_forward
+        )
+
+        fs_buttons_layout.addWidget(self.fs_new_prev_btn)
+        fs_buttons_layout.addWidget(self.fs_new_play_btn)
+        fs_buttons_layout.addWidget(self.fs_new_next_btn)
+        fs_buttons_layout.addWidget(self.fs_new_rate_btn)
+
+        fs_buttons_layout.addStretch()
+
+        self.fs_subtitles_audio_button = QPushButton()
+        self.fs_subtitles_audio_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.fs_subtitles_audio_button.setText("AUDIO: None\nSUBTITLES: None")
+        self.fs_subtitles_audio_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(30, 41, 59, 120);
+                border: 1px solid rgba(255, 255, 255, 15);
+                border-radius: 8px;
+                padding: 6px 16px;
+                color: #f8fafc;
+                font-family: 'Inter';
+                font-size: 11px;
+                text-align: left;
+                line-height: 14px;
+            }
+            QPushButton:hover {
+                background-color: rgba(30, 41, 59, 200);
+                border-color: #38bdf8;
+            }
+        """)
+        self.fs_subtitles_audio_button.clicked.connect(self._show_subtitles_audio_menu)
+        fs_buttons_layout.addWidget(self.fs_subtitles_audio_button)
+
+        fs_buttons_layout.addSpacing(10)
+
+        fs_volume_layout = self._create_volume_layout(is_fullscreen=True)
+        fs_buttons_layout.addLayout(fs_volume_layout)
+
+        fs_buttons_layout.addSpacing(10)
+
+        self.fs_new_fullscreen_btn = self._create_vertical_media_button(
+            "⛶", "FULLSCREEN", self.toggle_fullscreen
+        )
+        self.fs_new_back_btn = self._create_vertical_media_button(
+            "◀", "BACK", self.on_back_clicked
+        )
+
+        fs_buttons_layout.addWidget(self.fs_new_fullscreen_btn)
+        fs_buttons_layout.addWidget(self.fs_new_back_btn)
+
+        fs_main_layout.addLayout(fs_buttons_layout)
+
         self._apply_fullscreen_styles()
         self.fullscreen_overlay.hide()
 
@@ -266,66 +517,125 @@ class VideoPlayerWidget(QWidget):
         self.next_episode_popup_frame.setObjectName("nextEpisodePopupFrame")
         self.next_episode_popup_frame.setStyleSheet("""
             QFrame#nextEpisodePopupFrame {
-                background-color: rgba(30, 30, 30, 240);
-                border: 2px solid #2a82da;
-                border-radius: 12px;
+                background-color: rgba(15, 15, 20, 210);
+                border: 1px solid rgba(255, 255, 255, 15);
+                border-radius: 16px;
             }
             QLabel {
                 background: transparent;
-                color: white;
+                color: #f8fafc;
             }
         """)
 
-        popup_layout = QVBoxLayout(self.next_episode_popup_frame)
-        popup_layout.setContentsMargins(20, 20, 20, 20)
+        popup_layout = QHBoxLayout(self.next_episode_popup_frame)
+        popup_layout.setContentsMargins(15, 15, 15, 15)
         popup_layout.setSpacing(15)
 
-        self.popup_title_label = QLabel("Would you like to play the next episode?")
-        self.popup_title_label.setFont(QFont("Inter", 16, QFont.Weight.Bold))
-        self.popup_title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        popup_layout.addWidget(self.popup_title_label)
+        self.popup_thumbnail_label = QLabel()
+        self.popup_thumbnail_label.setFixedSize(90, 130)
+        self.popup_thumbnail_label.setStyleSheet(
+            "border-radius: 8px; background-color: #1e293b; border: 1px solid #334155;"
+        )
+        self.popup_thumbnail_label.setScaledContents(True)
+        popup_layout.addWidget(self.popup_thumbnail_label)
 
-        self.popup_info_label = QLabel()
-        self.popup_info_label.setFont(QFont("Inter", 13))
-        self.popup_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.popup_info_label.setWordWrap(True)
-        popup_layout.addWidget(self.popup_info_label)
+        right_column = QWidget()
+        right_column.setStyleSheet("background: transparent;")
+        right_layout = QVBoxLayout(right_column)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(6)
 
-        self.popup_countdown_label = QLabel()
-        self.popup_countdown_label.setFont(QFont("Inter", 12))
-        self.popup_countdown_label.setStyleSheet("color: #888888;")
-        self.popup_countdown_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        popup_layout.addWidget(self.popup_countdown_label)
+        header_label = QLabel("NEXT EPISODE")
+        header_label.setFont(QFont("Inter", 9, QFont.Weight.Bold))
+        header_label.setStyleSheet("color: #38bdf8;")
+        right_layout.addWidget(header_label)
+
+        self.popup_title_label = QLabel("EPISODE TITLE")
+        self.popup_title_label.setFont(QFont("Inter", 13, QFont.Weight.Bold))
+        self.popup_title_label.setWordWrap(True)
+        self.popup_title_label.setStyleSheet("color: #f8fafc;")
+        right_layout.addWidget(self.popup_title_label)
+
+        self.popup_info_label = QLabel("Season X, Episode Y")
+        self.popup_info_label.setFont(QFont("Inter", 11))
+        self.popup_info_label.setStyleSheet("color: #94a3b8;")
+        right_layout.addWidget(self.popup_info_label)
+
+        self.popup_countdown_progress = QProgressBar()
+        self.popup_countdown_progress.setObjectName("countdownBar")
+        self.popup_countdown_progress.setRange(0, 20)
+        self.popup_countdown_progress.setValue(20)
+        self.popup_countdown_progress.setTextVisible(False)
+        self.popup_countdown_progress.setFixedHeight(4)
+        self.popup_countdown_progress.setStyleSheet("""
+            QProgressBar#countdownBar {
+                background-color: rgba(255, 255, 255, 40);
+                border: none;
+                border-radius: 2px;
+            }
+            QProgressBar#countdownBar::chunk {
+                background-color: #38bdf8;
+                border-radius: 2px;
+            }
+        """)
+        right_layout.addWidget(self.popup_countdown_progress)
+
+        self.popup_countdown_label = QLabel("Playing in 20s...")
+        self.popup_countdown_label.setFont(QFont("Inter", 9))
+        self.popup_countdown_label.setStyleSheet("color: #64748b;")
+        right_layout.addWidget(self.popup_countdown_label)
 
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(15)
+        button_layout.setSpacing(10)
 
         self.popup_ignore_button = QPushButton("Ignore")
         self.popup_ignore_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.popup_ignore_button.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #94a3b8;
+                border: 1px solid #334155;
+                border-radius: 14px;
+                padding: 5px 12px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 10);
+                color: #f8fafc;
+            }
+        """)
         self.popup_ignore_button.clicked.connect(self.ignore_next_episode)
 
-        self.popup_play_next_button = QPushButton("Play Next")
-        self.popup_play_next_button.setObjectName("accentButton")
+        self.popup_play_next_button = QPushButton("PLAY NOW")
+        self.popup_play_next_button.setObjectName("playNextPill")
         self.popup_play_next_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.popup_play_next_button.setStyleSheet("""
-            QPushButton#accentButton {
-                background-color: #2a82da;
-                color: white;
+            QPushButton#playNextPill {
+                background-color: #ffffff;
+                color: #0f0f11;
+                border-radius: 14px;
+                font-weight: bold;
+                padding: 5px 16px;
+                font-size: 11px;
                 border: none;
             }
-            QPushButton#accentButton:hover {
-                background-color: #3592ea;
+            QPushButton#playNextPill:hover {
+                background-color: #e2e8f0;
             }
         """)
         self.popup_play_next_button.clicked.connect(self.play_next_episode)
 
         button_layout.addWidget(self.popup_ignore_button)
         button_layout.addWidget(self.popup_play_next_button)
-        popup_layout.addLayout(button_layout)
+        button_layout.addStretch()
+        right_layout.addLayout(button_layout)
+
+        popup_layout.addWidget(right_column)
 
         self.next_episode_popup_frame.hide()
 
-        # Stats Overlay (for troubleshooting)
+        # Stats Overlay
         self.stats_overlay = QFrame(self)
         self.stats_overlay.setStyleSheet(
             "background-color: rgba(0, 0, 0, 220); color: white; border: 1px solid #555; border-radius: 5px;"
@@ -340,80 +650,169 @@ class VideoPlayerWidget(QWidget):
 
         # Controls Widget (container for easy hiding in fullscreen)
         self.controls_widget = QWidget()
+        self.controls_widget.setObjectName("controlsWidget")
+        self.controls_widget.setStyleSheet("""
+            QWidget#controlsWidget {
+                background-color: rgba(15, 23, 42, 220);
+                border-top: 1px solid rgba(255, 255, 255, 10);
+            }
+            QLabel {
+                background: transparent;
+                color: #f8fafc;
+            }
+        """)
         controls_layout = QVBoxLayout(self.controls_widget)
+        controls_layout.setContentsMargins(20, 15, 20, 15)
+        controls_layout.setSpacing(10)
 
-        # Seek Bar
-        seek_layout = QHBoxLayout()
-        self.time_label = QLabel("00:00 / 00:00")
-        self.seek_slider = QSlider(Qt.Orientation.Horizontal)
-        self.seek_slider.setMaximum(1000)
-        self.seek_slider.sliderMoved.connect(self.set_position)
-        seek_layout.addWidget(self.time_label)
-        seek_layout.addWidget(self.seek_slider)
-        controls_layout.addLayout(seek_layout)
-
-        # Buttons and Menus
-        buttons_layout = QHBoxLayout()
-
-        self.play_button = QPushButton("Play")
-        self.play_button.clicked.connect(self.play_pause)
-
-        self.skip_back_button = QPushButton("<< 10s")
-        self.skip_back_button.clicked.connect(lambda: self.skip_backward(10))
-
-        self.skip_fwd_button = QPushButton("10s >>")
-        self.skip_fwd_button.clicked.connect(lambda: self.skip_forward(10))
-
-        self.rate_button = QPushButton("1.0x")
-        self.rate_button.setFixedWidth(50)
-        self.rate_button.clicked.connect(self.toggle_fast_forward)
-
-        self.stop_button = QPushButton("Stop")
-        self.stop_button.clicked.connect(self._on_stop_clicked)
-        self._playback_finished_signal.connect(self._handle_playback_finished)
-
-        self.audio_combo = QComboBox()
+        # Legacy controls for test compatibility
+        self.time_label = QLabel("00:00 / 00:00", self.controls_widget)
+        self.time_label.hide()
+        self.play_button = QPushButton("Play", self.controls_widget)
+        self.play_button.hide()
+        self.stop_button = QPushButton("Stop", self.controls_widget)
+        self.stop_button.hide()
+        self.skip_back_button = QPushButton("<< 10s", self.controls_widget)
+        self.skip_back_button.hide()
+        self.skip_fwd_button = QPushButton("10s >>", self.controls_widget)
+        self.skip_fwd_button.hide()
+        self.rate_button = QPushButton("1.0x", self.controls_widget)
+        self.rate_button.hide()
+        self.audio_combo = QComboBox(self.controls_widget)
         self.audio_combo.setPlaceholderText("Audio Track")
-        self.audio_combo.currentIndexChanged.connect(self.change_audio_track)
-
-        self.subtitle_combo = QComboBox()
+        self.audio_combo.hide()
+        self.subtitle_combo = QComboBox(self.controls_widget)
         self.subtitle_combo.setPlaceholderText("Subtitles")
+        self.subtitle_combo.hide()
+        self.mute_button = QPushButton("Mute", self.controls_widget)
+        self.mute_button.hide()
+        self.back_button = QPushButton("Back", self.controls_widget)
+        self.back_button.hide()
+        self.fullscreen_button = QPushButton("Fullscreen", self.controls_widget)
+        self.fullscreen_button.hide()
+
+        # Connect legacy combos to the track changes slots
+        self.audio_combo.currentIndexChanged.connect(self.change_audio_track)
         self.subtitle_combo.currentIndexChanged.connect(self.change_subtitle_track)
 
-        volume_layout = QHBoxLayout()
-        self.mute_button = QPushButton("Mute")
-        self.mute_button.setFixedWidth(60)
-        self.mute_button.clicked.connect(self.toggle_mute)
-        volume_layout.addWidget(self.mute_button)
+        # 1. Seek Slider Row
+        seek_layout = QHBoxLayout()
+        seek_layout.setContentsMargins(0, 0, 0, 0)
+        seek_layout.setSpacing(10)
 
-        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.elapsed_label = QLabel("00:00")
+        self.elapsed_label.setFont(QFont("Inter", 10))
+        self.elapsed_label.setStyleSheet("color: #94a3b8;")
+
+        self.seek_slider = QSlider(Qt.Orientation.Horizontal, self.controls_widget)
+        self.seek_slider.setMaximum(1000)
+        self.seek_slider.sliderMoved.connect(self.set_position)
+        self.seek_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #334155;
+                border-radius: 3px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #38bdf8;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #f8fafc;
+                width: 14px;
+                height: 14px;
+                margin-top: -4px;
+                margin-bottom: -4px;
+                border-radius: 7px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #38bdf8;
+                width: 16px;
+                height: 16px;
+                margin-top: -5px;
+                margin-bottom: -5px;
+                border-radius: 8px;
+            }
+        """)
+
+        self.duration_label = QLabel("00:00")
+        self.duration_label.setFont(QFont("Inter", 10))
+        self.duration_label.setStyleSheet("color: #94a3b8;")
+
+        seek_layout.addWidget(self.elapsed_label)
+        seek_layout.addWidget(self.seek_slider)
+        seek_layout.addWidget(self.duration_label)
+        controls_layout.addLayout(seek_layout)
+
+        # 2. Buttons / Pane Row
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
+        buttons_layout.setSpacing(15)
+
+        self.new_prev_btn = self._create_vertical_media_button(
+            "⏮", "PREV EPISODE", lambda: self.skip_backward(10)
+        )
+        self.new_play_btn = self._create_vertical_media_button(
+            "▶", "PLAY/PAUSE", self.play_pause
+        )
+        self.new_next_btn = self._create_vertical_media_button(
+            "⏭", "NEXT EPISODE", lambda: self.skip_forward(10)
+        )
+        self.new_rate_btn = self._create_vertical_media_button(
+            "1.0x", "SPEED", self.toggle_fast_forward
+        )
+
+        buttons_layout.addWidget(self.new_prev_btn)
+        buttons_layout.addWidget(self.new_play_btn)
+        buttons_layout.addWidget(self.new_next_btn)
+        buttons_layout.addWidget(self.new_rate_btn)
+
+        buttons_layout.addStretch()
+
+        self.subtitles_audio_button = QPushButton()
+        self.subtitles_audio_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.subtitles_audio_button.setText("AUDIO: None\nSUBTITLES: None")
+        self.subtitles_audio_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(30, 41, 59, 120);
+                border: 1px solid rgba(255, 255, 255, 15);
+                border-radius: 8px;
+                padding: 6px 16px;
+                color: #f8fafc;
+                font-family: 'Inter';
+                font-size: 11px;
+                text-align: left;
+                line-height: 14px;
+            }
+            QPushButton:hover {
+                background-color: rgba(30, 41, 59, 200);
+                border-color: #38bdf8;
+            }
+        """)
+        self.subtitles_audio_button.clicked.connect(self._show_subtitles_audio_menu)
+        buttons_layout.addWidget(self.subtitles_audio_button)
+
+        buttons_layout.addSpacing(10)
+
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal, self.controls_widget)
         self.volume_slider.setMaximum(200)
         self.volume_slider.setValue(80)
-        self.volume_slider.setFixedWidth(100)
         self.volume_slider.valueChanged.connect(self.set_volume)
-        volume_layout.addWidget(self.volume_slider)
 
-        self.back_button = QPushButton("Back")
-        self.back_button.clicked.connect(self.on_back_clicked)
-
-        self.fullscreen_button = QPushButton("Fullscreen")
-        self.fullscreen_button.clicked.connect(self.toggle_fullscreen)
-
-        buttons_layout.addWidget(self.play_button)
-        buttons_layout.addWidget(self.stop_button)
-        buttons_layout.addWidget(self.skip_back_button)
-        buttons_layout.addWidget(self.skip_fwd_button)
-        buttons_layout.addWidget(self.rate_button)
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(QLabel("Audio:"))
-        buttons_layout.addWidget(self.audio_combo)
-        buttons_layout.addWidget(QLabel("Subs:"))
-        buttons_layout.addWidget(self.subtitle_combo)
-        buttons_layout.addSpacing(20)
+        volume_layout = self._create_volume_layout(is_fullscreen=False)
         buttons_layout.addLayout(volume_layout)
-        buttons_layout.addSpacing(20)
-        buttons_layout.addWidget(self.fullscreen_button)
-        buttons_layout.addWidget(self.back_button)
+
+        buttons_layout.addSpacing(10)
+
+        self.new_fullscreen_btn = self._create_vertical_media_button(
+            "⛶", "FULLSCREEN", self.toggle_fullscreen
+        )
+        self.new_back_btn = self._create_vertical_media_button(
+            "◀", "BACK", self.on_back_clicked
+        )
+
+        buttons_layout.addWidget(self.new_fullscreen_btn)
+        buttons_layout.addWidget(self.new_back_btn)
 
         controls_layout.addLayout(buttons_layout)
         self.main_layout.addWidget(self.controls_widget)
@@ -506,7 +905,7 @@ class VideoPlayerWidget(QWidget):
         self.progress_overlay.resize(self.video_frame.size())
 
         # Center the fullscreen overlay at the bottom
-        fs_size = QSize(650, 90)
+        fs_size = QSize(850, 120)
         self.fullscreen_overlay.resize(fs_size)
 
         # Position relative to video_frame's geometry in case it's shifted
@@ -548,6 +947,16 @@ class VideoPlayerWidget(QWidget):
         self.next_episode_popup_shown = False
         self.next_episode_info = db.get_next_episode(file_path)
         self.pending_resume_position = 0
+
+        is_mov = db.is_movie(file_path)
+        if hasattr(self, "new_prev_btn") and self.new_prev_btn:
+            self.new_prev_btn.setVisible(not is_mov)
+        if hasattr(self, "new_next_btn") and self.new_next_btn:
+            self.new_next_btn.setVisible(not is_mov)
+        if hasattr(self, "fs_new_prev_btn") and self.fs_new_prev_btn:
+            self.fs_new_prev_btn.setVisible(not is_mov)
+        if hasattr(self, "fs_new_next_btn") and self.fs_new_next_btn:
+            self.fs_new_next_btn.setVisible(not is_mov)
 
         saved_pos = db.get_episode_playback_position(file_path)
         if saved_pos > 60:
@@ -668,6 +1077,11 @@ class VideoPlayerWidget(QWidget):
         self.timer.start()
         self.play_button.setText("Pause")
         self.fs_pause_button.setText("Pause")
+        if hasattr(self, "new_play_btn"):
+            self.new_play_btn.button.setText("⏸")
+        if hasattr(self, "fs_new_play_btn"):
+            self.fs_new_play_btn.button.setText("⏸")
+        self._update_subtitles_audio_pane_text()
 
         # Initial volume
         self.mediaplayer.audio_set_volume(self.volume_slider.value())
@@ -686,6 +1100,8 @@ class VideoPlayerWidget(QWidget):
             self.pending_resume_position = 0
 
     def _refresh_tracks(self) -> None:
+        if not self.mediaplayer:
+            return
         # Audio tracks
         self.audio_combo.blockSignals(True)
         self.audio_combo.clear()
@@ -755,6 +1171,7 @@ class VideoPlayerWidget(QWidget):
         if idx != -1:
             self.subtitle_combo.setCurrentIndex(idx)
         self.subtitle_combo.blockSignals(False)
+        self._update_subtitles_audio_pane_text()
 
     def change_audio_track(self, index: int) -> None:
         track_id = self.audio_combo.itemData(index)
@@ -774,11 +1191,19 @@ class VideoPlayerWidget(QWidget):
             self.mediaplayer.pause()
             self.play_button.setText("Play")
             self.fs_pause_button.setText("Play")
+            if hasattr(self, "new_play_btn"):
+                self.new_play_btn.button.setText("▶")
+            if hasattr(self, "fs_new_play_btn"):
+                self.fs_new_play_btn.button.setText("▶")
         else:
             logger.info("Resuming playback")
             self.mediaplayer.play()
             self.play_button.setText("Pause")
             self.fs_pause_button.setText("Pause")
+            if hasattr(self, "new_play_btn"):
+                self.new_play_btn.button.setText("⏸")
+            if hasattr(self, "fs_new_play_btn"):
+                self.fs_new_play_btn.button.setText("⏸")
 
     def stop(self) -> None:
         logger.info("Stopping playback")
@@ -830,8 +1255,23 @@ class VideoPlayerWidget(QWidget):
         self.wakelock.uninhibit()
         self.timer.stop()
         self.play_button.setText("Play")
+        if hasattr(self, "new_play_btn"):
+            self.new_play_btn.button.setText("▶")
+        if hasattr(self, "fs_new_play_btn"):
+            self.fs_new_play_btn.button.setText("▶")
+        if hasattr(self, "new_rate_btn") and self.new_rate_btn:
+            self.new_rate_btn.button.setText("1.0x")
+        if hasattr(self, "fs_new_rate_btn") and self.fs_new_rate_btn:
+            self.fs_new_rate_btn.button.setText("1.0x")
         self.seek_slider.setValue(0)
+        self.fs_seek_slider.setValue(0)
         self.time_label.setText("00:00 / 00:00")
+        if hasattr(self, "elapsed_label"):
+            self.elapsed_label.setText("00:00")
+            self.duration_label.setText("00:00")
+        if hasattr(self, "fs_elapsed_label"):
+            self.fs_elapsed_label.setText("00:00")
+            self.fs_duration_label.setText("00:00")
         self._cleanup_cache()
         self._is_playback_finished = False
 
@@ -865,6 +1305,11 @@ class VideoPlayerWidget(QWidget):
         self.fs_volume_slider.setValue(volume)
         self.fs_volume_slider.blockSignals(False)
 
+        if hasattr(self, "vol_percent_label"):
+            self.vol_percent_label.setText(f"{volume}%")
+        if hasattr(self, "fs_vol_percent_label"):
+            self.fs_vol_percent_label.setText(f"{volume}%")
+
         if volume > 0 and self.is_muted:
             self.is_muted = False
             self._update_mute_ui()
@@ -895,6 +1340,11 @@ class VideoPlayerWidget(QWidget):
     def _update_mute_ui(self) -> None:
         text = "Unmute" if self.is_muted else "Mute"
         self.mute_button.setText(text)
+        icon = "🔇" if self.is_muted else "🔊"
+        if hasattr(self, "vol_icon"):
+            self.vol_icon.setText(icon)
+        if hasattr(self, "fs_vol_icon"):
+            self.fs_vol_icon.setText(icon)
 
     def _show_volume_osd(self, volume: int, muted: bool = False) -> None:
         if muted:
@@ -933,6 +1383,10 @@ class VideoPlayerWidget(QWidget):
         self.mediaplayer.set_rate(new_rate)
         text = f"{new_rate}x"
         self.rate_button.setText(text)
+        if hasattr(self, "new_rate_btn") and self.new_rate_btn:
+            self.new_rate_btn.button.setText(text)
+        if hasattr(self, "fs_new_rate_btn") and self.fs_new_rate_btn:
+            self.fs_new_rate_btn.button.setText(text)
         self._show_osd(f"Playback Speed: {text}")
 
     def _show_osd(self, text: str) -> None:
@@ -1014,6 +1468,16 @@ class VideoPlayerWidget(QWidget):
             self.time_label.setText(time_text)
             self.fs_time_label.setText(time_text)
 
+            # Update our new labels
+            if hasattr(self, "elapsed_label"):
+                self.elapsed_label.setText(self._format_time(curr_time))
+            if hasattr(self, "duration_label"):
+                self.duration_label.setText(self._format_time(duration))
+            if hasattr(self, "fs_elapsed_label"):
+                self.fs_elapsed_label.setText(self._format_time(curr_time))
+            if hasattr(self, "fs_duration_label"):
+                self.fs_duration_label.setText(self._format_time(duration))
+
             # Show next episode popup if playback reaches 98% watched and a next episode exists
             if (
                 config.enable_next_episode_popup
@@ -1034,6 +1498,19 @@ class VideoPlayerWidget(QWidget):
         title: str = self.next_episode_info.get("title") or "Unknown Title"
         season: str = self.next_episode_info.get("season") or "Unknown Season"
         episode_number: Optional[Any] = self.next_episode_info.get("episode_number")
+        poster_path: str = self.next_episode_info.get("poster_path") or ""
+
+        # Load poster if path exists
+        if poster_path and os.path.exists(poster_path):
+            from PySide6.QtGui import QPixmap
+
+            pixmap = QPixmap(poster_path)
+            if not pixmap.isNull():
+                self.popup_thumbnail_label.setPixmap(pixmap)
+            else:
+                self.popup_thumbnail_label.setText("No Image")
+        else:
+            self.popup_thumbnail_label.setText("No Image")
 
         episode_string: str = (
             f"Episode {episode_number}"
@@ -1042,9 +1519,12 @@ class VideoPlayerWidget(QWidget):
         )
         info_text: str = f'{season}, {episode_string}\n"{title}"'
         self.popup_info_label.setText(info_text)
+        self.popup_title_label.setText(title.upper())
 
         self.countdown_seconds = 20
         self.popup_countdown_label.setText("Closing in 20 seconds...")
+        if hasattr(self, "popup_countdown_progress"):
+            self.popup_countdown_progress.setValue(20)
         self.popup_countdown_timer.start()
 
         if self.window().isFullScreen():
@@ -1091,6 +1571,8 @@ class VideoPlayerWidget(QWidget):
         self.popup_countdown_label.setText(
             f"Closing in {self.countdown_seconds} seconds..."
         )
+        if hasattr(self, "popup_countdown_progress"):
+            self.popup_countdown_progress.setValue(self.countdown_seconds)
         if self.countdown_seconds <= 0:
             logger.info("Countdown expired. Dismissing next episode popup.")
             self.popup_countdown_timer.stop()

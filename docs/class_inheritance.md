@@ -22,7 +22,7 @@ This document details the classes, inheritance trees, docstrings, and detailed m
 ---
 
 ### `Episode`
-- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L78) (line 78)
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L81) (line 81)
 - **Inherits from**: `Base`
 
 > Database model representing a single television show episode, including technical video characteristics and watch status.
@@ -30,7 +30,7 @@ This document details the classes, inheritance trees, docstrings, and detailed m
 ---
 
 ### `Movie`
-- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L114) (line 114)
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L118) (line 118)
 - **Inherits from**: `Base`
 
 > Database model representing a movie, including technical properties and watch status.
@@ -38,7 +38,7 @@ This document details the classes, inheritance trees, docstrings, and detailed m
 ---
 
 ### `Season`
-- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L50) (line 50)
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L52) (line 52)
 - **Inherits from**: `Base`
 
 > Database model representing a specific season of a television series.
@@ -46,7 +46,7 @@ This document details the classes, inheritance trees, docstrings, and detailed m
 ---
 
 ### `Series`
-- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L23) (line 23)
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L24) (line 24)
 - **Inherits from**: `Base`
 
 > Database model representing a television series, containing references to seasons and metadata.
@@ -288,7 +288,7 @@ This document details the classes, inheritance trees, docstrings, and detailed m
 ---
 
 ### `LibraryGridView`
-- **Defined in**: [library_grid.py](../src/lan_streamer/ui_views/library_grid.py#L31) (line 31)
+- **Defined in**: [library_grid.py](../src/lan_streamer/ui_views/library_grid.py#L32) (line 32)
 - **Inherits from**: `QWidget`
 
 > Responsive Grid View displaying series items using custom layout sizing.
@@ -314,6 +314,8 @@ This document details the classes, inheritance trees, docstrings, and detailed m
 - `def on_item_clicked(self, item_target: QListWidgetItem) -> None`
 
 - `def on_library_changed(self, library_name: str) -> None`
+
+- `def on_library_tab_changed(self, index: int) -> None`
 
 - `def on_order_changed(self, text: str) -> None`
 
@@ -519,7 +521,7 @@ This document details the classes, inheritance trees, docstrings, and detailed m
 ---
 
 ### `SeriesDetailView`
-- **Defined in**: [series_detail.py](../src/lan_streamer/ui_views/series_detail.py#L33) (line 33)
+- **Defined in**: [series_detail.py](../src/lan_streamer/ui_views/series_detail.py#L34) (line 34)
 - **Inherits from**: `QWidget`
 
 > Presents exhaustive series structure tabs, season tables, and direct execution actions.
@@ -531,6 +533,8 @@ This document details the classes, inheritance trees, docstrings, and detailed m
 - `def _on_mark_season_watched(self, season_name: str) -> None`
 
 - `def _on_mark_series_watched(self) -> None`
+
+- `def _on_play_next_clicked(self) -> None`
 
 - `def _setup_ui(self) -> None`
 
