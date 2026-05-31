@@ -2,6 +2,60 @@
 
 This document details the classes, inheritance trees, docstrings, and detailed method signatures within the `lan-streamer` codebase. It serves as a developer guide to understanding the object-oriented structure of the application.
 
+---
+
+## 🌳 Class Inheritance Paths
+
+Below is the structured textual representation of all major class inheritance paths in the `lan-streamer` codebase:
+
+### 1. Database Models (`SQLAlchemy`)
+- `DeclarativeBase`
+  - `Base`
+    - `Series` (represents a television series)
+    - `Season` (represents a television season)
+    - `Episode` (represents a single television episode)
+    - `Movie` (represents a single movie)
+
+### 2. Background Thread Workers (`QThread`)
+- `QThread` (PySide6)
+  - `CacheWorker` (copies network share media locally)
+  - `CleanupAllLibrariesWorker` (removes deleted/missing items across all libraries)
+  - `CleanupWorker` (cleans up a single media library)
+  - `JellyfinPullWorker` (pulls watch history from Jellyfin user database)
+  - `JellyfinPushWorker` (syncs watched episodes/movies to Jellyfin server)
+  - `MetadataEmbedWorker` (embeds movie/episode metadata tags using ffmpeg copy pipelines)
+  - `RefreshSeriesWorker` (re-scans folder metadata for a specific series/movie)
+  - `RuntimeExtractionWorker` (extracts runtimes, codec, audio/subtitle tracks via ffprobe)
+  - `ScanAllLibrariesWorker` (runs sequential scans on all libraries)
+  - `ScanWorker` (scans a specific TV or movie library directory using TMDB clients)
+  - `SeriesMetadataEmbedWorker` (recursively embeds metadata for all episodes in a series)
+  - `SubtitleMergeWorker` (merges downloaded `.srt` subtitles into a video container)
+
+### 3. User Interface Dialogs (`QDialog`)
+- `QDialog` (PySide6)
+  - `EpisodeDetailsDialog` (detailed view with metadata edit, remote search, and ffmpeg embedding options)
+  - `EpisodeMatchDialog` (custom matching for a single episode)
+  - `JellyfinMatchDialog` (modal search mapping Jellyfin watch history IDs)
+  - `MetadataMatchDialog` (modal search mapping TMDB series/movie metadata IDs)
+  - `MovieDetailsDialog` (detailed movie properties and actions)
+  - `RenamePreviewDialog` (preview interface displaying proposed file rename operations)
+  - `SeriesDetailsDialog` (overview of series attributes and locking toggle)
+  - `SettingsDialog` (tabbed dialog for general, logging, caching, and library path preferences)
+  - `SubtitleSearchDialog` (search results and remote subtitle download options)
+
+### 4. User Interface Widgets (`QWidget`)
+- `QWidget` (PySide6)
+  - `LibraryGridView` (responsive list view displaying parsed library assets)
+  - `LibraryScanProgressBar` (main segmented library scanning bar)
+  - `MovieDetailView` (expanded detailed view of a selected movie)
+  - `ScanProgressTree` (collapsible execution tree detail during scanning)
+  - `SegmentedProgressBar` (base segmented progress bar component)
+  - `SeriesDetailView` (split view of poster, episodes, and next episode trigger)
+  - `VideoPlayerWidget` (embedded libvlc media player containing all sliders, speed selectors, and overlays)
+  - `VerticalMediaButton` (nested layout widget for vertical player buttons)
+
+---
+
 ## Table of Contents
 - [Database Models](#database-models)
 - [Background Workers (QThread)](#background-workers-qthread)
@@ -818,6 +872,18 @@ This document details the classes, inheritance trees, docstrings, and detailed m
 - `def toggle_stats(self) -> None`
 
 - `def update_ui(self) -> None`
+
+---
+
+### `VerticalMediaButton`
+- **Defined in**: [widget.py](../src/lan_streamer/playback/widget.py#L31) (line 31)
+- **Inherits from**: `QWidget`
+
+> Custom widget wrapper containing a QPushButton and QLabel.
+
+**Attributes**:
+- `button: QPushButton`
+- `label: QLabel`
 
 ---
 

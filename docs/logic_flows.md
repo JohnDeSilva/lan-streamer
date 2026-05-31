@@ -1,211 +1,161 @@
 # Logic Flows and Codepaths
 
-This document details the main logic flows and execution paths within the `lan-streamer` codebase, using Mermaid.js diagrams to visualize the control flow.
+This document details the main logic flows, execution paths, user choices, and decision gates within the `lan-streamer` codebase. It serves as a developer guide to how the system orchestrates metadata matching, background processing, media playback, and server synchronization.
 
 ---
 
 ## 1. Library Scanning Flow
 
-The library scanning flow updates the local SQLite database with information about files in the configured media directories, linking them to TMDB metadata.
+The library scanning workflow reads files in configured media directories, resolves metadata from online services, and populates the SQLite database.
 
-### Mermaid Diagram
+### Workflow Description & User Choices
+When initiating a scan, the user can choose to trigger a standard scan or a **Force Refresh**:
+1. **Standard (Incremental) Scan**: The scanner only queries external APIs for directories or files that do not currently exist in the database, preserving existing metadata and manual corrections.
+2. **Force Refresh**: The scanner ignores cached states and re-queries external APIs for all items, overwriting existing records unless metadata is explicitly locked.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant GridView as LibraryGridView
-    participant Control as Controller
-    participant Worker as ScanWorker
-    participant Core as scan_directories (core.py)
-    participant TMDB as TMDBClient
-    participant DB as db (models/SQLAlchemy)
+### Logical Decision Gates
+During execution, the scanner processes each media directory and evaluates the following logic gates:
+- **Lock Check**: If a series or movie has its `locked_metadata` flag set to `True` in the database, the scanner skips online queries entirely, preserving all existing metadata.
+- **Cache Match**: If incremental scanning is active and a folder's directory structure matches existing database records with valid metadata, online matching is bypassed.
+- **TMDB Resolution**: Folder names are cleaned (removing tags like `1080p`, `x264`, `BluRay`) and matched against TMDB search endpoints (`search_series` or `search_movie`). If a match is found (similarity score >= 0.7), its ID is used; otherwise, it falls back to raw folder names.
+- **TV vs. Movie Logic**:
+  - **Movies**: Scanned directly, extracting runtime, year, and TMDB identifiers.
+  - **TV Series**: Scanned recursively for season subdirectories. Video files are parsed via regular expressions (e.g. `S\d+E\d+`, `\d+x\d+`) to extract season and episode numbers, which are then matched to TMDB episode structures.
 
-    User->>GridView: Clicks Scan / Force Refresh
-    GridView->>Control: trigger_scan(force_refresh)
-    Control->>Worker: Instantiate ScanWorker
-    Control->>Worker: start()
-    Note over Worker: Runs run() in QThread
-    Worker->>Control: Emit init_library_scan (pre-walk directory tree)
-    Worker->>Core: scan_directories()
-
-    loop For each Series/Movie Directory
-        Core->>DB: Check for existing metadata & lock status
-        alt Locked Metadata or Local Cache Valid
-            Note over Core: Reuse cached data
-        else Not Locked & (Force Refresh or Missing Metadata)
-            Core->>TMDB: search_series() or search_movie()
-            TMDB-->>Core: Return Metadata (ID, poster_path, overview)
-        end
-
-        loop For each Season & Episode (TV library only)
-            Core->>TMDB: get_episodes() for Season
-            Core->>Core: Parse episode numbers from filename
-            Core->>Core: Match with TMDB episode record
-        end
-
-        Core->>Control: Emit partial_result (for real-time UI updates)
-    end
-
-    Core-->>Worker: Returns scanned LibraryDict
-    Worker->>DB: save_library() / save_movie_library()
-    Worker->>Control: Emit finished(updated_library)
-    Control->>GridView: Emit library_loaded() signal
-    GridView->>User: Re-render UI with new posters and info
-```
-
-### Steps in the Flow
-
-1. **Triggering the Scan**: The user requests a scan from the UI (e.g. `LibraryGridView` or `SettingsDialog`).
-2. **Worker Instantiation**: The `Controller` instantiates a `ScanWorker` (which inherits from `QThread`) to run the scanning loop in the background and prevent UI lockups.
-3. **Directory Pre-Walk**: The worker calls `discover_single_library_tree` to pre-walk folders. It emits `init_library_scan` to initialize the `LibraryScanProgressBar` and `ScanProgressTree`.
-4. **Metadata Resolution & Matching**:
-   - `scan_directories` walks each subdirectory.
-   - If a series has `locked_metadata=True`, scanning is skipped, and the existing entry is preserved.
-   - Otherwise, `TMDBClient` is queried to match the folder name with online records.
-   - In TV libraries, season folders are scanned for video files, matched with TMDB episode numbers via regex (`_parse_episode_number`), and metadata (name, air date, runtime) is gathered.
-5. **Database Updates**: Scanned records are written to the database using SQLAlchemy sessions in `db.save_library()` or `db.save_movie_library()`.
-6. **UI Refresh**: Once finished, the worker emits the `finished` signal, and the `Controller` triggers `library_loaded` to update view templates.
+### Execution Path
+1. **Scan Request**: The user triggers the scan from the UI.
+2. **Thread Offloading**: The `Controller` instantiates a `ScanWorker` (`QThread`), keeping the main UI responsive.
+3. **Directory Discovery**: The worker pre-walks directories to establish file counts, emitting `init_library_scan` to initialize progress bars.
+4. **Metadata Loop**: The core scanner walks the tree, calling the TMDB API, resolving matches, and emitting partial progress updates to the UI.
+5. **Database Transaction**: Scanned results are structured into model dictionaries and saved to the SQLite database via SQLAlchemy (`db.save_library`).
+6. **UI Refresh**: The worker emits `finished`, triggering the main view to reload posters, titles, and stats.
 
 ---
 
 ## 2. Technical Metadata Extraction and Subtitle Merging
 
-When files are scanned, they may have missing runtimes, resolutions, or subtitles. Background processes extract technical info and run `ffmpeg` to embed assets.
+After library scanning, files are analyzed in the background to extract technical characteristics (codecs, runtimes, audio/subtitle tracks) and optionally embed metadata or merge external subtitles.
 
-### Mermaid Diagram
+### Technical Metadata Extraction Flow
+The extraction process operates automatically in the background via the `RuntimeExtractionWorker`:
+1. **Database Query**: Queries the SQLite database for movies or episodes where the runtime is set to `0` or is missing.
+2. **Target Evaluation**: For each missing item, the extractor attempts to retrieve file information:
+   - **Path Resolution**: The worker uses `_get_ffprobe_command` to check for local system `ffprobe` binaries.
+   - **Subprocess Execution**: It spawns an asynchronous `ffprobe` process requesting JSON-formatted details.
+   - **Success Gate**:
+     - *If ffprobe succeeds*: The system parses the output for exact runtime, resolution width/height, video codec, audio track languages, and subtitle tracks.
+     - *If ffprobe fails*: The system falls back to a lightweight libvlc media parser instance to retrieve basic runtime duration.
+   - **Database Update**: The extracted characteristics are updated in the SQLite table.
 
-```mermaid
-flowchart TD
-    A[Start Runtime Extraction] --> B[Retrieve item paths missing runtime from DB]
-    B --> C{For each item}
-    C -->|Has items| D[Call get_detailed_file_info]
-    C -->|Finished| I[Emit finished & refresh UI]
-
-    D --> E[Resolve ffprobe location via _get_ffprobe_command]
-    E --> F[Run ffprobe subprocess with JSON format parameters]
-    F --> G{ffprobe success?}
-    G -->|Yes| H[Parse runtime, resolution, codec, audio/subtitle tracks]
-    G -->|No| J[Fall back to libvlc media parser]
-    H --> K[Update episode/movie record in SQLite]
-    J --> K
-    K --> C
-```
-
-### Subtitle and Metadata Embedding Sequence
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant UI as EpisodeDetailsDialog
-    participant Control as Controller
-    participant Worker as SubtitleMergeWorker / MetadataEmbedWorker
-    participant Shell as ffmpeg / Subprocess
-    participant Disk as File System
-
-    UI->>Control: Request Subtitle Merge / Metadata Embed
-    Control->>Worker: Instantiate QThread worker
-    Control->>Worker: start()
-    Note over Worker: Runs run() in background thread
-    Worker->>Shell: Run ffmpeg command copy pipeline
-    Note over Shell: e.g., ffmpeg -i video.mp4 -i sub.srt -c copy -map 0 -map 1 temp.merged.mkv
-    Shell-->>Worker: Success (exit code 0)
-    Worker->>Disk: Atomically replace original video with merged container (os.replace)
-    Worker->>Disk: Delete external subtitle file (if merging subtitles)
-    Worker->>Control: Emit finished() signal
-    Control->>UI: Refresh episode detail panel
-```
-
-### Technical Details
-
-- **`ffprobe` Resolution**: The `_get_ffprobe_command` helper in `src/lan_streamer/scanner/runtime.py` checks the system path and falls back to macOS homebrew paths (`/opt/homebrew/bin/ffprobe`) or Unix standard bin paths.
-- **FFmpeg copy pipelines**: To avoid re-encoding, technical workers always invoke ffmpeg using the `-c copy` flag. This allows swift embedding of tracks and metadata tags without consuming high CPU cycles or degrading video quality.
+### Subtitle and Metadata Embedding Workflow
+Users can choose to embed metadata or merge downloaded subtitle files directly into the video container from the details dialog:
+1. **User Choice**: The user selects "Embed Metadata" or "Merge Subtitles" for an episode or movie.
+2. **Offloading Worker**: The `Controller` launches a `MetadataEmbedWorker` or `SubtitleMergeWorker` thread.
+3. **FFmpeg copy pipelines**: To avoid time-consuming and quality-degrading re-encoding, the worker invokes an `ffmpeg` command with the `-c copy` pipeline flag:
+   - Example: `ffmpeg -i video.mp4 -i sub.srt -c copy -map 0 -map 1 temp.merged.mkv`
+4. **Atomic File Replacement**: If the ffmpeg subprocess exits successfully (exit code `0`), the worker uses `os.replace` to atomically replace the original video file with the new container. If subtitle merging was requested, the external `.srt` file is cleaned up.
+5. **UI Update**: Emits a `finished` signal, and the UI re-reads the file details to show embedded tracks.
 
 ---
 
 ## 3. Media Playback & Wakelocks
 
-This flow manages the lifecycle of video playback, ensuring files are cached locally if needed, system sleep is inhibited, and playback positions are tracked.
+Manages the lifecycle of media playing in either embedded or external players, ensuring system power states are maintained and progress is tracked.
 
-### Mermaid Diagram
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant UI as Library View / Details View
-    participant Control as Controller
-    participant Player as VideoPlayerWidget
-    participant WL as WakeLock
-    participant Cache as CacheWorker
-    participant VLC as libvlc instance
-
-    User->>UI: Clicks Play Video
-    UI->>Control: Emit playback_requested(file_path)
-
-    alt Embedded Player enabled
-        Control->>Player: play_video(file_path)
-        Player->>WL: inhibit() (Disable screensaver / system sleep)
-        Note over WL: Platform-specific calls (dbus on Linux, caffeinate on macOS, etc.)
-
-        alt Cache Enabled & File is Network Share
-            Player->>Cache: Start CacheWorker
-            Cache->>Cache: Copy media file chunk to local directory
-            Cache-->>Player: Emit finished / chunk ready
-        end
-
-        Player->>VLC: Load file path
-        Player->>VLC: Set position / Resume playback if requested
-
-        loop During Playback
-            VLC->>Player: Emit position change events
-            Player->>Player: Update stats overlay and save position
-        end
-
-        User->>Player: Closes Player or Video Reaches End
-        Player->>Control: mark_episode_watched(file_path, watched=True)
-        Player->>WL: uninhibit() (Re-enable system sleep)
-        Player->>Player: _cleanup_cache()
-        Player->>UI: Return to details screen
-    else External Player enabled
-        Control->>Control: Spawn external VLC or MPV process
-    end
-```
-
-### Steps in the Flow
-
-1. **Playback Request**: The `Controller` listens to view clicks and routes the selected video path.
-2. **Wakelock Activation**: To prevent screensavers or system sleep from interrupting movies, `WakeLock.inhibit()` is called. It supports Linux (`org.freedesktop.ScreenSaver` dbus), Windows (`SetThreadExecutionState`), and macOS (`caffeinate` sub-processes).
-3. **Local Caching**: The `CacheWorker` runs in a separate thread to copy media files locally to speed up seek times when playing files over high-latency networks (e.g. SMB/NFS mounts).
-4. **VLC Playback Control**: Playback state, track selection, volume, and playback speed are controlled via libvlc.
-5. **Watched State Sync**: When a threshold is met or the video ends, the local DB updates `watched=True` and resets the saved resume position.
+### Playback Decision Gates & User Choices
+When a playback request is initiated, the system evaluates several logical decision gates and user choices:
+- **Player Selection**: Evaluates the `enable_embedded_player` setting.
+  - *External Player*: Spawns a separate process (e.g. VLC or MPV) and monitors its lifecycle.
+  - *Embedded Player*: Instantiates PySide6 `VideoPlayerWidget` using `libvlc`.
+- **Wakelock Inhibition**: Once playback starts, the system inhibits screen savers and power sleep modes. It uses D-Bus messages on Linux, `SetThreadExecutionState` on Windows, and `caffeinate` sub-processes on macOS.
+- **Local Caching Check**: If caching is enabled and the media is stored on a high-latency network share, `CacheWorker` copies the file to the local directory, displaying a progress bar. Embedded playback then points to this cached path.
+- **Resume Prompt**:
+  - If the database has a saved playback position greater than 60 seconds, the user is prompted: *Resume playback or Start from Beginning?*
+  - The player seeks to the selected position or starts playing from `0`.
+- **UI & Autoplay Loop**: During playback, a QTimer triggers every second to update the seek bar slider and elapsed/remaining time labels.
+  - **Autoplay decision**: If progress reaches 98% and a next episode is available, an overlay popup card appears with a 20-second countdown.
+  - **Autoplay user choices**: The user can click **Play Next** (switches to the next file immediately), click **Ignore** (dismisses the card), or let the countdown expire (dismisses card).
+- **Watched Threshold Check**: When the user exits playback or the video ends, the system checks:
+  - If progress is >= `watched_threshold` (default 95%), it marks the file as `watched=True` in SQLite and resets the resume position.
+  - Otherwise, if duration played is > 60 seconds, it saves the current position; if < 60 seconds, it clears any saved position.
 
 ---
 
 ## 4. Jellyfin Watch History Sync (Push/Pull)
 
-Syncs local watch status with a central Jellyfin server.
+Synchronizes watched history state between the local SQLite database and a remote Jellyfin server.
 
-### Mermaid Diagram
+### Pull Synchronization Workflow
+The `JellyfinPullWorker` fetches server watched states and applies them locally:
+1. **API Fetch**: Queries the Jellyfin server API for the logged-in user's watch history.
+2. **Identification Gate**: For each returned item, the pull worker attempts to match it against SQLite:
+   - First, checks if the Jellyfin item ID matches a mapped Jellyfin ID in the database.
+   - Second, falls back to path or name matching.
+3. **Database Update**: If a local match is found, its watched flag is updated to `True` in SQLite. Unmapped items are skipped.
 
-```mermaid
-flowchart LR
-    subgraph Pull Sync
-        A[Pull worker starts] --> B[Fetch watched items list from Jellyfin]
-        B --> C[Match TMDB/Jellyfin IDs in SQLite]
-        C --> D[Update local watched state flags]
-        D --> E[Sync Complete]
-    end
+### Push Synchronization Workflow
+The `JellyfinPushWorker` pushes local watch states back to the server:
+1. **Database Query**: Queries the SQLite database for episodes or movies marked as watched locally.
+2. **Mapping Gate**: Evaluates if the watched item already has an associated Jellyfin ID:
+   - *If mapped*: Directly sends a watch update request to the Jellyfin API.
+   - *If unmapped*: Performs a search query on the Jellyfin server by name. If an ID is successfully retrieved, the mapping is saved to SQLite, and the watched status is posted. If search fails, the item is skipped.
 
-    subgraph Push Sync
-        F[Push worker starts] --> G[Query local SQLite for watched episodes]
-        G --> H[Check mapped Jellyfin IDs]
-        H --> I[Post status changes to Jellyfin server]
-        I --> J[Sync Complete]
-    end
-```
+---
 
-### Synchronizing Rules
+## 5. Manual Metadata Matching Workflow
 
-- **Pull Process**: `JellyfinPullWorker` calls `fetch_watched_episodes` which queries the Jellyfin user library database, resolves the items using local DB models, and marks matches as watched.
-- **Push Process**: `JellyfinPushWorker` identifies which items were watched locally but remain unwatched on Jellyfin, sending watch/unwatch requests through Jellyfin HTTP APIs.
+Provides a way to override or correct automated TMDB catalog resolution results.
+
+### User Choice & Search Execution
+1. **Manual Match Trigger**: The user opens the details dialog and selects the match/search action.
+2. **Keyword Input**: The search query is pre-populated with the folder/file name but can be manually modified by the user.
+3. **API Query**: Queries TMDB search endpoints (`search_series_full` or `search_movie_full`) to retrieve a collection of matched title details (e.g. titles, release years, overviews, posters).
+
+### Applying the Match
+1. **Selection**: The user selects a specific TMDB item from the search result list.
+2. **Controller updates**:
+   - Saves the new TMDB ID mapping to the database.
+   - Triggers download and caching of the updated poster artwork.
+   - Triggers background workers to re-scan seasons and episodes matching the new TMDB ID.
+   - Refreshes UI grids and panels to show updated metadata and artwork immediately.
+
+---
+
+## 6. File Renaming and Hygiene Workflow
+
+Ensures files follow a clean, consistent naming structure for media players and scrapers.
+
+### Preview and Safety Checks
+1. **Hygiene Action**: User requests file renaming from the series details dialog.
+2. **Template Evaluation**: The system generates proposed names using a token template (e.g. `{SeriesTitle} - S{SeasonNumber:02}E{EpisodeNumber:02} - {EpisodeTitle}`).
+3. **Sanitization rules**:
+   - Removes characters illegal across operating systems (`\ / : * ? " < > |`).
+   - Ensures no reserved system namespaces (e.g. `CON`, `PRN`, `NUL`) are used.
+   - Restricts total file name length to standard filesystem limits (max 255 bytes).
+4. **Subtitle tracking**: Automatically finds separate subtitle files sharing the same file stem (e.g. `.srt`, `.en.srt`), and adds renaming previews for them to match the new video filename.
+5. **Preview Panel**: Displays target filenames color-coded by safety status to the user.
+
+### Execution
+1. **Atomic Rename**: When the user approves, files are moved on the filesystem. Parent folders are created automatically if missing.
+2. **Database Update**: SQLite is updated to point to the new absolute paths.
+3. **UI Refresh**: Emits updates to redraw media cards and lists.
+
+---
+
+## 7. Subtitle Searching & Downloading Workflow
+
+Retrieves and stores subtitle files for media playbacks automatically or interactively.
+
+### Search Trigger
+1. **Dialog Input**: The user opens the subtitle search interface from the media details panel.
+2. **Automatic Query Formulator**:
+   - For movies, sets defaults to `<Movie Title> <Year>`.
+   - For TV episodes, sets defaults to `<Series Title> S<SeasonNumber>E<EpisodeNumber>`.
+3. **OpenSubtitles Query**: Connects to OpenSubtitles.com REST API. Uses the associated TMDB ID if available to ensure exact catalog alignment, falling back to text queries.
+4. **List Display**: Displays matched subtitle candidates alongside metadata (e.g. language, release name, rating, download counts).
+
+### Download and Write
+1. **Link Request**: Upon clicking "Download", requests a single-use download URL from OpenSubtitles.
+2. **Payload Fetch**: Downloads raw subtitle data bytes.
+3. **Adjacent File Write**: Saves the file in the exact media directory matching the video file's parent folder, appending language codes (e.g., `video_file.en.srt`).
+4. **UI Update**: Signals details panel components to re-run ffprobe or refresh, showing the newly downloaded track option.
