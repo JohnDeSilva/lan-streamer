@@ -19,6 +19,8 @@ CACHE_DIR = Path.home() / ".config" / "lan-streamer" / "cache" / "images"
 
 
 class TMDBClient:
+    """Client for interacting with The Movie Database (TMDB) API to fetch movie and TV metadata."""
+
     def __init__(self) -> None:
         self.session = requests.Session()
         self.session.headers.update(

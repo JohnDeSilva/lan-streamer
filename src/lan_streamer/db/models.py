@@ -16,10 +16,14 @@ from sqlalchemy.orm import (
 
 
 class Base(DeclarativeBase):
+    """SQLAlchemy declarative base class for database models."""
+
     pass
 
 
 class Series(Base):
+    """Database model representing a television series, containing references to seasons and metadata."""
+
     __tablename__ = "series"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -46,6 +50,8 @@ class Series(Base):
 
 
 class Season(Base):
+    """Database model representing a specific season of a television series."""
+
     __tablename__ = "seasons"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -73,6 +79,8 @@ class Season(Base):
 
 
 class Episode(Base):
+    """Database model representing a single television show episode, including technical video characteristics and watch status."""
+
     __tablename__ = "episodes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -108,6 +116,8 @@ class Episode(Base):
 
 
 class Movie(Base):
+    """Database model representing a movie, including technical properties and watch status."""
+
     __tablename__ = "movies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
