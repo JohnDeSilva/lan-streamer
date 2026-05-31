@@ -1,3 +1,9 @@
+## v0.21.0 (2026-05-31)
+
+### Feat
+
+- **playback**: align controls, toggle next/prev on movies, restore playback speed, and update skip symbols
+
 ## v0.20.1 (2026-05-30)
 
 ### Fix
