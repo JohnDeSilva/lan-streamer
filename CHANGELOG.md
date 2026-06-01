@@ -1,3 +1,9 @@
+## v0.21.1 (2026-05-31)
+
+### Refactor
+
+- **playback**: update player widget controls and layout
+
 ## v0.21.0 (2026-05-31)
 
 ### Feat
