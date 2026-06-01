@@ -1105,8 +1105,8 @@ def test_select_track_from_menu(player_widget) -> None:
     player_widget.mediaplayer.video_set_spu.assert_called_once_with(11)
 
 
-def test_movie_vs_episode_navigation_buttons(player_widget) -> None:
-    """Test that next/prev episode buttons are hidden for movies and shown for episodes."""
+def test_navigation_buttons_always_visible(player_widget) -> None:
+    """Test that rewind and fast forward buttons are always visible for both movies and TV episodes."""
     config.enable_caching = False
     player_widget._load_and_play = MagicMock()
 
@@ -1114,19 +1114,19 @@ def test_movie_vs_episode_navigation_buttons(player_widget) -> None:
     with patch("lan_streamer.db.is_movie", return_value=True):
         player_widget.play_video("/movies/some_movie.mkv")
 
-        assert player_widget.new_prev_btn.isHidden() is True
-        assert player_widget.new_next_btn.isHidden() is True
-        assert player_widget.fs_new_prev_btn.isHidden() is True
-        assert player_widget.fs_new_next_btn.isHidden() is True
+        assert player_widget.new_rew_btn.isHidden() is False
+        assert player_widget.new_ff_btn.isHidden() is False
+        assert player_widget.fs_new_rew_btn.isHidden() is False
+        assert player_widget.fs_new_ff_btn.isHidden() is False
 
     # Case 2: Playing a TV episode (not a movie)
     with patch("lan_streamer.db.is_movie", return_value=False):
         player_widget.play_video("/tv/some_episode.mkv")
 
-        assert player_widget.new_prev_btn.isHidden() is False
-        assert player_widget.new_next_btn.isHidden() is False
-        assert player_widget.fs_new_prev_btn.isHidden() is False
-        assert player_widget.fs_new_next_btn.isHidden() is False
+        assert player_widget.new_rew_btn.isHidden() is False
+        assert player_widget.new_ff_btn.isHidden() is False
+        assert player_widget.fs_new_rew_btn.isHidden() is False
+        assert player_widget.fs_new_ff_btn.isHidden() is False
 
 
 def test_playback_speed_toggling(player_widget) -> None:
@@ -1164,3 +1164,24 @@ def test_playback_speed_toggling(player_widget) -> None:
     player_widget.stop()
     assert player_widget.new_rate_btn.button.text() == "1.0x"
     assert player_widget.fs_new_rate_btn.button.text() == "1.0x"
+
+
+def test_volume_buttons(player_widget) -> None:
+    """Test that the volume plus and minus buttons correctly change volume by 5%."""
+    player_widget.mediaplayer = MagicMock()
+
+    # Test normal mode volume buttons
+    player_widget.volume_slider.setValue(100)
+    player_widget.volume_plus_btn.click()
+    assert player_widget.volume_slider.value() == 105
+
+    player_widget.volume_minus_btn.click()
+    assert player_widget.volume_slider.value() == 100
+
+    # Test fullscreen mode volume buttons
+    player_widget.fs_volume_slider.setValue(80)
+    player_widget.fs_volume_plus_btn.click()
+    assert player_widget.fs_volume_slider.value() == 85
+
+    player_widget.fs_volume_minus_btn.click()
+    assert player_widget.fs_volume_slider.value() == 80
