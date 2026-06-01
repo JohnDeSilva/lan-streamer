@@ -527,6 +527,7 @@ def test_ui_layout_completeness(player_widget) -> None:
     assert player_widget.stop_button.parent() == player_widget.controls_widget
     assert player_widget.fullscreen_button.parent() == player_widget.controls_widget
     assert player_widget.back_button.parent() == player_widget.controls_widget
+    assert player_widget.new_stop_btn.parent() == player_widget.controls_widget
 
     # Verify the controls_widget is in the main_layout
     found = False
@@ -548,6 +549,7 @@ def test_ui_layout_completeness(player_widget) -> None:
     assert player_widget.fs_volume_slider.parent() == player_widget.fullscreen_overlay
     assert player_widget.fs_seek_slider.parent() == player_widget.fullscreen_overlay
     assert player_widget.fs_pause_button.parent() == player_widget.fullscreen_overlay
+    assert player_widget.fs_new_stop_btn.parent() == player_widget.fullscreen_overlay
 
 
 def test_stop_saves_playback_position_incomplete(player_widget) -> None:

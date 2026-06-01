@@ -337,6 +337,7 @@ class SeriesDetailView(QWidget):
                 )
 
                 details_container: QWidget = QWidget()
+                details_container.setStyleSheet("background-color: transparent;")
                 details_layout: QHBoxLayout = QHBoxLayout(details_container)
                 details_layout.setContentsMargins(2, 2, 2, 2)
                 details_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
