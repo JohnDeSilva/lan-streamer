@@ -1,3 +1,9 @@
+## v0.21.2 (2026-05-31)
+
+### Fix
+
+- **player**: replace player back button with stop button next to play & fix details cell background
+
 ## v0.21.1 (2026-05-31)
 
 ### Refactor
