@@ -175,7 +175,7 @@ Below is the structured textual representation of all major class inheritance pa
 - **Inherits from**: `QThread`
 
 > Background worker that uses ffmpeg to embed metadata into a video container.
-> Strictly typesafe with zero abbreviations.
+> Typed with static typing.
 
 **Methods**:
 - `def __init__(self, video_path: str, metadata: Dict[str, str], parent: Optional[QObject]=None) -> None`
@@ -244,7 +244,7 @@ Below is the structured textual representation of all major class inheritance pa
 - **Inherits from**: `QThread`
 
 > Background worker that embeds metadata for all episodes in a series.
-> Strictly typesafe with zero abbreviations.
+> Typed with static typing.
 
 **Methods**:
 - `def __init__(self, series_name: str, episodes: List[Dict[str, Any]], parent: Optional[QObject]=None) -> None`
@@ -308,7 +308,7 @@ Below is the structured textual representation of all major class inheritance pa
 - **Inherits from**: `QDialog`
 
 > Modal dialog allowing users to match metadata on TMDB for an individual episode of a show.
-> Conforms strictly to zero-abbreviation variable naming and static typing standards.
+> Conforms to static typing standards.
 
 **Methods**:
 - `def __init__(self, series_name: str, episode_path: str, controller_instance: 'Controller', parent: Optional[QWidget]=None) -> None`
@@ -328,7 +328,7 @@ Below is the structured textual representation of all major class inheritance pa
 - **Inherits from**: `QDialog`
 
 > Search modal to retrieve series or movie IDs specifically from Jellyfin for watch history correlation.
-> Strictly typesafe with zero abbreviations.
+> Typed with static typing.
 
 **Methods**:
 - `def __init__(self, series_name: str, controller_instance: 'Controller', parent: Optional[QWidget]=None) -> None`
@@ -346,7 +346,7 @@ Below is the structured textual representation of all major class inheritance pa
 - **Inherits from**: `QWidget`
 
 > Responsive Grid View displaying series items using custom layout sizing.
-> Conforms strictly to zero-abbreviation variable naming and typing requirements.
+> Conforms to typing requirements.
 
 **Methods**:
 - `def __init__(self, controller_instance: Controller, parent: Optional[QWidget]=None) -> None`
@@ -412,7 +412,7 @@ Below is the structured textual representation of all major class inheritance pa
 - **Inherits from**: `QDialog`
 
 > Search modal to retrieve metadata from external matching provider APIs.
-> Strictly typesafe with zero abbreviations.
+> Typed with static typing.
 
 **Methods**:
 - `def __init__(self, series_name: str, controller_instance: 'Controller', parent: Optional[QWidget]=None) -> None`
@@ -483,7 +483,7 @@ Below is the structured textual representation of all major class inheritance pa
 - **Inherits from**: `QDialog`
 
 > Dialog displaying generated file renaming mapping previews for consistent file hygiene.
-> Conforms strictly to standard static typing and naming constraints.
+> Conforms to static typing constraints.
 
 **Methods**:
 - `def __init__(self, series_name: str, controller_instance: 'Controller', parent: Optional[QWidget]=None) -> None`
@@ -1315,7 +1315,7 @@ Below is the structured textual representation of all major class inheritance pa
 
 - `def update_movie_metadata(self, movie_name: str, movie_path: str, metadata: Dict[str, Any]) -> None`
   > Updates movie metadata in the database and refreshes local cache.
-  > Strictly typed with no abbreviations.
+  > Typed with static typing.
 
 - `def update_series_name(self, old_name: str, new_name: str) -> None`
   > Renames a series in the database and updates cache.
