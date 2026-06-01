@@ -344,6 +344,9 @@ class VideoPlayerWidget(QWidget):
         play_btn = self._create_vertical_media_button(
             "▶", "PLAY/PAUSE", self.play_pause, font_size=32
         )
+        stop_btn = self._create_vertical_media_button(
+            "■", "STOP", self._on_stop_clicked, font_size=26
+        )
         ff_btn = self._create_vertical_media_button(
             "▶▶", "FAST FORWARD", lambda: self.skip_forward(10)
         )
@@ -353,26 +356,23 @@ class VideoPlayerWidget(QWidget):
         fullscreen_btn = self._create_vertical_media_button(
             "⛶", "FULLSCREEN", self.toggle_fullscreen, font_size=32
         )
-        back_btn = self._create_vertical_media_button(
-            "ESC", "BACK", self.on_back_clicked, font_size=16
-        )
 
         if is_fullscreen:
             self.fs_new_rew_btn = rew_btn
             self.fs_new_play_btn = play_btn
+            self.fs_new_stop_btn = stop_btn
             self.fs_new_ff_btn = ff_btn
             self.fs_new_rate_btn = rate_btn
             self.fs_new_fullscreen_btn = fullscreen_btn
-            self.fs_new_back_btn = back_btn
         else:
             self.new_rew_btn = rew_btn
             self.new_play_btn = play_btn
+            self.new_stop_btn = stop_btn
             self.new_ff_btn = ff_btn
             self.new_rate_btn = rate_btn
             self.new_fullscreen_btn = fullscreen_btn
-            self.new_back_btn = back_btn
 
-        return rew_btn, play_btn, ff_btn, rate_btn, fullscreen_btn, back_btn
+        return rew_btn, play_btn, stop_btn, ff_btn, rate_btn, fullscreen_btn
 
     def _show_subtitles_audio_menu(self) -> None:
         self._refresh_tracks()
@@ -553,12 +553,13 @@ class VideoPlayerWidget(QWidget):
         fs_buttons_layout.setContentsMargins(0, 0, 0, 0)
         fs_buttons_layout.setSpacing(15)
 
-        fs_rew_btn, fs_play_btn, fs_ff_btn, fs_rate_btn, fs_fs_btn, fs_bk_btn = (
+        fs_rew_btn, fs_play_btn, fs_stop_btn, fs_ff_btn, fs_rate_btn, fs_fs_btn = (
             self._create_controls_set(is_fullscreen=True)
         )
 
         fs_buttons_layout.addWidget(fs_rew_btn)
         fs_buttons_layout.addWidget(fs_play_btn)
+        fs_buttons_layout.addWidget(fs_stop_btn)
         fs_buttons_layout.addWidget(fs_ff_btn)
         fs_buttons_layout.addWidget(fs_rate_btn)
 
@@ -576,7 +577,7 @@ class VideoPlayerWidget(QWidget):
                 color: #f8fafc;
                 font-family: 'Inter';
                 font-size: 11px;
-                text-align: left;
+                text-align: center;
                 line-height: 14px;
             }
             QPushButton:hover {
@@ -591,7 +592,6 @@ class VideoPlayerWidget(QWidget):
         fs_buttons_layout.addLayout(fs_volume_layout)
 
         fs_buttons_layout.addWidget(fs_fs_btn)
-        fs_buttons_layout.addWidget(fs_bk_btn)
 
         fs_main_layout.addLayout(fs_buttons_layout)
 
@@ -847,12 +847,13 @@ class VideoPlayerWidget(QWidget):
         buttons_layout.setContentsMargins(0, 0, 0, 0)
         buttons_layout.setSpacing(15)
 
-        rew_btn, play_btn, ff_btn, rate_btn, fs_btn, bk_btn = self._create_controls_set(
-            is_fullscreen=False
+        rew_btn, play_btn, stop_btn, ff_btn, rate_btn, fs_btn = (
+            self._create_controls_set(is_fullscreen=False)
         )
 
         buttons_layout.addWidget(rew_btn)
         buttons_layout.addWidget(play_btn)
+        buttons_layout.addWidget(stop_btn)
         buttons_layout.addWidget(ff_btn)
         buttons_layout.addWidget(rate_btn)
 
@@ -870,7 +871,7 @@ class VideoPlayerWidget(QWidget):
                 color: #f8fafc;
                 font-family: 'Inter';
                 font-size: 11px;
-                text-align: left;
+                text-align: center;
                 line-height: 14px;
             }
             QPushButton:hover {
@@ -894,7 +895,6 @@ class VideoPlayerWidget(QWidget):
         buttons_layout.addSpacing(10)
 
         buttons_layout.addWidget(fs_btn)
-        buttons_layout.addWidget(bk_btn)
 
         controls_layout.addLayout(buttons_layout)
         self.main_layout.addWidget(self.controls_widget)
