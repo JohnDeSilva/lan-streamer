@@ -145,7 +145,7 @@ class VideoPlayerWidget(QWidget):
         pass
 
     def _create_vertical_media_button(
-        self, icon: str, label_text: str, slot: Any
+        self, icon: str, label_text: str, slot: Any, font_size: int = 20
     ) -> VerticalMediaButton:
         container = VerticalMediaButton()
         layout = QVBoxLayout(container)
@@ -156,21 +156,21 @@ class VideoPlayerWidget(QWidget):
         btn = QPushButton(icon)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.clicked.connect(slot)
-        btn.setStyleSheet("""
-            QPushButton {
+        btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: transparent;
                 color: #f8fafc;
                 border: none;
-                font-size: 20px;
+                font-size: {font_size}px;
                 min-width: 40px;
                 min-height: 40px;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 color: #38bdf8;
-            }
-            QPushButton:pressed {
+            }}
+            QPushButton:pressed {{
                 color: #0284c7;
-            }
+            }}
         """)
 
         lbl = QLabel(label_text)
@@ -192,14 +192,56 @@ class VideoPlayerWidget(QWidget):
 
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(5)
+        row.setSpacing(0)
 
         vol_icon = QPushButton("🔊")
+        vol_icon.setObjectName("volumeIcon")
         vol_icon.setCursor(Qt.CursorShape.PointingHandCursor)
-        vol_icon.setStyleSheet(
-            "background: transparent; color: #f8fafc; border: none; font-size: 14px;"
-        )
+        vol_icon.setFixedSize(20, 40)
+        vol_icon.setStyleSheet("""
+            QPushButton#volumeIcon {
+                background: transparent;
+                background-color: transparent;
+                color: #f8fafc;
+                border: none;
+                border-radius: 0px;
+                font-size: 14px;
+                min-height: 40px;
+                max-height: 40px;
+                padding: 0px;
+                margin: 0px;
+            }
+        """)
         vol_icon.clicked.connect(self.toggle_mute)
+
+        minus_btn = QPushButton("−")
+        minus_btn.setObjectName("volumeMinusBtn")
+        minus_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        minus_btn.setFixedSize(12, 12)
+        minus_btn.setStyleSheet("""
+            QPushButton#volumeMinusBtn {
+                background: transparent;
+                background-color: transparent;
+                color: #94a3b8;
+                border: none;
+                border-radius: 0px;
+                font-size: 12px;
+                font-weight: bold;
+                min-width: 12px;
+                max-width: 12px;
+                min-height: 12px;
+                max-height: 12px;
+                padding: 0px;
+                margin: 0px;
+            }
+            QPushButton#volumeMinusBtn:hover {
+                color: #38bdf8;
+            }
+            QPushButton#volumeMinusBtn:pressed {
+                color: #0284c7;
+            }
+        """)
+        minus_btn.clicked.connect(self.decrease_volume)
 
         slider = self.fs_volume_slider if is_fullscreen else self.volume_slider
         slider.setOrientation(Qt.Orientation.Horizontal)
@@ -227,34 +269,110 @@ class VideoPlayerWidget(QWidget):
             }
         """)
 
-        percent_lbl = QLabel(f"{slider.value()}%")
-        percent_lbl.setFont(QFont("Inter", 9, QFont.Weight.Bold))
-        percent_lbl.setStyleSheet("color: #f8fafc; background: transparent;")
-        percent_lbl.setFixedWidth(35)
-        percent_lbl.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
+        plus_btn = QPushButton("+")
+        plus_btn.setObjectName("volumePlusBtn")
+        plus_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        plus_btn.setFixedSize(12, 12)
+        plus_btn.setStyleSheet("""
+            QPushButton#volumePlusBtn {
+                background: transparent;
+                background-color: transparent;
+                color: #94a3b8;
+                border: none;
+                border-radius: 0px;
+                font-size: 12px;
+                font-weight: bold;
+                min-width: 12px;
+                max-width: 12px;
+                min-height: 12px;
+                max-height: 12px;
+                padding: 0px;
+                margin: 0px;
+            }
+            QPushButton#volumePlusBtn:hover {
+                color: #38bdf8;
+            }
+            QPushButton#volumePlusBtn:pressed {
+                color: #0284c7;
+            }
+        """)
+        plus_btn.clicked.connect(self.increase_volume)
 
-        row.addWidget(vol_icon)
-        row.addWidget(slider)
-        row.addWidget(percent_lbl)
+        row.addWidget(vol_icon, alignment=Qt.AlignmentFlag.AlignVCenter)
+        row.addSpacing(6)
+        row.addWidget(minus_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+        row.addSpacing(8)
+        row.addWidget(slider, alignment=Qt.AlignmentFlag.AlignVCenter)
+        row.addSpacing(8)
+        row.addWidget(plus_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         layout.addLayout(row)
 
-        sub_lbl = QLabel("VOLUME")
-        sub_lbl.setFont(QFont("Inter", 8, QFont.Weight.Bold))
-        sub_lbl.setStyleSheet("color: #94a3b8; background: transparent;")
-        sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(sub_lbl)
+        percent_lbl = QLabel(f"VOLUME: {slider.value()}%")
+        percent_lbl.setFont(QFont("Inter", 8, QFont.Weight.Bold))
+        percent_lbl.setStyleSheet("color: #94a3b8; background: transparent;")
+        percent_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(percent_lbl)
 
         if is_fullscreen:
             self.fs_vol_percent_label = percent_lbl
             self.fs_vol_icon = vol_icon
+            self.fs_volume_minus_btn = minus_btn
+            self.fs_volume_plus_btn = plus_btn
         else:
             self.vol_percent_label = percent_lbl
             self.vol_icon = vol_icon
+            self.volume_minus_btn = minus_btn
+            self.volume_plus_btn = plus_btn
 
         return layout
+
+    def _create_controls_set(
+        self, is_fullscreen: bool = False
+    ) -> tuple[
+        VerticalMediaButton,
+        VerticalMediaButton,
+        VerticalMediaButton,
+        VerticalMediaButton,
+        VerticalMediaButton,
+        VerticalMediaButton,
+    ]:
+        """Creates and returns the vertical media buttons set to avoid code duplication."""
+        rew_btn = self._create_vertical_media_button(
+            "◀◀", "REWIND", lambda: self.skip_backward(10)
+        )
+        play_btn = self._create_vertical_media_button(
+            "▶", "PLAY/PAUSE", self.play_pause, font_size=32
+        )
+        ff_btn = self._create_vertical_media_button(
+            "▶▶", "FAST FORWARD", lambda: self.skip_forward(10)
+        )
+        rate_btn = self._create_vertical_media_button(
+            "1.0x", "SPEED", self.toggle_fast_forward
+        )
+        fullscreen_btn = self._create_vertical_media_button(
+            "⛶", "FULLSCREEN", self.toggle_fullscreen, font_size=32
+        )
+        back_btn = self._create_vertical_media_button(
+            "ESC", "BACK", self.on_back_clicked, font_size=16
+        )
+
+        if is_fullscreen:
+            self.fs_new_rew_btn = rew_btn
+            self.fs_new_play_btn = play_btn
+            self.fs_new_ff_btn = ff_btn
+            self.fs_new_rate_btn = rate_btn
+            self.fs_new_fullscreen_btn = fullscreen_btn
+            self.fs_new_back_btn = back_btn
+        else:
+            self.new_rew_btn = rew_btn
+            self.new_play_btn = play_btn
+            self.new_ff_btn = ff_btn
+            self.new_rate_btn = rate_btn
+            self.new_fullscreen_btn = fullscreen_btn
+            self.new_back_btn = back_btn
+
+        return rew_btn, play_btn, ff_btn, rate_btn, fullscreen_btn, back_btn
 
     def _show_subtitles_audio_menu(self) -> None:
         self._refresh_tracks()
@@ -380,7 +498,7 @@ class VideoPlayerWidget(QWidget):
                 border-radius: 12px;
             }
         """)
-        self.fullscreen_overlay.setFixedWidth(850)
+        self.fullscreen_overlay.setFixedWidth(1150)
 
         # Legacy fs controls for test compatibility
         self.fs_pause_button = QPushButton("Pause", self.fullscreen_overlay)
@@ -435,23 +553,14 @@ class VideoPlayerWidget(QWidget):
         fs_buttons_layout.setContentsMargins(0, 0, 0, 0)
         fs_buttons_layout.setSpacing(15)
 
-        self.fs_new_prev_btn = self._create_vertical_media_button(
-            "⏮", "PREV EPISODE", lambda: self.skip_backward(10)
-        )
-        self.fs_new_play_btn = self._create_vertical_media_button(
-            "▶", "PLAY/PAUSE", self.play_pause
-        )
-        self.fs_new_next_btn = self._create_vertical_media_button(
-            "⏭", "NEXT EPISODE", lambda: self.skip_forward(10)
-        )
-        self.fs_new_rate_btn = self._create_vertical_media_button(
-            "1.0x", "SPEED", self.toggle_fast_forward
+        fs_rew_btn, fs_play_btn, fs_ff_btn, fs_rate_btn, fs_fs_btn, fs_bk_btn = (
+            self._create_controls_set(is_fullscreen=True)
         )
 
-        fs_buttons_layout.addWidget(self.fs_new_prev_btn)
-        fs_buttons_layout.addWidget(self.fs_new_play_btn)
-        fs_buttons_layout.addWidget(self.fs_new_next_btn)
-        fs_buttons_layout.addWidget(self.fs_new_rate_btn)
+        fs_buttons_layout.addWidget(fs_rew_btn)
+        fs_buttons_layout.addWidget(fs_play_btn)
+        fs_buttons_layout.addWidget(fs_ff_btn)
+        fs_buttons_layout.addWidget(fs_rate_btn)
 
         fs_buttons_layout.addStretch()
 
@@ -478,22 +587,11 @@ class VideoPlayerWidget(QWidget):
         self.fs_subtitles_audio_button.clicked.connect(self._show_subtitles_audio_menu)
         fs_buttons_layout.addWidget(self.fs_subtitles_audio_button)
 
-        fs_buttons_layout.addSpacing(10)
-
         fs_volume_layout = self._create_volume_layout(is_fullscreen=True)
         fs_buttons_layout.addLayout(fs_volume_layout)
 
-        fs_buttons_layout.addSpacing(10)
-
-        self.fs_new_fullscreen_btn = self._create_vertical_media_button(
-            "⛶", "FULLSCREEN", self.toggle_fullscreen
-        )
-        self.fs_new_back_btn = self._create_vertical_media_button(
-            "◀", "BACK", self.on_back_clicked
-        )
-
-        fs_buttons_layout.addWidget(self.fs_new_fullscreen_btn)
-        fs_buttons_layout.addWidget(self.fs_new_back_btn)
+        fs_buttons_layout.addWidget(fs_fs_btn)
+        fs_buttons_layout.addWidget(fs_bk_btn)
 
         fs_main_layout.addLayout(fs_buttons_layout)
 
@@ -749,23 +847,14 @@ class VideoPlayerWidget(QWidget):
         buttons_layout.setContentsMargins(0, 0, 0, 0)
         buttons_layout.setSpacing(15)
 
-        self.new_prev_btn = self._create_vertical_media_button(
-            "⏮", "PREV EPISODE", lambda: self.skip_backward(10)
-        )
-        self.new_play_btn = self._create_vertical_media_button(
-            "▶", "PLAY/PAUSE", self.play_pause
-        )
-        self.new_next_btn = self._create_vertical_media_button(
-            "⏭", "NEXT EPISODE", lambda: self.skip_forward(10)
-        )
-        self.new_rate_btn = self._create_vertical_media_button(
-            "1.0x", "SPEED", self.toggle_fast_forward
+        rew_btn, play_btn, ff_btn, rate_btn, fs_btn, bk_btn = self._create_controls_set(
+            is_fullscreen=False
         )
 
-        buttons_layout.addWidget(self.new_prev_btn)
-        buttons_layout.addWidget(self.new_play_btn)
-        buttons_layout.addWidget(self.new_next_btn)
-        buttons_layout.addWidget(self.new_rate_btn)
+        buttons_layout.addWidget(rew_btn)
+        buttons_layout.addWidget(play_btn)
+        buttons_layout.addWidget(ff_btn)
+        buttons_layout.addWidget(rate_btn)
 
         buttons_layout.addStretch()
 
@@ -804,15 +893,8 @@ class VideoPlayerWidget(QWidget):
 
         buttons_layout.addSpacing(10)
 
-        self.new_fullscreen_btn = self._create_vertical_media_button(
-            "⛶", "FULLSCREEN", self.toggle_fullscreen
-        )
-        self.new_back_btn = self._create_vertical_media_button(
-            "◀", "BACK", self.on_back_clicked
-        )
-
-        buttons_layout.addWidget(self.new_fullscreen_btn)
-        buttons_layout.addWidget(self.new_back_btn)
+        buttons_layout.addWidget(fs_btn)
+        buttons_layout.addWidget(bk_btn)
 
         controls_layout.addLayout(buttons_layout)
         self.main_layout.addWidget(self.controls_widget)
@@ -905,7 +987,7 @@ class VideoPlayerWidget(QWidget):
         self.progress_overlay.resize(self.video_frame.size())
 
         # Center the fullscreen overlay at the bottom
-        fs_size = QSize(850, 120)
+        fs_size = QSize(1150, 120)
         self.fullscreen_overlay.resize(fs_size)
 
         # Position relative to video_frame's geometry in case it's shifted
@@ -947,16 +1029,6 @@ class VideoPlayerWidget(QWidget):
         self.next_episode_popup_shown = False
         self.next_episode_info = db.get_next_episode(file_path)
         self.pending_resume_position = 0
-
-        is_mov = db.is_movie(file_path)
-        if hasattr(self, "new_prev_btn") and self.new_prev_btn:
-            self.new_prev_btn.setVisible(not is_mov)
-        if hasattr(self, "new_next_btn") and self.new_next_btn:
-            self.new_next_btn.setVisible(not is_mov)
-        if hasattr(self, "fs_new_prev_btn") and self.fs_new_prev_btn:
-            self.fs_new_prev_btn.setVisible(not is_mov)
-        if hasattr(self, "fs_new_next_btn") and self.fs_new_next_btn:
-            self.fs_new_next_btn.setVisible(not is_mov)
 
         saved_pos = db.get_episode_playback_position(file_path)
         if saved_pos > 60:
