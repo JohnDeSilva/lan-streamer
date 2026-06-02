@@ -1,3 +1,10 @@
+## v0.22.0 (2026-06-02)
+
+### Feat
+
+- make future episode placeholders configurable per library and update UI
+- show missing/future episodes in season view with robust date validation and a highly-compatible lozenge icon
+
 ## v0.21.2 (2026-05-31)
 
 ### Fix
