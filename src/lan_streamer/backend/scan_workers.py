@@ -99,6 +99,9 @@ class ScanWorker(QThread):
             def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
                 self.detail_progress.emit(event, payload)
 
+            library_config = config.libraries.get(self.library_name, {})
+            show_future = library_config.get("show_future_episodes", True)
+
             library: LibraryDict = scan_directories(
                 self.root_directories,
                 library_type=self.library_type,
@@ -108,6 +111,7 @@ class ScanWorker(QThread):
                 force_refresh=self.force_refresh,
                 cleanup=self.cleanup,
                 detail_callback=_detail_callback,
+                show_future_episodes=show_future,
             )
             self.unavailable_directories = library.unavailable_directories
             logger.info("ScanWorker finished successfully")
@@ -241,6 +245,9 @@ class ScanAllLibrariesWorker(QThread):
                     library_configuration.get("paths", [])
                 )
                 library_type: str = library_configuration.get("type", "tv")
+                show_future: bool = library_configuration.get(
+                    "show_future_episodes", True
+                )
 
                 self.detail_progress.emit("start_library", {"library": library_name})
 
@@ -270,6 +277,7 @@ class ScanAllLibrariesWorker(QThread):
                         force_refresh=self.force_refresh,
                         cleanup=False,
                         detail_callback=_make_detail_callback(library_name),
+                        show_future_episodes=show_future,
                     )
                     self.unavailable_directories.extend(
                         updated_library_data.unavailable_directories
@@ -295,6 +303,7 @@ class ScanAllLibrariesWorker(QThread):
                             force_refresh=self.force_refresh,
                             cleanup=False,
                             detail_callback=_make_detail_callback(library_name),
+                            show_future_episodes=show_future,
                         )
                         self.unavailable_directories.extend(
                             updated_library_data.unavailable_directories

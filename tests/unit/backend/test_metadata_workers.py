@@ -335,6 +335,7 @@ def test_refresh_series_worker_success(tmp_path, mock_db_save):
             force_refresh=True,
             cleanup=False,
             single_item_refresh=True,
+            show_future_episodes=True,
         )
 
 
