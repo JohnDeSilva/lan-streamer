@@ -624,3 +624,40 @@ def test_db_movie_save_stale_name_collision() -> None:
     assert "Movie TargetName" in reloaded
     assert reloaded["Movie TargetName"]["path"] == "/path/target.mkv"
     assert "Movie OldName" not in reloaded
+
+
+def test_save_library_deletes_placeholder_episodes(mock_db_file) -> None:
+    """Ensure placeholder episodes (path=None) are removed without raising errors."""
+    lib_name = "PlaceholderLib"
+    library = {
+        "Series X": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Ep Placeholder",
+                            "tmdb_number": 1,
+                            "path": None,
+                            "watched": False,
+                        },
+                        {
+                            "name": "Ep Real",
+                            "tmdb_number": 2,
+                            "path": "/tmp/real.mkv",
+                            "watched": False,
+                        },
+                    ],
+                }
+            },
+        }
+    }
+    # Save library should not raise and should delete the placeholder episode
+    db.save_library(lib_name, library)
+    loaded = db.load_library(lib_name)
+    episodes = loaded["Series X"]["seasons"]["Season 1"]["episodes"]
+    # Only the real episode should remain
+    assert len(episodes) == 1
+    assert episodes[0]["name"] == "Ep Real"
+    assert episodes[0]["path"] == "/tmp/real.mkv"

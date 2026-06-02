@@ -389,14 +389,17 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
                             stats,
                         )
 
-                    # Delete stale placeholders (which have path=None, i.e., in existing_by_number)
-                    for ep_obj in list(existing_by_number.values()):
-                        if ep_obj.path is None:
-                            logger.info(
-                                f"Removing stale placeholder episode S{season.name} E{ep_obj.tmdb_number} from database"
-                            )
-                            session.delete(ep_obj)
-                            stats["deleted"] += 1
+                    # Bulk delete stale placeholder episodes (path is None) for the current season
+                    deleted_count = (
+                        session.query(Episode)
+                        .filter(Episode.season_id == season.id, Episode.path.is_(None))
+                        .delete(synchronize_session=False)
+                    )
+                    if deleted_count:
+                        logger.info(
+                            f"Removing {deleted_count} stale placeholder episodes from database"
+                        )
+                        stats["deleted"] += deleted_count
 
     except Exception:
         logger.exception(f"Error saving library '{library_name}' to database")
