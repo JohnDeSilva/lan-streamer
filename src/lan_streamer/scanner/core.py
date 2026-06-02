@@ -51,6 +51,7 @@ def scan_directories(
     single_item_refresh: bool = False,
     detail_callback: Any = None,
     root_directory_label: str = "",
+    show_future_episodes: bool = True,
 ) -> LibraryDict:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -177,6 +178,7 @@ def scan_directories(
                     cleanup=cleanup,
                     single_item_refresh=single_item_refresh,
                     detail_callback=detail_callback,
+                    show_future_episodes=show_future_episodes,
                 )
                 if is_locked:
                     series_data["metadata"]["locked_metadata"] = True
@@ -408,6 +410,7 @@ def scan_series(
     cleanup: bool = False,
     single_item_refresh: bool = False,
     detail_callback: Any = None,
+    show_future_episodes: bool = True,
 ) -> Dict[str, Any]:
     """
     Scans a single series directory and fetches metadata from TMDB.
@@ -468,6 +471,21 @@ def scan_series(
         )
     )
     if is_early_return:
+        if not show_future_episodes:
+            import datetime
+
+            today_str = datetime.date.today().isoformat()
+            for season_name, season_data in list(
+                series_data.get("seasons", {}).items()
+            ):
+                filtered_episodes = []
+                for ep in season_data.get("episodes", []):
+                    if ep.get("path") is None:
+                        air_date = ep.get("air_date") or ""
+                        if not air_date or air_date > today_str:
+                            continue
+                    filtered_episodes.append(ep)
+                season_data["episodes"] = filtered_episodes
         return series_data
 
     for season_directory in series_directory.iterdir():
@@ -553,9 +571,17 @@ def scan_series(
             m = re.search(r"\d+", season_name)
             s_idx = int(m.group()) if m else 1
 
+        import datetime
+
+        today_str = datetime.date.today().isoformat()
+
         for tmdb_ep in tmdb_episodes:
             ep_num = tmdb_ep.get("episode_number")
             if ep_num is not None and ep_num not in local_numbers:
+                if not show_future_episodes:
+                    air_date = tmdb_ep.get("air_date") or ""
+                    if not air_date or air_date > today_str:
+                        continue
                 ep_name = tmdb_ep.get("name") or "TBA"
                 formatted_name = f"S{s_idx:02d}E{ep_num:02d} - {ep_name}"
                 episode_record = {
@@ -613,6 +639,10 @@ def scan_series(
                     else:
                         if old_num not in found_numbers:
                             # Keep missing/placeholder episodes
+                            if not show_future_episodes:
+                                air_date = old_episode.get("air_date") or ""
+                                if not air_date or air_date > today_str:
+                                    continue
                             series_data["seasons"][old_season_name]["episodes"].append(
                                 old_episode
                             )

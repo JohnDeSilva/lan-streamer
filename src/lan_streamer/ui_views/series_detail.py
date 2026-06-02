@@ -20,6 +20,7 @@ from PySide6.QtGui import QFont, QColor, QAction
 from lan_streamer.ui_views.proxy import QPixmap
 
 from lan_streamer import db
+from lan_streamer.system.config import config
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QMenu
@@ -149,6 +150,12 @@ class SeriesDetailView(QWidget):
         if getattr(self.controller, "is_video_playing", False):
             return
 
+        import datetime
+
+        today_str = datetime.date.today().isoformat()
+        library_config = config.libraries.get(self.controller.current_library_name, {})
+        show_future_episodes = library_config.get("show_future_episodes", True)
+
         is_opening: bool = self._current_series_name != series_name
         self._current_series_name = series_name
         self._season_tables = {}
@@ -234,6 +241,15 @@ class SeriesDetailView(QWidget):
         for season_name in sorted_season_names:
             season_data = seasons_dictionary.get(season_name, {})
             episodes_list = season_data.get("episodes", [])
+            if not show_future_episodes:
+                episodes_list = [
+                    ep
+                    for ep in episodes_list
+                    if not (
+                        ep.get("path") is None
+                        and (not ep.get("air_date") or ep.get("air_date") > today_str)
+                    )
+                ]
             try:
                 sorted_episodes = sorted(episodes_list, key=episode_sort_key)
             except Exception:
@@ -271,13 +287,18 @@ class SeriesDetailView(QWidget):
             self._next_episode_path = ""
             self.play_next_button.setVisible(False)
 
-        import datetime
-
-        today_str = datetime.date.today().isoformat()
-
         for season_name in sorted_season_names:
             season_data: Dict[str, Any] = seasons_dictionary.get(season_name, {})
             episodes_list: List[Dict[str, Any]] = season_data.get("episodes", [])
+            if not show_future_episodes:
+                episodes_list = [
+                    ep
+                    for ep in episodes_list
+                    if not (
+                        ep.get("path") is None
+                        and (not ep.get("air_date") or ep.get("air_date") > today_str)
+                    )
+                ]
 
             try:
                 sorted_episodes = sorted(episodes_list, key=episode_sort_key)

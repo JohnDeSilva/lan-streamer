@@ -2638,3 +2638,190 @@ def test_scanner_queries_tmdb_when_single_item_refresh_true(tmp_path):
 
         assert res["Refresh Show"]["metadata"]["tmdb_name"] == "Fresh Title"
         mock_tmdb.get_series_by_id.assert_called_once_with("refresh_id")
+
+
+def test_scan_series_show_future_episodes(tmp_path) -> None:
+    from lan_streamer.scanner import scan_series
+    import datetime
+
+    series_dir = tmp_path / "Future Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    episode_file = season_dir / "Future Show S01E01.mkv"
+    episode_file.touch()
+
+    today = datetime.date.today()
+    past_date = (today - datetime.timedelta(days=5)).isoformat()
+    future_date = (today + datetime.timedelta(days=5)).isoformat()
+
+    with patch("lan_streamer.scanner.tmdb_client") as mock_tmdb:
+        mock_tmdb.is_configured.return_value = True
+        mock_tmdb.search_series.return_value = {
+            "id": "series123",
+            "tmdb_identifier": "series123",
+            "name": "Future Show",
+            "overview": "A future show",
+            "poster_path": "",
+        }
+        mock_tmdb.get_seasons.return_value = [
+            {
+                "id": "season123",
+                "episode_number": 1,
+                "name": "Season 1",
+                "season_number": 1,
+                "image": "",
+            }
+        ]
+        # TMDB returns:
+        # S01E01 (aired past, exists locally)
+        # S01E02 (aired past, missing locally)
+        # S01E03 (aired future, missing locally)
+        mock_tmdb.get_episodes.return_value = [
+            {
+                "id": "ep1",
+                "episode_number": 1,
+                "name": "Episode 1",
+                "air_date": past_date,
+            },
+            {
+                "id": "ep2",
+                "episode_number": 2,
+                "name": "Episode 2",
+                "air_date": past_date,
+            },
+            {
+                "id": "ep3",
+                "episode_number": 3,
+                "name": "Episode 3",
+                "air_date": future_date,
+            },
+        ]
+        mock_tmdb.download_image.return_value = ""
+
+        # Test with show_future_episodes=True (default)
+        res_true = scan_series(series_dir, show_future_episodes=True)
+        eps_true = res_true["seasons"]["Season 1"]["episodes"]
+        assert len(eps_true) == 3
+        assert any(e["tmdb_number"] == 1 for e in eps_true)
+        assert any(e["tmdb_number"] == 2 for e in eps_true)
+        assert any(e["tmdb_number"] == 3 for e in eps_true)
+
+        # Test with show_future_episodes=False
+        res_false = scan_series(series_dir, show_future_episodes=False)
+        eps_false = res_false["seasons"]["Season 1"]["episodes"]
+        assert len(eps_false) == 2
+        assert any(e["tmdb_number"] == 1 for e in eps_false)
+        assert any(e["tmdb_number"] == 2 for e in eps_false)
+        assert not any(e["tmdb_number"] == 3 for e in eps_false)
+
+
+def test_scan_series_preserves_only_past_missing_episodes(tmp_path) -> None:
+    from lan_streamer.scanner import scan_series
+    import datetime
+
+    series_dir = tmp_path / "Preserve Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    (season_dir / "S01E01.mkv").touch()
+
+    today = datetime.date.today()
+    past_date = (today - datetime.timedelta(days=5)).isoformat()
+    future_date = (today + datetime.timedelta(days=5)).isoformat()
+
+    existing_series = {
+        "metadata": {
+            "tmdb_identifier": "series123",
+            "tmdb_name": "Preserve Show",
+        },
+        "seasons": {
+            "Season 1": {
+                "metadata": {},
+                "episodes": [
+                    {
+                        "name": "S01E01.mkv",
+                        "path": str((season_dir / "S01E01.mkv").absolute()),
+                        "tmdb_number": 1,
+                    },
+                    {
+                        "name": "S01E02 - TBA",
+                        "path": None,
+                        "tmdb_number": 2,
+                        "air_date": past_date,
+                    },
+                    {
+                        "name": "S01E03 - TBA",
+                        "path": None,
+                        "tmdb_number": 3,
+                        "air_date": future_date,
+                    },
+                ],
+            }
+        },
+    }
+
+    with patch("lan_streamer.scanner.tmdb_client"):
+        # Simulate scanning with show_future_episodes=False to verify preservation filter
+        res = scan_series(
+            series_dir,
+            existing_series_data=existing_series,
+            show_future_episodes=False,
+            force_refresh=False,
+        )
+        eps = res["seasons"]["Season 1"]["episodes"]
+        assert len(eps) == 2
+        assert any(e["tmdb_number"] == 1 for e in eps)
+        assert any(e["tmdb_number"] == 2 for e in eps)
+        assert not any(e["tmdb_number"] == 3 for e in eps)
+
+
+def test_save_library_prunes_placeholders() -> None:
+    from lan_streamer.db.library import save_library
+    from lan_streamer.db.models import Series, Season, Episode
+
+    mock_session = MagicMock()
+    mock_series = Series(library_name="TestLib", name="TestShow")
+    mock_season = Season(name="Season 1", series=mock_series)
+
+    # Let's create two episode DB records:
+    # 1. Ep 1 (a local episode with a path)
+    # 2. Ep 2 (a placeholder episode with path = None)
+    ep1_db = Episode(path="/path/to/ep1.mkv", season=mock_season, tmdb_number=1)
+    ep2_db = Episode(path=None, season=mock_season, tmdb_number=2)
+    mock_season.episodes = [ep1_db, ep2_db]
+
+    # Incoming scan only has ep1 (no placeholder for ep2)
+    library_data = {
+        "TestShow": {
+            "metadata": {"tmdb_identifier": "123"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "S01E01.mkv",
+                            "path": "/path/to/ep1.mkv",
+                            "tmdb_number": 1,
+                        }
+                    ],
+                }
+            },
+        }
+    }
+
+    with (
+        patch("lan_streamer.db.library.get_session") as mock_get_session,
+        patch("lan_streamer.db.library._save_series_record", return_value=mock_series),
+        patch("lan_streamer.db.library._save_season_record", return_value=mock_season),
+        patch("lan_streamer.db.library._save_episode_record") as mock_save_ep_rec,
+    ):
+        mock_get_session.return_value.__enter__.return_value = mock_session
+        mock_session.scalars.return_value.all.return_value = [mock_series]
+
+        save_library("TestLib", library_data)
+
+        # Verify mock_save_ep_rec was called for ep1
+        assert mock_save_ep_rec.called
+        # Verify mock_session.delete was called for the leftover placeholder (ep2_db)
+        mock_session.delete.assert_called_once_with(ep2_db)

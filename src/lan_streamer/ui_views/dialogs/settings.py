@@ -78,6 +78,7 @@ class SettingsDialog(QDialog):
         self.library_name_input: QLineEdit = QLineEdit()
         self.library_type_input: QComboBox = QComboBox()
         self.library_selector: QComboBox = QComboBox()
+        self.show_future_episodes_checkbox: QCheckBox = QCheckBox()
         self.directory_list_widget: QListWidget = QListWidget()
         self.library_order_list_widget: QListWidget = QListWidget()
 
@@ -274,6 +275,13 @@ class SettingsDialog(QDialog):
         select_layout.addWidget(delete_library_button)
         select_layout.addStretch()
         libraries_layout.addLayout(select_layout)
+
+        # Select Library options
+        self.show_future_episodes_checkbox.setText("Show future episodes")
+        self.show_future_episodes_checkbox.stateChanged.connect(
+            self._on_show_future_episodes_toggled
+        )
+        libraries_layout.addWidget(self.show_future_episodes_checkbox)
 
         # Mapped Directories List
         libraries_layout.addWidget(QLabel("Mapped Root Directories:"))
@@ -761,6 +769,9 @@ class SettingsDialog(QDialog):
             library_name: {
                 "type": library_config.get("type", "tv"),
                 "paths": list(library_config.get("paths", [])),
+                "show_future_episodes": library_config.get(
+                    "show_future_episodes", True
+                ),
             }
             for library_name, library_config in config.libraries.items()
         }
@@ -1022,11 +1033,38 @@ class SettingsDialog(QDialog):
         self.library_selector.addItems(sorted(self.staged_libraries.keys()))
         self.library_selector.blockSignals(False)
         self._refresh_directory_list()
+        self._refresh_library_options()
         self._refresh_library_order_list()
 
     @Slot(str)
     def _on_library_selected(self, library_name: str) -> None:
         self._refresh_directory_list()
+        self._refresh_library_options()
+
+    def _refresh_library_options(self) -> None:
+        selected_library: str = self.library_selector.currentText()
+        if selected_library in self.staged_libraries:
+            lib_config = self.staged_libraries[selected_library]
+            lib_type = lib_config.get("type", "tv")
+            if lib_type == "tv":
+                self.show_future_episodes_checkbox.setVisible(True)
+                self.show_future_episodes_checkbox.blockSignals(True)
+                self.show_future_episodes_checkbox.setChecked(
+                    lib_config.get("show_future_episodes", True)
+                )
+                self.show_future_episodes_checkbox.blockSignals(False)
+            else:
+                self.show_future_episodes_checkbox.setVisible(False)
+        else:
+            self.show_future_episodes_checkbox.setVisible(False)
+
+    @Slot(int)
+    def _on_show_future_episodes_toggled(self, state: int) -> None:
+        selected_library: str = self.library_selector.currentText()
+        if selected_library in self.staged_libraries:
+            self.staged_libraries[selected_library]["show_future_episodes"] = (
+                self.show_future_episodes_checkbox.isChecked()
+            )
 
     def _refresh_directory_list(self) -> None:
         self.directory_list_widget.clear()
@@ -1055,6 +1093,7 @@ class SettingsDialog(QDialog):
         self.staged_libraries[new_library_name] = {
             "type": new_library_type,
             "paths": [],
+            "show_future_episodes": True,
         }
         self.library_name_input.clear()
         self._refresh_library_selector()

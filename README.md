@@ -20,7 +20,7 @@ LAN Streamer is built to play your media files directly and natively without any
 
 ### 🔍 Metadata Management
 *   **🔍 Metadata Matching**: Multi-stage search strategy to link local media to TMDB and Jellyfin entries. Includes metadata locking capabilities to prevent automatic updates during library scans, alongside targeted metadata refresh controls in details windows to manually refresh individual series or episodes.
-*   **📅 Missing & Future Episode Placeholders**: Automatically fetches and saves all episodes for a season to the local database when the first episode of that season is scanned. This optimizes API usage by eliminating redundant TMDB network calls, enables offline operations, and allows the UI to display upcoming or missing episodes immediately.
+*   **📅 Missing & Future Episode Placeholders**: Automatically fetches and saves all episodes for a season to the local database when the first episode of that season is scanned. This optimizes API usage by eliminating redundant TMDB network calls, enables offline operations, and allows the UI to display upcoming or missing episodes immediately. This behavior can be configured on a per-library basis via the "Show future episodes" checkbox in the "Libraries Setup" settings tab.
 *   **📛 TMDB & Naming Support**: Uses official **TMDB** episode and series names, with filename fallbacks for unmatched items. Downloads posters and overviews from TMDB.
 *   **⚡ API Optimization**: Proactively identifies, logs, and ignores deeply nested or non-compliant subdirectory structures within TV libraries to minimize unnecessary TMDB API calls.
 *   **🔄 Bidirectional Sync**: Syncs "Watched" status with Jellyfin servers in real-time.

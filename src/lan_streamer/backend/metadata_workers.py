@@ -7,6 +7,7 @@ from PySide6.QtCore import QObject, Signal, QThread
 
 from lan_streamer.backend.proxy import (
     db,
+    config,
     jellyfin_client,
     get_detailed_file_info,
     scan_series,
@@ -338,6 +339,9 @@ class RefreshSeriesWorker(QThread):
                     single_item_refresh=True,
                 )
             else:
+                show_future = config.libraries.get(self.library_name, {}).get(
+                    "show_future_episodes", True
+                )
                 item_data = scan_series(
                     target_dir,
                     tmdb_series=None,
@@ -347,6 +351,7 @@ class RefreshSeriesWorker(QThread):
                     force_refresh=True,
                     cleanup=False,
                     single_item_refresh=True,
+                    show_future_episodes=show_future,
                 )
 
             if not item_data:

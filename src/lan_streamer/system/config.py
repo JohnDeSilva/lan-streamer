@@ -216,8 +216,11 @@ class Config:
                                 self.libraries[lib_name] = {
                                     "type": "tv",
                                     "paths": lib_val,
+                                    "show_future_episodes": True,
                                 }
                             else:
+                                if "show_future_episodes" not in lib_val:
+                                    lib_val["show_future_episodes"] = True
                                 self.libraries[lib_name] = lib_val
                         if any(isinstance(val, list) for val in raw_libraries.values()):
                             self.save()
@@ -227,6 +230,7 @@ class Config:
                             "Default": {
                                 "type": "tv",
                                 "paths": data.get("root_dirs", []),
+                                "show_future_episodes": True,
                             }
                         }
                         self.save()
@@ -294,7 +298,11 @@ class Config:
     def add_library(self, name: str, library_type: str = "tv") -> None:
         logger.info(f"Adding library '{name}' with type '{library_type}'")
         if name not in self.libraries:
-            self.libraries[name] = {"type": library_type, "paths": []}
+            self.libraries[name] = {
+                "type": library_type,
+                "paths": [],
+                "show_future_episodes": True,
+            }
             self.save()
 
     def remove_library(self, name: str) -> None:

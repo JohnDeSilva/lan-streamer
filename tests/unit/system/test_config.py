@@ -46,7 +46,13 @@ def test_config_load_existing(mock_config_file) -> None:
         )
 
     config = Config()
-    assert config.libraries == {"TestLib": {"type": "tv", "paths": ["/path/to/test"]}}
+    assert config.libraries == {
+        "TestLib": {
+            "type": "tv",
+            "paths": ["/path/to/test"],
+            "show_future_episodes": True,
+        }
+    }
     assert config.jellyfin_url == "http://test"
     assert config.jellyfin_api_key == "test_key"
     assert config.tmdb_api_key == "tmdb_key"
@@ -62,7 +68,9 @@ def test_config_migrate_old_format(mock_config_file) -> None:
         json.dump({"root_dirs": ["/old/path"]}, f)
 
     config = Config()
-    assert config.libraries == {"Default": {"type": "tv", "paths": ["/old/path"]}}
+    assert config.libraries == {
+        "Default": {"type": "tv", "paths": ["/old/path"], "show_future_episodes": True}
+    }
     assert config.jellyfin_url == ""
 
 

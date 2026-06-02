@@ -373,6 +373,26 @@ def test_series_detail_view_rendering(
     assert table_item_future is not None
     assert table_item_future.text() == "◊  Future Episode"
 
+    # Verify that disabling show_future_episodes hides the future episode
+    controller_instance.current_library_name = "Test Lib"
+    config.libraries["Test Lib"] = {
+        "type": "tv",
+        "paths": [],
+        "show_future_episodes": False,
+    }
+
+    try:
+        detail_view.populate_series_details("Cosmos")
+
+        page_widget_filtered = detail_view.seasons_tab_widget.widget(0)
+        assert page_widget_filtered is not None
+        table_widget_filtered = page_widget_filtered.findChild(QTableWidget)
+        assert isinstance(table_widget_filtered, QTableWidget)
+        assert table_widget_filtered.rowCount() == 3
+    finally:
+        if "Test Lib" in config.libraries:
+            del config.libraries["Test Lib"]
+
 
 def test_series_detail_view_play_next_button(
     sample_library_dictionary: Dict[str, Any], qtbot: Any
