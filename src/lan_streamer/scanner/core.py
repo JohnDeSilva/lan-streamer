@@ -480,6 +480,7 @@ def scan_series(
                 series_data,
                 existing_series_data,
                 existing_episodes_by_path,
+                force_refresh,
                 single_item_refresh,
             )
         )
@@ -526,6 +527,7 @@ def scan_series(
                     tmdb_series,
                     jellyfin_data,
                     existing_episodes_by_path,
+                    existing_series_data,
                 )
                 series_data["seasons"][season_name]["episodes"].append(episode_record)
                 if detail_callback:
@@ -537,6 +539,39 @@ def scan_series(
                             "season": season_name,
                         },
                     )
+
+        # Add placeholders for remaining episodes in TMDB list that are not found locally
+        local_numbers = {
+            ep["tmdb_number"]
+            for ep in series_data["seasons"][season_name]["episodes"]
+            if ep.get("tmdb_number") is not None
+        }
+
+        if season_name.lower() == "specials":
+            s_idx = 0
+        else:
+            m = re.search(r"\d+", season_name)
+            s_idx = int(m.group()) if m else 1
+
+        for tmdb_ep in tmdb_episodes:
+            ep_num = tmdb_ep.get("episode_number")
+            if ep_num is not None and ep_num not in local_numbers:
+                ep_name = tmdb_ep.get("name") or "TBA"
+                formatted_name = f"S{s_idx:02d}E{ep_num:02d} - {ep_name}"
+                episode_record = {
+                    "name": formatted_name,
+                    "path": None,
+                    "tmdb_identifier": str(tmdb_ep.get("id", "")),
+                    "tmdb_episode_identifier": str(tmdb_ep.get("id", "")),
+                    "tmdb_name": tmdb_ep.get("name", ""),
+                    "tmdb_number": ep_num,
+                    "air_date": tmdb_ep.get("air_date") or "",
+                    "runtime": tmdb_ep.get("runtime") or 0,
+                    "jellyfin_id": "",
+                    "watched": False,
+                    "date_added": 0,
+                }
+                series_data["seasons"][season_name]["episodes"].append(episode_record)
 
         if detail_callback:
             detail_callback(
@@ -557,15 +592,30 @@ def scan_series(
                 found_paths = {
                     episode["path"]
                     for episode in series_data["seasons"][old_season_name]["episodes"]
+                    if episode.get("path")
+                }
+                found_numbers = {
+                    episode["tmdb_number"]
+                    for episode in series_data["seasons"][old_season_name]["episodes"]
+                    if episode.get("tmdb_number") is not None
                 }
                 for old_episode in old_season_data.get("episodes", []):
-                    if old_episode["path"] not in found_paths:
-                        logger.info(
-                            f"Preserving missing episode file '{old_episode['name']}' (non-destructive)"
-                        )
-                        series_data["seasons"][old_season_name]["episodes"].append(
-                            old_episode
-                        )
+                    old_path = old_episode.get("path")
+                    old_num = old_episode.get("tmdb_number")
+                    if old_path:
+                        if old_path not in found_paths:
+                            logger.info(
+                                f"Preserving missing episode file '{old_episode['name']}' (non-destructive)"
+                            )
+                            series_data["seasons"][old_season_name]["episodes"].append(
+                                old_episode
+                            )
+                    else:
+                        if old_num not in found_numbers:
+                            # Keep missing/placeholder episodes
+                            series_data["seasons"][old_season_name]["episodes"].append(
+                                old_episode
+                            )
                 series_data["seasons"][old_season_name]["episodes"].sort(
                     key=lambda x: natural_sort_key(x["name"])
                 )

@@ -20,6 +20,7 @@ LAN Streamer is built to play your media files directly and natively without any
 
 ### 🔍 Metadata Management
 *   **🔍 Metadata Matching**: Multi-stage search strategy to link local media to TMDB and Jellyfin entries. Includes metadata locking capabilities to prevent automatic updates during library scans, alongside targeted metadata refresh controls in details windows to manually refresh individual series or episodes.
+*   **📅 Missing & Future Episode Placeholders**: Automatically fetches and saves all episodes for a season to the local database when the first episode of that season is scanned. This optimizes API usage by eliminating redundant TMDB network calls, enables offline operations, and allows the UI to display upcoming or missing episodes immediately.
 *   **📛 TMDB & Naming Support**: Uses official **TMDB** episode and series names, with filename fallbacks for unmatched items. Downloads posters and overviews from TMDB.
 *   **⚡ API Optimization**: Proactively identifies, logs, and ignores deeply nested or non-compliant subdirectory structures within TV libraries to minimize unnecessary TMDB API calls.
 *   **🔄 Bidirectional Sync**: Syncs "Watched" status with Jellyfin servers in real-time.
@@ -37,7 +38,13 @@ LAN Streamer is built to play your media files directly and natively without any
 *   **📁 Multi-Library Support**: Organize content into multiple libraries with support for multiple root directories per library.
 *   **🏠 Combined View**: Configure a global **Combined Library View** in the settings menu to aggregate content from all or selected libraries into custom scrollable rows (e.g. Next Up, Recently Added, or custom smart queries). The main toolbar's sort and order selector dropdowns are automatically hidden when viewing the Combined Library View to prevent layout clutter.
 *   **📅 Contextual Sorting & Custom Smart Rows**: Sort libraries alphabetically (A-Z or Z-A), by date added (Newest to Oldest or Oldest to Newest), by air date (Recently Aired), or by **Next Up**. Sorting controls adapt contextually (hiding direction selectors for Next Up, and using appropriate directional labels like A-Z/Z-A or Newest to Oldest/Oldest to Newest based on the active sorting mode).
-*   **🎨 Responsive UI**: Native dark mode interface built with PySide6 (QtWidgets). Employs color-coded text (blue for unwatched, grey for watched) and a right-click context menu to quickly mark/track series, seasons, and episodes.
+*   **🎨 Responsive UI**: Native dark mode interface built with PySide6 (QtWidgets). Employs color-coded text and icons (✓ for watched, ● for unwatched, ✕ for missing, ◊ for future episodes) and a right-click context menu to quickly mark/track series, seasons, and episodes.
+*   **⌛ Missing/Future Episode Styling**: Seasons in the details view render all chronological episodes (local files and placeholders). Visual state styling is applied across all columns:
+    - **✓ Watched (Local)**: Grey text (`#888888`) with `✓ ` prefix.
+    - **● Unwatched (Local)**: Blue text (`#0e5296`) with `● ` prefix.
+    - **✕ Missing (Placeholder)**: Red text (`#ef4444`) with `✕ ` prefix for episodes already aired but not found locally.
+    - **◊ Future (Placeholder)**: Lavender text (`#a78bfa`) with `◊ ` prefix for upcoming episodes scheduled to air after today.
+    Placeholder items have disabled details buttons/context menus, and are skipped by autoplay and the main "Play Next" recommendation banner.
 *   **📊 Segmented Library Scan Progress Bar**: Displays a persistent progress bar at the very bottom of the library view during scans, segmenting by root directories and folders/series. The sub-segments dynamically sort and fill from left to right as progress is made, and a detailed status label directly above the bar displays the full root directory path and series name currently being scanned.
 *   **📜 Real-Time Log Viewer**: View streaming logs directly within a dedicated "Running Logs" tab in the Settings dialog, with log level filtering, text searching, auto-scroll toggle, clipboard copying, and compressed ZIP export functionality.
 
@@ -188,7 +195,7 @@ The application automatically tracks your playback progress and maintains a "wat
 - **Resume Playback**: If you stop a video after at least 60 seconds of playback, your position is saved. The next time you play the same file, you will be prompted to resume from where you left off.
 - **Automatic "Watched" Status**: Once playback exceeds the `watched_threshold`, the item is marked as watched in the local database. If Jellyfin integration is enabled, this status is immediately synchronized to your Jellyfin server.
 - **Threshold Logic**: If a video is marked as watched (either manually or by reaching the threshold), any saved playback position is cleared.
-- **Autoplay Next Episode**: When the current video progress reaches the completion threshold (matching `watched_threshold`), an on-screen overlay pops up in the bottom-right corner with a 20-second countdown timer. Clicking **Play Next** plays the next episode automatically, maintaining the fullscreen status. If the countdown expires or you click **Ignore**, the overlay is dismissed and you can continue watching.
+- **Autoplay Next Episode**: When the current video progress reaches the completion threshold (matching `watched_threshold`), an on-screen overlay pops up in the bottom-right corner with a 20-second countdown timer. Clicking **Play Next** plays the next episode automatically, maintaining the fullscreen status. If the countdown expires or you click **Ignore**, the overlay is dismissed. The autoplay popup and details button are hidden/disabled for future or missing episodes that do not have files.
 
 ---
 

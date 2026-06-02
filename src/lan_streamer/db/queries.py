@@ -422,6 +422,10 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
                 current_index + 1
             ]
 
+            if not next_episode.path:
+                logger.info("Next episode has no file path (placeholder).")
+                return None
+
             result = {
                 "title": next_episode.tmdb_name
                 if next_episode.tmdb_name

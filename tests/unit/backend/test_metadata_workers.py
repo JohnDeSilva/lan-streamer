@@ -244,16 +244,17 @@ def test_series_metadata_embed_worker_success(tmp_path: Path) -> None:
 
 
 def test_series_metadata_embed_worker_skips_empty_path() -> None:
-    """Episodes with an empty path should be silently skipped."""
+    """Episodes with an empty or None path should be silently skipped."""
     episodes: List[Dict[str, Any]] = [
         {"path": "", "tmdb_name": "Ghost Episode"},
+        {"path": None, "tmdb_name": "Ghost Episode 2"},
     ]
 
     finished_emitted: List[bool] = []
     worker = SeriesMetadataEmbedWorker("Test Series", episodes)
     worker.finished.connect(lambda: finished_emitted.append(True))
 
-    # subprocess.run must never be called for an empty path
+    # subprocess.run must never be called for an empty or None path
     with patch("subprocess.run") as mock_run:
         worker.run()
         mock_run.assert_not_called()

@@ -1555,13 +1555,14 @@ class VideoPlayerWidget(QWidget):
                 config.enable_next_episode_popup
                 and not self.next_episode_popup_shown
                 and self.next_episode_info is not None
+                and self.next_episode_info.get("path")
                 and (curr_time / duration) >= 0.98
             ):
                 self.show_next_episode_popup()
 
     def show_next_episode_popup(self) -> None:
         """Shows the next episode popup overlay with next episode details."""
-        if not self.next_episode_info:
+        if not self.next_episode_info or not self.next_episode_info.get("path"):
             return
 
         self.next_episode_popup_shown = True

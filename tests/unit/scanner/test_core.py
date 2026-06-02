@@ -84,8 +84,10 @@ def test_scan_directories_with_mock(tmp_path) -> None:
 
     assert "Series B" in library
     sb_eps = library["Series B"]["seasons"]["Season 1"]["episodes"]
-    assert len(sb_eps) == 1
+    assert len(sb_eps) == 2
     assert sb_eps[0]["name"] == "S01E01.mkv"
+    assert sb_eps[1]["name"] == "S01E02 - TBA"
+    assert sb_eps[1]["path"] is None
 
 
 def test_scan_directories_empty_list() -> None:

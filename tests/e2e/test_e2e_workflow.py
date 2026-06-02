@@ -289,8 +289,41 @@ def test_library_grid_view_combined_view(qtbot: Any) -> None:
 def test_series_detail_view_rendering(
     sample_library_dictionary: Dict[str, Any], qtbot: Any
 ) -> None:
+    import copy
+    import datetime
+
+    today = datetime.date.today()
+    future_date = (today + datetime.timedelta(days=10)).isoformat()
+    past_date = (today - datetime.timedelta(days=10)).isoformat()
+
+    local_dict = copy.deepcopy(sample_library_dictionary)
+    local_dict["Cosmos"]["seasons"]["Season 1"]["episodes"].extend(
+        [
+            {
+                "name": "S01E03 - Missing Episode",
+                "path": None,  # Missing
+                "watched": False,
+                "tmdb_number": 3,
+                "tmdb_name": "Missing Episode",
+                "date_added": 0,
+                "air_date": past_date,
+                "runtime": 45,
+            },
+            {
+                "name": "S01E04 - Future Episode",
+                "path": None,  # Future
+                "watched": False,
+                "tmdb_number": 4,
+                "tmdb_name": "Future Episode",
+                "date_added": 0,
+                "air_date": future_date,
+                "runtime": 50,
+            },
+        ]
+    )
+
     controller_instance = Controller()
-    controller_instance.cached_library_data = sample_library_dictionary
+    controller_instance.cached_library_data = local_dict
     controller_instance._cache_series_metrics()
 
     detail_view = SeriesDetailView(controller_instance)
@@ -312,16 +345,33 @@ def test_series_detail_view_rendering(
     table_widget: Optional[Any] = page_widget.findChild(QTableWidget)
     assert isinstance(table_widget, QTableWidget)
     assert table_widget.columnCount() == 5
-    assert table_widget.rowCount() == 2
+    assert table_widget.rowCount() == 4
+
+    # Unwatched local episode
     table_item = table_widget.item(0, 1)
     assert table_item is not None
-    assert table_item.text() == "The Shores of the Cosmic Ocean"
+    assert table_item.text() == "●  The Shores of the Cosmic Ocean"
     air_date_item = table_widget.item(0, 2)
     assert air_date_item is not None
     assert air_date_item.text() == "1980-09-28"
     runtime_item = table_widget.item(0, 3)
     assert runtime_item is not None
     assert runtime_item.text() == "60 min"
+
+    # Watched local episode
+    table_item_watched = table_widget.item(1, 1)
+    assert table_item_watched is not None
+    assert table_item_watched.text() == "✓  One Voice in the Cosmic Fugue"
+
+    # Missing episode placeholder
+    table_item_missing = table_widget.item(2, 1)
+    assert table_item_missing is not None
+    assert table_item_missing.text() == "✕  Missing Episode"
+
+    # Future episode placeholder
+    table_item_future = table_widget.item(3, 1)
+    assert table_item_future is not None
+    assert table_item_future.text() == "◊  Future Episode"
 
 
 def test_series_detail_view_play_next_button(
