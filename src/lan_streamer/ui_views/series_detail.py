@@ -204,23 +204,45 @@ class SeriesDetailView(QWidget):
         except AttributeError:
             sorted_season_names = sorted(seasons_dictionary.keys())
 
+        # Filter seasons to only those having 1 or more episodes (at least one local episode)
+        filtered_season_names = []
+        for season_name in sorted_season_names:
+            season_data = seasons_dictionary.get(season_name, {})
+            episodes_list = season_data.get("episodes", [])
+            if any(ep.get("path") for ep in episodes_list):
+                filtered_season_names.append(season_name)
+        sorted_season_names = filtered_season_names
+
         # Determine next unwatched episode in natural order
         next_episode_path: Optional[str] = None
         next_episode_season_num: Optional[str] = None
         next_episode_num: Optional[str] = None
 
+        def episode_sort_key(ep: Dict[str, Any]) -> tuple:
+            num = ep.get("tmdb_number")
+            if num is not None:
+                try:
+                    return (int(num), ep.get("name", ""))
+                except ValueError, TypeError:
+                    pass
+            name_str = ep.get("name", "")
+            parsed = re.search(r"[Ee](\d+)", name_str)
+            if parsed:
+                return (int(parsed.group(1)), name_str)
+            return (999999, name_str)
+
         for season_name in sorted_season_names:
             season_data = seasons_dictionary.get(season_name, {})
             episodes_list = season_data.get("episodes", [])
             try:
-                sorted_episodes = sorted(
-                    episodes_list, key=lambda x: db.natural_sort_key(x.get("name", ""))
-                )
+                sorted_episodes = sorted(episodes_list, key=episode_sort_key)
             except Exception:
                 sorted_episodes = episodes_list
 
             for index, episode_record in enumerate(sorted_episodes):
-                if not episode_record.get("watched", False):
+                if not episode_record.get("watched", False) and episode_record.get(
+                    "path"
+                ):
                     next_episode_path = episode_record.get("path", "")
 
                     season_num_match = re.search(r"\d+", season_name)
@@ -249,9 +271,18 @@ class SeriesDetailView(QWidget):
             self._next_episode_path = ""
             self.play_next_button.setVisible(False)
 
+        import datetime
+
+        today_str = datetime.date.today().isoformat()
+
         for season_name in sorted_season_names:
             season_data: Dict[str, Any] = seasons_dictionary.get(season_name, {})
             episodes_list: List[Dict[str, Any]] = season_data.get("episodes", [])
+
+            try:
+                sorted_episodes = sorted(episodes_list, key=episode_sort_key)
+            except Exception:
+                sorted_episodes = episodes_list
 
             # Create an explicit QTableWidget layout for absolute robust item targeting under automated tests
             episode_table: QTableWidget = QTableWidget()
@@ -283,7 +314,7 @@ class SeriesDetailView(QWidget):
             episode_table.verticalHeader().setDefaultSectionSize(32)
             episode_table.setShowGrid(False)
 
-            episode_table.setRowCount(len(episodes_list))
+            episode_table.setRowCount(len(sorted_episodes))
 
             def make_cell_clicked_slot(
                 episode_list: List[Dict[str, Any]],
@@ -296,9 +327,9 @@ class SeriesDetailView(QWidget):
 
                 return slot
 
-            episode_table.cellClicked.connect(make_cell_clicked_slot(episodes_list))
+            episode_table.cellClicked.connect(make_cell_clicked_slot(sorted_episodes))
 
-            for row_index, episode_record in enumerate(episodes_list):
+            for row_index, episode_record in enumerate(sorted_episodes):
                 tmdb_number_value: Optional[int] = episode_record.get("tmdb_number")
                 number_string: str = (
                     str(tmdb_number_value)
@@ -313,11 +344,40 @@ class SeriesDetailView(QWidget):
                     else episode_record.get("name", "Unknown")
                 )
 
-                absolute_path: str = episode_record.get("path", "")
+                absolute_path: str = episode_record.get("path") or ""
                 is_watched: bool = bool(episode_record.get("watched", False))
                 air_date_string: str = episode_record.get("air_date") or ""
                 runtime_value: int = episode_record.get("runtime", 0)
                 runtime_string: str = f"{runtime_value} min" if runtime_value else ""
+
+                # Determine styling and icons based on state
+                if absolute_path:
+                    if is_watched:
+                        text_color = QColor("#888888")
+                        icon_str = "✓  "
+                    else:
+                        text_color = QColor("#0e5296")
+                        icon_str = "●  "
+                else:
+                    is_missing = False
+                    if air_date_string:
+                        try:
+                            air_date_obj = datetime.date.fromisoformat(air_date_string)
+                            today_obj = datetime.date.today()
+                            if air_date_obj < today_obj:
+                                is_missing = True
+                        except ValueError:
+                            if air_date_string < today_str:
+                                is_missing = True
+
+                    if is_missing:
+                        text_color = QColor("#ef4444")  # Bright Red
+                        icon_str = "✕  "
+                    else:
+                        text_color = QColor("#a78bfa")  # Lavender/purple
+                        icon_str = "◊  "
+
+                display_title = f"{icon_str}{title_string}"
 
                 # Column 0: Details Button
                 details_button: QPushButton = QPushButton("...")
@@ -325,16 +385,20 @@ class SeriesDetailView(QWidget):
                 details_button.setObjectName(f"detailsEpisodeButton_{row_index}")
                 details_button.setStyleSheet("padding: 2px 8px; font-weight: bold;")
 
-                def make_details_slot(
-                    target_series: str, target_path: str
-                ) -> Callable[[], None]:
-                    return lambda: self.controller.episode_details_requested.emit(
-                        target_series, target_path
-                    )
+                if absolute_path:
 
-                details_button.clicked.connect(
-                    make_details_slot(series_name, absolute_path)
-                )
+                    def make_details_slot(
+                        target_series: str, target_path: str
+                    ) -> Callable[[], None]:
+                        return lambda: self.controller.episode_details_requested.emit(
+                            target_series, target_path
+                        )
+
+                    details_button.clicked.connect(
+                        make_details_slot(series_name, absolute_path)
+                    )
+                else:
+                    details_button.setEnabled(False)
 
                 details_container: QWidget = QWidget()
                 details_container.setStyleSheet("background-color: transparent;")
@@ -344,19 +408,14 @@ class SeriesDetailView(QWidget):
                 details_layout.addWidget(details_button)
                 episode_table.setCellWidget(row_index, 4, details_container)
 
-                # Determine distinctive color: unwatched blue (#0e5296), watched grey (#888888)
-                text_color: QColor = (
-                    QColor("#888888") if is_watched else QColor("#0e5296")
-                )
-
                 # Render table item entities cleanly
                 number_item: QTableWidgetItem = QTableWidgetItem(number_string)
                 number_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 number_item.setForeground(text_color)
                 episode_table.setItem(row_index, 0, number_item)
 
-                title_item: QTableWidgetItem = QTableWidgetItem(title_string)
-                title_item.setToolTip("Click to play episode")
+                title_item: QTableWidgetItem = QTableWidgetItem(display_title)
+                title_item.setToolTip("Click to play episode" if absolute_path else "")
                 title_item.setForeground(text_color)
                 episode_table.setItem(row_index, 1, title_item)
 
@@ -379,6 +438,9 @@ class SeriesDetailView(QWidget):
                         return
                     row: int = item.row()
                     episode: Dict[str, Any] = episode_list[row]
+                    if not episode.get("path"):
+                        return
+
                     menu: QMenu = QMenu(table)
 
                     is_watched: bool = bool(episode.get("watched", False))
@@ -404,7 +466,7 @@ class SeriesDetailView(QWidget):
 
             episode_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             episode_table.customContextMenuRequested.connect(
-                make_context_menu_slot(episode_table, season_name, episodes_list)
+                make_context_menu_slot(episode_table, season_name, sorted_episodes)
             )
 
             # Create season_page container to house the table and mark season watched button cleanly

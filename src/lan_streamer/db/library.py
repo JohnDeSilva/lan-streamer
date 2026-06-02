@@ -262,14 +262,38 @@ def _save_episode_record(
     session: Session,
     season: Season,
     episode_data: Dict[str, Any],
-    existing_episodes: Dict[str, Episode],
+    existing_by_path: Dict[str, Episode],
+    existing_by_number: Dict[int, Episode],
     stats: Dict[str, int],
 ) -> Episode:
-    path = episode_data["path"]
-    episode = existing_episodes.get(path)
+    path = episode_data.get("path") or None
+    tmdb_num = episode_data.get("tmdb_number")
+
+    episode = None
+    if path:
+        episode = existing_by_path.get(path)
+        # If not found by path, check if there was a missing/future episode placeholder
+        if not episode and tmdb_num is not None:
+            episode = existing_by_number.get(tmdb_num)
+            if episode:
+                # Promote placeholder to local file
+                logger.info(
+                    f"Promoting placeholder episode S{season.name} E{tmdb_num} to local path {path}"
+                )
+                episode.path = path
+                existing_by_path[path] = episode
+                existing_by_number.pop(tmdb_num, None)
+    elif tmdb_num is not None:
+        episode = existing_by_number.get(tmdb_num)
+
     if not episode:
         episode = Episode(path=path, season=season)
         session.add(episode)
+        if path:
+            existing_by_path[path] = episode
+        elif tmdb_num is not None:
+            existing_by_number[tmdb_num] = episode
+
     stats["episodes"] += 1
 
     episode.name = episode_data["name"]
@@ -347,15 +371,22 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
                         stats,
                     )
 
-                    existing_episodes = {
-                        episode_obj.path: episode_obj
-                        for episode_obj in season.episodes
-                        if episode_obj.path is not None
-                    }
+                    existing_by_path = {}
+                    existing_by_number = {}
+                    for episode_obj in season.episodes:
+                        if episode_obj.path is not None:
+                            existing_by_path[episode_obj.path] = episode_obj
+                        elif episode_obj.tmdb_number is not None:
+                            existing_by_number[episode_obj.tmdb_number] = episode_obj
 
                     for episode_data in season_data.get("episodes", []):
                         _save_episode_record(
-                            session, season, episode_data, existing_episodes, stats
+                            session,
+                            season,
+                            episode_data,
+                            existing_by_path,
+                            existing_by_number,
+                            stats,
                         )
 
     except Exception:
