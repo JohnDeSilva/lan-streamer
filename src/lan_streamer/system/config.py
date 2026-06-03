@@ -70,6 +70,7 @@ class Config:
                 "filter_mode": "All",
             },
         ]
+        self.series_preferences: Dict[str, Dict[str, Any]] = {}
         self.load()
 
     def load(self) -> None:
@@ -207,6 +208,7 @@ class Config:
                         f"Loaded combined view settings: enabled={self.enable_combined_view}, "
                         f"row_count={len(self.combined_views)}"
                     )
+                    self.series_preferences = data.get("series_preferences", {})
 
                     if "libraries" in data:
                         raw_libraries = data["libraries"]
@@ -288,12 +290,28 @@ class Config:
                         "database_backup_retention": self.database_backup_retention,
                         "enable_combined_view": self.enable_combined_view,
                         "combined_views": self.combined_views,
+                        "series_preferences": self.series_preferences,
                     },
                     f,
                     indent=4,
                 )
         except Exception:
             logger.exception("Error saving config")
+
+    def get_series_preference(
+        self, library_name: str, series_name: str, key: str, default: Any = None
+    ) -> Any:
+        pref_key = f"{library_name}:{series_name}"
+        return self.series_preferences.get(pref_key, {}).get(key, default)
+
+    def set_series_preference(
+        self, library_name: str, series_name: str, key: str, value: Any
+    ) -> None:
+        pref_key = f"{library_name}:{series_name}"
+        if pref_key not in self.series_preferences:
+            self.series_preferences[pref_key] = {}
+        self.series_preferences[pref_key][key] = value
+        self.save()
 
     def add_library(self, name: str, library_type: str = "tv") -> None:
         logger.info(f"Adding library '{name}' with type '{library_type}'")
