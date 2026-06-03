@@ -563,6 +563,8 @@ def get_combined_smart_row(
 
                 for season in series.seasons:
                     for ep in season.episodes:
+                        if ep.path is None:
+                            continue
                         total_episodes += 1
                         if ep.watched:
                             watched_episodes += 1

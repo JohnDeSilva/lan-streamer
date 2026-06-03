@@ -1690,8 +1690,18 @@ def test_library_grid_view_next_up_sorting(qtbot: Any) -> None:
             "seasons": {
                 "Season 1": {
                     "episodes": [
-                        {"watched": False, "last_played_at": 3000, "date_added": 1000},
-                        {"watched": True, "last_played_at": 1000, "date_added": 1000},
+                        {
+                            "path": "/tv/cosmos/s01e01.mkv",
+                            "watched": False,
+                            "last_played_at": 3000,
+                            "date_added": 1000,
+                        },
+                        {
+                            "path": "/tv/cosmos/s01e02.mkv",
+                            "watched": True,
+                            "last_played_at": 1000,
+                            "date_added": 1000,
+                        },
                     ]
                 }
             },
@@ -1704,7 +1714,12 @@ def test_library_grid_view_next_up_sorting(qtbot: Any) -> None:
             "seasons": {
                 "Season 1": {
                     "episodes": [
-                        {"watched": True, "last_played_at": 5000, "date_added": 1000},
+                        {
+                            "path": "/tv/trek/s01e01.mkv",
+                            "watched": True,
+                            "last_played_at": 5000,
+                            "date_added": 1000,
+                        },
                     ]
                 }
             },
@@ -1717,7 +1732,12 @@ def test_library_grid_view_next_up_sorting(qtbot: Any) -> None:
             "seasons": {
                 "Season 1": {
                     "episodes": [
-                        {"watched": False, "last_played_at": 0, "date_added": 1000},
+                        {
+                            "path": "/tv/who/s01e01.mkv",
+                            "watched": False,
+                            "last_played_at": 0,
+                            "date_added": 1000,
+                        },
                     ]
                 }
             },
@@ -1759,7 +1779,12 @@ def test_library_grid_view_bidirectional_sorting(qtbot: Any) -> None:
             "seasons": {
                 "Season 1": {
                     "episodes": [
-                        {"watched": False, "last_played_at": 1000, "date_added": 1000},
+                        {
+                            "path": "/tv/aseries/s01e01.mkv",
+                            "watched": False,
+                            "last_played_at": 1000,
+                            "date_added": 1000,
+                        },
                     ]
                 }
             },
@@ -1769,7 +1794,12 @@ def test_library_grid_view_bidirectional_sorting(qtbot: Any) -> None:
             "seasons": {
                 "Season 1": {
                     "episodes": [
-                        {"watched": False, "last_played_at": 2000, "date_added": 2000},
+                        {
+                            "path": "/tv/zseries/s01e01.mkv",
+                            "watched": False,
+                            "last_played_at": 2000,
+                            "date_added": 2000,
+                        },
                     ]
                 }
             },
@@ -1878,6 +1908,7 @@ def test_library_grid_view_recently_aired_sorting(qtbot: Any) -> None:
                             "last_played_at": 0,
                             "date_added": 1000,
                             "air_date": "2000-06-15",
+                            "path": "/old_show_s01e01.mkv",
                         },
                     ]
                 }
@@ -1893,6 +1924,7 @@ def test_library_grid_view_recently_aired_sorting(qtbot: Any) -> None:
                             "last_played_at": 0,
                             "date_added": 2000,
                             "air_date": "2024-06-15",
+                            "path": "/new_show_s01e01.mkv",
                         },
                     ]
                 }
@@ -2032,7 +2064,7 @@ def test_combined_view_scan_button(qtbot: Any) -> None:
                 QPushButton
             )
             assert combined_scan_button is not None
-            assert combined_scan_button.text() == "Scan New Files"
+            assert combined_scan_button.text() == "Scan & Update"
             combined_scan_button.click()
             mock_scan_all.assert_called_once_with(False)
 

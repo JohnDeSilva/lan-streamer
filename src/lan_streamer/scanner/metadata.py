@@ -426,7 +426,7 @@ def _process_series_metadata(
     force_refresh: bool,
     cleanup: bool,
     single_item_refresh: bool = False,
-) -> tuple[Dict[str, Any], bool, Dict[str, Any] | None, Dict[str, Any]]:
+) -> tuple[Dict[str, Any], bool, Dict[str, Any] | None, Dict[str, Any], bool]:
     series_name = series_directory.name
 
     existing_episodes_by_path: Dict[str, Any] = {}
@@ -494,7 +494,7 @@ def _process_series_metadata(
                         ]
                 if not episode.get("runtime"):
                     episode["runtime"] = 0
-        return series_data, True, tmdb_series, existing_episodes_by_path
+        return series_data, True, tmdb_series, existing_episodes_by_path, force_refresh
 
     if tmdb_series and "name" not in tmdb_series and "id" in tmdb_series:
         if single_item_refresh or not series_metadata.get("tmdb_name"):
@@ -504,13 +504,18 @@ def _process_series_metadata(
 
     if not tmdb_series:
         if series_metadata["tmdb_identifier"]:
-            tmdb_series = {
-                "id": series_metadata["tmdb_identifier"],
-                "name": series_metadata["tmdb_name"],
-                "overview": series_metadata["overview"],
-                "poster_path": series_metadata["poster_path"],
-                "first_air_date": series_metadata.get("first_air_date", ""),
-            }
+            if force_refresh or single_item_refresh:
+                full = tmdb_client.get_series_by_id(series_metadata["tmdb_identifier"])
+                if full:
+                    tmdb_series = full
+            if not tmdb_series:
+                tmdb_series = {
+                    "id": series_metadata["tmdb_identifier"],
+                    "name": series_metadata["tmdb_name"],
+                    "overview": series_metadata["overview"],
+                    "poster_path": series_metadata["poster_path"],
+                    "first_air_date": series_metadata.get("first_air_date", ""),
+                }
         elif not is_locked and (
             single_item_refresh
             or not existing_series_data
@@ -557,7 +562,7 @@ def _process_series_metadata(
         "_jellyfin_id": "",
     }
 
-    return series_data, False, tmdb_series, existing_episodes_by_path
+    return series_data, False, tmdb_series, existing_episodes_by_path, force_refresh
 
 
 def _process_season_metadata(

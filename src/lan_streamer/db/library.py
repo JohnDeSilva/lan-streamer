@@ -91,8 +91,11 @@ def _cleanup_tv_library(
     stats: Dict[str, int],
 ) -> None:
     """
-    Removes Series/Season/Episode records whose corresponding paths no longer
-    exist on disk, then purges any empty seasons or series left behind.
+    Removes Series records whose folder no longer exists in any root directory.
+    For series whose folder still exists, sets episode.path = None for any
+    episode file that is no longer present on disk (rather than deleting the record).
+    Season and episode records are never deleted independently — only cascade-deleted
+    when the parent series record is removed.
     """
     series_list = session.scalars(
         select(Series).where(Series.library_name == library_name)
@@ -112,64 +115,16 @@ def _cleanup_tv_library(
             stats["series"] += 1
             continue
 
+        # Series folder still exists — null out paths for files that are gone
         for season in series.seasons:
-            season_path_exists = any(
-                series.name
-                and season.name
-                and (Path(root) / series.name / season.name).is_dir()
-                for root in root_directories
-            )
-            if not season_path_exists:
-                logger.info(
-                    f"Cleanup: Removing missing season '{season.name}' "
-                    f"from series '{series.name}'"
-                )
-                stats["episodes"] += len(season.episodes)
-                session.delete(season)
-                stats["seasons"] += 1
-                continue
-
             for episode in season.episodes:
                 if episode.path and not Path(episode.path).exists():
                     logger.info(
-                        f"Cleanup: Removing missing episode '{episode.name}' "
-                        f"at '{episode.path}'"
+                        f"Cleanup: Setting path=None for missing episode "
+                        f"'{episode.name}' (was '{episode.path}')"
                     )
-                    session.delete(episode)
+                    episode.path = None
                     stats["episodes"] += 1
-
-    # Purge seasons and series that became empty after episode deletion
-    session.flush()
-    session.expire_all()
-
-    empty_seasons = session.scalars(
-        select(Season)
-        .join(Series)
-        .where(Series.library_name == library_name)
-        .where(~Season.episodes.any())
-    ).all()
-    for season in empty_seasons:
-        season_series_name = (
-            season.series.name if season.series and season.series.name else "Unknown"
-        )
-        logger.info(
-            f"Cleanup: Removing empty season '{season.name}' "
-            f"from series '{season_series_name}'"
-        )
-        session.delete(season)
-        stats["seasons"] += 1
-
-    session.flush()
-
-    empty_series = session.scalars(
-        select(Series)
-        .where(Series.library_name == library_name)
-        .where(~Series.seasons.any())
-    ).all()
-    for series in empty_series:
-        logger.info(f"Cleanup: Removing empty series '{series.name}'")
-        session.delete(series)
-        stats["series"] += 1
 
 
 def load_library(library_name: str) -> Dict[str, Any]:
@@ -274,7 +229,7 @@ def _save_episode_record(
         episode = existing_by_path.get(path)
         # If not found by path, check if there was a missing/future episode placeholder
         if not episode and tmdb_num is not None:
-            episode = existing_by_number.get(tmdb_num)
+            episode = existing_by_number.pop(tmdb_num, None)
             if episode:
                 # Promote placeholder to local file
                 logger.info(
@@ -282,17 +237,14 @@ def _save_episode_record(
                 )
                 episode.path = path
                 existing_by_path[path] = episode
-                existing_by_number.pop(tmdb_num, None)
     elif tmdb_num is not None:
-        episode = existing_by_number.get(tmdb_num)
+        episode = existing_by_number.pop(tmdb_num, None)
 
     if not episode:
         episode = Episode(path=path, season=season)
         session.add(episode)
         if path:
             existing_by_path[path] = episode
-        elif tmdb_num is not None:
-            existing_by_number[tmdb_num] = episode
 
     stats["episodes"] += 1
 

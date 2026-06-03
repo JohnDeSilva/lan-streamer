@@ -106,8 +106,13 @@ class LibraryGridView(QWidget):
         actions_toolbar_layout.setContentsMargins(0, 0, 0, 0)
         actions_toolbar_layout.setSpacing(10)
 
-        scan_button: QPushButton = QPushButton("Scan New Files")
-        scan_button.clicked.connect(lambda: self.controller.trigger_scan(False))
+        scan_button: QPushButton = QPushButton("Scan & Update")
+        scan_button.setToolTip(
+            "Scan for new files and update paths for moved or deleted episodes"
+        )
+        scan_button.clicked.connect(
+            lambda: self.controller.trigger_scan_and_update(False)
+        )
         actions_toolbar_layout.addWidget(scan_button)
 
         refresh_all_button: QPushButton = QPushButton("Refresh Metadata")
@@ -122,10 +127,6 @@ class LibraryGridView(QWidget):
         push_history_button.clicked.connect(self.controller.trigger_jellyfin_push)
         actions_toolbar_layout.addWidget(push_history_button)
 
-        cleanup_button: QPushButton = QPushButton("Cleanup")
-        cleanup_button.clicked.connect(self.controller.trigger_cleanup)
-        actions_toolbar_layout.addWidget(cleanup_button)
-
         actions_toolbar_layout.addStretch()
         main_layout.addWidget(self.actions_toolbar_widget)
 
@@ -137,7 +138,10 @@ class LibraryGridView(QWidget):
         combined_actions_toolbar_layout.setContentsMargins(0, 0, 0, 0)
         combined_actions_toolbar_layout.setSpacing(10)
 
-        combined_scan_button: QPushButton = QPushButton("Scan New Files")
+        combined_scan_button: QPushButton = QPushButton("Scan & Update")
+        combined_scan_button.setToolTip(
+            "Scan for new files and update paths for moved or deleted episodes"
+        )
         combined_scan_button.clicked.connect(self.trigger_combined_scan)
         combined_actions_toolbar_layout.addWidget(combined_scan_button)
 
@@ -391,6 +395,9 @@ class LibraryGridView(QWidget):
                 total_episodes > 0 and watched_episodes == total_episodes
             )
             if self.controller.filter_out_watched and is_fully_watched:
+                continue
+
+            if not is_movie and total_episodes == 0:
                 continue
 
             first_air_date: str = (

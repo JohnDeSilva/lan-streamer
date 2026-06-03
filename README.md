@@ -27,11 +27,11 @@ LAN Streamer is built to play your media files directly and natively without any
 *   **🗨️ Subtitle Search**: Integrated **OpenSubtitles.com** support for searching and downloading subtitles directly within the app.
 
 ### 📁 File Management
-*   **⚡ Library Scanning**: Uses SQLite `UPSERT` logic for incremental scanning, preserving manual metadata corrections. Displays a detailed, real-time scan progress dashboard in the settings menu:
+*   **⚡ Library Scanning & Cleanup**: Combined "Scan & Update" action that scans for new files and automatically updates paths for moved or missing files in a single pass. Displays a detailed, real-time scan progress dashboard.
 *   **🏷️ Media Renamer**: Utility to rename local files to match official metadata standards.
 *   **📦 Metadata Embedding**: Background FFmpeg integration to write and embed metadata directly into the video containers of individual movies, episodes, or entire TV series.
 *   **💬 Subtitle Embedding**: Merges downloaded or external subtitle files directly into the video container using background FFmpeg workers.
-*   **🧹 Library Cleanup**: Tool to remove missing files and stale database entries while maintaining metadata integrity.
+*   **🧹 Library Cleanup**: Tool to remove missing files and stale database entries while maintaining metadata integrity, accessible from the settings dialog.
 *   **🛡️ Graceful Offline Handling**: Gracefully handles temporarily unavailable files and root directories (e.g. disconnected NAS or external drives) during a scan, preventing data loss or premature library cleanup.
 
 ### 🎨 UI & Settings Features
@@ -103,11 +103,11 @@ make run
 > **Standalone Executables**: The pre-compiled Linux, macOS, and Windows executables feature **smart VLC plugin discovery**. They will automatically scan your system for native VLC plugins upon startup, allowing advanced rendering flags (like `--swscale-mode=2`) to function natively without any manual `VLC_PLUGIN_PATH` configuration. If plugins are completely missing, the player gracefully falls back to default settings to prevent crashes.
 
 ### Setup Guide
-1.  **Configure TMDB**: Go to **Metadata > TMDB Settings...** and enter your API Key.
-2.  **Configure Jellyfin (Optional)**: In **Watch History > Jellyfin Settings**, enter your Server URL and API Key.
-3.  **Configure OpenSubtitles (Optional)**: In the **Remote APIs** settings tab, enter your OpenSubtitles credentials and API Key.
-4.  **Add Libraries**: Define media roots in **Settings > Manage Libraries...**.
-5.  **Scan Library**: Trigger initial scanning in **Metadata > Check for New Files and Fetch Metadata**.
+1.  **Configure TMDB**: Click **Settings...** in the main window toolbar, go to the **Remote API's** tab, and enter your TMDB API Key.
+2.  **Configure Jellyfin (Optional)**: In **Settings... > Remote API's**, enter your Jellyfin Server URL and API Key.
+3.  **Configure OpenSubtitles (Optional)**: In **Settings... > Remote API's**, enter your OpenSubtitles credentials and API Key.
+4.  **Add Libraries**: Click **Settings...** and go to **Libraries Setup** to define your media library roots and settings.
+5.  **Scan Library**: Click the **Scan & Update** button at the bottom of the main window to scan for files, or click **Refresh Metadata** to force a full update from TMDB.
 
 ---
 
