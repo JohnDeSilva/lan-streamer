@@ -1,3 +1,10 @@
+## v0.23.0 (2026-06-03)
+
+### Feat
+
+- add TMDB episode group mapping support with UI dialog and metadata persistence
+- adds support for alternate TMDB episode display groups in series detail view as well as handling for series that use absolute ordering
+
 ## v0.22.3 (2026-06-02)
 
 ### Fix
