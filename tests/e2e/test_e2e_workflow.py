@@ -2060,7 +2060,7 @@ def test_combined_view_scan_button(qtbot: Any) -> None:
                 QPushButton
             )
             assert combined_scan_button is not None
-            assert combined_scan_button.text() == "Scan & Update"
+            assert combined_scan_button.text() == "Scan Library"
             combined_scan_button.click()
             mock_scan_all.assert_called_once_with(False)
 

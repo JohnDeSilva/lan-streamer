@@ -440,7 +440,7 @@ class Controller(QObject):
         series_removed: int = statistics.get("series", 0)
         episodes_nulled: int = statistics.get("episodes", 0)
         self.status_changed.emit(
-            f"Scan & Update complete. "
+            f"Scan Library complete. "
             f"{series_removed} series removed, {episodes_nulled} episode paths updated."
         )
         self.scan_completed.emit()
