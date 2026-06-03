@@ -54,3 +54,26 @@ def test_settings_dialog_library_scan_order(qtbot) -> None:
             mock_save.assert_called_once()
 
         dialog.reject()
+
+
+def test_settings_dialog_combined_view_comboboxes(qtbot) -> None:
+    from lan_streamer.ui_views.dialogs.settings import SettingsDialog
+
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    # Verify "Next Up" is present in Sort By options
+    sort_items = [
+        dialog.row_sort_selector.itemText(i)
+        for i in range(dialog.row_sort_selector.count())
+    ]
+    assert "Next Up" in sort_items
+
+    # Verify "Next Up" is NOT present in Filter Mode options
+    filter_items = [
+        dialog.row_filter_selector.itemText(i)
+        for i in range(dialog.row_filter_selector.count())
+    ]
+    assert "Next Up" not in filter_items
+
+    dialog.reject()
