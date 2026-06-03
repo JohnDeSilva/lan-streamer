@@ -33,3 +33,4 @@ These rules apply to all AI coding assistants working on this repository.
 *   **Verification**: Always run `make test` after changes. Run `make lint` as the **FINAL** step after all updates are complete.
 *   **Coverage**: Maintain a minimum of **90% code coverage**.
 *   **Migrations**: If you modify the database schema, generate a new Alembic revision using `make revision name="description"`. **MANDATORY**: Ensure `make migrate` is run to apply changes.
+*   **Documentation**: **MANDATORY**: Ensure `README.md` and any other relevant documentation or walkthroughs are updated immediately after making changes to features, UI, or configuration options to keep documentation in sync with the codebase.
