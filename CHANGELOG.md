@@ -1,3 +1,9 @@
+## v0.22.1 (2026-06-02)
+
+### Fix
+
+- update library cleanup to nullify missing episode paths instead of deleting records and implement forced TMDB metadata refresh
+
 ## v0.22.0 (2026-06-02)
 
 ### Feat
