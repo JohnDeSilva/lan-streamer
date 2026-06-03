@@ -36,6 +36,7 @@ class Series(Base):
     tmdb_name: Mapped[Optional[str]] = mapped_column(String)
     locked_metadata: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     first_air_date: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_episode_group_id: Mapped[Optional[str]] = mapped_column(String)
 
     seasons: Mapped[List["Season"]] = relationship(
         "Season",

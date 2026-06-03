@@ -463,6 +463,10 @@ def _process_series_metadata(
         for key, value in ext_metadata.items():
             if value:
                 series_metadata[key] = value
+        if "tmdb_episode_group_id" in ext_metadata:
+            series_metadata["tmdb_episode_group_id"] = ext_metadata[
+                "tmdb_episode_group_id"
+            ]
         if manual_jellyfin_id:
             series_metadata["jellyfin_id"] = manual_jellyfin_id
 
@@ -543,9 +547,29 @@ def _process_series_metadata(
 
         if tmdb_identifier and not is_locked:
             if force_refresh or single_item_refresh or not existing_series_data:
-                episode_group_details = tmdb_client.get_season_based_episode_group(
-                    tmdb_identifier
+                episode_group_details = None
+                existing_metadata = (
+                    existing_series_data.get("metadata", {})
+                    if existing_series_data
+                    else {}
                 )
+                saved_group_id = existing_metadata.get("tmdb_episode_group_id")
+                if saved_group_id:
+                    try:
+                        episode_group_details = tmdb_client.get_episode_group_details(
+                            saved_group_id
+                        )
+                        logger.info(
+                            f"Using saved default group ID {saved_group_id} for series '{series_name}' metadata scan"
+                        )
+                    except Exception as e:
+                        logger.exception(
+                            f"Failed to fetch saved group details {saved_group_id}: {e}"
+                        )
+                if not episode_group_details:
+                    episode_group_details = tmdb_client.get_season_based_episode_group(
+                        tmdb_identifier
+                    )
                 if (
                     episode_group_details
                     and isinstance(episode_group_details, dict)
