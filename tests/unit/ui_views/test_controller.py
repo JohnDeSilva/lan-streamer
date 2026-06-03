@@ -426,3 +426,58 @@ def test_controller_update_movie_metadata(mock_controller):
         assert (
             mock_controller.cached_library_data["Movie 1"]["tmdb_name"] == "New Movie"
         )
+
+
+def test_controller_update_metadata_match_syncs_with_episode_groups(
+    mock_controller, mock_db_save
+) -> None:
+    mock_save, _ = mock_db_save
+
+    # Make the episode name/path parseable as S01E01
+    ep = mock_controller.cached_library_data["Test Show"]["seasons"]["Season 1"][
+        "episodes"
+    ][0]
+    ep["name"] = "S01E01.mkv"
+
+    # Mock TV Episode Group details
+    mock_group_details = {
+        "id": "group-id-123",
+        "name": "TVDB Seasons",
+        "groups": [
+            {
+                "name": "Season 1",
+                "order": 1,
+                "episodes": [
+                    {
+                        "id": "ep-sync-999",
+                        "name": "Synced Episode Name",
+                        "order": 0,  # Group order is 0 (first ep)
+                        "season_number": 1,
+                        "episode_number": 10,  # Absolute number
+                        "air_date": "2020-01-02",
+                        "runtime": 50,
+                    }
+                ],
+            }
+        ],
+    }
+
+    with patch("lan_streamer.ui_views.controller.tmdb_client") as mock_tmdb:
+        mock_tmdb.get_season_based_episode_group.return_value = mock_group_details
+
+        mock_controller.apply_metadata_match(
+            "Test Show",
+            {"id": "999", "name": "Matched Show Title", "first_air_date": "2020-01-01"},
+        )
+
+        mock_tmdb.get_season_based_episode_group.assert_called_once_with("999")
+        mock_tmdb.get_episodes.assert_not_called()
+
+        updated_ep = mock_controller.cached_library_data["Test Show"]["seasons"][
+            "Season 1"
+        ]["episodes"][0]
+        assert updated_ep["tmdb_episode_identifier"] == "ep-sync-999"
+        assert updated_ep["tmdb_name"] == "Synced Episode Name"
+        assert updated_ep["runtime"] == 50
+        assert updated_ep["tmdb_number"] == 1
+        mock_save.assert_called_once()

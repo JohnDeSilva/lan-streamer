@@ -117,3 +117,133 @@ def test_series_detail_view_hide_missing_future(qtbot: Any) -> None:
 
     season_table = view._season_tables["Season 1"]
     assert season_table.rowCount() == 3
+
+
+def test_series_detail_view_alternate_display_groups(qtbot: Any) -> None:
+    controller = Controller()
+    controller.current_library_name = "TV"
+    controller.cached_library_data = {
+        "Breaking Bad": {
+            "metadata": {
+                "tmdb_identifier": "1396",
+                "tmdb_name": "Breaking Bad",
+                "overview": "A high school chemistry teacher...",
+                "poster_path": "/path/to/poster.jpg",
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "Pilot",
+                            "path": "/tv/Breaking Bad/S01E01.mkv",
+                            "watched": True,
+                            "air_date": "2008-01-20",
+                            "runtime": 58,
+                            "tmdb_episode_identifier": "62085",
+                            "tmdb_number": 1,
+                        },
+                        {
+                            "name": "Cat's in the Bag...",
+                            "path": "/tv/Breaking Bad/S01E02.mkv",
+                            "watched": False,
+                            "air_date": "2008-01-27",
+                            "runtime": 48,
+                            "tmdb_episode_identifier": "62086",
+                            "tmdb_number": 2,
+                        },
+                    ]
+                }
+            },
+        }
+    }
+
+    # Force clear config preferences to start fresh
+    config.series_preferences = {}
+
+    # Mock tmdb_client calls
+    mock_groups = [
+        {
+            "id": "alternate-group-1",
+            "name": "DVD Order",
+            "type": 3,
+        }
+    ]
+    mock_group_details = {
+        "id": "alternate-group-1",
+        "name": "DVD Order",
+        "type": 3,
+        "groups": [
+            {
+                "name": "Beta Season",
+                "order": 1,
+                "episodes": [
+                    {
+                        "id": "62086",
+                        "name": "Cat's in the Bag... (DVD Title)",
+                        "order": 0,
+                        "season_number": 1,
+                        "episode_number": 2,
+                        "air_date": "2008-01-27",
+                        "runtime": 48,
+                    }
+                ],
+            },
+            {
+                "name": "Alpha Season",
+                "order": 2,
+                "episodes": [
+                    {
+                        "id": "62085",
+                        "name": "Pilot (DVD Title)",
+                        "order": 0,
+                        "season_number": 1,
+                        "episode_number": 1,
+                        "air_date": "2008-01-20",
+                        "runtime": 58,
+                    }
+                ],
+            },
+        ],
+    }
+
+    view = SeriesDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.series_detail.Path.is_file", return_value=True),
+        patch("lan_streamer.ui_views.series_detail.QPixmap") as mock_pixmap,
+        patch.object(view.poster_label, "setPixmap"),
+        patch("lan_streamer.ui_views.series_detail.tmdb_client") as mock_tmdb,
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        mock_tmdb.get_episode_groups.return_value = mock_groups
+        mock_tmdb.get_episode_group_details.return_value = mock_group_details
+
+        view.populate_series_details("Breaking Bad")
+
+        # By default, TV Order (Default) should be selected (index 0)
+        assert view.order_combo.count() == 2
+        assert view.order_combo.itemText(0) == "TV Order (Default)"
+        assert view.order_combo.itemText(1) == "DVD Order"
+        assert view.order_combo.currentIndex() == 0
+
+        # Change display order to DVD Order
+        view.order_combo.setCurrentIndex(1)
+
+        # Tabs should display "Beta Season" first, "Alpha Season" second (chronological order)
+        # alphabetical order would put "Alpha Season" first.
+        assert view.seasons_tab_widget.count() == 2
+        assert view.seasons_tab_widget.tabText(0) == "Beta Season"
+        assert view.seasons_tab_widget.tabText(1) == "Alpha Season"
+
+        # Table Beta Season should display Cat's in the Bag
+        table_beta = view._season_tables["Beta Season"]
+        assert table_beta.rowCount() == 1
+        assert "Cat's in the Bag..." in table_beta.item(0, 1).text()
+        assert table_beta.item(0, 0).text() == "1"  # Relative number (order + 1)
+
+        # Table Alpha Season should display Pilot
+        table_alpha = view._season_tables["Alpha Season"]
+        assert table_alpha.rowCount() == 1
+        assert "Pilot" in table_alpha.item(0, 1).text()
+        assert table_alpha.item(0, 0).text() == "1"  # Relative number (order + 1)

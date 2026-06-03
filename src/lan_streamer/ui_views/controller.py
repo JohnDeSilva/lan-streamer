@@ -623,6 +623,30 @@ class Controller(QObject):
     def _sync_tmdb_episodes_for_series(
         self, series_record: Dict[str, Any], new_tmdb_identifier: str
     ) -> None:
+        episode_group_details = tmdb_client.get_season_based_episode_group(
+            new_tmdb_identifier
+        )
+        group_seasons = {}
+        if (
+            episode_group_details
+            and isinstance(episode_group_details, dict)
+            and "groups" in episode_group_details
+        ):
+            for group in episode_group_details.get("groups", []):
+                group_name = group.get("name") or ""
+                season_num_match = re.search(r"\d+", group_name)
+                season_num = (
+                    int(season_num_match.group())
+                    if season_num_match
+                    else group.get("order", -1)
+                )
+                if group_name.lower() == "specials":
+                    season_num = 0
+                if season_num >= 0:
+                    group_seasons[season_num] = group.get("episodes", [])
+        else:
+            episode_group_details = None
+
         for season_folder_name, season_data_dict in series_record.get(
             "seasons", {}
         ).items():
@@ -635,9 +659,27 @@ class Controller(QObject):
                 )
 
             if target_season_number >= 0:
-                fetched_episodes_list = tmdb_client.get_episodes(
-                    new_tmdb_identifier, target_season_number
-                )
+                if (
+                    episode_group_details
+                    and isinstance(episode_group_details, dict)
+                    and "groups" in episode_group_details
+                ):
+                    fetched_episodes_list = []
+                    for group_ep in group_seasons.get(target_season_number, []):
+                        fetched_episodes_list.append(
+                            {
+                                "id": group_ep.get("id"),
+                                "name": group_ep.get("name"),
+                                "episode_number": group_ep.get("order")
+                                + 1,  # Using order + 1 as the 1-indexed episode number
+                                "air_date": group_ep.get("air_date") or "",
+                                "runtime": group_ep.get("runtime") or 0,
+                            }
+                        )
+                else:
+                    fetched_episodes_list = tmdb_client.get_episodes(
+                        new_tmdb_identifier, target_season_number
+                    )
                 for episode_item_dict in season_data_dict.get("episodes", []):
                     episode_filename: str = str(
                         episode_item_dict.get("name")

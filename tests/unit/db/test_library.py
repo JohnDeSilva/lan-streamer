@@ -708,6 +708,110 @@ class TestSeriesStructuralPermutations:
         assert all(ep["path"] is None for ep in eps)
         assert {ep["name"] for ep in eps} == {"S01E01", "S01E02"}
 
+    def test_series_with_placeholder_episode_number_zero_round_trips(self) -> None:
+        """An episode with tmdb_number=0 is saved, reused, and doesn't crash on subsequent saves."""
+        db.save_library(
+            self.LIBRARY,
+            {
+                "Zero Episode Show": {
+                    "metadata": {},
+                    "seasons": {
+                        "Season 1": {
+                            "metadata": {},
+                            "episodes": [
+                                {
+                                    "name": "S01E00 - Premiere",
+                                    "path": None,
+                                    "tmdb_number": 0,
+                                },
+                            ],
+                        }
+                    },
+                }
+            },
+        )
+        loaded = db.load_library(self.LIBRARY)
+        eps = loaded["Zero Episode Show"]["seasons"]["Season 1"]["episodes"]
+        assert len(eps) == 1
+        assert eps[0]["tmdb_number"] == 0
+        assert eps[0]["path"] is None
+
+        # Re-save to verify no UNIQUE constraint crash on duplicate insertion / mismatch
+        db.save_library(
+            self.LIBRARY,
+            {
+                "Zero Episode Show": {
+                    "metadata": {},
+                    "seasons": {
+                        "Season 1": {
+                            "metadata": {},
+                            "episodes": [
+                                {
+                                    "name": "S01E00 - Premiere",
+                                    "path": None,
+                                    "tmdb_number": 0,
+                                },
+                            ],
+                        }
+                    },
+                }
+            },
+        )
+        loaded2 = db.load_library(self.LIBRARY)
+        eps2 = loaded2["Zero Episode Show"]["seasons"]["Season 1"]["episodes"]
+        assert len(eps2) == 1
+        assert eps2[0]["tmdb_number"] == 0
+
+    def test_series_with_corrupted_none_placeholder_heals(self) -> None:
+        """Verify that an existing placeholder with tmdb_number=None is successfully matched by name fallback and healed without throwing UNIQUE constraint errors."""
+        db.save_library(
+            self.LIBRARY,
+            {
+                "Heal Show": {
+                    "metadata": {},
+                    "seasons": {
+                        "Season 1": {
+                            "metadata": {},
+                            "episodes": [
+                                {
+                                    "name": "S01E00 - Premiere",
+                                    "path": None,
+                                    "tmdb_number": None,
+                                },
+                            ],
+                        }
+                    },
+                }
+            },
+        )
+
+        db.save_library(
+            self.LIBRARY,
+            {
+                "Heal Show": {
+                    "metadata": {},
+                    "seasons": {
+                        "Season 1": {
+                            "metadata": {},
+                            "episodes": [
+                                {
+                                    "name": "S01E00 - Premiere",
+                                    "path": None,
+                                    "tmdb_number": 0,
+                                },
+                            ],
+                        }
+                    },
+                }
+            },
+        )
+
+        loaded = db.load_library(self.LIBRARY)
+        eps = loaded["Heal Show"]["seasons"]["Season 1"]["episodes"]
+        assert len(eps) == 1
+        assert eps[0]["name"] == "S01E00 - Premiere"
+        assert eps[0]["tmdb_number"] == 0
+
     def test_series_with_mixed_real_and_placeholder_episodes_round_trips(
         self,
     ) -> None:

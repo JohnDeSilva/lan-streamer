@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QSizePolicy,
+    QComboBox,
 )
 from PySide6.QtCore import Qt, Slot, QPoint, Signal
 from PySide6.QtGui import QFont, QColor, QAction
@@ -24,8 +25,9 @@ from lan_streamer.system.config import config
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QMenu
+    from lan_streamer.providers.tmdb import tmdb_client
 else:
-    from lan_streamer.ui_views.proxy import QMenu
+    from lan_streamer.ui_views.proxy import QMenu, tmdb_client
 from lan_streamer.ui_views.controller import Controller
 
 logger = logging.getLogger(__name__)
@@ -52,6 +54,8 @@ class SeriesDetailView(QWidget):
         self.seasons_tab_widget: QTabWidget = QTabWidget()
         self._current_series_name: str = ""
         self._season_tables: Dict[str, QTableWidget] = {}
+        self.episode_groups_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self.episode_group_details_cache: Dict[str, Dict[str, Any]] = {}
 
         self._setup_ui()
         self.controller.series_selected.connect(self.populate_series_details)
@@ -105,6 +109,13 @@ class SeriesDetailView(QWidget):
             )
         )
         actions_layout.addWidget(series_details_button)
+
+        actions_layout.addWidget(QLabel("Display Group:"))
+        self.order_combo = QComboBox()
+        self.order_combo.setObjectName("orderComboBox")
+        self.order_combo.currentIndexChanged.connect(self._on_order_changed)
+        actions_layout.addWidget(self.order_combo)
+
         actions_layout.addStretch()
         left_layout.addLayout(actions_layout)
 
@@ -123,6 +134,19 @@ class SeriesDetailView(QWidget):
             and self._current_series_name in self.controller.cached_library_data
         ):
             self.populate_series_details(self._current_series_name)
+
+    @Slot(int)
+    def _on_order_changed(self, index: int) -> None:
+        if index < 0 or not self._current_series_name:
+            return
+        selected_group_id = self.order_combo.itemData(index)
+        config.set_series_preference(
+            self.controller.current_library_name,
+            self._current_series_name,
+            "display_group_id",
+            selected_group_id,
+        )
+        self.populate_series_details(self._current_series_name)
 
     @Slot()
     def _on_mark_series_watched(self) -> None:
@@ -208,14 +232,134 @@ class SeriesDetailView(QWidget):
 
         # Clear and repopulate Season Tabs
         self.seasons_tab_widget.clear()
-        seasons_dictionary: Dict[str, Any] = series_record.get("seasons", {})
 
-        try:
-            sorted_season_names: List[str] = sorted(
-                seasons_dictionary.keys(), key=db.natural_sort_key
+        # Get the selected group ID from configuration preference
+        saved_group_id = config.get_series_preference(
+            self.controller.current_library_name,
+            series_name,
+            "display_group_id",
+            "default",
+        )
+
+        available_groups: List[Dict[str, str]] = [
+            {"id": "default", "name": "TV Order (Default)"}
+        ]
+        tmdb_id = metadata_dictionary.get("tmdb_identifier")
+        if tmdb_id:
+            if tmdb_id not in self.episode_groups_cache:
+                self.episode_groups_cache[tmdb_id] = tmdb_client.get_episode_groups(
+                    tmdb_id
+                )
+            groups_list = self.episode_groups_cache[tmdb_id]
+            for g in groups_list:
+                available_groups.append(
+                    {
+                        "id": str(g.get("id") or ""),
+                        "name": str(g.get("name") or "Unknown Order"),
+                    }
+                )
+
+        if not any(g["id"] == saved_group_id for g in available_groups):
+            saved_group_id = "default"
+
+        group_details = None
+        if saved_group_id != "default":
+            if saved_group_id not in self.episode_group_details_cache:
+                details = tmdb_client.get_episode_group_details(saved_group_id)
+                self.episode_group_details_cache[saved_group_id] = details or {}
+            group_details = self.episode_group_details_cache.get(saved_group_id)
+
+        group_order_map = {}
+        seasons_dictionary: Dict[str, Any] = series_record.get("seasons", {})
+        if group_details and "groups" in group_details:
+            # Re-group episodes from database seasons by matching on tmdb_episode_identifier
+            db_episodes_by_id = {}
+            db_episodes_by_number = {}
+            for s_name, s_data in seasons_dictionary.items():
+                s_num_match = re.search(r"\d+", s_name)
+                s_num = int(s_num_match.group()) if s_num_match else 0
+                for ep in s_data.get("episodes", []):
+                    ep_id = ep.get("tmdb_episode_identifier") or ep.get(
+                        "tmdb_identifier"
+                    )
+                    if ep_id:
+                        db_episodes_by_id[str(ep_id)] = ep
+                    ep_num = ep.get("tmdb_number")
+                    if ep_num is not None:
+                        db_episodes_by_number[(s_num, ep_num)] = ep
+
+            regrouped_seasons = {}
+            for idx, group in enumerate(group_details["groups"]):
+                group_name = group.get("name") or f"Group {group.get('order', '')}"
+                group_order_map[group_name] = idx
+                episodes_list = []
+                for group_ep in group.get("episodes", []):
+                    ep_id = str(group_ep.get("id", ""))
+                    db_ep = db_episodes_by_id.get(ep_id)
+                    if not db_ep:
+                        # Try matching by standard season/episode number
+                        db_ep = db_episodes_by_number.get(
+                            (
+                                group_ep.get("season_number"),
+                                group_ep.get("episode_number"),
+                            )
+                        )
+
+                    if db_ep:
+                        new_ep = db_ep.copy()
+                        new_ep["tmdb_number"] = group_ep.get("order") + 1
+                        if group_ep.get("name"):
+                            new_ep["tmdb_name"] = group_ep.get("name")
+                        episodes_list.append(new_ep)
+                    else:
+                        ep_name = group_ep.get("name") or "TBA"
+                        group_order = group_ep.get("order") + 1
+                        formatted_name = f"{group_name} E{group_order:02d} - {ep_name}"
+                        episodes_list.append(
+                            {
+                                "name": formatted_name,
+                                "path": None,
+                                "tmdb_identifier": ep_id,
+                                "tmdb_episode_identifier": ep_id,
+                                "tmdb_name": ep_name,
+                                "tmdb_number": group_order,
+                                "air_date": group_ep.get("air_date") or "",
+                                "runtime": group_ep.get("runtime") or 0,
+                                "jellyfin_id": "",
+                                "watched": False,
+                                "date_added": 0,
+                            }
+                        )
+                if episodes_list:
+                    regrouped_seasons[group_name] = {
+                        "metadata": {
+                            "jellyfin_id": "",
+                            "poster_path": "",
+                        },
+                        "episodes": episodes_list,
+                    }
+            seasons_dictionary = regrouped_seasons
+
+        # Populate order combobox
+        self.order_combo.blockSignals(True)
+        self.order_combo.clear()
+        for idx, g in enumerate(available_groups):
+            self.order_combo.addItem(g["name"], userData=g["id"])
+            if g["id"] == saved_group_id:
+                self.order_combo.setCurrentIndex(idx)
+        self.order_combo.blockSignals(False)
+
+        if group_order_map:
+            sorted_season_names = sorted(
+                seasons_dictionary.keys(), key=lambda k: group_order_map.get(k, 999)
             )
-        except AttributeError:
-            sorted_season_names = sorted(seasons_dictionary.keys())
+        else:
+            try:
+                sorted_season_names: List[str] = sorted(
+                    seasons_dictionary.keys(), key=db.natural_sort_key
+                )
+            except AttributeError:
+                sorted_season_names = sorted(seasons_dictionary.keys())
 
         # Filter seasons to only those having 1 or more episodes (at least one local episode)
         filtered_season_names = []

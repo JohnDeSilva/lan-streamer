@@ -348,6 +348,67 @@ class TMDBClient:
             )
             return []
 
+    def get_episode_groups(self, tmdb_identifier: str | int) -> list:
+        """Fetches TV episode groups for a series."""
+        logger.info(f"Requesting TMDB episode groups for series ID '{tmdb_identifier}'")
+        try:
+            resp = self.session.get(
+                f"{TMDB_BASE_URL}/tv/{tmdb_identifier}/episode_groups",
+                params=self._params(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json().get("results", [])
+        except Exception:
+            logger.exception(f"TMDB get_episode_groups({tmdb_identifier}) failed")
+            return []
+
+    def get_episode_group_details(self, group_id: str) -> dict | None:
+        """Fetches details for a specific episode group."""
+        logger.info(f"Requesting TMDB episode group details for group ID '{group_id}'")
+        try:
+            resp = self.session.get(
+                f"{TMDB_BASE_URL}/tv/episode_group/{group_id}",
+                params=self._params(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            logger.exception(f"TMDB get_episode_group_details({group_id}) failed")
+            return None
+
+    def get_season_based_episode_group(self, tmdb_identifier: str | int) -> dict | None:
+        """Resolves the best season-based episode group for a series."""
+        groups = self.get_episode_groups(tmdb_identifier)
+        if not groups:
+            return None
+
+        # Prioritize:
+        # 1. Name contains "season" or "tvdb" (case-insensitive)
+        # 2. Type 7 (TV Order/TVDB seasons)
+        # 3. Type 3 (DVD) or Type 4 (Digital)
+        selected_group = None
+        for g in groups:
+            name_lower = (g.get("name") or "").lower()
+            if "season" in name_lower or "tvdb" in name_lower:
+                selected_group = g
+                break
+        if not selected_group:
+            for g in groups:
+                if g.get("type") == 7:
+                    selected_group = g
+                    break
+        if not selected_group:
+            for g in groups:
+                if g.get("type") in (3, 4):
+                    selected_group = g
+                    break
+
+        if selected_group:
+            return self.get_episode_group_details(selected_group["id"])
+        return None
+
     def get_cached_image(self, cache_key: str) -> str:
         """Checks the /cache/images directory first to see if a poster already exists for the given cache_key."""
         if not cache_key:

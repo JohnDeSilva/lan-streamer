@@ -507,3 +507,100 @@ def test_get_movie_by_id_error(tmdb) -> None:
 def test_do_movie_search_error(tmdb) -> None:
     tmdb.session.get = MagicMock(side_effect=Exception("network error"))
     assert tmdb._do_movie_search("query") == []
+
+
+# ------------------------------------------------------------------
+# Episode Groups
+# ------------------------------------------------------------------
+
+
+def test_get_episode_groups_success(tmdb) -> None:
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"results": [{"id": "g1", "name": "DVD Order"}]}
+    tmdb.session.get = MagicMock(return_value=mock_resp)
+
+    res = tmdb.get_episode_groups(1234)
+    assert len(res) == 1
+    assert res[0]["id"] == "g1"
+
+
+def test_get_episode_groups_error(tmdb) -> None:
+    tmdb.session.get = MagicMock(side_effect=Exception("network error"))
+    assert tmdb.get_episode_groups(1234) == []
+
+
+def test_get_episode_group_details_success(tmdb) -> None:
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"id": "g1", "name": "DVD Order", "groups": []}
+    tmdb.session.get = MagicMock(return_value=mock_resp)
+
+    res = tmdb.get_episode_group_details("g1")
+    assert res is not None
+    assert res["id"] == "g1"
+
+
+def test_get_episode_group_details_error(tmdb) -> None:
+    tmdb.session.get = MagicMock(side_effect=Exception("network error"))
+    assert tmdb.get_episode_group_details("g1") is None
+
+
+def test_get_season_based_episode_group_no_groups(tmdb) -> None:
+    tmdb.get_episode_groups = MagicMock(return_value=[])
+    assert tmdb.get_season_based_episode_group(1234) is None
+
+
+def test_get_season_based_episode_group_priority(tmdb) -> None:
+    # 1. Type 7 is preferred
+    mock_groups = [
+        {"id": "g3", "name": "DVD", "type": 3},
+        {"id": "g7", "name": "TVDB", "type": 7},
+        {"id": "g4", "name": "Digital", "type": 4},
+    ]
+    tmdb.get_episode_groups = MagicMock(return_value=mock_groups)
+    tmdb.get_episode_group_details = MagicMock(side_effect=lambda gid: {"id": gid})
+
+    res = tmdb.get_season_based_episode_group(1234)
+    assert res is not None
+    assert res["id"] == "g7"
+
+
+def test_get_season_based_episode_group_fallback_type_3_4(tmdb) -> None:
+    # 2. Type 3/4 fallback if no Type 7
+    mock_groups = [
+        {"id": "g3", "name": "DVD", "type": 3},
+        {"id": "g4", "name": "Digital", "type": 4},
+    ]
+    tmdb.get_episode_groups = MagicMock(return_value=mock_groups)
+    tmdb.get_episode_group_details = MagicMock(side_effect=lambda gid: {"id": gid})
+
+    res = tmdb.get_season_based_episode_group(1234)
+    assert res is not None
+    assert res["id"] == "g3"
+
+
+def test_get_season_based_episode_group_fallback_name(tmdb) -> None:
+    # 3. Fallback to name containing "season" or "tvdb" if no Type 7, 3, or 4
+    mock_groups = [
+        {"id": "g_other", "name": "Random Order", "type": 1},
+        {"id": "g_season", "name": "Season Pack", "type": 2},
+    ]
+    tmdb.get_episode_groups = MagicMock(return_value=mock_groups)
+    tmdb.get_episode_group_details = MagicMock(side_effect=lambda gid: {"id": gid})
+
+    res = tmdb.get_season_based_episode_group(1234)
+    assert res is not None
+    assert res["id"] == "g_season"
+
+
+def test_get_season_based_episode_group_seasons_name_preferred_over_cours(tmdb) -> None:
+    # Seasons (type 6) matches name "season" which is prioritized over Cours (type 7)
+    mock_groups = [
+        {"id": "g_cours", "name": "Cours", "type": 7},
+        {"id": "g_seasons", "name": "Seasons", "type": 6},
+    ]
+    tmdb.get_episode_groups = MagicMock(return_value=mock_groups)
+    tmdb.get_episode_group_details = MagicMock(side_effect=lambda gid: {"id": gid})
+
+    res = tmdb.get_season_based_episode_group(1234)
+    assert res is not None
+    assert res["id"] == "g_seasons"
