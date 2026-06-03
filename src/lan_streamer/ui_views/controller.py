@@ -623,9 +623,21 @@ class Controller(QObject):
     def _sync_tmdb_episodes_for_series(
         self, series_record: Dict[str, Any], new_tmdb_identifier: str
     ) -> None:
-        episode_group_details = tmdb_client.get_season_based_episode_group(
-            new_tmdb_identifier
-        )
+        episode_group_details = None
+        saved_group_id = series_record.get("metadata", {}).get("tmdb_episode_group_id")
+        if saved_group_id:
+            try:
+                episode_group_details = tmdb_client.get_episode_group_details(
+                    saved_group_id
+                )
+            except Exception as e:
+                logger.exception(
+                    f"Failed to fetch saved group details {saved_group_id}: {e}"
+                )
+        if not episode_group_details:
+            episode_group_details = tmdb_client.get_season_based_episode_group(
+                new_tmdb_identifier
+            )
         group_seasons = {}
         if (
             episode_group_details

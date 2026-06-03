@@ -90,6 +90,7 @@ def _build_series_dict(series: Series) -> Dict[str, Any]:
             "tmdb_name": series.tmdb_name,
             "locked_metadata": bool(series.locked_metadata),
             "first_air_date": series.first_air_date or "",
+            "tmdb_episode_group_id": series.tmdb_episode_group_id,
         },
         "seasons": seasons,
     }

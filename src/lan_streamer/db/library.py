@@ -190,6 +190,8 @@ def _save_series_record(
     series.first_air_date = (
         series_metadata.get("first_air_date") or series.first_air_date
     )
+    if "tmdb_episode_group_id" in series_metadata:
+        series.tmdb_episode_group_id = series_metadata.get("tmdb_episode_group_id")
     return series
 
 

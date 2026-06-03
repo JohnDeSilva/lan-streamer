@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
@@ -14,13 +15,20 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QFormLayout,
     QTabWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QComboBox,
+    QHeaderView,
 )
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Slot, Qt
 from PySide6.QtGui import QFont
 
+from lan_streamer import db
 from lan_streamer.system.config import config
-from lan_streamer.ui_views.proxy import QMessageBox, jellyfin_client
+from lan_streamer.ui_views.proxy import QMessageBox, jellyfin_client, tmdb_client
 from lan_streamer.ui_views.dialogs.subtitle_search import SubtitleSearchDialog
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from lan_streamer.ui_views.controller import Controller
@@ -694,12 +702,20 @@ class SeriesDetailsDialog(QDialog):
         )
 
         self.setWindowTitle(f"Series Details: {series_name}")
-        self.resize(700, 550)
+        self.resize(900, 650)
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(10)
+
+        # Tab widget
+        self.tab_widget = QTabWidget(self)
+
+        # Settings tab widget
+        settings_tab = QWidget()
+        settings_layout = QVBoxLayout(settings_tab)
+        settings_layout.setSpacing(15)
 
         form = QFormLayout()
         self.name_edit = QLineEdit(self.series_name)
@@ -763,38 +779,48 @@ class SeriesDetailsDialog(QDialog):
         self.hide_missing_checkbox.setChecked(hide_missing_val)
         form.addRow("Episode View:", self.hide_missing_checkbox)
 
-        layout.addLayout(form)
+        settings_layout.addLayout(form)
 
         # Buttons
         match_meta_btn = QPushButton("Match Series Metadata...")
         match_meta_btn.clicked.connect(self._on_match_meta_clicked)
-        layout.addWidget(match_meta_btn)
+        settings_layout.addWidget(match_meta_btn)
 
         refresh_btn = QPushButton("Refresh Series Metadata")
         refresh_btn.clicked.connect(self._on_refresh_clicked)
-        layout.addWidget(refresh_btn)
+        settings_layout.addWidget(refresh_btn)
 
         match_jellyfin_btn = QPushButton("Match Jellyfin Watch History...")
         match_jellyfin_btn.clicked.connect(self._on_match_jellyfin_clicked)
         if not jellyfin_client.is_configured():
             match_jellyfin_btn.setEnabled(False)
-        layout.addWidget(match_jellyfin_btn)
+        settings_layout.addWidget(match_jellyfin_btn)
 
         rename_btn = QPushButton("Rename Files...")
         rename_btn.clicked.connect(self._on_rename_clicked)
-        layout.addWidget(rename_btn)
+        settings_layout.addWidget(rename_btn)
 
         embed_btn = QPushButton("Embed Metadata into All Video Files")
         embed_btn.setObjectName("accentButton")
         embed_btn.clicked.connect(self._on_embed_clicked)
-        layout.addWidget(embed_btn)
+        settings_layout.addWidget(embed_btn)
 
         mark_watched_btn = QPushButton("Mark Series as Watched")
         mark_watched_btn.clicked.connect(self._on_mark_watched_clicked)
-        layout.addWidget(mark_watched_btn)
+        settings_layout.addWidget(mark_watched_btn)
 
-        layout.addStretch()
+        settings_layout.addStretch()
 
+        self.tab_widget.addTab(settings_tab, "General Settings")
+
+        # Mapper tab widget
+        self.mapper_widget = QWidget()
+        self._setup_mapper_ui()
+        self.tab_widget.addTab(self.mapper_widget, "Manual Episode Mapper")
+
+        main_layout.addWidget(self.tab_widget)
+
+        # Bottom Close/Save buttons
         buttons = QHBoxLayout()
         buttons.addStretch()
         close_btn = QPushButton("Close")
@@ -803,7 +829,276 @@ class SeriesDetailsDialog(QDialog):
         save_btn.clicked.connect(self._on_save_clicked)
         buttons.addWidget(close_btn)
         buttons.addWidget(save_btn)
-        layout.addLayout(buttons)
+        main_layout.addLayout(buttons)
+
+    def _setup_mapper_ui(self) -> None:
+        layout = QVBoxLayout(self.mapper_widget)
+        layout.setSpacing(10)
+
+        # Dropdowns layout
+        combo_layout = QHBoxLayout()
+        combo_layout.addWidget(QLabel("TMDB Group:"))
+        self.group_combo = QComboBox()
+        combo_layout.addWidget(self.group_combo)
+
+        combo_layout.addWidget(QLabel("Subgroup (Arc/Season):"))
+        self.subgroup_combo = QComboBox()
+        combo_layout.addWidget(self.subgroup_combo)
+        layout.addLayout(combo_layout)
+
+        self.set_default_group_checkbox = QCheckBox(
+            "Save selected TMDB Group as default group for future metadata updates"
+        )
+        layout.addWidget(self.set_default_group_checkbox)
+
+        # Table
+        self.mapper_table = QTableWidget()
+        self.mapper_table.setColumnCount(3)
+        self.mapper_table.setHorizontalHeaderLabels(
+            ["TMDB Episode", "Air Date", "Mapped Local File"]
+        )
+        self.mapper_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.mapper_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.mapper_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch
+        )
+        self.mapper_table.verticalHeader().setDefaultSectionSize(40)
+        self.mapper_table.verticalHeader().setVisible(False)
+        layout.addWidget(self.mapper_table)
+
+        # Button to save
+        self.apply_mapping_btn = QPushButton("Apply Manual Mappings")
+        self.apply_mapping_btn.setObjectName("accentButton")
+        self.apply_mapping_btn.clicked.connect(self._on_apply_mappings_clicked)
+        layout.addWidget(self.apply_mapping_btn)
+
+        # Load data
+        self._load_mapper_data()
+
+    def _load_mapper_data(self) -> None:
+        # Collect local files
+        self.local_episodes = []
+        for season in self.series_record.get("seasons", {}).values():
+            for ep in season.get("episodes", []):
+                if ep.get("path"):
+                    self.local_episodes.append(ep)
+        # Sort naturally
+        self.local_episodes.sort(
+            key=lambda x: db.natural_sort_key(x.get("name") or Path(x["path"]).name)
+        )
+
+        # Pull groups from TMDB
+        tmdb_id = self.series_record.get("metadata", {}).get("tmdb_identifier")
+        self.groups_list = []
+        if tmdb_id:
+            try:
+                self.groups_list = tmdb_client.get_episode_groups(tmdb_id) or []
+            except Exception as e:
+                logger.exception(f"Failed to fetch episode groups: {e}")
+
+        # Check if there is a saved default group
+        saved_group_id = self.series_record.get("metadata", {}).get(
+            "tmdb_episode_group_id"
+        )
+        self.set_default_group_checkbox.setChecked(bool(saved_group_id))
+
+        # Populate group combo
+        self.group_combo.blockSignals(True)
+        self.group_combo.clear()
+        self.group_combo.addItem("Select Group...", userData=None)
+        selected_idx = 0
+        for idx, g in enumerate(self.groups_list):
+            g_id = g.get("id")
+            self.group_combo.addItem(
+                str(g.get("name") or "Unknown Group"), userData=g_id
+            )
+            if saved_group_id and str(g_id) == str(saved_group_id):
+                selected_idx = idx + 1
+
+        self.group_combo.setCurrentIndex(selected_idx)
+        self.group_combo.blockSignals(False)
+        if selected_idx > 0:
+            self._on_group_changed()
+
+        # Connect signals
+        self.group_combo.currentIndexChanged.connect(self._on_group_changed)
+        self.subgroup_combo.currentIndexChanged.connect(self._on_subgroup_changed)
+
+    def _on_group_changed(self) -> None:
+        self.subgroup_combo.blockSignals(True)
+        self.subgroup_combo.clear()
+        self.subgroup_combo.addItem("Select Subgroup...", userData=None)
+
+        group_id = self.group_combo.currentData()
+        if not group_id:
+            self.set_default_group_checkbox.setChecked(False)
+            self.set_default_group_checkbox.setEnabled(False)
+        else:
+            self.set_default_group_checkbox.setEnabled(True)
+
+        if group_id:
+            try:
+                group_details = tmdb_client.get_episode_group_details(group_id)
+                if group_details and "groups" in group_details:
+                    for subgroup in group_details.get("groups", []):
+                        self.subgroup_combo.addItem(
+                            str(subgroup.get("name") or "Unknown Subgroup"),
+                            userData=subgroup,
+                        )
+            except Exception as e:
+                logger.exception(f"Failed to fetch group details: {e}")
+
+        self.subgroup_combo.blockSignals(False)
+        self._on_subgroup_changed()
+
+    def _on_subgroup_changed(self) -> None:
+        self.mapper_table.setRowCount(0)
+        subgroup_data = self.subgroup_combo.currentData()
+        if not subgroup_data:
+            return
+
+        episodes = subgroup_data.get("episodes", [])
+        self.mapper_table.setRowCount(len(episodes))
+        self.row_group_episodes = episodes
+
+        for row_idx, group_ep in enumerate(episodes):
+            ep_order = group_ep.get("order", 0) + 1
+            ep_title = group_ep.get("name") or "TBA"
+            air_date = group_ep.get("air_date") or "Unknown"
+
+            # Column 0: Name
+            name_item = QTableWidgetItem(f"E{ep_order:02d} - {ep_title}")
+            name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.mapper_table.setItem(row_idx, 0, name_item)
+
+            # Column 1: Air Date
+            date_item = QTableWidgetItem(air_date)
+            date_item.setFlags(date_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.mapper_table.setItem(row_idx, 1, date_item)
+
+            # Column 2: ComboBox for local file
+            combo = QComboBox()
+            combo.addItem("Unmapped / None", userData=None)
+
+            selected_idx = 0
+            for idx, local_ep in enumerate(self.local_episodes):
+                filename = Path(local_ep["path"]).name
+                combo.addItem(filename, userData=local_ep["path"])
+
+                # Check if this local ep is currently mapped to this TMDB episode ID
+                cur_id = local_ep.get("tmdb_episode_identifier") or local_ep.get(
+                    "tmdb_identifier"
+                )
+                if cur_id and str(cur_id) == str(group_ep.get("id")):
+                    selected_idx = idx + 1
+
+            combo.setCurrentIndex(selected_idx)
+            self.mapper_table.setCellWidget(row_idx, 2, combo)
+
+    def _on_apply_mappings_clicked(self) -> None:
+        subgroup_data = self.subgroup_combo.currentData()
+        if not subgroup_data:
+            QMessageBox.warning(
+                self, "No Subgroup Selected", "Please select a subgroup first."
+            )
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Mapping",
+            "Are you sure you want to apply these manual mappings? This will overwrite existing metadata for these files.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        group_id = self.group_combo.currentData()
+        group_name = self.group_combo.currentText()
+        subgroup_name = self.subgroup_combo.currentText()
+        logger.info(
+            f"Manual Map: Applying mappings for series '{self.series_name}' using TMDB Group '{group_name}' (ID: {group_id}), Subgroup '{subgroup_name}'"
+        )
+
+        # Gather selections
+        updates = {}
+        for row_idx in range(self.mapper_table.rowCount()):
+            combo = self.mapper_table.cellWidget(row_idx, 2)
+            if isinstance(combo, QComboBox):
+                selected_path = combo.currentData()
+                if selected_path:
+                    group_ep = self.row_group_episodes[row_idx]
+                    ep_order = group_ep.get("order", 0) + 1
+                    ep_name = group_ep.get("name", "")
+
+                    logger.info(
+                        f"Manual Map: Mapping file '{Path(selected_path).name}' to TMDB episode E{ep_order:02d} - '{ep_name}' (ID: {group_ep['id']})"
+                    )
+
+                    updates[selected_path] = {
+                        "tmdb_identifier": str(group_ep["id"]),
+                        "tmdb_episode_identifier": str(group_ep["id"]),
+                        "tmdb_name": ep_name,
+                        "tmdb_number": group_ep.get("episode_number")
+                        or (group_ep.get("order", 0) + 1),
+                        "air_date": group_ep.get("air_date") or "",
+                        "runtime": group_ep.get("runtime") or 0,
+                    }
+
+        subgroup_ep_ids = {str(ep["id"]) for ep in self.row_group_episodes}
+
+        # Apply in-place
+        modified_count = 0
+        for season_name, season_data in self.series_record.get("seasons", {}).items():
+            for ep in season_data.get("episodes", []):
+                p = ep.get("path")
+                if p:
+                    if p in updates:
+                        for k, v in updates[p].items():
+                            ep[k] = v
+                        modified_count += 1
+                    elif str(ep.get("tmdb_episode_identifier")) in subgroup_ep_ids:
+                        old_id = ep.get("tmdb_episode_identifier")
+                        logger.info(
+                            f"Manual Map: Clearing mapping for file '{Path(p).name}' (was mapped to TMDB ID: {old_id})"
+                        )
+                        ep["tmdb_identifier"] = ""
+                        ep["tmdb_episode_identifier"] = ""
+                        ep["tmdb_name"] = ""
+                        ep["tmdb_number"] = None
+                        modified_count += 1
+
+        # Save default group ID if checked
+        saved_group_id = None
+        if self.set_default_group_checkbox.isChecked():
+            saved_group_id = self.group_combo.currentData()
+            logger.info(
+                f"Manual Map: Setting default group ID '{saved_group_id}' for series '{self.series_name}'"
+            )
+        else:
+            logger.info(
+                f"Manual Map: Default group ID not set or cleared for series '{self.series_name}'"
+            )
+
+        if "metadata" not in self.series_record:
+            self.series_record["metadata"] = {}
+        self.series_record["metadata"]["tmdb_episode_group_id"] = saved_group_id
+
+        # Save once
+        db.save_library(
+            self.controller.current_library_name, self.controller.cached_library_data
+        )
+        self.controller.library_loaded.emit()
+        self.controller.series_selected.emit(self.series_name)
+
+        QMessageBox.information(
+            self,
+            "Success",
+            f"Successfully applied manual mappings for {modified_count} episode file(s).",
+        )
 
     def _on_match_meta_clicked(self) -> None:
         self.controller.metadata_dialog_requested.emit(self.series_name)
@@ -853,9 +1148,22 @@ class SeriesDetailsDialog(QDialog):
             "hide_missing_future",
             hide_missing,
         )
+
+        saved_group_id = None
+        if self.set_default_group_checkbox.isChecked():
+            saved_group_id = self.group_combo.currentData()
+
+        if "metadata" not in self.series_record:
+            self.series_record["metadata"] = {}
+        self.series_record["metadata"]["tmdb_episode_group_id"] = saved_group_id
+
         if new_name != self.series_name:
             self.controller.update_series_name(self.series_name, new_name)
         self.controller.toggle_series_lock(
             new_name if new_name != self.series_name else self.series_name, locked
+        )
+
+        db.save_library(
+            self.controller.current_library_name, self.controller.cached_library_data
         )
         self.accept()

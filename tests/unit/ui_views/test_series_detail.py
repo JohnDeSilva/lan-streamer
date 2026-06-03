@@ -247,3 +247,168 @@ def test_series_detail_view_alternate_display_groups(qtbot: Any) -> None:
         assert table_alpha.rowCount() == 1
         assert "Pilot" in table_alpha.item(0, 1).text()
         assert table_alpha.item(0, 0).text() == "1"  # Relative number (order + 1)
+
+
+def test_series_details_dialog_manual_mapper(qtbot: Any) -> None:
+    from lan_streamer.ui_views.proxy import QMessageBox
+
+    controller = Controller()
+    controller.current_library_name = "TV"
+    controller.cached_library_data = {
+        "Breaking Bad": {
+            "metadata": {
+                "tmdb_identifier": "1396",
+                "tmdb_name": "Breaking Bad",
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "01 - Pilot",
+                            "path": "/tv/Breaking Bad/S01E01.mkv",
+                            "watched": True,
+                            "air_date": "2008-01-20",
+                            "runtime": 58,
+                            "tmdb_episode_identifier": "62085",
+                            "tmdb_number": 1,
+                        },
+                        {
+                            "name": "02 - Cat's in the Bag...",
+                            "path": "/tv/Breaking Bad/S01E02.mkv",
+                            "watched": False,
+                            "air_date": "2008-01-27",
+                            "runtime": 48,
+                            "tmdb_episode_identifier": "62086",
+                            "tmdb_number": 2,
+                        },
+                    ]
+                }
+            },
+        }
+    }
+
+    mock_groups = [
+        {
+            "id": "group-123",
+            "name": "Story Arcs",
+            "type": 1,
+        }
+    ]
+    mock_group_details = {
+        "id": "group-123",
+        "name": "Story Arcs",
+        "type": 1,
+        "groups": [
+            {
+                "name": "Arc 1",
+                "order": 1,
+                "episodes": [
+                    {
+                        "id": "new-ep-id-1",
+                        "name": "Pilot (Arc Name)",
+                        "order": 0,
+                        "season_number": 1,
+                        "episode_number": 1,
+                        "air_date": "2008-01-20",
+                        "runtime": 58,
+                    },
+                    {
+                        "id": "new-ep-id-2",
+                        "name": "Cat's in the Bag... (Arc Name)",
+                        "order": 1,
+                        "season_number": 1,
+                        "episode_number": 2,
+                        "air_date": "2008-01-27",
+                        "runtime": 48,
+                    },
+                ],
+            }
+        ],
+    }
+
+    with (
+        patch("lan_streamer.ui_views.dialogs.details.tmdb_client") as mock_tmdb,
+        patch("lan_streamer.ui_views.dialogs.details.db.save_library") as mock_save,
+        patch(
+            "lan_streamer.ui_views.dialogs.details.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch(
+            "lan_streamer.ui_views.dialogs.details.QMessageBox.information"
+        ) as mock_info,
+    ):
+        mock_tmdb.get_episode_groups.return_value = mock_groups
+        mock_tmdb.get_episode_group_details.return_value = mock_group_details
+
+        dialog = SeriesDetailsDialog("Breaking Bad", controller)
+        qtbot.addWidget(dialog)
+
+        # Tab widget should have 2 tabs: "General Settings", "Manual Episode Mapper"
+        assert dialog.tab_widget.count() == 2
+        assert dialog.tab_widget.tabText(1) == "Manual Episode Mapper"
+
+        # Check groups combo
+        assert dialog.group_combo.count() == 2
+        assert dialog.group_combo.itemText(1) == "Story Arcs"
+
+        # Checkbox should be unchecked initially
+        assert dialog.set_default_group_checkbox.isChecked() is False
+
+        # Select Group
+        dialog.group_combo.setCurrentIndex(1)
+
+        # Checkbox should be enabled and unchecked
+        assert dialog.set_default_group_checkbox.isEnabled() is True
+        dialog.set_default_group_checkbox.setChecked(True)
+
+        # Check subgroups combo
+        assert dialog.subgroup_combo.count() == 2
+        assert dialog.subgroup_combo.itemText(1) == "Arc 1"
+
+        # Select Subgroup
+        dialog.subgroup_combo.setCurrentIndex(1)
+
+        # Table should be populated with 2 rows
+        assert dialog.mapper_table.rowCount() == 2
+        assert dialog.mapper_table.item(0, 0).text() == "E01 - Pilot (Arc Name)"
+        assert (
+            dialog.mapper_table.item(1, 0).text()
+            == "E02 - Cat's in the Bag... (Arc Name)"
+        )
+
+        # Set combobox value for E01 to first file (/tv/Breaking Bad/S01E01.mkv)
+        # "Unmapped / None" (index 0), S01E01.mkv (index 1), S01E02.mkv (index 2)
+        combo_row_0 = dialog.mapper_table.cellWidget(0, 2)
+        assert combo_row_0.count() == 3
+        assert combo_row_0.itemText(1) == "S01E01.mkv"
+        assert combo_row_0.itemText(2) == "S01E02.mkv"
+
+        # Map row 0 to S01E01.mkv
+        combo_row_0.setCurrentIndex(1)
+
+        # Map row 1 to S01E02.mkv
+        combo_row_1 = dialog.mapper_table.cellWidget(1, 2)
+        combo_row_1.setCurrentIndex(2)
+
+        # Click apply manual mappings
+        dialog.apply_mapping_btn.click()
+
+        # Check updates are applied in cache
+        ep_0 = controller.cached_library_data["Breaking Bad"]["seasons"]["Season 1"][
+            "episodes"
+        ][0]
+        assert ep_0["tmdb_episode_identifier"] == "new-ep-id-1"
+        assert ep_0["tmdb_name"] == "Pilot (Arc Name)"
+
+        ep_1 = controller.cached_library_data["Breaking Bad"]["seasons"]["Season 1"][
+            "episodes"
+        ][1]
+        assert ep_1["tmdb_episode_identifier"] == "new-ep-id-2"
+        assert ep_1["tmdb_name"] == "Cat's in the Bag... (Arc Name)"
+
+        # Check default group ID is saved
+        metadata = controller.cached_library_data["Breaking Bad"]["metadata"]
+        assert metadata["tmdb_episode_group_id"] == "group-123"
+
+        mock_save.assert_called_once()
+        mock_info.assert_called_once()
