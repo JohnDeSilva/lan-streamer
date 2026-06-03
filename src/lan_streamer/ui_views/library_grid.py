@@ -557,6 +557,7 @@ class LibraryGridView(QWidget):
                 self.controller.select_series(title)
 
     def populate_combined_view(self) -> None:
+        logger.info("populate_combined_view: started populating combined layout")
         # Clear existing widgets in combined_scroll_layout
         while self.combined_scroll_layout.count():
             layout_item = self.combined_scroll_layout.takeAt(0)
@@ -569,6 +570,9 @@ class LibraryGridView(QWidget):
         enabled_rows = [
             row for row in config.combined_views if row.get("enabled", True)
         ]
+        logger.info(
+            f"populate_combined_view: found {len(enabled_rows)} enabled smart rows"
+        )
         if not enabled_rows:
             empty_label = QLabel(
                 "No rows configured or enabled in Combined View settings."
@@ -584,11 +588,21 @@ class LibraryGridView(QWidget):
             sort_by = row.get("sort_by", "Alphabetical")
             filter_mode = row.get("filter_mode", "All")
 
+            logger.info(
+                f"populate_combined_view: processing row '{row_name}' (libraries={libraries}, "
+                f"sort_by='{sort_by}', filter_mode='{filter_mode}')"
+            )
             items = db.get_combined_smart_row(libraries, sort_by, filter_mode)
+            logger.info(
+                f"populate_combined_view: db returned {len(items)} items for row '{row_name}'"
+            )
             max_items = row.get("max_items", 20)
             items = items[:max_items]
 
             if not items:
+                logger.info(
+                    f"populate_combined_view: skipping row '{row_name}' because it contains 0 items"
+                )
                 continue
 
             # Create a row container

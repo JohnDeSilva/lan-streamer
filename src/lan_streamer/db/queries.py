@@ -395,9 +395,10 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
             # Construct flat list of all episodes in series in natural order
             ordered_episodes: List[Tuple[Episode, Season, int]] = []
             for season in seasons:
-                # Sort episodes in this season naturally by name
+                # Sort episodes in this season naturally by name, excluding missing/future episodes (path is None or empty)
+                valid_episodes = [e for e in season.episodes if e.path]
                 season_episodes: List[Episode] = sorted(
-                    season.episodes, key=lambda e: natural_sort_key(e.name)
+                    valid_episodes, key=lambda e: natural_sort_key(e.name)
                 )
                 for index, episode in enumerate(season_episodes):
                     ordered_episodes.append((episode, season, index + 1))
@@ -455,14 +456,20 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
     """
 
     try:
-        logger.debug(f"get_combined_next_up called with libraries={library_names}")
+        logger.info(
+            f"get_combined_next_up: fetching next up items for libraries={library_names}"
+        )
         with get_session() as session:
-            # Find series that have any episode where watched is True or last_played_at > 0
+            # Find series that have any episode where watched is True or last_played_at > 0, and the episode has a file path (not missing/future)
             series_stmt = (
                 select(Series)
                 .join(Season)
                 .join(Episode)
-                .where((Episode.watched.is_(True)) | (Episode.last_played_at > 0))
+                .where(
+                    (Episode.path.isnot(None))
+                    & (Episode.path != "")
+                    & ((Episode.watched.is_(True)) | (Episode.last_played_at > 0))
+                )
             )
             if library_names:
                 series_stmt = series_stmt.where(Series.library_name.in_(library_names))
@@ -478,7 +485,8 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
 
                 # Find the first season that is not fully watched
                 for season in seasons:
-                    episodes = season.episodes
+                    # Do not consider missing or future episodes (those with no path)
+                    episodes = [ep for ep in season.episodes if ep.path]
                     if not episodes:
                         continue
                     # Check if all episodes in this season are watched
@@ -488,15 +496,25 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
                         break
 
                 if next_season:
-                    # Find max last_played_at across all episodes in the series
+                    # Find max last_played_at, date_added, and air_date across all episodes in the series that have a path
                     max_lp = 0
+                    max_date_added = 0
+                    max_air_date = ""
                     for s in series.seasons:
                         for ep in s.episodes:
+                            if not ep.path:
+                                continue
                             val = ep.last_played_at or 0
                             if val > max_lp:
                                 max_lp = val
+                            added_val = ep.date_added or 0
+                            if added_val > max_date_added:
+                                max_date_added = added_val
+                            air_val = ep.air_date or ""
+                            if air_val > max_air_date:
+                                max_air_date = air_val
 
-                    season_episodes = next_season.episodes
+                    season_episodes = [ep for ep in next_season.episodes if ep.path]
                     watched_count = sum(1 for ep in season_episodes if ep.watched)
                     total_count = len(season_episodes)
 
@@ -509,6 +527,8 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
                             or series.poster_path,
                             "library_name": series.library_name,
                             "last_played_at": max_lp,
+                            "date_added": max_date_added,
+                            "air_date": max_air_date or series.first_air_date or "",
                             "watched_count": watched_count,
                             "total_count": total_count,
                         }
@@ -516,7 +536,7 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
 
             # Sort by last_played_at descending
             results.sort(key=lambda x: int(x["last_played_at"] or 0), reverse=True)
-            logger.debug(f"get_combined_next_up returning {len(results)} results")
+            logger.info(f"get_combined_next_up: returning {len(results)} seasons")
             return results
     except Exception:
         logger.exception("Error in get_combined_next_up")
@@ -539,12 +559,16 @@ def get_combined_smart_row(
     """
 
     try:
-        logger.debug(
-            f"get_combined_smart_row called with libraries={library_names}, "
+        logger.info(
+            f"get_combined_smart_row processing request: libraries={library_names}, "
             f"sort_by='{sort_by}', filter_mode='{filter_mode}'"
         )
         if sort_by == "Next Up":
-            return get_combined_next_up(library_names)
+            results = get_combined_next_up(library_names)
+            logger.info(
+                f"get_combined_smart_row (Next Up) returned {len(results)} items"
+            )
+            return results
 
         with get_session() as session:
             results = []
@@ -641,7 +665,11 @@ def get_combined_smart_row(
                 # Default fallback
                 results.sort(key=lambda x: str(x["name"] or "").lower())
 
-            logger.debug(f"get_combined_smart_row returning {len(results)} results")
+            logger.info(
+                f"get_combined_smart_row: returning {len(results)} items (type counts: "
+                f"Series={len([r for r in results if r['type'] == 'series'])} "
+                f"Movies={len([r for r in results if r['type'] == 'movie'])})"
+            )
             return results
     except Exception:
         logger.exception("Error in get_combined_smart_row")
