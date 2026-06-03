@@ -327,7 +327,8 @@ def main() -> None:
     def on_series_details_requested(series_name: str) -> None:
         logger.info(f"Opening Series Details Dialog for series: '{series_name}'")
         dialog_instance = SeriesDetailsDialog(series_name, controller, main_window)
-        dialog_instance.exec()
+        if dialog_instance.exec():
+            series_detail_view.populate_series_details(series_name)
 
     controller.series_details_requested.connect(on_series_details_requested)
 

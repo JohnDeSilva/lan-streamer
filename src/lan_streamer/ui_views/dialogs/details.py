@@ -751,6 +751,18 @@ class SeriesDetailsDialog(QDialog):
         self.locked_checkbox.setChecked(is_locked)
         form.addRow("Metadata Lock:", self.locked_checkbox)
 
+        self.hide_missing_checkbox = QCheckBox("Hide missing/future episodes")
+        self.hide_missing_checkbox.setObjectName("hideMissingCheckbox")
+        self.hide_missing_checkbox.setFont(QFont("Inter", 11, QFont.Weight.Bold))
+        hide_missing_val = config.get_series_preference(
+            self.controller.current_library_name,
+            self.series_name,
+            "hide_missing_future",
+            False,
+        )
+        self.hide_missing_checkbox.setChecked(hide_missing_val)
+        form.addRow("Episode View:", self.hide_missing_checkbox)
+
         layout.addLayout(form)
 
         # Buttons
@@ -834,6 +846,13 @@ class SeriesDetailsDialog(QDialog):
     def _on_save_clicked(self) -> None:
         new_name = self.name_edit.text()
         locked = self.locked_checkbox.isChecked()
+        hide_missing = self.hide_missing_checkbox.isChecked()
+        config.set_series_preference(
+            self.controller.current_library_name,
+            self.series_name,
+            "hide_missing_future",
+            hide_missing,
+        )
         if new_name != self.series_name:
             self.controller.update_series_name(self.series_name, new_name)
         self.controller.toggle_series_lock(

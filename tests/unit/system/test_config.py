@@ -181,3 +181,24 @@ def test_config_backup_settings(mock_config_file) -> None:
     assert loaded.database_backup_frequency == 5
     assert loaded.config_backup_retention == 10
     assert loaded.database_backup_retention == 14
+
+
+def test_config_series_preferences(mock_config_file) -> None:
+    config = Config()
+    assert config.series_preferences == {}
+
+    config.set_series_preference("TV", "Breaking Bad", "hide_missing_future", True)
+    assert (
+        config.get_series_preference("TV", "Breaking Bad", "hide_missing_future")
+        is True
+    )
+    assert (
+        config.get_series_preference("TV", "Breaking Bad", "nonexistent", "default_val")
+        == "default_val"
+    )
+
+    loaded = Config()
+    assert (
+        loaded.get_series_preference("TV", "Breaking Bad", "hide_missing_future")
+        is True
+    )
