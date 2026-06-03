@@ -3,7 +3,6 @@ from lan_streamer.backend.scan_workers import (
     ScanWorker,
     CleanupWorker,
     ScanAllLibrariesWorker,
-    CleanupAllLibrariesWorker,
 )
 from lan_streamer.backend.jellyfin_workers import (
     JellyfinPullWorker,
@@ -26,7 +25,6 @@ __all__ = [
     "ScanWorker",
     "CleanupWorker",
     "ScanAllLibrariesWorker",
-    "CleanupAllLibrariesWorker",
     "JellyfinPullWorker",
     "JellyfinPushWorker",
     "RuntimeExtractionWorker",

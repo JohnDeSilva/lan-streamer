@@ -907,10 +907,6 @@ def test_settings_dialog_global_actions(qtbot: Any) -> None:
         dialog_instance.trigger_global_refresh_metadata()
         mock_scan_all.assert_called_with(True)
 
-    with patch.object(controller_instance, "trigger_cleanup_all") as mock_clean_all:
-        dialog_instance.trigger_global_cleanup()
-        mock_clean_all.assert_called_once()
-
     with patch.object(controller_instance, "trigger_jellyfin_pull") as mock_pull:
         dialog_instance.trigger_global_jellyfin_pull()
         mock_pull.assert_called_once()
@@ -971,7 +967,7 @@ def test_settings_dialog_global_actions(qtbot: Any) -> None:
     # Test no controller instance handles safely
     dialog_no_controller = SettingsDialog(None)
     dialog_no_controller.trigger_global_scan_files()
-    dialog_no_controller.trigger_global_cleanup()
+
     dialog_no_controller.trigger_global_refresh_metadata()
     dialog_no_controller.trigger_global_jellyfin_pull()
     dialog_no_controller.trigger_global_jellyfin_push()

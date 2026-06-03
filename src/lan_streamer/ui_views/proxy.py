@@ -12,7 +12,6 @@ from lan_streamer.backend import (
     JellyfinPullWorker as JellyfinPullWorker_real,
     JellyfinPushWorker as JellyfinPushWorker_real,
     ScanAllLibrariesWorker as ScanAllLibrariesWorker_real,
-    CleanupAllLibrariesWorker as CleanupAllLibrariesWorker_real,
     RuntimeExtractionWorker as RuntimeExtractionWorker_real,
 )
 from lan_streamer.providers.jellyfin import jellyfin_client as jellyfin_client_real
@@ -49,9 +48,6 @@ JellyfinPullWorker = PatchedClass("JellyfinPullWorker", lambda: JellyfinPullWork
 JellyfinPushWorker = PatchedClass("JellyfinPushWorker", lambda: JellyfinPushWorker_real)
 ScanAllLibrariesWorker = PatchedClass(
     "ScanAllLibrariesWorker", lambda: ScanAllLibrariesWorker_real
-)
-CleanupAllLibrariesWorker = PatchedClass(
-    "CleanupAllLibrariesWorker", lambda: CleanupAllLibrariesWorker_real
 )
 RuntimeExtractionWorker = PatchedClass(
     "RuntimeExtractionWorker", lambda: RuntimeExtractionWorker_real
