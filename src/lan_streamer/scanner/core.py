@@ -40,6 +40,33 @@ class LibraryDict(dict[str, Any]):
         self.unavailable_directories: List[str] = []
 
 
+def _has_season_subdirs(directory: Path) -> bool:
+    """
+    Returns True if *directory* contains at least one subdirectory whose name
+    looks like a season folder (contains 'season', 'special', 'extra',
+    'featurette', 'bonus', 'shorts', or any digit sequence). This allows
+    series folders with no local video files to still be indexed so that
+    TMDB placeholder episodes can be seeded into the database.
+    """
+    try:
+        for child in directory.iterdir():
+            if child.is_dir() and not child.name.startswith("."):
+                name_lower = child.name.lower()
+                if (
+                    "season" in name_lower
+                    or "special" in name_lower
+                    or "extra" in name_lower
+                    or "featurette" in name_lower
+                    or "bonus" in name_lower
+                    or "shorts" in name_lower
+                    or bool(re.search(r"\d+", child.name))
+                ):
+                    return True
+    except PermissionError:
+        pass
+    return False
+
+
 def scan_directories(
     root_directories: List[str],
     library_type: str = "tv",
@@ -72,14 +99,16 @@ def scan_directories(
                 detail_callback("unavailable_root", {"root": root_directory})
             continue
 
-        # Sort series directories by mtime (newest first)
+        # Sort series directories by mtime (newest first).
+        # Include a directory if it contains video files OR season-style subdirs,
+        # so series with only TMDB placeholder episodes are still indexed.
         series_dirs = sorted(
             [
                 directory
                 for directory in root_path.iterdir()
                 if directory.is_dir()
                 and not directory.name.startswith(".")
-                and has_video_files(directory)
+                and (has_video_files(directory) or _has_season_subdirs(directory))
             ],
             key=lambda directory: directory.stat().st_mtime,
             reverse=True,
@@ -138,8 +167,8 @@ def scan_directories(
                         tmdb_series = _build_locked_tv_tmdb_stub(existing_series)
 
             series_force_refresh = (
-                force_refresh
-                if not is_locked and (single_item_refresh or not has_meta)
+                (force_refresh or single_item_refresh or not has_meta)
+                if not is_locked
                 else False
             )
             cleaned: Optional[Dict[str, Any]] = None
@@ -458,17 +487,21 @@ def scan_series(
             f"Example: '{nested_too_deeply[0].relative_to(series_directory)}'"
         )
 
-    series_data, is_early_return, tmdb_series, existing_episodes_by_path = (
-        _process_series_metadata(
-            series_directory,
-            tmdb_series,
-            jellyfin_data,
-            manual_jellyfin_id,
-            existing_series_data,
-            force_refresh,
-            cleanup,
-            single_item_refresh,
-        )
+    (
+        series_data,
+        is_early_return,
+        tmdb_series,
+        existing_episodes_by_path,
+        force_refresh,
+    ) = _process_series_metadata(
+        series_directory,
+        tmdb_series,
+        jellyfin_data,
+        manual_jellyfin_id,
+        existing_series_data,
+        force_refresh,
+        cleanup,
+        single_item_refresh,
     )
     if is_early_return:
         if not show_future_episodes:

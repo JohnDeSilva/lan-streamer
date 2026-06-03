@@ -144,6 +144,11 @@ class Controller(QObject):
 
                 for season_data in series_data.get("seasons", {}).values():
                     for episode_record in season_data.get("episodes", []):
+                        # Only count episodes that have a local file path.
+                        # Placeholder/missing episodes (path=None) are stored in the
+                        # DB for display purposes but do not contribute to progress.
+                        if not episode_record.get("path"):
+                            continue
                         total_episodes += 1
                         if episode_record.get("watched"):
                             watched_episodes += 1
@@ -364,6 +369,84 @@ class Controller(QObject):
         self.status_changed.emit(
             f"Cleanup finished: removed {series_removed} series, {seasons_removed} seasons, {episodes_removed} episodes."
         )
+
+    def trigger_scan_and_update(self, force_refresh: bool = False) -> None:
+        """
+        Combines a library scan (discovers new files, updates paths) with a
+        cleanup pass (nulls paths for files that have gone missing).
+        The cleanup runs automatically once the scan has completed.
+        """
+        if not self.current_library_name:
+            self.status_changed.emit("Select a library first.")
+            return
+
+        if (
+            self.scan_worker_instance is not None
+            and self.scan_worker_instance.isRunning()
+        ):
+            logger.info(
+                "ScanWorker is already actively running. Skipping redundant scan trigger."
+            )
+            return
+
+        library_config = config.libraries.get(self.current_library_name, {})
+        root_directories: List[str] = library_config.get("paths", [])
+        library_type: str = library_config.get("type", "tv")
+        self.status_changed.emit(
+            f"Scanning & updating library '{self.current_library_name}'..."
+        )
+
+        self.scan_worker_instance = ScanWorker(
+            root_directories=root_directories,
+            library_type=library_type,
+            existing_library=self.cached_library_data,
+            force_refresh=force_refresh,
+            cleanup=False,
+            library_name=self.current_library_name,
+        )
+        self.scan_worker_instance.finished.connect(
+            self._on_scan_and_update_scan_finished
+        )
+        self.scan_worker_instance.partial_result.connect(self._on_scan_partial)
+        self.scan_worker_instance.error.connect(self._on_worker_error)
+        self.scan_worker_instance.detail_progress.connect(
+            self.detail_progress_updated.emit
+        )
+        self.scan_worker_instance.start()
+
+    def _on_scan_and_update_scan_finished(
+        self, updated_library: Dict[str, Any]
+    ) -> None:
+        """Called when the scan phase of scan_and_update completes. Saves results then runs cleanup."""
+        self._on_scan_finished(updated_library)
+
+        # Now chain into cleanup
+        if not self.current_library_name:
+            return
+        library_config = config.libraries.get(self.current_library_name, {})
+        root_directories: List[str] = library_config.get("paths", [])
+        self.status_changed.emit(
+            f"Scan complete. Updating paths in '{self.current_library_name}'..."
+        )
+        self.cleanup_worker_instance = CleanupWorker(
+            library_name=self.current_library_name, root_directories=root_directories
+        )
+        self.cleanup_worker_instance.finished.connect(
+            self._on_scan_and_update_cleanup_finished
+        )
+        self.cleanup_worker_instance.error.connect(self._on_worker_error)
+        self.cleanup_worker_instance.start()
+
+    def _on_scan_and_update_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
+        """Called when the cleanup phase of scan_and_update completes."""
+        self.select_library(self.current_library_name, reset_selection=False)
+        series_removed: int = statistics.get("series", 0)
+        episodes_nulled: int = statistics.get("episodes", 0)
+        self.status_changed.emit(
+            f"Scan & Update complete. "
+            f"{series_removed} series removed, {episodes_nulled} episode paths updated."
+        )
+        self.scan_completed.emit()
 
     def trigger_jellyfin_pull(self) -> None:
         if not jellyfin_client.is_configured():

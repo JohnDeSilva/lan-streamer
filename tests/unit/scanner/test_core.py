@@ -924,6 +924,69 @@ def test_scan_directories_locked_metadata_bypasses_refresh(tmp_path) -> None:
     mock_tmdb.get_series_by_id.assert_not_called()
 
 
+def test_scan_directories_force_refresh_calls_tmdb_for_unlocked_series(
+    tmp_path,
+) -> None:
+    """Test that scan_directories with force_refresh=True calls TMDB for unlocked series even if they already have metadata."""
+    series_dir = tmp_path / "Unlocked Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    (season_dir / "S01E01.mkv").touch()
+
+    existing_library = {
+        "Unlocked Show": {
+            "metadata": {
+                "tmdb_identifier": "unlocked_id",
+                "tmdb_name": "Old Title",
+                "overview": "Old overview",
+                "locked_metadata": False,
+            },
+            "seasons": {
+                "Season 1": {
+                    "metadata": {"jellyfin_id": ""},
+                    "episodes": [
+                        {
+                            "name": "S01E01 - Pilot",
+                            "path": str(season_dir / "S01E01.mkv"),
+                            "tmdb_number": 1,
+                        }
+                    ],
+                }
+            },
+        }
+    }
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.get_series_by_id.return_value = {
+        "id": "unlocked_id",
+        "name": "Fresh Title",
+        "overview": "Fresh overview",
+    }
+    mock_tmdb.get_seasons.return_value = [
+        {"season_number": 1, "id": "s1_id", "poster_path": ""}
+    ]
+    mock_tmdb.get_episodes.return_value = [
+        {"episode_number": 1, "name": "Pilot", "id": "ep1_id"},
+        {"episode_number": 2, "name": "Episode 2", "id": "ep2_id"},
+    ]
+    mock_tmdb.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        library = scan_directories(
+            [str(tmp_path)], existing_library=existing_library, force_refresh=True
+        )
+
+    mock_tmdb.get_series_by_id.assert_called_with("unlocked_id")
+    mock_tmdb.get_episodes.assert_called_with("unlocked_id", 1)
+
+    assert library["Unlocked Show"]["metadata"]["tmdb_name"] == "Fresh Title"
+    episodes = library["Unlocked Show"]["seasons"]["Season 1"]["episodes"]
+    assert len(episodes) == 2
+    paths = [ep.get("path") for ep in episodes]
+    assert None in paths
+
+
 def test_scan_series_auto_refresh_new_files(tmp_path) -> None:
     series_dir = tmp_path / "AutoShow"
     series_dir.mkdir()
@@ -2593,7 +2656,7 @@ def test_scanner_skips_tmdb_during_global_scan(tmp_path):
         res = scan_directories(
             [str(tmp_path)],
             existing_library=existing_library,
-            force_refresh=True,
+            force_refresh=False,
             single_item_refresh=False,
         )
 
