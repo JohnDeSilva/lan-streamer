@@ -14,7 +14,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "commitizen>=4.16.2",
+    "commitizen>=4.16.3",
     "pre-commit>=4.1.0",
     "pyinstaller>=6.20.0",
     "pytest>=9.0.3",
