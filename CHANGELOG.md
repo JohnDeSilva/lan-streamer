@@ -1,3 +1,9 @@
+## v0.22.2 (2026-06-02)
+
+### Fix
+
+- add persistent per-series preference to toggle visibility of missing and future episodes
+
 ## v0.22.1 (2026-06-02)
 
 ### Fix
