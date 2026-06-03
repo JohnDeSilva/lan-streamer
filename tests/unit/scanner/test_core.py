@@ -2888,3 +2888,66 @@ def test_save_library_prunes_placeholders() -> None:
         assert mock_save_ep_rec.called
         # Verify mock_session.delete was called for the leftover placeholder (ep2_db)
         mock_session.delete.assert_called_once_with(ep2_db)
+
+
+def test_scan_series_with_episode_groups(tmp_path) -> None:
+    from lan_streamer.scanner import scan_series
+
+    series_dir = tmp_path / "Group Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    episode_file = season_dir / "Group Show S01E01.mkv"
+    episode_file.touch()
+
+    # Episode Group details representing TVDB / Season-based ordering where the TMDB id matches,
+    # mapping group episode order to episode_number.
+    mock_group_details = {
+        "id": "group-id-123",
+        "name": "TVDB Seasons",
+        "groups": [
+            {
+                "name": "Season 1",
+                "order": 1,
+                "episodes": [
+                    {
+                        "id": "ep-999",
+                        "name": "Episode from Group Details",
+                        "order": 0,
+                        "season_number": 1,
+                        "episode_number": 5,  # absolute number, but group order is 0 (first ep)
+                        "air_date": "2020-01-01",
+                        "runtime": 45,
+                    }
+                ],
+            }
+        ],
+    }
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.is_configured.return_value = True
+    mock_tmdb.search_series.return_value = {
+        "id": "series123",
+        "tmdb_identifier": "series123",
+        "name": "Group Show",
+        "overview": "A group show",
+        "poster_path": "",
+    }
+    mock_tmdb.get_season_based_episode_group.return_value = mock_group_details
+    mock_tmdb.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        res = scan_series(series_dir, force_refresh=True)
+
+    # Bypassed standard seasons and episodes endpoints
+    mock_tmdb.get_seasons.assert_not_called()
+    mock_tmdb.get_episodes.assert_not_called()
+
+    # Metadata seasons resolved from groups
+    assert "Season 1" in res["seasons"]
+    eps = res["seasons"]["Season 1"]["episodes"]
+    assert len(eps) == 1
+    assert eps[0]["tmdb_name"] == "Episode from Group Details"
+    # Order inside the group becomes tmdb_number
+    assert eps[0]["tmdb_number"] == 1
+    assert eps[0]["tmdb_episode_identifier"] == "ep-999"

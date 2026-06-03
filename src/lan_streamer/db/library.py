@@ -219,32 +219,55 @@ def _save_episode_record(
     episode_data: Dict[str, Any],
     existing_by_path: Dict[str, Episode],
     existing_by_number: Dict[int, Episode],
+    existing_by_name: Dict[str, Episode],
     stats: Dict[str, int],
 ) -> Episode:
     path = episode_data.get("path") or None
     tmdb_num = episode_data.get("tmdb_number")
+    name = episode_data.get("name")
 
     episode = None
     if path:
         episode = existing_by_path.get(path)
         # If not found by path, check if there was a missing/future episode placeholder
         if not episode and tmdb_num is not None:
-            episode = existing_by_number.pop(tmdb_num, None)
+            episode = existing_by_number.get(tmdb_num)
             if episode:
                 # Promote placeholder to local file
                 logger.info(
                     f"Promoting placeholder episode S{season.name} E{tmdb_num} to local path {path}"
                 )
                 episode.path = path
-                existing_by_path[path] = episode
     elif tmdb_num is not None:
-        episode = existing_by_number.pop(tmdb_num, None)
+        episode = existing_by_number.get(tmdb_num)
+
+    # Fallback to name-based matching if still not found, to avoid UNIQUE constraint violation on name
+    if not episode and name:
+        episode = existing_by_name.get(name)
+        if episode:
+            logger.debug(
+                f"Matched existing episode by name fallback: S{season.name} '{name}'"
+            )
+            if path and not episode.path:
+                episode.path = path
+            if tmdb_num is not None and episode.tmdb_number is None:
+                episode.tmdb_number = tmdb_num
 
     if not episode:
         episode = Episode(path=path, season=season)
         session.add(episode)
-        if path:
-            existing_by_path[path] = episode
+    else:
+        # Remove from tracking dicts so it's not reused/considered stale
+        if episode.path in existing_by_path:
+            existing_by_path.pop(episode.path, None)
+        if episode.tmdb_number in existing_by_number:
+            existing_by_number.pop(episode.tmdb_number, None)
+        if episode.name in existing_by_name:
+            existing_by_name.pop(episode.name, None)
+
+    # If we newly added a path, make sure it is indexed
+    if path:
+        existing_by_path[path] = episode
 
     stats["episodes"] += 1
 
@@ -254,7 +277,8 @@ def _save_episode_record(
         episode_data.get("tmdb_episode_identifier") or episode.tmdb_episode_identifier
     )
     episode.tmdb_name = episode_data.get("tmdb_name") or episode.tmdb_name
-    episode.tmdb_number = episode_data.get("tmdb_number") or episode.tmdb_number
+    if episode_data.get("tmdb_number") is not None:
+        episode.tmdb_number = episode_data["tmdb_number"]
     episode.watched = episode.watched or bool(episode_data.get("watched"))
     episode.date_added = episode_data.get("date_added") or episode.date_added or 0
     episode.air_date = episode_data.get("air_date") or episode.air_date
@@ -325,11 +349,15 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
 
                     existing_by_path = {}
                     existing_by_number = {}
+                    existing_by_name = {}
                     for episode_obj in season.episodes:
                         if episode_obj.path is not None:
                             existing_by_path[episode_obj.path] = episode_obj
                         elif episode_obj.tmdb_number is not None:
                             existing_by_number[episode_obj.tmdb_number] = episode_obj
+
+                        if episode_obj.name is not None:
+                            existing_by_name[episode_obj.name] = episode_obj
 
                     for episode_data in season_data.get("episodes", []):
                         _save_episode_record(
@@ -338,17 +366,25 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
                             episode_data,
                             existing_by_path,
                             existing_by_number,
+                            existing_by_name,
                             stats,
                         )
 
-                    # Delete stale placeholders (which have path=None, i.e., in existing_by_number)
+                    # Delete stale placeholders (which have path=None)
+                    stale_placeholders = set()
                     for ep_obj in list(existing_by_number.values()):
                         if ep_obj.path is None:
-                            logger.info(
-                                f"Removing stale placeholder episode S{season.name} E{ep_obj.tmdb_number} from database"
-                            )
-                            session.delete(ep_obj)
-                            stats["deleted"] += 1
+                            stale_placeholders.add(ep_obj)
+                    for ep_obj in list(existing_by_name.values()):
+                        if ep_obj.path is None:
+                            stale_placeholders.add(ep_obj)
+
+                    for ep_obj in stale_placeholders:
+                        logger.info(
+                            f"Removing stale placeholder episode S{season.name} E{ep_obj.tmdb_number} from database"
+                        )
+                        session.delete(ep_obj)
+                        stats["deleted"] += 1
 
     except Exception:
         logger.exception(f"Error saving library '{library_name}' to database")

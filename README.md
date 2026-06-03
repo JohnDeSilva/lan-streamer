@@ -20,6 +20,7 @@ LAN Streamer is built to play your media files directly and natively without any
 
 ### 🔍 Metadata Management
 *   **🔍 Metadata Matching**: Multi-stage search strategy to link local media to TMDB and Jellyfin entries. Includes metadata locking capabilities to prevent automatic updates during library scans, alongside targeted metadata refresh controls in details windows to manually refresh individual series or episodes.
+*   **📺 TMDB TV Episode Groups & Season Resolution**: Automatically queries TMDB's TV Episode Groups API to match absolute-numbered anime or TV shows (such as *Frieren: Beyond Journey's End*) to a clean, season-based folder structure during local scans. In the UI, users can switch views between different group styles (Broadcast Seasons, Story Arcs, DVD order, Cours) with tabs and episodes sorted chronologically in air/group order.
 *   **📅 Missing & Future Episode Placeholders**: Automatically fetches and saves all episodes for a season to the local database when the first episode of that season is scanned. This optimizes API usage by eliminating redundant TMDB network calls, enables offline operations, and allows the UI to display upcoming or missing episodes immediately. This behavior can be configured:
     - **Per-library**: Via the "Show future episodes" checkbox in the "Libraries Setup" settings tab (only controls upcoming future episodes).
     - **Per-series**: Via the "Hide missing/future episodes" checkbox in the **Series Details** dialog (toggles visibility of all missing and future episodes for that series).
