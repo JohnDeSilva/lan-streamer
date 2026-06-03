@@ -5,7 +5,6 @@ from lan_streamer.backend import (
     ScanWorker,
     CleanupWorker,
     ScanAllLibrariesWorker,
-    CleanupAllLibrariesWorker,
 )
 
 
@@ -155,46 +154,6 @@ def test_scan_all_libraries_worker_execution() -> None:
             worker.error.connect(errors_emitted.append)
             worker.run()
             assert errors_emitted == ["Global scan error"]
-
-
-def test_cleanup_all_libraries_worker_execution() -> None:
-    # Successful run
-    with (
-        patch("lan_streamer.backend.scan_workers.config") as mock_config,
-        patch("lan_streamer.backend.scan_workers.db.cleanup_library") as mock_clean,
-    ):
-        mock_config.libraries = {
-            "LibA": {"paths": ["/path_a"]},
-            "LibB": {"paths": ["/path_b"]},
-        }
-        progress_emitted: List[tuple] = []
-        finished_emitted: List[bool] = []
-
-        worker = CleanupAllLibrariesWorker()
-        worker.library_progress.connect(
-            lambda name, comp, tot: progress_emitted.append((name, comp, tot))
-        )
-        worker.finished.connect(lambda: finished_emitted.append(True))
-        worker.run()
-
-        assert mock_clean.call_count == 2
-        mock_clean.assert_any_call("LibA", ["/path_a"])
-        mock_clean.assert_any_call("LibB", ["/path_b"])
-        assert progress_emitted == [("LibA", 1, 2), ("LibB", 2, 2)]
-        assert finished_emitted == [True]
-
-    # Exception run
-    with patch("lan_streamer.backend.scan_workers.config") as mock_config:
-        mock_config.libraries = {"LibA": {}}
-        with patch(
-            "lan_streamer.backend.scan_workers.db.cleanup_library",
-            side_effect=Exception("Global clean error"),
-        ):
-            errors_emitted: List[str] = []
-            worker = CleanupAllLibrariesWorker()
-            worker.error.connect(errors_emitted.append)
-            worker.run()
-            assert errors_emitted == ["Global clean error"]
 
 
 def test_scan_worker_detail_progress() -> None:

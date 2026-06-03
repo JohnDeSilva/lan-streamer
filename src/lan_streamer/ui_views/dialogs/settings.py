@@ -585,10 +585,6 @@ class SettingsDialog(QDialog):
         scan_all_button.clicked.connect(self.trigger_global_scan_files)
         management_layout.addWidget(scan_all_button)
 
-        cleanup_all_button: QPushButton = QPushButton("Cleanup All Libraries")
-        cleanup_all_button.clicked.connect(self.trigger_global_cleanup)
-        management_layout.addWidget(cleanup_all_button)
-
         extract_runtime_button: QPushButton = QPushButton(
             "Extract Missing Video Runtimes (Background)"
         )
@@ -1424,12 +1420,6 @@ class SettingsDialog(QDialog):
         if self.controller is not None:
             self._show_scan_progress_widgets()
             self.controller.trigger_scan_all(False)
-
-    @Slot()
-    def trigger_global_cleanup(self) -> None:
-        if self.controller is not None:
-            self.global_progress_bar.setVisible(True)
-            self.controller.trigger_cleanup_all()
 
     @Slot()
     def trigger_global_runtime_extraction(self) -> None:

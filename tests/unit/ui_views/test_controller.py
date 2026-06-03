@@ -320,25 +320,6 @@ def test_controller_global_triggers() -> None:
             controller_instance._on_scan_all_finished()
             mock_select.assert_called_once_with("CosmosLib", reset_selection=False)
 
-    with patch(
-        "lan_streamer.ui_views.controller.CleanupAllLibrariesWorker"
-    ) as mock_cleanup_all:
-        controller_instance.trigger_cleanup_all()
-        mock_cleanup_all.assert_called_once()
-        mock_cleanup_all.return_value.start.assert_called_once()
-
-        # Test concurrency protection
-        mock_worker_clean = MagicMock()
-        mock_worker_clean.isRunning.return_value = True
-        controller_instance.cleanup_all_worker_instance = mock_worker_clean
-        controller_instance.trigger_cleanup_all()
-        assert mock_cleanup_all.call_count == 1
-
-        # Test finished callback
-        with patch.object(controller_instance, "select_library") as mock_select:
-            controller_instance._on_cleanup_all_finished()
-            mock_select.assert_called_once_with("CosmosLib", reset_selection=False)
-
 
 def test_controller_toggle_series_lock(mock_controller, mock_db_save):
     mock_save, mock_movie_save = mock_db_save

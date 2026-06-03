@@ -19,7 +19,6 @@ Below is the structured textual representation of all major class inheritance pa
 ### 2. Background Thread Workers (`QThread`)
 - `QThread` (PySide6)
   - `CacheWorker` (copies network share media locally)
-  - `CleanupAllLibrariesWorker` (removes deleted/missing items across all libraries)
   - `CleanupWorker` (cleans up a single media library)
   - `JellyfinPullWorker` (pulls watch history from Jellyfin user database)
   - `JellyfinPushWorker` (syncs watched episodes/movies to Jellyfin server)
@@ -117,19 +116,6 @@ Below is the structured textual representation of all major class inheritance pa
 
 **Methods**:
 - `def __init__(self, src_path: str, dest_path: str) -> None`
-
-- `def run(self) -> None`
-
----
-
-### `CleanupAllLibrariesWorker`
-- **Defined in**: [scan_workers.py](../src/lan_streamer/backend/scan_workers.py#L324) (line 324)
-- **Inherits from**: `QThread`
-
-> Removes missing items from the database across all configured libraries sequentially.
-
-**Methods**:
-- `def __init__(self, parent: Optional[QObject]=None) -> None`
 
 - `def run(self) -> None`
 
@@ -724,8 +710,6 @@ Below is the structured textual representation of all major class inheritance pa
 
 - `def save_config(self) -> None`
 
-- `def trigger_global_cleanup(self) -> None`
-
 - `def trigger_global_jellyfin_pull(self) -> None`
 
 - `def trigger_global_jellyfin_push(self) -> None`
@@ -1215,8 +1199,6 @@ Below is the structured textual representation of all major class inheritance pa
 
 - `def _download_provider_artwork(self, target_dict: Dict[str, Any], match_dictionary: Dict[str, Any], is_movie: bool) -> None`
 
-- `def _on_cleanup_all_finished(self) -> None`
-
 - `def _on_cleanup_finished(self, statistics: Dict[str, Any]) -> None`
 
 - `def _on_debounce_timeout(self) -> None`
@@ -1294,8 +1276,6 @@ Below is the structured textual representation of all major class inheritance pa
   > Updates the locked_metadata flag for a series or movie and persists it to the database.
 
 - `def trigger_cleanup(self) -> None`
-
-- `def trigger_cleanup_all(self) -> None`
 
 - `def trigger_jellyfin_pull(self) -> None`
 

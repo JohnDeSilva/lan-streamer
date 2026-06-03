@@ -14,7 +14,6 @@ from lan_streamer.backend import (
     JellyfinPullWorker,
     JellyfinPushWorker,
     ScanAllLibrariesWorker,
-    CleanupAllLibrariesWorker,
     RuntimeExtractionWorker,
 )
 
@@ -54,7 +53,6 @@ __all__ = [
     "JellyfinPullWorker",
     "JellyfinPushWorker",
     "ScanAllLibrariesWorker",
-    "CleanupAllLibrariesWorker",
     "RuntimeExtractionWorker",
     "get_application_stylesheet",
     "SegmentedProgressBar",
