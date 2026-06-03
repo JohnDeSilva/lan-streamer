@@ -1,3 +1,9 @@
+## v0.22.3 (2026-06-02)
+
+### Fix
+
+- fixes Next Up sort bug in combined view, exclude placeholder episodes from library queries, and improve logging
+
 ## v0.22.2 (2026-06-02)
 
 ### Fix
