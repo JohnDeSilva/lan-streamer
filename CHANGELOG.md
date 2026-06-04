@@ -1,3 +1,15 @@
+## v0.23.1 (2026-06-04)
+
+### Fix
+
+- **dev-dependency**: bump commitizen from 4.16.2 to 4.16.3
+- **dev-dependency**: bump ruff from 0.15.14 to 0.15.15
+
+### Refactor
+
+- rename Scan & Update action to Scan Library throughout the UI and documentation
+- remove CleanupAllLibrariesWorker and associated UI functionality
+
 ## v0.23.0 (2026-06-03)
 
 ### Feat
