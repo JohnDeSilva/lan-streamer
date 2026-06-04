@@ -17,7 +17,6 @@ if TYPE_CHECKING:
         JellyfinPullWorker,
         JellyfinPushWorker,
         ScanAllLibrariesWorker,
-        CleanupAllLibrariesWorker,
         RuntimeExtractionWorker,
     )
 else:
@@ -29,7 +28,6 @@ else:
         JellyfinPullWorker,
         JellyfinPushWorker,
         ScanAllLibrariesWorker,
-        CleanupAllLibrariesWorker,
         RuntimeExtractionWorker,
     )
 
@@ -74,7 +72,6 @@ class Controller(QObject):
         self.pull_worker_instance: Optional[JellyfinPullWorker] = None
         self.push_worker_instance: Optional[JellyfinPushWorker] = None
         self.scan_all_worker_instance: Optional[ScanAllLibrariesWorker] = None
-        self.cleanup_all_worker_instance: Optional[CleanupAllLibrariesWorker] = None
         self.runtime_worker_instance: Optional[RuntimeExtractionWorker] = None
         self.merge_subtitle_worker_instance: Optional[Any] = None
         self.embed_metadata_worker_instance: Optional[Any] = None
@@ -443,7 +440,7 @@ class Controller(QObject):
         series_removed: int = statistics.get("series", 0)
         episodes_nulled: int = statistics.get("episodes", 0)
         self.status_changed.emit(
-            f"Scan & Update complete. "
+            f"Scan Library complete. "
             f"{series_removed} series removed, {episodes_nulled} episode paths updated."
         )
         self.scan_completed.emit()
@@ -547,28 +544,6 @@ class Controller(QObject):
             else:
                 self.select_library(self.current_library_name, reset_selection=False)
         self.scan_completed.emit()
-
-    def trigger_cleanup_all(self) -> None:
-        if (
-            self.cleanup_all_worker_instance is not None
-            and self.cleanup_all_worker_instance.isRunning()
-        ):
-            logger.info("CleanupAllLibrariesWorker is already running.")
-            return
-
-        self.status_changed.emit("Cleaning up all libraries...")
-        self.cleanup_all_worker_instance = CleanupAllLibrariesWorker()
-        self.cleanup_all_worker_instance.library_progress.connect(
-            self.global_progress_updated.emit
-        )
-        self.cleanup_all_worker_instance.finished.connect(self._on_cleanup_all_finished)
-        self.cleanup_all_worker_instance.error.connect(self._on_worker_error)
-        self.cleanup_all_worker_instance.start()
-
-    def _on_cleanup_all_finished(self) -> None:
-        self.status_changed.emit("Global multi-library cleanup completed successfully.")
-        if self.current_library_name:
-            self.select_library(self.current_library_name, reset_selection=False)
 
     def trigger_runtime_extraction(self) -> None:
         if (

@@ -328,39 +328,3 @@ class ScanAllLibrariesWorker(QThread):
         except Exception as exception_instance:
             logger.exception("ScanAllLibrariesWorker failed")
             self.error.emit(str(exception_instance))
-
-
-class CleanupAllLibrariesWorker(QThread):
-    """Removes missing items from the database across all configured libraries sequentially."""
-
-    library_progress = Signal(str, int, int)
-    finished = Signal()
-    error = Signal(str)
-
-    def __init__(self, parent: Optional[QObject] = None) -> None:
-        super().__init__(parent)
-
-    def run(self) -> None:
-        try:
-            logger.info("CleanupAllLibrariesWorker starting global cleanup run")
-            libraries_dictionary = config.libraries
-            total_count: int = len(libraries_dictionary)
-            completed_count: int = 0
-
-            for library_name, library_configuration in libraries_dictionary.items():
-                logger.info(
-                    f"CleanupAllLibrariesWorker cleaning library: {library_name}"
-                )
-                root_directories: List[str] = list(
-                    library_configuration.get("paths", [])
-                )
-                db.cleanup_library(library_name, root_directories)
-
-                completed_count += 1
-                self.library_progress.emit(library_name, completed_count, total_count)
-
-            logger.info("CleanupAllLibrariesWorker finished successfully")
-            self.finished.emit()
-        except Exception as exception_instance:
-            logger.exception("CleanupAllLibrariesWorker failed")
-            self.error.emit(str(exception_instance))

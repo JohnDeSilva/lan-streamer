@@ -106,7 +106,7 @@ class LibraryGridView(QWidget):
         actions_toolbar_layout.setContentsMargins(0, 0, 0, 0)
         actions_toolbar_layout.setSpacing(10)
 
-        scan_button: QPushButton = QPushButton("Scan & Update")
+        scan_button: QPushButton = QPushButton("Scan Library")
         scan_button.setToolTip(
             "Scan for new files and update paths for moved or deleted episodes"
         )
@@ -138,7 +138,7 @@ class LibraryGridView(QWidget):
         combined_actions_toolbar_layout.setContentsMargins(0, 0, 0, 0)
         combined_actions_toolbar_layout.setSpacing(10)
 
-        combined_scan_button: QPushButton = QPushButton("Scan & Update")
+        combined_scan_button: QPushButton = QPushButton("Scan Library")
         combined_scan_button.setToolTip(
             "Scan for new files and update paths for moved or deleted episodes"
         )
