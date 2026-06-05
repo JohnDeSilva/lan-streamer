@@ -77,3 +77,26 @@ def test_settings_dialog_combined_view_comboboxes(qtbot) -> None:
     assert "Next Up" not in filter_items
 
     dialog.reject()
+
+
+def test_settings_dialog_vlc_buffer(qtbot) -> None:
+    from lan_streamer.ui_views.dialogs.settings import SettingsDialog
+    from lan_streamer.system.config import config
+
+    config.vlc_buffer_ms = 4000
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    # Check that the input box has the correct initial value
+    assert dialog.vlc_buffer_input.text() == "4000"
+
+    # Modify value
+    dialog.vlc_buffer_input.setText("8000")
+
+    # Save and verify
+    with patch.object(config, "save") as mock_save:
+        dialog.save_config()
+        assert config.vlc_buffer_ms == 8000
+        mock_save.assert_called_once()
+
+    dialog.reject()

@@ -86,7 +86,7 @@ class SettingsDialog(QDialog):
             "Use Embedded Video Player (uncheck for Standalone VLC)"
         )
         self.enable_caching_checkbox: QCheckBox = QCheckBox(
-            "Enable Media Stream Caching"
+            "Copy Files to local Cache before Streaming"
         )
         self.enable_hw_accel_checkbox: QCheckBox = QCheckBox(
             "Enable Hardware Acceleration Decoding"
@@ -96,6 +96,7 @@ class SettingsDialog(QDialog):
         )
         self.watched_threshold_input: QLineEdit = QLineEdit()
         self.max_cache_size_input: QLineEdit = QLineEdit()
+        self.vlc_buffer_input: QLineEdit = QLineEdit()
 
         self.db_path_input: QLineEdit = QLineEdit()
         self.log_dir_input: QLineEdit = QLineEdit()
@@ -437,11 +438,18 @@ class SettingsDialog(QDialog):
         player_layout.addLayout(threshold_layout)
 
         cache_size_layout: QHBoxLayout = QHBoxLayout()
-        cache_size_layout.addWidget(QLabel("Max Cache Size (GB):"))
+        cache_size_layout.addWidget(QLabel("Max Local File Cache Size (GB):"))
         self.max_cache_size_input.setFixedWidth(80)
         cache_size_layout.addWidget(self.max_cache_size_input)
         cache_size_layout.addStretch()
         player_layout.addLayout(cache_size_layout)
+
+        vlc_buffer_layout: QHBoxLayout = QHBoxLayout()
+        vlc_buffer_layout.addWidget(QLabel("VLC Buffer Size (ms):"))
+        self.vlc_buffer_input.setFixedWidth(80)
+        vlc_buffer_layout.addWidget(self.vlc_buffer_input)
+        vlc_buffer_layout.addStretch()
+        player_layout.addLayout(vlc_buffer_layout)
 
         player_layout.addStretch()
 
@@ -740,6 +748,7 @@ class SettingsDialog(QDialog):
         )
         self.watched_threshold_input.setText(str(int(config.watched_threshold * 100)))
         self.max_cache_size_input.setText(str(config.max_cache_size_gb))
+        self.vlc_buffer_input.setText(str(config.vlc_buffer_ms))
 
         self.db_path_input.setText(config.database_path)
         self.log_dir_input.setText(config.log_directory)
@@ -1233,6 +1242,11 @@ class SettingsDialog(QDialog):
 
         try:
             config.max_cache_size_gb = float(self.max_cache_size_input.text().strip())
+        except ValueError:
+            pass
+
+        try:
+            config.vlc_buffer_ms = int(self.vlc_buffer_input.text().strip())
         except ValueError:
             pass
 

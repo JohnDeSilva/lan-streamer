@@ -59,9 +59,9 @@ class VideoPlayerWidget(QWidget):
                 "--deinterlace=1",
                 "--deinterlace-mode=yadif",
                 # Caching to ensure smooth delivery
-                "--file-caching=3000",
-                "--network-caching=5000",
-                "--live-caching=5000",
+                f"--file-caching={config.vlc_buffer_ms}",
+                f"--network-caching={config.vlc_buffer_ms}",
+                f"--live-caching={config.vlc_buffer_ms}",
                 # High quality scaling and decoding
                 "--swscale-mode=2",  # Lanczos
                 "--avcodec-skiploopfilter=0",

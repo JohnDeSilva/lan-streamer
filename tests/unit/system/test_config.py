@@ -21,6 +21,7 @@ def test_config_initialization(mock_config_file) -> None:
     assert config.filter_out_watched is False
     assert config.sort_mode == "Alphabetical"
     assert config.max_cache_size_gb == 15.0
+    assert config.vlc_buffer_ms == 3000
     assert config.backup_directory.endswith("backups")
     assert config.config_backup_frequency == 0
     assert config.database_backup_frequency == 0
@@ -41,6 +42,7 @@ def test_config_load_existing(mock_config_file) -> None:
                 "filter_out_watched": True,
                 "sort_mode": "Date Added (Newest)",
                 "max_cache_size_gb": 20.5,
+                "vlc_buffer_ms": 7500,
             },
             f,
         )
@@ -60,6 +62,7 @@ def test_config_load_existing(mock_config_file) -> None:
     assert config.filter_out_watched is True
     assert config.sort_mode == "Date Added (Newest)"
     assert config.max_cache_size_gb == 20.5
+    assert config.vlc_buffer_ms == 7500
 
 
 def test_config_migrate_old_format(mock_config_file) -> None:
