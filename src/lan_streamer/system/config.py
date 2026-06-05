@@ -41,6 +41,7 @@ class Config:
         self.use_embedded_player: bool = True
         self.enable_hw_accel: bool = True
         self.vlc_extra_args: List[str] = []
+        self.vlc_buffer_ms: int = 3000
         self.player_overlay_opacity: float = 0.4
         self.player_overlay_color: str = "white"
         self.max_cache_size_gb: float = 15.0
@@ -149,6 +150,7 @@ class Config:
                     self.use_embedded_player = data.get("use_embedded_player", True)
                     self.enable_hw_accel = data.get("enable_hw_accel", True)
                     self.vlc_extra_args = data.get("vlc_extra_args", [])
+                    self.vlc_buffer_ms = int(data.get("vlc_buffer_ms", 3000))
                     self.player_overlay_opacity = data.get(
                         "player_overlay_opacity", 0.4
                     )
@@ -278,6 +280,7 @@ class Config:
                         "use_embedded_player": self.use_embedded_player,
                         "enable_hw_accel": self.enable_hw_accel,
                         "vlc_extra_args": self.vlc_extra_args,
+                        "vlc_buffer_ms": self.vlc_buffer_ms,
                         "player_overlay_opacity": self.player_overlay_opacity,
                         "player_overlay_color": self.player_overlay_color,
                         "max_cache_size_gb": self.max_cache_size_gb,

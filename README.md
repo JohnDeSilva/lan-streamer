@@ -173,18 +173,27 @@ The application includes a **Running Logs** tab in Settings. Utilizing a thread-
 - Clear the log display or copy all log output to the clipboard.
 - Export all logs (including active and rotated logs) into a compressed ZIP file (`lan_streamer_logs_YYYYMMDD_HHMMSS.zip`) saved directly in the user's home directory.
 
-### Local Caching
-To minimize network latency and buffering when streaming from remote sources (e.g., NAS over Wi-Fi), LAN Streamer can cache media files to local storage before playback.
+### Local Caching & Playback Buffering
+To minimize network latency and buffering when streaming from remote sources (e.g., NAS over Wi-Fi), LAN Streamer provides two buffering mechanism options:
 
-#### Configuration Keys
-- `enable_caching`: Toggles background caching. Default: `false`.
-- `cache_directory`: Path where cached files are stored (default: `~/.config/lan-streamer/cache`).
-- `max_cache_size_gb`: Maximum disk space allocated for the cache. Default: `15.0` GB.
+#### 1. Copy Files to Local Cache before Streaming
+Copies the entire media file to local storage before playback starts.
+- **Configuration Keys:**
+  - `enable_caching`: Toggles background caching. Default: `false`.
+  - `cache_directory`: Path where cached files are stored (default: `~/.config/lan-streamer/cache`).
+  - `max_cache_size_gb`: Maximum disk space allocated for the cache. Default: `15.0` GB.
+- **Behavior:**
+  - **Pre-playback Copy**: When enabled, the application copies the entire media file to the local cache before the player starts. A progress bar is displayed during this process.
+  - **Auto-Reuse**: If a file is already in the cache and its size matches the source, playback starts immediately.
+  - **LRU Cleanup**: The system automatically removes the oldest cached files when the `max_cache_size_gb` limit is reached or when files are older than 24 hours.
 
-#### Behavior
-- **Pre-playback Copy**: When enabled, the application copies the entire media file to the local cache before the player starts. A progress bar is displayed during this process.
-- **Auto-Reuse**: If a file is already in the cache and its size matches the source, playback starts immediately.
-- **LRU Cleanup**: The system automatically removes the oldest cached files when the `max_cache_size_gb` limit is reached or when files are older than 24 hours.
+#### 2. VLC Player Stream Buffering
+Configures VLC's internal caching buffer size (in milliseconds) to absorb temporary network drops without copying the entire file first.
+- **Configuration Keys:**
+  - `vlc_buffer_ms`: Buffer cache size (in milliseconds) used for VLC player options (`--file-caching`, `--network-caching`, and `--live-caching`). Default: `3000`.
+- **Behavior:**
+  - Configurable under the **Video Player** settings tab in the UI.
+  - Controls VLC's cache buffer sizes dynamically.
 
 ### Progress Tracking
 The application automatically tracks your playback progress and maintains a "watched" state across your library.
