@@ -1,3 +1,10 @@
+## v0.24.3 (2026-06-05)
+
+### Fix
+
+- add support for Default TV Order episode grouping in manual mapper and scanner
+- sanitize dictionary data retrieval with fallback defaults and expand unit test coverage for dialog components.
+
 ## v0.24.2 (2026-06-05)
 
 ### Fix
