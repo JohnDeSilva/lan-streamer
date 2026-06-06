@@ -19,6 +19,11 @@ class Config:
         self.jellyfin_url: str = ""
         self.jellyfin_api_key: str = ""
         self.tmdb_api_key: str = ""
+        self.myanimelist_client_id: str = ""
+        self.myanimelist_client_secret: str = ""
+        self.myanimelist_access_token: str = ""
+        self.myanimelist_refresh_token: str = ""
+        self.myanimelist_token_expires_at: float = 0.0
         self.opensubtitles_username: str = ""
         self.opensubtitles_password: str = ""
         self.opensubtitles_api_key: str = ""
@@ -86,6 +91,19 @@ class Config:
                     self.tmdb_api_key = data.get(
                         "tmdb_api_key",
                         data.get("tvdb_api_key", ""),  # backwards compat
+                    )
+                    self.myanimelist_client_id = data.get("myanimelist_client_id", "")
+                    self.myanimelist_client_secret = data.get(
+                        "myanimelist_client_secret", ""
+                    )
+                    self.myanimelist_access_token = data.get(
+                        "myanimelist_access_token", ""
+                    )
+                    self.myanimelist_refresh_token = data.get(
+                        "myanimelist_refresh_token", ""
+                    )
+                    self.myanimelist_token_expires_at = float(
+                        data.get("myanimelist_token_expires_at", 0.0)
                     )
                     self.opensubtitles_username = data.get("opensubtitles_username", "")
                     self.opensubtitles_password = data.get("opensubtitles_password", "")
@@ -263,6 +281,11 @@ class Config:
                         "jellyfin_url": self.jellyfin_url,
                         "jellyfin_api_key": self.jellyfin_api_key,
                         "tmdb_api_key": self.tmdb_api_key,
+                        "myanimelist_client_id": self.myanimelist_client_id,
+                        "myanimelist_client_secret": self.myanimelist_client_secret,
+                        "myanimelist_access_token": self.myanimelist_access_token,
+                        "myanimelist_refresh_token": self.myanimelist_refresh_token,
+                        "myanimelist_token_expires_at": self.myanimelist_token_expires_at,
                         "opensubtitles_username": self.opensubtitles_username,
                         "opensubtitles_password": self.opensubtitles_password,
                         "opensubtitles_api_key": self.opensubtitles_api_key,

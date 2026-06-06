@@ -42,6 +42,8 @@ def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> None:
     movie.runtime = movie_data.get("runtime") or movie.runtime or 0
     movie.rating = movie_data.get("rating") or movie.rating or ""
     movie.genre = movie_data.get("genre") or movie.genre or ""
+    if "myanimelist_anime_id" in movie_data:
+        movie.myanimelist_anime_id = movie_data["myanimelist_anime_id"]
     movie.year = movie_data.get("year") or movie.year or 0
     movie.watched = movie.watched or bool(movie_data.get("watched"))
     movie.last_played_position = (
@@ -212,6 +214,8 @@ def _save_season_record(
     season_metadata = season_data.get("metadata", {})
     season.jellyfin_id = season_metadata.get("jellyfin_id") or season.jellyfin_id
     season.poster_path = season_metadata.get("poster_path") or season.poster_path
+    if "myanimelist_id" in season_metadata:
+        season.myanimelist_id = season_metadata["myanimelist_id"]
     return season
 
 
@@ -285,6 +289,10 @@ def _save_episode_record(
     episode.date_added = episode_data.get("date_added") or episode.date_added or 0
     episode.air_date = episode_data.get("air_date") or episode.air_date
     episode.runtime = episode_data.get("runtime") or episode.runtime or 0
+    if "myanimelist_anime_id" in episode_data:
+        episode.myanimelist_anime_id = episode_data["myanimelist_anime_id"]
+    if "myanimelist_episode_number" in episode_data:
+        episode.myanimelist_episode_number = episode_data["myanimelist_episode_number"]
     if "video_codec" in episode_data:
         episode.video_codec = episode_data.get("video_codec") or episode.video_codec
     if "resolution" in episode_data:

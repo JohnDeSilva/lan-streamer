@@ -62,6 +62,7 @@ class Season(Base):
     name: Mapped[Optional[str]] = mapped_column(String)
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
     poster_path: Mapped[Optional[str]] = mapped_column(String)
+    myanimelist_id: Mapped[Optional[int]] = mapped_column(Integer)
 
     series: Mapped[Optional["Series"]] = relationship(
         "Series", back_populates="seasons"
@@ -98,6 +99,8 @@ class Episode(Base):
     date_added: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     air_date: Mapped[Optional[str]] = mapped_column(String)
     runtime: Mapped[Optional[int]] = mapped_column(Integer)
+    myanimelist_anime_id: Mapped[Optional[int]] = mapped_column(Integer)
+    myanimelist_episode_number: Mapped[Optional[int]] = mapped_column(Integer)
     last_played_position: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     last_played_at: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     video_codec: Mapped[Optional[str]] = mapped_column(String)
@@ -132,6 +135,7 @@ class Movie(Base):
     locked_metadata: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     date_added: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     path: Mapped[Optional[str]] = mapped_column(String, unique=True)
+    myanimelist_anime_id: Mapped[Optional[int]] = mapped_column(Integer)
     runtime: Mapped[Optional[int]] = mapped_column(Integer)
     rating: Mapped[Optional[str]] = mapped_column(String)
     genre: Mapped[Optional[str]] = mapped_column(String)
