@@ -476,8 +476,13 @@ def test_e2e_right_click_marks_watched(
 
         assert mock_menu_instance.exec.called
         assert mock_menu_instance.addAction.called
-        action = mock_menu_instance.addAction.call_args[0][0]
-        assert "Mark as Watched" in action.text()
+        action = None
+        for call in mock_menu_instance.addAction.call_args_list:
+            act = call[0][0]
+            if "Mark as Watched" in act.text():
+                action = act
+                break
+        assert action is not None
         action.trigger()
 
     assert (
@@ -499,8 +504,13 @@ def test_e2e_right_click_marks_watched(
 
         assert mock_menu_instance.exec.called
         assert mock_menu_instance.addAction.called
-        action = mock_menu_instance.addAction.call_args[0][0]
-        assert "Mark as Unwatched" in action.text()
+        action = None
+        for call in mock_menu_instance.addAction.call_args_list:
+            act = call[0][0]
+            if "Mark as Unwatched" in act.text():
+                action = act
+                break
+        assert action is not None
         action.trigger()
 
     assert (

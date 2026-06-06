@@ -27,6 +27,8 @@ from lan_streamer.db.queries import (
     get_combined_next_up,
     get_combined_recently_added,
     get_combined_smart_row,
+    delete_series_record,
+    delete_episode_record,
 )
 from lan_streamer.db.library import (
     load_library,
@@ -78,6 +80,8 @@ __all__ = [
     "get_combined_next_up",
     "get_combined_recently_added",
     "get_combined_smart_row",
+    "delete_series_record",
+    "delete_episode_record",
     "load_library",
     "save_library",
     "load_movie_library",

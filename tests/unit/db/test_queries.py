@@ -797,3 +797,54 @@ def test_get_combined_smart_row_next_up(mock_db_file) -> None:
     assert results[1]["name"] == "Show B"
     assert results[2]["type"] == "series"
     assert results[2]["name"] == "Show A"
+
+
+def test_delete_series_record(mock_db_file) -> None:
+    test_lib = {
+        "DeleteSeries": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Ep 1",
+                            "path": "/path/to/del_ep1.mkv",
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library("MyLib", test_lib)
+
+    db.delete_series_record("MyLib", "DeleteSeries")
+
+    loaded = db.load_library("MyLib")
+    assert "DeleteSeries" not in loaded
+
+
+def test_delete_episode_record(mock_db_file) -> None:
+    test_lib = {
+        "TestSeries": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Ep 1",
+                            "path": "/path/to/del_ep.mkv",
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library("MyLib", test_lib)
+
+    db.delete_episode_record("/path/to/del_ep.mkv")
+
+    loaded = db.load_library("MyLib")
+    eps = loaded["TestSeries"]["seasons"]["Season 1"]["episodes"]
+    assert len(eps) == 0

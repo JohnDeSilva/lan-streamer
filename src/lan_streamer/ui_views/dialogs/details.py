@@ -809,6 +809,11 @@ class SeriesDetailsDialog(QDialog):
         mark_watched_btn.clicked.connect(self._on_mark_watched_clicked)
         settings_layout.addWidget(mark_watched_btn)
 
+        delete_series_btn = QPushButton("Delete Series...")
+        delete_series_btn.setObjectName("dangerButton")
+        delete_series_btn.clicked.connect(self._on_delete_series_clicked)
+        settings_layout.addWidget(delete_series_btn)
+
         settings_layout.addStretch()
 
         self.tab_widget.addTab(settings_tab, "General Settings")
@@ -1184,6 +1189,17 @@ class SeriesDetailsDialog(QDialog):
     def _on_mark_watched_clicked(self) -> None:
         self.controller.mark_series_watched(self.series_name)
         self.accept()
+
+    def _on_delete_series_clicked(self) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "Delete Series",
+            f"Are you sure you want to delete the series '{self.series_name}' from the library database? This action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.controller.delete_series(self.series_name)
+            self.accept()
 
     def _on_save_clicked(self) -> None:
         new_name = self.name_edit.text()

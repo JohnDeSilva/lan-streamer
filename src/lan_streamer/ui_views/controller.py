@@ -1214,3 +1214,29 @@ class Controller(QObject):
                     self.movie_selected.emit(self.selected_series_name)
                 else:
                     self.series_selected.emit(self.selected_series_name)
+
+    def delete_series(self, series_name: str) -> None:
+        """Deletes a series record from database."""
+        logger.info(f"Controller deleting series: {series_name}")
+        if not self.current_library_name:
+            return
+
+        try:
+            db.delete_series_record(self.current_library_name, series_name)
+        except Exception as e:
+            logger.exception(f"Failed to delete series record for {series_name}: {e}")
+
+        self.select_library(self.current_library_name, reset_selection=True)
+
+    def delete_episode(self, absolute_path: str) -> None:
+        """Deletes an episode record from database."""
+        logger.info(f"Controller deleting episode: {absolute_path}")
+        try:
+            db.delete_episode_record(absolute_path)
+        except Exception as e:
+            logger.exception(
+                f"Failed to delete episode record for {absolute_path}: {e}"
+            )
+
+        if self.current_library_name:
+            self.select_library(self.current_library_name, reset_selection=False)

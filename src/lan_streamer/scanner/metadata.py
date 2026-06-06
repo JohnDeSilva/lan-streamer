@@ -470,7 +470,7 @@ def _process_series_metadata(
         if manual_jellyfin_id:
             series_metadata["jellyfin_id"] = manual_jellyfin_id
 
-    if not force_refresh and not cleanup and existing_series_data:
+    if not force_refresh and not has_new_files and not cleanup and existing_series_data:
         series_data = existing_series_data.copy()
         meta = series_data.get("metadata", {})
         if (

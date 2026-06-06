@@ -675,3 +675,35 @@ def get_combined_smart_row(
     except Exception:
         logger.exception("Error in get_combined_smart_row")
         return []
+
+
+def delete_series_record(library_name: str, series_name: str) -> None:
+    """Deletes a series record from the database."""
+    try:
+        logger.info(
+            f"Deleting series '{series_name}' from library '{library_name}' in database"
+        )
+        with get_session() as session:
+            series = session.scalars(
+                select(Series).where(
+                    Series.library_name == library_name, Series.name == series_name
+                )
+            ).first()
+            if series:
+                session.delete(series)
+    except Exception:
+        logger.exception(f"Error deleting series '{series_name}'")
+
+
+def delete_episode_record(path: str) -> None:
+    """Deletes an episode record from the database."""
+    try:
+        logger.info(f"Deleting episode record for path: {path}")
+        with get_session() as session:
+            episode = session.scalars(
+                select(Episode).where(Episode.path == path)
+            ).first()
+            if episode:
+                session.delete(episode)
+    except Exception:
+        logger.exception(f"Error deleting episode record for '{path}'")
