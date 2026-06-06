@@ -554,7 +554,7 @@ def _process_series_metadata(
                     else {}
                 )
                 saved_group_id = existing_metadata.get("tmdb_episode_group_id")
-                if saved_group_id:
+                if saved_group_id and saved_group_id != "default":
                     try:
                         episode_group_details = tmdb_client.get_episode_group_details(
                             saved_group_id
@@ -566,7 +566,9 @@ def _process_series_metadata(
                         logger.exception(
                             f"Failed to fetch saved group details {saved_group_id}: {e}"
                         )
-                if not episode_group_details:
+                if saved_group_id == "default":
+                    episode_group_details = None
+                elif not episode_group_details:
                     episode_group_details = tmdb_client.get_season_based_episode_group(
                         tmdb_identifier
                     )

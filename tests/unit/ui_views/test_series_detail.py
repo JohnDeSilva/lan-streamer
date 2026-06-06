@@ -348,14 +348,14 @@ def test_series_details_dialog_manual_mapper(qtbot: Any) -> None:
         assert dialog.tab_widget.tabText(1) == "Manual Episode Mapper"
 
         # Check groups combo
-        assert dialog.group_combo.count() == 2
-        assert dialog.group_combo.itemText(1) == "Story Arcs"
+        assert dialog.group_combo.count() == 3
+        assert dialog.group_combo.itemText(2) == "Story Arcs"
 
         # Checkbox should be unchecked initially
         assert dialog.set_default_group_checkbox.isChecked() is False
 
         # Select Group
-        dialog.group_combo.setCurrentIndex(1)
+        dialog.group_combo.setCurrentIndex(2)
 
         # Checkbox should be enabled and unchecked
         assert dialog.set_default_group_checkbox.isEnabled() is True

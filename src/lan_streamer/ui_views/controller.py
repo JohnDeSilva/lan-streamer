@@ -600,7 +600,7 @@ class Controller(QObject):
     ) -> None:
         episode_group_details = None
         saved_group_id = series_record.get("metadata", {}).get("tmdb_episode_group_id")
-        if saved_group_id:
+        if saved_group_id and saved_group_id != "default":
             try:
                 episode_group_details = tmdb_client.get_episode_group_details(
                     saved_group_id
