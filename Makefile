@@ -29,6 +29,7 @@ CONTAINER_ENGINE ?= $(shell command -v docker 2> /dev/null || command -v podman 
 TEST_OS ?= fedora
 TEST_OS_VERSION ?= latest
 GIT_HASH := $(shell git rev-parse --short HEAD)
+VERSION := $(shell python3 -c "import re; print(re.search(r'__version__\s*=\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]', open('src/lan_streamer/__init__.py').read()).group(1))")
 DOCKERFILE := $(shell if [ -f docker/Dockerfile.$(TEST_OS)-$(TEST_OS_VERSION) ]; then echo docker/Dockerfile.$(TEST_OS)-$(TEST_OS_VERSION); else echo docker/Dockerfile.$(TEST_OS); fi)
 
 run: migrate
@@ -84,21 +85,21 @@ load-test:
 build:
 	$(PYTHON) -m PyInstaller --noconfirm lan-streamer.spec
 ifeq ($(UNAME_S),Darwin)
-	rm -rf dist/lan-streamer
-	ln -sf lan-streamer.app/Contents/MacOS/lan-streamer dist/lan-streamer
+	rm -rf dist/lan-streamer-$(VERSION)
+	ln -sf lan-streamer-$(VERSION).app/Contents/MacOS/lan-streamer-$(VERSION) dist/lan-streamer-$(VERSION)
 endif
 
 validate-executable:
 ifeq ($(UNAME_S),Darwin)
 	$(MAKE) build
-	LAN_STREAMER_DRY_RUN=1 QT_QPA_PLATFORM=offscreen ./dist/lan-streamer.app/Contents/MacOS/lan-streamer
+	LAN_STREAMER_DRY_RUN=1 QT_QPA_PLATFORM=offscreen ./dist/lan-streamer-$(VERSION).app/Contents/MacOS/lan-streamer-$(VERSION)
 else
 	$(MAKE) build-test-image
-	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_DRY_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-$(TEST_OS):$(GIT_HASH) ./dist/lan-streamer
+	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_DRY_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-$(TEST_OS):$(GIT_HASH) ./dist/lan-streamer-$(VERSION)
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-extract || true
 	$(CONTAINER_ENGINE) create --name lan-streamer-test-$(TEST_OS)-extract lan-streamer-test-$(TEST_OS):$(GIT_HASH)
 	mkdir -p dist
-	$(CONTAINER_ENGINE) cp lan-streamer-test-$(TEST_OS)-extract:/app/dist/lan-streamer ./dist/lan-streamer
+	$(CONTAINER_ENGINE) cp lan-streamer-test-$(TEST_OS)-extract:/app/dist/lan-streamer-$(VERSION) ./dist/lan-streamer-$(VERSION)
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-extract
 endif
 

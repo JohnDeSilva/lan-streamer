@@ -38,4 +38,4 @@ COPY . /app
 RUN uv sync
 
 # Build the executable
-RUN uv run pyinstaller --onefile --paths src src/entrypoint.py --name lan-streamer
+RUN uv run pyinstaller --noconfirm lan-streamer.spec
