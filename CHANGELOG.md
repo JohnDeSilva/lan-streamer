@@ -1,3 +1,9 @@
+## v0.24.2 (2026-06-05)
+
+### Fix
+
+- add support for Default TV Order episode grouping in manual mapper and scanner
+
 ## v0.24.1 (2026-06-05)
 
 ### Refactor
