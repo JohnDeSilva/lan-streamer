@@ -479,3 +479,83 @@ def test_movie_details_dialog_refresh(mock_opt_controller, qtbot):
         ) as mock_refresh:
             dialog._on_refresh_clicked()
             mock_refresh.assert_called_once_with("Test Movie")
+
+
+def test_series_details_dialog_manual_mapper_default_tv_order(
+    mock_series_controller, qtbot
+):
+    # Setup metadata to not have a saved group, but have a TMDB identifier
+    mock_series_controller.cached_library_data["Cosmos"]["metadata"][
+        "tmdb_identifier"
+    ] = "12345"
+    mock_series_controller.cached_library_data["Cosmos"]["metadata"][
+        "tmdb_episode_group_id"
+    ] = None
+
+    mock_seasons = [{"season_number": 1, "name": "Season 1"}]
+    mock_episodes = [
+        {
+            "id": 999,
+            "name": "Episode One Title",
+            "episode_number": 1,
+            "air_date": "1980-01-01",
+            "runtime": 45,
+        }
+    ]
+
+    with (
+        patch(
+            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_episode_groups",
+            return_value=[],
+        ),
+        patch(
+            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_seasons",
+            return_value=mock_seasons,
+        ),
+        patch(
+            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_episodes",
+            return_value=mock_episodes,
+        ),
+    ):
+        dialog = SeriesDetailsDialog("Cosmos", mock_series_controller)
+        qtbot.addWidget(dialog)
+
+        # Check group combo contains "Default TV Order" and is selected by default
+        assert dialog.group_combo.count() == 2  # Select Group..., Default TV Order
+        assert dialog.group_combo.currentText() == "Default TV Order"
+        assert dialog.group_combo.currentData() == "default"
+
+        # Check subgroup combo contains Season 1
+        assert dialog.subgroup_combo.count() == 2  # Select Subgroup..., Season 1
+        dialog.subgroup_combo.setCurrentIndex(1)  # Select Season 1
+        assert dialog.subgroup_combo.currentText() == "Season 1"
+
+        # Check table contents
+        assert dialog.mapper_table.rowCount() == 1
+        assert dialog.mapper_table.item(0, 0).text() == "E01 - Episode One Title"
+        assert dialog.mapper_table.item(0, 1).text() == "1980-01-01"
+
+        combo = dialog.mapper_table.cellWidget(0, 2)
+        assert combo.count() == 3  # Unmapped, S01E01, S01E02
+        combo.setCurrentIndex(1)  # select S01E01.mkv
+
+        with (
+            patch(
+                "PySide6.QtWidgets.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch("PySide6.QtWidgets.QMessageBox.information") as mock_info,
+        ):
+            dialog._on_apply_mappings_clicked()
+            mock_info.assert_called_once()
+
+        # Check mapped episode details saved
+        ep = mock_series_controller.cached_library_data["Cosmos"]["seasons"][
+            "Season 1"
+        ]["episodes"][0]
+        assert ep["tmdb_identifier"] == "999"
+        assert ep["tmdb_episode_identifier"] == "999"
+        assert ep["tmdb_name"] == "Episode One Title"
+        assert ep["tmdb_number"] == 1
+        assert ep["air_date"] == "1980-01-01"
+        assert ep["runtime"] == 45

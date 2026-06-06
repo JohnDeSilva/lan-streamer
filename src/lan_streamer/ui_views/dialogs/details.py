@@ -910,14 +910,17 @@ class SeriesDetailsDialog(QDialog):
         self.group_combo.blockSignals(True)
         self.group_combo.clear()
         self.group_combo.addItem("Select Group...", userData=None)
+        self.group_combo.addItem("Default TV Order", userData="default")
         selected_idx = 0
+        if saved_group_id == "default" or (not saved_group_id and tmdb_id):
+            selected_idx = 1
         for idx, g in enumerate(self.groups_list):
             g_id = g.get("id")
             self.group_combo.addItem(
                 str(g.get("name") or "Unknown Group"), userData=g_id
             )
             if saved_group_id and str(g_id) == str(saved_group_id):
-                selected_idx = idx + 1
+                selected_idx = idx + 2
 
         self.group_combo.setCurrentIndex(selected_idx)
         self.group_combo.blockSignals(False)
@@ -941,16 +944,36 @@ class SeriesDetailsDialog(QDialog):
             self.set_default_group_checkbox.setEnabled(True)
 
         if group_id:
-            try:
-                group_details = tmdb_client.get_episode_group_details(group_id)
-                if group_details and "groups" in group_details:
-                    for subgroup in group_details.get("groups", []):
-                        self.subgroup_combo.addItem(
-                            str(subgroup.get("name") or "Unknown Subgroup"),
-                            userData=subgroup,
-                        )
-            except Exception as e:
-                logger.exception(f"Failed to fetch group details: {e}")
+            if group_id == "default":
+                tmdb_id = self.series_record.get("metadata", {}).get("tmdb_identifier")
+                if tmdb_id:
+                    try:
+                        seasons = tmdb_client.get_seasons(tmdb_id)
+                        for season in seasons:
+                            season_number = season.get("season_number")
+                            if season_number is not None:
+                                self.subgroup_combo.addItem(
+                                    str(
+                                        season.get("name") or f"Season {season_number}"
+                                    ),
+                                    userData={
+                                        "is_season": True,
+                                        "season_number": season_number,
+                                    },
+                                )
+                    except Exception as e:
+                        logger.exception(f"Failed to fetch seasons: {e}")
+            else:
+                try:
+                    group_details = tmdb_client.get_episode_group_details(group_id)
+                    if group_details and "groups" in group_details:
+                        for subgroup in group_details.get("groups", []):
+                            self.subgroup_combo.addItem(
+                                str(subgroup.get("name") or "Unknown Subgroup"),
+                                userData=subgroup,
+                            )
+                except Exception as e:
+                    logger.exception(f"Failed to fetch group details: {e}")
 
         self.subgroup_combo.blockSignals(False)
         self._on_subgroup_changed()
@@ -961,7 +984,31 @@ class SeriesDetailsDialog(QDialog):
         if not subgroup_data:
             return
 
-        episodes = subgroup_data.get("episodes", [])
+        if isinstance(subgroup_data, dict) and subgroup_data.get("is_season"):
+            season_number = subgroup_data.get("season_number")
+            tmdb_id = self.series_record.get("metadata", {}).get("tmdb_identifier")
+            if tmdb_id and season_number is not None:
+                try:
+                    episodes_data = tmdb_client.get_episodes(tmdb_id, season_number)
+                    episodes = []
+                    for ep in episodes_data:
+                        episodes.append(
+                            {
+                                "id": ep.get("id"),
+                                "name": ep.get("name"),
+                                "episode_number": ep.get("episode_number"),
+                                "order": ep.get("episode_number", 1) - 1,
+                                "air_date": ep.get("air_date"),
+                                "runtime": ep.get("runtime"),
+                            }
+                        )
+                except Exception as e:
+                    logger.exception(f"Failed to fetch season episodes: {e}")
+                    episodes = []
+            else:
+                episodes = []
+        else:
+            episodes = subgroup_data.get("episodes", [])
         self.mapper_table.setRowCount(len(episodes))
         self.row_group_episodes = episodes
 
