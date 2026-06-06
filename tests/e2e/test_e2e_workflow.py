@@ -689,10 +689,11 @@ def test_rename_preview_dialog_workflow(
         dialog_instance = RenamePreviewDialog("Cosmos", controller_instance)
         qtbot.addWidget(dialog_instance)
 
-        assert dialog_instance.preview_table.rowCount() == 1
-        preview_item = dialog_instance.preview_table.item(0, 0)
-        assert preview_item is not None
-        assert preview_item.text() == "test_video.mkv"
+        assert dialog_instance.preview_tree.topLevelItemCount() == 1
+        season_item = dialog_instance.preview_tree.topLevelItem(0)
+        assert season_item.childCount() == 1
+        child_item = season_item.child(0)
+        assert child_item.text(0) == "test_video.mkv"
 
         def side_effect_perform(
             preview_results: List[Dict[str, Any]], success_callback: Any
