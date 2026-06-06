@@ -53,6 +53,10 @@ def setup_dark_theme(application_instance: QApplication) -> None:
 def main() -> None:
     import os
 
+    if len(sys.argv) > 1 and sys.argv[1] in ("--version", "-v", "-V"):
+        print(f"lan-streamer {__version__}")
+        sys.exit(0)
+
     if os.environ.get("LAN_STREAMER_DRY_RUN") == "1":
         if not os.environ.get("QT_QPA_PLATFORM"):
             os.environ["QT_QPA_PLATFORM"] = "offscreen"

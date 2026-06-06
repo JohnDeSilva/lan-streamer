@@ -2,6 +2,16 @@ import os
 import sys
 import logging
 
+if (
+    __name__ == "__main__"
+    and len(sys.argv) > 1
+    and sys.argv[1] in ("--version", "-v", "-V")
+):
+    from lan_streamer import __version__
+
+    print(f"lan-streamer {__version__}")
+    sys.exit(0)
+
 
 def setup_vlc_environment() -> None:
     import ctypes
