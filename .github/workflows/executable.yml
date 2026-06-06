@@ -21,7 +21,7 @@ jobs:
         run: TEST_OS=ubuntu make validate-executable
 
       - name: Rename executable for artifact
-        run: mv dist/lan-streamer dist/lan-streamer-ubuntu
+        run: mv dist/lan-streamer-* dist/lan-streamer-ubuntu
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -41,7 +41,7 @@ jobs:
         run: TEST_OS=fedora make validate-executable
 
       - name: Rename executable for artifact
-        run: mv dist/lan-streamer dist/lan-streamer-fedora
+        run: mv dist/lan-streamer-* dist/lan-streamer-fedora
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -84,7 +84,7 @@ jobs:
         run: |
           cd dist
           mkdir -p dmg_root
-          mv lan-streamer.app "dmg_root/Lan Streamer.app"
+          mv lan-streamer-*.app "dmg_root/Lan Streamer.app"
           ln -s /Applications dmg_root/Applications
           hdiutil create -volname "Lan Streamer" -srcfolder dmg_root -ov -format UDZO lan-streamer-macos.dmg
 
@@ -119,7 +119,7 @@ jobs:
 
       - name: Build executable
         shell: bash
-        run: uv run pyinstaller --noconfirm --onefile --windowed --paths src src/entrypoint.py --name lan-streamer
+        run: uv run pyinstaller --noconfirm lan-streamer.spec
 
       - name: Validate executable runs
         shell: bash
@@ -127,11 +127,11 @@ jobs:
           PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
           LAN_STREAMER_DRY_RUN: '1'
           QT_QPA_PLATFORM: offscreen
-        run: ./dist/lan-streamer.exe
+        run: for f in ./dist/lan-streamer-*.exe; do "$f"; break; done
 
       - name: Rename executable for artifact
         shell: bash
-        run: mv dist/lan-streamer.exe dist/lan-streamer-windows.exe
+        run: mv dist/lan-streamer-*.exe dist/lan-streamer-windows.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
