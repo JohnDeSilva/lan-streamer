@@ -1,3 +1,9 @@
+## v0.24.1 (2026-06-05)
+
+### Refactor
+
+- replace rename preview table with a hierarchical tree view and add support for selective episode renaming
+
 ## v0.24.0 (2026-06-05)
 
 ### Feat
