@@ -742,3 +742,4 @@ def test_series_details_dialog_manual_mapper_missing_data_handling(
 
         # No subgroups loaded due to exception
         assert dialog.subgroup_combo.count() == 1  # Select Subgroup...
+
