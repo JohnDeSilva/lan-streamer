@@ -123,3 +123,38 @@ def test_settings_dialog_sync_history_on_start(qtbot) -> None:
         mock_save.assert_called_once()
 
     dialog.reject()
+
+
+def test_settings_dialog_anime_library_toggle(qtbot) -> None:
+    from lan_streamer.ui_views.dialogs.settings import SettingsDialog
+    from lan_streamer.system.config import config
+
+    initial_libraries = {
+        "TV Shows": {"type": "tv", "paths": ["/tv"]},
+        "Movies": {"type": "movie", "paths": ["/movies"]},
+    }
+
+    with patch.dict(config.libraries, initial_libraries, clear=True):
+        dialog = SettingsDialog()
+        qtbot.addWidget(dialog)
+
+        # Select "TV Shows" (type "tv")
+        dialog.library_selector.setCurrentText("TV Shows")
+        assert not dialog.anime_library_checkbox.isHidden()
+        assert dialog.anime_library_checkbox.isChecked() is False
+
+        # Toggle it on (turns TV Show to Anime)
+        dialog.anime_library_checkbox.setChecked(True)
+        assert dialog.staged_libraries["TV Shows"]["type"] == "anime"
+        assert dialog.anime_library_checkbox.isChecked() is True
+
+        # Toggle it off (turns Anime to TV Show)
+        dialog.anime_library_checkbox.setChecked(False)
+        assert dialog.staged_libraries["TV Shows"]["type"] == "tv"
+        assert dialog.anime_library_checkbox.isChecked() is False
+
+        # Select "Movies" (type "movie") - should hide the checkbox
+        dialog.library_selector.setCurrentText("Movies")
+        assert dialog.anime_library_checkbox.isHidden()
+
+        dialog.reject()

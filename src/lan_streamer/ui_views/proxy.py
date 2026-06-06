@@ -16,6 +16,9 @@ from lan_streamer.backend import (
 )
 from lan_streamer.providers.jellyfin import jellyfin_client as jellyfin_client_real
 from lan_streamer.providers.tmdb import tmdb_client as tmdb_client_real
+from lan_streamer.providers.myanimelist import (
+    myanimelist_client as myanimelist_client_real,
+)
 
 
 class PatchedClass:
@@ -55,3 +58,4 @@ RuntimeExtractionWorker = PatchedClass(
 
 jellyfin_client = PatchedClass("jellyfin_client", lambda: jellyfin_client_real)
 tmdb_client = PatchedClass("tmdb_client", lambda: tmdb_client_real)
+myanimelist_client = PatchedClass("myanimelist_client", lambda: myanimelist_client_real)

@@ -347,7 +347,7 @@ class ScanProgressTree(QWidget):
                     self._folder_nodes[key] = folder_item
 
                     # For TV libraries, populate seasons and episodes upfront
-                    if lib_type == "tv":
+                    if lib_type in ("tv", "anime"):
                         seasons_dict = folder_info.get("seasons", {})
                         for season_name, episodes_list in seasons_dict.items():
                             s_key = self._season_key(lib_name, folder_name, season_name)

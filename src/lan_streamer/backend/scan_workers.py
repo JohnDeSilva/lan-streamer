@@ -196,7 +196,7 @@ class ScanAllLibrariesWorker(QThread):
                     reverse=True,
                 ):
                     series_name = series_path.name
-                    if library_type == "tv":
+                    if library_type in ("tv", "anime"):
                         seasons: Dict[str, List[str]] = {}
                         for season_path in series_path.iterdir():
                             if season_path.is_dir() and not season_path.name.startswith(

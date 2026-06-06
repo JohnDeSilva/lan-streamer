@@ -50,6 +50,8 @@ def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
         "tmdb_episode_identifier": episode.tmdb_episode_identifier,
         "tmdb_name": episode.tmdb_name,
         "tmdb_number": episode.tmdb_number,
+        "myanimelist_anime_id": episode.myanimelist_anime_id,
+        "myanimelist_episode_number": episode.myanimelist_episode_number,
         "watched": bool(episode.watched),
         "date_added": episode.date_added or 0,
         "air_date": episode.air_date or "",
@@ -70,6 +72,7 @@ def _build_season_dict(season: Season) -> Dict[str, Any]:
         "metadata": {
             "jellyfin_id": season.jellyfin_id,
             "poster_path": season.poster_path,
+            "myanimelist_id": season.myanimelist_id,
         },
         "episodes": episodes,
     }
@@ -119,6 +122,7 @@ def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
         "tmdb_name": movie.tmdb_name,
         "locked_metadata": bool(movie.locked_metadata),
         "date_added": movie.date_added or 0,
+        "myanimelist_anime_id": movie.myanimelist_anime_id,
         "runtime": movie.runtime or 0,
         "rating": movie.rating or "",
         "genre": movie.genre or "",
@@ -133,6 +137,24 @@ def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
     }
 
 
+def _trigger_mal_push_async(anime_id: int, num_watched_episodes: int) -> None:
+    """Helper to asynchronously push watch status to MyAnimeList."""
+    from lan_streamer.providers.myanimelist import myanimelist_client
+
+    if myanimelist_client.is_configured() and myanimelist_client.is_authenticated():
+        import threading
+
+        def _run() -> None:
+            try:
+                myanimelist_client.update_watched_status(anime_id, num_watched_episodes)
+            except Exception:
+                logger.exception(
+                    f"Background MyAnimeList push failed for anime {anime_id}"
+                )
+
+        threading.Thread(target=_run, daemon=True).start()
+
+
 def update_episode_watched_status(path: str, watched: bool) -> None:
 
     try:
@@ -145,12 +167,22 @@ def update_episode_watched_status(path: str, watched: bool) -> None:
                 episode.watched = watched
                 if watched:
                     episode.last_played_at = int(time.time())
+                    if (
+                        episode.myanimelist_anime_id
+                        and episode.myanimelist_episode_number
+                    ):
+                        _trigger_mal_push_async(
+                            episode.myanimelist_anime_id,
+                            episode.myanimelist_episode_number,
+                        )
             else:
                 movie = session.scalars(select(Movie).where(Movie.path == path)).first()
                 if movie:
                     movie.watched = watched
                     if watched:
                         movie.last_played_at = int(time.time())
+                        if movie.myanimelist_anime_id:
+                            _trigger_mal_push_async(movie.myanimelist_anime_id, 1)
     except Exception:
         logger.exception(f"Error updating watched status for {path}")
 
@@ -256,6 +288,16 @@ def update_season_watched_status(
                     .where(Episode.season_id == season.id)
                     .values(watched=watched)
                 )
+                if watched:
+                    mal_updates = {}
+                    for ep in season.episodes:
+                        if ep.myanimelist_anime_id and ep.myanimelist_episode_number:
+                            mal_updates[ep.myanimelist_anime_id] = max(
+                                mal_updates.get(ep.myanimelist_anime_id, 0),
+                                ep.myanimelist_episode_number,
+                            )
+                    for anime_id, max_ep in mal_updates.items():
+                        _trigger_mal_push_async(anime_id, max_ep)
     except Exception:
         logger.exception(
             f"Error updating watched status for {series_name} - {season_name}"
@@ -280,9 +322,21 @@ def update_series_watched_status(
                 )
             ).first()
             if series:
+                mal_updates = {}
                 for season in series.seasons:
                     for episode in season.episodes:
                         episode.watched = watched
+                        if (
+                            watched
+                            and episode.myanimelist_anime_id
+                            and episode.myanimelist_episode_number
+                        ):
+                            mal_updates[episode.myanimelist_anime_id] = max(
+                                mal_updates.get(episode.myanimelist_anime_id, 0),
+                                episode.myanimelist_episode_number,
+                            )
+                for anime_id, max_ep in mal_updates.items():
+                    _trigger_mal_push_async(anime_id, max_ep)
     except Exception:
         logger.exception(f"Error updating watched status for series {series_name}")
 

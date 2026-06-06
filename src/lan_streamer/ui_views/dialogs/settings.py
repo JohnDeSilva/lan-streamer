@@ -82,6 +82,7 @@ class SettingsDialog(QDialog):
         self.library_type_input: QComboBox = QComboBox()
         self.library_selector: QComboBox = QComboBox()
         self.show_future_episodes_checkbox: QCheckBox = QCheckBox()
+        self.anime_library_checkbox: QCheckBox = QCheckBox()
         self.directory_list_widget: QListWidget = QListWidget()
         self.library_order_list_widget: QListWidget = QListWidget()
 
@@ -233,7 +234,44 @@ class SettingsDialog(QDialog):
         self.opensubtitles_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         connectivity_layout.addWidget(self.opensubtitles_api_key_input, 9, 1)
 
-        connectivity_layout.setRowStretch(10, 1)
+        # MyAnimeList Section
+        mal_header = self._create_header_with_info(
+            "MyAnimeList",
+            "MyAnimeList integration allows Lan Streamer to push your watch history.\n\n"
+            "To get a Client ID and Client Secret, register an application on MyAnimeList at:\n"
+            "https://myanimelist.net/apiconfig/create\n\n"
+            "Important: Configure the Redirect URI on MyAnimeList to exactly:\n"
+            "http://localhost/\n"
+            "(with a trailing slash - omitting the slash will cause a login redirect loop on MyAnimeList).",
+        )
+        connectivity_layout.addWidget(mal_header, 10, 0, 1, 2)
+        connectivity_layout.addWidget(QLabel("Client ID:"), 11, 0)
+        self.myanimelist_client_id_input: QLineEdit = QLineEdit()
+        connectivity_layout.addWidget(self.myanimelist_client_id_input, 11, 1)
+
+        connectivity_layout.addWidget(QLabel("Client Secret:"), 12, 0)
+        self.myanimelist_client_secret_input: QLineEdit = QLineEdit()
+        self.myanimelist_client_secret_input.setEchoMode(QLineEdit.EchoMode.Password)
+        connectivity_layout.addWidget(self.myanimelist_client_secret_input, 12, 1)
+
+        mal_buttons_layout = QHBoxLayout()
+        self.myanimelist_status_label = QLabel("Status: Not connected")
+        self.myanimelist_status_label.setFont(QFont("Inter", 11, QFont.Weight.Bold))
+        self.myanimelist_status_label.setStyleSheet("color: #e53935;")
+        mal_buttons_layout.addWidget(self.myanimelist_status_label)
+
+        self.myanimelist_link_button = QPushButton("Link MAL Account...")
+        self.myanimelist_link_button.clicked.connect(self.link_myanimelist_account)
+        mal_buttons_layout.addWidget(self.myanimelist_link_button)
+
+        self.myanimelist_unlink_button = QPushButton("Remove MAL Connection")
+        self.myanimelist_unlink_button.clicked.connect(self.unlink_myanimelist_account)
+        self.myanimelist_unlink_button.setVisible(False)
+        mal_buttons_layout.addWidget(self.myanimelist_unlink_button)
+
+        connectivity_layout.addLayout(mal_buttons_layout, 13, 0, 1, 2)
+
+        connectivity_layout.setRowStretch(14, 1)
 
         # Libraries Management Pane
         libraries_tab: QWidget = QWidget()
@@ -254,7 +292,7 @@ class SettingsDialog(QDialog):
         create_layout.addWidget(self.library_name_input)
 
         create_layout.addWidget(QLabel("Type:"))
-        self.library_type_input.addItems(["TV Shows", "Movies"])
+        self.library_type_input.addItems(["TV Shows", "Movies", "Anime"])
         create_layout.addWidget(self.library_type_input)
 
         add_library_button: QPushButton = QPushButton("Create Library")
@@ -287,6 +325,13 @@ class SettingsDialog(QDialog):
             self._on_show_future_episodes_toggled
         )
         libraries_layout.addWidget(self.show_future_episodes_checkbox)
+
+        self.anime_library_checkbox.setText("Anime Library")
+        self.anime_library_checkbox.setToolTip(
+            "Enable Anime Mode for MyAnimeList integration and better metadata matching."
+        )
+        self.anime_library_checkbox.stateChanged.connect(self._on_anime_library_toggled)
+        libraries_layout.addWidget(self.anime_library_checkbox)
 
         # Mapped Directories List
         libraries_layout.addWidget(QLabel("Mapped Root Directories:"))
@@ -744,6 +789,9 @@ class SettingsDialog(QDialog):
         self.opensubtitles_username_input.setText(config.opensubtitles_username)
         self.opensubtitles_password_input.setText(config.opensubtitles_password)
         self.opensubtitles_api_key_input.setText(config.opensubtitles_api_key)
+        self.myanimelist_client_id_input.setText(config.myanimelist_client_id)
+        self.myanimelist_client_secret_input.setText(config.myanimelist_client_secret)
+        self._update_mal_status_ui()
 
         self.use_embedded_checkbox.setChecked(config.use_embedded_player)
         self.enable_caching_checkbox.setChecked(config.enable_caching)
@@ -1056,17 +1104,23 @@ class SettingsDialog(QDialog):
         if selected_library in self.staged_libraries:
             lib_config = self.staged_libraries[selected_library]
             lib_type = lib_config.get("type", "tv")
-            if lib_type == "tv":
+            if lib_type in ("tv", "anime"):
                 self.show_future_episodes_checkbox.setVisible(True)
                 self.show_future_episodes_checkbox.blockSignals(True)
                 self.show_future_episodes_checkbox.setChecked(
                     lib_config.get("show_future_episodes", True)
                 )
                 self.show_future_episodes_checkbox.blockSignals(False)
+                self.anime_library_checkbox.setVisible(True)
+                self.anime_library_checkbox.blockSignals(True)
+                self.anime_library_checkbox.setChecked(lib_type == "anime")
+                self.anime_library_checkbox.blockSignals(False)
             else:
                 self.show_future_episodes_checkbox.setVisible(False)
+                self.anime_library_checkbox.setVisible(False)
         else:
             self.show_future_episodes_checkbox.setVisible(False)
+            self.anime_library_checkbox.setVisible(False)
 
     @Slot(int)
     def _on_show_future_episodes_toggled(self, state: int) -> None:
@@ -1087,9 +1141,11 @@ class SettingsDialog(QDialog):
     @Slot()
     def add_staged_library(self) -> None:
         new_library_name: str = self.library_name_input.text().strip()
-        new_library_type: str = (
-            "movie" if self.library_type_input.currentText() == "Movies" else "tv"
-        )
+        new_library_type: str = "tv"
+        if self.library_type_input.currentText() == "Movies":
+            new_library_type = "movie"
+        elif self.library_type_input.currentText() == "Anime":
+            new_library_type = "anime"
         if not new_library_name:
             return
         if new_library_name in self.staged_libraries:
@@ -1228,6 +1284,10 @@ class SettingsDialog(QDialog):
         config.opensubtitles_username = self.opensubtitles_username_input.text().strip()
         config.opensubtitles_password = self.opensubtitles_password_input.text().strip()
         config.opensubtitles_api_key = self.opensubtitles_api_key_input.text().strip()
+        config.myanimelist_client_id = self.myanimelist_client_id_input.text().strip()
+        config.myanimelist_client_secret = (
+            self.myanimelist_client_secret_input.text().strip()
+        )
         config.sync_history_on_start = self.sync_history_on_start_checkbox.isChecked()
 
         config.use_embedded_player = self.use_embedded_checkbox.isChecked()
@@ -1309,6 +1369,122 @@ class SettingsDialog(QDialog):
 
         set_application_log_level(config.log_level)
         self.accept()
+
+    @Slot()
+    def link_myanimelist_account(self) -> None:
+        from lan_streamer.ui_views.proxy import myanimelist_client
+        from PySide6.QtWidgets import QInputDialog
+
+        client_id = self.myanimelist_client_id_input.text().strip()
+        client_secret = self.myanimelist_client_secret_input.text().strip()
+        if not client_id:
+            QMessageBox.warning(
+                self, "MyAnimeList Configuration", "Please enter a Client ID."
+            )
+            return
+
+        config.myanimelist_client_id = client_id
+        config.myanimelist_client_secret = client_secret
+        config.save()
+
+        import secrets
+        import string
+
+        chars = string.ascii_letters + string.digits
+        code_verifier = "".join(secrets.choice(chars) for _ in range(128))
+
+        auth_url = myanimelist_client.generate_auth_url(code_verifier)
+
+        import webbrowser
+
+        webbrowser.open(auth_url)
+
+        text, ok = QInputDialog.getText(
+            self,
+            "Link MyAnimeList Account",
+            "An authorization page has been opened in your browser.\n\n"
+            "1. Sign in to MyAnimeList and click 'Allow' to authorize the app.\n"
+            "2. The browser will then redirect to a blank page starting with 'http://localhost/?code=...'.\n"
+            "   (Make sure your App Redirect URL in MyAnimeList is exactly 'http://localhost/')\n"
+            "3. Copy that final redirected URL from your browser's address bar and paste it below:\n\n"
+            "(Do NOT copy the initial MyAnimeList sign-in page URL)",
+        )
+        if not ok or not text.strip():
+            return
+
+        from urllib.parse import urlparse, parse_qs
+
+        if (
+            "myanimelist.net/v1/oauth2/authorize" in text
+            or "response_type=code" in text
+        ):
+            QMessageBox.warning(
+                self,
+                "Link MyAnimeList Account",
+                "It looks like you copied the initial authorization URL by mistake.\n\n"
+                "You must sign in and approve the application in the browser first, "
+                "then copy the final redirect URL (starting with http://localhost/?code=...) "
+                "and paste it here.",
+            )
+            return
+
+        query = urlparse(text).query
+        params = parse_qs(query)
+        code_list = params.get("code")
+        code = code_list[0].strip() if code_list else text.strip()
+
+        if not code or code.startswith("http"):
+            QMessageBox.warning(
+                self,
+                "Link MyAnimeList Account",
+                "Could not find authorization code in the provided URL/text.\n\n"
+                "Make sure you copy the final redirect URL starting with 'http://localhost/?code=' after authorizing.",
+            )
+            return
+
+        success, msg = myanimelist_client.exchange_auth_code(code, code_verifier)
+        if success:
+            QMessageBox.information(self, "Link MyAnimeList Account", msg)
+        else:
+            QMessageBox.critical(self, "Link MyAnimeList Account", msg)
+
+        self._update_mal_status_ui()
+
+    @Slot()
+    def unlink_myanimelist_account(self) -> None:
+        from lan_streamer.ui_views.proxy import myanimelist_client
+
+        confirm = QMessageBox.question(
+            self,
+            "Remove MyAnimeList Connection",
+            "Are you sure you want to disconnect MyAnimeList? This will clear your authentication credentials.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            myanimelist_client.remove_connection()
+            self._update_mal_status_ui()
+
+    def _update_mal_status_ui(self) -> None:
+        from lan_streamer.ui_views.proxy import myanimelist_client
+
+        if myanimelist_client.is_authenticated():
+            self.myanimelist_status_label.setText("Status: Connected")
+            self.myanimelist_status_label.setStyleSheet("color: #4caf50;")
+            self.myanimelist_unlink_button.setVisible(True)
+        else:
+            self.myanimelist_status_label.setText("Status: Not connected")
+            self.myanimelist_status_label.setStyleSheet("color: #e53935;")
+            self.myanimelist_unlink_button.setVisible(False)
+
+    @Slot(int)
+    def _on_anime_library_toggled(self, state: int) -> None:
+        selected_library: str = self.library_selector.currentText()
+        if selected_library in self.staged_libraries:
+            lib_config = self.staged_libraries[selected_library]
+            is_anime = self.anime_library_checkbox.isChecked()
+            lib_config["type"] = "anime" if is_anime else "tv"
+            self._refresh_library_options()
 
     @Slot()
     def browse_backup_directory(self) -> None:
