@@ -280,3 +280,29 @@ def test_get_rename_preview_with_subtitles(tmp_path) -> None:
     sub2 = next(p for p in previews if p["new_name"] == "Show - S01E01.en.srt")
     assert sub2["old_name"] == "ep1.en.srt"
     assert sub2["is_subtitle"] is True
+
+
+def test_get_rename_preview_with_none_path() -> None:
+    series_data = {
+        "metadata": {"tmdb_name": "Show"},
+        "seasons": {
+            "Season 1": {
+                "episodes": [
+                    {
+                        "name": "Ep 1",
+                        "path": "/data/ep1.mkv",
+                        "tmdb_number": 1,
+                    },
+                    {
+                        "name": "Ep 2",
+                        "path": None,  # Placeholder episode
+                        "tmdb_number": 2,
+                    },
+                ]
+            }
+        },
+    }
+    template = "{SeriesTitle} - S{SeasonNumber:02}E{EpisodeNumber:02}"
+    previews = get_rename_preview(series_data, template)
+    assert len(previews) == 1
+    assert previews[0]["old_name"] == "ep1.mkv"

@@ -107,22 +107,22 @@ def get_application_stylesheet() -> str:
         border: 1px solid #2a82da;
     }
 
-    /* Tables */
-    QTableWidget {
+    /* Tables & Trees */
+    QTableWidget, QTreeWidget, QTreeView {
         background-color: #16161a;
         border: 1px solid #2d2d35;
         border-radius: 8px;
         gridline-color: transparent;
         color: #E2E8F0;
     }
-    QTableWidget::item {
+    QTableWidget::item, QTreeWidget::item, QTreeView::item {
         padding: 6px;
         border-bottom: 1px solid #22222a;
     }
-    QTableWidget::item:hover {
+    QTableWidget::item:hover, QTreeWidget::item:hover, QTreeView::item:hover {
         background-color: #202025;
     }
-    QTableWidget::item:selected {
+    QTableWidget::item:selected, QTreeWidget::item:selected, QTreeView::item:selected {
         background-color: #2a82da;
         color: #ffffff;
     }

@@ -125,6 +125,8 @@ def get_rename_preview(
             season_num = int(match.group())
 
         for episode in season_data.get("episodes", []):
+            if not episode.get("path"):
+                continue
             old_path = Path(episode["path"])
 
             data = {

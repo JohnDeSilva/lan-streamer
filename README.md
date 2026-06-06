@@ -32,7 +32,7 @@ LAN Streamer is built to play your media files directly and natively without any
 
 ### 📁 File Management
 *   **⚡ Library Scanning & Cleanup**: Combined "Scan Library" action that scans for new files and automatically updates paths for moved or missing files in a single pass. Displays a detailed, real-time scan progress dashboard.
-*   **🏷️ Media Renamer**: Utility to rename local files to match official metadata standards.
+*   **🏷️ Media Renamer**: Utility to rename local files to match official metadata standards, featuring season-based grouping and checkstate selectors for updating whole seasons or individual episodes at a time.
 *   **📦 Metadata Embedding**: Background FFmpeg integration to write and embed metadata directly into the video containers of individual movies, episodes, or entire TV series.
 *   **💬 Subtitle Embedding**: Merges downloaded or external subtitle files directly into the video container using background FFmpeg workers.
 *   **🛡️ Graceful Offline Handling**: Gracefully handles temporarily unavailable files and root directories (e.g. disconnected NAS or external drives) during a scan, preventing data loss or premature library cleanup.

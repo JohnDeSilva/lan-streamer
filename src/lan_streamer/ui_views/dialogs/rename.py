@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QHeaderView,
     QComboBox,
+    QTreeWidget,
+    QTreeWidgetItem,
 )
 from PySide6.QtCore import Slot, Qt
 
@@ -222,8 +224,9 @@ class RenamePreviewDialog(QDialog):
         self.series_name: str = series_name
         self.controller: "Controller" = controller_instance
         self.template_input: QLineEdit = QLineEdit()
-        self.preview_table: QTableWidget = QTableWidget()
+        self.preview_tree: QTreeWidget = QTreeWidget()
         self.preview_results_list: List[Dict[str, Any]] = []
+        self.all_previews_list: List[Dict[str, Any]] = []
 
         self.setWindowTitle(f"Rename Preview: {series_name}")
         self.resize(900, 600)
@@ -253,21 +256,21 @@ class RenamePreviewDialog(QDialog):
 
         main_layout.addLayout(template_layout)
 
-        # Preview Data Table
-        self.preview_table.setColumnCount(2)
-        self.preview_table.setHorizontalHeaderLabels(
+        # Preview Data Tree
+        self.preview_tree.setColumnCount(2)
+        self.preview_tree.setHeaderLabels(
             ["Original Target Filename", "New Standardized Filename"]
         )
-        self.preview_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
+        self.preview_tree.header().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Interactive
         )
-        self.preview_table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows
+        self.preview_tree.header().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
         )
-        self.preview_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.preview_table.verticalHeader().setVisible(False)
+        self.preview_tree.setColumnWidth(0, 400)
+        self.preview_tree.itemChanged.connect(self.on_tree_item_changed)
 
-        main_layout.addWidget(self.preview_table)
+        main_layout.addWidget(self.preview_tree)
 
         # Action Execution Toolbar
         actions_layout: QHBoxLayout = QHBoxLayout()
@@ -285,6 +288,41 @@ class RenamePreviewDialog(QDialog):
 
         main_layout.addLayout(actions_layout)
 
+    @Slot(QTreeWidgetItem, int)
+    def on_tree_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
+        if column != 0:
+            return
+
+        self.preview_tree.blockSignals(True)
+        try:
+            # If a parent item (Season) checkstate changes, sync all its child items
+            if item.parent() is None:
+                state = item.checkState(0)
+                for i in range(item.childCount()):
+                    item.child(i).setCheckState(0, state)
+            else:
+                # If a child item (Episode) checkstate changes, update the parent's checkstate
+                parent = item.parent()
+                if parent:
+                    checked_count = 0
+                    unchecked_count = 0
+                    child_count = parent.childCount()
+                    for i in range(child_count):
+                        child_state = parent.child(i).checkState(0)
+                        if child_state == Qt.CheckState.Checked:
+                            checked_count += 1
+                        elif child_state == Qt.CheckState.Unchecked:
+                            unchecked_count += 1
+
+                    if checked_count == child_count:
+                        parent.setCheckState(0, Qt.CheckState.Checked)
+                    elif unchecked_count == child_count:
+                        parent.setCheckState(0, Qt.CheckState.Unchecked)
+                    else:
+                        parent.setCheckState(0, Qt.CheckState.PartiallyChecked)
+        finally:
+            self.preview_tree.blockSignals(False)
+
     @Slot()
     def generate_preview(self) -> None:
         template_string: str = self.template_input.text().strip()
@@ -299,34 +337,91 @@ class RenamePreviewDialog(QDialog):
         ]
 
         from lan_streamer.scanner.renamer import get_rename_preview
+        from lan_streamer.db import natural_sort_key
 
-        self.preview_results_list = get_rename_preview(
-            series_dictionary, template_string
-        )
+        self.all_previews_list = get_rename_preview(series_dictionary, template_string)
 
         # Filter out subtitle entries for preview display
         filtered_results = [
-            p for p in self.preview_results_list if not p.get("is_subtitle", False)
+            p for p in self.all_previews_list if not p.get("is_subtitle", False)
         ]
-        self.preview_table.setRowCount(len(filtered_results))
-        self.preview_results_list = filtered_results
-        for row_index, preview_dictionary in enumerate(self.preview_results_list):
-            old_name_str: str = preview_dictionary.get("old_name", "")
-            if not old_name_str and "old_path" in preview_dictionary:
-                old_name_str = Path(preview_dictionary["old_path"]).name
 
-            old_item: QTableWidgetItem = QTableWidgetItem(old_name_str)
-            self.preview_table.setItem(row_index, 0, old_item)
+        # Group preview entries by season
+        from collections import defaultdict
 
-            new_item: QTableWidgetItem = QTableWidgetItem(
-                preview_dictionary.get("new_name", "")
-            )
-            self.preview_table.setItem(row_index, 1, new_item)
+        grouped_by_season = defaultdict(list)
+        for p in filtered_results:
+            grouped_by_season[p.get("season", "Unknown Season")].append(p)
+
+        self.preview_tree.blockSignals(True)
+        self.preview_tree.clear()
+
+        # Naturally sort the season keys
+        sorted_seasons = sorted(grouped_by_season.keys(), key=natural_sort_key)
+
+        for season_name in sorted_seasons:
+            season_item = QTreeWidgetItem(self.preview_tree)
+            season_item.setText(0, season_name)
+            season_item.setFlags(season_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            season_item.setCheckState(0, Qt.CheckState.Checked)
+
+            for preview_dictionary in grouped_by_season[season_name]:
+                old_name_str: str = preview_dictionary.get("old_name", "")
+                if not old_name_str and "old_path" in preview_dictionary:
+                    old_name_str = Path(preview_dictionary["old_path"]).name
+
+                child_item = QTreeWidgetItem(season_item)
+                child_item.setText(0, old_name_str)
+                child_item.setText(1, preview_dictionary.get("new_name", ""))
+                child_item.setFlags(
+                    child_item.flags() | Qt.ItemFlag.ItemIsUserCheckable
+                )
+                child_item.setCheckState(0, Qt.CheckState.Checked)
+                child_item.setData(0, Qt.ItemDataRole.UserRole, preview_dictionary)
+
+        self.preview_tree.expandAll()
+        self.preview_tree.blockSignals(False)
 
     @Slot()
     def apply_renames(self) -> None:
-        if not self.preview_results_list:
+        # Collect checked video paths from the tree view
+        checked_video_paths = set()
+        root = self.preview_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            season_item = root.child(i)
+            for j in range(season_item.childCount()):
+                child_item = season_item.child(j)
+                if child_item.checkState(0) == Qt.CheckState.Checked:
+                    video_dict = child_item.data(0, Qt.ItemDataRole.UserRole)
+                    if video_dict and "old_path" in video_dict:
+                        checked_video_paths.add(video_dict["old_path"])
+
+        if not checked_video_paths:
+            QMessageBox.warning(
+                self,
+                "Selection Required",
+                "Please select at least one episode to rename.",
+            )
             return
 
+        # Build list of previews to apply, including associated subtitles
+        to_apply = []
+        for p in self.all_previews_list:
+            if not p.get("is_subtitle", False):
+                if p["old_path"] in checked_video_paths:
+                    to_apply.append(p)
+            else:
+                # Subtitle files are matched to their corresponding video files
+                is_checked = False
+                for v_path in checked_video_paths:
+                    sub = Path(p["old_path"])
+                    vid = Path(v_path)
+                    if sub.parent == vid.parent and sub.name.startswith(vid.stem):
+                        is_checked = True
+                        break
+                if is_checked:
+                    to_apply.append(p)
+
+        self.preview_results_list = to_apply
         self.controller.apply_rename_batch(self.preview_results_list)
         self.accept()
