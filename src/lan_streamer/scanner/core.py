@@ -643,10 +643,11 @@ def scan_series(
             "seasons", {}
         ).items():
             if old_season_name not in series_data["seasons"]:
-                logger.info(
-                    f"Preserving missing season folder '{old_season_name}' (non-destructive)"
-                )
-                series_data["seasons"][old_season_name] = old_season_data
+                if (series_directory / old_season_name).is_dir():
+                    logger.info(
+                        f"Preserving missing season folder '{old_season_name}' (non-destructive)"
+                    )
+                    series_data["seasons"][old_season_name] = old_season_data
             else:
                 found_paths = {
                     episode["path"]
@@ -663,12 +664,13 @@ def scan_series(
                     old_num = old_episode.get("tmdb_number")
                     if old_path:
                         if old_path not in found_paths:
-                            logger.info(
-                                f"Preserving missing episode file '{old_episode['name']}' (non-destructive)"
-                            )
-                            series_data["seasons"][old_season_name]["episodes"].append(
-                                old_episode
-                            )
+                            if Path(old_path).exists():
+                                logger.info(
+                                    f"Preserving missing episode file '{old_episode['name']}' (non-destructive)"
+                                )
+                                series_data["seasons"][old_season_name][
+                                    "episodes"
+                                ].append(old_episode)
                     else:
                         if old_num not in found_numbers:
                             # Keep missing/placeholder episodes

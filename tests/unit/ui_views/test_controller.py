@@ -462,3 +462,28 @@ def test_controller_update_metadata_match_syncs_with_episode_groups(
         assert updated_ep["runtime"] == 50
         assert updated_ep["tmdb_number"] == 1
         mock_save.assert_called_once()
+
+
+def test_controller_delete_series(mock_controller) -> None:
+    mock_controller.cached_library_data = {"DeleteShow": {}}
+    mock_controller.current_library_name = "test_lib"
+
+    with (
+        patch("lan_streamer.db.delete_series_record") as mock_db_delete,
+        patch.object(mock_controller, "select_library") as mock_select,
+    ):
+        mock_controller.delete_series("DeleteShow")
+        mock_db_delete.assert_called_once_with("test_lib", "DeleteShow")
+        mock_select.assert_called_once_with("test_lib", reset_selection=True)
+
+
+def test_controller_delete_episode(mock_controller) -> None:
+    mock_controller.current_library_name = "test_lib"
+
+    with (
+        patch("lan_streamer.db.delete_episode_record") as mock_db_delete,
+        patch.object(mock_controller, "select_library") as mock_select,
+    ):
+        mock_controller.delete_episode("/path/to/ep.mkv")
+        mock_db_delete.assert_called_once_with("/path/to/ep.mkv")
+        mock_select.assert_called_once_with("test_lib", reset_selection=False)

@@ -49,6 +49,15 @@ def get_application_stylesheet() -> str:
         background-color: #3592ea;
         color: #ffffff;
     }
+    QPushButton#dangerButton {
+        background-color: #ef4444;
+        color: #ffffff;
+        border: none;
+    }
+    QPushButton#dangerButton:hover {
+        background-color: #f87171;
+        color: #ffffff;
+    }
     QPushButton#playButton, QPushButton#playEpisodeButton {
         background-color: #e05b35;
         color: #ffffff;

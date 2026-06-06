@@ -635,6 +635,28 @@ class SeriesDetailView(QWidget):
 
                     toggle_action.triggered.connect(handle_toggle)
                     menu.addAction(toggle_action)
+
+                    delete_action: QAction = QAction("Delete Episode", table)
+
+                    def handle_delete() -> None:
+                        target_path: str = episode.get("path", "")
+                        if target_path:
+                            from PySide6.QtWidgets import QMessageBox
+
+                            confirm = QMessageBox.question(
+                                self,
+                                "Delete Episode",
+                                f"Are you sure you want to delete the episode '{Path(target_path).name}' from the library database? This action cannot be undone.",
+                                QMessageBox.StandardButton.Yes
+                                | QMessageBox.StandardButton.No,
+                            )
+                            if confirm == QMessageBox.StandardButton.Yes:
+                                self.controller.delete_episode(target_path)
+                                self.populate_series_details(self._current_series_name)
+
+                    delete_action.triggered.connect(handle_delete)
+                    menu.addAction(delete_action)
+
                     menu.exec(table.viewport().mapToGlobal(position))
 
                 return show_context_menu

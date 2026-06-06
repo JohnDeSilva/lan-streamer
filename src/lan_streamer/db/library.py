@@ -353,10 +353,23 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
                     existing_by_number = {}
                     existing_by_name = {}
                     for episode_obj in season.episodes:
+                        is_missing = False
                         if episode_obj.path is not None:
+                            try:
+                                if not Path(episode_obj.path).exists():
+                                    is_missing = True
+                            except Exception:
+                                is_missing = True
+
+                        if episode_obj.path is not None and not is_missing:
                             existing_by_path[episode_obj.path] = episode_obj
-                        elif episode_obj.tmdb_number is not None:
-                            existing_by_number[episode_obj.tmdb_number] = episode_obj
+                        else:
+                            if episode_obj.path is not None:
+                                existing_by_path[episode_obj.path] = episode_obj
+                            if episode_obj.tmdb_number is not None:
+                                existing_by_number[episode_obj.tmdb_number] = (
+                                    episode_obj
+                                )
 
                         if episode_obj.name is not None:
                             existing_by_name[episode_obj.name] = episode_obj
@@ -461,6 +474,19 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> None:
                     if m.path is not None
                 }
 
+            existing_movies_by_tmdb = {}
+            for m in list(existing_movies_by_name.values()):
+                if m.tmdb_identifier:
+                    is_missing = False
+                    if m.path:
+                        try:
+                            if not Path(m.path).exists():
+                                is_missing = True
+                        except Exception:
+                            is_missing = True
+                    if is_missing:
+                        existing_movies_by_tmdb[m.tmdb_identifier] = m
+
             touched_movie_names = set()
 
             for movie_name, movie_data in library.items():
@@ -472,6 +498,10 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> None:
                     movie = existing_movies_by_path[path]
                 elif movie_name in existing_movies_by_name:
                     movie = existing_movies_by_name[movie_name]
+                else:
+                    tmdb_id = movie_data.get("tmdb_identifier")
+                    if tmdb_id and tmdb_id in existing_movies_by_tmdb:
+                        movie = existing_movies_by_tmdb[tmdb_id]
 
                 if not movie:
                     movie = Movie(library_name=library_name, name=movie_name)
