@@ -1,3 +1,9 @@
+## v0.24.0 (2026-06-05)
+
+### Feat
+
+- add configurable VLC buffer size settings to optimize playback performance
+
 ## v0.23.1 (2026-06-04)
 
 ### Fix
