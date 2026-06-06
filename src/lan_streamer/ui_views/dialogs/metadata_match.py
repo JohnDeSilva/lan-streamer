@@ -116,12 +116,12 @@ class MetadataMatchDialog(QDialog):
             for item_data in raw_results:
                 self.search_results_list.append(
                     {
-                        "id": str(item_data.get("id", "")),
-                        "tmdb_id": str(item_data.get("id", "")),
-                        "name": item_data.get("title", ""),
-                        "first_air_date": item_data.get("release_date", ""),
-                        "overview": item_data.get("overview", ""),
-                        "poster_path": item_data.get("poster_path", ""),
+                        "id": str(item_data.get("id") or ""),
+                        "tmdb_id": str(item_data.get("id") or ""),
+                        "name": item_data.get("title") or "",
+                        "first_air_date": item_data.get("release_date") or "",
+                        "overview": item_data.get("overview") or "",
+                        "poster_path": item_data.get("poster_path") or "",
                         "provider": "TMDB",
                     }
                 )
@@ -130,12 +130,12 @@ class MetadataMatchDialog(QDialog):
             for item_data in raw_results:
                 self.search_results_list.append(
                     {
-                        "id": str(item_data.get("id", "")),
-                        "tmdb_id": str(item_data.get("id", "")),
-                        "name": item_data.get("name", ""),
-                        "first_air_date": item_data.get("first_air_date", ""),
-                        "overview": item_data.get("overview", ""),
-                        "poster_path": item_data.get("poster_path", ""),
+                        "id": str(item_data.get("id") or ""),
+                        "tmdb_id": str(item_data.get("id") or ""),
+                        "name": item_data.get("name") or "",
+                        "first_air_date": item_data.get("first_air_date") or "",
+                        "overview": item_data.get("overview") or "",
+                        "poster_path": item_data.get("poster_path") or "",
                         "provider": "TMDB",
                     }
                 )
@@ -273,17 +273,20 @@ class JellyfinMatchDialog(QDialog):
             raw_results = jellyfin_client.search_series(query_string)
 
         for item_data in raw_results:
-            production_year_value: str = str(item_data.get("ProductionYear", ""))
+            production_year = item_data.get("ProductionYear")
+            production_year_value: str = (
+                str(production_year) if production_year is not None else ""
+            )
             first_air_date_value: str = (
                 production_year_value if production_year_value else ""
             )
 
             self.search_results_list.append(
                 {
-                    "id": str(item_data.get("Id", "")),
-                    "name": item_data.get("Name", ""),
+                    "id": str(item_data.get("Id") or ""),
+                    "name": item_data.get("Name") or "",
                     "first_air_date": first_air_date_value,
-                    "overview": item_data.get("Overview", ""),
+                    "overview": item_data.get("Overview") or "",
                     "provider": "Jellyfin",
                 }
             )
