@@ -100,3 +100,26 @@ def test_settings_dialog_vlc_buffer(qtbot) -> None:
         mock_save.assert_called_once()
 
     dialog.reject()
+
+
+def test_settings_dialog_sync_history_on_start(qtbot) -> None:
+    from lan_streamer.ui_views.dialogs.settings import SettingsDialog
+    from lan_streamer.system.config import config
+
+    config.sync_history_on_start = True
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    # Check that the checkbox has the correct initial value
+    assert dialog.sync_history_on_start_checkbox.isChecked() is True
+
+    # Modify value
+    dialog.sync_history_on_start_checkbox.setChecked(False)
+
+    # Save and verify
+    with patch.object(config, "save") as mock_save:
+        dialog.save_config()
+        assert config.sync_history_on_start is False
+        mock_save.assert_called_once()
+
+    dialog.reject()

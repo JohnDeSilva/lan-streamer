@@ -69,6 +69,9 @@ class SettingsDialog(QDialog):
 
         self.jellyfin_url_input: QLineEdit = QLineEdit()
         self.jellyfin_key_input: QLineEdit = QLineEdit()
+        self.sync_history_on_start_checkbox: QCheckBox = QCheckBox(
+            "Sync watch history from Jellyfin on startup"
+        )
         self.tmdb_key_input: QLineEdit = QLineEdit()
         self.opensubtitles_username_input: QLineEdit = QLineEdit()
         self.opensubtitles_password_input: QLineEdit = QLineEdit()
@@ -199,6 +202,7 @@ class SettingsDialog(QDialog):
         connectivity_layout.addWidget(QLabel("API Token:"), 2, 0)
         self.jellyfin_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         connectivity_layout.addWidget(self.jellyfin_key_input, 2, 1)
+        connectivity_layout.addWidget(self.sync_history_on_start_checkbox, 3, 0, 1, 2)
 
         # TMDB Section
         tmdb_header = self._create_header_with_info(
@@ -206,10 +210,10 @@ class SettingsDialog(QDialog):
             "TMDB is used to fetch posters, descriptions, and episode metadata.\n\n"
             "- API Key: Create a free key at https://www.themoviedb.org/settings/api",
         )
-        connectivity_layout.addWidget(tmdb_header, 3, 0, 1, 2)
-        connectivity_layout.addWidget(QLabel("API Key:"), 4, 0)
+        connectivity_layout.addWidget(tmdb_header, 4, 0, 1, 2)
+        connectivity_layout.addWidget(QLabel("API Key:"), 5, 0)
         self.tmdb_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        connectivity_layout.addWidget(self.tmdb_key_input, 4, 1)
+        connectivity_layout.addWidget(self.tmdb_key_input, 5, 1)
 
         # OpenSubtitles Section
         osub_header = self._create_header_with_info(
@@ -219,17 +223,17 @@ class SettingsDialog(QDialog):
             "- API Key: MANDATORY for the app to connect. Create a free 'Consumer Key' "
             "at https://www.opensubtitles.com/en/consumers",
         )
-        connectivity_layout.addWidget(osub_header, 5, 0, 1, 2)
-        connectivity_layout.addWidget(QLabel("Username:"), 6, 0)
-        connectivity_layout.addWidget(self.opensubtitles_username_input, 6, 1)
-        connectivity_layout.addWidget(QLabel("Password:"), 7, 0)
+        connectivity_layout.addWidget(osub_header, 6, 0, 1, 2)
+        connectivity_layout.addWidget(QLabel("Username:"), 7, 0)
+        connectivity_layout.addWidget(self.opensubtitles_username_input, 7, 1)
+        connectivity_layout.addWidget(QLabel("Password:"), 8, 0)
         self.opensubtitles_password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        connectivity_layout.addWidget(self.opensubtitles_password_input, 7, 1)
-        connectivity_layout.addWidget(QLabel("API Key:"), 8, 0)
+        connectivity_layout.addWidget(self.opensubtitles_password_input, 8, 1)
+        connectivity_layout.addWidget(QLabel("API Key:"), 9, 0)
         self.opensubtitles_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        connectivity_layout.addWidget(self.opensubtitles_api_key_input, 8, 1)
+        connectivity_layout.addWidget(self.opensubtitles_api_key_input, 9, 1)
 
-        connectivity_layout.setRowStretch(9, 1)
+        connectivity_layout.setRowStretch(10, 1)
 
         # Libraries Management Pane
         libraries_tab: QWidget = QWidget()
@@ -735,6 +739,7 @@ class SettingsDialog(QDialog):
     def _load_config(self) -> None:
         self.jellyfin_url_input.setText(config.jellyfin_url)
         self.jellyfin_key_input.setText(config.jellyfin_api_key)
+        self.sync_history_on_start_checkbox.setChecked(config.sync_history_on_start)
         self.tmdb_key_input.setText(config.tmdb_api_key)
         self.opensubtitles_username_input.setText(config.opensubtitles_username)
         self.opensubtitles_password_input.setText(config.opensubtitles_password)
@@ -1223,7 +1228,7 @@ class SettingsDialog(QDialog):
         config.opensubtitles_username = self.opensubtitles_username_input.text().strip()
         config.opensubtitles_password = self.opensubtitles_password_input.text().strip()
         config.opensubtitles_api_key = self.opensubtitles_api_key_input.text().strip()
-        config.sync_history_on_start = False
+        config.sync_history_on_start = self.sync_history_on_start_checkbox.isChecked()
 
         config.use_embedded_player = self.use_embedded_checkbox.isChecked()
         config.enable_caching = self.enable_caching_checkbox.isChecked()
