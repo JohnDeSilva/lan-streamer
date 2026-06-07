@@ -1,3 +1,14 @@
+## v0.25.0 (2026-06-06)
+
+### Feat
+
+- add MyAnimeList integration for metadata mapping and anime library support
+- implement database deletion for series and episodes with UI controls and refined scanner cleanup logic
+
+### Fix
+
+- adds missing sync history on startup toggle to settings dialog
+
 ## v0.24.3 (2026-06-05)
 
 ### Fix
