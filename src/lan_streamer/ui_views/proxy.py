@@ -1,3 +1,4 @@
+import logging
 import sys
 from typing import Any, Callable
 from PySide6.QtWidgets import (
@@ -20,6 +21,8 @@ from lan_streamer.providers.myanimelist import (
     myanimelist_client as myanimelist_client_real,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class PatchedClass:
     def __init__(self, attr_name: str, default_factory: Callable[[], Any]) -> None:
@@ -33,9 +36,27 @@ class PatchedClass:
         return self.default_factory()
 
     def __getattr__(self, item: str) -> Any:
-        return getattr(self._get_target(), item)
+        attr = getattr(self._get_target(), item)
+        if (
+            self.attr_name in ("QMessageBox", "QFileDialog")
+            and callable(attr)
+            and not isinstance(attr, type)
+        ):
+
+            def wrapper(*args: Any, **kwargs: Any) -> Any:
+                logger.info(
+                    f"UI Dialog Prompt: {self.attr_name}.{item} called with args={args}, kwargs={kwargs}"
+                )
+                return attr(*args, **kwargs)
+
+            return wrapper
+        return attr
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if self.attr_name in ("QMessageBox", "QFileDialog"):
+            logger.info(
+                f"UI Dialog Prompt: Instantiating {self.attr_name} with args={args}, kwargs={kwargs}"
+            )
         return self._get_target()(*args, **kwargs)
 
 

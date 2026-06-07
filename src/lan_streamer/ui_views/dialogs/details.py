@@ -782,6 +782,7 @@ class SeriesDetailsDialog(QDialog):
             False,
         )
         self.hide_missing_checkbox.setChecked(hide_missing_val)
+        self.hide_missing_checkbox.stateChanged.connect(self._on_hide_missing_changed)
         form.addRow("Episode View:", self.hide_missing_checkbox)
 
         settings_layout.addLayout(form)
@@ -1181,6 +1182,13 @@ class SeriesDetailsDialog(QDialog):
             self.accept()
 
     def _on_match_jellyfin_clicked(self) -> None:
+        if not jellyfin_client.is_configured():
+            QMessageBox.information(
+                self,
+                "Jellyfin Sync",
+                "Jellyfin is not configured. Please configure it in Settings first.",
+            )
+            return
         self.controller.jellyfin_dialog_requested.emit(self.series_name)
         self.accept()
 
@@ -1243,6 +1251,16 @@ class SeriesDetailsDialog(QDialog):
             self.controller.current_library_name, self.controller.cached_library_data
         )
         self.accept()
+
+    @Slot(int)
+    def _on_hide_missing_changed(self, state: int) -> None:
+        checked = bool(state)
+        config.set_series_preference(
+            self.controller.current_library_name,
+            self.series_name,
+            "hide_missing_future",
+            checked,
+        )
 
     def _setup_mal_mapper_ui(self) -> None:
         layout = QVBoxLayout(self.mal_mapper_widget)

@@ -342,10 +342,14 @@ def test_series_details_match_buttons(mock_series_controller, qtbot):
 
     dialog = SeriesDetailsDialog("Cosmos", mock_series_controller)
     qtbot.addWidget(dialog)
-    with qtbot.waitSignal(
-        mock_series_controller.jellyfin_dialog_requested, timeout=1000
+    with patch(
+        "lan_streamer.ui_views.proxy.jellyfin_client.is_configured",
+        return_value=True,
     ):
-        dialog._on_match_jellyfin_clicked()
+        with qtbot.waitSignal(
+            mock_series_controller.jellyfin_dialog_requested, timeout=1000
+        ):
+            dialog._on_match_jellyfin_clicked()
 
     dialog = SeriesDetailsDialog("Cosmos", mock_series_controller)
     qtbot.addWidget(dialog)
