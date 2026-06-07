@@ -1004,6 +1004,47 @@ Below is the structured textual representation of all major class inheritance pa
 
 ---
 
+### `MyAnimeListClient`
+- **Defined in**: [myanimelist.py](../src/lan_streamer/providers/myanimelist.py#L10) (line 10)
+- **Inherits from**: *None (Base Class)*
+
+> Client for interacting with the MyAnimeList API v2. Handles OAuth2 authentication with PKCE and syncs watch history.
+
+**Methods**:
+- `def __init__(self) -> None`
+
+- `def is_configured(self) -> bool`
+  > Checks if Client ID is configured.
+
+- `def is_authenticated(self) -> bool`
+  > Checks if the user has authenticated and we have an access token.
+
+- `def get_auth_headers(self) -> Dict[str, str]`
+  > Returns headers for authenticated MAL API requests. Refreshes token automatically if expired.
+
+- `def generate_auth_url(self, code_verifier: str) -> str`
+  > Generates the MAL authorization URL using PKCE with 'plain' method.
+
+- `def exchange_auth_code(self, code: str, code_verifier: str) -> Tuple[bool, str]`
+  > Exchanges the authorization code for access and refresh tokens.
+
+- `def refresh_access_token(self) -> bool`
+  > Uses the refresh token to obtain a new access token.
+
+- `def remove_connection(self) -> None`
+  > Clears all MyAnimeList authentication tokens.
+
+- `def search_anime(self, query: str) -> List[Dict[str, Any]]`
+  > Searches MyAnimeList for anime matching the given query string.
+
+- `def get_anime_details(self, anime_id: int) -> Optional[Dict[str, Any]]`
+  > Fetches full details of a specific MyAnimeList entry.
+
+- `def update_watched_status(self, anime_id: int, num_watched_episodes: int, total_episodes: int = 0) -> bool`
+  > Updates the watched status of a specific anime on MAL.
+
+---
+
 ### `TMDBClient`
 - **Defined in**: [tmdb.py](../src/lan_streamer/providers/tmdb.py#L21) (line 21)
 - **Inherits from**: *None (Base Class)*

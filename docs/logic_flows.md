@@ -81,11 +81,13 @@ When a playback request is initiated, the system evaluates several logical decis
 
 ---
 
-## 4. Jellyfin Watch History Sync (Push/Pull)
+## 4. Watch History Sync (Jellyfin & MyAnimeList)
 
-Synchronizes watched history state between the local SQLite database and a remote Jellyfin server.
+Synchronizes watched history state between the local SQLite database and remote services (Jellyfin and/or MyAnimeList).
 
-### Pull Synchronization Workflow
+### Jellyfin Sync Workflows
+
+#### Pull Synchronization Workflow
 The `JellyfinPullWorker` fetches server watched states and applies them locally:
 1. **API Fetch**: Queries the Jellyfin server API for the logged-in user's watch history.
 2. **Identification Gate**: For each returned item, the pull worker attempts to match it against SQLite:
@@ -93,31 +95,43 @@ The `JellyfinPullWorker` fetches server watched states and applies them locally:
    - Second, falls back to path or name matching.
 3. **Database Update**: If a local match is found, its watched flag is updated to `True` in SQLite. Unmapped items are skipped.
 
-### Push Synchronization Workflow
+#### Push Synchronization Workflow
 The `JellyfinPushWorker` pushes local watch states back to the server:
 1. **Database Query**: Queries the SQLite database for episodes or movies marked as watched locally.
 2. **Mapping Gate**: Evaluates if the watched item already has an associated Jellyfin ID:
    - *If mapped*: Directly sends a watch update request to the Jellyfin API.
    - *If unmapped*: Performs a search query on the Jellyfin server by name. If an ID is successfully retrieved, the mapping is saved to SQLite, and the watched status is posted. If search fails, the item is skipped.
 
+### MyAnimeList Sync Workflow
+Unlike Jellyfin's worker threads which run sync sweeps, watch history is pushed to MyAnimeList asynchronously on demand:
+1. **Trigger Gates**: When an episode or movie is marked as watched (manually in the UI or by reaching the playback threshold), the query handler checks:
+   - If the item has a mapped `myanimelist_anime_id` and `myanimelist_episode_number` (or is a mapped movie).
+   - If the MyAnimeList client ID is configured and the user account is authenticated.
+2. **Async Task Dispatch**: An asynchronous background thread is spawned (`_trigger_mal_push_async`) to handle the network request without blocking the UI.
+3. **Status Update**: Pushes the progress to the MAL `my_list_status` API endpoint. If all episodes in the MAL entry are completed, the status is marked as `"completed"`; otherwise, it's set to `"watching"`.
+4. **Token Refresh Gate**: If the current OAuth access token is expired or close to expiry, the client automatically requests a new access token using the stored refresh token before transmitting the status.
+
 ---
 
-## 5. Manual Metadata Matching Workflow
+## 5. Manual Metadata Matching Workflow (TMDB & MyAnimeList)
 
-Provides a way to override or correct automated TMDB catalog resolution results.
+Provides a way to override or correct automated TMDB catalog resolution results and map local season episodes to MyAnimeList entries.
 
-### User Choice & Search Execution
+### TMDB Catalog Matching
 1. **Manual Match Trigger**: The user opens the details dialog and selects the match/search action.
 2. **Keyword Input**: The search query is pre-populated with the folder/file name but can be manually modified by the user.
-3. **API Query**: Queries TMDB search endpoints (`search_series_full` or `search_movie_full`) to retrieve a collection of matched title details (e.g. titles, release years, overviews, posters).
-
-### Applying the Match
-1. **Selection**: The user selects a specific TMDB item from the search result list.
-2. **Controller updates**:
+3. **API Query**: Queries TMDB search endpoints (`search_series_full` or `search_movie_full`) to retrieve a collection of matched title details.
+4. **Applying the Match**:
    - Saves the new TMDB ID mapping to the database.
    - Triggers download and caching of the updated poster artwork.
    - Triggers background workers to re-scan seasons and episodes matching the new TMDB ID.
    - Refreshes UI grids and panels to show updated metadata and artwork immediately.
+
+### MyAnimeList Mapping (Anime Libraries Only)
+For libraries defined as `"anime"`, the **Series Details** dialog displays a dedicated **MyAnimeList Mapper** tab:
+1. **Search MyAnimeList**: Users search by keyword, which queries MyAnimeList's `/anime` endpoint.
+2. **Episode Alignment**: Selecting a search candidate pulls its detailed metadata and episode list from MAL. The UI matches local episodes to MAL episodes side-by-side.
+3. **Commit Mappings**: Clicking "Apply MyAnimeList Mappings" saves the `myanimelist_id` to the local `Season` record, and updates individual `Episode` rows in the SQLite database with their corresponding `myanimelist_anime_id` and `myanimelist_episode_number`.
 
 ---
 

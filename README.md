@@ -29,6 +29,7 @@ LAN Streamer is built to play your media files directly and natively without any
 *   **⚡ API Optimization**: Proactively identifies, logs, and ignores deeply nested or non-compliant subdirectory structures within TV libraries to minimize unnecessary TMDB API calls.
 *   **🔄 Bidirectional Sync**: Syncs "Watched" status with Jellyfin servers in real-time.
 *   **🗨️ Subtitle Search**: Integrated **OpenSubtitles.com** support for searching and downloading subtitles directly within the app.
+*   **🌸 MyAnimeList Integration & Anime Mode**: Push-only watch progress synchronization to MyAnimeList. Configures libraries as `"anime"` to display a dedicated **MyAnimeList Mapper** tab in the **Series Details** dialog, allowing manual mapping of local episodes to MAL anime entries and background watch progress sync.
 
 ### 📁 File Management
 *   **⚡ Library Scanning & Cleanup**: Combined "Scan Library" action that scans for new files and automatically updates paths for moved or missing files in a single pass. Displays a detailed, real-time scan progress dashboard.
@@ -68,6 +69,7 @@ LAN Streamer is built to play your media files directly and natively without any
 *   **TMDB API Key**: Required for metadata (free from [The Movie Database](https://www.themoviedb.org/)).
 *   **Jellyfin**: (Optional) For watch history synchronization.
 *   **OpenSubtitles**: (Optional) For subtitle downloads (requires API key and credentials).
+*   **MyAnimeList**: (Optional) For anime watch history synchronization (requires API Client ID/Secret).
 
 ---
 
@@ -109,8 +111,9 @@ make run
 1.  **Configure TMDB**: Click **Settings...** in the main window toolbar, go to the **Remote API's** tab, and enter your TMDB API Key.
 2.  **Configure Jellyfin (Optional)**: In **Settings... > Remote API's**, enter your Jellyfin Server URL and API Key.
 3.  **Configure OpenSubtitles (Optional)**: In **Settings... > Remote API's**, enter your OpenSubtitles credentials and API Key.
-4.  **Add Libraries**: Click **Settings...** and go to **Libraries Setup** to define your media library roots and settings.
-5.  **Scan Library**: Click the **Scan Library** button at the bottom of the main window to scan for files, or click **Refresh Metadata** to force a full update from TMDB.
+4.  **Configure MyAnimeList (Optional)**: In **Settings... > Remote API's**, enter your MyAnimeList Client ID and Client Secret, and click **Link MAL Account...** to link your account using the browser-based OAuth flow.
+5.  **Add Libraries**: Click **Settings...** and go to **Libraries Setup** to define your media library roots and settings. Make sure to check **Anime Mode** for libraries containing anime series you want to map to MyAnimeList.
+6.  **Scan Library**: Click the **Scan Library** button at the bottom of the main window to scan for files, or click **Refresh Metadata** to force a full update from TMDB.
 
 ---
 
@@ -194,6 +197,29 @@ Configures VLC's internal caching buffer size (in milliseconds) to absorb tempor
 - **Behavior:**
   - Configurable under the **Video Player** settings tab in the UI.
   - Controls VLC's cache buffer sizes dynamically.
+
+### MyAnimeList Integration
+Allows synchronization of anime watch history with MyAnimeList. Configurable in **Settings > Remote API's**.
+
+#### API Client Registration Guide
+To obtain your credentials for MyAnimeList integration:
+1. Go to the [MyAnimeList API License page](https://myanimelist.net/apiconfig/create) and register a new client application.
+2. Ensure you configure the App Redirect URL (Redirect URI) to exactly:
+   ```
+   http://localhost/
+   ```
+   > [!IMPORTANT]
+   > Ensure you include the trailing slash (`/`). Omitting the trailing slash will result in a login redirect loop on MyAnimeList.
+3. Make sure the App Type is web in order to get a Client ID and Cl ient Secret.
+4. Copy the generated **Client ID** and **Client Secret**.
+
+#### Configuration Keys
+- `myanimelist_client_id`: The Client ID obtained from MyAnimeList.
+- `myanimelist_client_secret`: The Client Secret obtained from MyAnimeList.
+
+#### Features
+- **OAuth2 Flow with PKCE**: Generates an authorization URL and opens it in the browser. The user authenticates and redirects to `http://localhost/`, then pastes the final URL back into the Settings dialog.
+- **Watch History Push**: Automatically updates the watched status and episode count of mapped anime on MyAnimeList when local episodes or movies are marked as watched.
 
 ### Progress Tracking
 The application automatically tracks your playback progress and maintains a "watched" state across your library.
