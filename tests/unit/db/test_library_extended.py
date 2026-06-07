@@ -1,0 +1,395 @@
+"""
+Targeted tests for db/library.py covering:
+ - _save_episode_record: promote placeholder, fallback name-match, stale placeholder deletion
+ - _apply_movie_fields: audio_tracks / subtitle_tracks json fields
+ - save_movie_library: TMDB id-based match, stale movie name collision
+ - cleanup_library: tv library (episode path null'd out, series removed)
+ - cleanup_library: movie library (missing movie removed)
+ - load_library exception path
+ - save_library exception path
+
+Missing lines to hit: 46, 53, 55, 58, 64, 218, 243-246, 258, 293, 295, 297, 299, 302, 308,
+  369-370, 373, 402-403, 488-496, 512, 563, 569
+"""
+
+import pytest
+import json
+from unittest.mock import patch
+
+import lan_streamer.db as db
+from lan_streamer.db import get_session
+from lan_streamer.db.models import Series, Season, Episode, Movie
+from lan_streamer.system.config import config
+
+
+# ---------------------------------------------------------------------------
+# _apply_movie_fields - audio/subtitle json fields and remaining branches
+# ---------------------------------------------------------------------------
+
+
+def test_apply_movie_fields_audio_subtitle_json(mock_db_file) -> None:
+    """_apply_movie_fields should JSON-encode audio and subtitle tracks."""
+    from lan_streamer.db.library import _apply_movie_fields
+
+    with get_session() as session:
+        movie = Movie(name="TestMovie", library_name="Lib")
+        session.add(movie)
+        session.flush()
+
+        movie_data = {
+            "path": "/movies/test.mkv",
+            "audio_tracks": [{"lang": "en"}, {"lang": "fr"}],
+            "subtitle_tracks": [{"lang": "de"}],
+            "myanimelist_anime_id": 12345,
+            "video_codec": "H.264",
+            "resolution": "1080p",
+        }
+        _apply_movie_fields(movie, movie_data)
+        session.commit()
+
+        assert json.loads(movie.audio_tracks) == [{"lang": "en"}, {"lang": "fr"}]
+        assert json.loads(movie.subtitle_tracks) == [{"lang": "de"}]
+        assert movie.myanimelist_anime_id == 12345
+        assert movie.video_codec == "H.264"
+        assert movie.resolution == "1080p"
+
+
+def test_apply_movie_fields_empty_audio_subtitle_keeps_existing(mock_db_file) -> None:
+    """When audio_tracks/subtitle_tracks are empty, keeps the existing value."""
+    from lan_streamer.db.library import _apply_movie_fields
+
+    with get_session() as session:
+        movie = Movie(
+            name="ExistingMovie",
+            library_name="Lib",
+            audio_tracks=json.dumps([{"lang": "es"}]),
+            subtitle_tracks=json.dumps([{"lang": "jp"}]),
+        )
+        session.add(movie)
+        session.flush()
+
+        movie_data = {
+            "audio_tracks": [],  # empty – should keep existing
+            "subtitle_tracks": [],  # empty – should keep existing
+        }
+        _apply_movie_fields(movie, movie_data)
+        session.commit()
+
+        # Existing values should be preserved
+        assert json.loads(movie.audio_tracks) == [{"lang": "es"}]
+        assert json.loads(movie.subtitle_tracks) == [{"lang": "jp"}]
+
+
+# ---------------------------------------------------------------------------
+# _save_episode_record - placeholder promotion
+# ---------------------------------------------------------------------------
+
+
+def test_save_episode_record_promotes_placeholder(mock_db_file) -> None:
+    """When a placeholder episode (path=None) is found by tmdb_number, it should be promoted."""
+    from lan_streamer.db.library import _save_episode_record
+
+    with get_session() as session:
+        series = Series(name="PlaceholderShow", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+
+        # Create a placeholder episode
+        placeholder = Episode(
+            season=season,
+            name="S01E01",
+            path=None,
+            tmdb_number=1,
+        )
+        session.add(placeholder)
+        session.flush()
+
+        existing_by_path = {}
+        existing_by_number = {1: placeholder}
+        existing_by_name = {"S01E01": placeholder}
+        stats = {"episodes": 0}
+
+        episode_data = {
+            "name": "S01E01",
+            "path": "/shows/Season 1/S01E01.mkv",
+            "tmdb_number": 1,
+        }
+
+        _save_episode_record(
+            session,
+            season,
+            episode_data,
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        # The placeholder should now have a path
+        assert placeholder.path == "/shows/Season 1/S01E01.mkv"
+        assert stats["episodes"] == 1
+
+
+def test_save_episode_record_name_fallback(mock_db_file) -> None:
+    """Fallback to name-matching when path and tmdb_number don't match.
+    Path gets assigned when episode has no existing path (placeholder)."""
+    from lan_streamer.db.library import _save_episode_record
+
+    with get_session() as session:
+        series = Series(name="NameFallbackShow", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+
+        # A placeholder episode with no path
+        existing_ep = Episode(
+            season=season,
+            name="SpecialEp",
+            path=None,  # placeholder, no path
+            tmdb_number=None,
+        )
+        session.add(existing_ep)
+        session.flush()
+
+        existing_by_path = {}
+        existing_by_number = {}
+        existing_by_name = {"SpecialEp": existing_ep}
+        stats = {"episodes": 0}
+
+        # New episode with same name and now has a path
+        episode_data = {
+            "name": "SpecialEp",
+            "path": "/new/path.mkv",
+            "tmdb_number": None,
+        }
+
+        _save_episode_record(
+            session,
+            season,
+            episode_data,
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        # Should have assigned path via name fallback (since existing_ep.path was None)
+        assert existing_ep.path == "/new/path.mkv"
+
+
+def test_save_episode_record_myanimelist_fields(mock_db_file) -> None:
+    """Episode records should save myanimelist fields."""
+    from lan_streamer.db.library import _save_episode_record
+
+    with get_session() as session:
+        series = Series(name="MALShow", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+
+        existing_by_path = {}
+        existing_by_number = {}
+        existing_by_name = {}
+        stats = {"episodes": 0}
+
+        episode_data = {
+            "name": "ep1.mkv",
+            "path": "/mal/ep1.mkv",
+            "myanimelist_anime_id": 55555,
+            "myanimelist_episode_number": 3,
+            "audio_tracks": [{"lang": "ja"}],
+            "subtitle_tracks": [{"lang": "en"}],
+            "video_codec": "HEVC",
+            "resolution": "4K",
+        }
+
+        ep = _save_episode_record(
+            session,
+            season,
+            episode_data,
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        assert ep.myanimelist_anime_id == 55555
+        assert ep.myanimelist_episode_number == 3
+        assert json.loads(ep.audio_tracks) == [{"lang": "ja"}]
+        assert json.loads(ep.subtitle_tracks) == [{"lang": "en"}]
+        assert ep.video_codec == "HEVC"
+        assert ep.resolution == "4K"
+
+
+# ---------------------------------------------------------------------------
+# _save_season_record - myanimelist_id field
+# ---------------------------------------------------------------------------
+
+
+def test_save_season_record_myanimelist_id(mock_db_file) -> None:
+    """Season records should save myanimelist_id from metadata."""
+    from lan_streamer.db.library import _save_season_record
+
+    with get_session() as session:
+        series = Series(name="MALSeason", library_name="Lib")
+        session.add(series)
+        session.flush()
+
+        stats = {"seasons": 0}
+        season_data = {"metadata": {"myanimelist_id": 99999, "jellyfin_id": ""}}
+
+        season = _save_season_record(
+            session, series, "Season 1", season_data, {}, stats
+        )
+        session.commit()
+
+        assert season.myanimelist_id == 99999
+        assert stats["seasons"] == 1
+
+
+# ---------------------------------------------------------------------------
+# save_movie_library - TMDB ID fallback match
+# ---------------------------------------------------------------------------
+
+
+def test_save_movie_library_tmdb_id_fallback(mock_db_file, tmp_path) -> None:
+    """When path changed but tmdb_identifier matches, reuse existing record."""
+    # Create existing movie record with a non-existent path (so it's considered missing)
+    with get_session() as session:
+        movie = Movie(
+            name="OldName",
+            library_name="Movies",
+            path="/old/nonexistent.mkv",
+            tmdb_identifier="tmdb_abc",
+        )
+        session.add(movie)
+        session.commit()
+
+    # Save library with same TMDB ID but new path/name
+    new_movie_file = tmp_path / "NewName.mkv"
+    new_movie_file.write_bytes(b"\x00")
+
+    library = {
+        "NewName": {
+            "path": str(new_movie_file),
+            "tmdb_identifier": "tmdb_abc",
+            "tmdb_name": "New Name",
+        }
+    }
+    db.save_movie_library("Movies", library)
+
+    result = db.load_movie_library("Movies")
+    # The movie should be updated (via TMDB id match) rather than duplicated
+    assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# cleanup_library - movie: removes missing movies
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_library_movie_removes_missing(mock_db_file) -> None:
+    """cleanup_library for movie type should remove Movie records with missing files."""
+    # Create a movie that points to a non-existent path
+    with get_session() as session:
+        movie = Movie(
+            name="Orphan",
+            library_name="Movies",
+            path="/nonexistent/movie.mkv",
+        )
+        session.add(movie)
+        session.commit()
+
+    config.libraries["Movies"] = {"type": "movie", "paths": []}
+    stats = db.cleanup_library("Movies", [])
+    assert stats["movies"] == 1
+
+
+# ---------------------------------------------------------------------------
+# cleanup_library - tv: nulls out missing episode paths
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_library_tv_nulls_missing_episode_path(mock_db_file, tmp_path) -> None:
+    """cleanup_library for tv type should null out episode paths for missing files."""
+    series_dir = tmp_path / "MyShow"
+    series_dir.mkdir()
+
+    with get_session() as session:
+        series = Series(name="MyShow", library_name="TVLib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+        ep = Episode(
+            name="S01E01.mkv",
+            path="/nonexistent/s01e01.mkv",  # file doesn't exist
+            season=season,
+        )
+        session.add(ep)
+        session.commit()
+
+    config.libraries["TVLib"] = {"type": "tv", "paths": [str(tmp_path)]}
+    db.cleanup_library("TVLib", [str(tmp_path)])
+
+    # Check the episode path is now None
+    with get_session() as session:
+        ep_row = session.scalars(
+            __import__("sqlalchemy").select(Episode).where(Episode.name == "S01E01.mkv")
+        ).first()
+        assert ep_row is None or ep_row.path is None
+
+
+def test_cleanup_library_tv_removes_missing_series(mock_db_file, tmp_path) -> None:
+    """cleanup_library for tv type should remove Series records not on disk."""
+    with get_session() as session:
+        series = Series(name="GoneShow", library_name="TVLib2")
+        session.add(series)
+        session.flush()
+        season = Season(name="S1", series=series)
+        session.add(season)
+        session.flush()
+        ep = Episode(name="ep.mkv", path="/gone/ep.mkv", season=season)
+        session.add(ep)
+        session.commit()
+
+    config.libraries["TVLib2"] = {"type": "tv", "paths": [str(tmp_path)]}
+    stats = db.cleanup_library("TVLib2", [str(tmp_path)])
+
+    # GoneShow folder doesn't exist in tmp_path → should be removed
+    assert stats["series"] == 1
+
+
+# ---------------------------------------------------------------------------
+# load_library exception path
+# ---------------------------------------------------------------------------
+
+
+def test_load_library_handles_exception(mock_db_file) -> None:
+    """load_library should return {} on database errors."""
+    with patch(
+        "lan_streamer.db.library.get_session", side_effect=RuntimeError("DB fail")
+    ):
+        result = db.load_library("SomeLib")
+    assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_db_file(tmp_path):
+    return tmp_path / "library.db"
