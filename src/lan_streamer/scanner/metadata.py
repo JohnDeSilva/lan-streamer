@@ -658,12 +658,14 @@ def _process_season_metadata(
 
     existing_season_id = ""
     existing_season_poster = ""
+    existing_mal_id = None
     if existing_series_data and season_name in existing_series_data.get("seasons", {}):
         old_season_metadata = existing_series_data["seasons"][season_name].get(
             "metadata", {}
         )
         existing_season_id = old_season_metadata.get("tmdb_identifier", "")
         existing_season_poster = old_season_metadata.get("poster_path", "")
+        existing_mal_id = old_season_metadata.get("myanimelist_id")
 
     if matched_tmdb_season and series_data["_tmdb_series_id"]:
         season_tmdb_identifier = matched_tmdb_season.get("id")
@@ -691,6 +693,9 @@ def _process_season_metadata(
     else:
         season_metadata["tmdb_identifier"] = existing_season_id
         season_metadata["poster_path"] = existing_season_poster
+
+    if existing_mal_id:
+        season_metadata["myanimelist_id"] = existing_mal_id
 
     is_locked = bool(series_data.get("metadata", {}).get("locked_metadata", False))
     season_already_has_episodes = False
@@ -929,5 +934,29 @@ def _process_episode_file(
         res["resolution"] = existing_episode.get("resolution")
         res["audio_tracks"] = existing_episode.get("audio_tracks")
         res["subtitle_tracks"] = existing_episode.get("subtitle_tracks")
+
+    # Preserve existing MyAnimeList mapping if it exists
+    if existing_episode:
+        res["myanimelist_anime_id"] = existing_episode.get("myanimelist_anime_id")
+        res["myanimelist_episode_number"] = existing_episode.get(
+            "myanimelist_episode_number"
+        )
+    elif placeholder_episode:
+        res["myanimelist_anime_id"] = placeholder_episode.get("myanimelist_anime_id")
+        res["myanimelist_episode_number"] = placeholder_episode.get(
+            "myanimelist_episode_number"
+        )
+
+    # Automatically map to MyAnimeList if the season has a myanimelist_id
+    mal_id = season_metadata.get("myanimelist_id")
+    if mal_id and not res.get("myanimelist_anime_id"):
+        res["myanimelist_anime_id"] = mal_id
+        # Use tmdb_number, or fallback to parsed episode number from name
+        ep_num = res.get("tmdb_number")
+        if ep_num is None:
+            parsed = _parse_episode_number(episode_name)
+            if parsed:
+                _, ep_num = parsed
+        res["myanimelist_episode_number"] = ep_num
 
     return res
