@@ -1178,12 +1178,54 @@ class VideoPlayerWidget(QWidget):
         self.audio_combo.blockSignals(True)
         self.audio_combo.clear()
         audio_tracks = self.mediaplayer.audio_get_track_description()
+        decoded_audio = []
         for track_id, track_name in audio_tracks:
-            self.audio_combo.addItem(
-                track_name.decode() if isinstance(track_name, bytes) else track_name,
-                track_id,
+            decoded_name = (
+                track_name.decode() if isinstance(track_name, bytes) else track_name
             )
-        current_audio = self.mediaplayer.audio_get_track()
+            self.audio_combo.addItem(decoded_name, track_id)
+            decoded_audio.append((track_id, decoded_name))
+
+        selected_audio = None
+        active_audio = [
+            (t_id, t_name)
+            for t_id, t_name in decoded_audio
+            if t_id != -1 and "disable" not in t_name.lower()
+        ]
+
+        if active_audio:
+            english_audio = [
+                (t_id, t_name)
+                for t_id, t_name in active_audio
+                if "english" in t_name.lower()
+            ]
+            if english_audio:
+                if len(english_audio) == 1:
+                    selected_audio = english_audio[0][0]
+                else:
+                    excluded_words = [
+                        "commentary",
+                        "description",
+                        "descriptive",
+                        "director",
+                    ]
+                    preferred_audio = [
+                        (t_id, t_name)
+                        for t_id, t_name in english_audio
+                        if not any(word in t_name.lower() for word in excluded_words)
+                    ]
+                    if preferred_audio:
+                        selected_audio = preferred_audio[0][0]
+                    else:
+                        selected_audio = english_audio[0][0]
+
+        if selected_audio is not None:
+            logger.info(f"Automatically selecting audio track ID: {selected_audio}")
+            self.mediaplayer.audio_set_track(selected_audio)
+            current_audio = selected_audio
+        else:
+            current_audio = self.mediaplayer.audio_get_track()
+
         idx = self.audio_combo.findData(current_audio)
         if idx != -1:
             self.audio_combo.setCurrentIndex(idx)
