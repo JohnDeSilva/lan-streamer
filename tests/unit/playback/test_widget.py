@@ -674,6 +674,72 @@ def test_ask_resume_playback(player_widget) -> None:
                 assert added_buttons[1].text() == "Start from Beginning"
 
 
+def test_audio_selection_single_english(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = [
+        (-1, b"Disable"),
+        (1, b"English"),
+        (2, b"Japanese"),
+    ]
+    player_widget.mediaplayer.audio_get_track.return_value = -1
+    player_widget.mediaplayer.video_get_spu_description.return_value = []
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+
+    player_widget._refresh_tracks()
+
+    player_widget.mediaplayer.audio_set_track.assert_called_once_with(1)
+
+
+def test_audio_selection_multiple_english_filtered(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = [
+        (-1, b"Disable"),
+        (1, b"English (Commentary)"),
+        (2, b"English (Descriptive)"),
+        (3, b"English (Director's Cut)"),
+        (4, b"English"),
+    ]
+    player_widget.mediaplayer.audio_get_track.return_value = -1
+    player_widget.mediaplayer.video_get_spu_description.return_value = []
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+
+    player_widget._refresh_tracks()
+
+    player_widget.mediaplayer.audio_set_track.assert_called_once_with(4)
+
+
+def test_audio_selection_multiple_english_all_excluded(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = [
+        (-1, b"Disable"),
+        (1, b"English (Commentary)"),
+        (2, b"English (Descriptive)"),
+    ]
+    player_widget.mediaplayer.audio_get_track.return_value = -1
+    player_widget.mediaplayer.video_get_spu_description.return_value = []
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+
+    player_widget._refresh_tracks()
+
+    # Should fallback to the first English track if all contain excluded words
+    player_widget.mediaplayer.audio_set_track.assert_called_once_with(1)
+
+
+def test_audio_selection_no_english_fallback(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = [
+        (-1, b"Disable"),
+        (2, b"Japanese"),
+    ]
+    player_widget.mediaplayer.audio_get_track.return_value = 2
+    player_widget.mediaplayer.video_get_spu_description.return_value = []
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+
+    player_widget._refresh_tracks()
+
+    player_widget.mediaplayer.audio_set_track.assert_not_called()
+
+
 def test_subtitle_selection_single_english(player_widget) -> None:
     player_widget.mediaplayer = MagicMock()
     player_widget.mediaplayer.audio_get_track_description.return_value = []
