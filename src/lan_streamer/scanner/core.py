@@ -617,6 +617,7 @@ def scan_series(
                         continue
                 ep_name = tmdb_ep.get("name") or "TBA"
                 formatted_name = f"S{s_idx:02d}E{ep_num:02d} - {ep_name}"
+                mal_id = season_metadata.get("myanimelist_id")
                 episode_record = {
                     "name": formatted_name,
                     "path": None,
@@ -630,6 +631,9 @@ def scan_series(
                     "watched": False,
                     "date_added": 0,
                 }
+                if mal_id:
+                    episode_record["myanimelist_anime_id"] = mal_id
+                    episode_record["myanimelist_episode_number"] = ep_num
                 series_data["seasons"][season_name]["episodes"].append(episode_record)
 
         if detail_callback:

@@ -2951,3 +2951,86 @@ def test_scan_series_with_episode_groups(tmp_path) -> None:
     # Order inside the group becomes tmdb_number
     assert eps[0]["tmdb_number"] == 1
     assert eps[0]["tmdb_episode_identifier"] == "ep-999"
+
+
+def test_scan_series_myanimelist_auto_mapping(tmp_path) -> None:
+    from lan_streamer.scanner import scan_series
+
+    series_dir = tmp_path / "Anime Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    ep1_file = season_dir / "S01E01.mkv"
+    ep2_file = season_dir / "S01E02.mkv"
+    ep1_file.touch()
+    ep2_file.touch()
+
+    # S01E01 is an existing episode. S01E02 is a new episode.
+    existing_series = {
+        "metadata": {
+            "tmdb_identifier": "anime_series_id",
+            "tmdb_name": "Anime Show",
+        },
+        "seasons": {
+            "Season 1": {
+                "metadata": {
+                    "myanimelist_id": 12345,
+                },
+                "episodes": [
+                    {
+                        "name": "S01E01.mkv",
+                        "path": str(ep1_file.absolute()),
+                        "tmdb_identifier": "tmdb_ep_1",
+                        "tmdb_episode_identifier": "tmdb_ep_1",
+                        "tmdb_number": 1,
+                        "myanimelist_anime_id": 12345,
+                        "myanimelist_episode_number": 1,
+                    }
+                ],
+            }
+        },
+    }
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.is_configured.return_value = True
+    mock_tmdb.get_series_by_id.return_value = {
+        "id": "anime_series_id",
+        "name": "Anime Show",
+    }
+    mock_tmdb.get_seasons.return_value = [{"season_number": 1, "id": "season_1_id"}]
+    # Return three episodes to force a placeholder for episode 3
+    mock_tmdb.get_episodes.return_value = [
+        {"id": "tmdb_ep_1", "episode_number": 1, "name": "Episode 1"},
+        {"id": "tmdb_ep_2", "episode_number": 2, "name": "Episode 2"},
+        {"id": "tmdb_ep_3", "episode_number": 3, "name": "Episode 3"},
+    ]
+    mock_tmdb.download_image.return_value = ""
+
+    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+        res = scan_series(
+            series_dir, existing_series_data=existing_series, force_refresh=True
+        )
+
+    # 1. Season myanimelist_id should be preserved
+    assert res["seasons"]["Season 1"]["metadata"]["myanimelist_id"] == 12345
+
+    eps = res["seasons"]["Season 1"]["episodes"]
+    # Sort them by name/number to be sure
+    eps.sort(key=lambda x: x.get("tmdb_number") or 0)
+
+    assert len(eps) == 3
+
+    # 2. Existing S01E01 mapping should be preserved
+    assert eps[0]["name"] == "S01E01.mkv"
+    assert eps[0]["myanimelist_anime_id"] == 12345
+    assert eps[0]["myanimelist_episode_number"] == 1
+
+    # 3. New S01E02 should be automatically mapped using season's myanimelist_id
+    assert eps[1]["name"] == "S01E02.mkv"
+    assert eps[1]["myanimelist_anime_id"] == 12345
+    assert eps[1]["myanimelist_episode_number"] == 2
+
+    # 4. Placeholder S01E03 should also be automatically mapped
+    assert eps[2]["path"] is None
+    assert eps[2]["myanimelist_anime_id"] == 12345
+    assert eps[2]["myanimelist_episode_number"] == 3
