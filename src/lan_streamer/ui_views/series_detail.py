@@ -167,12 +167,17 @@ class SeriesDetailView(QWidget):
     @Slot()
     def _on_play_next_clicked(self) -> None:
         if self._next_episode_path:
+            logger.info(
+                f"Play Next clicked for: '{self._current_series_name}' (Next Episode Path: {self._next_episode_path})"
+            )
             self.controller.playback_requested.emit(self._next_episode_path)
 
     @Slot(str)
     def populate_series_details(self, series_name: str) -> None:
         if getattr(self.controller, "is_video_playing", False):
             return
+
+        logger.info(f"Populating series details for: '{series_name}'")
 
         import datetime
 
@@ -498,6 +503,9 @@ class SeriesDetailView(QWidget):
                     if col == 1:  # Title column
                         target_path = episode_list[row].get("path", "")
                         if target_path:
+                            logger.info(
+                                f"Episode table row clicked to play: '{episode_list[row].get('name')}' (Path: {target_path})"
+                            )
                             self.controller.playback_requested.emit(target_path)
 
                 return slot
@@ -628,6 +636,9 @@ class SeriesDetailView(QWidget):
                         target_path: str = episode.get("path", "")
                         if target_path:
                             new_status: bool = not is_watched
+                            logger.info(
+                                f"Context menu toggle watched status for episode '{episode.get('name')}' to {new_status} (Path: {target_path})"
+                            )
                             self.controller.mark_episode_watched(
                                 target_path, new_status
                             )
@@ -651,6 +662,9 @@ class SeriesDetailView(QWidget):
                                 | QMessageBox.StandardButton.No,
                             )
                             if confirm == QMessageBox.StandardButton.Yes:
+                                logger.info(
+                                    f"User confirmed delete of episode: '{episode.get('name')}' (Path: {target_path})"
+                                )
                                 self.controller.delete_episode(target_path)
                                 self.populate_series_details(self._current_series_name)
 

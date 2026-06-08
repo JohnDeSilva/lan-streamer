@@ -121,6 +121,7 @@ class MovieDetailView(QWidget):
         if getattr(self.controller, "is_video_playing", False):
             return
 
+        logger.info(f"Populating movie details for: '{movie_name}'")
         self._current_movie_name = movie_name
         movie_record: Dict[str, Any] = self.controller.cached_library_data.get(
             movie_name, {}
@@ -169,6 +170,9 @@ class MovieDetailView(QWidget):
                     pixmap_assigned = True
 
         if not pixmap_assigned:
+            logger.info(
+                f"No poster loaded or file missing for movie: '{movie_name}', showing fallback"
+            )
             self.poster_label.clear()
             self.poster_label.setText("No Poster")
 
@@ -187,4 +191,7 @@ class MovieDetailView(QWidget):
     @Slot()
     def _on_play_clicked(self) -> None:
         if self._current_movie_path:
+            logger.info(
+                f"Play Movie clicked for: '{self._current_movie_name}' (Path: {self._current_movie_path})"
+            )
             self.controller.playback_requested.emit(self._current_movie_path)

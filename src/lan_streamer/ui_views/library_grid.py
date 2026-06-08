@@ -351,6 +351,11 @@ class LibraryGridView(QWidget):
             return
         self.order_selector.blockSignals(True)
         current_sort_mode: str = self.controller.sort_mode
+        logger.info(
+            f"Populating library grid for '{self.controller.current_library_name}' "
+            f"(Sort: {current_sort_mode}, Descending: {self.controller.sort_descending}, "
+            f"Hide Watched: {self.controller.filter_out_watched})"
+        )
         show_order: bool = current_sort_mode != "Next Up"
         self.order_label.setVisible(show_order)
         self.order_selector.setVisible(show_order)
@@ -512,6 +517,7 @@ class LibraryGridView(QWidget):
         while self.series_list_widget.count() > target_item_count:
             last_row_index: int = self.series_list_widget.count() - 1
             self.series_list_widget.takeItem(last_row_index)
+        logger.info(f"Populated library grid with {target_item_count} items.")
 
     def _assign_item_icon(
         self, item_target: QListWidgetItem, poster_path_value: str
@@ -536,8 +542,19 @@ class LibraryGridView(QWidget):
                     self.cached_icons[poster_path_value] = loaded_icon
                     item_target.setIcon(loaded_icon)
                     icon_assigned = True
+                else:
+                    logger.warning(
+                        f"Could not load poster pixmap (invalid format): {poster_path_value}"
+                    )
+            else:
+                logger.warning(
+                    f"Poster path does not exist on disk: {poster_path_value}"
+                )
 
         if not icon_assigned:
+            logger.debug(
+                f"Assigning fallback default icon for item text: '{item_target.text().splitlines()[0]}'"
+            )
             if "" not in self.cached_icons:
                 fallback_pixmap = QPixmap(160, 220)
                 fallback_pixmap.fill(QColor(40, 40, 40))
@@ -548,6 +565,7 @@ class LibraryGridView(QWidget):
     def on_item_clicked(self, item_target: QListWidgetItem) -> None:
         title: str = item_target.data(Qt.ItemDataRole.UserRole)
         if title:
+            logger.info(f"Library item clicked: '{title}'")
             library_config = config.libraries.get(
                 self.controller.current_library_name, {}
             )
@@ -725,6 +743,10 @@ class LibraryGridView(QWidget):
 
         item_type = item_data.get("type")  # "season", "series", "movie"
         library_name = item_data.get("library_name")
+        name = item_data.get("name") or item_data.get("series_name") or ""
+        logger.info(
+            f"Combined view item clicked: '{name}' (Type: {item_type}, Library: {library_name})"
+        )
 
         if library_name:
             self.controller.current_library_name = library_name

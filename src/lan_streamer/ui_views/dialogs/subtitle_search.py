@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
@@ -20,6 +21,8 @@ from lan_streamer.providers.opensubtitles import opensubtitles_client
 if TYPE_CHECKING:
     from lan_streamer.ui_views.controller import Controller
 
+logger = logging.getLogger(__name__)
+
 
 class SubtitleSearchDialog(QDialog):
     """
@@ -35,6 +38,9 @@ class SubtitleSearchDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        logger.info(
+            f"Initializing SubtitleSearchDialog for media '{media_name}' (is_movie: {is_movie})"
+        )
         self.media_name = media_name
         self.media_record = media_record
         self.controller = controller_instance
@@ -107,6 +113,9 @@ class SubtitleSearchDialog(QDialog):
     def _on_search_clicked(self) -> None:
         query = self.query_edit.text().strip()
         langs = self.lang_edit.text().strip()
+        logger.info(
+            f"SubtitleSearchDialog executing search: query='{query}', languages='{langs}'"
+        )
 
         tmdb_id = None
         season_num = None
@@ -133,6 +142,7 @@ class SubtitleSearchDialog(QDialog):
             episode_number=episode_num,
             languages=langs,
         )
+        logger.info(f"SubtitleSearchDialog search found {len(self.results)} subtitles")
 
         self.results_table.setRowCount(0)
         for res in self.results:
@@ -165,12 +175,21 @@ class SubtitleSearchDialog(QDialog):
         file_id = (
             subtitle_data.get("attributes", {}).get("files", [{}])[0].get("file_id")
         )
+        logger.info(
+            f"SubtitleSearchDialog downloading subtitle row {selected_row} (File ID: {file_id})"
+        )
         if not file_id:
+            logger.warning(
+                "SubtitleSearchDialog download failed: no file ID found in metadata"
+            )
             QMessageBox.warning(self, "Download", "No file ID found for this subtitle.")
             return
 
         download_url = opensubtitles_client.get_download_link(file_id)
         if not download_url:
+            logger.warning(
+                f"SubtitleSearchDialog download failed: could not get download link for File ID {file_id}"
+            )
             QMessageBox.warning(
                 self,
                 "Download",
@@ -180,6 +199,9 @@ class SubtitleSearchDialog(QDialog):
 
         content = opensubtitles_client.download_subtitle(download_url)
         if not content:
+            logger.warning(
+                f"SubtitleSearchDialog download failed: failed to fetch subtitle content from {download_url}"
+            )
             QMessageBox.warning(
                 self, "Download", "Failed to download subtitle content."
             )
@@ -193,11 +215,14 @@ class SubtitleSearchDialog(QDialog):
 
         lang = subtitle_data.get("attributes", {}).get("language", "en")
         sub_path = video_path.with_suffix(f".{lang}.srt")
+        logger.info(f"SubtitleSearchDialog saving subtitle file to: '{sub_path}'")
 
         try:
             with open(sub_path, "wb") as f:
                 f.write(content)
+            logger.info("SubtitleSearchDialog successfully saved subtitle file")
             QMessageBox.information(self, "Download", f"Subtitle saved to:\n{sub_path}")
             self.accept()
         except Exception as e:
+            logger.exception(f"SubtitleSearchDialog failed to save subtitle file: {e}")
             QMessageBox.critical(self, "Download", f"Error saving subtitle: {e}")

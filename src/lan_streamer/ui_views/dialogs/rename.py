@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
@@ -23,6 +24,8 @@ from lan_streamer.ui_views.proxy import QMessageBox, tmdb_client
 if TYPE_CHECKING:
     from lan_streamer.ui_views.controller import Controller
 
+logger = logging.getLogger(__name__)
+
 
 class EpisodeMatchDialog(QDialog):
     """
@@ -38,6 +41,9 @@ class EpisodeMatchDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        logger.info(
+            f"Initializing EpisodeMatchDialog for series '{series_name}', episode: '{episode_path}'"
+        )
         self.series_name: str = series_name
         self.episode_path: str = episode_path
         self.controller: "Controller" = controller_instance
@@ -137,6 +143,9 @@ class EpisodeMatchDialog(QDialog):
         if season_number_value is None:
             return
 
+        logger.info(
+            f"EpisodeMatchDialog season changed to: '{season_text}' (number: {season_number_value})"
+        )
         season_number_int: int = int(season_number_value)
         self.results_table.clearContents()
         self.results_table.setRowCount(0)
@@ -165,6 +174,9 @@ class EpisodeMatchDialog(QDialog):
                 }
             )
 
+        logger.info(
+            f"EpisodeMatchDialog fetched {len(self.search_results_list)} episodes for season {season_number_value}"
+        )
         self.results_table.setRowCount(len(self.search_results_list))
         for row_index, record_dictionary in enumerate(self.search_results_list):
             number_item: QTableWidgetItem = QTableWidgetItem(
@@ -193,6 +205,7 @@ class EpisodeMatchDialog(QDialog):
             item.row() for item in self.results_table.selectedItems()
         ]
         if not selected_rows:
+            logger.warning("EpisodeMatchDialog apply clicked with no selection")
             QMessageBox.warning(
                 self,
                 "Selection Required",
@@ -202,6 +215,9 @@ class EpisodeMatchDialog(QDialog):
 
         target_row_index: int = selected_rows[0]
         match_record: Dict[str, Any] = self.search_results_list[target_row_index]
+        logger.info(
+            f"EpisodeMatchDialog applying match for '{self.episode_path}': {match_record}"
+        )
         self.controller.apply_episode_metadata_match(
             self.series_name, self.episode_path, match_record
         )
@@ -221,6 +237,7 @@ class RenamePreviewDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        logger.info(f"Initializing RenamePreviewDialog for series '{series_name}'")
         self.series_name: str = series_name
         self.controller: "Controller" = controller_instance
         self.template_input: QLineEdit = QLineEdit()
@@ -326,6 +343,9 @@ class RenamePreviewDialog(QDialog):
     @Slot()
     def generate_preview(self) -> None:
         template_string: str = self.template_input.text().strip()
+        logger.info(
+            f"RenamePreviewDialog generating preview with template: '{template_string}'"
+        )
         if (
             not template_string
             or self.series_name not in self.controller.cached_library_data
@@ -423,5 +443,8 @@ class RenamePreviewDialog(QDialog):
                     to_apply.append(p)
 
         self.preview_results_list = to_apply
+        logger.info(
+            f"RenamePreviewDialog applying rename batch of {len(to_apply)} items for '{self.series_name}'"
+        )
         self.controller.apply_rename_batch(self.preview_results_list)
         self.accept()
