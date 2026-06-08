@@ -53,6 +53,9 @@ class EpisodeDetailsDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        logger.info(
+            f"Initializing EpisodeDetailsDialog for series '{series_name}', episode: '{episode_path}'"
+        )
         self.series_name: str = series_name
         self.episode_path: str = episode_path
         self.controller: "Controller" = controller_instance
@@ -274,9 +277,15 @@ class EpisodeDetailsDialog(QDialog):
                 int(self.runtime_edit.text()) if self.runtime_edit.text() else 0
             )
         except ValueError:
+            logger.warning(
+                "EpisodeDetailsDialog save validation failed: runtime is not a number"
+            )
             QMessageBox.warning(self, "Invalid Input", "Runtime must be a number.")
             return
 
+        logger.info(
+            f"EpisodeDetailsDialog saving changes for episode '{self.episode_path}': {metadata}"
+        )
         self.controller.update_episode_metadata(
             self.series_name, self.episode_path, metadata
         )
@@ -300,6 +309,9 @@ class EpisodeDetailsDialog(QDialog):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm == QMessageBox.StandardButton.Yes:
+            logger.info(
+                f"User requested TMDB metadata refresh for episode: '{self.episode_path}'"
+            )
             self.controller.refresh_episode_metadata(
                 self.series_name, self.episode_path
             )
@@ -334,6 +346,9 @@ class EpisodeDetailsDialog(QDialog):
         )
 
         if confirm == QMessageBox.StandardButton.Yes:
+            logger.info(
+                f"User requested metadata embedding into episode: '{self.episode_path}'"
+            )
             self.controller.embed_metadata(self.episode_path, metadata)
             self.accept()
 
@@ -351,6 +366,9 @@ class EpisodeDetailsDialog(QDialog):
         )
 
         if confirm == QMessageBox.StandardButton.Yes:
+            logger.info(
+                f"User requested subtitle merge for episode '{self.episode_path}' (Subtitles count: {len(self._ext_subs)})"
+            )
             self.controller.merge_subtitles(self.episode_path, self._ext_subs)
             self.accept()
 
@@ -381,6 +399,9 @@ class MovieDetailsDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        logger.info(
+            f"Initializing MovieDetailsDialog for movie '{movie_name}', path: '{movie_path}'"
+        )
         self.movie_name: str = movie_name
         self.movie_path: str = movie_path
         self.controller: "Controller" = controller_instance
@@ -608,11 +629,17 @@ class MovieDetailsDialog(QDialog):
                 int(self.year_edit.text()) if self.year_edit.text() else 0
             )
         except ValueError:
+            logger.warning(
+                "MovieDetailsDialog save validation failed: runtime or year is not a number"
+            )
             QMessageBox.warning(
                 self, "Invalid Input", "Runtime and Year must be numbers."
             )
             return
 
+        logger.info(
+            f"MovieDetailsDialog saving changes for movie '{self.movie_name}' (Path: '{self.movie_path}'): {metadata}"
+        )
         self.controller.update_movie_metadata(
             self.movie_name, self.movie_path, metadata
         )
@@ -635,6 +662,9 @@ class MovieDetailsDialog(QDialog):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm == QMessageBox.StandardButton.Yes:
+            logger.info(
+                f"User requested TMDB metadata refresh for movie: '{self.movie_name}'"
+            )
             self.controller.trigger_series_refresh(self.movie_name)
             self.accept()
 
@@ -655,6 +685,9 @@ class MovieDetailsDialog(QDialog):
         )
 
         if confirm == QMessageBox.StandardButton.Yes:
+            logger.info(
+                f"User requested metadata embedding into movie '{self.movie_name}' (Path: '{self.movie_path}')"
+            )
             self.controller.embed_metadata(self.movie_path, metadata)
             self.accept()
 
@@ -672,6 +705,9 @@ class MovieDetailsDialog(QDialog):
         )
 
         if confirm == QMessageBox.StandardButton.Yes:
+            logger.info(
+                f"User requested subtitle merge for movie '{self.movie_name}' (Path: '{self.movie_path}', Subtitles: {self._ext_subs})"
+            )
             self.controller.merge_subtitles(self.movie_path, self._ext_subs)
             self.accept()
 
@@ -700,6 +736,7 @@ class SeriesDetailsDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        logger.info(f"Initializing SeriesDetailsDialog for series '{series_name}'")
         self.series_name: str = series_name
         self.controller: "Controller" = controller_instance
         self.series_record: Dict[str, Any] = self.controller.cached_library_data.get(
@@ -956,6 +993,11 @@ class SeriesDetailsDialog(QDialog):
         self.subgroup_combo.addItem("Select Subgroup...", userData=None)
 
         group_id = self.group_combo.currentData()
+        group_name = self.group_combo.currentText()
+        logger.info(
+            f"SeriesDetailsDialog TMDB group changed to: '{group_name}' (ID: {group_id})"
+        )
+
         if not group_id:
             self.set_default_group_checkbox.setChecked(False)
             self.set_default_group_checkbox.setEnabled(False)
@@ -1000,6 +1042,8 @@ class SeriesDetailsDialog(QDialog):
     def _on_subgroup_changed(self) -> None:
         self.mapper_table.setRowCount(0)
         subgroup_data = self.subgroup_combo.currentData()
+        subgroup_name = self.subgroup_combo.currentText()
+        logger.info(f"SeriesDetailsDialog subgroup changed to: '{subgroup_name}'")
         if not subgroup_data:
             return
 
@@ -1332,6 +1376,7 @@ class SeriesDetailsDialog(QDialog):
     def _on_mal_season_changed(self) -> None:
         self.mal_local_episodes = []
         season_name = self.mal_season_combo.currentText()
+        logger.info(f"SeriesDetailsDialog MAL season changed to: '{season_name}'")
         if not season_name:
             return
 
@@ -1380,6 +1425,7 @@ class SeriesDetailsDialog(QDialog):
     @Slot()
     def _on_mal_search_clicked(self) -> None:
         query = self.mal_search_input.text().strip()
+        logger.info(f"SeriesDetailsDialog MAL searching for: '{query}'")
         if not query:
             return
 
@@ -1399,6 +1445,7 @@ class SeriesDetailsDialog(QDialog):
     def _on_mal_entry_selected(self) -> None:
         anime_id = self.mal_search_results_combo.currentData()
         self.mal_mapper_table.setRowCount(0)
+        logger.info(f"SeriesDetailsDialog MAL entry selected ID: {anime_id}")
         if not anime_id:
             return
 

@@ -1,3 +1,4 @@
+import logging
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 from PySide6.QtWidgets import (
@@ -20,6 +21,8 @@ from lan_streamer.ui_views.proxy import tmdb_client, jellyfin_client, QMessageBo
 if TYPE_CHECKING:
     from lan_streamer.ui_views.controller import Controller
 
+logger = logging.getLogger(__name__)
+
 
 class MetadataMatchDialog(QDialog):
     """
@@ -34,6 +37,7 @@ class MetadataMatchDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        logger.info(f"Initializing MetadataMatchDialog for series '{series_name}'")
         self.series_name: str = series_name
         self.controller: "Controller" = controller_instance
         self.search_input: QLineEdit = QLineEdit()
@@ -101,6 +105,7 @@ class MetadataMatchDialog(QDialog):
     @Slot()
     def execute_search(self) -> None:
         query_string: str = self.search_input.text().strip()
+        logger.info(f"MetadataMatchDialog executing search for: '{query_string}'")
         if not query_string:
             return
 
@@ -140,6 +145,9 @@ class MetadataMatchDialog(QDialog):
                     }
                 )
 
+        logger.info(
+            f"MetadataMatchDialog search found {len(self.search_results_list)} results for '{query_string}'"
+        )
         self.results_table.setRowCount(len(self.search_results_list))
         for row_index, result_dictionary in enumerate(self.search_results_list):
             id_item: QTableWidgetItem = QTableWidgetItem(result_dictionary["id"])
@@ -164,6 +172,7 @@ class MetadataMatchDialog(QDialog):
             item.row() for item in self.results_table.selectedItems()
         ]
         if not selected_rows:
+            logger.warning("MetadataMatchDialog apply clicked with no selection")
             QMessageBox.warning(
                 self, "Selection Required", "Please select a match result first."
             )
@@ -171,6 +180,9 @@ class MetadataMatchDialog(QDialog):
 
         target_row_index: int = selected_rows[0]
         match_record: Dict[str, Any] = self.search_results_list[target_row_index]
+        logger.info(
+            f"MetadataMatchDialog applying match for '{self.series_name}': {match_record}"
+        )
         self.controller.apply_metadata_match(self.series_name, match_record)
         self.accept()
 
@@ -188,6 +200,7 @@ class JellyfinMatchDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        logger.info(f"Initializing JellyfinMatchDialog for series '{series_name}'")
         self.series_name: str = series_name
         self.controller: "Controller" = controller_instance
         self.search_input: QLineEdit = QLineEdit()
@@ -255,6 +268,7 @@ class JellyfinMatchDialog(QDialog):
     @Slot()
     def execute_search(self) -> None:
         query_string: str = self.search_input.text().strip()
+        logger.info(f"JellyfinMatchDialog executing search for: '{query_string}'")
         if not query_string:
             return
 
@@ -291,6 +305,9 @@ class JellyfinMatchDialog(QDialog):
                 }
             )
 
+        logger.info(
+            f"JellyfinMatchDialog search found {len(self.search_results_list)} results for '{query_string}'"
+        )
         self.results_table.setRowCount(len(self.search_results_list))
         for row_index, result_dictionary in enumerate(self.search_results_list):
             id_item: QTableWidgetItem = QTableWidgetItem(result_dictionary["id"])
@@ -315,6 +332,7 @@ class JellyfinMatchDialog(QDialog):
             item.row() for item in self.results_table.selectedItems()
         ]
         if not selected_rows:
+            logger.warning("JellyfinMatchDialog link clicked with no selection")
             QMessageBox.warning(
                 self, "Selection Required", "Please select a match result first."
             )
@@ -322,5 +340,8 @@ class JellyfinMatchDialog(QDialog):
 
         target_row_index: int = selected_rows[0]
         match_record: Dict[str, Any] = self.search_results_list[target_row_index]
+        logger.info(
+            f"JellyfinMatchDialog linking watch match for '{self.series_name}': {match_record}"
+        )
         self.controller.apply_jellyfin_watch_match(self.series_name, match_record)
         self.accept()

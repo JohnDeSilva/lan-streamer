@@ -52,6 +52,7 @@ class SettingsDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        logger.info("Initializing SettingsDialog")
         self.controller: Optional["Controller"] = controller_instance
         self.setWindowTitle("Application Configuration")
         self.resize(800, 700)
@@ -1230,6 +1231,9 @@ class SettingsDialog(QDialog):
 
     @Slot()
     def save_config(self) -> None:
+        logger.info(
+            "SettingsDialog save_config called to persist configuration settings"
+        )
         db_freq = 0
         db_ret = 0
         try:
