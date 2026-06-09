@@ -1,3 +1,14 @@
+## v0.26.0 (2026-06-08)
+
+### Feat
+
+- implement automatic selection logic for English audio tracks in playback widget
+- implement automatic MyAnimeList episode mapping based on season metadata
+
+### Refactor
+
+- add comprehensive logging instrumentation across UI views and dialogs
+
 ## v0.25.0 (2026-06-06)
 
 ### Feat
