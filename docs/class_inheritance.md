@@ -791,6 +791,18 @@ Below is the structured textual representation of all major class inheritance pa
 
 - `def _reposition_overlays(self) -> None`
 
+- `def _select_audio_device(self, device_id: str) -> None`
+  > Selects the preferred audio output device, persists the choice, and updates the player.
+
+- `def _select_audio_track_from_menu(self, index: int) -> None`
+  > Handles selecting an audio track from the player menu.
+
+- `def _select_subtitle_track_from_menu(self, index: int) -> None`
+  > Handles selecting a subtitle track from the player menu.
+
+- `def _show_subtitles_audio_menu(self) -> None`
+  > Refreshes tracks and displays the popup context menu containing audio tracks, subtitles, and audio devices.
+
 - `def _setup_ui(self) -> None`
 
 - `def _show_fullscreen_controls(self) -> None`
