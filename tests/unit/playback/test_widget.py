@@ -1253,3 +1253,80 @@ def test_volume_buttons(player_widget) -> None:
 
     player_widget.fs_volume_minus_btn.click()
     assert player_widget.fs_volume_slider.value() == 80
+
+
+def test_vlc_instance_args_linux(qtbot) -> None:
+    """Test that --aout=pulse is added on Linux platforms."""
+    with patch("sys.platform", "linux"):
+        with patch("vlc.Instance") as mock_vlc:
+            VideoPlayerWidget()
+            args = mock_vlc.call_args[0][0]
+            assert "--aout=pulse" in args
+
+
+def test_vlc_instance_args_non_linux(qtbot) -> None:
+    """Test that --aout=pulse is NOT added on non-Linux platforms."""
+    with patch("sys.platform", "win32"):
+        with patch("vlc.Instance") as mock_vlc:
+            VideoPlayerWidget()
+            args = mock_vlc.call_args[0][0]
+            assert "--aout=pulse" not in args
+
+
+def test_show_subtitles_audio_menu_with_devices(player_widget) -> None:
+    """Test that the Audio Devices submenu is added to the menu and populated."""
+    player_widget.mediaplayer = MagicMock()
+
+    class MockDeviceContents:
+        def __init__(self, device, description, next_node=None):
+            self.device = device
+            self.description = description
+            self.next = next_node
+
+    class MockDeviceNode:
+        def __init__(self, contents):
+            self.contents = contents
+
+    node2 = MockDeviceNode(MockDeviceContents(b"dev2", b"Device 2", None))
+    node1 = MockDeviceNode(MockDeviceContents(b"dev1", b"Device 1", node2))
+
+    player_widget.mediaplayer.audio_output_device_enum.return_value = node1
+    player_widget.mediaplayer.audio_output_device_get.return_value = b"dev1"
+
+    with patch("lan_streamer.playback.widget.QMenu") as MockQMenu:
+        mock_menu_instance = MagicMock()
+        MockQMenu.return_value = mock_menu_instance
+
+        mock_sub_menu = MagicMock()
+        mock_menu_instance.addMenu.return_value = mock_sub_menu
+
+        player_widget._show_subtitles_audio_menu()
+
+        player_widget.mediaplayer.audio_output_device_enum.assert_called_once()
+        mock_menu_instance.addMenu.assert_any_call("Audio Devices")
+
+
+def test_select_audio_device(player_widget) -> None:
+    """Test that selecting an audio device updates player and config."""
+    player_widget.mediaplayer = MagicMock()
+    with patch.object(player_widget, "_show_osd") as mock_osd:
+        player_widget._select_audio_device("some_device_id")
+        player_widget.mediaplayer.audio_output_device_set.assert_called_once_with(
+            None, "some_device_id"
+        )
+        assert config.preferred_audio_device == "some_device_id"
+        mock_osd.assert_called_once_with("Audio Output Changed")
+
+
+def test_load_and_play_applies_preferred_audio_device(player_widget) -> None:
+    """Test that loading a video applies the preferred audio device preference."""
+    player_widget.mediaplayer = MagicMock()
+    config.preferred_audio_device = "saved_device_id"
+    player_widget.instance = MagicMock()
+    player_widget.instance.media_new = MagicMock()
+
+    with patch.object(player_widget.video_frame, "show"):
+        player_widget._load_and_play("/path/to/video.mp4")
+        player_widget.mediaplayer.audio_output_device_set.assert_called_with(
+            None, "saved_device_id"
+        )

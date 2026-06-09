@@ -79,6 +79,9 @@ class VideoPlayerWidget(QWidget):
             if config.vlc_extra_args:
                 args.extend(config.vlc_extra_args)
 
+            if sys.platform == "linux":
+                args.append("--aout=pulse")
+
             logger.info(f"Initializing VLC Instance with args: {args}")
             self.instance = vlc.Instance(args)
 
@@ -423,6 +426,57 @@ class VideoPlayerWidget(QWidget):
 
             action.triggered.connect(make_sub_slot(idx))
 
+        # Audio Output Devices
+        device_menu = menu.addMenu("Audio Devices")
+        device_menu.setStyleSheet(menu.styleSheet())
+        has_devices = False
+        if vlc and self.mediaplayer:
+            try:
+                mods = self.mediaplayer.audio_output_device_enum()
+                if mods:
+                    current_device = self.mediaplayer.audio_output_device_get()
+                    if isinstance(current_device, bytes):
+                        current_device = current_device.decode("utf-8", errors="ignore")
+
+                    curr = mods
+                    while curr:
+                        try:
+                            dev_id = curr.contents.device
+                            if isinstance(dev_id, bytes):
+                                dev_id = dev_id.decode("utf-8", errors="ignore")
+                            dev_desc = curr.contents.description
+                            if isinstance(dev_desc, bytes):
+                                dev_desc = dev_desc.decode("utf-8", errors="ignore")
+
+                            if dev_id:
+                                has_devices = True
+                                action = device_menu.addAction(dev_desc or dev_id)
+                                action.setCheckable(True)
+
+                                is_active = current_device and dev_id == current_device
+                                is_preferred = (
+                                    config.preferred_audio_device
+                                    and dev_id == config.preferred_audio_device
+                                )
+                                if is_active or (not current_device and is_preferred):
+                                    action.setChecked(True)
+
+                                def make_device_slot(d_id: str) -> Any:
+                                    return lambda: self._select_audio_device(d_id)
+
+                                action.triggered.connect(make_device_slot(dev_id))
+                        except Exception:
+                            logger.exception("Error parsing VLC audio device item")
+                        curr = curr.contents.next
+
+                    vlc.libvlc_audio_output_device_list_release(mods)
+            except Exception:
+                logger.exception("Failed to enumerate VLC audio devices")
+
+        if not has_devices:
+            action = device_menu.addAction("No Audio Devices Found")
+            action.setEnabled(False)
+
         if isinstance(sender, QWidget):
             menu.exec(sender.mapToGlobal(sender.rect().bottomLeft()))
         else:
@@ -431,6 +485,14 @@ class VideoPlayerWidget(QWidget):
                     self.subtitles_audio_button.rect().bottomLeft()
                 )
             )
+
+    def _select_audio_device(self, device_id: str) -> None:
+        if self.mediaplayer:
+            logger.info(f"Setting audio output device to: {device_id}")
+            self.mediaplayer.audio_output_device_set(None, device_id)
+            config.preferred_audio_device = device_id
+            config.save()
+            self._show_osd("Audio Output Changed")
 
     def _select_audio_track_from_menu(self, index: int) -> None:
         self.audio_combo.setCurrentIndex(index)
@@ -1157,6 +1219,15 @@ class VideoPlayerWidget(QWidget):
 
         # Initial volume
         self.mediaplayer.audio_set_volume(self.volume_slider.value())
+
+        # Initial audio output device
+        if getattr(config, "preferred_audio_device", None):
+            logger.info(
+                f"Applying preferred audio output device: {config.preferred_audio_device}"
+            )
+            self.mediaplayer.audio_output_device_set(
+                None, config.preferred_audio_device
+            )
 
         # Schedule playback resumption seek and track refresh
         QTimer.singleShot(500, self._apply_pending_resume)
