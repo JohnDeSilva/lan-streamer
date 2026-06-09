@@ -1125,6 +1125,7 @@ def test_next_episode_popup_setting(qtbot: Any) -> None:
 def test_show_subtitles_audio_menu(player_widget) -> None:
     """Test that _show_subtitles_audio_menu refreshes tracks, updates pane text, and displays the menu."""
     player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_output_device_enum.return_value = None
     player_widget.mediaplayer.audio_get_track_description.return_value = [
         (1, b"English Dolby Digital 5.1"),
         (2, b"French Stereo"),
