@@ -77,6 +77,7 @@ class Config:
             },
         ]
         self.series_preferences: Dict[str, Dict[str, Any]] = {}
+        self.preferred_audio_device: str = ""
         self.load()
 
     def load(self) -> None:
@@ -229,6 +230,7 @@ class Config:
                         f"row_count={len(self.combined_views)}"
                     )
                     self.series_preferences = data.get("series_preferences", {})
+                    self.preferred_audio_device = data.get("preferred_audio_device", "")
 
                     if "libraries" in data:
                         raw_libraries = data["libraries"]
@@ -317,6 +319,7 @@ class Config:
                         "enable_combined_view": self.enable_combined_view,
                         "combined_views": self.combined_views,
                         "series_preferences": self.series_preferences,
+                        "preferred_audio_device": self.preferred_audio_device,
                     },
                     f,
                     indent=4,
