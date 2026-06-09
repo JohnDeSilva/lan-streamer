@@ -13,7 +13,8 @@ LAN Streamer is built to play your media files directly and natively without any
 ## 🚀 Key Features
 
 ### 🎬 Playing Videos
-*   **📺 Embedded Playback**: Uses **VLC** for playback directly within the application. Supports audio and subtitle track selection, seeking, volume controls, and playback speed/rate controls (1.0x, 1.5x, 2.0x).
+*   **📺 Embedded Playback**: Uses **VLC** for playback directly within the application. Supports audio and subtitle track selection, seeking, volume controls, and playback speed/rate controls (1.0x, 1.5x, 2.0x). Automatically resolves and defaults to English audio and subtitle tracks when available in media containers.
+*   **🔊 Audio Output Device Selector**: Support for enumerating, selecting, and persisting preferred audio output devices (with native Linux PulseAudio support) directly from the player interface.
 *   **🎭 Theatre Mode**: Hides UI elements during fullscreen playback for an unobstructed view. A minimal control bar provides essential playback actions, dynamically hiding the previous/next episode navigation buttons (`⏮` / `⏭`) when playing a movie.
 *   **🧠 Progress Tracking**: Automatically marks media as watched based on a configurable threshold, supports resuming playback from saved positions, and displays an on-screen overlay to automatically play the next episode in a series once the completion threshold is reached.
 *   **💾 Local Caching**: Optional pre-playback caching of media files to local storage to eliminate network-related buffering.
@@ -59,6 +60,7 @@ LAN Streamer is built to play your media files directly and natively without any
 *   **Database Migrations**: Managed via **Alembic** to ensure schema consistency across updates.
 *   **Asynchronous Operations**: Library scanning, cleanup, and synchronization run in background threads to maintain UI responsiveness.
 *   **🛡️ Code Quality**: Enforces **90% minimum code coverage** and **100% strict static type checking** (`mypy`). All warnings are treated as errors in the test suite.
+*   **⚡ Optimized Parallel Testing**: Test execution is speed-optimized using `pytest-xdist`. Spawns workers set dynamically to half of your available CPU cores to limit RAM consumption by 50%. Employs a pre-migrated SQLite database template copy mechanism to eliminate redundant Alembic startup compiler/DDL schema overhead per test.
 
 ---
 
