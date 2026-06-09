@@ -1,14 +1,96 @@
 import os
-import pytest
+from pathlib import Path
+import shutil
 import subprocess
 from unittest.mock import patch
+
+import pytest
 
 # Force offscreen rendering so individual tests run seamlessly in GUI-less IDE test explorers
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
+# Mock VLC globally for tests to prevent spawning real VLC processes and consuming high CPU/memory
+import sys
+from unittest.mock import MagicMock
+
+
+class MockVLC:
+    __name__ = "vlc"
+
+    class EventType:
+        MediaPlayerEndReached = 265
+
+    class MediaStats:
+        input_bitrate = 0.0
+        demux_bitrate = 0.0
+        decoded_video = 0
+        displayed_pictures = 0
+        lost_pictures = 0
+        decoded_audio = 0
+        lost_abuffers = 0
+
+    def Instance(self, *args, **kwargs):
+        mock_instance = MagicMock()
+        mock_media_player = MagicMock()
+        mock_media_player.get_length.return_value = 0
+        mock_media_player.get_time.return_value = 0
+        mock_media_player.video_get_size.return_value = (0, 0)
+        mock_media_player.get_fps.return_value = 0.0
+        mock_media_player.audio_output_device_enum.return_value = None
+        mock_instance.media_player_new.return_value = mock_media_player
+        return mock_instance
+
+    def libvlc_audio_output_device_list_release(self, *args, **kwargs):
+        pass
+
+    def __getattr__(self, name):
+        if name == "MediaStats":
+            return MockVLC.MediaStats
+        return MagicMock()
+
+
+sys.modules["vlc"] = MockVLC()
+
+
+_TEMPLATE_DB_PATH = None
+
+
+def get_template_db(tmp_path_factory) -> Path:
+    global _TEMPLATE_DB_PATH
+    if _TEMPLATE_DB_PATH is None:
+        temp_dir = tmp_path_factory.getbasetemp()
+        template_db = temp_dir / "template_library.db"
+
+        import lan_streamer.db
+
+        orig_db_file = getattr(lan_streamer.db, "DB_FILE", None)
+        lan_streamer.db.DB_FILE = template_db
+
+        if hasattr(lan_streamer.db, "_engine") and lan_streamer.db._engine is not None:
+            lan_streamer.db._engine.dispose()
+        lan_streamer.db._engine = None
+        lan_streamer.db._SessionLocal = None
+        lan_streamer.db._db_initialized = False
+
+        # Initialize schema once
+        lan_streamer.db.init_db()
+
+        if lan_streamer.db._engine is not None:
+            lan_streamer.db._engine.dispose()
+        lan_streamer.db._engine = None
+        lan_streamer.db._SessionLocal = None
+        lan_streamer.db._db_initialized = False
+
+        if orig_db_file is not None:
+            lan_streamer.db.DB_FILE = orig_db_file
+
+        _TEMPLATE_DB_PATH = template_db
+
+    return _TEMPLATE_DB_PATH
+
 
 @pytest.fixture(autouse=True)
-def protect_user_dirs(tmp_path) -> None:
+def protect_user_dirs(tmp_path, tmp_path_factory) -> None:
     """
     Ensure no test can ever overwrite the user's actual config or DB.
     We patch all the paths to point to tmp_path.
@@ -37,6 +119,11 @@ def protect_user_dirs(tmp_path) -> None:
     lan_streamer.db._SessionLocal = None
     lan_streamer.db._db_initialized = False
 
+    # Pre-create parent directory and copy the pre-migrated template database
+    db_file.parent.mkdir(parents=True, exist_ok=True)
+    template_db = get_template_db(tmp_path_factory)
+    shutil.copy2(template_db, db_file)
+
     with (
         patch("lan_streamer.system.config.CONFIG_FILE", config_file),
         patch("lan_streamer.system.backup.CONFIG_FILE", config_file),
@@ -44,8 +131,8 @@ def protect_user_dirs(tmp_path) -> None:
         patch("lan_streamer.db.DB_FILE", db_file),
         patch("lan_streamer.providers.tmdb.CACHE_DIR", cache_dir),
     ):
-        # Initialize schema for tests
-        lan_streamer.db.init_db()
+        # Already initialized via copy
+        lan_streamer.db._db_initialized = True
 
         # Reload config instance so it points to the new path
         config.libraries = {}
@@ -72,6 +159,11 @@ def protect_user_dirs(tmp_path) -> None:
     jellyfin_client.__dict__.update(jellyfin_dict)
     tmdb_client.__dict__.clear()
     tmdb_client.__dict__.update(tmdb_dict)
+
+    # Force garbage collection to reclaim PySide6/Qt and DB objects
+    import gc
+
+    gc.collect()
 
 
 @pytest.fixture(scope="session")
@@ -149,3 +241,11 @@ def generated_video_asset(tmp_path_factory) -> str:
         pytest.skip(msg)
 
     return str(output_mkv)
+
+
+def pytest_xdist_auto_num_workers(config) -> int:
+    """Dynamically determine the number of workers when -n auto is specified to use half of the available CPU cores."""
+    import os
+
+    num_cores = os.cpu_count() or 1
+    return max(1, num_cores // 2)
