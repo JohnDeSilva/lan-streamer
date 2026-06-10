@@ -147,6 +147,27 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract Changelog Section
+        run: |
+          python -c '
+          with open("CHANGELOG.md", "r", encoding="utf-8") as f:
+              lines = f.readlines()
+          notes = []
+          header_count = 0
+          for line in lines:
+              if line.startswith("## v"):
+                  header_count += 1
+                  if header_count > 1:
+                      break
+              if header_count == 1:
+                  notes.append(line)
+          with open("release_notes.md", "w", encoding="utf-8") as f:
+              f.writelines(notes)
+          '
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -157,4 +178,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ./release-assets/*
-          generate_release_notes: true
+          body_path: release_notes.md
