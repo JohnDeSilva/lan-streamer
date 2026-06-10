@@ -445,7 +445,7 @@ class TestSeriesDetailsDialog:
                 d._on_embed_clicked()
                 mock_embed.assert_called_once_with("ShowA")
 
-    def test_on_delete_clicked_yes(self, ctrl_tv, qtbot) -> None:
+    def test_on_remove_clicked_yes(self, ctrl_tv, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_tv, qtbot)
@@ -453,10 +453,10 @@ class TestSeriesDetailsDialog:
             with patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
             ):
-                d._on_delete_series_clicked()
+                d._on_remove_series_clicked()
                 mock_delete.assert_called_once_with("ShowA")
 
-    def test_on_delete_clicked_no(self, ctrl_tv, qtbot) -> None:
+    def test_on_remove_clicked_no(self, ctrl_tv, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_tv, qtbot)
@@ -464,7 +464,7 @@ class TestSeriesDetailsDialog:
             with patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.No
             ):
-                d._on_delete_series_clicked()
+                d._on_remove_series_clicked()
                 mock_delete.assert_not_called()
 
     def test_on_match_jellyfin_clicked_not_configured(self, ctrl_tv, qtbot) -> None:
