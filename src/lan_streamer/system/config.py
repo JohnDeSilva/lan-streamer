@@ -15,6 +15,7 @@ class Config:
 
     def __init__(self) -> None:
         """Initialize the configuration with default values and load from file."""
+        self._last_loaded_mtime: float = 0.0
         self.libraries: Dict[str, Dict[str, Any]] = {}
         self.jellyfin_url: str = ""
         self.jellyfin_api_key: str = ""
@@ -81,10 +82,17 @@ class Config:
         self.check_for_updates_on_startup: bool = True
         self.load()
 
-    def load(self) -> None:
+    def load(self, force: bool = False) -> None:
         logger.debug(f"Attempting to load config from {CONFIG_FILE}")
         if CONFIG_FILE.exists():
             try:
+                current_mtime = CONFIG_FILE.stat().st_mtime
+                if not force and current_mtime == getattr(
+                    self, "_last_loaded_mtime", 0.0
+                ):
+                    logger.debug("Config file has not changed on disk. Skipping load.")
+                    return
+
                 with open(CONFIG_FILE, "r") as f:
                     data = json.load(f)
 
@@ -264,12 +272,16 @@ class Config:
                         self.save()
                     else:
                         self.libraries = {}
+                self._last_loaded_mtime = current_mtime
             except Exception:
                 logger.exception("Error loading config")
                 self.libraries = {}
         else:
-            logger.info("Config file does not exist. Initializing empty libraries.")
-            self.libraries = {}
+            logger.info("Config file does not exist.")
+            if getattr(self, "_last_loaded_mtime", 0.0) == 0.0 or force:
+                logger.info("Initializing empty libraries.")
+                self.libraries = {}
+                self._last_loaded_mtime = -1.0
 
     def save(self) -> None:
         logger.debug(f"Attempting to save config to {CONFIG_FILE}")
@@ -329,6 +341,8 @@ class Config:
                     f,
                     indent=4,
                 )
+            if CONFIG_FILE.exists():
+                self._last_loaded_mtime = CONFIG_FILE.stat().st_mtime
         except Exception:
             logger.exception("Error saving config")
 

@@ -87,6 +87,7 @@ class Controller(QObject):
 
     def select_library(self, library_name: str, reset_selection: bool = True) -> None:
         logger.info(f"Controller loading library: {library_name}")
+        config.load()
         self.current_library_name = library_name
         self.status_changed.emit(f"Loading library: {library_name}...")
 
@@ -272,6 +273,7 @@ class Controller(QObject):
             )
             return
 
+        config.load()
         library_config = config.libraries.get(self.current_library_name, {})
         root_directories: List[str] = library_config.get("paths", [])
         library_type: str = library_config.get("type", "tv")
@@ -386,6 +388,7 @@ class Controller(QObject):
             )
             return
 
+        config.load()
         library_config = config.libraries.get(self.current_library_name, {})
         root_directories: List[str] = library_config.get("paths", [])
         library_type: str = library_config.get("type", "tv")
@@ -487,6 +490,7 @@ class Controller(QObject):
             logger.info("ScanAllLibrariesWorker is already running.")
             return
 
+        config.load()
         self.status_changed.emit("Scanning all libraries...")
         self.scan_all_worker_instance = ScanAllLibrariesWorker(
             force_refresh=force_refresh
