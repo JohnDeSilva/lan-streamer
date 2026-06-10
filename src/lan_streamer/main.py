@@ -348,6 +348,37 @@ def main() -> None:
 
     logger.info("Displaying Main Window. Starting Qt event loop.")
     main_window.show()
+
+    if config.check_for_updates_on_startup and "pytest" not in sys.modules:
+        logger.info("Checking for application updates on startup...")
+        from lan_streamer.system.updater import UpdateCheckWorker
+        from lan_streamer.ui_views.dialogs.update_dialog import UpdateDialog
+
+        # Keep reference to prevent GC
+        setattr(main_window, "startup_update_worker", UpdateCheckWorker())
+        worker = getattr(main_window, "startup_update_worker")
+
+        def on_startup_check_finished(
+            success: bool, release_info: dict, error_msg: str
+        ) -> None:
+            if success and release_info:
+                logger.info(f"Update available on startup: {release_info['version']}")
+                dialog = UpdateDialog(
+                    current_version=__version__,
+                    new_version=release_info["version"],
+                    release_notes=release_info["release_notes"],
+                    download_url=release_info["download_url"],
+                    parent=main_window,
+                )
+                dialog.exec()
+            elif not success:
+                logger.warning(f"Startup update check failed: {error_msg}")
+            else:
+                logger.info("Application is up to date.")
+
+        worker.finished.connect(on_startup_check_finished)
+        worker.start()
+
     sys.exit(application_instance.exec())
 
 

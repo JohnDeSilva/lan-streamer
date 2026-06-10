@@ -52,6 +52,7 @@ LAN Streamer is built to play your media files directly and natively without any
     Placeholder items have disabled details buttons/context menus, and are skipped by autoplay and the main "Play Next" recommendation banner.
 *   **📊 Segmented Library Scan Progress Bar**: Displays a persistent progress bar at the very bottom of the library view during scans, segmenting by root directories and folders/series. The sub-segments dynamically sort and fill from left to right as progress is made, and a detailed status label directly above the bar displays the full root directory path and series name currently being scanned.
 *   **📜 Real-Time Log Viewer**: View streaming logs directly within a dedicated "Running Logs" tab in the Settings dialog, with log level filtering, text searching, auto-scroll toggle, clipboard copying, and compressed ZIP export functionality.
+*   **🔄 Automatic Updates**: Queries the latest version from GitHub releases upon application startup or manually under the Advanced settings tab. Prompts for upgrade displaying release notes, downloads the new version package in the background with progress feedback, makes it executable, and detaches the new launcher on exit.
 
 ---
 

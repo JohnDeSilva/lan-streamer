@@ -743,6 +743,25 @@ Below is the structured textual representation of all major class inheritance pa
 
 ---
 
+### `UpdateDialog`
+- **Defined in**: [update_dialog.py](../src/lan_streamer/ui_views/dialogs/update_dialog.py#L25) (line 25)
+- **Inherits from**: `QDialog`
+
+> Dialog displaying a new update version, release notes, and a progress bar while downloading the updated executable.
+
+**Methods**:
+- `def __init__(self, current_version: str, new_version: str, release_notes: str, download_url: str, parent: Optional[QWidget]=None) -> None`
+
+- `def start_download(self) -> None`
+
+- `def on_progress(self, bytes_read: int, total_bytes: int) -> None`
+
+- `def on_finished(self, success: bool, error_msg_or_path: str) -> None`
+
+- `def closeEvent(self, event: QCloseEvent) -> None`
+
+---
+
 ### `VideoPlayerWidget`
 - **Defined in**: [widget.py](../src/lan_streamer/playback/widget.py#L33) (line 33)
 - **Inherits from**: `QWidget`
@@ -907,6 +926,32 @@ Below is the structured textual representation of all major class inheritance pa
 - `def remove_root_dir(self, library_name: str, path: str) -> None`
 
 - `def save(self) -> None`
+
+---
+
+### `UpdateCheckWorker`
+- **Defined in**: [updater.py](../src/lan_streamer/system/updater.py#L52) (line 52)
+- **Inherits from**: `QThread`
+
+> Background worker thread to check the GitHub repository for the latest release.
+
+**Methods**:
+- `def run(self) -> None`
+
+---
+
+### `DownloadWorker`
+- **Defined in**: [updater.py](../src/lan_streamer/system/updater.py#L121) (line 121)
+- **Inherits from**: `QThread`
+
+> Background worker thread to download the target update asset.
+
+**Methods**:
+- `def __init__(self, download_url: str, save_path: str) -> None`
+
+- `def run(self) -> None`
+
+- `def cancel(self) -> None`
 
 ---
 
