@@ -647,7 +647,7 @@ class SeriesDetailView(QWidget):
                     toggle_action.triggered.connect(handle_toggle)
                     menu.addAction(toggle_action)
 
-                    delete_action: QAction = QAction("Delete Episode", table)
+                    remove_action: QAction = QAction("Remove Episode", table)
 
                     def handle_delete() -> None:
                         target_path: str = episode.get("path", "")
@@ -656,20 +656,20 @@ class SeriesDetailView(QWidget):
 
                             confirm = QMessageBox.question(
                                 self,
-                                "Delete Episode",
-                                f"Are you sure you want to delete the episode '{Path(target_path).name}' from the library database? This action cannot be undone.",
+                                "Remove Episode",
+                                f"Are you sure you want to remove the episode '{Path(target_path).name}' from the library database? This is a nondestructive operation that only affects the database, and files will be picked up on the next scan.",
                                 QMessageBox.StandardButton.Yes
                                 | QMessageBox.StandardButton.No,
                             )
                             if confirm == QMessageBox.StandardButton.Yes:
                                 logger.info(
-                                    f"User confirmed delete of episode: '{episode.get('name')}' (Path: {target_path})"
+                                    f"User confirmed removal of episode: '{episode.get('name')}' (Path: {target_path})"
                                 )
                                 self.controller.delete_episode(target_path)
                                 self.populate_series_details(self._current_series_name)
 
-                    delete_action.triggered.connect(handle_delete)
-                    menu.addAction(delete_action)
+                    remove_action.triggered.connect(handle_delete)
+                    menu.addAction(remove_action)
 
                     menu.exec(table.viewport().mapToGlobal(position))
 

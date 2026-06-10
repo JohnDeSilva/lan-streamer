@@ -411,12 +411,12 @@ class SettingsDialog(QDialog):
         move_up_btn.clicked.connect(self.move_combined_view_row_up)
         move_down_btn = QPushButton("Move Down")
         move_down_btn.clicked.connect(self.move_combined_view_row_down)
-        delete_btn = QPushButton("Delete Row")
-        delete_btn.clicked.connect(self.delete_combined_view_row)
+        remove_btn = QPushButton("Remove Row")
+        remove_btn.clicked.connect(self.delete_combined_view_row)
 
         list_btn_layout.addWidget(move_up_btn)
         list_btn_layout.addWidget(move_down_btn)
-        list_btn_layout.addWidget(delete_btn)
+        list_btn_layout.addWidget(remove_btn)
         left_layout.addLayout(list_btn_layout)
 
         add_row_btn = QPushButton("Add New Row")

@@ -206,6 +206,11 @@ class EpisodeDetailsDialog(QDialog):
         osub_btn.clicked.connect(self._on_search_osub_clicked)
         layout.addWidget(osub_btn)
 
+        remove_ep_btn = QPushButton("Remove Episode...")
+        remove_ep_btn.setObjectName("dangerButton")
+        remove_ep_btn.clicked.connect(self._on_remove_episode_clicked)
+        layout.addWidget(remove_ep_btn)
+
         layout.addStretch()
 
         return widget
@@ -383,6 +388,21 @@ class EpisodeDetailsDialog(QDialog):
         )
         if dialog.exec():
             self._refresh_file_info()
+
+    @Slot()
+    def _on_remove_episode_clicked(self) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "Remove Episode",
+            f"Are you sure you want to remove the episode '{Path(self.episode_path).name}' from the library database? This is a nondestructive operation that only affects the database, and files will be picked up on the next scan.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            logger.info(
+                f"User confirmed removal of episode from details dialog: '{self.episode_path}'"
+            )
+            self.controller.delete_episode(self.episode_path)
+            self.accept()
 
 
 class MovieDetailsDialog(QDialog):
@@ -836,10 +856,10 @@ class SeriesDetailsDialog(QDialog):
         mark_watched_btn.clicked.connect(self._on_mark_watched_clicked)
         info_layout.addWidget(mark_watched_btn)
 
-        delete_series_btn = QPushButton("Delete Series...")
-        delete_series_btn.setObjectName("dangerButton")
-        delete_series_btn.clicked.connect(self._on_delete_series_clicked)
-        info_layout.addWidget(delete_series_btn)
+        remove_series_btn = QPushButton("Remove Series...")
+        remove_series_btn.setObjectName("dangerButton")
+        remove_series_btn.clicked.connect(self._on_remove_series_clicked)
+        info_layout.addWidget(remove_series_btn)
 
         info_layout.addStretch()
 
@@ -1289,11 +1309,11 @@ class SeriesDetailsDialog(QDialog):
         self.controller.mark_series_watched(self.series_name)
         self.accept()
 
-    def _on_delete_series_clicked(self) -> None:
+    def _on_remove_series_clicked(self) -> None:
         confirm = QMessageBox.question(
             self,
-            "Delete Series",
-            f"Are you sure you want to delete the series '{self.series_name}' from the library database? This action cannot be undone.",
+            "Remove Series",
+            f"Are you sure you want to remove the series '{self.series_name}' from the library database? This is a nondestructive operation that only affects the database, and files will be picked up on the next scan.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm == QMessageBox.StandardButton.Yes:

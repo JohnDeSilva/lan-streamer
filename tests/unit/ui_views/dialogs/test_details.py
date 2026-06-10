@@ -130,6 +130,54 @@ def test_episode_details_merge_subtitles_trigger(mock_episode_controller, qtbot)
                 )
 
 
+def test_episode_details_remove_episode_yes(mock_episode_controller, qtbot):
+    with patch("lan_streamer.scanner.get_detailed_file_info") as mock_info:
+        mock_info.return_value = {
+            "path": "/media/Test Series/S01E01.mkv",
+            "size_bytes": 0,
+            "video_type": "MKV",
+            "resolution": "Unknown",
+            "audio_tracks": [],
+            "subtitle_tracks": [],
+        }
+        dialog = EpisodeDetailsDialog(
+            "Test Series", "/media/Test Series/S01E01.mkv", mock_episode_controller
+        )
+        qtbot.addWidget(dialog)
+
+        with patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            with patch.object(mock_episode_controller, "delete_episode") as mock_delete:
+                dialog._on_remove_episode_clicked()
+                mock_delete.assert_called_once_with("/media/Test Series/S01E01.mkv")
+
+
+def test_episode_details_remove_episode_no(mock_episode_controller, qtbot):
+    with patch("lan_streamer.scanner.get_detailed_file_info") as mock_info:
+        mock_info.return_value = {
+            "path": "/media/Test Series/S01E01.mkv",
+            "size_bytes": 0,
+            "video_type": "MKV",
+            "resolution": "Unknown",
+            "audio_tracks": [],
+            "subtitle_tracks": [],
+        }
+        dialog = EpisodeDetailsDialog(
+            "Test Series", "/media/Test Series/S01E01.mkv", mock_episode_controller
+        )
+        qtbot.addWidget(dialog)
+
+        with patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.No,
+        ):
+            with patch.object(mock_episode_controller, "delete_episode") as mock_delete:
+                dialog._on_remove_episode_clicked()
+                mock_delete.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Movie Details Dialog Tests
 # ---------------------------------------------------------------------------
