@@ -1,3 +1,16 @@
+## v0.27.1 (2026-06-10)
+
+### Fix
+
+- Add remove episode and series functionality with confirmation dialogs
+- Implement config loading on library actions and add tests for auto-scan functionality
+- Add MyAnimeList status labels for seasons in SeriesDetailsDialog
+
+### Refactor
+
+- **config,db**: Refactor configuration handling and migrate settings to database
+- Rename settings tab to Series Info and update tab structure in SeriesDetailsDialog
+
 ## v0.27.0 (2026-06-09)
 
 ### Feat
