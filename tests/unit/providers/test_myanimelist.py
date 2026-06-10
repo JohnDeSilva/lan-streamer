@@ -70,7 +70,7 @@ def test_mal_exchange_auth_code_success(mal) -> None:
     }
     mal.session.post = MagicMock(return_value=mock_resp)
 
-    with patch.object(config, "save") as mock_save:
+    with patch.object(config, "save_to_db") as mock_save:
         success, msg = mal.exchange_auth_code("auth_code", "verifier")
         assert success is True
         assert config.myanimelist_access_token == "new-access"
@@ -94,7 +94,7 @@ def test_mal_refresh_access_token_success(mal) -> None:
     }
     mal.session.post = MagicMock(return_value=mock_resp)
 
-    with patch.object(config, "save") as mock_save:
+    with patch.object(config, "save_to_db") as mock_save:
         success = mal.refresh_access_token()
         assert success is True
         assert config.myanimelist_access_token == "refreshed-access"
@@ -113,7 +113,7 @@ def test_mal_refresh_access_token_failure(mal) -> None:
 
 
 def test_mal_remove_connection(mal) -> None:
-    with patch.object(config, "save") as mock_save:
+    with patch.object(config, "save_to_db") as mock_save:
         mal.remove_connection()
         assert config.myanimelist_access_token == ""
         assert config.myanimelist_refresh_token == ""

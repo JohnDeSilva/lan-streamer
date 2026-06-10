@@ -1,3 +1,4 @@
+import enum
 from typing import Optional, List
 from sqlalchemy import (
     Integer,
@@ -21,6 +22,48 @@ class Base(DeclarativeBase):
     pass
 
 
+class SecretType(str, enum.Enum):
+    """Enumeration of supported external-service secret types."""
+
+    JELLYFIN = "jellyfin"
+    TMDB = "tmdb"
+    MYANIMELIST = "myanimelist"
+    OPENSUBTITLES = "opensubtitles"
+
+
+class AppSecret(Base):
+    """Stores service credentials as opaque JSON blobs, one row per service.
+
+    Each row is keyed by a generated UUID primary key and a unique ``secret_type``
+    string (one of the ``SecretType`` enum values).  All fields for a given service
+    are serialised together into the ``secret`` JSON column so that adding new
+    fields never requires a schema migration.
+    """
+
+    __tablename__ = "app_secrets"
+
+    secret_uuid: Mapped[str] = mapped_column(String, primary_key=True)
+    secret_type: Mapped[str] = mapped_column(String, nullable=False)
+    secret: Mapped[Optional[str]] = mapped_column(String, default="{}")
+
+    __table_args__ = (UniqueConstraint("secret_type", name="uq_app_secrets_type"),)
+
+
+class AppConfig(Base):
+    """Key/value store for non-secret application configuration.
+
+    The ``type`` column carries a short hint used by the query helpers to
+    coerce the stored text back to the correct Python type on read:
+    ``'str'``, ``'int'``, ``'float'``, ``'bool'``, or ``'json'``.
+    """
+
+    __tablename__ = "app_config"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[Optional[str]] = mapped_column(String)
+    type: Mapped[str] = mapped_column(String, default="str")
+
+
 class Series(Base):
     """Database model representing a television series, containing references to seasons and metadata."""
 
@@ -37,6 +80,11 @@ class Series(Base):
     locked_metadata: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     first_air_date: Mapped[Optional[str]] = mapped_column(String)
     tmdb_episode_group_id: Mapped[Optional[str]] = mapped_column(String)
+    # Per-series user preferences
+    pref_hide_missing_future: Mapped[Optional[bool]] = mapped_column(
+        Boolean, default=False
+    )
+    pref_display_group_id: Mapped[Optional[str]] = mapped_column(String, default=None)
 
     seasons: Mapped[List["Season"]] = relationship(
         "Season",

@@ -352,3 +352,78 @@ def test_last_played_at_migration_with_fake_data(tmp_path) -> None:
         )
 
     engine.dispose()
+
+
+def test_settings_to_db_migration(tmp_path) -> None:
+    """Test seeding from config.json to app_config/app_secrets/series tables during alembic migration."""
+    import json
+
+    fake_home = tmp_path / "fake_home"
+    config_file = fake_home / ".config" / "lan-streamer" / "config.json"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    db_path = tmp_path / "test_migration_settings.db"
+
+    with open(config_file, "w") as f:
+        json.dump(
+            {
+                "root_dirs": ["/old/path"],
+                "tvdb_api_key": "old_tvdb_key",
+                "jellyfin_url": "http://jellyfin",
+                "jellyfin_api_key": "jf_key",
+                "libraries": {"OldLib": ["/some/path"]},
+                "series_preferences": {
+                    "TV:Breaking Bad": {
+                        "hide_missing_future": True,
+                        "display_group_id": "group1",
+                    }
+                },
+            },
+            f,
+        )
+
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    # 90c0fcb92ee7 is one of the heads before our settings migration. We need to merge them.
+    # Actually, we can upgrade to 90c0fcb92ee7 then migrate.
+    command.upgrade(alembic_cfg, "90c0fcb92ee7")
+
+    # Insert a dummy series representing TV:Breaking Bad to check back-fill
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO series (library_name, name) VALUES ('TV', 'Breaking Bad')"
+            )
+        )
+
+    from unittest.mock import patch
+
+    with patch("pathlib.Path.home", return_value=fake_home):
+        command.upgrade(alembic_cfg, "a1b2c3d4e5f6")
+
+    # Verify the database has migrated settings
+    with engine.connect() as conn:
+        rows = conn.execute(sa.text("SELECT key, value FROM app_config")).fetchall()
+        cfg_dict = dict(rows)
+        libraries = json.loads(cfg_dict["libraries"])
+        assert libraries["OldLib"]["paths"] == ["/some/path"]
+        assert libraries["OldLib"]["type"] == "tv"
+
+        secrets = conn.execute(
+            sa.text("SELECT secret_type, secret FROM app_secrets")
+        ).fetchall()
+        sec_dict = {r[0]: json.loads(r[1]) for r in secrets}
+        assert sec_dict["jellyfin"]["url"] == "http://jellyfin"
+        assert sec_dict["jellyfin"]["api_key"] == "jf_key"
+        assert sec_dict["tmdb"]["api_key"] == "old_tvdb_key"
+
+        series_pref = conn.execute(
+            sa.text(
+                "SELECT pref_hide_missing_future, pref_display_group_id FROM series WHERE name='Breaking Bad'"
+            )
+        ).fetchone()
+        assert series_pref[0] == 1 or series_pref[0] is True
+        assert series_pref[1] == "group1"
+
+    engine.dispose()

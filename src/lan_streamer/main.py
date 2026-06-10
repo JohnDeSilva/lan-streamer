@@ -179,6 +179,8 @@ def main() -> None:
 
     logger.info("Initializing database...")
     db.init_db()
+    logger.info("Loading settings from database...")
+    config.load_from_db()
     logger.info("Initializing Qt Application...")
     application_instance = QApplication(sys.argv)
     setup_dark_theme(application_instance)

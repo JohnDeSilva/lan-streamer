@@ -29,6 +29,12 @@ from lan_streamer.db.queries import (
     get_combined_smart_row,
     delete_series_record,
     delete_episode_record,
+    get_app_config,
+    set_app_config,
+    get_secret,
+    set_secret,
+    get_series_pref,
+    set_series_pref,
 )
 from lan_streamer.db.library import (
     load_library,
@@ -47,7 +53,16 @@ from lan_streamer.db.sync import (
     _sync_watched_by_paths,
     _sync_watched_by_names,
 )
-from lan_streamer.db.models import Base, Series, Season, Episode, Movie
+from lan_streamer.db.models import (
+    Base,
+    Series,
+    Season,
+    Episode,
+    Movie,
+    AppConfig,
+    AppSecret,
+    SecretType,
+)
 
 DB_FILE = Path(os.getenv("LAN_STREAMER_DB", config.database_path))
 
@@ -82,6 +97,12 @@ __all__ = [
     "get_combined_smart_row",
     "delete_series_record",
     "delete_episode_record",
+    "get_app_config",
+    "set_app_config",
+    "get_secret",
+    "set_secret",
+    "get_series_pref",
+    "set_series_pref",
     "load_library",
     "save_library",
     "load_movie_library",
@@ -103,4 +124,7 @@ __all__ = [
     "Season",
     "Episode",
     "Movie",
+    "AppConfig",
+    "AppSecret",
+    "SecretType",
 ]

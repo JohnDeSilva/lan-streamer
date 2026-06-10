@@ -33,7 +33,7 @@ def backup_environment(tmp_path: Path) -> Generator[Path, None, None]:
     with (
         patch("lan_streamer.system.backup.CONFIG_FILE", test_config_file),
         patch("lan_streamer.system.config.CONFIG_FILE", test_config_file),
-        patch.object(config, "backup_directory", str(test_backup_directory)),
+        patch.object(config, "_backup_directory", str(test_backup_directory)),
         patch.object(config, "database_path", str(test_database_file)),
         patch.dict(os.environ, {"LAN_STREAMER_DB": str(test_database_file)}),
     ):
@@ -326,7 +326,7 @@ def test_perform_scheduled_backups_dir_creation_failure(
 ) -> None:
     """When the backup directory cannot be created, the function returns early."""
     with (
-        patch.object(config, "backup_directory", "/root/cannot_create_this"),
+        patch.object(config, "_backup_directory", "/root/cannot_create_this"),
         patch("pathlib.Path.mkdir", side_effect=PermissionError("Permission denied")),
     ):
         # Should NOT raise

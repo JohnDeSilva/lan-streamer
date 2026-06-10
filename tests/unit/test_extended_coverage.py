@@ -206,62 +206,39 @@ class TestConfigSaveLoadEdgeCases:
                 # Should not raise even if mkdir fails
                 cfg.save()
 
-    def test_load_config_missing_libraries_key_with_root_dirs(self, tmp_path) -> None:
-        """Test the root_dirs migration path in load()."""
+    def test_load_config_startup_paths_expansion(self, tmp_path) -> None:
+        """Test that database_path and log_directory tildes are expanded correctly."""
         import json
+        from pathlib import Path
         from lan_streamer.system.config import Config
 
         config_file = tmp_path / "config.json"
         config_file.write_text(
             json.dumps(
                 {
-                    "root_dirs": ["/old/path"],
-                    "jellyfin_url": "",
-                    "jellyfin_api_key": "",
-                    "tmdb_api_key": "",
+                    "database_path": "~/my_test_library.db",
+                    "log_directory": "~/my_test_logs",
                 }
             )
         )
 
-        cfg = Config.__new__(Config)
-        # Initialize required attributes first
-        cfg.series_preferences = {}
-        cfg.libraries = {}
         with patch("lan_streamer.system.config.CONFIG_FILE", config_file):
-            with patch.object(cfg, "save"):
-                cfg.load()
+            cfg = Config()
+            assert cfg.database_path == str(
+                Path("~/my_test_library.db").expanduser().absolute()
+            )
+            assert cfg.log_directory == str(
+                Path("~/my_test_logs").expanduser().absolute()
+            )
 
-        assert "Default" in cfg.libraries
-        assert cfg.libraries["Default"]["paths"] == ["/old/path"]
-
-    def test_load_config_old_list_format_migration(self, tmp_path) -> None:
-        """Test migration from old list format (lib_name: [paths]) to new dict format."""
-        import json
+    def test_load_config_properties_expansion(self) -> None:
+        """Test that properties like cache_directory expand tilde on setting."""
+        from pathlib import Path
         from lan_streamer.system.config import Config
 
-        config_file = tmp_path / "config.json"
-        config_file.write_text(
-            json.dumps(
-                {
-                    "libraries": {
-                        "OldLib": ["/some/path"],
-                    }
-                }
-            )
-        )
-
-        cfg = Config.__new__(Config)
-        cfg.series_preferences = {}
-        cfg.libraries = {}
-        with patch("lan_streamer.system.config.CONFIG_FILE", config_file):
-            with patch.object(cfg, "save") as mock_save:
-                cfg.load()
-                # Should have saved the migrated config
-                mock_save.assert_called_once()
-
-        assert "OldLib" in cfg.libraries
-        assert cfg.libraries["OldLib"]["type"] == "tv"
-        assert cfg.libraries["OldLib"]["paths"] == ["/some/path"]
+        cfg = Config()
+        cfg.cache_directory = "~/my_cache"
+        assert cfg.cache_directory == str(Path("~/my_cache").expanduser().absolute())
 
     def test_load_config_exception(self, tmp_path) -> None:
         """When config file is corrupted, should not crash."""
