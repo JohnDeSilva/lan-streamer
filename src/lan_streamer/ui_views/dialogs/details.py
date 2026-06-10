@@ -795,6 +795,27 @@ class SeriesDetailsDialog(QDialog):
             self.jellyfin_status_label.setVisible(False)
         info_form.addRow("Sync Status:", self.jellyfin_status_label)
 
+        # MyAnimeList status for each season (only for anime libraries)
+        self.mal_status_labels = {}
+        library_config = config.libraries.get(self.controller.current_library_name, {})
+        lib_type = library_config.get("type", "tv")
+        if lib_type == "anime":
+            seasons = self.series_record.get("seasons", {})
+            sorted_season_names = sorted(seasons.keys(), key=db.natural_sort_key)
+            for season_name in sorted_season_names:
+                season_data = seasons[season_name]
+                mal_id = season_data.get("metadata", {}).get("myanimelist_id")
+                status_label = QLabel()
+                status_label.setFont(QFont("Inter", 11, QFont.Weight.Bold))
+                if mal_id:
+                    status_label.setText(f"Mapped (MAL ID: {mal_id})")
+                    status_label.setStyleSheet("color: #43a047;")
+                else:
+                    status_label.setText("Not Mapped")
+                    status_label.setStyleSheet("color: #e53935;")
+                self.mal_status_labels[season_name] = status_label
+                info_form.addRow(f"{season_name} MAL Match:", status_label)
+
         self.hide_missing_checkbox = QCheckBox("Hide missing/future episodes")
         self.hide_missing_checkbox.setObjectName("hideMissingCheckbox")
         self.hide_missing_checkbox.setFont(QFont("Inter", 11, QFont.Weight.Bold))
@@ -1545,6 +1566,16 @@ class SeriesDetailsDialog(QDialog):
         if "metadata" not in season_data:
             season_data["metadata"] = {}
         season_data["metadata"]["myanimelist_id"] = anime_id
+
+        # Update MAL status label in Series Info tab
+        if hasattr(self, "mal_status_labels") and season_name in self.mal_status_labels:
+            lbl = self.mal_status_labels[season_name]
+            if anime_id:
+                lbl.setText(f"Mapped (MAL ID: {anime_id})")
+                lbl.setStyleSheet("color: #43a047;")
+            else:
+                lbl.setText("Not Mapped")
+                lbl.setStyleSheet("color: #e53935;")
 
         modified_count = 0
         for ep in season_data.get("episodes", []):
