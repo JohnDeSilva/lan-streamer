@@ -30,6 +30,9 @@ from PySide6.QtGui import QCloseEvent, QTextCursor, QFont
 
 from lan_streamer.system.config import config
 from lan_streamer.ui_views.proxy import QMessageBox, QFileDialog
+from lan_streamer.system.updater import UpdateCheckWorker
+from lan_streamer.ui_views.dialogs.update_dialog import UpdateDialog
+from lan_streamer import __version__
 from lan_streamer.ui_views.progress_widgets import (
     SegmentedProgressBar,
     ScanProgressTree,
@@ -72,6 +75,9 @@ class SettingsDialog(QDialog):
         self.jellyfin_key_input: QLineEdit = QLineEdit()
         self.sync_history_on_start_checkbox: QCheckBox = QCheckBox(
             "Sync watch history from Jellyfin on startup"
+        )
+        self.check_updates_startup_checkbox: QCheckBox = QCheckBox(
+            "Automatically check for updates on startup"
         )
         self.tmdb_key_input: QLineEdit = QLineEdit()
         self.opensubtitles_username_input: QLineEdit = QLineEdit()
@@ -631,6 +637,33 @@ class SettingsDialog(QDialog):
 
         advanced_layout.addWidget(config_frame)
 
+        # 4. Updates Settings Group
+        updates_frame: QFrame = QFrame()
+        updates_frame.setObjectName("updatesGroupFrame")
+        updates_frame.setStyleSheet(
+            "QFrame#updatesGroupFrame { background-color: #222222; border: 1px solid #333333; border-radius: 8px; }"
+        )
+        updates_group_layout: QGridLayout = QGridLayout(updates_frame)
+        updates_group_layout.setContentsMargins(15, 15, 15, 15)
+        updates_group_layout.setSpacing(10)
+        updates_group_layout.setColumnStretch(1, 1)
+
+        updates_title: QLabel = QLabel("Application Updates")
+        updates_title.setStyleSheet(
+            "font-size: 15px; font-weight: bold; color: #2a82da;"
+        )
+        updates_group_layout.addWidget(updates_title, 0, 0, 1, 3)
+
+        updates_group_layout.addWidget(self.check_updates_startup_checkbox, 1, 0, 1, 3)
+
+        self.check_updates_now_button: QPushButton = QPushButton(
+            "Check for Updates Now"
+        )
+        self.check_updates_now_button.clicked.connect(self.trigger_manual_update_check)
+        updates_group_layout.addWidget(self.check_updates_now_button, 2, 0, 1, 1)
+
+        advanced_layout.addWidget(updates_frame)
+
         advanced_layout.addStretch()
 
         # Library Management Pane
@@ -786,6 +819,9 @@ class SettingsDialog(QDialog):
         self.jellyfin_url_input.setText(config.jellyfin_url)
         self.jellyfin_key_input.setText(config.jellyfin_api_key)
         self.sync_history_on_start_checkbox.setChecked(config.sync_history_on_start)
+        self.check_updates_startup_checkbox.setChecked(
+            config.check_for_updates_on_startup
+        )
         self.tmdb_key_input.setText(config.tmdb_api_key)
         self.opensubtitles_username_input.setText(config.opensubtitles_username)
         self.opensubtitles_password_input.setText(config.opensubtitles_password)
@@ -1293,6 +1329,9 @@ class SettingsDialog(QDialog):
             self.myanimelist_client_secret_input.text().strip()
         )
         config.sync_history_on_start = self.sync_history_on_start_checkbox.isChecked()
+        config.check_for_updates_on_startup = (
+            self.check_updates_startup_checkbox.isChecked()
+        )
 
         config.use_embedded_player = self.use_embedded_checkbox.isChecked()
         config.enable_caching = self.enable_caching_checkbox.isChecked()
@@ -1654,6 +1693,46 @@ class SettingsDialog(QDialog):
 
     def _complete_jellyfin_progress(self, message_text: str) -> None:
         pass  # Segmented bar has no text format; completion is driven by mark_library_done
+
+    @Slot()
+    def trigger_manual_update_check(self) -> None:
+        logger.info("Manual update check triggered")
+        self.check_updates_now_button.setEnabled(False)
+        self.check_updates_now_button.setText("Checking...")
+
+        self.update_check_worker = UpdateCheckWorker()
+
+        def on_check_finished(
+            success: bool, release_info: dict, error_msg: str
+        ) -> None:
+            self.check_updates_now_button.setEnabled(True)
+            self.check_updates_now_button.setText("Check for Updates Now")
+
+            if success:
+                if release_info:
+                    dialog = UpdateDialog(
+                        current_version=__version__,
+                        new_version=release_info["version"],
+                        release_notes=release_info["release_notes"],
+                        download_url=release_info["download_url"],
+                        parent=self,
+                    )
+                    dialog.exec()
+                else:
+                    QMessageBox.information(
+                        self,
+                        "No Updates",
+                        "You are running the latest version of LAN Streamer.",
+                    )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Update Check Failed",
+                    f"Could not check for updates:\n{error_msg}",
+                )
+
+        self.update_check_worker.finished.connect(on_check_finished)
+        self.update_check_worker.start()
 
     @Slot(str)
     def _on_log_filter_changed(self, text: str) -> None:

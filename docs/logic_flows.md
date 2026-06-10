@@ -175,3 +175,28 @@ Retrieves and stores subtitle files for media playbacks automatically or interac
 2. **Payload Fetch**: Downloads raw subtitle data bytes.
 3. **Adjacent File Write**: Saves the file in the exact media directory matching the video file's parent folder, appending language codes (e.g., `video_file.en.srt`).
 4. **UI Update**: Signals details panel components to re-run ffprobe or refresh, showing the newly downloaded track option.
+
+---
+
+## 8. Application Updates Flow
+
+Manages checking for updates on startup or manually, downloading updates in the background, making files executable, detaching the updater process, and terminating the parent process.
+
+### Check Workflow
+1. **Startup Check**: If `config.check_for_updates_on_startup` is enabled (and we are not running under Pytest), the application spawns an `UpdateCheckWorker` thread at startup.
+2. **Manual Check**: Triggers when the user clicks "Check for Updates Now" in the Advanced settings tab.
+3. **API Query**: Queries GitHub's `/repos/JohnDeSilva/lan-streamer/releases/latest` endpoint.
+4. **Version Parsing and Selection**:
+   - Parses versions into integer tuples to ensure correct semantic comparison.
+   - Maps the system platform to expected target release asset names (`lan-streamer-windows.exe`, `lan-streamer-macos.dmg`, `lan-streamer-fedora`, or `lan-streamer-ubuntu`).
+5. **Popup Dialog**: If a newer version exists with a valid matching platform asset, the system displays the `UpdateDialog` modal showing release notes and a "Download" button.
+
+### Download & Launch Workflow
+1. **Download Trigger**: When the user clicks "Download", the dialog layout transitions to a progress display.
+2. **Background Download**: Spawns a `DownloadWorker` thread that fetches the asset from GitHub's CDN in 8KB chunks, updating the `QProgressBar` and labels.
+3. **Execution**:
+   - Once completed, the file is saved to the local updates folder.
+   - On Unix/Linux platforms, it runs `os.chmod(path, 0o755)` to set the executable permission bit.
+   - On macOS, it mounts the DMG via `QProcess.startDetached("open", [path])`.
+   - On Linux/Windows, it spawns the binary directly using `QProcess.startDetached(path)`.
+4. **Termination**: The current host application is immediately closed using `QApplication.quit()` and `sys.exit(0)`, allowing the new version to take over.

@@ -38,6 +38,7 @@ from lan_streamer.ui_views.dialogs import (
     EpisodeMatchDialog,
     RenamePreviewDialog,
     SettingsDialog,
+    UpdateDialog,
 )
 
 __all__ = [
@@ -71,4 +72,5 @@ __all__ = [
     "EpisodeMatchDialog",
     "RenamePreviewDialog",
     "SettingsDialog",
+    "UpdateDialog",
 ]
