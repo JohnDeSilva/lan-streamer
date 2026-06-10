@@ -2,11 +2,19 @@ import logging
 import re
 import time
 import json
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, Callable
 
 from sqlalchemy import select, update
 
-from lan_streamer.db.models import Series, Season, Episode, Movie
+from lan_streamer.db.models import (
+    Series,
+    Season,
+    Episode,
+    Movie,
+    AppConfig,
+    AppSecret,
+    SecretType,
+)
 
 
 def get_session() -> Any:
@@ -761,3 +769,183 @@ def delete_episode_record(path: str) -> None:
                 session.delete(episode)
     except Exception:
         logger.exception(f"Error deleting episode record for '{path}'")
+
+
+# ---------------------------------------------------------------------------
+# app_config helpers
+# ---------------------------------------------------------------------------
+
+_TYPE_COERCIONS: Dict[str, Callable[[Any], Any]] = {
+    "bool": lambda v: v == "1",
+    "int": int,
+    "float": float,
+    "json": json.loads,
+    "str": str,
+}
+
+
+def get_app_config(key: str, default: Any = None) -> Any:
+    """Returns the stored value for *key* from app_config, coerced to its declared type.
+
+    Returns *default* when the key does not exist.
+    """
+    try:
+        with get_session() as session:
+            row = session.scalars(select(AppConfig).where(AppConfig.key == key)).first()
+            if row is None or row.value is None:
+                return default
+            coerce = _TYPE_COERCIONS.get(row.type or "str", str)
+            return coerce(row.value)
+    except Exception:
+        logger.exception(f"Error reading app_config key '{key}'")
+        return default
+
+
+def set_app_config(key: str, value: Any) -> None:
+    """Upserts *value* for *key* in app_config.
+
+    The type hint is inferred from the current Python type of *value* when
+    no row exists yet; existing rows keep their declared type on update.
+    """
+    try:
+        with get_session() as session:
+            row = session.scalars(select(AppConfig).where(AppConfig.key == key)).first()
+
+            if row is None:
+                # Infer type hint from value
+                if isinstance(value, bool):
+                    type_hint = "bool"
+                elif isinstance(value, int):
+                    type_hint = "int"
+                elif isinstance(value, float):
+                    type_hint = "float"
+                elif isinstance(value, (list, dict)):
+                    type_hint = "json"
+                else:
+                    type_hint = "str"
+                row = AppConfig(key=key, type=type_hint)
+                session.add(row)
+
+            # Serialise to TEXT
+            hint = row.type or "str"
+            if hint == "json":
+                row.value = json.dumps(value)
+            elif hint == "bool":
+                row.value = "1" if value else "0"
+            else:
+                row.value = str(value)
+    except Exception:
+        logger.exception(f"Error writing app_config key '{key}'")
+
+
+# ---------------------------------------------------------------------------
+# app_secrets helpers
+# ---------------------------------------------------------------------------
+
+
+def get_secret(secret_type: SecretType) -> Dict[str, Any]:
+    """Returns the credential payload dict for *secret_type*.
+
+    Returns an empty dict when no row exists so callers can safely use
+    ``.get()`` without checking for ``None``.
+    """
+    try:
+        with get_session() as session:
+            row = session.scalars(
+                select(AppSecret).where(AppSecret.secret_type == secret_type.value)
+            ).first()
+            if row is None or not row.secret:
+                return {}
+            return json.loads(row.secret)
+    except Exception:
+        logger.exception(f"Error reading secret for type '{secret_type}'")
+        return {}
+
+
+def set_secret(secret_type: SecretType, payload: Dict[str, Any]) -> None:
+    """Upserts the full credential payload for *secret_type*.
+
+    On first insert a UUID4 primary key is generated automatically.
+    """
+    import uuid as _uuid
+
+    try:
+        with get_session() as session:
+            row = session.scalars(
+                select(AppSecret).where(AppSecret.secret_type == secret_type.value)
+            ).first()
+            if row is None:
+                row = AppSecret(
+                    secret_uuid=str(_uuid.uuid4()),
+                    secret_type=secret_type.value,
+                )
+                session.add(row)
+            row.secret = json.dumps(payload)
+    except Exception:
+        logger.exception(f"Error writing secret for type '{secret_type}'")
+
+
+# ---------------------------------------------------------------------------
+# Series preference helpers
+# ---------------------------------------------------------------------------
+
+_SERIES_PREF_COLUMNS = {
+    "hide_missing_future": "pref_hide_missing_future",
+    "display_group_id": "pref_display_group_id",
+}
+
+
+def get_series_pref(
+    library_name: str, series_name: str, key: str, default: Any = None
+) -> Any:
+    """Returns the per-series preference *key* for the given series.
+
+    Falls back to *default* when the series row or the column value is missing.
+    """
+    col = _SERIES_PREF_COLUMNS.get(key)
+    if col is None:
+        logger.warning(f"Unknown series preference key: '{key}'")
+        return default
+    try:
+        with get_session() as session:
+            series = session.scalars(
+                select(Series).where(
+                    Series.library_name == library_name,
+                    Series.name == series_name,
+                )
+            ).first()
+            if series is None:
+                return default
+            value = getattr(series, col, None)
+            return default if value is None else value
+    except Exception:
+        logger.exception(
+            f"Error reading series pref '{key}' for '{library_name}:{series_name}'"
+        )
+        return default
+
+
+def set_series_pref(library_name: str, series_name: str, key: str, value: Any) -> None:
+    """Persists the per-series preference *key* = *value* for the given series."""
+    col = _SERIES_PREF_COLUMNS.get(key)
+    if col is None:
+        logger.warning(f"Unknown series preference key: '{key}'")
+        return
+    try:
+        with get_session() as session:
+            series = session.scalars(
+                select(Series).where(
+                    Series.library_name == library_name,
+                    Series.name == series_name,
+                )
+            ).first()
+            if series is None:
+                logger.warning(
+                    f"set_series_pref: series '{library_name}:{series_name}' not found"
+                )
+                return
+            setattr(series, col, value)
+    except Exception:
+        logger.exception(
+            f"Error writing series pref '{key}' for '{library_name}:{series_name}'"
+        )

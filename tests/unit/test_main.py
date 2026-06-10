@@ -330,6 +330,7 @@ def test_main_playback_requested_external() -> None:
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("lan_streamer.main.play_video", MagicMock()) as mock_external_play,
+        patch.object(config, "load_from_db", MagicMock()),
     ):
         main.main()
         mock_controller_instance = mock_controller_class.return_value
@@ -366,6 +367,7 @@ def test_main_playback_requested_external_exception() -> None:
             side_effect=Exception("External player launch fault"),
         ) as mock_external_play,
         patch("lan_streamer.main.logger") as mock_logger,
+        patch.object(config, "load_from_db", MagicMock()),
     ):
         main.main()
         mock_controller_instance = mock_controller_class.return_value
@@ -519,6 +521,7 @@ def test_main_more_signal_routings() -> None:
         patch(
             "lan_streamer.main.SeriesDetailsDialog", MagicMock()
         ) as mock_series_detail_dialog,
+        patch.object(config, "load_from_db", MagicMock()),
     ):
         main.main()
         mock_controller_instance = mock_controller_class.return_value

@@ -491,7 +491,7 @@ class VideoPlayerWidget(QWidget):
             logger.info(f"Setting audio output device to: {device_id}")
             self.mediaplayer.audio_output_device_set(None, device_id)
             config.preferred_audio_device = device_id
-            config.save()
+            config.save_to_db()
             self._show_osd("Audio Output Changed")
 
     def _select_audio_track_from_menu(self, index: int) -> None:

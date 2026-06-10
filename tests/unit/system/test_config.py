@@ -34,61 +34,63 @@ def test_config_load_existing(mock_config_file) -> None:
     with open(mock_config_file, "w") as f:
         json.dump(
             {
-                "libraries": {"TestLib": ["/path/to/test"]},
-                "jellyfin_url": "http://test",
-                "jellyfin_api_key": "test_key",
-                "tmdb_api_key": "tmdb_key",
-                "sync_history_on_start": False,
-                "filter_out_watched": True,
-                "sort_mode": "Date Added (Newest)",
-                "max_cache_size_gb": 20.5,
-                "vlc_buffer_ms": 7500,
+                "database_path": "/path/to/db.db",
+                "log_directory": "/path/to/logs",
+                "log_level": "DEBUG",
+                "config_backup_frequency": 3,
+                "database_backup_frequency": 5,
             },
             f,
         )
 
     config = Config()
-    assert config.libraries == {
+    assert config.database_path == "/path/to/db.db"
+    assert config.log_directory == "/path/to/logs"
+    assert config.log_level == "DEBUG"
+    assert config.config_backup_frequency == 3
+    assert config.database_backup_frequency == 5
+
+    # DB-backed settings
+    config.libraries = {
         "TestLib": {
             "type": "tv",
             "paths": ["/path/to/test"],
             "show_future_episodes": True,
         }
     }
-    assert config.jellyfin_url == "http://test"
-    assert config.jellyfin_api_key == "test_key"
-    assert config.tmdb_api_key == "tmdb_key"
-    assert config.sync_history_on_start is False
-    assert config.filter_out_watched is True
-    assert config.sort_mode == "Date Added (Newest)"
-    assert config.max_cache_size_gb == 20.5
-    assert config.vlc_buffer_ms == 7500
+    config.jellyfin_url = "http://test"
+    config.jellyfin_api_key = "test_key"
+    config.tmdb_api_key = "tmdb_key"
+    config.sync_history_on_start = False
+    config.filter_out_watched = True
+    config.sort_mode = "Date Added (Newest)"
+    config.max_cache_size_gb = 20.5
+    config.vlc_buffer_ms = 7500
 
+    config.save_to_db()
 
-def test_config_migrate_old_format(mock_config_file) -> None:
-    mock_config_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(mock_config_file, "w") as f:
-        json.dump({"root_dirs": ["/old/path"]}, f)
-
-    config = Config()
-    assert config.libraries == {
-        "Default": {"type": "tv", "paths": ["/old/path"], "show_future_episodes": True}
+    config2 = Config()
+    config2.load_from_db()
+    assert config2.libraries == {
+        "TestLib": {
+            "type": "tv",
+            "paths": ["/path/to/test"],
+            "show_future_episodes": True,
+        }
     }
-    assert config.jellyfin_url == ""
-
-
-def test_config_backwards_compat_tvdb_api_key(mock_config_file) -> None:
-    """Old config files using tvdb_api_key should migrate to tmdb_api_key."""
-    mock_config_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(mock_config_file, "w") as f:
-        json.dump({"tvdb_api_key": "old_tvdb_key"}, f)
-
-    config = Config()
-    assert config.tmdb_api_key == "old_tvdb_key"
+    assert config2.jellyfin_url == "http://test"
+    assert config2.jellyfin_api_key == "test_key"
+    assert config2.tmdb_api_key == "tmdb_key"
+    assert config2.sync_history_on_start is False
+    assert config2.filter_out_watched is True
+    assert config2.sort_mode == "Date Added (Newest)"
+    assert config2.max_cache_size_gb == 20.5
+    assert config2.vlc_buffer_ms == 7500
 
 
 def test_config_add_remove_library(mock_config_file) -> None:
     config = Config()
+    config.libraries = {}
     config.add_library("NewLib")
     assert "NewLib" in config.libraries
 
@@ -135,38 +137,28 @@ def test_config_load_no_keys(mock_config_file) -> None:
 
 def test_config_max_log_retention(mock_config_file) -> None:
     config = Config()
+    config.load_from_db()
     assert config.max_log_retention_days == 7
 
     config.max_log_retention_days = 30
-    config.save()
+    config.save_to_db()
 
     loaded = Config()
+    loaded.load_from_db()
     assert loaded.max_log_retention_days == 30
 
 
 def test_config_divide_logs_by_service(mock_config_file) -> None:
     config = Config()
+    config.load_from_db()
     assert config.divide_logs_by_service is False
 
-    # Test load legacy enable_global_file_logging: true -> divide_logs_by_service: False
-    with open(mock_config_file, "w") as f:
-        json.dump({"enable_global_file_logging": True}, f)
-    loaded1 = Config()
-    assert loaded1.divide_logs_by_service is False
+    config.divide_logs_by_service = True
+    config.save_to_db()
 
-    # Test load legacy enable_global_file_logging: false -> divide_logs_by_service: True
-    with open(mock_config_file, "w") as f:
-        json.dump({"enable_global_file_logging": False}, f)
-    loaded2 = Config()
-    assert loaded2.divide_logs_by_service is True
-
-    # Test native divide_logs_by_service takes precedence
-    with open(mock_config_file, "w") as f:
-        json.dump(
-            {"divide_logs_by_service": True, "enable_global_file_logging": True}, f
-        )
-    loaded3 = Config()
-    assert loaded3.divide_logs_by_service is True
+    loaded = Config()
+    loaded.load_from_db()
+    assert loaded.divide_logs_by_service is True
 
 
 def test_config_backup_settings(mock_config_file) -> None:
@@ -177,8 +169,10 @@ def test_config_backup_settings(mock_config_file) -> None:
     config.config_backup_retention = 10
     config.database_backup_retention = 14
     config.save()
+    config.save_to_db()
 
     loaded = Config()
+    loaded.load_from_db()
     assert loaded.backup_directory == "/custom/backups"
     assert loaded.config_backup_frequency == 3
     assert loaded.database_backup_frequency == 5
@@ -187,9 +181,14 @@ def test_config_backup_settings(mock_config_file) -> None:
 
 
 def test_config_series_preferences(mock_config_file) -> None:
-    config = Config()
-    assert config.series_preferences == {}
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import Series
 
+    with get_session() as session:
+        series = Series(library_name="TV", name="Breaking Bad")
+        session.add(series)
+
+    config = Config()
     config.set_series_preference("TV", "Breaking Bad", "hide_missing_future", True)
     assert (
         config.get_series_preference("TV", "Breaking Bad", "hide_missing_future")
@@ -198,10 +197,4 @@ def test_config_series_preferences(mock_config_file) -> None:
     assert (
         config.get_series_preference("TV", "Breaking Bad", "nonexistent", "default_val")
         == "default_val"
-    )
-
-    loaded = Config()
-    assert (
-        loaded.get_series_preference("TV", "Breaking Bad", "hide_missing_future")
-        is True
     )

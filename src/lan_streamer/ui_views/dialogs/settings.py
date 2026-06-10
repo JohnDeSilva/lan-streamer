@@ -1407,7 +1407,8 @@ class SettingsDialog(QDialog):
         config.libraries = self.staged_libraries
         config.enable_combined_view = self.enable_combined_view_checkbox.isChecked()
         config.combined_views = self.staged_combined_views
-        config.save()
+        config.save()  # Persist startup-critical keys to config file
+        config.save_to_db()  # Persist all DB-backed keys to database
         from lan_streamer.system.logging_handler import set_application_log_level
 
         set_application_log_level(config.log_level)
@@ -1428,7 +1429,7 @@ class SettingsDialog(QDialog):
 
         config.myanimelist_client_id = client_id
         config.myanimelist_client_secret = client_secret
-        config.save()
+        config.save_to_db()
 
         import secrets
         import string

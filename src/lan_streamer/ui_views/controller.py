@@ -183,7 +183,7 @@ class Controller(QObject):
             logger.info(f"Sort mode changed from '{self.sort_mode}' to '{mode}'")
             self.sort_mode = mode
             config.sort_mode = mode
-            config.save()
+            config.save_to_db()
             self.library_loaded.emit()
 
     def set_sort_descending(self, descending: bool) -> None:
@@ -193,14 +193,14 @@ class Controller(QObject):
             )
             self.sort_descending = descending
             config.sort_descending = descending
-            config.save()
+            config.save_to_db()
             self.library_loaded.emit()
 
     def set_filter_out_watched(self, enabled: bool) -> None:
         if self.filter_out_watched != enabled:
             self.filter_out_watched = enabled
             config.filter_out_watched = enabled
-            config.save()
+            config.save_to_db()
             self.library_loaded.emit()
 
     def mark_episode_watched(self, absolute_path: str, watched: bool) -> None:

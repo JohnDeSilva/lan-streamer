@@ -221,6 +221,8 @@ def test_config_path_expansion(tmp_path, monkeypatch) -> None:
     config_module = sys.modules["lan_streamer.system.config"]
     monkeypatch.setattr(config_module, "CONFIG_FILE", temp_config_file)
     cfg = Config()
+    cfg.cache_directory = "~/cache"
+    cfg.backup_directory = "~/backups"
 
     expected_db = str(fake_home / "library.db")
     expected_log = str(fake_home / "logs")

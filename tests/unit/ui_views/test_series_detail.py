@@ -48,8 +48,14 @@ def test_series_detail_view_hide_missing_future(qtbot: Any) -> None:
         }
     }
 
-    # Force clear config preferences to start fresh
-    config.series_preferences = {}
+    # Setup database series row to store preferences
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import Series
+
+    with get_session() as session:
+        session.query(Series).delete()
+        series = Series(library_name="TV", name="Breaking Bad")
+        session.add(series)
 
     view = SeriesDetailView(controller)
     qtbot.addWidget(view)
@@ -157,8 +163,14 @@ def test_series_detail_view_alternate_display_groups(qtbot: Any) -> None:
         }
     }
 
-    # Force clear config preferences to start fresh
-    config.series_preferences = {}
+    # Setup database series row to store preferences
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import Series
+
+    with get_session() as session:
+        session.query(Series).delete()
+        series = Series(library_name="TV", name="Breaking Bad")
+        session.add(series)
 
     # Mock tmdb_client calls
     mock_groups = [

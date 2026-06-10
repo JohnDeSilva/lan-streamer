@@ -109,7 +109,7 @@ class MyAnimeListClient:
             config.myanimelist_refresh_token = token_data.get("refresh_token", "")
             expires_in = token_data.get("expires_in", 2419200)  # Default 28 days
             config.myanimelist_token_expires_at = time.time() + expires_in
-            config.save()
+            config.save_to_db()
 
             logger.info("Successfully authenticated with MyAnimeList.")
             return True, "Authentication successful!"
@@ -144,7 +144,7 @@ class MyAnimeListClient:
             config.myanimelist_refresh_token = token_data.get("refresh_token", "")
             expires_in = token_data.get("expires_in", 2419200)
             config.myanimelist_token_expires_at = time.time() + expires_in
-            config.save()
+            config.save_to_db()
 
             logger.info("Successfully refreshed MyAnimeList access token.")
             return True
@@ -157,7 +157,7 @@ class MyAnimeListClient:
         config.myanimelist_access_token = ""
         config.myanimelist_refresh_token = ""
         config.myanimelist_token_expires_at = 0.0
-        config.save()
+        config.save_to_db()
         logger.info("Removed MyAnimeList connection credentials.")
 
     def search_anime(self, query: str) -> List[Dict[str, Any]]:
