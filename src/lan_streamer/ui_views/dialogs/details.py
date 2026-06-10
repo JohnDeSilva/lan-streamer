@@ -754,14 +754,14 @@ class SeriesDetailsDialog(QDialog):
         # Tab widget
         self.tab_widget = QTabWidget(self)
 
-        # Settings tab widget
-        settings_tab = QWidget()
-        settings_layout = QVBoxLayout(settings_tab)
-        settings_layout.setSpacing(15)
+        # Series Info tab widget
+        info_tab = QWidget()
+        info_layout = QVBoxLayout(info_tab)
+        info_layout.setSpacing(15)
 
-        form = QFormLayout()
+        info_form = QFormLayout()
         self.name_edit = QLineEdit(self.series_name)
-        form.addRow("Series Name:", self.name_edit)
+        info_form.addRow("Series Name:", self.name_edit)
 
         # Paths
         paths = set()
@@ -777,7 +777,7 @@ class SeriesDetailsDialog(QDialog):
 
         paths_label = QLabel("\n".join(sorted(list(paths))))
         paths_label.setWordWrap(True)
-        form.addRow("Series Path(s):", paths_label)
+        info_form.addRow("Series Path(s):", paths_label)
 
         # Jellyfin Status
         metadata = self.series_record.get("metadata", {})
@@ -793,21 +793,7 @@ class SeriesDetailsDialog(QDialog):
                 self.jellyfin_status_label.setStyleSheet("color: #e53935;")
         else:
             self.jellyfin_status_label.setVisible(False)
-        form.addRow("Sync Status:", self.jellyfin_status_label)
-
-        self.locked_checkbox = QCheckBox(
-            "Lock Metadata (Prevents automatic updates during scans)"
-        )
-        self.locked_checkbox.setFont(QFont("Inter", 11, QFont.Weight.Bold))
-        self.locked_checkbox.setStyleSheet("color: #ff9800;")
-        library_config = config.libraries.get(self.controller.current_library_name, {})
-        is_movie = library_config.get("type", "tv") == "movie"
-        if is_movie:
-            is_locked = bool(self.series_record.get("locked_metadata", False))
-        else:
-            is_locked = bool(metadata.get("locked_metadata", False))
-        self.locked_checkbox.setChecked(is_locked)
-        form.addRow("Metadata Lock:", self.locked_checkbox)
+        info_form.addRow("Sync Status:", self.jellyfin_status_label)
 
         self.hide_missing_checkbox = QCheckBox("Hide missing/future episodes")
         self.hide_missing_checkbox.setObjectName("hideMissingCheckbox")
@@ -820,51 +806,78 @@ class SeriesDetailsDialog(QDialog):
         )
         self.hide_missing_checkbox.setChecked(hide_missing_val)
         self.hide_missing_checkbox.stateChanged.connect(self._on_hide_missing_changed)
-        form.addRow("Episode View:", self.hide_missing_checkbox)
+        info_form.addRow("Episode View:", self.hide_missing_checkbox)
 
-        settings_layout.addLayout(form)
+        info_layout.addLayout(info_form)
 
-        # Buttons
+        # Buttons on Info Tab
+        mark_watched_btn = QPushButton("Mark Series as Watched")
+        mark_watched_btn.clicked.connect(self._on_mark_watched_clicked)
+        info_layout.addWidget(mark_watched_btn)
+
+        delete_series_btn = QPushButton("Delete Series...")
+        delete_series_btn.setObjectName("dangerButton")
+        delete_series_btn.clicked.connect(self._on_delete_series_clicked)
+        info_layout.addWidget(delete_series_btn)
+
+        info_layout.addStretch()
+
+        self.tab_widget.addTab(info_tab, "Series Info")
+
+        # Series Metadata tab widget
+        metadata_tab = QWidget()
+        metadata_layout = QVBoxLayout(metadata_tab)
+        metadata_layout.setSpacing(15)
+
+        metadata_form = QFormLayout()
+        self.locked_checkbox = QCheckBox(
+            "Lock Metadata (Prevents automatic updates during scans)"
+        )
+        self.locked_checkbox.setFont(QFont("Inter", 11, QFont.Weight.Bold))
+        self.locked_checkbox.setStyleSheet("color: #ff9800;")
+        library_config = config.libraries.get(self.controller.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+        if is_movie:
+            is_locked = bool(self.series_record.get("locked_metadata", False))
+        else:
+            is_locked = bool(metadata.get("locked_metadata", False))
+        self.locked_checkbox.setChecked(is_locked)
+        metadata_form.addRow("Metadata Lock:", self.locked_checkbox)
+
+        metadata_layout.addLayout(metadata_form)
+
+        # Buttons on Metadata Tab
         match_meta_btn = QPushButton("Match Series Metadata...")
         match_meta_btn.clicked.connect(self._on_match_meta_clicked)
-        settings_layout.addWidget(match_meta_btn)
+        metadata_layout.addWidget(match_meta_btn)
 
         refresh_btn = QPushButton("Refresh Series Metadata")
         refresh_btn.clicked.connect(self._on_refresh_clicked)
-        settings_layout.addWidget(refresh_btn)
+        metadata_layout.addWidget(refresh_btn)
 
         match_jellyfin_btn = QPushButton("Match Jellyfin Watch History...")
         match_jellyfin_btn.clicked.connect(self._on_match_jellyfin_clicked)
         if not jellyfin_client.is_configured():
             match_jellyfin_btn.setEnabled(False)
-        settings_layout.addWidget(match_jellyfin_btn)
+        metadata_layout.addWidget(match_jellyfin_btn)
 
         rename_btn = QPushButton("Rename Files...")
         rename_btn.clicked.connect(self._on_rename_clicked)
-        settings_layout.addWidget(rename_btn)
+        metadata_layout.addWidget(rename_btn)
 
         embed_btn = QPushButton("Embed Metadata into All Video Files")
         embed_btn.setObjectName("accentButton")
         embed_btn.clicked.connect(self._on_embed_clicked)
-        settings_layout.addWidget(embed_btn)
+        metadata_layout.addWidget(embed_btn)
 
-        mark_watched_btn = QPushButton("Mark Series as Watched")
-        mark_watched_btn.clicked.connect(self._on_mark_watched_clicked)
-        settings_layout.addWidget(mark_watched_btn)
+        metadata_layout.addStretch()
 
-        delete_series_btn = QPushButton("Delete Series...")
-        delete_series_btn.setObjectName("dangerButton")
-        delete_series_btn.clicked.connect(self._on_delete_series_clicked)
-        settings_layout.addWidget(delete_series_btn)
-
-        settings_layout.addStretch()
-
-        self.tab_widget.addTab(settings_tab, "General Settings")
+        self.tab_widget.addTab(metadata_tab, "Series Metadata")
 
         # Mapper tab widget
         self.mapper_widget = QWidget()
         self._setup_mapper_ui()
-        self.tab_widget.addTab(self.mapper_widget, "Manual Episode Mapper")
+        self.tab_widget.addTab(self.mapper_widget, "Manual Metadata Mapper")
 
         # MyAnimeList tab (only for anime libraries)
         library_config = config.libraries.get(self.controller.current_library_name, {})

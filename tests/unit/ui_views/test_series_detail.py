@@ -343,9 +343,11 @@ def test_series_details_dialog_manual_mapper(qtbot: Any) -> None:
         dialog = SeriesDetailsDialog("Breaking Bad", controller)
         qtbot.addWidget(dialog)
 
-        # Tab widget should have 2 tabs: "General Settings", "Manual Episode Mapper"
-        assert dialog.tab_widget.count() == 2
-        assert dialog.tab_widget.tabText(1) == "Manual Episode Mapper"
+        # Tab widget should have 3 tabs: "Series Info", "Series Metadata", "Manual Metadata Mapper"
+        assert dialog.tab_widget.count() == 3
+        assert dialog.tab_widget.tabText(0) == "Series Info"
+        assert dialog.tab_widget.tabText(1) == "Series Metadata"
+        assert dialog.tab_widget.tabText(2) == "Manual Metadata Mapper"
 
         # Check groups combo
         assert dialog.group_combo.count() == 3
