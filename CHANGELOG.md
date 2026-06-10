@@ -1,3 +1,14 @@
+## v0.27.0 (2026-06-09)
+
+### Feat
+
+- Implement automatic updates feature
+- add audio output device selection menu and persistent configuration with Linux PulseAudio support
+
+### Fix
+
+- **dev-dependency**: bump ruff from 0.15.15 to 0.15.16
+
 ## v0.26.0 (2026-06-08)
 
 ### Feat
