@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QFrame,
     QTabBar,
+    QDialog,
 )
 from PySide6.QtCore import Qt, Slot, QSize
 from PySide6.QtGui import QIcon, QColor
@@ -298,9 +299,45 @@ class LibraryGridView(QWidget):
 
     @Slot()
     def open_settings_dialog(self) -> None:
+        config.load()
+        old_library_paths = {
+            lib_name: list(lib_info.get("paths", []))
+            for lib_name, lib_info in config.libraries.items()
+        }
         dialog_instance = SettingsDialog(self.controller, self)
-        dialog_instance.exec()
-        self.populate_libraries(list(config.libraries.keys()))
+        if dialog_instance.exec() == QDialog.DialogCode.Accepted:
+            new_library_paths = {
+                lib_name: list(lib_info.get("paths", []))
+                for lib_name, lib_info in config.libraries.items()
+            }
+            new_paths_added = False
+            current_library_paths_added = False
+            current_library = self.controller.current_library_name
+
+            for lib_name, new_paths in new_library_paths.items():
+                old_paths = old_library_paths.get(lib_name, [])
+                added_for_this_lib = any(path not in old_paths for path in new_paths)
+                if added_for_this_lib:
+                    new_paths_added = True
+                    if lib_name == current_library:
+                        current_library_paths_added = True
+
+            self.populate_libraries(list(config.libraries.keys()))
+
+            if new_paths_added:
+                if current_library_paths_added and current_library != "Combined View":
+                    logger.info(
+                        f"New path added to current library '{current_library}'. Triggering auto-scan..."
+                    )
+                    self.controller.trigger_scan_and_update(False)
+                else:
+                    logger.info(
+                        "New path added to a library. Triggering scan all libraries..."
+                    )
+                    self.controller.trigger_scan_all(False)
+        else:
+            config.load()
+            self.populate_libraries(list(config.libraries.keys()))
 
     @Slot(str)
     def on_library_changed(self, library_name: str) -> None:

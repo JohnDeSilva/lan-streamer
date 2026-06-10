@@ -414,3 +414,121 @@ def test_series_details_dialog_manual_mapper(qtbot: Any) -> None:
 
         mock_save.assert_called_once()
         mock_info.assert_called_once()
+
+
+def test_series_details_dialog_anime_mal_status(qtbot: Any) -> None:
+    from lan_streamer.ui_views.proxy import QMessageBox
+
+    controller = Controller()
+    controller.current_library_name = "Anime"
+    controller.cached_library_data = {
+        "Frieren": {
+            "metadata": {
+                "tmdb_identifier": "209867",
+                "tmdb_name": "Frieren",
+            },
+            "seasons": {
+                "Season 1": {
+                    "metadata": {
+                        "myanimelist_id": 52991,
+                    },
+                    "episodes": [
+                        {
+                            "name": "01 - Journey's End",
+                            "path": "/anime/Frieren/S01E01.mkv",
+                            "watched": True,
+                            "air_date": "2023-09-29",
+                            "runtime": 24,
+                            "tmdb_episode_identifier": "123",
+                            "tmdb_number": 1,
+                        }
+                    ],
+                },
+                "Season 2": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "01 - Season 2 Episode 1",
+                            "path": "/anime/Frieren/S02E01.mkv",
+                            "watched": False,
+                            "air_date": "2025-01-01",
+                            "runtime": 24,
+                            "tmdb_episode_identifier": "456",
+                            "tmdb_number": 1,
+                        }
+                    ],
+                },
+            },
+        }
+    }
+
+    # Setup the library config as anime type
+    config.libraries = {"Anime": {"type": "anime", "paths": ["/anime"]}}
+
+    with (
+        patch(
+            "lan_streamer.ui_views.dialogs.details.myanimelist_client"
+        ) as mock_mal_client,
+        patch("lan_streamer.ui_views.dialogs.details.db.save_library") as mock_save,
+        patch(
+            "lan_streamer.ui_views.dialogs.details.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch(
+            "lan_streamer.ui_views.dialogs.details.QMessageBox.information"
+        ) as mock_info,
+    ):
+        mock_mal_client.is_configured.return_value = True
+        mock_mal_client.get_anime_details.return_value = {
+            "id": 52991,
+            "title": "Sousou no Frieren",
+            "num_episodes": 28,
+        }
+
+        dialog = SeriesDetailsDialog("Frieren", controller)
+        qtbot.addWidget(dialog)
+
+        # 1. Verify that the MAL status labels are created in the Series Info tab
+        assert hasattr(dialog, "mal_status_labels")
+        assert "Season 1" in dialog.mal_status_labels
+        assert "Season 2" in dialog.mal_status_labels
+
+        assert "Mapped (MAL ID: 52991)" in dialog.mal_status_labels["Season 1"].text()
+        assert dialog.mal_status_labels["Season 2"].text() == "Not Mapped"
+
+        # 2. Simulate mapping Season 2 via the MyAnimeList mapper
+        # First, set the combo box to Season 2
+        season_idx = dialog.mal_season_combo.findText("Season 2")
+        dialog.mal_season_combo.setCurrentIndex(season_idx)
+
+        # Mock search results for mapping
+        mock_mal_client.search_anime.return_value = [
+            {"id": 99999, "title": "Frieren Season 2", "start_date": "2025-01-01"}
+        ]
+        dialog.mal_search_input.setText("Frieren Season 2")
+        dialog._on_mal_search_clicked()
+
+        # Check results are populated in combo
+        assert dialog.mal_search_results_combo.count() == 2
+        # Set to the searched result (index 1)
+        mock_mal_client.get_anime_details.return_value = {
+            "id": 99999,
+            "title": "Frieren Season 2",
+            "num_episodes": 12,
+        }
+        dialog.mal_search_results_combo.setCurrentIndex(1)
+
+        # Apply mapping
+        dialog.mal_apply_btn.click()
+
+        # Check that it updated the season 2 status label in Series Info tab
+        assert "Mapped (MAL ID: 99999)" in dialog.mal_status_labels["Season 2"].text()
+
+        # Check cache updates
+        season_2_meta = controller.cached_library_data["Frieren"]["seasons"][
+            "Season 2"
+        ]["metadata"]
+        assert season_2_meta.get("myanimelist_id") == 99999
+
+        mock_save.assert_called_once()
+        mock_info.assert_called_once()
