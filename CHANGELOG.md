@@ -1,3 +1,14 @@
+## v0.27.2 (2026-06-11)
+
+### Fix
+
+- **config**: Implement database backup before migrations and update backup frequency defaults
+- **config**: Enhance configuration handling with new app config methods and default seeding
+
+### Refactor
+
+- **db**: replaces primary key for tables with UUID stored as BLOB
+
 ## v0.27.1 (2026-06-10)
 
 ### Fix
