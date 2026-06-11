@@ -31,14 +31,38 @@ class RuntimeExtractionWorker(QThread):
 
             items_list: List[Dict[str, Any]] = db.get_items_missing_runtime()
             total_count: int = len(items_list)
+            logger.info(
+                f"Found {total_count} items missing runtime metadata in database"
+            )
             completed_count: int = 0
             updated_count: int = 0
 
             for item_dictionary in items_list:
                 file_path: str = item_dictionary["path"]
+                logger.info(
+                    f"Looking at file [{completed_count + 1}/{total_count}]: {file_path} (Type: {item_dictionary['type']})"
+                )
+
                 info = get_detailed_file_info(file_path)
-                extracted_runtime = info.get("runtime", 0)
-                if extracted_runtime > 0:
+                extracted_runtime = info.get("runtime")
+                runtime_val = extracted_runtime if extracted_runtime is not None else 0
+
+                logger.info(
+                    f"Extraction results for {file_path}: runtime={extracted_runtime} mins, "
+                    f"codec={info.get('video_codec')}, resolution={info.get('resolution')}, "
+                    f"bit_rate={info.get('bit_rate')}"
+                )
+
+                has_tech_info = (
+                    (info.get("video_codec") and info.get("video_codec") != "Unknown")
+                    or (info.get("resolution") and info.get("resolution") != "Unknown")
+                    or ((info.get("bit_rate") or 0) > 0)
+                )
+
+                if runtime_val > 0 or has_tech_info:
+                    logger.info(
+                        f"Updating database for {file_path} with extracted runtime and technical info"
+                    )
                     db.update_item_runtime(
                         item_identifier=item_dictionary["id"],
                         item_type=item_dictionary["type"],
@@ -50,12 +74,16 @@ class RuntimeExtractionWorker(QThread):
                         bit_rate=info.get("bit_rate"),
                     )
                     updated_count += 1
+                else:
+                    logger.warning(
+                        f"Bypassing database update for {file_path}: no valid runtime or technical metadata extracted"
+                    )
 
                 completed_count += 1
                 self.progress_updated.emit(completed_count, total_count)
 
             logger.info(
-                f"RuntimeExtractionWorker finished, updated {updated_count} items"
+                f"RuntimeExtractionWorker finished, updated {updated_count} of {total_count} items"
             )
             self.finished.emit(updated_count)
         except Exception as exception_instance:

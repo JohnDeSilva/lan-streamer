@@ -14,6 +14,7 @@ from lan_streamer.db.models import (
     AppConfig,
     AppSecret,
     SecretType,
+    MediaFile,
 )
 
 
@@ -71,6 +72,7 @@ def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
                 "bit_rate": mf.bit_rate or 0,
                 "audio_tracks": audio,
                 "subtitle_tracks": subs,
+                "runtime": mf.runtime,
             }
         )
 
@@ -87,6 +89,7 @@ def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
         "date_added": episode.date_added or 0,
         "air_date": episode.air_date or "",
         "runtime": episode.runtime or 0,
+        "file_runtime": episode.file_runtime or 0,
         "last_played_at": episode.last_played_at or 0,
         "video_codec": episode.video_codec or "",
         "resolution": episode.resolution or "",
@@ -166,6 +169,7 @@ def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
                 "bit_rate": mf.bit_rate or 0,
                 "audio_tracks": audio,
                 "subtitle_tracks": subs,
+                "runtime": mf.runtime,
             }
         )
 
@@ -181,6 +185,7 @@ def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
         "date_added": movie.date_added or 0,
         "myanimelist_anime_id": movie.myanimelist_anime_id,
         "runtime": movie.runtime or 0,
+        "file_runtime": movie.file_runtime or 0,
         "rating": movie.rating or "",
         "genre": movie.genre or "",
         "year": movie.year or 0,
@@ -430,15 +435,28 @@ def update_series_watched_status(
 
 
 def get_items_missing_runtime() -> List[Dict[str, Any]]:
-    """Retrieves all episodes and movies whose runtime is 0 or missing."""
+    """Retrieves all episodes and movies whose runtime is 0/missing or whose technical metadata (codec, bit rate, resolution) is missing."""
 
     items_list: List[Dict[str, Any]] = []
     try:
         with get_session() as session:
             episodes = session.scalars(
-                select(Episode).where(
-                    (Episode.runtime == 0) | (Episode.runtime.is_(None))
+                select(Episode)
+                .outerjoin(Episode.media_files)
+                .where(
+                    (MediaFile.id.is_(None))
+                    | (MediaFile.runtime.is_(None))
+                    | (MediaFile.runtime == 0)
+                    | (MediaFile.video_codec.is_(None))
+                    | (MediaFile.video_codec == "Unknown")
+                    | (MediaFile.video_codec == "")
+                    | (MediaFile.resolution.is_(None))
+                    | (MediaFile.resolution == "Unknown")
+                    | (MediaFile.resolution == "")
+                    | (MediaFile.bit_rate.is_(None))
+                    | (MediaFile.bit_rate <= 0)
                 )
+                .distinct()
             ).all()
             for episode in episodes:
                 if episode.path:
@@ -447,7 +465,22 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
                     )
 
             movies = session.scalars(
-                select(Movie).where((Movie.runtime == 0) | (Movie.runtime.is_(None)))
+                select(Movie)
+                .outerjoin(Movie.media_files)
+                .where(
+                    (MediaFile.id.is_(None))
+                    | (MediaFile.runtime.is_(None))
+                    | (MediaFile.runtime == 0)
+                    | (MediaFile.video_codec.is_(None))
+                    | (MediaFile.video_codec == "Unknown")
+                    | (MediaFile.video_codec == "")
+                    | (MediaFile.resolution.is_(None))
+                    | (MediaFile.resolution == "Unknown")
+                    | (MediaFile.resolution == "")
+                    | (MediaFile.bit_rate.is_(None))
+                    | (MediaFile.bit_rate <= 0)
+                )
+                .distinct()
             ).all()
             for movie in movies:
                 if movie.path:
@@ -462,7 +495,7 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
 def update_item_runtime(
     item_identifier: bytes | str,
     item_type: str,
-    runtime_minutes: int,
+    runtime_minutes: Optional[int],
     video_codec: Optional[str] = None,
     resolution: Optional[str] = None,
     audio_tracks: Optional[List[Dict[str, Any]]] = None,
@@ -478,7 +511,10 @@ def update_item_runtime(
                     select(Episode).where(Episode.id == item_identifier)
                 ).first()
                 if episode:
-                    episode.runtime = runtime_minutes
+                    if runtime_minutes is not None and (
+                        runtime_minutes > 0 or not episode.file_runtime
+                    ):
+                        episode.file_runtime = runtime_minutes
                     if video_codec:
                         episode.video_codec = video_codec
                     if resolution:
@@ -494,7 +530,10 @@ def update_item_runtime(
                     select(Movie).where(Movie.id == item_identifier)
                 ).first()
                 if movie:
-                    movie.runtime = runtime_minutes
+                    if runtime_minutes is not None and (
+                        runtime_minutes > 0 or not movie.file_runtime
+                    ):
+                        movie.file_runtime = runtime_minutes
                     if video_codec:
                         movie.video_codec = video_codec
                     if resolution:

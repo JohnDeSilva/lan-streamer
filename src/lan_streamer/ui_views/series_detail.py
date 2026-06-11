@@ -530,7 +530,11 @@ class SeriesDetailView(QWidget):
                 absolute_path: str = episode_record.get("path") or ""
                 is_watched: bool = bool(episode_record.get("watched", False))
                 air_date_string: str = episode_record.get("air_date") or ""
-                runtime_value: int = episode_record.get("runtime", 0)
+                runtime_value: int = (
+                    episode_record.get("file_runtime")
+                    or episode_record.get("runtime")
+                    or 0
+                )
                 runtime_string: str = f"{runtime_value} min" if runtime_value else ""
 
                 # Determine styling and icons based on state

@@ -33,9 +33,9 @@ def test_runtime_extraction_worker_execution() -> None:
                 "subtitle_tracks": [],
             },
             {
-                "runtime": 0,
-                "video_codec": "h264",
-                "resolution": "1920x1080",
+                "runtime": None,
+                "video_codec": None,
+                "resolution": None,
                 "audio_tracks": [],
                 "subtitle_tracks": [],
             },

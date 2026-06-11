@@ -1293,8 +1293,8 @@ def test_extract_video_runtime_failure(tmp_path) -> None:
     from lan_streamer.scanner import _extract_video_runtime
 
     # Test nonexistent file
-    assert _extract_video_runtime("") == 0
-    assert _extract_video_runtime("/nonexistent/file.mkv") == 0
+    assert _extract_video_runtime("") is None
+    assert _extract_video_runtime("/nonexistent/file.mkv") is None
 
     video_file = tmp_path / "fail_video.mkv"
     video_file.touch()
@@ -1307,7 +1307,7 @@ def test_extract_video_runtime_failure(tmp_path) -> None:
             {"vlc": MagicMock(Instance=MagicMock(side_effect=Exception("vlc error")))},
         ),
     ):
-        assert _extract_video_runtime(str(video_file.absolute())) == 0
+        assert _extract_video_runtime(str(video_file.absolute())) is None
 
 
 def test_get_ffprobe_command_path_resolved() -> None:
@@ -1835,14 +1835,14 @@ def test_resolve_episode_jellyfin_id_series_id_map_sxxexx() -> None:
 
 
 def test_get_detailed_file_info_missing_path() -> None:
-    """Missing or empty path should return a zero-filled info dict."""
+    """Missing or empty path should return a dict with None values."""
     info = scanner.get_detailed_file_info("")
-    assert info["size_bytes"] == 0
-    assert info["resolution"] == "Unknown"
+    assert info["size_bytes"] is None
+    assert info["resolution"] is None
     assert info["audio_tracks"] == []
 
     info2 = scanner.get_detailed_file_info("/nonexistent/file.mkv")
-    assert info2["size_bytes"] == 0
+    assert info2["size_bytes"] is None
 
 
 def test_get_detailed_file_info_ffprobe_success(tmp_path: Path) -> None:
@@ -1904,12 +1904,12 @@ def test_get_detailed_file_info_ffprobe_exception(tmp_path: Path) -> None:
     with patch("subprocess.run", side_effect=OSError("ffprobe not found")):
         info = scanner.get_detailed_file_info(str(video_file))
 
-    assert info["resolution"] == "Unknown"
+    assert info["resolution"] is None
     assert info["audio_tracks"] == []
 
 
 def test_get_detailed_file_info_ffprobe_nonzero_return(tmp_path: Path) -> None:
-    """Non-zero ffprobe returncode should leave resolution as Unknown."""
+    """Non-zero ffprobe returncode should leave resolution as None."""
 
     video_file = tmp_path / "bad.mkv"
     video_file.write_bytes(b"\x00" * 8)
@@ -1921,7 +1921,7 @@ def test_get_detailed_file_info_ffprobe_nonzero_return(tmp_path: Path) -> None:
     with patch("subprocess.run", return_value=mock_result):
         info = scanner.get_detailed_file_info(str(video_file))
 
-    assert info["resolution"] == "Unknown"
+    assert info["resolution"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -1930,11 +1930,11 @@ def test_get_detailed_file_info_ffprobe_nonzero_return(tmp_path: Path) -> None:
 
 
 def test_extract_video_runtime_missing_file() -> None:
-    """Empty path and non-existent path should return 0."""
+    """Empty path and non-existent path should return None."""
     from lan_streamer.scanner import _extract_video_runtime
 
-    assert _extract_video_runtime("") == 0
-    assert _extract_video_runtime("/nonexistent/video.mkv") == 0
+    assert _extract_video_runtime("") is None
+    assert _extract_video_runtime("/nonexistent/video.mkv") is None
 
 
 def test_extract_video_runtime_ffprobe_success_explicit_minutes(tmp_path: Path) -> None:
@@ -1982,7 +1982,7 @@ def test_extract_video_runtime_ffprobe_fails_vlc_fallback(tmp_path: Path) -> Non
 
 
 def test_extract_video_runtime_both_fail(tmp_path: Path) -> None:
-    """When both ffprobe and vlc fail, the function should return 0."""
+    """When both ffprobe and vlc fail, the function should return None."""
     from lan_streamer.scanner import _extract_video_runtime
 
     video_file = tmp_path / "video.mkv"
@@ -1994,7 +1994,7 @@ def test_extract_video_runtime_both_fail(tmp_path: Path) -> None:
     ):
         runtime = _extract_video_runtime(str(video_file))
 
-    assert runtime == 0
+    assert runtime is None
 
 
 def test_scanner_additional_coverage(tmp_path: Path) -> None:
@@ -2371,12 +2371,12 @@ def test_get_detailed_file_info_and_runtime_worker(tmp_path) -> None:
     # Verify that the database now has the runtime and technical metadata populated
     with db.get_session() as session:
         db_episode = session.get(db.Episode, episode_id)
-        assert db_episode.runtime == 60
+        assert db_episode.file_runtime == 60
         assert db_episode.video_codec == "hevc"
         assert db_episode.resolution == "3840x2160"
 
         db_movie = session.get(db.Movie, movie_id)
-        assert db_movie.runtime == 60
+        assert db_movie.file_runtime == 60
         assert db_movie.video_codec == "hevc"
         assert db_movie.resolution == "3840x2160"
 

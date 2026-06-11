@@ -287,6 +287,16 @@ class Episode(Base):
     def bit_rate(self, value: Optional[int]) -> None:
         self._get_or_create_media_file().bit_rate = value
 
+    @property
+    def file_runtime(self) -> Optional[int]:
+        if self.media_files:
+            return self.media_files[0].runtime
+        return None
+
+    @file_runtime.setter
+    def file_runtime(self, value: Optional[int]) -> None:
+        self._get_or_create_media_file().runtime = value
+
     __table_args__ = (
         UniqueConstraint("season_id", "name", name="uq_episodes_season_id_name"),
         Index("idx_episodes_jellyfin_id", "jellyfin_id"),
@@ -406,6 +416,16 @@ class Movie(Base):
     def bit_rate(self, value: Optional[int]) -> None:
         self._get_or_create_media_file().bit_rate = value
 
+    @property
+    def file_runtime(self) -> Optional[int]:
+        if self.media_files:
+            return self.media_files[0].runtime
+        return None
+
+    @file_runtime.setter
+    def file_runtime(self, value: Optional[int]) -> None:
+        self._get_or_create_media_file().runtime = value
+
     __table_args__ = (
         UniqueConstraint("library_name", "name", name="uq_movies_library_name_name"),
         Index("idx_movies_jellyfin_id", "jellyfin_id"),
@@ -432,6 +452,7 @@ class MediaFile(Base):
     bit_rate: Mapped[Optional[int]] = mapped_column(Integer)
     audio_tracks: Mapped[Optional[str]] = mapped_column(String)
     subtitle_tracks: Mapped[Optional[str]] = mapped_column(String)
+    runtime: Mapped[Optional[int]] = mapped_column(Integer)
 
     episode: Mapped[Optional["Episode"]] = relationship(
         "Episode", back_populates="media_files"

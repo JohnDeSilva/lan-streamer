@@ -218,8 +218,16 @@ def test_runtime_management_functions(mock_db_file) -> None:
             season_id=season.id, name="E1", path="/path/to/missing_ep.mkv", runtime=0
         )
         episode_present = Episode(
-            season_id=season.id, name="E2", path="/path/to/present_ep.mkv", runtime=25
+            season_id=season.id,
+            name="E2",
+            path="/path/to/present_ep.mkv",
+            runtime=25,
+            video_codec="h264",
         )
+        episode_present.media_files[0].video_codec = "h264"
+        episode_present.file_runtime = 25
+        episode_present.resolution = "1920x1080"
+        episode_present.bit_rate = 5000
         movie_missing = Movie(
             name="MissingMovie",
             path="/path/to/missing_movie.mkv",
@@ -249,7 +257,8 @@ def test_runtime_management_functions(mock_db_file) -> None:
             .first()
         )
         assert updated_episode is not None
-        assert updated_episode.runtime == 45
+        assert updated_episode.file_runtime == 45
+        assert updated_episode.runtime == 0
 
         updated_movie = (
             session.query(Movie)
@@ -258,7 +267,8 @@ def test_runtime_management_functions(mock_db_file) -> None:
             .first()
         )
         assert updated_movie is not None
-        assert updated_movie.runtime == 45
+        assert updated_movie.file_runtime == 45
+        assert updated_movie.runtime is None
 
 
 def test_build_episode_dict(mock_db_file) -> None:

@@ -74,6 +74,7 @@ class EpisodeDetailsDialog(QDialog):
         self.codec_label: QLabel = QLabel()
         self.resolution_label: QLabel = QLabel()
         self.bit_rate_label: QLabel = QLabel()
+        self.file_runtime_label: QLabel = QLabel()
         self.default_file_combo: QComboBox = QComboBox()
         self.audio_list: QListWidget = QListWidget()
         self.subtitle_list: QListWidget = QListWidget()
@@ -189,8 +190,11 @@ class EpisodeDetailsDialog(QDialog):
         grid.addWidget(QLabel("<b>Bit Rate:</b>"), 5, 0)
         grid.addWidget(self.bit_rate_label, 5, 1)
 
-        grid.addWidget(QLabel("<b>Default Version:</b>"), 6, 0)
-        grid.addWidget(self.default_file_combo, 6, 1)
+        grid.addWidget(QLabel("<b>File Runtime:</b>"), 6, 0)
+        grid.addWidget(self.file_runtime_label, 6, 1)
+
+        grid.addWidget(QLabel("<b>Default Version:</b>"), 7, 0)
+        grid.addWidget(self.default_file_combo, 7, 1)
 
         layout.addLayout(grid)
 
@@ -294,6 +298,7 @@ class EpisodeDetailsDialog(QDialog):
                     "audio_tracks": self.episode_record.get("audio_tracks") or [],
                     "subtitle_tracks": self.episode_record.get("subtitle_tracks") or [],
                     "bit_rate": self.episode_record.get("bit_rate") or 0,
+                    "runtime": self.episode_record.get("file_runtime"),
                 }
             else:
                 info = get_detailed_file_info(path)
@@ -328,6 +333,11 @@ class EpisodeDetailsDialog(QDialog):
         )
         self.codec_label.setText(safe_str(info.get("video_codec"), "Unknown"))
         self.resolution_label.setText(safe_str(info.get("resolution"), "Unknown"))
+        file_runtime = info.get("runtime")
+        if file_runtime:
+            self.file_runtime_label.setText(f"{file_runtime} min")
+        else:
+            self.file_runtime_label.setText("Unknown")
 
         bit_rate_bps = info.get("bit_rate") or 0
         try:
@@ -593,6 +603,7 @@ class MovieDetailsDialog(QDialog):
         self.codec_label: QLabel = QLabel()
         self.resolution_label: QLabel = QLabel()
         self.bit_rate_label: QLabel = QLabel()
+        self.file_runtime_label: QLabel = QLabel()
         self.audio_list: QListWidget = QListWidget()
         self.subtitle_list: QListWidget = QListWidget()
         self.external_sub_list: QListWidget = QListWidget()
@@ -701,6 +712,9 @@ class MovieDetailsDialog(QDialog):
         grid.addWidget(QLabel("<b>Bit Rate:</b>"), 5, 0)
         grid.addWidget(self.bit_rate_label, 5, 1)
 
+        grid.addWidget(QLabel("<b>File Runtime:</b>"), 6, 0)
+        grid.addWidget(self.file_runtime_label, 6, 1)
+
         layout.addLayout(grid)
 
         layout.addWidget(QLabel("<b>Internal Audio Tracks:</b>"))
@@ -741,6 +755,7 @@ class MovieDetailsDialog(QDialog):
                 "audio_tracks": self.movie_record.get("audio_tracks") or [],
                 "subtitle_tracks": self.movie_record.get("subtitle_tracks") or [],
                 "bit_rate": self.movie_record.get("bit_rate") or 0,
+                "runtime": self.movie_record.get("file_runtime"),
             }
             try:
                 info["size_bytes"] = Path(self.movie_path).stat().st_size
@@ -783,6 +798,11 @@ class MovieDetailsDialog(QDialog):
         )
         self.codec_label.setText(safe_str(info.get("video_codec"), "Unknown"))
         self.resolution_label.setText(safe_str(info.get("resolution"), "Unknown"))
+        file_runtime = info.get("runtime")
+        if file_runtime:
+            self.file_runtime_label.setText(f"{file_runtime} min")
+        else:
+            self.file_runtime_label.setText("Unknown")
 
         bit_rate_bps = info.get("bit_rate") or 0
         try:
