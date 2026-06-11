@@ -57,7 +57,6 @@ setup-git-hooks:
 	$(PRE_COMMIT) install --hook-type commit-msg --hook-type pre-push --hook-type pre-commit
 
 test-local:
-	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src $(PYTHON) -m alembic upgrade head
 	LAN_STREAMER_DB=./test_library.db PYTHONPATH=src QT_QPA_PLATFORM=offscreen $(PYTEST) -n auto --cov-fail-under=90 -m "not load" tests/
 	rm -f ./test_library.db ./test_library.db-wal ./test_library.db-shm
 
@@ -110,8 +109,7 @@ clean:
 revision:
 	PYTHONPATH=src $(PYTHON) -m alembic revision --autogenerate -m "$(name)"
 
-migrate:
-	PYTHONPATH=src $(PYTHON) -m alembic upgrade head
+
 
 release: check-lint typecheck test
 	uv lock

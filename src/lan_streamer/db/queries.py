@@ -862,6 +862,9 @@ def get_all_app_configs() -> Dict[str, Any]:
             rows = session.scalars(select(AppConfig)).all()
             config_dict = {}
             for row in rows:
+                logger.info(
+                    f"Reading app_config row: key='{row.key}', type='{row.type}', value='{row.value}'"
+                )
                 if row.value is not None:
                     coerce = _TYPE_COERCIONS.get(row.type or "str", str)
                     config_dict[row.key] = coerce(row.value)
