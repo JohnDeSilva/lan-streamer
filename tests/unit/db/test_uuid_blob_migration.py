@@ -49,16 +49,22 @@ def _engine(db_path: Any) -> sa.Engine:
 
 
 def _is_valid_uuid(value: Any) -> bool:
-    """Return True when *value* is a 16-byte blob that is a valid UUID."""
-    if not isinstance(value, (bytes, bytearray)):
-        return False
-    if len(value) != 16:
-        return False
-    try:
-        uuid.UUID(bytes=bytes(value))
-        return True
-    except ValueError, TypeError:
-        return False
+    """Return True when *value* is a 16-byte blob or a valid UUID string."""
+    if isinstance(value, (bytes, bytearray)):
+        if len(value) != 16:
+            return False
+        try:
+            uuid.UUID(bytes=bytes(value))
+            return True
+        except ValueError, TypeError:
+            return False
+    if isinstance(value, str):
+        try:
+            uuid.UUID(value)
+            return True
+        except ValueError:
+            return False
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -582,8 +588,8 @@ def test_update_item_runtime_nonexistent_bytes_id_is_noop(mock_db_file) -> None:
     db_mod._db_initialized = False
 
 
-def test_get_items_missing_runtime_returns_bytes_ids(mock_db_file) -> None:
-    """get_items_missing_runtime must return dicts whose 'id' values are bytes."""
+def test_get_items_missing_runtime_returns_string_ids(mock_db_file) -> None:
+    """get_items_missing_runtime must return dicts whose 'id' values are strings."""
     import lan_streamer.db as db_mod
 
     db_mod.DB_FILE = mock_db_file
@@ -609,8 +615,8 @@ def test_get_items_missing_runtime_returns_bytes_ids(mock_db_file) -> None:
     items = db_mod.get_items_missing_runtime()
     assert len(items) >= 2
     for item in items:
-        assert isinstance(item["id"], (bytes, bytearray)), (
-            f"Expected bytes ID, got {type(item['id'])}: {item['id']!r}"
+        assert isinstance(item["id"], str), (
+            f"Expected string ID, got {type(item['id'])}: {item['id']!r}"
         )
         assert _is_valid_uuid(item["id"])
 

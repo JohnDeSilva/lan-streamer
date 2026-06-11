@@ -1,6 +1,6 @@
 import enum
 import uuid
-from typing import Optional, List
+from typing import Optional, List, Any
 from sqlalchemy import (
     Integer,
     String,
@@ -9,6 +9,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Index,
     LargeBinary,
+    TypeDecorator,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -23,10 +24,45 @@ def _new_uuid_bytes() -> bytes:
     return uuid.uuid4().bytes
 
 
+def _new_uuid_str() -> str:
+    """Generate a new UUID4 as a standard string."""
+    return str(uuid.uuid4())
+
+
 class Base(DeclarativeBase):
     """SQLAlchemy declarative base class for database models."""
 
     pass
+
+
+class UUIDBLOB(TypeDecorator):
+    """Platform-independent UUID type stored as 16-byte BLOB/LargeBinary,
+    but exposed as standard canonical UUID hex string in Python/application code.
+    """
+
+    impl = LargeBinary
+    cache_ok = True
+
+    def process_bind_param(self, value: Any, dialect: Any) -> Optional[bytes]:
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            if len(value) == 16:
+                return value
+            return value
+        if isinstance(value, uuid.UUID):
+            return value.bytes
+        try:
+            return uuid.UUID(value).bytes
+        except ValueError, TypeError, AttributeError:
+            return value
+
+    def process_result_value(self, value: Any, dialect: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, bytes) and len(value) == 16:
+            return str(uuid.UUID(bytes=value))
+        return value
 
 
 class SecretType(str, enum.Enum):
@@ -49,8 +85,8 @@ class AppSecret(Base):
 
     __tablename__ = "app_secrets"
 
-    secret_uuid: Mapped[bytes] = mapped_column(
-        LargeBinary, primary_key=True, default=_new_uuid_bytes
+    secret_uuid: Mapped[str] = mapped_column(
+        UUIDBLOB, primary_key=True, default=_new_uuid_str
     )
     secret_type: Mapped[str] = mapped_column(String, nullable=False)
     secret: Mapped[Optional[str]] = mapped_column(String, default="{}")
@@ -78,9 +114,7 @@ class Series(Base):
 
     __tablename__ = "series"
 
-    id: Mapped[bytes] = mapped_column(
-        LargeBinary, primary_key=True, default=_new_uuid_bytes
-    )
+    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
     library_name: Mapped[Optional[str]] = mapped_column(String)
     name: Mapped[Optional[str]] = mapped_column(String)
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
@@ -114,11 +148,9 @@ class Season(Base):
 
     __tablename__ = "seasons"
 
-    id: Mapped[bytes] = mapped_column(
-        LargeBinary, primary_key=True, default=_new_uuid_bytes
-    )
-    series_id: Mapped[Optional[bytes]] = mapped_column(
-        LargeBinary, ForeignKey("series.id", ondelete="CASCADE")
+    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
+    series_id: Mapped[Optional[str]] = mapped_column(
+        UUIDBLOB, ForeignKey("series.id", ondelete="CASCADE")
     )
     name: Mapped[Optional[str]] = mapped_column(String)
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
@@ -146,11 +178,9 @@ class Episode(Base):
 
     __tablename__ = "episodes"
 
-    id: Mapped[bytes] = mapped_column(
-        LargeBinary, primary_key=True, default=_new_uuid_bytes
-    )
-    season_id: Mapped[Optional[bytes]] = mapped_column(
-        LargeBinary, ForeignKey("seasons.id", ondelete="CASCADE")
+    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
+    season_id: Mapped[Optional[str]] = mapped_column(
+        UUIDBLOB, ForeignKey("seasons.id", ondelete="CASCADE")
     )
     name: Mapped[Optional[str]] = mapped_column(String)
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
@@ -269,9 +299,7 @@ class Movie(Base):
 
     __tablename__ = "movies"
 
-    id: Mapped[bytes] = mapped_column(
-        LargeBinary, primary_key=True, default=_new_uuid_bytes
-    )
+    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
     library_name: Mapped[Optional[str]] = mapped_column(String)
     name: Mapped[Optional[str]] = mapped_column(String)
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
@@ -389,14 +417,12 @@ class MediaFile(Base):
 
     __tablename__ = "media_files"
 
-    id: Mapped[bytes] = mapped_column(
-        LargeBinary, primary_key=True, default=_new_uuid_bytes
+    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
+    episode_id: Mapped[Optional[str]] = mapped_column(
+        UUIDBLOB, ForeignKey("episodes.id", ondelete="CASCADE"), nullable=True
     )
-    episode_id: Mapped[Optional[bytes]] = mapped_column(
-        LargeBinary, ForeignKey("episodes.id", ondelete="CASCADE"), nullable=True
-    )
-    movie_id: Mapped[Optional[bytes]] = mapped_column(
-        LargeBinary, ForeignKey("movies.id", ondelete="CASCADE"), nullable=True
+    movie_id: Mapped[Optional[str]] = mapped_column(
+        UUIDBLOB, ForeignKey("movies.id", ondelete="CASCADE"), nullable=True
     )
     path: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     size_bytes: Mapped[Optional[int]] = mapped_column(Integer)

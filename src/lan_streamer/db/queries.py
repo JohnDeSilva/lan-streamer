@@ -460,7 +460,7 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
 
 
 def update_item_runtime(
-    item_identifier: bytes,
+    item_identifier: bytes | str,
     item_type: str,
     runtime_minutes: int,
     video_codec: Optional[str] = None,
