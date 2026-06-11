@@ -377,19 +377,25 @@ def test_update_item_runtime_movie_with_tech_info(mock_db_file) -> None:
 
 def test_update_item_runtime_episode_not_found(mock_db_file) -> None:
     """Should not crash when ID doesn't exist."""
-    db.update_item_runtime(99999, "episode", 30)
+    import uuid
+
+    db.update_item_runtime(uuid.uuid4().bytes, "episode", 30)
 
 
 def test_update_item_runtime_movie_not_found(mock_db_file) -> None:
     """Should not crash when movie ID doesn't exist."""
-    db.update_item_runtime(99999, "movie", 30)
+    import uuid
+
+    db.update_item_runtime(uuid.uuid4().bytes, "movie", 30)
 
 
 def test_update_item_runtime_exception() -> None:
     with patch("lan_streamer.db.connection.get_session") as mock_session:
         mock_session.side_effect = Exception("DB error")
         # Should not raise
-        db.update_item_runtime(1, "episode", 30)
+        import uuid
+
+        db.update_item_runtime(uuid.uuid4().bytes, "episode", 30)
 
 
 # ---------------------------------------------------------------------------

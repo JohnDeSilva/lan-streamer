@@ -342,6 +342,20 @@ class TMDBClient:
             )
             resp.raise_for_status()
             return resp.json().get("episodes", [])
+        except requests.exceptions.HTTPError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            if status_code == 404:
+                logger.warning(
+                    f"TMDB get_episodes({tmdb_identifier}, S{season_num}) failed: "
+                    f"season {season_num} not found on TMDB (404). "
+                    "This season may not yet exist in the TMDB database."
+                )
+            else:
+                logger.exception(
+                    f"TMDB get_episodes({tmdb_identifier}, S{season_num}) failed "
+                    f"with HTTP {status_code}"
+                )
+            return []
         except Exception:
             logger.exception(
                 f"TMDB get_episodes({tmdb_identifier}, S{season_num}) failed"
