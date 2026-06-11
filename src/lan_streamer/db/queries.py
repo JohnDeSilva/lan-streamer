@@ -787,17 +787,32 @@ _TYPE_COERCIONS: Dict[str, Callable[[Any], Any]] = {
 def get_app_config(key: str, default: Any = None) -> Any:
     """Returns the stored value for *key* from app_config, coerced to its declared type.
 
-    Returns *default* when the key does not exist.
+    Returns *default* when the key does not exist.  When the key is absent and
+    *default* is not ``None`` the default is automatically persisted to the
+    database so that the row exists on subsequent reads (i.e. missing rows are
+    seeded on first access).
     """
     try:
         with get_session() as session:
-            row = session.scalars(select(AppConfig).where(AppConfig.key == key)).first()
+            row = session.scalars(
+                select(AppConfig).where(AppConfig.key == key)
+            ).one_or_none()
             if row is None or row.value is None:
+                logger.debug(
+                    f"No value stored for app_config key '{key}' — returning default value"
+                )
+                # Seed the default into the DB so the key exists going forward.
+                if default is not None:
+                    # Use a deferred import to avoid circular references; this
+                    # module already defines set_app_config below.
+                    set_app_config(key, default)
                 return default
             coerce = _TYPE_COERCIONS.get(row.type or "str", str)
             return coerce(row.value)
     except Exception:
-        logger.exception(f"Error reading app_config key '{key}'")
+        logger.warning(
+            f"Error reading app_config key '{key}' — returning default value"
+        )
         return default
 
 
@@ -809,7 +824,9 @@ def set_app_config(key: str, value: Any) -> None:
     """
     try:
         with get_session() as session:
-            row = session.scalars(select(AppConfig).where(AppConfig.key == key)).first()
+            row = session.scalars(
+                select(AppConfig).where(AppConfig.key == key)
+            ).one_or_none()
 
             if row is None:
                 # Infer type hint from value
@@ -838,6 +855,59 @@ def set_app_config(key: str, value: Any) -> None:
         logger.exception(f"Error writing app_config key '{key}'")
 
 
+def get_all_app_configs() -> Dict[str, Any]:
+    """Returns all app_config rows as a dictionary of key -> coerced_value."""
+    try:
+        with get_session() as session:
+            rows = session.scalars(select(AppConfig)).all()
+            config_dict = {}
+            for row in rows:
+                if row.value is not None:
+                    coerce = _TYPE_COERCIONS.get(row.type or "str", str)
+                    config_dict[row.key] = coerce(row.value)
+            return config_dict
+    except Exception:
+        logger.warning("Error reading all app_config rows")
+        return {}
+
+
+def bulk_set_app_configs(config_dict: Dict[str, Any]) -> None:
+    """Upserts all key/value pairs in config_dict into app_config in a single session."""
+    try:
+        with get_session() as session:
+            rows = session.scalars(select(AppConfig)).all()
+            existing_map = {row.key: row for row in rows}
+
+            for key, value in config_dict.items():
+                row = existing_map.get(key)
+                if row is None:
+                    # Infer type hint from value
+                    if isinstance(value, bool):
+                        type_hint = "bool"
+                    elif isinstance(value, int):
+                        type_hint = "int"
+                    elif isinstance(value, float):
+                        type_hint = "float"
+                    elif isinstance(value, (list, dict)):
+                        type_hint = "json"
+                    else:
+                        type_hint = "str"
+                    row = AppConfig(key=key, type=type_hint)
+                    session.add(row)
+
+                # Serialise to TEXT
+                hint = row.type or "str"
+                if hint == "json":
+                    row.value = json.dumps(value)
+                elif hint == "bool":
+                    row.value = "1" if value else "0"
+                else:
+                    row.value = str(value)
+            logging.info(f"Bulk upserted {len(config_dict)} app_config settings")
+    except Exception:
+        logger.exception("Error writing bulk app_config settings")
+
+
 # ---------------------------------------------------------------------------
 # app_secrets helpers
 # ---------------------------------------------------------------------------
@@ -853,12 +923,37 @@ def get_secret(secret_type: SecretType) -> Dict[str, Any]:
         with get_session() as session:
             row = session.scalars(
                 select(AppSecret).where(AppSecret.secret_type == secret_type.value)
-            ).first()
+            ).one_or_none()
             if row is None or not row.secret:
+                logger.debug(
+                    f"No secret stored for type '{secret_type}' — returning empty dict"
+                )
                 return {}
             return json.loads(row.secret)
     except Exception:
-        logger.exception(f"Error reading secret for type '{secret_type}'")
+        logger.warning(
+            f"Error reading secret for type '{secret_type}' — returning empty dict"
+        )
+        return {}
+
+
+def get_all_secrets() -> Dict[str, Dict[str, Any]]:
+    """Returns all app_secrets rows as a dictionary of secret_type string -> payload dict."""
+    try:
+        with get_session() as session:
+            rows = session.scalars(select(AppSecret)).all()
+            secrets_dict = {}
+            for row in rows:
+                if row.secret:
+                    try:
+                        secrets_dict[row.secret_type] = json.loads(row.secret)
+                    except Exception:
+                        logger.warning(
+                            f"Error parsing secret for type '{row.secret_type}'"
+                        )
+            return secrets_dict
+    except Exception:
+        logger.warning("Error reading all secrets from database")
         return {}
 
 
