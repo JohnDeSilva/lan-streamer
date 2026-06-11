@@ -23,8 +23,8 @@ def test_config_initialization(mock_config_file) -> None:
     assert config.max_cache_size_gb == 15.0
     assert config.vlc_buffer_ms == 3000
     assert config.backup_directory.endswith("backups")
-    assert config.config_backup_frequency == 0
-    assert config.database_backup_frequency == 0
+    assert config.config_backup_frequency == 1
+    assert config.database_backup_frequency == 1
     assert config.config_backup_retention == 7
     assert config.database_backup_retention == 7
 
@@ -212,3 +212,73 @@ def test_config_generates_on_startup_if_not_exists(mock_config_file) -> None:
         data = json.load(f)
     assert data["database_path"] == config.database_path
     assert data["log_level"] == "INFO"
+    assert data["config_backup_frequency"] == 1
+    assert data["database_backup_frequency"] == 1
+
+
+def test_config_generates_and_backups_db_on_startup(tmp_path, mock_config_file) -> None:
+    from lan_streamer.system import backup as backup_module
+    from lan_streamer.system.backup import perform_scheduled_backups
+
+    # 1. Create a dummy database file
+    db_file = tmp_path / "library.db"
+    db_file.write_text("dummy database content")
+
+    # 2. Configure paths using mocks so Config and backup use test directories
+    home_dir = tmp_path / "home"
+    backup_dir = home_dir / ".config" / "lan-streamer" / "backups"
+
+    # Directly save and override the backup module's singleton config properties
+    # (can't use patch() on properties backed by a custom setter with no deleter)
+    backup_cfg = backup_module.config
+    orig_backup_dir = backup_cfg._backup_directory
+    orig_db_path = backup_cfg.database_path
+    orig_cfg_freq = backup_cfg.config_backup_frequency
+    orig_db_freq = backup_cfg.database_backup_frequency
+    orig_cfg_ret = backup_cfg.config_backup_retention
+    orig_db_ret = backup_cfg.database_backup_retention
+
+    backup_cfg._backup_directory = str(backup_dir)
+    backup_cfg.database_path = str(db_file)
+    backup_cfg.config_backup_frequency = 1
+    backup_cfg.database_backup_frequency = 1
+    backup_cfg.config_backup_retention = 7
+    backup_cfg.database_backup_retention = 7
+
+    try:
+        with (
+            patch("pathlib.Path.home", return_value=home_dir),
+            patch("os.getenv", return_value=str(db_file)),
+            patch("lan_streamer.system.config.CONFIG_FILE", mock_config_file),
+            patch("lan_streamer.system.backup.CONFIG_FILE", mock_config_file),
+        ):
+            if mock_config_file.exists():
+                mock_config_file.unlink()
+
+            # Initialization should trigger self.save() and create the config file
+            config = Config()  # noqa: F841
+
+            # Verify config file is generated with backup frequencies set to 1
+            assert mock_config_file.exists()
+            with open(mock_config_file, "r") as f:
+                data = json.load(f)
+            assert data["config_backup_frequency"] == 1
+            assert data["database_backup_frequency"] == 1
+
+            # Simulate the startup backup step (called from main.py after Config init)
+            perform_scheduled_backups()
+
+            # Verify the database was backed up in the expected backups subfolder
+            assert backup_dir.exists()
+            backup_files = list(backup_dir.iterdir())
+            db_backups = [f for f in backup_files if f.name.endswith("_library.db")]
+            assert len(db_backups) == 1
+            assert db_backups[0].read_text() == "dummy database content"
+    finally:
+        # Restore the singleton to its original state
+        backup_cfg._backup_directory = orig_backup_dir
+        backup_cfg.database_path = orig_db_path
+        backup_cfg.config_backup_frequency = orig_cfg_freq
+        backup_cfg.database_backup_frequency = orig_db_freq
+        backup_cfg.config_backup_retention = orig_cfg_ret
+        backup_cfg.database_backup_retention = orig_db_ret

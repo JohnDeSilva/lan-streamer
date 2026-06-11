@@ -336,6 +336,27 @@ def test_init_db_frozen_path() -> None:
         assert result is False
 
 
+def test_init_db_creates_backup_if_db_exists(tmp_path) -> None:
+    """When the database file already exists, init_db backs it up before running alembic."""
+    import lan_streamer.db as db_module
+    from lan_streamer.db.connection import init_db
+
+    db_path = tmp_path / "library.db"
+    db_path.write_text("existing database content")
+
+    db_module._db_initialized = False
+
+    with (
+        patch("lan_streamer.db.DB_FILE", db_path),
+        patch("alembic.command.upgrade") as mock_upgrade,
+        patch("lan_streamer.system.backup.create_database_backup") as mock_backup,
+    ):
+        result = init_db()
+        assert result is True
+        mock_backup.assert_called_once()
+        mock_upgrade.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # db/queries.py – corrupt JSON in audio_tracks / subtitle_tracks
 # ---------------------------------------------------------------------------

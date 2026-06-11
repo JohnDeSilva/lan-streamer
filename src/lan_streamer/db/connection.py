@@ -103,6 +103,14 @@ def init_db() -> bool:
     except Exception as exc:
         logger.warning(f"Could not create database directory {db_file.parent}: {exc}")
         return False
+    if db_file.is_file():
+        try:
+            from lan_streamer.system.backup import create_database_backup
+
+            logger.info("Backing up database before running migrations...")
+            create_database_backup()
+        except Exception as exc:
+            logger.warning(f"Failed to create pre-migration database backup: {exc}")
 
     try:
         from alembic.config import Config

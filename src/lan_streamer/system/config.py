@@ -1,7 +1,8 @@
+import copy
 import json
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 CONFIG_FILE = Path.home() / ".config" / "lan-streamer" / "config.json"
 logger: logging.Logger = logging.getLogger(__name__)
@@ -24,49 +25,33 @@ class Config:
     - ``database_backup_frequency``
     """
 
-    def __init__(self) -> None:
-        """Initialise startup-critical attributes and load them from the config file."""
-        self._last_loaded_mtime: float = 0.0
-
-        # --- Startup-critical (config-file backed) ---
-        self.database_path: str = str(
-            Path.home() / ".config" / "lan-streamer" / "library.db"
-        )
-        self.log_directory: str = str(Path.home() / ".config" / "lan-streamer" / "logs")
-        self.log_level: str = "INFO"
-        self.config_backup_frequency: int = 0
-        self.database_backup_frequency: int = 0
-
-        # --- DB-backed (populated by load_from_db after DB init) ---
-        # These in-memory attributes act as a cache so that the rest of the
-        # application can read them as plain attributes on the config object.
-        self.libraries: Dict[str, Dict[str, Any]] = {}
-        self.sync_history_on_start: bool = True
-        self.filter_out_watched: bool = False
-        self.sort_mode: str = "Alphabetical"
-        self.sort_descending: bool = False
-        self.divide_logs_by_service: bool = False
-        self.enable_caching: bool = False
-        self.watched_threshold: float = 0.95
-        self._cache_directory: str = str(
-            Path.home() / ".config" / "lan-streamer" / "cache"
-        )
-        self.use_embedded_player: bool = True
-        self.enable_hw_accel: bool = True
-        self.vlc_extra_args: List[str] = []
-        self.vlc_buffer_ms: int = 3000
-        self.player_overlay_opacity: float = 0.4
-        self.player_overlay_color: str = "white"
-        self.max_cache_size_gb: float = 15.0
-        self.enable_next_episode_popup: bool = True
-        self.max_log_retention_days: int = 7
-        self._backup_directory: str = str(
-            Path.home() / ".config" / "lan-streamer" / "backups"
-        )
-        self.config_backup_retention: int = 7
-        self.database_backup_retention: int = 7
-        self.enable_combined_view: bool = False
-        self.combined_views: List[Dict[str, Any]] = [
+    # Single source of truth for all DB-backed setting defaults.
+    # Referenced by both __init__ (to seed safe pre-DB values) and
+    # load_from_db (to fill in missing rows on first run).
+    _DB_DEFAULTS: Dict[str, Any] = {
+        "libraries": {},
+        "sync_history_on_start": True,
+        "filter_out_watched": False,
+        "sort_mode": "Alphabetical",
+        "sort_descending": False,
+        "divide_logs_by_service": False,
+        "enable_caching": False,
+        "watched_threshold": 0.95,
+        "cache_directory": str(Path.home() / ".config" / "lan-streamer" / "cache"),
+        "use_embedded_player": True,
+        "enable_hw_accel": True,
+        "vlc_extra_args": [],
+        "vlc_buffer_ms": 3000,
+        "player_overlay_opacity": 0.4,
+        "player_overlay_color": "white",
+        "max_cache_size_gb": 15.0,
+        "enable_next_episode_popup": True,
+        "max_log_retention_days": 7,
+        "backup_directory": str(Path.home() / ".config" / "lan-streamer" / "backups"),
+        "config_backup_retention": 7,
+        "database_backup_retention": 7,
+        "enable_combined_view": False,
+        "combined_views": [
             {
                 "name": "All Libraries - Next Up - All",
                 "enabled": True,
@@ -81,9 +66,28 @@ class Config:
                 "sort_by": "Recently Added",
                 "filter_mode": "All",
             },
-        ]
-        self.preferred_audio_device: str = ""
-        self.check_for_updates_on_startup: bool = True
+        ],
+        "preferred_audio_device": "",
+        "check_for_updates_on_startup": True,
+    }
+
+    def __init__(self) -> None:
+        """Initialise startup-critical attributes and load them from the config file."""
+        self._last_loaded_mtime: float = 0.0
+
+        # --- Startup-critical (config-file backed) ---
+        self.database_path: str = str(
+            Path.home() / ".config" / "lan-streamer" / "library.db"
+        )
+        self.log_directory: str = str(Path.home() / ".config" / "lan-streamer" / "logs")
+        self.log_level: str = "INFO"
+        self.config_backup_frequency: int = 1
+        self.database_backup_frequency: int = 1
+
+        # --- DB-backed (seeded from _DB_DEFAULTS so the object is usable
+        # before load_from_db() is called after DB initialisation) ---
+        for key, val in copy.deepcopy(self._DB_DEFAULTS).items():
+            setattr(self, key, val)
 
         # Convenience credential attributes — populated by load_from_db
         self.jellyfin_url: str = ""
@@ -215,66 +219,21 @@ class Config:
             )
             from lan_streamer.db.models import SecretType
 
-            # Define defaults for all general settings
-            defaults = {
-                "libraries": {},
-                "sync_history_on_start": True,
-                "filter_out_watched": False,
-                "sort_mode": "Alphabetical",
-                "sort_descending": False,
-                "divide_logs_by_service": False,
-                "enable_caching": False,
-                "watched_threshold": 0.95,
-                "cache_directory": str(
-                    Path.home() / ".config" / "lan-streamer" / "cache"
-                ),
-                "use_embedded_player": True,
-                "enable_hw_accel": True,
-                "vlc_extra_args": [],
-                "vlc_buffer_ms": 3000,
-                "player_overlay_opacity": 0.4,
-                "player_overlay_color": "white",
-                "max_cache_size_gb": 15.0,
-                "enable_next_episode_popup": True,
-                "max_log_retention_days": 7,
-                "backup_directory": str(
-                    Path.home() / ".config" / "lan-streamer" / "backups"
-                ),
-                "config_backup_retention": 7,
-                "database_backup_retention": 7,
-                "enable_combined_view": False,
-                "combined_views": [
-                    {
-                        "name": "All Libraries - Next Up - All",
-                        "enabled": True,
-                        "libraries": [],
-                        "sort_by": "Next Up",
-                        "filter_mode": "All",
-                    },
-                    {
-                        "name": "All Libraries - Recently Added - All",
-                        "enabled": True,
-                        "libraries": [],
-                        "sort_by": "Recently Added",
-                        "filter_mode": "All",
-                    },
-                ],
-                "preferred_audio_device": "",
-                "check_for_updates_on_startup": True,
-            }
-
-            # 1. get all rows in the database in a single query and take that result and put it into a dictionary
+            # 1. Fetch all rows from the database in a single query.
             config_dict = get_all_app_configs()
+            for k, v in config_dict.items():
+                logger.debug(f"Config from DB - Key: '{k}' Value: '{v}'")
 
-            # 2. Iterate over each setting and get the value from the dictionary if it exists or write it to the dictionary if it doesn't
-            logger.debug(
-                "Applying default DB config values for missing startup settings"
-            )
+            # 2. Fill in any keys missing from the DB using _DB_DEFAULTS.
+            defaults = copy.deepcopy(self._DB_DEFAULTS)
             for key, default in defaults.items():
                 if key not in config_dict:
                     logger.debug(f"Setting config key '{key}' to default '{default}'")
                     config_dict[key] = default
-                logger.info(f"Using config key '{key}' with value '{config_dict[key]}'")
+                else:
+                    logger.debug(
+                        f"Using config key '{key}' with value '{config_dict[key]}'"
+                    )
 
             # Assign general settings from the fully populated dictionary
             self.libraries = config_dict["libraries"]
