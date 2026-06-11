@@ -67,15 +67,47 @@ Below is the structured textual representation of all major class inheritance pa
 ## Database Models
 
 ### `Base`
-- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L18) (line 18)
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L32) (line 32)
 - **Inherits from**: `DeclarativeBase`
 
 > SQLAlchemy declarative base class for database models.
 
 ---
 
+### `AppSecret`
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L41) (line 41)
+- **Inherits from**: `Base`
+
+> Stores external service credentials (like Jellyfin, TMDB, MyAnimeList) as opaque JSON.
+
+---
+
+### `AppConfig`
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L61) (line 61)
+- **Inherits from**: `Base`
+
+> Key/value store for general application preferences and configuration.
+
+---
+
+### `Series`
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L76) (line 76)
+- **Inherits from**: `Base`
+
+> Database model representing a television series, containing references to seasons and metadata.
+
+---
+
+### `Season`
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L112) (line 112)
+- **Inherits from**: `Base`
+
+> Database model representing a specific season of a television series.
+
+---
+
 ### `Episode`
-- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L81) (line 81)
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L144) (line 144)
 - **Inherits from**: `Base`
 
 > Database model representing a single television show episode, including technical video characteristics and watch status.
@@ -83,26 +115,18 @@ Below is the structured textual representation of all major class inheritance pa
 ---
 
 ### `Movie`
-- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L118) (line 118)
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L268) (line 268)
 - **Inherits from**: `Base`
 
 > Database model representing a movie, including technical properties and watch status.
 
 ---
 
-### `Season`
-- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L52) (line 52)
+### `MediaFile`
+- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L388) (line 388)
 - **Inherits from**: `Base`
 
-> Database model representing a specific season of a television series.
-
----
-
-### `Series`
-- **Defined in**: [models.py](../src/lan_streamer/db/models.py#L24) (line 24)
-- **Inherits from**: `Base`
-
-> Database model representing a television series, containing references to seasons and metadata.
+> Database model representing a physical media file mapped to an episode or movie, supporting multiple file versions.
 
 ---
 
