@@ -265,6 +265,24 @@ def test_get_episodes_error(tmdb) -> None:
     assert tmdb.get_episodes(1, 1) == []
 
 
+def test_get_episodes_http_error_404(tmdb) -> None:
+    mock_resp = MagicMock()
+    mock_resp.status_code = 404
+    tmdb.session.get = MagicMock(
+        side_effect=requests.exceptions.HTTPError(response=mock_resp)
+    )
+    assert tmdb.get_episodes(1, 1) == []
+
+
+def test_get_episodes_http_error_500(tmdb) -> None:
+    mock_resp = MagicMock()
+    mock_resp.status_code = 500
+    tmdb.session.get = MagicMock(
+        side_effect=requests.exceptions.HTTPError(response=mock_resp)
+    )
+    assert tmdb.get_episodes(1, 1) == []
+
+
 # ------------------------------------------------------------------
 # download_image
 # ------------------------------------------------------------------

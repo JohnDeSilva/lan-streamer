@@ -630,3 +630,79 @@ class TestScanDirectoriesUnavailableRoot:
         result = scan_directories([])
         assert len(result) == 0
         assert result.unavailable_directories == []
+
+
+# ---------------------------------------------------------------------------
+# scanner/metadata.py - _process_season_metadata
+# ---------------------------------------------------------------------------
+
+
+class TestProcessSeasonMetadata:
+    def test_process_season_metadata_specials(self) -> None:
+        from lan_streamer.scanner.metadata import _process_season_metadata
+        from pathlib import Path
+
+        season_dir = Path("/some/path/Specials")
+        series_data = {
+            "_tmdb_series_id": "123",
+            "_tmdb_seasons": [{"season_number": 0, "poster_path": "/p.jpg", "id": 999}],
+        }
+
+        with patch("lan_streamer.scanner.metadata.tmdb_client") as mock_tmdb:
+            mock_tmdb.get_episodes.return_value = [
+                {"id": 1, "episode_number": 1, "name": "Spec ep"}
+            ]
+            name, idx, meta, episodes = _process_season_metadata(
+                season_dir,
+                series_data,
+                None,
+                {},
+            )
+            assert name == "Specials"
+            assert idx == 0
+            assert len(episodes) == 1
+            mock_tmdb.get_episodes.assert_called_once_with("123", 0)
+
+    def test_process_season_metadata_valid_season(self) -> None:
+        from lan_streamer.scanner.metadata import _process_season_metadata
+        from pathlib import Path
+
+        season_dir = Path("/some/path/Season 5")
+        series_data = {
+            "_tmdb_series_id": "123",
+            "_tmdb_seasons": [{"season_number": 5, "id": 555}],
+        }
+
+        with patch("lan_streamer.scanner.metadata.tmdb_client") as mock_tmdb:
+            mock_tmdb.get_episodes.return_value = []
+            name, idx, meta, episodes = _process_season_metadata(
+                season_dir,
+                series_data,
+                None,
+                {},
+            )
+            assert name == "Season 5"
+            assert idx == 5
+            mock_tmdb.get_episodes.assert_called_once_with("123", 5)
+
+    def test_process_season_metadata_invalid_season_skips_fetch(self) -> None:
+        from lan_streamer.scanner.metadata import _process_season_metadata
+        from pathlib import Path
+
+        season_dir = Path("/some/path/Season X")
+        series_data = {
+            "_tmdb_series_id": "123",
+            "_tmdb_seasons": [],
+        }
+
+        with patch("lan_streamer.scanner.metadata.tmdb_client") as mock_tmdb:
+            name, idx, meta, episodes = _process_season_metadata(
+                season_dir,
+                series_data,
+                None,
+                {},
+            )
+            assert name == "Season X"
+            assert idx == -1
+            assert episodes == []
+            mock_tmdb.get_episodes.assert_not_called()

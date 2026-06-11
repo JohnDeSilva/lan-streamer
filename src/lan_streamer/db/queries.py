@@ -380,7 +380,7 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
 
 
 def update_item_runtime(
-    item_identifier: int,
+    item_identifier: bytes,
     item_type: str,
     runtime_minutes: int,
     video_codec: Optional[str] = None,
@@ -422,7 +422,7 @@ def update_item_runtime(
                         movie.subtitle_tracks = json.dumps(subtitle_tracks)
     except Exception:
         logger.exception(
-            f"Error updating runtime and technical info for {item_type} ID {item_identifier}"
+            f"Error updating runtime and technical info for {item_type} ID {item_identifier!r}"
         )
 
 
@@ -963,20 +963,16 @@ def get_all_secrets() -> Dict[str, Dict[str, Any]]:
 def set_secret(secret_type: SecretType, payload: Dict[str, Any]) -> None:
     """Upserts the full credential payload for *secret_type*.
 
-    On first insert a UUID4 primary key is generated automatically.
+    On first insert a UUID4 primary key is generated automatically via the
+    column default (stored as a 16-byte BLOB).
     """
-    import uuid as _uuid
-
     try:
         with get_session() as session:
             row = session.scalars(
                 select(AppSecret).where(AppSecret.secret_type == secret_type.value)
             ).first()
             if row is None:
-                row = AppSecret(
-                    secret_uuid=str(_uuid.uuid4()),
-                    secret_type=secret_type.value,
-                )
+                row = AppSecret(secret_type=secret_type.value)
                 session.add(row)
             row.secret = json.dumps(payload)
     except Exception:

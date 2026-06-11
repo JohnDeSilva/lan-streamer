@@ -1,10 +1,12 @@
 import enum
+import uuid
 from typing import Optional, List
 from sqlalchemy import (
     Integer,
     String,
     Boolean,
     ForeignKey,
+    LargeBinary,
     UniqueConstraint,
     Index,
 )
@@ -14,6 +16,11 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
+
+
+def _new_uuid_bytes() -> bytes:
+    """Generate a new UUID4 as raw bytes for use as a BLOB primary key."""
+    return uuid.uuid4().bytes
 
 
 class Base(DeclarativeBase):
@@ -42,7 +49,9 @@ class AppSecret(Base):
 
     __tablename__ = "app_secrets"
 
-    secret_uuid: Mapped[str] = mapped_column(String, primary_key=True)
+    secret_uuid: Mapped[bytes] = mapped_column(
+        LargeBinary, primary_key=True, default=_new_uuid_bytes
+    )
     secret_type: Mapped[str] = mapped_column(String, nullable=False)
     secret: Mapped[Optional[str]] = mapped_column(String, default="{}")
 
@@ -69,7 +78,9 @@ class Series(Base):
 
     __tablename__ = "series"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[bytes] = mapped_column(
+        LargeBinary, primary_key=True, default=_new_uuid_bytes
+    )
     library_name: Mapped[Optional[str]] = mapped_column(String)
     name: Mapped[Optional[str]] = mapped_column(String)
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
@@ -103,9 +114,11 @@ class Season(Base):
 
     __tablename__ = "seasons"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    series_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("series.id", ondelete="CASCADE")
+    id: Mapped[bytes] = mapped_column(
+        LargeBinary, primary_key=True, default=_new_uuid_bytes
+    )
+    series_id: Mapped[Optional[bytes]] = mapped_column(
+        LargeBinary, ForeignKey("series.id", ondelete="CASCADE")
     )
     name: Mapped[Optional[str]] = mapped_column(String)
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
@@ -133,9 +146,11 @@ class Episode(Base):
 
     __tablename__ = "episodes"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    season_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("seasons.id", ondelete="CASCADE")
+    id: Mapped[bytes] = mapped_column(
+        LargeBinary, primary_key=True, default=_new_uuid_bytes
+    )
+    season_id: Mapped[Optional[bytes]] = mapped_column(
+        LargeBinary, ForeignKey("seasons.id", ondelete="CASCADE")
     )
     name: Mapped[Optional[str]] = mapped_column(String)
     path: Mapped[Optional[str]] = mapped_column(String, unique=True)
@@ -172,7 +187,9 @@ class Movie(Base):
 
     __tablename__ = "movies"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[bytes] = mapped_column(
+        LargeBinary, primary_key=True, default=_new_uuid_bytes
+    )
     library_name: Mapped[Optional[str]] = mapped_column(String)
     name: Mapped[Optional[str]] = mapped_column(String)
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)

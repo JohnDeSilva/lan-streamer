@@ -642,7 +642,14 @@ def _process_season_metadata(
         season_index = 0
     else:
         season_number_match = re.search(r"\d+", season_name)
-        season_index = int(season_number_match.group()) if season_number_match else -1
+        if season_number_match:
+            season_index = int(season_number_match.group())
+        else:
+            season_index = -1
+            logger.warning(
+                f"Season directory '{season_name}' contains no recognisable season number "
+                "— TMDB episode lookup will be skipped for this directory."
+            )
 
     logger.debug(
         f"Processing season directory: '{season_name}' (Season index: {season_index})"
@@ -744,12 +751,19 @@ def _process_season_metadata(
                         }
                     )
         else:
-            logger.info(
-                f"Fetching TMDB episodes list for series ID '{series_data['_tmdb_series_id']}', season index '{season_index}'"
-            )
-            tmdb_episodes = tmdb_client.get_episodes(
-                series_data["_tmdb_series_id"], season_index
-            )
+            if season_index < 0:
+                logger.warning(
+                    f"Skipping TMDB episode fetch for series ID '{series_data['_tmdb_series_id']}': "
+                    f"season index '{season_index}' is invalid (could not parse a season number "
+                    f"from directory name '{season_name}')."
+                )
+            else:
+                logger.info(
+                    f"Fetching TMDB episodes list for series ID '{series_data['_tmdb_series_id']}', season index '{season_index}'"
+                )
+                tmdb_episodes = tmdb_client.get_episodes(
+                    series_data["_tmdb_series_id"], season_index
+                )
 
     return season_name, season_index, season_metadata, tmdb_episodes
 
