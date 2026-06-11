@@ -104,11 +104,24 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
         "runtime": None,
     }
 
-    if not file_path or not os.path.exists(file_path):
+    if not file_path:
+        logger.debug("get_detailed_file_info: Empty file path provided.")
+        return info
+
+    if not os.path.exists(file_path):
+        logger.warning(
+            f"get_detailed_file_info: File path does not exist on disk: '{file_path}'"
+        )
         return info
 
     path_obj = Path(file_path)
-    info["size_bytes"] = path_obj.stat().st_size
+    try:
+        info["size_bytes"] = path_obj.stat().st_size
+    except Exception as stat_error:
+        logger.error(
+            f"get_detailed_file_info: Failed to read file stats/size for '{file_path}': {stat_error}"
+        )
+
     suffix = path_obj.suffix
     info["video_type"] = suffix.upper().replace(".", "") if suffix else None
 
