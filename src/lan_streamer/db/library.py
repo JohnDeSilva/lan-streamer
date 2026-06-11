@@ -7,7 +7,7 @@ from typing import Dict, Any, List
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from lan_streamer.db.models import Series, Season, Episode, Movie
+from lan_streamer.db.models import Series, Season, Episode, Movie, MediaFile
 from lan_streamer.system.config import config
 from lan_streamer.db.queries import (
     _build_series_dict,
@@ -22,6 +22,57 @@ def get_session() -> Any:
 
 
 logger = logging.getLogger(__name__)
+
+
+def _sync_media_files(
+    session: Session, owner: Any, versions_data: List[Dict[str, Any]] | None
+) -> None:
+    if versions_data is None:
+        return
+
+    incoming_paths = {v["path"] for v in versions_data if v.get("path")}
+
+    # Remove existing files not in incoming
+    existing_files = {mf.path: mf for mf in owner.media_files}
+    for path, mf in list(existing_files.items()):
+        if path not in incoming_paths:
+            session.delete(mf)
+            owner.media_files.remove(mf)
+
+    # Add or update files
+    for v in versions_data:
+        path = v.get("path")
+        if not path:
+            continue
+        mf = existing_files.get(path)
+        if not mf:
+            mf = session.scalars(
+                select(MediaFile).where(MediaFile.path == path)
+            ).first()
+            if mf:
+                # Re-parent
+                mf.episode = None
+                mf.movie = None
+                if type(owner).__name__ == "Episode":
+                    mf.episode = owner
+                else:
+                    mf.movie = owner
+            else:
+                mf = MediaFile(path=path)
+                owner.media_files.append(mf)
+                session.add(mf)
+
+        mf.size_bytes = v.get("size_bytes")
+        mf.video_type = v.get("video_type")
+        mf.video_codec = v.get("video_codec")
+        mf.resolution = v.get("resolution")
+        mf.bit_rate = v.get("bit_rate")
+        mf.audio_tracks = (
+            json.dumps(v.get("audio_tracks")) if v.get("audio_tracks") else None
+        )
+        mf.subtitle_tracks = (
+            json.dumps(v.get("subtitle_tracks")) if v.get("subtitle_tracks") else None
+        )
 
 
 def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> None:
@@ -53,6 +104,10 @@ def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> None:
         movie.video_codec = movie_data.get("video_codec") or movie.video_codec
     if "resolution" in movie_data:
         movie.resolution = movie_data.get("resolution") or movie.resolution
+    if "bit_rate" in movie_data:
+        movie.bit_rate = movie_data.get("bit_rate") or movie.bit_rate
+    if "default_path" in movie_data:
+        movie.default_path = movie_data.get("default_path") or movie.default_path
 
     if "audio_tracks" in movie_data:
         movie.audio_tracks = (
@@ -278,6 +333,7 @@ def _save_episode_record(
     stats["episodes"] += 1
 
     episode.name = episode_data["name"]
+    episode.path = episode_data.get("path") or episode.path
     episode.jellyfin_id = episode_data.get("jellyfin_id") or episode.jellyfin_id
     episode.tmdb_episode_identifier = (
         episode_data.get("tmdb_episode_identifier") or episode.tmdb_episode_identifier
@@ -293,10 +349,28 @@ def _save_episode_record(
         episode.myanimelist_anime_id = episode_data["myanimelist_anime_id"]
     if "myanimelist_episode_number" in episode_data:
         episode.myanimelist_episode_number = episode_data["myanimelist_episode_number"]
+    versions = episode_data.get("versions")
+    if versions is None and episode_data.get("path"):
+        versions = [
+            {
+                "path": episode_data.get("path"),
+                "video_codec": episode_data.get("video_codec"),
+                "resolution": episode_data.get("resolution"),
+                "bit_rate": episode_data.get("bit_rate"),
+                "audio_tracks": episode_data.get("audio_tracks"),
+                "subtitle_tracks": episode_data.get("subtitle_tracks"),
+            }
+        ]
+    _sync_media_files(session, episode, versions)
+
     if "video_codec" in episode_data:
         episode.video_codec = episode_data.get("video_codec") or episode.video_codec
     if "resolution" in episode_data:
         episode.resolution = episode_data.get("resolution") or episode.resolution
+    if "bit_rate" in episode_data:
+        episode.bit_rate = episode_data.get("bit_rate") or episode.bit_rate
+    if "default_path" in episode_data:
+        episode.default_path = episode_data.get("default_path") or episode.default_path
 
     if "audio_tracks" in episode_data:
         episode.audio_tracks = (
@@ -477,7 +551,9 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> None:
                 existing_movies_by_path = {
                     m.path: m
                     for m in session.scalars(
-                        select(Movie).where(Movie.path.in_(incoming_paths))
+                        select(Movie)
+                        .join(MediaFile)
+                        .where(MediaFile.path.in_(incoming_paths))
                     ).all()
                     if m.path is not None
                 }
@@ -533,6 +609,19 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> None:
                     existing_movies_by_path[path] = movie
                 existing_movies_by_name[movie_name] = movie
 
+                versions = movie_data.get("versions")
+                if versions is None and movie_data.get("path"):
+                    versions = [
+                        {
+                            "path": movie_data.get("path"),
+                            "video_codec": movie_data.get("video_codec"),
+                            "resolution": movie_data.get("resolution"),
+                            "bit_rate": movie_data.get("bit_rate"),
+                            "audio_tracks": movie_data.get("audio_tracks"),
+                            "subtitle_tracks": movie_data.get("subtitle_tracks"),
+                        }
+                    ]
+                _sync_media_files(session, movie, versions)
                 _apply_movie_fields(movie, movie_data)
 
     except Exception:

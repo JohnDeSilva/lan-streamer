@@ -1,6 +1,6 @@
 import enum
 import uuid
-from typing import Optional, List
+from typing import Optional, List, Any
 from sqlalchemy import (
     Integer,
     String,
@@ -9,7 +9,9 @@ from sqlalchemy import (
     LargeBinary,
     UniqueConstraint,
     Index,
+    LargeBinary,
 )
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -27,6 +29,9 @@ class Base(DeclarativeBase):
     """SQLAlchemy declarative base class for database models."""
 
     pass
+
+
+
 
 
 class SecretType(str, enum.Enum):
@@ -153,7 +158,6 @@ class Episode(Base):
         LargeBinary, ForeignKey("seasons.id", ondelete="CASCADE")
     )
     name: Mapped[Optional[str]] = mapped_column(String)
-    path: Mapped[Optional[str]] = mapped_column(String, unique=True)
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
     tmdb_episode_identifier: Mapped[Optional[str]] = mapped_column(String)
     tmdb_name: Mapped[Optional[str]] = mapped_column(String)
@@ -167,13 +171,96 @@ class Episode(Base):
     last_played_position: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     last_played_at: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     video_codec: Mapped[Optional[str]] = mapped_column(String)
-    resolution: Mapped[Optional[str]] = mapped_column(String)
-    audio_tracks: Mapped[Optional[str]] = mapped_column(String)
-    subtitle_tracks: Mapped[Optional[str]] = mapped_column(String)
+    default_path: Mapped[Optional[str]] = mapped_column(String)
 
     season: Mapped[Optional["Season"]] = relationship(
         "Season", back_populates="episodes"
     )
+    media_files: Mapped[List["MediaFile"]] = relationship(
+        "MediaFile",
+        back_populates="episode",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    def _get_or_create_media_file(self) -> "MediaFile":
+        if not self.media_files:
+            mf = MediaFile(path=f"pending_{uuid.uuid4()}")
+            self.media_files.append(mf)
+            return mf
+        return self.media_files[0]
+
+    @property
+    def path(self) -> Optional[str]:
+        if self.default_path:
+            return self.default_path
+        if self.media_files:
+            p = self.media_files[0].path
+            if p and p.startswith("pending_"):
+                return None
+            return p
+        return None
+
+    @path.setter
+    def path(self, value: Optional[str]) -> None:
+        if value == self.path:
+            return
+        self.default_path = value
+        if value:
+            if len(self.media_files) == 1 and self.media_files[0].path.startswith(
+                "pending_"
+            ):
+                self.media_files[0].path = value
+            else:
+                exists = False
+                for mf in self.media_files:
+                    if mf.path == value:
+                        exists = True
+                        break
+                if not exists:
+                    self.media_files.append(MediaFile(path=value))
+        else:
+            self.media_files.clear()
+
+    @property
+    def resolution(self) -> Optional[str]:
+        if self.media_files:
+            return self.media_files[0].resolution
+        return None
+
+    @resolution.setter
+    def resolution(self, value: Optional[str]) -> None:
+        self._get_or_create_media_file().resolution = value
+
+    @property
+    def audio_tracks(self) -> Optional[str]:
+        if self.media_files:
+            return self.media_files[0].audio_tracks
+        return None
+
+    @audio_tracks.setter
+    def audio_tracks(self, value: Optional[str]) -> None:
+        self._get_or_create_media_file().audio_tracks = value
+
+    @property
+    def subtitle_tracks(self) -> Optional[str]:
+        if self.media_files:
+            return self.media_files[0].subtitle_tracks
+        return None
+
+    @subtitle_tracks.setter
+    def subtitle_tracks(self, value: Optional[str]) -> None:
+        self._get_or_create_media_file().subtitle_tracks = value
+
+    @property
+    def bit_rate(self) -> Optional[int]:
+        if self.media_files:
+            return self.media_files[0].bit_rate
+        return None
+
+    @bit_rate.setter
+    def bit_rate(self, value: Optional[int]) -> None:
+        self._get_or_create_media_file().bit_rate = value
 
     __table_args__ = (
         UniqueConstraint("season_id", "name", name="uq_episodes_season_id_name"),
@@ -199,7 +286,6 @@ class Movie(Base):
     tmdb_name: Mapped[Optional[str]] = mapped_column(String)
     locked_metadata: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     date_added: Mapped[Optional[int]] = mapped_column(Integer, default=0)
-    path: Mapped[Optional[str]] = mapped_column(String, unique=True)
     myanimelist_anime_id: Mapped[Optional[int]] = mapped_column(Integer)
     runtime: Mapped[Optional[int]] = mapped_column(Integer)
     rating: Mapped[Optional[str]] = mapped_column(String)
@@ -209,11 +295,126 @@ class Movie(Base):
     last_played_position: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     last_played_at: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     video_codec: Mapped[Optional[str]] = mapped_column(String)
-    resolution: Mapped[Optional[str]] = mapped_column(String)
-    audio_tracks: Mapped[Optional[str]] = mapped_column(String)
-    subtitle_tracks: Mapped[Optional[str]] = mapped_column(String)
+    default_path: Mapped[Optional[str]] = mapped_column(String)
+
+    media_files: Mapped[List["MediaFile"]] = relationship(
+        "MediaFile",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    def _get_or_create_media_file(self) -> "MediaFile":
+        if not self.media_files:
+            mf = MediaFile(path=f"pending_{uuid.uuid4()}")
+            self.media_files.append(mf)
+            return mf
+        return self.media_files[0]
+
+    @property
+    def path(self) -> Optional[str]:
+        if self.default_path:
+            return self.default_path
+        if self.media_files:
+            p = self.media_files[0].path
+            if p and p.startswith("pending_"):
+                return None
+            return p
+        return None
+
+    @path.setter
+    def path(self, value: Optional[str]) -> None:
+        if value == self.path:
+            return
+        self.default_path = value
+        if value:
+            if len(self.media_files) == 1 and self.media_files[0].path.startswith(
+                "pending_"
+            ):
+                self.media_files[0].path = value
+            else:
+                exists = False
+                for mf in self.media_files:
+                    if mf.path == value:
+                        exists = True
+                        break
+                if not exists:
+                    self.media_files.append(MediaFile(path=value))
+        else:
+            self.media_files.clear()
+
+    @property
+    def resolution(self) -> Optional[str]:
+        if self.media_files:
+            return self.media_files[0].resolution
+        return None
+
+    @resolution.setter
+    def resolution(self, value: Optional[str]) -> None:
+        self._get_or_create_media_file().resolution = value
+
+    @property
+    def audio_tracks(self) -> Optional[str]:
+        if self.media_files:
+            return self.media_files[0].audio_tracks
+        return None
+
+    @audio_tracks.setter
+    def audio_tracks(self, value: Optional[str]) -> None:
+        self._get_or_create_media_file().audio_tracks = value
+
+    @property
+    def subtitle_tracks(self) -> Optional[str]:
+        if self.media_files:
+            return self.media_files[0].subtitle_tracks
+        return None
+
+    @subtitle_tracks.setter
+    def subtitle_tracks(self, value: Optional[str]) -> None:
+        self._get_or_create_media_file().subtitle_tracks = value
+
+    @property
+    def bit_rate(self) -> Optional[int]:
+        if self.media_files:
+            return self.media_files[0].bit_rate
+        return None
+
+    @bit_rate.setter
+    def bit_rate(self, value: Optional[int]) -> None:
+        self._get_or_create_media_file().bit_rate = value
 
     __table_args__ = (
         UniqueConstraint("library_name", "name", name="uq_movies_library_name_name"),
         Index("idx_movies_jellyfin_id", "jellyfin_id"),
+    )
+
+
+class MediaFile(Base):
+    """Database model representing a physical media file mapped to an episode or movie."""
+
+    __tablename__ = "media_files"
+
+    id: Mapped[bytes] = mapped_column(
+        LargeBinary, primary_key=True, default=_new_uuid_bytes
+    )
+    episode_id: Mapped[Optional[bytes]] = mapped_column(
+        LargeBinary, ForeignKey("episodes.id", ondelete="CASCADE"), nullable=True
+    )
+    movie_id: Mapped[Optional[bytes]] = mapped_column(
+        LargeBinary, ForeignKey("movies.id", ondelete="CASCADE"), nullable=True
+    )
+    path: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    size_bytes: Mapped[Optional[int]] = mapped_column(Integer)
+    video_type: Mapped[Optional[str]] = mapped_column(String)
+    video_codec: Mapped[Optional[str]] = mapped_column(String)
+    resolution: Mapped[Optional[str]] = mapped_column(String)
+    bit_rate: Mapped[Optional[int]] = mapped_column(Integer)
+    audio_tracks: Mapped[Optional[str]] = mapped_column(String)
+    subtitle_tracks: Mapped[Optional[str]] = mapped_column(String)
+
+    episode: Mapped[Optional["Episode"]] = relationship(
+        "Episode", back_populates="media_files"
+    )
+    movie: Mapped[Optional["Movie"]] = relationship(
+        "Movie", back_populates="media_files"
     )

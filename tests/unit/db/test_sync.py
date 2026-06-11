@@ -176,9 +176,21 @@ def test_sync_watched_by_ids(mock_db_file) -> None:
     from lan_streamer.db import get_session
 
     with get_session() as session:
-        ep = session.query(Episode).filter_by(path="/p1").first()
+        from lan_streamer.db.models import MediaFile
+
+        ep = (
+            session.query(Episode)
+            .join(MediaFile)
+            .filter(MediaFile.path == "/p1")
+            .first()
+        )
         assert ep is not None and ep.watched is True
-        ep2 = session.query(Episode).filter_by(path="/p2").first()
+        ep2 = (
+            session.query(Episode)
+            .join(MediaFile)
+            .filter(MediaFile.path == "/p2")
+            .first()
+        )
         assert ep2 is not None and ep2.watched is False
 
 

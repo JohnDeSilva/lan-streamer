@@ -47,6 +47,7 @@ class RuntimeExtractionWorker(QThread):
                         resolution=info.get("resolution"),
                         audio_tracks=info.get("audio_tracks"),
                         subtitle_tracks=info.get("subtitle_tracks"),
+                        bit_rate=info.get("bit_rate"),
                     )
                     updated_count += 1
 

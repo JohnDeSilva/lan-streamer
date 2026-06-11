@@ -98,6 +98,7 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
         "video_type": "Unknown",
         "resolution": "Unknown",
         "video_codec": "Unknown",
+        "bit_rate": 0,
         "audio_tracks": [],
         "subtitle_tracks": [],
         "runtime": 0,
@@ -138,6 +139,20 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
                     duration_seconds = float(duration_str)
                     info["runtime"] = int(round(duration_seconds / 60.0))
                 except ValueError:
+                    pass
+
+            bit_rate_str = format_data.get("bit_rate")
+            if bit_rate_str:
+                try:
+                    info["bit_rate"] = int(bit_rate_str)
+                except ValueError:
+                    pass
+            if not info.get("bit_rate") and duration_str:
+                try:
+                    dur = float(duration_str)
+                    if dur > 0:
+                        info["bit_rate"] = int(round((info["size_bytes"] * 8) / dur))
+                except Exception:
                     pass
 
             for stream in streams:
