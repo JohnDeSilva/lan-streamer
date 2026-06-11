@@ -106,10 +106,12 @@ class Config:
 
     def _load_startup_config(self, force: bool = False) -> None:
         """Read startup-critical settings from the config file."""
-        logger.debug(f"Attempting to load startup config from {CONFIG_FILE}")
+        logger.info(f"Attempting to load startup config from {CONFIG_FILE}")
         if not CONFIG_FILE.exists():
-            logger.info("Config file does not exist.")
-            self._last_loaded_mtime = -1.0
+            logger.info(
+                "Config file does not exist. Generating a new one with defaults."
+            )
+            self.save()
             return
 
         try:
@@ -148,7 +150,7 @@ class Config:
             )
 
             self._last_loaded_mtime = current_mtime
-            logger.debug("Startup config loaded successfully.")
+            logger.info("Startup config loaded successfully.")
         except Exception:
             logger.exception("Error loading startup config")
 
@@ -206,47 +208,42 @@ class Config:
         """
         logger.debug("Loading DB-backed config settings from database.")
         try:
-            from lan_streamer.db.queries import get_app_config, get_secret
+            from lan_streamer.db.queries import (
+                get_all_app_configs,
+                bulk_set_app_configs,
+                get_all_secrets,
+            )
             from lan_streamer.db.models import SecretType
 
-            # General settings
-            self.libraries = get_app_config("libraries", {})
-            self.sync_history_on_start = get_app_config("sync_history_on_start", True)
-            self.filter_out_watched = get_app_config("filter_out_watched", False)
-            self.sort_mode = get_app_config("sort_mode", "Alphabetical")
-            self.sort_descending = get_app_config("sort_descending", False)
-            self.divide_logs_by_service = get_app_config(
-                "divide_logs_by_service", False
-            )
-            self.enable_caching = get_app_config("enable_caching", False)
-            self.watched_threshold = get_app_config("watched_threshold", 0.95)
-            self.cache_directory = get_app_config(
-                "cache_directory",
-                str(Path.home() / ".config" / "lan-streamer" / "cache"),
-            )
-            self.use_embedded_player = get_app_config("use_embedded_player", True)
-            self.enable_hw_accel = get_app_config("enable_hw_accel", True)
-            self.vlc_extra_args = get_app_config("vlc_extra_args", [])
-            self.vlc_buffer_ms = get_app_config("vlc_buffer_ms", 3000)
-            self.player_overlay_opacity = get_app_config("player_overlay_opacity", 0.4)
-            self.player_overlay_color = get_app_config("player_overlay_color", "white")
-            self.max_cache_size_gb = get_app_config("max_cache_size_gb", 15.0)
-            self.enable_next_episode_popup = get_app_config(
-                "enable_next_episode_popup", True
-            )
-            self.max_log_retention_days = get_app_config("max_log_retention_days", 7)
-            self.backup_directory = get_app_config(
-                "backup_directory",
-                str(Path.home() / ".config" / "lan-streamer" / "backups"),
-            )
-            self.config_backup_retention = get_app_config("config_backup_retention", 7)
-            self.database_backup_retention = get_app_config(
-                "database_backup_retention", 7
-            )
-            self.enable_combined_view = get_app_config("enable_combined_view", False)
-            self.combined_views = get_app_config(
-                "combined_views",
-                [
+            # Define defaults for all general settings
+            defaults = {
+                "libraries": {},
+                "sync_history_on_start": True,
+                "filter_out_watched": False,
+                "sort_mode": "Alphabetical",
+                "sort_descending": False,
+                "divide_logs_by_service": False,
+                "enable_caching": False,
+                "watched_threshold": 0.95,
+                "cache_directory": str(
+                    Path.home() / ".config" / "lan-streamer" / "cache"
+                ),
+                "use_embedded_player": True,
+                "enable_hw_accel": True,
+                "vlc_extra_args": [],
+                "vlc_buffer_ms": 3000,
+                "player_overlay_opacity": 0.4,
+                "player_overlay_color": "white",
+                "max_cache_size_gb": 15.0,
+                "enable_next_episode_popup": True,
+                "max_log_retention_days": 7,
+                "backup_directory": str(
+                    Path.home() / ".config" / "lan-streamer" / "backups"
+                ),
+                "config_backup_retention": 7,
+                "database_backup_retention": 7,
+                "enable_combined_view": False,
+                "combined_views": [
                     {
                         "name": "All Libraries - Next Up - All",
                         "enabled": True,
@@ -262,28 +259,73 @@ class Config:
                         "filter_mode": "All",
                     },
                 ],
+                "preferred_audio_device": "",
+                "check_for_updates_on_startup": True,
+            }
+
+            # 1. get all rows in the database in a single query and take that result and put it into a dictionary
+            config_dict = get_all_app_configs()
+
+            # 2. Iterate over each setting and get the value from the dictionary if it exists or write it to the dictionary if it doesn't
+            logger.debug(
+                "Applying default DB config values for missing startup settings"
             )
-            self.preferred_audio_device = get_app_config("preferred_audio_device", "")
-            self.check_for_updates_on_startup = get_app_config(
-                "check_for_updates_on_startup", True
-            )
+            for key, default in defaults.items():
+                if key not in config_dict:
+                    logger.debug(f"Setting config key '{key}' to default '{default}'")
+                    config_dict[key] = default
+                logger.info(f"Using config key '{key}' with value '{config_dict[key]}'")
+
+            # Assign general settings from the fully populated dictionary
+            self.libraries = config_dict["libraries"]
+            self.sync_history_on_start = config_dict["sync_history_on_start"]
+            self.filter_out_watched = config_dict["filter_out_watched"]
+            self.sort_mode = config_dict["sort_mode"]
+            self.sort_descending = config_dict["sort_descending"]
+            self.divide_logs_by_service = config_dict["divide_logs_by_service"]
+            self.enable_caching = config_dict["enable_caching"]
+            self.watched_threshold = config_dict["watched_threshold"]
+            self.cache_directory = config_dict["cache_directory"]
+            self.use_embedded_player = config_dict["use_embedded_player"]
+            self.enable_hw_accel = config_dict["enable_hw_accel"]
+            self.vlc_extra_args = config_dict["vlc_extra_args"]
+            self.vlc_buffer_ms = config_dict["vlc_buffer_ms"]
+            self.player_overlay_opacity = config_dict["player_overlay_opacity"]
+            self.player_overlay_color = config_dict["player_overlay_color"]
+            self.max_cache_size_gb = config_dict["max_cache_size_gb"]
+            self.enable_next_episode_popup = config_dict["enable_next_episode_popup"]
+            self.max_log_retention_days = config_dict["max_log_retention_days"]
+            self.backup_directory = config_dict["backup_directory"]
+            self.config_backup_retention = config_dict["config_backup_retention"]
+            self.database_backup_retention = config_dict["database_backup_retention"]
+            self.enable_combined_view = config_dict["enable_combined_view"]
+            self.combined_views = config_dict["combined_views"]
+            self.preferred_audio_device = config_dict["preferred_audio_device"]
+            self.check_for_updates_on_startup = config_dict[
+                "check_for_updates_on_startup"
+            ]
+
+            # 3. After going through all the settings take the fully populated dictionary and write the contents back to the database
+            bulk_set_app_configs(config_dict)
 
             # Secrets — convenience flat attributes
-            jf = get_secret(SecretType.JELLYFIN)
+            secrets = get_all_secrets()
+
+            jf = secrets.get(SecretType.JELLYFIN.value, {})
             self.jellyfin_url = jf.get("url", "")
             self.jellyfin_api_key = jf.get("api_key", "")
 
-            tmdb = get_secret(SecretType.TMDB)
+            tmdb = secrets.get(SecretType.TMDB.value, {})
             self.tmdb_api_key = tmdb.get("api_key", "")
 
-            mal = get_secret(SecretType.MYANIMELIST)
+            mal = secrets.get(SecretType.MYANIMELIST.value, {})
             self.myanimelist_client_id = mal.get("client_id", "")
             self.myanimelist_client_secret = mal.get("client_secret", "")
             self.myanimelist_access_token = mal.get("access_token", "")
             self.myanimelist_refresh_token = mal.get("refresh_token", "")
             self.myanimelist_token_expires_at = float(mal.get("token_expires_at", 0.0))
 
-            os_creds = get_secret(SecretType.OPENSUBTITLES)
+            os_creds = secrets.get(SecretType.OPENSUBTITLES.value, {})
             self.opensubtitles_username = os_creds.get("username", "")
             self.opensubtitles_password = os_creds.get("password", "")
             self.opensubtitles_api_key = os_creds.get("api_key", "")

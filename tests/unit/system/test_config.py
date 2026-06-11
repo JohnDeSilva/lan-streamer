@@ -198,3 +198,17 @@ def test_config_series_preferences(mock_config_file) -> None:
         config.get_series_preference("TV", "Breaking Bad", "nonexistent", "default_val")
         == "default_val"
     )
+
+
+def test_config_generates_on_startup_if_not_exists(mock_config_file) -> None:
+    if mock_config_file.exists():
+        mock_config_file.unlink()
+
+    # Initialization should trigger self.save() and create the file
+    config = Config()
+    assert mock_config_file.exists()
+
+    with open(mock_config_file, "r") as f:
+        data = json.load(f)
+    assert data["database_path"] == config.database_path
+    assert data["log_level"] == "INFO"
