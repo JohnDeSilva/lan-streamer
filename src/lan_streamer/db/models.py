@@ -1,17 +1,15 @@
 import enum
 import uuid
-from typing import Optional, List, Any
+from typing import Optional, List
 from sqlalchemy import (
     Integer,
     String,
     Boolean,
     ForeignKey,
-    LargeBinary,
     UniqueConstraint,
     Index,
     LargeBinary,
 )
-from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -29,9 +27,6 @@ class Base(DeclarativeBase):
     """SQLAlchemy declarative base class for database models."""
 
     pass
-
-
-
 
 
 class SecretType(str, enum.Enum):
