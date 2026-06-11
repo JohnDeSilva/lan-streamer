@@ -5,7 +5,7 @@ import functools
 import json
 import subprocess
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 logger = logging.getLogger(__name__)
@@ -41,14 +41,14 @@ def _get_ffprobe_command() -> str:
     return "ffprobe"
 
 
-def _extract_video_runtime(file_path: str) -> int:
+def _extract_video_runtime(file_path: str) -> Optional[int]:
     """
     Extracts video runtime in minutes directly from the video file itself.
     First attempts using ffprobe via subprocess for clean offline parsing,
     falling back to libvlc media parsing if ffprobe is unavailable.
     """
     if not file_path or not os.path.exists(file_path):
-        return 0
+        return None
 
     try:
         process_result: subprocess.CompletedProcess[str] = subprocess.run(
@@ -84,7 +84,7 @@ def _extract_video_runtime(file_path: str) -> int:
     except Exception as error_instance:
         logger.debug(f"vlc extraction failed for '{file_path}': {error_instance}")
 
-    return 0
+    return None
 
 
 def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
@@ -94,14 +94,14 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
     """
     info: Dict[str, Any] = {
         "path": file_path,
-        "size_bytes": 0,
-        "video_type": "Unknown",
-        "resolution": "Unknown",
-        "video_codec": "Unknown",
-        "bit_rate": 0,
+        "size_bytes": None,
+        "video_type": None,
+        "resolution": None,
+        "video_codec": None,
+        "bit_rate": None,
         "audio_tracks": [],
         "subtitle_tracks": [],
-        "runtime": 0,
+        "runtime": None,
     }
 
     if not file_path or not os.path.exists(file_path):
@@ -109,7 +109,8 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
 
     path_obj = Path(file_path)
     info["size_bytes"] = path_obj.stat().st_size
-    info["video_type"] = path_obj.suffix.upper().replace(".", "")
+    suffix = path_obj.suffix
+    info["video_type"] = suffix.upper().replace(".", "") if suffix else None
 
     try:
         process_result = subprocess.run(
@@ -150,7 +151,7 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
             if not info.get("bit_rate") and duration_str:
                 try:
                     dur = float(duration_str)
-                    if dur > 0:
+                    if dur > 0 and info["size_bytes"] is not None:
                         info["bit_rate"] = int(round((info["size_bytes"] * 8) / dur))
                 except Exception:
                     pass
@@ -174,7 +175,7 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
                     height = stream.get("height")
                     if width and height:
                         info["resolution"] = f"{width}x{height}"
-                    if info["video_codec"] == "Unknown" or not info.get("video_codec"):
+                    if not info.get("video_codec"):
                         info["video_codec"] = codec_name
                 elif codec_type == "audio":
                     info["audio_tracks"].append(track_info)
@@ -184,7 +185,7 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
     except Exception as exc:
         logger.error(f"Failed to extract detailed info for {file_path}: {exc}")
 
-    if info["runtime"] == 0:
+    if not info.get("runtime"):
         info["runtime"] = _extract_video_runtime(file_path)
 
     return info

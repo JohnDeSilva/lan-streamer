@@ -136,7 +136,9 @@ class MovieDetailView(QWidget):
 
         # Build metadata label details
         year: Optional[int] = movie_record.get("year")
-        runtime: Optional[int] = movie_record.get("runtime")
+        runtime: Optional[int] = movie_record.get("file_runtime") or movie_record.get(
+            "runtime"
+        )
         rating: Optional[str] = movie_record.get("rating")
         genre: Optional[str] = movie_record.get("genre")
 

@@ -344,7 +344,8 @@ def test_update_item_runtime_episode_with_tech_info(mock_db_file) -> None:
     with get_session() as session:
         updated = session.query(Episode).filter_by(id=ep_id).first()
         assert updated is not None
-        assert updated.runtime == 45
+        assert updated.runtime == 0
+        assert updated.file_runtime == 45
         assert updated.video_codec == "h264"
         assert updated.resolution == "1920x1080"
         assert json.loads(updated.audio_tracks) == [{"language": "eng"}]
@@ -379,7 +380,8 @@ def test_update_item_runtime_movie_with_tech_info(mock_db_file) -> None:
     with get_session() as session:
         updated = session.query(Movie).filter_by(id=movie_id).first()
         assert updated is not None
-        assert updated.runtime == 120
+        assert updated.runtime == 0
+        assert updated.file_runtime == 120
         assert updated.video_codec == "hevc"
         assert updated.resolution == "3840x2160"
         assert json.loads(updated.audio_tracks) == [
