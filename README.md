@@ -241,6 +241,106 @@ The application automatically tracks your playback progress and maintains a "wat
 
 ---
 
+## 🗄️ Database Architecture
+
+The application uses an SQLite database with SQLAlchemy ORM. Primary and foreign keys are stored as 16-byte raw binary `BLOB`s (UUIDs) in the database for space efficiency, and are transparently mapped to standard canonical UUID strings in Python/application code.
+
+### Database Schema Diagram
+
+```mermaid
+erDiagram
+    SERIES {
+        bytes id PK
+        string library_name
+        string name
+        string jellyfin_id
+        string tmdb_identifier
+        string poster_path
+        string overview
+        string tmdb_name
+        boolean locked_metadata
+        string first_air_date
+        string tmdb_episode_group_id
+        boolean pref_hide_missing_future
+        string pref_display_group_id
+    }
+    SEASONS {
+        bytes id PK
+        bytes series_id FK
+        string name
+        string jellyfin_id
+        string poster_path
+        int myanimelist_id
+    }
+    EPISODES {
+        bytes id PK
+        bytes season_id FK
+        string name
+        string jellyfin_id
+        string tmdb_episode_identifier
+        string tmdb_name
+        int tmdb_number
+        boolean watched
+        int myanimelist_episode_number
+        int last_played_position
+        int last_played_at
+        string video_codec
+        string default_path
+    }
+    MOVIES {
+        bytes id PK
+        string library_name
+        string name
+        string jellyfin_id
+        string tmdb_identifier
+        string poster_path
+        string overview
+        string tmdb_name
+        boolean locked_metadata
+        int date_added
+        int myanimelist_anime_id
+        int runtime
+        string rating
+        string genre
+        int year
+        boolean watched
+        int last_played_position
+        int last_played_at
+        string video_codec
+        string default_path
+    }
+    MEDIA_FILES {
+        bytes id PK
+        bytes episode_id FK
+        bytes movie_id FK
+        string path UK
+        int size_bytes
+        string video_type
+        string video_codec
+        string resolution
+        int bit_rate
+        string audio_tracks
+        string subtitle_tracks
+    }
+    APP_CONFIG {
+        string key PK
+        string value
+        string type
+    }
+    APP_SECRETS {
+        bytes secret_uuid PK
+        string secret_type UK
+        string secret
+    }
+
+    SERIES ||--o{ SEASONS : "contains"
+    SEASONS ||--o{ EPISODES : "contains"
+    EPISODES ||--o{ MEDIA_FILES : "mapped_to"
+    MOVIES ||--o{ MEDIA_FILES : "mapped_to"
+```
+
+---
+
 ## 🧪 Development & Quality Assurance
 
 ### Technical Stack
