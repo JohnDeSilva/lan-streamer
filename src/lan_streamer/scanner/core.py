@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Optional
 
 from lan_streamer.db import natural_sort_key
 from lan_streamer.scanner.proxy import tmdb_client, clean_series_data, scanner_proxy
+from lan_streamer.scanner.runtime import get_detailed_file_info
 from lan_streamer.scanner.parser import (
     VIDEO_EXTENSIONS,
     has_video_files,
@@ -27,6 +28,66 @@ from lan_streamer.scanner.metadata import (
 )
 
 logger = logging.getLogger("lan_streamer.scanner")
+
+
+def get_version_score_key(version: Dict[str, Any]) -> tuple:
+    res = version.get("resolution") or ""
+    res_score = 0
+    if "x" in res:
+        try:
+            w, h = res.split("x")
+            res_score = int(w) * int(h)
+        except Exception:
+            pass
+
+    bit_rate = version.get("bit_rate") or 0
+    try:
+        bit_rate = int(bit_rate)
+    except Exception:
+        bit_rate = 0
+
+    video_codec = (version.get("video_codec") or "").lower()
+    video_ranks = {"av1": 4, "hevc": 3, "h265": 3, "h264": 2, "avc": 2}
+    video_codec_score = 1
+    for k, v in video_ranks.items():
+        if k in video_codec:
+            video_codec_score = max(video_codec_score, v)
+
+    audio_tracks = version.get("audio_tracks") or []
+    audio_ranks = {
+        "truehd": 6,
+        "atmos": 6,
+        "dts-hd": 5,
+        "dts": 4,
+        "eac3": 3,
+        "ac3": 3,
+        "aac": 2,
+        "opus": 2,
+        "mp3": 1,
+    }
+    audio_codec_score = 0
+    for track in audio_tracks:
+        codec = (track.get("codec") or "").lower()
+        track_score = 1
+        for k, v in audio_ranks.items():
+            if k in codec:
+                track_score = max(track_score, v)
+        audio_codec_score = max(audio_codec_score, track_score)
+
+    return (res_score, bit_rate, video_codec_score, audio_codec_score)
+
+
+def choose_active_version(
+    versions: List[Dict[str, Any]], default_path: Optional[str] = None
+) -> Dict[str, Any]:
+    if not versions:
+        return {}
+    if default_path:
+        for v in versions:
+            if v.get("path") == default_path:
+                return v
+    sorted_versions = sorted(versions, key=get_version_score_key, reverse=True)
+    return sorted_versions[0]
 
 
 class LibraryDict(dict[str, Any]):
@@ -292,15 +353,36 @@ def scan_movie(
     folder_name = movie_directory.name
     title, year = _parse_movie_folder(folder_name)
 
-    # Find the first video file
-    video_file = None
+    video_files = []
     for file in movie_directory.rglob("*"):
         if file.is_file() and file.suffix.lower() in VIDEO_EXTENSIONS:
-            video_file = file
-            break
+            video_files.append(file)
 
-    if not video_file:
+    if not video_files:
         return None
+
+    versions = []
+    for file in video_files:
+        path_str = str(file.absolute())
+        existing_v = None
+        if existing_movie_data and existing_movie_data.get("versions"):
+            for ev in existing_movie_data["versions"]:
+                if ev.get("path") == path_str:
+                    existing_v = ev
+                    break
+        if existing_v and not force_refresh:
+            versions.append(existing_v)
+        else:
+            versions.append(get_detailed_file_info(path_str))
+
+    default_path = (
+        existing_movie_data.get("default_path") if existing_movie_data else None
+    )
+    active_version = choose_active_version(versions, default_path)
+    video_path = active_version.get("path")
+    if not video_path:
+        return None
+    video_file = Path(video_path)
 
     if detail_callback:
         detail_callback(
@@ -312,7 +394,6 @@ def scan_movie(
     except OSError:
         ctime = 0
 
-    video_path = str(video_file.absolute())
     is_locked = (
         existing_movie_data.get("locked_metadata", False)
         if existing_movie_data
@@ -348,6 +429,14 @@ def scan_movie(
         movie_data = existing_movie_data.copy()
         if video_path:
             movie_data["path"] = video_path
+        movie_data["video_codec"] = active_version.get("video_codec")
+        movie_data["resolution"] = active_version.get("resolution")
+        movie_data["bit_rate"] = active_version.get("bit_rate")
+        movie_data["audio_tracks"] = active_version.get("audio_tracks")
+        movie_data["subtitle_tracks"] = active_version.get("subtitle_tracks")
+        movie_data["versions"] = versions
+        movie_data["default_path"] = default_path
+
         if not movie_data.get("jellyfin_id") and jellyfin_data:
             path_map = jellyfin_data.get("path_map", {})
             if video_path in path_map:
@@ -413,13 +502,14 @@ def scan_movie(
         "last_played_position": existing_movie_data.get("last_played_position", 0)
         if existing_movie_data
         else 0,
+        "video_codec": active_version.get("video_codec"),
+        "resolution": active_version.get("resolution"),
+        "bit_rate": active_version.get("bit_rate"),
+        "audio_tracks": active_version.get("audio_tracks"),
+        "subtitle_tracks": active_version.get("subtitle_tracks"),
+        "versions": versions,
+        "default_path": default_path,
     }
-
-    if existing_movie_data:
-        movie_data["video_codec"] = existing_movie_data.get("video_codec")
-        movie_data["resolution"] = existing_movie_data.get("resolution")
-        movie_data["audio_tracks"] = existing_movie_data.get("audio_tracks")
-        movie_data["subtitle_tracks"] = existing_movie_data.get("subtitle_tracks")
 
     if detail_callback:
         detail_callback(
@@ -548,6 +638,7 @@ def scan_series(
             "_tmdb_episodes": tmdb_episodes,
         }
 
+        scanned_episodes = []
         for episode_file in season_directory.iterdir():
             if episode_file.is_dir() and not episode_file.name.startswith("."):
                 logger.warning(
@@ -580,7 +671,7 @@ def scan_series(
                     existing_episodes_by_path,
                     existing_series_data,
                 )
-                series_data["seasons"][season_name]["episodes"].append(episode_record)
+                scanned_episodes.append(episode_record)
                 if detail_callback:
                     detail_callback(
                         "finish_file",
@@ -590,6 +681,76 @@ def scan_series(
                             "season": season_name,
                         },
                     )
+
+        # Group by tmdb_number (or name if tmdb_number is None)
+        grouped_episodes = {}
+        for ep in scanned_episodes:
+            key = ep.get("tmdb_number")
+            if key is None:
+                key = ep.get("name")
+            if key not in grouped_episodes:
+                grouped_episodes[key] = []
+            grouped_episodes[key].append(ep)
+
+        for key, ep_list in grouped_episodes.items():
+            versions = []
+            for ep in ep_list:
+                path_str = ep["path"]
+                existing_v = None
+                if existing_series_data:
+                    existing_season = existing_series_data.get("seasons", {}).get(
+                        season_name, {}
+                    )
+                    for ex_ep in existing_season.get("episodes", []):
+                        match = False
+                        if ep.get("tmdb_number") is not None and ex_ep.get(
+                            "tmdb_number"
+                        ) == ep.get("tmdb_number"):
+                            match = True
+                        elif ep.get("name") == ex_ep.get("name"):
+                            match = True
+                        if match and ex_ep.get("versions"):
+                            for ev in ex_ep["versions"]:
+                                if ev.get("path") == path_str:
+                                    existing_v = ev
+                                    break
+                        if existing_v:
+                            break
+                if existing_v and not force_refresh:
+                    versions.append(existing_v)
+                else:
+                    versions.append(get_detailed_file_info(path_str))
+
+            default_path = None
+            if existing_series_data:
+                existing_season = existing_series_data.get("seasons", {}).get(
+                    season_name, {}
+                )
+                for ex_ep in existing_season.get("episodes", []):
+                    match = False
+                    if ep_list[0].get("tmdb_number") is not None and ex_ep.get(
+                        "tmdb_number"
+                    ) == ep_list[0].get("tmdb_number"):
+                        match = True
+                    elif ep_list[0].get("name") == ex_ep.get("name"):
+                        match = True
+                    if match:
+                        default_path = ex_ep.get("default_path")
+                        break
+
+            active_version = choose_active_version(versions, default_path)
+
+            base_ep = ep_list[0].copy()
+            base_ep["path"] = active_version.get("path")
+            base_ep["video_codec"] = active_version.get("video_codec")
+            base_ep["resolution"] = active_version.get("resolution")
+            base_ep["bit_rate"] = active_version.get("bit_rate")
+            base_ep["audio_tracks"] = active_version.get("audio_tracks")
+            base_ep["subtitle_tracks"] = active_version.get("subtitle_tracks")
+            base_ep["versions"] = versions
+            base_ep["default_path"] = default_path
+
+            series_data["seasons"][season_name]["episodes"].append(base_ep)
 
         # Add placeholders for remaining episodes in TMDB list that are not found locally
         local_numbers = {

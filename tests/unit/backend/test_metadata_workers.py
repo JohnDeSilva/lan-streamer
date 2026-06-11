@@ -60,6 +60,7 @@ def test_runtime_extraction_worker_execution() -> None:
             resolution="1920x1080",
             audio_tracks=[],
             subtitle_tracks=[],
+            bit_rate=None,
         )
         assert progress_emitted == [(1, 2), (2, 2)]
         assert finished_emitted == [1]

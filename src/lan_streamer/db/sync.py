@@ -5,7 +5,7 @@ from typing import Set, Tuple, Any
 from sqlalchemy import select, update, func
 from sqlalchemy.orm import Session
 
-from lan_streamer.db.models import Series, Season, Episode, Movie
+from lan_streamer.db.models import Series, Season, Episode, Movie, MediaFile
 
 
 def get_session() -> Any:
@@ -51,18 +51,32 @@ def _sync_watched_by_paths(session: Session, watched_paths: Set[str]) -> int:
     if not watched_paths:
         return 0
     logger.debug(f"Syncing watched status by path for {len(watched_paths)} items")
+
+    ep_subquery = (
+        select(Episode.id)
+        .join(MediaFile)
+        .where(MediaFile.path.in_(watched_paths))
+        .scalar_subquery()
+    )
     count = int(
         session.execute(
             update(Episode)
-            .where(Episode.watched.is_(False), Episode.path.in_(watched_paths))
+            .where(Episode.watched.is_(False), Episode.id.in_(ep_subquery))
             .values(watched=True)
         ).rowcount  # type: ignore[attr-defined]
         or 0
     )
+
+    mv_subquery = (
+        select(Movie.id)
+        .join(MediaFile)
+        .where(MediaFile.path.in_(watched_paths))
+        .scalar_subquery()
+    )
     count += int(
         session.execute(
             update(Movie)
-            .where(Movie.watched.is_(False), Movie.path.in_(watched_paths))
+            .where(Movie.watched.is_(False), Movie.id.in_(mv_subquery))
             .values(watched=True)
         ).rowcount  # type: ignore[attr-defined]
         or 0

@@ -1191,11 +1191,16 @@ class Controller(QObject):
             for series_dictionary in self.cached_library_data.values():
                 for season_dictionary in series_dictionary.get("seasons", {}).values():
                     for episode_dictionary in season_dictionary.get("episodes", []):
+                        if episode_dictionary.get("default_path") == old_path_string:
+                            episode_dictionary["default_path"] = new_path_string
                         if episode_dictionary.get("path") == old_path_string:
                             episode_dictionary["path"] = new_path_string
                             path_instance = Path(new_path_string)
                             episode_dictionary["name"] = path_instance.name
-                            break
+                        versions = episode_dictionary.get("versions") or []
+                        for v in versions:
+                            if v.get("path") == old_path_string:
+                                v["path"] = new_path_string
 
         perform_rename(preview_results, on_rename_success)
 

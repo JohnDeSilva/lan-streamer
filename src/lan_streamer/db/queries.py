@@ -51,6 +51,29 @@ def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
     except Exception:
         subtitle_tracks = []
 
+    versions = []
+    for mf in episode.media_files:
+        try:
+            audio = json.loads(mf.audio_tracks) if mf.audio_tracks else []
+        except Exception:
+            audio = []
+        try:
+            subs = json.loads(mf.subtitle_tracks) if mf.subtitle_tracks else []
+        except Exception:
+            subs = []
+        versions.append(
+            {
+                "path": mf.path,
+                "size_bytes": mf.size_bytes or 0,
+                "video_type": mf.video_type or "",
+                "video_codec": mf.video_codec or "",
+                "resolution": mf.resolution or "",
+                "bit_rate": mf.bit_rate or 0,
+                "audio_tracks": audio,
+                "subtitle_tracks": subs,
+            }
+        )
+
     return {
         "name": episode.name,
         "path": episode.path,
@@ -69,6 +92,9 @@ def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
         "resolution": episode.resolution or "",
         "audio_tracks": audio_tracks,
         "subtitle_tracks": subtitle_tracks,
+        "bit_rate": episode.bit_rate or 0,
+        "versions": versions,
+        "default_path": episode.default_path or "",
     }
 
 
@@ -120,6 +146,29 @@ def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
     except Exception:
         subtitle_tracks = []
 
+    versions = []
+    for mf in movie.media_files:
+        try:
+            audio = json.loads(mf.audio_tracks) if mf.audio_tracks else []
+        except Exception:
+            audio = []
+        try:
+            subs = json.loads(mf.subtitle_tracks) if mf.subtitle_tracks else []
+        except Exception:
+            subs = []
+        versions.append(
+            {
+                "path": mf.path,
+                "size_bytes": mf.size_bytes or 0,
+                "video_type": mf.video_type or "",
+                "video_codec": mf.video_codec or "",
+                "resolution": mf.resolution or "",
+                "bit_rate": mf.bit_rate or 0,
+                "audio_tracks": audio,
+                "subtitle_tracks": subs,
+            }
+        )
+
     return {
         "name": movie.name,
         "path": movie.path,
@@ -142,6 +191,9 @@ def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
         "resolution": movie.resolution or "",
         "audio_tracks": audio_tracks,
         "subtitle_tracks": subtitle_tracks,
+        "bit_rate": movie.bit_rate or 0,
+        "versions": versions,
+        "default_path": movie.default_path or "",
     }
 
 
@@ -168,8 +220,10 @@ def update_episode_watched_status(path: str, watched: bool) -> None:
     try:
         logger.info(f"Updating watched status for {path} to {watched}")
         with get_session() as session:
+            from lan_streamer.db.models import MediaFile
+
             episode = session.scalars(
-                select(Episode).where(Episode.path == path)
+                select(Episode).join(MediaFile).where(MediaFile.path == path)
             ).first()
             if episode:
                 episode.watched = watched
@@ -184,7 +238,9 @@ def update_episode_watched_status(path: str, watched: bool) -> None:
                             episode.myanimelist_episode_number,
                         )
             else:
-                movie = session.scalars(select(Movie).where(Movie.path == path)).first()
+                movie = session.scalars(
+                    select(Movie).join(MediaFile).where(MediaFile.path == path)
+                ).first()
                 if movie:
                     movie.watched = watched
                     if watched:
@@ -201,11 +257,23 @@ def update_episode_path(old_path: str, new_path: str) -> None:
     try:
         logger.info(f"Updating episode path from {old_path} to {new_path}")
         with get_session() as session:
-            episode = session.scalars(
-                select(Episode).where(Episode.path == old_path)
+            from lan_streamer.db.models import MediaFile
+
+            mf = session.scalars(
+                select(MediaFile).where(MediaFile.path == old_path)
             ).first()
-            if episode:
-                episode.path = new_path
+            if mf:
+                mf.path = new_path
+                if mf.episode:
+                    if mf.episode.default_path == old_path:
+                        mf.episode.default_path = new_path
+            else:
+                episode = session.scalars(
+                    select(Episode).join(MediaFile).where(MediaFile.path == old_path)
+                ).first()
+                if episode:
+                    if episode.default_path == old_path:
+                        episode.default_path = new_path
     except Exception:
         logger.exception(f"Error updating episode path from {old_path} to {new_path}")
 
@@ -216,14 +284,18 @@ def update_episode_playback_position(path: str, position: int) -> bool:
     try:
         logger.debug(f"Saving playback position for '{path}' to {position}s")
         with get_session() as session:
+            from lan_streamer.db.models import MediaFile
+
             episode = session.scalars(
-                select(Episode).where(Episode.path == path)
+                select(Episode).join(MediaFile).where(MediaFile.path == path)
             ).first()
             if episode:
                 episode.last_played_position = position
                 episode.last_played_at = int(time.time())
                 return True
-            movie = session.scalars(select(Movie).where(Movie.path == path)).first()
+            movie = session.scalars(
+                select(Movie).join(MediaFile).where(MediaFile.path == path)
+            ).first()
             if movie:
                 movie.last_played_position = position
                 movie.last_played_at = int(time.time())
@@ -239,15 +311,19 @@ def get_episode_playback_position(path: str) -> int:
     try:
         logger.debug(f"Retrieving playback position for '{path}'")
         with get_session() as session:
+            from lan_streamer.db.models import MediaFile
+
             episode = session.scalars(
-                select(Episode).where(Episode.path == path)
+                select(Episode).join(MediaFile).where(MediaFile.path == path)
             ).first()
             if episode and episode.last_played_position:
                 logger.debug(
                     f"Playback position for episode '{path}' is {episode.last_played_position}s"
                 )
                 return int(episode.last_played_position)
-            movie = session.scalars(select(Movie).where(Movie.path == path)).first()
+            movie = session.scalars(
+                select(Movie).join(MediaFile).where(MediaFile.path == path)
+            ).first()
             if movie and movie.last_played_position:
                 logger.debug(
                     f"Playback position for movie '{path}' is {movie.last_played_position}s"
@@ -262,7 +338,11 @@ def is_movie(path: str) -> bool:
     """Returns True if the given path corresponds to a movie in the database."""
     try:
         with get_session() as session:
-            movie = session.scalars(select(Movie).where(Movie.path == path)).first()
+            from lan_streamer.db.models import MediaFile
+
+            movie = session.scalars(
+                select(Movie).join(MediaFile).where(MediaFile.path == path)
+            ).first()
             return movie is not None
     except Exception:
         logger.exception(f"Error checking if path is movie: {path}")
@@ -387,6 +467,7 @@ def update_item_runtime(
     resolution: Optional[str] = None,
     audio_tracks: Optional[List[Dict[str, Any]]] = None,
     subtitle_tracks: Optional[List[Dict[str, Any]]] = None,
+    bit_rate: Optional[int] = None,
 ) -> None:
     """Updates the runtime and technical info fields for a given episode or movie."""
 
@@ -402,6 +483,8 @@ def update_item_runtime(
                         episode.video_codec = video_codec
                     if resolution:
                         episode.resolution = resolution
+                    if bit_rate is not None:
+                        episode.bit_rate = bit_rate
                     if audio_tracks is not None:
                         episode.audio_tracks = json.dumps(audio_tracks)
                     if subtitle_tracks is not None:
@@ -416,6 +499,8 @@ def update_item_runtime(
                         movie.video_codec = video_codec
                     if resolution:
                         movie.resolution = resolution
+                    if bit_rate is not None:
+                        movie.bit_rate = bit_rate
                     if audio_tracks is not None:
                         movie.audio_tracks = json.dumps(audio_tracks)
                     if subtitle_tracks is not None:
@@ -435,8 +520,10 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
     try:
         logger.debug(f"Determining next episode after: '{current_path}'")
         with get_session() as session:
+            from lan_streamer.db.models import MediaFile
+
             current_episode: Optional[Episode] = session.scalars(
-                select(Episode).where(Episode.path == current_path)
+                select(Episode).join(MediaFile).where(MediaFile.path == current_path)
             ).first()
             if (
                 not current_episode
@@ -523,14 +610,17 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
             f"get_combined_next_up: fetching next up items for libraries={library_names}"
         )
         with get_session() as session:
+            from lan_streamer.db.models import MediaFile
+
             # Find series that have any episode where watched is True or last_played_at > 0, and the episode has a file path (not missing/future)
             series_stmt = (
                 select(Series)
                 .join(Season)
                 .join(Episode)
+                .join(MediaFile)
                 .where(
-                    (Episode.path.isnot(None))
-                    & (Episode.path != "")
+                    (MediaFile.path.isnot(None))
+                    & (MediaFile.path != "")
                     & ((Episode.watched.is_(True)) | (Episode.last_played_at > 0))
                 )
             )
@@ -762,8 +852,10 @@ def delete_episode_record(path: str) -> None:
     try:
         logger.info(f"Deleting episode record for path: {path}")
         with get_session() as session:
+            from lan_streamer.db.models import MediaFile
+
             episode = session.scalars(
-                select(Episode).where(Episode.path == path)
+                select(Episode).join(MediaFile).where(MediaFile.path == path)
             ).first()
             if episode:
                 session.delete(episode)

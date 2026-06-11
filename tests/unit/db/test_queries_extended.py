@@ -112,7 +112,14 @@ def test_update_episode_watched_status_movie_path(mock_db_file) -> None:
     db.update_episode_watched_status("/movies/test.mkv", True)
 
     with get_session() as session:
-        m = session.query(Movie).filter_by(path="/movies/test.mkv").first()
+        from lan_streamer.db.models import MediaFile
+
+        m = (
+            session.query(Movie)
+            .join(MediaFile)
+            .filter(MediaFile.path == "/movies/test.mkv")
+            .first()
+        )
         assert m is not None
         assert m.watched is True
         assert m.last_played_at is not None and m.last_played_at > 0
@@ -135,7 +142,14 @@ def test_update_episode_watched_status_movie_unwatch(mock_db_file) -> None:
     db.update_episode_watched_status("/movies/watched.mkv", False)
 
     with get_session() as session:
-        m = session.query(Movie).filter_by(path="/movies/watched.mkv").first()
+        from lan_streamer.db.models import MediaFile
+
+        m = (
+            session.query(Movie)
+            .join(MediaFile)
+            .filter(MediaFile.path == "/movies/watched.mkv")
+            .first()
+        )
         assert m is not None
         assert m.watched is False
 

@@ -239,16 +239,23 @@ def test_runtime_management_functions(mock_db_file) -> None:
     for item in items:
         db.update_item_runtime(item["id"], item["type"], 45)
 
-    # Verify updates
     with get_session() as session:
+        from lan_streamer.db.models import MediaFile
+
         updated_episode = (
-            session.query(Episode).filter_by(path="/path/to/missing_ep.mkv").first()
+            session.query(Episode)
+            .join(MediaFile)
+            .filter(MediaFile.path == "/path/to/missing_ep.mkv")
+            .first()
         )
         assert updated_episode is not None
         assert updated_episode.runtime == 45
 
         updated_movie = (
-            session.query(Movie).filter_by(path="/path/to/missing_movie.mkv").first()
+            session.query(Movie)
+            .join(MediaFile)
+            .filter(MediaFile.path == "/path/to/missing_movie.mkv")
+            .first()
         )
         assert updated_movie is not None
         assert updated_movie.runtime == 45

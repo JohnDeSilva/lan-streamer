@@ -125,83 +125,115 @@ def get_rename_preview(
             season_num = int(match.group())
 
         for episode in season_data.get("episodes", []):
-            if not episode.get("path"):
+            versions = episode.get("versions") or []
+            if not versions and episode.get("path"):
+                versions = [
+                    {
+                        "path": episode["path"],
+                        "resolution": episode.get("resolution"),
+                        "video_codec": episode.get("video_codec"),
+                    }
+                ]
+            if not versions:
                 continue
-            old_path = Path(episode["path"])
 
-            data = {
-                "SeriesTitle": series_title,
-                "SeasonNumber": season_num,
-                "EpisodeNumber": episode.get("tmdb_number") or 0,
-                "EpisodeTitle": episode.get("tmdb_name")
-                or episode.get("name")
-                or "Unknown Episode",
-                "OriginalTitle": old_path.stem,
-            }
+            is_multi = len(versions) > 1
+            use_numbers = False
+            if is_multi:
+                seen_pairs = set()
+                for v in versions:
+                    pair = (
+                        v.get("resolution") or "Unknown",
+                        v.get("video_codec") or "Unknown",
+                    )
+                    if pair in seen_pairs:
+                        use_numbers = True
+                        break
+                    seen_pairs.add(pair)
 
-            # Generate new name
-            new_filename = format_name(file_template, data)
-            extension = old_path.suffix
+            for idx, v in enumerate(versions):
+                v_path_str = v.get("path")
+                if not v_path_str:
+                    continue
+                old_path = Path(v_path_str)
 
-            # Ensure extension is preserved and only added once
-            if not new_filename.lower().endswith(extension.lower()):
-                new_filename += extension
-
-            new_path = old_path.parent / new_filename
-            new_stem = Path(new_filename).stem
-
-            safe, error = is_safe_filename(new_filename)
-
-            previews.append(
-                {
-                    "old_name": old_path.name,
-                    "old_path": str(old_path),
-                    "new_name": new_filename,
-                    "new_path": str(new_path),
-                    "series": series_title,
-                    "season": season_name,
-                    "episode": episode.get("name"),
-                    "safe": safe,
-                    "error": error,
-                    "is_subtitle": False,
+                data = {
+                    "SeriesTitle": series_title,
+                    "SeasonNumber": season_num,
+                    "EpisodeNumber": episode.get("tmdb_number") or 0,
+                    "EpisodeTitle": episode.get("tmdb_name")
+                    or episode.get("name")
+                    or "Unknown Episode",
+                    "OriginalTitle": old_path.stem,
                 }
-            )
 
-            # Check for subtitle files with same stem
-            if old_path.parent.exists():
-                old_stem = old_path.stem
-                for sibling in old_path.parent.iterdir():
-                    if (
-                        sibling.is_file()
-                        and sibling.stem.startswith(old_stem)
-                        and sibling != old_path
-                    ):
-                        # Ensure it's a subtitle file or has a subtitle extension
-                        if sibling.suffix.lower() in SUBTITLE_EXTENSIONS or any(
-                            ext in sibling.name.lower() for ext in SUBTITLE_EXTENSIONS
+                new_filename = format_name(file_template, data)
+                new_stem = Path(new_filename).stem
+
+                if is_multi:
+                    if not use_numbers:
+                        res = v.get("resolution") or "Unknown"
+                        codec = v.get("video_codec") or "Unknown"
+                        suffix = f" - {res} {codec}"
+                    else:
+                        suffix = f" - {idx + 1}"
+                    new_filename = f"{new_stem}{suffix}{old_path.suffix}"
+                else:
+                    if not new_filename.lower().endswith(old_path.suffix.lower()):
+                        new_filename += old_path.suffix
+
+                new_path = old_path.parent / new_filename
+                new_stem = Path(new_filename).stem
+
+                safe, error = is_safe_filename(new_filename)
+
+                previews.append(
+                    {
+                        "old_name": old_path.name,
+                        "old_path": str(old_path),
+                        "new_name": new_filename,
+                        "new_path": str(new_path),
+                        "series": series_title,
+                        "season": season_name,
+                        "episode": episode.get("name"),
+                        "safe": safe,
+                        "error": error,
+                        "is_subtitle": False,
+                    }
+                )
+
+                if old_path.parent.exists():
+                    old_stem = old_path.stem
+                    for sibling in old_path.parent.iterdir():
+                        if (
+                            sibling.is_file()
+                            and sibling.stem.startswith(old_stem)
+                            and sibling != old_path
                         ):
-                            # Calculate new name: new_stem + original suffix(es)
-                            # e.g. old_stem="ep1", sibling="ep1.en.srt", new_stem="Show S01E01" -> "Show S01E01.en.srt"
-                            extra_suffix = sibling.name[len(old_stem) :]
-                            sibling_new_name = new_stem + extra_suffix
-                            sibling_new_path = sibling.parent / sibling_new_name
+                            if sibling.suffix.lower() in SUBTITLE_EXTENSIONS or any(
+                                ext in sibling.name.lower()
+                                for ext in SUBTITLE_EXTENSIONS
+                            ):
+                                extra_suffix = sibling.name[len(old_stem) :]
+                                sibling_new_name = new_stem + extra_suffix
+                                sibling_new_path = sibling.parent / sibling_new_name
 
-                            s_safe, s_error = is_safe_filename(sibling_new_name)
+                                s_safe, s_error = is_safe_filename(sibling_new_name)
 
-                            previews.append(
-                                {
-                                    "old_name": sibling.name,
-                                    "old_path": str(sibling),
-                                    "new_name": sibling_new_name,
-                                    "new_path": str(sibling_new_path),
-                                    "series": series_title,
-                                    "season": season_name,
-                                    "episode": f"{episode.get('name')} (Subtitle)",
-                                    "safe": s_safe,
-                                    "error": s_error,
-                                    "is_subtitle": True,
-                                }
-                            )
+                                previews.append(
+                                    {
+                                        "old_name": sibling.name,
+                                        "old_path": str(sibling),
+                                        "new_name": sibling_new_name,
+                                        "new_path": str(sibling_new_path),
+                                        "series": series_title,
+                                        "season": season_name,
+                                        "episode": f"{episode.get('name')} (Subtitle)",
+                                        "safe": s_safe,
+                                        "error": s_error,
+                                        "is_subtitle": True,
+                                    }
+                                )
 
     return previews
 

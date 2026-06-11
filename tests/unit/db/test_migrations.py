@@ -21,7 +21,7 @@ def test_air_date_migration_with_fake_data(tmp_path) -> None:
     with engine.begin() as conn:
         conn.execute(
             sa.text(
-                "INSERT INTO series (library_name, name) VALUES ('Lib', 'Fake Show')"
+                "INSERT INTO series (id, library_name, name) VALUES ('1', 'Lib', 'Fake Show')"
             )
         )
         series_id = conn.execute(
@@ -30,8 +30,9 @@ def test_air_date_migration_with_fake_data(tmp_path) -> None:
 
         conn.execute(
             sa.text(
-                f"INSERT INTO seasons (series_id, name) VALUES ({series_id}, 'Season 1')"
-            )
+                "INSERT INTO seasons (id, series_id, name) VALUES ('1', :series_id, 'Season 1')"
+            ),
+            {"series_id": series_id},
         )
         season_id = conn.execute(
             sa.text("SELECT id FROM seasons WHERE name='Season 1'")
@@ -39,8 +40,9 @@ def test_air_date_migration_with_fake_data(tmp_path) -> None:
 
         conn.execute(
             sa.text(
-                f"INSERT INTO episodes (season_id, name, path) VALUES ({season_id}, 'Ep 1', '/fake/path')"
-            )
+                "INSERT INTO episodes (id, season_id, name, path) VALUES ('1', :season_id, 'Ep 1', '/fake/path')"
+            ),
+            {"season_id": season_id},
         )
 
     # 3. Upgrade to our target revision 8dbcde9fc7de
@@ -49,25 +51,25 @@ def test_air_date_migration_with_fake_data(tmp_path) -> None:
     # 4. Verify fake data preservation and confirm new columns exist
     with engine.connect() as conn:
         series_row = conn.execute(
-            sa.text("SELECT name, first_air_date FROM series WHERE id=1")
+            sa.text("SELECT name, first_air_date FROM series WHERE id='1'")
         ).fetchone()
         assert series_row[0] == "Fake Show"
         assert series_row[1] is None
 
         ep_row = conn.execute(
-            sa.text("SELECT name, air_date FROM episodes WHERE id=1")
+            sa.text("SELECT name, air_date FROM episodes WHERE id='1'")
         ).fetchone()
         assert ep_row[0] == "Ep 1"
         assert ep_row[1] is None
 
         conn.execute(
-            sa.text("UPDATE series SET first_air_date='2025-01-01' WHERE id=1")
+            sa.text("UPDATE series SET first_air_date='2025-01-01' WHERE id='1'")
         )
-        conn.execute(sa.text("UPDATE episodes SET air_date='2025-01-02' WHERE id=1"))
+        conn.execute(sa.text("UPDATE episodes SET air_date='2025-01-02' WHERE id='1'"))
         conn.commit()
 
         updated_series = conn.execute(
-            sa.text("SELECT first_air_date FROM series WHERE id=1")
+            sa.text("SELECT first_air_date FROM series WHERE id='1'")
         ).scalar()
         assert updated_series == "2025-01-01"
 
@@ -80,7 +82,7 @@ def test_air_date_migration_with_fake_data(tmp_path) -> None:
             conn.execute(sa.text("SELECT air_date FROM episodes")).fetchall()
 
         assert (
-            conn.execute(sa.text("SELECT name FROM series WHERE id=1")).scalar()
+            conn.execute(sa.text("SELECT name FROM series WHERE id='1'")).scalar()
             == "Fake Show"
         )
 
@@ -104,15 +106,17 @@ def test_playback_position_migration_with_fake_data(tmp_path) -> None:
     with engine.begin() as conn:
         conn.execute(
             sa.text(
-                "INSERT INTO series (library_name, name) VALUES ('Lib', 'Fake Series')"
+                "INSERT INTO series (id, library_name, name) VALUES ('1', 'Lib', 'Fake Series')"
             )
         )
         conn.execute(
-            sa.text("INSERT INTO seasons (series_id, name) VALUES (1, 'Season 1')")
+            sa.text(
+                "INSERT INTO seasons (id, series_id, name) VALUES ('1', '1', 'Season 1')"
+            )
         )
         conn.execute(
             sa.text(
-                "INSERT INTO episodes (season_id, name, path) VALUES (1, 'Ep 1', '/fake/path/pos')"
+                "INSERT INTO episodes (id, season_id, name, path) VALUES ('1', '1', 'Ep 1', '/fake/path/pos')"
             )
         )
 
@@ -122,16 +126,18 @@ def test_playback_position_migration_with_fake_data(tmp_path) -> None:
     # 4. Verify fake data preservation and confirm new column exists
     with engine.connect() as conn:
         ep_row = conn.execute(
-            sa.text("SELECT name, last_played_position FROM episodes WHERE id=1")
+            sa.text("SELECT name, last_played_position FROM episodes WHERE id='1'")
         ).fetchone()
         assert ep_row[0] == "Ep 1"
         assert ep_row[1] is None
 
-        conn.execute(sa.text("UPDATE episodes SET last_played_position=120 WHERE id=1"))
+        conn.execute(
+            sa.text("UPDATE episodes SET last_played_position=120 WHERE id='1'")
+        )
         conn.commit()
 
         updated_pos = conn.execute(
-            sa.text("SELECT last_played_position FROM episodes WHERE id=1")
+            sa.text("SELECT last_played_position FROM episodes WHERE id='1'")
         ).scalar()
         assert updated_pos == 120
 
@@ -144,7 +150,7 @@ def test_playback_position_migration_with_fake_data(tmp_path) -> None:
             ).fetchall()
 
         assert (
-            conn.execute(sa.text("SELECT name FROM episodes WHERE id=1")).scalar()
+            conn.execute(sa.text("SELECT name FROM episodes WHERE id='1'")).scalar()
             == "Ep 1"
         )
 
@@ -168,7 +174,7 @@ def test_movies_table_migration_with_fake_data(tmp_path) -> None:
     with engine.begin() as conn:
         conn.execute(
             sa.text(
-                "INSERT INTO series (library_name, name) VALUES ('Lib', 'Fake Series')"
+                "INSERT INTO series (id, library_name, name) VALUES ('1', 'Lib', 'Fake Series')"
             )
         )
 
@@ -179,13 +185,13 @@ def test_movies_table_migration_with_fake_data(tmp_path) -> None:
     with engine.begin() as conn:
         conn.execute(
             sa.text(
-                "INSERT INTO movies (library_name, name, path) VALUES ('Movies', 'Fake Movie', '/fake/movie.mp4')"
+                "INSERT INTO movies (id, library_name, name, path) VALUES ('1', 'Movies', 'Fake Movie', '/fake/movie.mp4')"
             )
         )
 
     with engine.connect() as conn:
         movie_row = conn.execute(
-            sa.text("SELECT name, path FROM movies WHERE id=1")
+            sa.text("SELECT name, path FROM movies WHERE id='1'")
         ).fetchone()
         assert movie_row[0] == "Fake Movie"
         assert movie_row[1] == "/fake/movie.mp4"
@@ -197,7 +203,7 @@ def test_movies_table_migration_with_fake_data(tmp_path) -> None:
             conn.execute(sa.text("SELECT * FROM movies")).fetchall()
 
         assert (
-            conn.execute(sa.text("SELECT name FROM series WHERE id=1")).scalar()
+            conn.execute(sa.text("SELECT name FROM series WHERE id='1'")).scalar()
             == "Fake Series"
         )
 
@@ -221,15 +227,17 @@ def test_episodes_runtime_migration_with_fake_data(tmp_path) -> None:
     with engine.begin() as conn:
         conn.execute(
             sa.text(
-                "INSERT INTO series (library_name, name) VALUES ('Lib', 'Fake Series')"
+                "INSERT INTO series (id, library_name, name) VALUES ('1', 'Lib', 'Fake Series')"
             )
         )
         conn.execute(
-            sa.text("INSERT INTO seasons (series_id, name) VALUES (1, 'Season 1')")
+            sa.text(
+                "INSERT INTO seasons (id, series_id, name) VALUES ('1', '1', 'Season 1')"
+            )
         )
         conn.execute(
             sa.text(
-                "INSERT INTO episodes (season_id, name, path) VALUES (1, 'Ep 1', '/fake/path/runtime')"
+                "INSERT INTO episodes (id, season_id, name, path) VALUES ('1', '1', 'Ep 1', '/fake/path/runtime')"
             )
         )
 
@@ -239,16 +247,16 @@ def test_episodes_runtime_migration_with_fake_data(tmp_path) -> None:
     # 4. Verify fake data preservation and confirm new column exists as nullable
     with engine.connect() as conn:
         ep_row = conn.execute(
-            sa.text("SELECT name, runtime FROM episodes WHERE id=1")
+            sa.text("SELECT name, runtime FROM episodes WHERE id='1'")
         ).fetchone()
         assert ep_row[0] == "Ep 1"
         assert ep_row[1] is None
 
-        conn.execute(sa.text("UPDATE episodes SET runtime=45 WHERE id=1"))
+        conn.execute(sa.text("UPDATE episodes SET runtime=45 WHERE id='1'"))
         conn.commit()
 
         updated_runtime = conn.execute(
-            sa.text("SELECT runtime FROM episodes WHERE id=1")
+            sa.text("SELECT runtime FROM episodes WHERE id='1'")
         ).scalar()
         assert updated_runtime == 45
 
@@ -259,7 +267,7 @@ def test_episodes_runtime_migration_with_fake_data(tmp_path) -> None:
             conn.execute(sa.text("SELECT runtime FROM episodes")).fetchall()
 
         assert (
-            conn.execute(sa.text("SELECT name FROM episodes WHERE id=1")).scalar()
+            conn.execute(sa.text("SELECT name FROM episodes WHERE id='1'")).scalar()
             == "Ep 1"
         )
 
@@ -283,20 +291,22 @@ def test_last_played_at_migration_with_fake_data(tmp_path) -> None:
     with engine.begin() as conn:
         conn.execute(
             sa.text(
-                "INSERT INTO series (library_name, name) VALUES ('Lib', 'Fake Series')"
-            )
-        )
-        conn.execute(
-            sa.text("INSERT INTO seasons (series_id, name) VALUES (1, 'Season 1')")
-        )
-        conn.execute(
-            sa.text(
-                "INSERT INTO episodes (season_id, name, path) VALUES (1, 'Ep 1', '/fake/path/lp_ep')"
+                "INSERT INTO series (id, library_name, name) VALUES ('1', 'Lib', 'Fake Series')"
             )
         )
         conn.execute(
             sa.text(
-                "INSERT INTO movies (library_name, name, path) VALUES ('Movies', 'Fake Movie', '/fake/path/lp_mv')"
+                "INSERT INTO seasons (id, series_id, name) VALUES ('1', '1', 'Season 1')"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO episodes (id, season_id, name, path) VALUES ('1', '1', 'Ep 1', '/fake/path/lp_ep')"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO movies (id, library_name, name, path) VALUES ('1', 'Movies', 'Fake Movie', '/fake/path/lp_mv')"
             )
         )
 
@@ -306,30 +316,30 @@ def test_last_played_at_migration_with_fake_data(tmp_path) -> None:
     # 4. Verify fake data preservation and confirm new column exists with default 0
     with engine.connect() as conn:
         ep_row = conn.execute(
-            sa.text("SELECT name, last_played_at FROM episodes WHERE id=1")
+            sa.text("SELECT name, last_played_at FROM episodes WHERE id='1'")
         ).fetchone()
         assert ep_row[0] == "Ep 1"
         assert ep_row[1] == 0 or ep_row[1] is None
 
         mv_row = conn.execute(
-            sa.text("SELECT name, last_played_at FROM movies WHERE id=1")
+            sa.text("SELECT name, last_played_at FROM movies WHERE id='1'")
         ).fetchone()
         assert mv_row[0] == "Fake Movie"
         assert mv_row[1] == 0 or mv_row[1] is None
 
-        conn.execute(sa.text("UPDATE episodes SET last_played_at=12345 WHERE id=1"))
-        conn.execute(sa.text("UPDATE movies SET last_played_at=67890 WHERE id=1"))
+        conn.execute(sa.text("UPDATE episodes SET last_played_at=12345 WHERE id='1'"))
+        conn.execute(sa.text("UPDATE movies SET last_played_at=67890 WHERE id='1'"))
         conn.commit()
 
         assert (
             conn.execute(
-                sa.text("SELECT last_played_at FROM episodes WHERE id=1")
+                sa.text("SELECT last_played_at FROM episodes WHERE id='1'")
             ).scalar()
             == 12345
         )
         assert (
             conn.execute(
-                sa.text("SELECT last_played_at FROM movies WHERE id=1")
+                sa.text("SELECT last_played_at FROM movies WHERE id='1'")
             ).scalar()
             == 67890
         )
@@ -343,11 +353,11 @@ def test_last_played_at_migration_with_fake_data(tmp_path) -> None:
             conn.execute(sa.text("SELECT last_played_at FROM movies")).fetchall()
 
         assert (
-            conn.execute(sa.text("SELECT name FROM episodes WHERE id=1")).scalar()
+            conn.execute(sa.text("SELECT name FROM episodes WHERE id='1'")).scalar()
             == "Ep 1"
         )
         assert (
-            conn.execute(sa.text("SELECT name FROM movies WHERE id=1")).scalar()
+            conn.execute(sa.text("SELECT name FROM movies WHERE id='1'")).scalar()
             == "Fake Movie"
         )
 
@@ -393,7 +403,7 @@ def test_settings_to_db_migration(tmp_path) -> None:
     with engine.begin() as conn:
         conn.execute(
             sa.text(
-                "INSERT INTO series (library_name, name) VALUES ('TV', 'Breaking Bad')"
+                "INSERT INTO series (id, library_name, name) VALUES ('1', 'TV', 'Breaking Bad')"
             )
         )
 
