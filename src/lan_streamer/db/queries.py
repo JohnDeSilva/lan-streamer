@@ -501,6 +501,7 @@ def update_item_runtime(
     audio_tracks: Optional[List[Dict[str, Any]]] = None,
     subtitle_tracks: Optional[List[Dict[str, Any]]] = None,
     bit_rate: Optional[int] = None,
+    size_bytes: Optional[int] = None,
 ) -> None:
     """Updates the runtime and technical info fields for a given episode or movie."""
 
@@ -517,6 +518,8 @@ def update_item_runtime(
                         episode.file_runtime = runtime_minutes
                     if video_codec:
                         episode.video_codec = video_codec
+                        if episode.media_files:
+                            episode.media_files[0].video_codec = video_codec
                     if resolution:
                         episode.resolution = resolution
                     if bit_rate is not None:
@@ -525,6 +528,9 @@ def update_item_runtime(
                         episode.audio_tracks = json.dumps(audio_tracks)
                     if subtitle_tracks is not None:
                         episode.subtitle_tracks = json.dumps(subtitle_tracks)
+                    if size_bytes is not None:
+                        if episode.media_files:
+                            episode.media_files[0].size_bytes = size_bytes
             elif item_type == "movie":
                 movie = session.scalars(
                     select(Movie).where(Movie.id == item_identifier)
@@ -536,6 +542,8 @@ def update_item_runtime(
                         movie.file_runtime = runtime_minutes
                     if video_codec:
                         movie.video_codec = video_codec
+                        if movie.media_files:
+                            movie.media_files[0].video_codec = video_codec
                     if resolution:
                         movie.resolution = resolution
                     if bit_rate is not None:
@@ -544,6 +552,9 @@ def update_item_runtime(
                         movie.audio_tracks = json.dumps(audio_tracks)
                     if subtitle_tracks is not None:
                         movie.subtitle_tracks = json.dumps(subtitle_tracks)
+                    if size_bytes is not None:
+                        if movie.media_files:
+                            movie.media_files[0].size_bytes = size_bytes
     except Exception:
         logger.exception(
             f"Error updating runtime and technical info for {item_type} ID {item_identifier!r}"
