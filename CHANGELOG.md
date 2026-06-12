@@ -1,3 +1,16 @@
+## v0.29.0 (2026-06-12)
+
+### Feat
+
+- **scan**: implement selective scan passes based on file changes
+- implement multi-pass color-coded library scans and settings report UI
+- **scanner**: implement progressive database writes, metadata protection, and scan issues reporting
+
+### Refactor
+
+- remove compatibility wrappers and __all__ re-exports, and fix episodes UNIQUE constraint
+- split scan/metadata workers, modularize queries, and add detailed logging
+
 ## v0.28.0 (2026-06-11)
 
 ### Feat
