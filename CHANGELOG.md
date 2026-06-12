@@ -1,3 +1,18 @@
+## v0.28.0 (2026-06-11)
+
+### Feat
+
+- add runtime metadata support for media files and update related components
+- **db**: support UUID primary/foreign keys as strings in application code
+- **db**: add alembic migration and tests for multiple media files support
+- Add multiple file support
+
+### Fix
+
+- add size_bytes parameter to runtime update functions and related tests
+- fix creation or temp records
+- enhance error handling and logging in get_detailed_file_info function
+
 ## v0.27.2 (2026-06-11)
 
 ### Fix
