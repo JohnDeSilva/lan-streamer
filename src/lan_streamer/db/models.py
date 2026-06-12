@@ -208,22 +208,43 @@ class Episode(Base):
         passive_deletes=True,
     )
 
-    def _get_or_create_media_file(self) -> "MediaFile":
-        if not self.media_files:
-            mf = MediaFile(path=f"pending_{uuid.uuid4()}")
-            self.media_files.append(mf)
-            return mf
-        return self.media_files[0]
+    def __init__(self, **kwargs: Any) -> None:
+        self._pending_media_attrs: dict[str, Any] = {}
+        super().__init__(**kwargs)
+
+    def _flush_pending_to(self, mf: "MediaFile") -> None:
+        """Apply any buffered media attributes onto a real MediaFile."""
+        pending = getattr(self, "_pending_media_attrs", None)
+        if not pending:
+            return
+        for attr, val in pending.items():
+            setattr(mf, attr, val)
+        pending.clear()
+
+    def _set_media_attr(self, attr: str, value: Any) -> None:
+        """Set a media attribute on the first MediaFile, or buffer it if none exists."""
+        if self.media_files:
+            setattr(self.media_files[0], attr, value)
+        else:
+            if not hasattr(self, "_pending_media_attrs"):
+                self._pending_media_attrs = {}
+            self._pending_media_attrs[attr] = value
+
+    def _get_media_attr(self, attr: str) -> Any:
+        """Read a media attribute from the first MediaFile, or from the pending buffer."""
+        if self.media_files:
+            return getattr(self.media_files[0], attr)
+        pending = getattr(self, "_pending_media_attrs", None)
+        if pending:
+            return pending.get(attr)
+        return None
 
     @property
     def path(self) -> Optional[str]:
         if self.default_path:
             return self.default_path
         if self.media_files:
-            p = self.media_files[0].path
-            if p and p.startswith("pending_"):
-                return None
-            return p
+            return self.media_files[0].path
         return None
 
     @path.setter
@@ -232,70 +253,58 @@ class Episode(Base):
             return
         self.default_path = value
         if value:
-            if len(self.media_files) == 1 and self.media_files[0].path.startswith(
-                "pending_"
-            ):
-                self.media_files[0].path = value
-            else:
-                exists = False
-                for mf in self.media_files:
-                    if mf.path == value:
-                        exists = True
-                        break
-                if not exists:
-                    self.media_files.append(MediaFile(path=value))
+            exists = False
+            for mf in self.media_files:
+                if mf.path == value:
+                    exists = True
+                    self._flush_pending_to(mf)
+                    break
+            if not exists:
+                mf = MediaFile(path=value)
+                self._flush_pending_to(mf)
+                self.media_files.append(mf)
         else:
             self.media_files.clear()
 
     @property
     def resolution(self) -> Optional[str]:
-        if self.media_files:
-            return self.media_files[0].resolution
-        return None
+        return self._get_media_attr("resolution")
 
     @resolution.setter
     def resolution(self, value: Optional[str]) -> None:
-        self._get_or_create_media_file().resolution = value
+        self._set_media_attr("resolution", value)
 
     @property
     def audio_tracks(self) -> Optional[str]:
-        if self.media_files:
-            return self.media_files[0].audio_tracks
-        return None
+        return self._get_media_attr("audio_tracks")
 
     @audio_tracks.setter
     def audio_tracks(self, value: Optional[str]) -> None:
-        self._get_or_create_media_file().audio_tracks = value
+        self._set_media_attr("audio_tracks", value)
 
     @property
     def subtitle_tracks(self) -> Optional[str]:
-        if self.media_files:
-            return self.media_files[0].subtitle_tracks
-        return None
+        return self._get_media_attr("subtitle_tracks")
 
     @subtitle_tracks.setter
     def subtitle_tracks(self, value: Optional[str]) -> None:
-        self._get_or_create_media_file().subtitle_tracks = value
+        self._set_media_attr("subtitle_tracks", value)
 
     @property
     def bit_rate(self) -> Optional[int]:
-        if self.media_files:
-            return self.media_files[0].bit_rate
-        return None
+        return self._get_media_attr("bit_rate")
 
     @bit_rate.setter
     def bit_rate(self, value: Optional[int]) -> None:
-        self._get_or_create_media_file().bit_rate = value
+        self._set_media_attr("bit_rate", value)
 
     @property
     def file_runtime(self) -> Optional[int]:
-        if self.media_files:
-            return self.media_files[0].runtime
-        return None
+        return self._get_media_attr("runtime")
 
     @file_runtime.setter
     def file_runtime(self, value: Optional[int]) -> None:
-        self._get_or_create_media_file().runtime = value
+        self._set_media_attr("runtime", value)
 
     __table_args__ = (
         UniqueConstraint("season_id", "name", name="uq_episodes_season_id_name"),
@@ -337,22 +346,43 @@ class Movie(Base):
         passive_deletes=True,
     )
 
-    def _get_or_create_media_file(self) -> "MediaFile":
-        if not self.media_files:
-            mf = MediaFile(path=f"pending_{uuid.uuid4()}")
-            self.media_files.append(mf)
-            return mf
-        return self.media_files[0]
+    def __init__(self, **kwargs: Any) -> None:
+        self._pending_media_attrs: dict[str, Any] = {}
+        super().__init__(**kwargs)
+
+    def _flush_pending_to(self, mf: "MediaFile") -> None:
+        """Apply any buffered media attributes onto a real MediaFile."""
+        pending = getattr(self, "_pending_media_attrs", None)
+        if not pending:
+            return
+        for attr, val in pending.items():
+            setattr(mf, attr, val)
+        pending.clear()
+
+    def _set_media_attr(self, attr: str, value: Any) -> None:
+        """Set a media attribute on the first MediaFile, or buffer it if none exists."""
+        if self.media_files:
+            setattr(self.media_files[0], attr, value)
+        else:
+            if not hasattr(self, "_pending_media_attrs"):
+                self._pending_media_attrs = {}
+            self._pending_media_attrs[attr] = value
+
+    def _get_media_attr(self, attr: str) -> Any:
+        """Read a media attribute from the first MediaFile, or from the pending buffer."""
+        if self.media_files:
+            return getattr(self.media_files[0], attr)
+        pending = getattr(self, "_pending_media_attrs", None)
+        if pending:
+            return pending.get(attr)
+        return None
 
     @property
     def path(self) -> Optional[str]:
         if self.default_path:
             return self.default_path
         if self.media_files:
-            p = self.media_files[0].path
-            if p and p.startswith("pending_"):
-                return None
-            return p
+            return self.media_files[0].path
         return None
 
     @path.setter
@@ -361,70 +391,58 @@ class Movie(Base):
             return
         self.default_path = value
         if value:
-            if len(self.media_files) == 1 and self.media_files[0].path.startswith(
-                "pending_"
-            ):
-                self.media_files[0].path = value
-            else:
-                exists = False
-                for mf in self.media_files:
-                    if mf.path == value:
-                        exists = True
-                        break
-                if not exists:
-                    self.media_files.append(MediaFile(path=value))
+            exists = False
+            for mf in self.media_files:
+                if mf.path == value:
+                    exists = True
+                    self._flush_pending_to(mf)
+                    break
+            if not exists:
+                mf = MediaFile(path=value)
+                self._flush_pending_to(mf)
+                self.media_files.append(mf)
         else:
             self.media_files.clear()
 
     @property
     def resolution(self) -> Optional[str]:
-        if self.media_files:
-            return self.media_files[0].resolution
-        return None
+        return self._get_media_attr("resolution")
 
     @resolution.setter
     def resolution(self, value: Optional[str]) -> None:
-        self._get_or_create_media_file().resolution = value
+        self._set_media_attr("resolution", value)
 
     @property
     def audio_tracks(self) -> Optional[str]:
-        if self.media_files:
-            return self.media_files[0].audio_tracks
-        return None
+        return self._get_media_attr("audio_tracks")
 
     @audio_tracks.setter
     def audio_tracks(self, value: Optional[str]) -> None:
-        self._get_or_create_media_file().audio_tracks = value
+        self._set_media_attr("audio_tracks", value)
 
     @property
     def subtitle_tracks(self) -> Optional[str]:
-        if self.media_files:
-            return self.media_files[0].subtitle_tracks
-        return None
+        return self._get_media_attr("subtitle_tracks")
 
     @subtitle_tracks.setter
     def subtitle_tracks(self, value: Optional[str]) -> None:
-        self._get_or_create_media_file().subtitle_tracks = value
+        self._set_media_attr("subtitle_tracks", value)
 
     @property
     def bit_rate(self) -> Optional[int]:
-        if self.media_files:
-            return self.media_files[0].bit_rate
-        return None
+        return self._get_media_attr("bit_rate")
 
     @bit_rate.setter
     def bit_rate(self, value: Optional[int]) -> None:
-        self._get_or_create_media_file().bit_rate = value
+        self._set_media_attr("bit_rate", value)
 
     @property
     def file_runtime(self) -> Optional[int]:
-        if self.media_files:
-            return self.media_files[0].runtime
-        return None
+        return self._get_media_attr("runtime")
 
     @file_runtime.setter
     def file_runtime(self, value: Optional[int]) -> None:
-        self._get_or_create_media_file().runtime = value
+        self._set_media_attr("runtime", value)
 
     __table_args__ = (
         UniqueConstraint("library_name", "name", name="uq_movies_library_name_name"),
