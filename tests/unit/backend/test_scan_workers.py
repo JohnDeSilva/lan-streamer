@@ -397,3 +397,175 @@ def test_scan_workers_reporting() -> None:
         report_logs_all = [log for log in log_infos_all if "[SCAN_REPORT]" in log]
         assert len(report_logs_all) > 0
         assert any("SCAN RUN ISSUES REPORT" in log for log in report_logs_all)
+
+
+def test_scan_worker_stats_reporting() -> None:
+    from lan_streamer.scanner import LibraryDict
+
+    lib = LibraryDict({"Cosmos": {}})
+    lib.unavailable_directories = []
+
+    with (
+        patch(
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree",
+            return_value={},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
+        ) as mock_scan,
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_season_data",
+            return_value={"series_added": 1, "seasons_added": 1, "episodes_added": 5},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_movie_data",
+            return_value={"movies_added": 2},
+        ),
+        patch("lan_streamer.backend.scan_worker_single.logger") as mock_log,
+    ):
+
+        def fake_scan(*args, **kwargs):
+            season_cb = kwargs.get("season_callback")
+            if season_cb:
+                season_cb("Cosmos", {}, "Season 1", {})
+            movie_cb = kwargs.get("movie_callback")
+            if movie_cb:
+                movie_cb("Inception", {})
+            return lib
+
+        mock_scan.side_effect = fake_scan
+
+        worker = ScanWorker(["/path"], "tv", {}, library_name="TV_Lib")
+        worker.run()
+
+        # Check stats were accumulated
+        assert worker.stats["series_added"] == 2
+        assert worker.stats["seasons_added"] == 2
+        assert worker.stats["episodes_added"] == 10
+        assert worker.stats["movies_added"] == 4
+
+        # Check logs contain SCAN_REPORT stats
+        log_infos = [call.args[0] for call in mock_log.info.call_args_list]
+        report_logs = [log for log in log_infos if "[SCAN_REPORT]" in log]
+        assert len(report_logs) > 0
+        assert any("Series Added: 2" in log for log in report_logs)
+        assert any("Seasons Added: 2" in log for log in report_logs)
+        assert any("Episodes Added: 10" in log for log in report_logs)
+        assert any("Movies Added: 4" in log for log in report_logs)
+
+
+def test_scan_all_libraries_worker_stats_reporting() -> None:
+    from lan_streamer.scanner import LibraryDict
+
+    lib = LibraryDict({"Cosmos": {}})
+    lib.unavailable_directories = []
+
+    with (
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+        patch(
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
+            return_value=False,
+        ),
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch(
+            "lan_streamer.backend.scan_worker_all.db.save_season_data",
+            return_value={"series_added": 2, "seasons_added": 3, "episodes_added": 12},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_all.db.save_library",
+            return_value={"series_removed": 1, "seasons_removed": 1},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_all.scan_directories",
+            return_value=lib,
+        ) as mock_scan_all,
+        patch("lan_streamer.backend.scan_worker_all.logger") as mock_log,
+    ):
+        mock_config.libraries = {"TV_Lib": {"paths": ["/path"], "type": "tv"}}
+
+        def fake_scan(*args, **kwargs):
+            season_cb = kwargs.get("season_callback")
+            if season_cb:
+                season_cb("Cosmos", {}, "Season 1", {})
+            return lib
+
+        mock_scan_all.side_effect = fake_scan
+
+        worker = ScanAllLibrariesWorker()
+        worker.run()
+
+        # Check stats were accumulated
+        assert worker.stats["series_added"] == 4
+        assert worker.stats["seasons_added"] == 6
+        assert worker.stats["episodes_added"] == 24
+        assert worker.stats["series_removed"] == 2
+        assert worker.stats["seasons_removed"] == 2
+
+        # Check logs contain SCAN_REPORT stats
+        log_infos = [call.args[0] for call in mock_log.info.call_args_list]
+        report_logs = [log for log in log_infos if "[SCAN_REPORT]" in log]
+        assert len(report_logs) > 0
+        assert any("Series Added: 4" in log for log in report_logs)
+        assert any("Seasons Added: 6" in log for log in report_logs)
+        assert any("Episodes Added: 24" in log for log in report_logs)
+        assert any("Series Removed: 2" in log for log in report_logs)
+        assert any("Seasons Removed: 2" in log for log in report_logs)
+
+
+def test_scan_worker_formats_multiline_database_error_cleanly() -> None:
+    from lan_streamer.scanner import LibraryDict
+
+    lib = LibraryDict({"Cosmos": {}})
+    lib.unavailable_directories = []
+
+    multiline_err = (
+        "(sqlite3.IntegrityError) UNIQUE constraint failed: episodes.season_id, episodes.name\n"
+        "[SQL: UPDATE episodes SET name=? WHERE id = ?]\n"
+        "[parameters: ('Canada Drag Race', 4)]"
+    )
+
+    with (
+        patch(
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree",
+            return_value={},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
+        ) as mock_scan,
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_season_data",
+            side_effect=Exception(multiline_err),
+        ),
+        patch("lan_streamer.backend.scan_worker_single.logger") as mock_log,
+    ):
+
+        def fake_scan(*args, **kwargs):
+            season_cb = kwargs.get("season_callback")
+            if season_cb:
+                season_cb("Cosmos", {}, "Season 1", {})
+            return lib
+
+        mock_scan.side_effect = fake_scan
+
+        worker = ScanWorker(["/path"], "tv", {}, library_name="TV_Lib")
+        worker.run()
+
+        # It should record only the first line of the error in problems list (twice, once per pass)
+        assert len(worker.problems) == 2
+        for prob in worker.problems:
+            assert prob["type"] == "Database Write Failure"
+            assert (
+                prob["error"]
+                == "(sqlite3.IntegrityError) UNIQUE constraint failed: episodes.season_id, episodes.name"
+            )
+
+        # It should log the detailed block at debug level
+        log_debugs = [call.args[0] for call in mock_log.debug.call_args_list]
+        assert any("Database write failure detailed error" in d for d in log_debugs)
+
+        # It should log warnings with the clean first-line message
+        log_warnings = [call.args[0] for call in mock_log.warning.call_args_list]
+        assert any(
+            "[SCAN_ISSUE] Type=Database Write Failure" in w for w in log_warnings
+        )
+        assert not any("[SQL:" in w for w in log_warnings)

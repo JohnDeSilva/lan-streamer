@@ -316,9 +316,15 @@ def test_controller_global_triggers() -> None:
         assert mock_scan_all.call_count == 1
 
         # Test finished callback
-        with patch.object(controller_instance, "select_library") as mock_select:
+        with (
+            patch.object(controller_instance, "select_library") as mock_select,
+            patch.object(
+                controller_instance, "trigger_runtime_extraction"
+            ) as mock_extract,
+        ):
             controller_instance._on_scan_all_finished()
             mock_select.assert_called_once_with("CosmosLib", reset_selection=False)
+            mock_extract.assert_called_once()
 
 
 def test_controller_toggle_series_lock(mock_controller, mock_db_save):

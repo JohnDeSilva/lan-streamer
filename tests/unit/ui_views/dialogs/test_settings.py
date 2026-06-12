@@ -158,3 +158,45 @@ def test_settings_dialog_anime_library_toggle(qtbot) -> None:
         assert dialog.anime_library_checkbox.isHidden()
 
         dialog.reject()
+
+
+def test_settings_dialog_scan_report_view(qtbot) -> None:
+    from lan_streamer.ui_views.dialogs.settings import SettingsDialog
+
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    # Initially hidden
+    assert dialog.scan_report_display is not None
+    assert dialog.scan_report_display.isReadOnly()
+    assert dialog.scan_report_display.isHidden()
+
+    # Trigger scan view transition
+    dialog._show_scan_progress_widgets()
+    assert dialog._scan_running is True
+    assert dialog.scan_progress_tree.isHidden()
+    assert not dialog.scan_report_display.isHidden()
+
+    # Simulate logs emitted
+    dialog._on_log_emitted(
+        "2026-06-12 11:09:44,123 [INFO] lan_streamer.backend: [SCAN_REPORT] Series Added: 5",
+        "INFO",
+    )
+    dialog._on_log_emitted(
+        "2026-06-12 11:09:44,123 [WARNING] lan_streamer.backend: [SCAN_ISSUE] Type=Database Write Failure | Item=Season 'Season 1' | Error=DB lock",
+        "WARNING",
+    )
+
+    report_text = dialog.scan_report_display.toPlainText()
+    assert "Series Added: 5" in report_text
+    assert (
+        "ISSUE: Type=Database Write Failure | Item=Season 'Season 1' | Error=DB lock"
+        in report_text
+    )
+
+    # Complete scan
+    dialog._on_scan_completed()
+    assert dialog._scan_running is False
+    assert "*** SCAN COMPLETED ***" in dialog.scan_report_display.toPlainText()
+
+    dialog.reject()

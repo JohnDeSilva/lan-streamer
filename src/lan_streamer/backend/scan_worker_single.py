@@ -74,9 +74,20 @@ class ScanWorker(QThread):
         self.unavailable_directories: List[str] = []
         self.library_name: str = library_name
         self.problems: List[Dict[str, Any]] = []
+        self.stats: Dict[str, int] = {}
 
     def run(self) -> None:
         self.problems = []
+        self.stats = {
+            "series_added": 0,
+            "series_removed": 0,
+            "seasons_added": 0,
+            "seasons_removed": 0,
+            "episodes_added": 0,
+            "episodes_removed": 0,
+            "movies_added": 0,
+            "movies_removed": 0,
+        }
         try:
             logger.info(
                 f"ScanWorker starting run for directories: {self.root_directories}"
@@ -117,19 +128,28 @@ class ScanWorker(QThread):
                         season_name,
                         season_data,
                     )
-                    if stats and "issues" in stats:
-                        for issue in stats["issues"]:
-                            self.problems.append(issue)
+                    if stats:
+                        if "issues" in stats:
+                            for issue in stats["issues"]:
+                                self.problems.append(issue)
+                        for key in self.stats:
+                            if key in stats:
+                                self.stats[key] += stats[key]
                 except Exception as e:
                     err_msg = str(e)
+                    clean_msg = err_msg.split("\n")[0].strip()
+                    if "\n" in err_msg:
+                        logger.debug(
+                            f"Database write failure detailed error: {err_msg}"
+                        )
                     logger.warning(
-                        f"[SCAN_ISSUE] Type=Database Write Failure | Item=Season '{season_name}' of series '{series_name}' | Error={err_msg}"
+                        f"[SCAN_ISSUE] Type=Database Write Failure | Item=Season '{season_name}' of series '{series_name}' | Error={clean_msg}"
                     )
                     self.problems.append(
                         {
                             "type": "Database Write Failure",
                             "item": f"Season '{season_name}' of series '{series_name}'",
-                            "error": err_msg,
+                            "error": clean_msg,
                         }
                     )
 
@@ -139,19 +159,28 @@ class ScanWorker(QThread):
                     stats = db.save_movie_data(
                         self.library_name, movie_name, movie_data
                     )
-                    if stats and "issues" in stats:
-                        for issue in stats["issues"]:
-                            self.problems.append(issue)
+                    if stats:
+                        if "issues" in stats:
+                            for issue in stats["issues"]:
+                                self.problems.append(issue)
+                        for key in self.stats:
+                            if key in stats:
+                                self.stats[key] += stats[key]
                 except Exception as e:
                     err_msg = str(e)
+                    clean_msg = err_msg.split("\n")[0].strip()
+                    if "\n" in err_msg:
+                        logger.debug(
+                            f"Database write failure detailed error: {err_msg}"
+                        )
                     logger.warning(
-                        f"[SCAN_ISSUE] Type=Database Write Failure | Item=Movie '{movie_name}' | Error={err_msg}"
+                        f"[SCAN_ISSUE] Type=Database Write Failure | Item=Movie '{movie_name}' | Error={clean_msg}"
                     )
                     self.problems.append(
                         {
                             "type": "Database Write Failure",
                             "item": f"Movie '{movie_name}'",
-                            "error": err_msg,
+                            "error": clean_msg,
                         }
                     )
 
@@ -223,6 +252,45 @@ class ScanWorker(QThread):
 
             logger.info(
                 f"Finished Pass 2 (Online Metadata Resolution Scan) for library '{self.library_name}'"
+            )
+
+            logger.info(
+                "[SCAN_REPORT] ==================================================="
+            )
+            logger.info("[SCAN_REPORT]               SCAN RUN STATS REPORT")
+            logger.info(
+                "[SCAN_REPORT] ==================================================="
+            )
+            logger.info(
+                f"[SCAN_REPORT] Series Added: {self.stats.get('series_added', 0)}"
+            )
+            logger.info(
+                f"[SCAN_REPORT] Series Removed: {self.stats.get('series_removed', 0)}"
+            )
+            logger.info(
+                f"[SCAN_REPORT] Seasons Added: {self.stats.get('seasons_added', 0)}"
+            )
+            logger.info(
+                f"[SCAN_REPORT] Seasons Removed: {self.stats.get('seasons_removed', 0)}"
+            )
+            logger.info(
+                f"[SCAN_REPORT] Episodes Added: {self.stats.get('episodes_added', 0)}"
+            )
+            logger.info(
+                f"[SCAN_REPORT] Episodes Removed: {self.stats.get('episodes_removed', 0)}"
+            )
+            if (
+                self.stats.get("movies_added", 0) > 0
+                or self.stats.get("movies_removed", 0) > 0
+            ):
+                logger.info(
+                    f"[SCAN_REPORT] Movies Added: {self.stats.get('movies_added', 0)}"
+                )
+                logger.info(
+                    f"[SCAN_REPORT] Movies Removed: {self.stats.get('movies_removed', 0)}"
+                )
+            logger.info(
+                "[SCAN_REPORT] ==================================================="
             )
 
             if self.problems:

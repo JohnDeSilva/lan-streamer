@@ -245,6 +245,28 @@ class LibraryGridView(QWidget):
         elif event == "finish_folder":
             self.scan_progress_bar.mark_folder_done(root, folder)
 
+        elif event == "start_offline_scan":
+            self.scan_progress_bar.set_current_pass(1)
+            self.scan_status_label.setText("Starting offline scan (Pass 1 of 3)...")
+            self.scan_status_label.setVisible(True)
+
+        elif event == "start_metadata_resolution":
+            self.scan_progress_bar.set_current_pass(2)
+            self.scan_status_label.setText(
+                "Starting metadata resolution (Pass 2 of 3)..."
+            )
+            self.scan_status_label.setVisible(True)
+
+        elif event == "runtime_extraction_progress":
+            completed = payload.get("completed", 0)
+            total = payload.get("total", 0)
+            self.scan_progress_bar.set_pass3_progress(completed, total)
+            self.scan_status_label.setText(
+                f"Extracting video runtimes: {completed}/{total} (Pass 3 of 3)..."
+            )
+            self.scan_status_label.setVisible(True)
+            self.scan_progress_bar.setVisible(True)
+
     @Slot()
     def _on_scan_completed(self) -> None:
         self.scan_progress_bar.setVisible(False)

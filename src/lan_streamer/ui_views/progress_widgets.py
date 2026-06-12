@@ -53,6 +53,27 @@ class SegmentedProgressBar(QWidget):
         self._libraries: Dict[str, Any] = {}
         # {root_dir: state}
         self._root_states: Dict[str, int] = {}
+        self._current_pass: int = 1
+        self._pass3_fraction: float = 0.0
+
+    def set_current_pass(self, pass_num: int) -> None:
+        self._current_pass = pass_num
+        self._pass3_fraction = 0.0
+        # Reset state/done counters for a clean pass fill
+        for lib_name, lib_data in self._libraries.items():
+            lib_data["state"] = self.STATE_PENDING
+            for r in lib_data["roots"]:
+                lib_data["root_done"][r] = 0
+                self._root_states[r] = self.STATE_PENDING
+        self.update()
+
+    def set_pass3_progress(self, completed: int, total: int) -> None:
+        self._current_pass = 3
+        if total > 0:
+            self._pass3_fraction = completed / total
+        else:
+            self._pass3_fraction = 1.0
+        self.update()
 
     def init_from_tree(
         self,
@@ -141,7 +162,27 @@ class SegmentedProgressBar(QWidget):
             painter.end()
             return
 
+        # Determine colors for current pass
+        if self._current_pass == 1:
+            color_active = QColor("#d1d5db")
+            color_done = QColor("#ffffff")
+        elif self._current_pass == 2:
+            color_active = QColor("#fef08a")
+            color_done = QColor("#eab308")
+        else:
+            color_active = QColor("#bbf7d0")
+            color_done = QColor("#22c55e")
+
         lib_width = w / num_libs
+
+        # If Pass 3, draw a continuous fill across the entire bar first
+        if self._current_pass == 3:
+            # Draw base background first
+            painter.fillRect(0, bar_top, w, bar_height, self._COLOR_PENDING_FILL)
+            # Draw the continuous progress
+            fill_w = int(w * self._pass3_fraction)
+            if fill_w > 0:
+                painter.fillRect(0, bar_top, fill_w, bar_height, color_done)
 
         for idx, lib_name in enumerate(self._library_order):
             lib_data = self._libraries.get(lib_name, {})
@@ -149,42 +190,54 @@ class SegmentedProgressBar(QWidget):
             lx = int(idx * lib_width)
             lw = int(lib_width) - 1
 
-            # Background
-            if state == self.STATE_DONE:
-                bg = self._COLOR_DONE_LIB
-            elif state == self.STATE_ACTIVE:
-                bg = self._COLOR_ACTIVE_LIB
+            if self._current_pass != 3:
+                # Background
+                if state == self.STATE_DONE:
+                    bg = color_done
+                elif state == self.STATE_ACTIVE:
+                    bg = color_active
+                else:
+                    bg = self._COLOR_PENDING_FILL
+                painter.fillRect(lx, bar_top, lw, bar_height, bg)
+
+                # Draw root-directory sub-segments
+                roots = lib_data.get("roots", [])
+                num_roots = len(roots)
+                if num_roots > 1:
+                    root_w = lw / num_roots
+                    for ridx, root_dir in enumerate(roots):
+                        rx = lx + int(ridx * root_w)
+                        rw = int(root_w) - 1
+                        root_state = self._root_states.get(root_dir, self.STATE_PENDING)
+                        root_total = (
+                            lib_data.get("root_totals", {}).get(root_dir, 1) or 1
+                        )
+                        root_done = lib_data.get("root_done", {}).get(root_dir, 0)
+
+                        if root_state == self.STATE_DONE or state == self.STATE_DONE:
+                            painter.fillRect(rx, bar_top, rw, bar_height, color_done)
+                        elif state == self.STATE_ACTIVE:
+                            fill_fraction = root_done / root_total
+                            fill_w = int(rw * fill_fraction)
+                            painter.fillRect(
+                                rx, bar_top, fill_w, bar_height, color_active
+                            )
+
+                        # Root divider line
+                        if ridx > 0:
+                            painter.setPen(QPen(self._COLOR_ROOT_DIVIDER, 1))
+                            painter.drawLine(rx, bar_top, rx, bar_top + bar_height)
             else:
-                bg = self._COLOR_PENDING_FILL
-            painter.fillRect(lx, bar_top, lw, bar_height, bg)
-
-            # Draw root-directory sub-segments
-            roots = lib_data.get("roots", [])
-            num_roots = len(roots)
-            if num_roots > 1:
-                root_w = lw / num_roots
-                for ridx, root_dir in enumerate(roots):
-                    rx = lx + int(ridx * root_w)
-                    rw = int(root_w) - 1
-                    root_state = self._root_states.get(root_dir, self.STATE_PENDING)
-                    root_total = lib_data.get("root_totals", {}).get(root_dir, 1) or 1
-                    root_done = lib_data.get("root_done", {}).get(root_dir, 0)
-
-                    if root_state == self.STATE_DONE or state == self.STATE_DONE:
-                        painter.fillRect(
-                            rx, bar_top, rw, bar_height, self._COLOR_DONE_ROOT
-                        )
-                    elif state == self.STATE_ACTIVE:
-                        fill_fraction = root_done / root_total
-                        fill_w = int(rw * fill_fraction)
-                        painter.fillRect(
-                            rx, bar_top, fill_w, bar_height, self._COLOR_ACTIVE_ROOT
-                        )
-
-                    # Root divider line
-                    if ridx > 0:
-                        painter.setPen(QPen(self._COLOR_ROOT_DIVIDER, 1))
-                        painter.drawLine(rx, bar_top, rx, bar_top + bar_height)
+                # In Pass 3, we just draw root divider lines if there are any
+                roots = lib_data.get("roots", [])
+                num_roots = len(roots)
+                if num_roots > 1:
+                    root_w = lw / num_roots
+                    for ridx, root_dir in enumerate(roots):
+                        rx = lx + int(ridx * root_w)
+                        if ridx > 0:
+                            painter.setPen(QPen(self._COLOR_ROOT_DIVIDER, 1))
+                            painter.drawLine(rx, bar_top, rx, bar_top + bar_height)
 
             # Library border
             painter.setPen(QPen(self._COLOR_BORDER, 1))
@@ -561,6 +614,26 @@ class LibraryScanProgressBar(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._roots_order: List[str] = []
         self._roots: Dict[str, Any] = {}
+        self._current_pass: int = 1
+        self._pass3_fraction: float = 0.0
+
+    def set_current_pass(self, pass_num: int) -> None:
+        self._current_pass = pass_num
+        self._pass3_fraction = 0.0
+        # Reset state/done counters for a clean pass fill
+        for root_dir, root_data in self._roots.items():
+            root_data["state"] = self.STATE_PENDING
+            for f in root_data["folder_states"]:
+                root_data["folder_states"][f] = self.STATE_PENDING
+        self.update()
+
+    def set_pass3_progress(self, completed: int, total: int) -> None:
+        self._current_pass = 3
+        if total > 0:
+            self._pass3_fraction = completed / total
+        else:
+            self._pass3_fraction = 1.0
+        self.update()
 
     def init_from_roots(
         self, roots: Dict[str, List[str]], roots_order: List[str]
@@ -611,7 +684,27 @@ class LibraryScanProgressBar(QWidget):
             painter.end()
             return
 
+        # Determine colors for current pass
+        if self._current_pass == 1:
+            color_active = QColor("#d1d5db")
+            color_done = QColor("#ffffff")
+        elif self._current_pass == 2:
+            color_active = QColor("#fef08a")
+            color_done = QColor("#eab308")
+        else:
+            color_active = QColor("#bbf7d0")
+            color_done = QColor("#22c55e")
+
         root_width = w / num_roots
+
+        # If Pass 3, draw a continuous fill across the entire bar first
+        if self._current_pass == 3:
+            # Draw base background first
+            painter.fillRect(0, bar_top, w, bar_height, self._COLOR_PENDING_FILL)
+            # Draw the continuous progress
+            fill_w = int(w * self._pass3_fraction)
+            if fill_w > 0:
+                painter.fillRect(0, bar_top, fill_w, bar_height, color_done)
 
         for idx, root_dir in enumerate(self._roots_order):
             root_data = self._roots.get(root_dir, {})
@@ -619,61 +712,69 @@ class LibraryScanProgressBar(QWidget):
             rx = int(idx * root_width)
             rw = int(root_width) - 1
 
-            # Background for this root segment
-            if state == self.STATE_DONE:
-                bg = self._COLOR_DONE_ROOT
-            elif state == self.STATE_ACTIVE:
-                bg = self._COLOR_ACTIVE_ROOT
-            else:
-                bg = self._COLOR_PENDING_FILL
-            painter.fillRect(rx, bar_top, rw, bar_height, bg)
+            if self._current_pass != 3:
+                # Background for this root segment
+                if state == self.STATE_DONE:
+                    bg = color_done
+                elif state == self.STATE_ACTIVE:
+                    bg = color_active
+                else:
+                    bg = self._COLOR_PENDING_FILL
+                painter.fillRect(rx, bar_top, rw, bar_height, bg)
 
-            # Draw folder sub-segments sorted by state to guarantee left-to-right fill
-            folders = root_data.get("folders", [])
-            num_folders = len(folders)
-            if num_folders > 0:
-                folder_w = rw / num_folders
+                # Draw folder sub-segments sorted by state to guarantee left-to-right fill
+                folders = root_data.get("folders", [])
+                num_folders = len(folders)
+                if num_folders > 0:
+                    folder_w = rw / num_folders
 
-                # Count counts of each state
-                states_count = {
-                    self.STATE_PENDING: 0,
-                    self.STATE_ACTIVE: 0,
-                    self.STATE_DONE: 0,
-                }
-                for folder_name in folders:
-                    folder_state = root_data.get("folder_states", {}).get(
-                        folder_name, self.STATE_PENDING
+                    # Count counts of each state
+                    states_count = {
+                        self.STATE_PENDING: 0,
+                        self.STATE_ACTIVE: 0,
+                        self.STATE_DONE: 0,
+                    }
+                    for folder_name in folders:
+                        folder_state = root_data.get("folder_states", {}).get(
+                            folder_name, self.STATE_PENDING
+                        )
+                        states_count[folder_state] += 1
+
+                    # Create an ordered list of states: DONE first, then ACTIVE, then PENDING
+                    ordered_states = (
+                        [self.STATE_DONE] * states_count[self.STATE_DONE]
+                        + [self.STATE_ACTIVE] * states_count[self.STATE_ACTIVE]
+                        + [self.STATE_PENDING] * states_count[self.STATE_PENDING]
                     )
-                    states_count[folder_state] += 1
 
-                # Create an ordered list of states: DONE first, then ACTIVE, then PENDING
-                ordered_states = (
-                    [self.STATE_DONE] * states_count[self.STATE_DONE]
-                    + [self.STATE_ACTIVE] * states_count[self.STATE_ACTIVE]
-                    + [self.STATE_PENDING] * states_count[self.STATE_PENDING]
-                )
+                    for fidx, folder_state in enumerate(ordered_states):
+                        fx = rx + int(fidx * folder_w)
+                        fw = int(folder_w) - 1
 
-                for fidx, folder_state in enumerate(ordered_states):
-                    fx = rx + int(fidx * folder_w)
-                    fw = int(folder_w) - 1
+                        if folder_state == self.STATE_DONE or state == self.STATE_DONE:
+                            painter.fillRect(fx, bar_top, fw, bar_height, color_done)
+                        elif folder_state == self.STATE_ACTIVE:
+                            painter.fillRect(fx, bar_top, fw, bar_height, color_active)
+                        else:
+                            painter.fillRect(
+                                fx, bar_top, fw, bar_height, self._COLOR_PENDING_FILL
+                            )
 
-                    if folder_state == self.STATE_DONE or state == self.STATE_DONE:
-                        painter.fillRect(
-                            fx, bar_top, fw, bar_height, self._COLOR_DONE_FOLDER
-                        )
-                    elif folder_state == self.STATE_ACTIVE:
-                        painter.fillRect(
-                            fx, bar_top, fw, bar_height, self._COLOR_ACTIVE_FOLDER
-                        )
-                    else:
-                        painter.fillRect(
-                            fx, bar_top, fw, bar_height, self._COLOR_PENDING_FILL
-                        )
-
-                    # Folder divider line
-                    if fidx > 0:
-                        painter.setPen(QPen(self._COLOR_ROOT_DIVIDER, 1))
-                        painter.drawLine(fx, bar_top, fx, bar_top + bar_height)
+                        # Folder divider line
+                        if fidx > 0:
+                            painter.setPen(QPen(self._COLOR_ROOT_DIVIDER, 1))
+                            painter.drawLine(fx, bar_top, fx, bar_top + bar_height)
+            else:
+                # In Pass 3, we just draw root divider lines if there are any
+                folders = root_data.get("folders", [])
+                num_folders = len(folders)
+                if num_folders > 0:
+                    folder_w = rw / num_folders
+                    for fidx in range(num_folders):
+                        fx = rx + int(fidx * folder_w)
+                        if fidx > 0:
+                            painter.setPen(QPen(self._COLOR_ROOT_DIVIDER, 1))
+                            painter.drawLine(fx, bar_top, fx, bar_top + bar_height)
 
             # Root border
             painter.setPen(QPen(self._COLOR_BORDER, 1))

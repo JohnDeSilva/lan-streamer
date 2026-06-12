@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QGridLayout,
     QPlainTextEdit,
+    QTextEdit,
     QTabWidget,
 )
 from PySide6.QtCore import Qt, Slot, QTimer
@@ -67,9 +68,17 @@ class SettingsDialog(QDialog):
         self.global_progress_bar.setVisible(False)
         self.scan_progress_tree: ScanProgressTree = ScanProgressTree()
         self.scan_progress_tree.setVisible(False)
+        self.scan_report_display: QTextEdit = QTextEdit()
+        self.scan_report_display.setReadOnly(True)
+        self.scan_report_display.setFont(QFont("Courier New", 10))
+        self.scan_report_display.setVisible(False)
+        self._scan_running: bool = False
+        self.current_scan_logs: List[str] = []
+
         if self.controller is not None:
             self.controller.global_progress_updated.connect(self._on_global_progress)
             self.controller.detail_progress_updated.connect(self._on_detail_progress)
+            self.controller.scan_completed.connect(self._on_scan_completed)
 
         self.jellyfin_url_input: QLineEdit = QLineEdit()
         self.jellyfin_key_input: QLineEdit = QLineEdit()
@@ -671,23 +680,27 @@ class SettingsDialog(QDialog):
         management_layout: QVBoxLayout = QVBoxLayout(management_tab)
         management_layout.setSpacing(15)
 
-        scan_all_button: QPushButton = QPushButton("Scan New Files (All Libraries)")
-        scan_all_button.setObjectName("accentButton")
-        scan_all_button.clicked.connect(self.trigger_global_scan_files)
-        management_layout.addWidget(scan_all_button)
+        self.scan_all_button: QPushButton = QPushButton(
+            "Scan New Files (All Libraries)"
+        )
+        self.scan_all_button.setObjectName("accentButton")
+        self.scan_all_button.clicked.connect(self.trigger_global_scan_files)
+        management_layout.addWidget(self.scan_all_button)
 
-        extract_runtime_button: QPushButton = QPushButton(
+        self.extract_runtime_button: QPushButton = QPushButton(
             "Extract Missing Video Runtimes (Background)"
         )
-        extract_runtime_button.clicked.connect(self.trigger_global_runtime_extraction)
-        management_layout.addWidget(extract_runtime_button)
+        self.extract_runtime_button.clicked.connect(
+            self.trigger_global_runtime_extraction
+        )
+        management_layout.addWidget(self.extract_runtime_button)
 
         # Refresh Metadata Group
-        refresh_frame: QFrame = QFrame()
-        refresh_frame.setStyleSheet(
+        self.refresh_frame: QFrame = QFrame()
+        self.refresh_frame.setStyleSheet(
             "QFrame { background-color: #222222; border: 1px solid #333333; border-radius: 6px; }"
         )
-        refresh_layout: QVBoxLayout = QVBoxLayout(refresh_frame)
+        refresh_layout: QVBoxLayout = QVBoxLayout(self.refresh_frame)
         refresh_layout.setSpacing(10)
 
         refresh_all_button: QPushButton = QPushButton(
@@ -697,14 +710,14 @@ class SettingsDialog(QDialog):
         refresh_layout.addWidget(refresh_all_button)
 
         refresh_layout.addWidget(self.force_refresh_checkbox)
-        management_layout.addWidget(refresh_frame)
+        management_layout.addWidget(self.refresh_frame)
 
         # Jellyfin Sync Group
-        jellyfin_frame: QFrame = QFrame()
-        jellyfin_frame.setStyleSheet(
+        self.jellyfin_frame: QFrame = QFrame()
+        self.jellyfin_frame.setStyleSheet(
             "QFrame { background-color: #222222; border: 1px solid #333333; border-radius: 6px; }"
         )
-        jellyfin_layout: QVBoxLayout = QVBoxLayout(jellyfin_frame)
+        jellyfin_layout: QVBoxLayout = QVBoxLayout(self.jellyfin_frame)
         jellyfin_layout.setSpacing(10)
 
         pull_all_button: QPushButton = QPushButton(
@@ -718,14 +731,16 @@ class SettingsDialog(QDialog):
         )
         push_all_button.clicked.connect(self.trigger_global_jellyfin_push)
         jellyfin_layout.addWidget(push_all_button)
-        management_layout.addWidget(jellyfin_frame)
+        management_layout.addWidget(self.jellyfin_frame)
 
         management_layout.addSpacing(10)
         management_layout.addWidget(QLabel("Global Operation Progress:"))
         management_layout.addWidget(self.global_progress_bar)
         management_layout.addSpacing(4)
-        management_layout.addWidget(QLabel("Scan Detail:"))
+        self.scan_detail_label: QLabel = QLabel("Scan Detail:")
+        management_layout.addWidget(self.scan_detail_label)
         management_layout.addWidget(self.scan_progress_tree)
+        management_layout.addWidget(self.scan_report_display, 1)
 
         management_layout.addStretch()
 
@@ -1617,7 +1632,12 @@ class SettingsDialog(QDialog):
                 tree, library_order, self.staged_libraries
             )
             self.global_progress_bar.setVisible(True)
-            self.scan_progress_tree.setVisible(True)
+            if self._scan_running:
+                self.scan_progress_tree.setVisible(False)
+                self.scan_report_display.setVisible(True)
+            else:
+                self.scan_progress_tree.setVisible(True)
+                self.scan_report_display.setVisible(False)
 
         elif event == "start_library":
             self.global_progress_bar.mark_library_active(library)
@@ -1649,10 +1669,42 @@ class SettingsDialog(QDialog):
         elif event == "finish_file":
             self.scan_progress_tree.mark_file_done(file_path)
 
+        elif event == "start_offline_scan":
+            self.global_progress_bar.set_current_pass(1)
+
+        elif event == "start_metadata_resolution":
+            self.global_progress_bar.set_current_pass(2)
+
+        elif event == "runtime_extraction_progress":
+            completed = payload.get("completed", 0)
+            total = payload.get("total", 0)
+            self.global_progress_bar.set_pass3_progress(completed, total)
+
+    @Slot()
+    def _on_scan_completed(self) -> None:
+        self._scan_running = False
+        self.scan_report_display.moveCursor(QTextCursor.MoveOperation.End)
+        self.scan_report_display.insertPlainText("\n*** SCAN COMPLETED ***\n")
+        self.scan_all_button.setVisible(True)
+        self.extract_runtime_button.setVisible(True)
+        self.refresh_frame.setVisible(True)
+        self.jellyfin_frame.setVisible(True)
+        self.scan_detail_label.setText("Scan Detail:")
+
     def _show_scan_progress_widgets(self) -> None:
         self.scan_progress_tree.reset()
+        self.scan_progress_tree.setVisible(False)
+        self.scan_report_display.clear()
+        self.scan_report_display.setVisible(True)
         self.global_progress_bar.setVisible(True)
-        self.scan_progress_tree.setVisible(True)
+        self._scan_running = True
+        self.current_scan_logs = []
+        self._appended_report_lines = set()
+        self.scan_all_button.setVisible(False)
+        self.extract_runtime_button.setVisible(False)
+        self.refresh_frame.setVisible(False)
+        self.jellyfin_frame.setVisible(False)
+        self.scan_detail_label.setText("Scan Report:")
 
     @Slot()
     def trigger_global_scan_files(self) -> None:
@@ -1846,6 +1898,38 @@ class SettingsDialog(QDialog):
         self.all_log_records.append((formatted_message, level_name))
         if len(self.all_log_records) > 1000:
             self.all_log_records.pop(0)
+
+        if self._scan_running:
+
+            def is_separator(text: str) -> bool:
+                stripped = text.strip()
+                if not stripped:
+                    return True
+                return all(c in "=-*_" for c in stripped)
+
+            if "[SCAN_REPORT]" in formatted_message:
+                idx = formatted_message.index("[SCAN_REPORT]")
+                content = formatted_message[idx + len("[SCAN_REPORT]") :]
+                if content.startswith(" "):
+                    content = content[1:]
+                if is_separator(content) or content not in self._appended_report_lines:
+                    if not is_separator(content):
+                        self._appended_report_lines.add(content)
+                    self.scan_report_display.moveCursor(QTextCursor.MoveOperation.End)
+                    self.scan_report_display.insertPlainText(content + "\n")
+                    self.current_scan_logs.append(formatted_message)
+            elif "[SCAN_ISSUE]" in formatted_message:
+                idx = formatted_message.index("[SCAN_ISSUE]")
+                content = (
+                    "ISSUE: " + formatted_message[idx + len("[SCAN_ISSUE]") :].strip()
+                )
+                if is_separator(content) or content not in self._appended_report_lines:
+                    if not is_separator(content):
+                        self._appended_report_lines.add(content)
+                    self.scan_report_display.moveCursor(QTextCursor.MoveOperation.End)
+                    self.scan_report_display.insertPlainText(content + "\n")
+                    self.current_scan_logs.append(formatted_message)
+
         search_term: str = self.log_search_input.text().strip().lower()
         selected_level: str = self.log_level_filter.currentText()
         level_threshold: int = self._get_level_value(selected_level)

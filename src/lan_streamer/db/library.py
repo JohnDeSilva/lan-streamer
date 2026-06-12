@@ -149,6 +149,7 @@ def _cleanup_movie_library(
             )
             session.delete(movie)
             stats["movies"] += 1
+            stats["movies_removed"] = stats.get("movies_removed", 0) + 1
 
 
 def _cleanup_tv_library(
@@ -176,10 +177,17 @@ def _cleanup_tv_library(
         if not series_path_exists:
             logger.info(f"Cleanup: Removing missing series '{series.name}'")
             stats["seasons"] += len(series.seasons)
+            stats["seasons_removed"] = stats.get("seasons_removed", 0) + len(
+                series.seasons
+            )
             for season in series.seasons:
                 stats["episodes"] += len(season.episodes)
+                stats["episodes_removed"] = stats.get("episodes_removed", 0) + len(
+                    season.episodes
+                )
             session.delete(series)
             stats["series"] += 1
+            stats["series_removed"] = stats.get("series_removed", 0) + 1
             continue
 
         # Series folder still exists — null out paths for files that are gone
@@ -242,6 +250,7 @@ def _save_series_record(
     if not series:
         series = Series(library_name=library_name, name=series_name)
         session.add(series)
+        stats["series_added"] = stats.get("series_added", 0) + 1
     stats["series"] += 1
 
     series_metadata = series_data.get("metadata", {})
@@ -274,6 +283,7 @@ def _save_season_record(
     if not season:
         season = Season(name=season_name, series=series)
         session.add(season)
+        stats["seasons_added"] = stats.get("seasons_added", 0) + 1
     stats["seasons"] += 1
 
     season_metadata = season_data.get("metadata", {})
@@ -327,6 +337,7 @@ def _save_episode_record(
     if not episode:
         episode = Episode(path=path, season=season)
         session.add(episode)
+        stats["episodes_added"] = stats.get("episodes_added", 0) + 1
     else:
         # Remove from tracking dicts so it's not reused/considered stale
         if episode.path in existing_by_path:
@@ -368,6 +379,7 @@ def _save_episode_record(
                     # Delete duplicate from session and remove from tracking dicts
                     session.delete(dup_ep)
                     stats["deleted"] += 1
+                    stats["episodes_removed"] = stats.get("episodes_removed", 0) + 1
 
                     if dup_ep.path in existing_by_path:
                         existing_by_path.pop(dup_ep.path, None)
@@ -471,6 +483,14 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
         "episodes": 0,
         "deleted": 0,
         "issues": [],
+        "series_added": 0,
+        "series_removed": 0,
+        "seasons_added": 0,
+        "seasons_removed": 0,
+        "episodes_added": 0,
+        "episodes_removed": 0,
+        "movies_added": 0,
+        "movies_removed": 0,
     }
 
     try:
@@ -560,6 +580,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                         )
                         session.delete(ep_obj)
                         stats["deleted"] += 1
+                        stats["episodes_removed"] = stats.get("episodes_removed", 0) + 1
 
     except Exception as e:
         logger.exception(f"Error saving library '{library_name}' to database")
@@ -618,7 +639,13 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
     """
 
     start_time = time.time()
-    stats: Dict[str, Any] = {"movies": 0, "deleted": 0, "issues": []}
+    stats: Dict[str, Any] = {
+        "movies": 0,
+        "deleted": 0,
+        "issues": [],
+        "movies_added": 0,
+        "movies_removed": 0,
+    }
 
     try:
         with get_session() as session:
@@ -676,6 +703,7 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
                 if not movie:
                     movie = Movie(library_name=library_name, name=movie_name)
                     session.add(movie)
+                    stats["movies_added"] = stats.get("movies_added", 0) + 1
                 else:
                     if movie.name != movie_name:
                         stale_movie = existing_movies_by_name.get(movie_name)
@@ -685,6 +713,7 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
                             )
                             session.delete(stale_movie)
                             session.flush()
+                            stats["movies_removed"] = stats.get("movies_removed", 0) + 1
                             del existing_movies_by_name[movie_name]
                     movie.library_name = library_name
                     movie.name = movie_name
@@ -781,6 +810,14 @@ def save_season_data(
         "episodes": 0,
         "deleted": 0,
         "issues": [],
+        "series_added": 0,
+        "series_removed": 0,
+        "seasons_added": 0,
+        "seasons_removed": 0,
+        "episodes_added": 0,
+        "episodes_removed": 0,
+        "movies_added": 0,
+        "movies_removed": 0,
     }
     try:
         with get_session() as session:
@@ -869,7 +906,22 @@ def save_movie_data(
     """
     Saves or updates a single movie in the database.
     """
-    stats: Dict[str, Any] = {"movies": 0, "deleted": 0, "issues": []}
+    stats: Dict[str, Any] = {
+        "series": 0,
+        "seasons": 0,
+        "episodes": 0,
+        "movies": 0,
+        "deleted": 0,
+        "issues": [],
+        "series_added": 0,
+        "series_removed": 0,
+        "seasons_added": 0,
+        "seasons_removed": 0,
+        "episodes_added": 0,
+        "episodes_removed": 0,
+        "movies_added": 0,
+        "movies_removed": 0,
+    }
     try:
         with get_session() as session:
             existing_movie = session.scalars(
@@ -900,6 +952,7 @@ def save_movie_data(
             if not movie:
                 movie = Movie(library_name=library_name, name=movie_name)
                 session.add(movie)
+                stats["movies_added"] = stats.get("movies_added", 0) + 1
             else:
                 if movie.name != movie_name:
                     stale_movie = existing_movie
@@ -909,6 +962,7 @@ def save_movie_data(
                         )
                         session.delete(stale_movie)
                         session.flush()
+                        stats["movies_removed"] = stats.get("movies_removed", 0) + 1
 
                 movie.library_name = library_name
                 movie.name = movie_name

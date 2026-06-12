@@ -78,6 +78,8 @@ class Controller(QObject):
         self.merge_subtitle_worker_instance: Optional[Any] = None
         self.embed_metadata_worker_instance: Optional[Any] = None
         self.is_video_playing: bool = False
+        self._running_pass3_after_scan: bool = False
+        self._doing_scan_and_update: bool = False
 
         self.debounce_timer = QTimer(self)
         self.debounce_timer.setSingleShot(True)
@@ -280,8 +282,11 @@ class Controller(QObject):
         root_directories: List[str] = library_config.get("paths", [])
         library_type: str = library_config.get("type", "tv")
         self.status_changed.emit(
-            f"Scanning library '{self.current_library_name}' (force={force_refresh})..."
+            f"Scanning library '{self.current_library_name}' (force={force_refresh})...."
         )
+
+        self._running_pass3_after_scan = True
+        self._doing_scan_and_update = False
 
         self.scan_worker_instance = ScanWorker(
             root_directories=root_directories,
@@ -342,7 +347,10 @@ class Controller(QObject):
                 and not self.is_video_playing
             ):
                 self.library_loaded.emit()
-        self.scan_completed.emit()
+        if self._running_pass3_after_scan and not self._doing_scan_and_update:
+            self.trigger_runtime_extraction()
+        elif not self._doing_scan_and_update:
+            self.scan_completed.emit()
 
     def trigger_cleanup(self) -> None:
         if not self.current_library_name:
@@ -398,6 +406,9 @@ class Controller(QObject):
             f"Scanning & updating library '{self.current_library_name}'..."
         )
 
+        self._running_pass3_after_scan = True
+        self._doing_scan_and_update = True
+
         self.scan_worker_instance = ScanWorker(
             root_directories=root_directories,
             library_type=library_type,
@@ -448,7 +459,10 @@ class Controller(QObject):
             f"Scan Library complete. "
             f"{series_removed} series removed, {episodes_nulled} episode paths updated."
         )
-        self.scan_completed.emit()
+        if self._running_pass3_after_scan:
+            self.trigger_runtime_extraction()
+        else:
+            self.scan_completed.emit()
 
     def trigger_jellyfin_pull(self) -> None:
         if not jellyfin_client.is_configured():
@@ -494,6 +508,7 @@ class Controller(QObject):
 
         config.load()
         self.status_changed.emit("Scanning all libraries...")
+        self._running_pass3_after_scan = True
         self.scan_all_worker_instance = ScanAllLibrariesWorker(
             force_refresh=force_refresh
         )
@@ -549,7 +564,10 @@ class Controller(QObject):
                 self.library_loaded.emit()
             else:
                 self.select_library(self.current_library_name, reset_selection=False)
-        self.scan_completed.emit()
+        if self._running_pass3_after_scan:
+            self.trigger_runtime_extraction()
+        else:
+            self.scan_completed.emit()
 
     def trigger_runtime_extraction(self) -> None:
         if (
@@ -572,6 +590,10 @@ class Controller(QObject):
         self.global_progress_updated.emit(
             "Extracting Runtimes", completed_count, total_count
         )
+        self.detail_progress_updated.emit(
+            "runtime_extraction_progress",
+            {"completed": completed_count, "total": total_count},
+        )
 
     def _on_runtime_finished(self, updated_count: int) -> None:
         self.status_changed.emit(
@@ -579,6 +601,8 @@ class Controller(QObject):
         )
         if self.current_library_name:
             self.select_library(self.current_library_name, reset_selection=False)
+        self._running_pass3_after_scan = False
+        self.scan_completed.emit()
 
     def _on_worker_error(self, error_message: str) -> None:
         self.status_changed.emit(f"Worker Error: {error_message}")
