@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 import pytest
 
 from lan_streamer.backend import (
-    RuntimeExtractionWorker,
+    FilePropertyExtractionWorker,
     SubtitleMergeWorker,
     MetadataEmbedWorker,
     SeriesMetadataEmbedWorker,
@@ -17,11 +17,19 @@ def test_runtime_extraction_worker_execution() -> None:
     # Successful run
     with (
         patch("lan_streamer.backend.db.get_items_missing_runtime") as mock_get_items,
+        patch("lan_streamer.backend.db.has_tech_and_metadata", return_value=False),
         patch("lan_streamer.scanner.get_detailed_file_info") as mock_info,
-        patch("lan_streamer.backend.db.update_item_runtime") as mock_update,
+        patch(
+            "lan_streamer.backend.db.update_items_runtime_batch"
+        ) as mock_update_batch,
     ):
         mock_get_items.return_value = [
-            {"id": 101, "path": "/vid1.mkv", "type": "episode"},
+            {
+                "id": 101,
+                "path": "/vid1.mkv",
+                "type": "episode",
+                "season_id": "season_1",
+            },
             {"id": 102, "path": "/vid2.mkv", "type": "movie"},
         ]
         mock_info.side_effect = [
@@ -44,7 +52,7 @@ def test_runtime_extraction_worker_execution() -> None:
         progress_emitted: List[tuple] = []
         finished_emitted: List[int] = []
 
-        worker = RuntimeExtractionWorker()
+        worker = FilePropertyExtractionWorker()
         worker.progress_updated.connect(
             lambda completed, total: progress_emitted.append((completed, total))
         )
@@ -52,16 +60,20 @@ def test_runtime_extraction_worker_execution() -> None:
         worker.run()
 
         assert mock_info.call_count == 2
-        mock_update.assert_called_once_with(
-            item_identifier=101,
-            item_type="episode",
-            runtime_minutes=22,
-            video_codec="h264",
-            resolution="1920x1080",
-            audio_tracks=[],
-            subtitle_tracks=[],
-            bit_rate=None,
-            size_bytes=None,
+        mock_update_batch.assert_called_once_with(
+            [
+                {
+                    "item_identifier": 101,
+                    "item_type": "episode",
+                    "runtime_minutes": 22,
+                    "video_codec": "h264",
+                    "resolution": "1920x1080",
+                    "audio_tracks": [],
+                    "subtitle_tracks": [],
+                    "bit_rate": None,
+                    "size_bytes": None,
+                }
+            ]
         )
         assert progress_emitted == [(1, 2), (2, 2)]
         assert finished_emitted == [1]
@@ -72,7 +84,7 @@ def test_runtime_extraction_worker_execution() -> None:
         side_effect=Exception("DB connection error"),
     ):
         errors_emitted: List[str] = []
-        worker = RuntimeExtractionWorker()
+        worker = FilePropertyExtractionWorker()
         worker.error.connect(errors_emitted.append)
         worker.run()
         assert errors_emitted == ["DB connection error"]
@@ -372,3 +384,76 @@ def test_subtitle_merge_worker_direct():
             with patch("os.remove"):
                 worker.run()
                 assert mock_run.call_count == 1
+
+
+def test_file_property_extraction_worker_skips_and_batches() -> None:
+    """Verify that FilePropertyExtractionWorker skips fully populated files and groups/batches database writes per season."""
+    with (
+        patch("lan_streamer.backend.db.get_items_missing_runtime") as mock_get_items,
+        patch("lan_streamer.backend.db.has_tech_and_metadata") as mock_has_tech,
+        patch("lan_streamer.scanner.get_detailed_file_info") as mock_info,
+        patch(
+            "lan_streamer.backend.db.update_items_runtime_batch"
+        ) as mock_update_batch,
+    ):
+        # 1. Mock get_items_missing_runtime
+        # We have three episode candidates:
+        # - Episode 201: season_1, missing specs, will be probed
+        # - Episode 202: season_1, missing specs, will be probed
+        # - Episode 203: season_2, already has technical and metadata, should be skipped!
+        mock_get_items.return_value = [
+            {
+                "id": 201,
+                "path": "/season1_ep1.mkv",
+                "type": "episode",
+                "season_id": "season_1",
+            },
+            {
+                "id": 202,
+                "path": "/season1_ep2.mkv",
+                "type": "episode",
+                "season_id": "season_1",
+            },
+            {
+                "id": 203,
+                "path": "/season2_ep1.mkv",
+                "type": "episode",
+                "season_id": "season_2",
+            },
+        ]
+
+        # Mock has_tech_and_metadata: True for 203, False for others
+        mock_has_tech.side_effect = lambda item_id, item_type: item_id == 203
+
+        # Mock probe info
+        mock_info.side_effect = [
+            {
+                "runtime": 25,
+                "video_codec": "hevc",
+                "resolution": "3840x2160",
+                "audio_tracks": [],
+                "subtitle_tracks": [],
+            },
+            {
+                "runtime": 24,
+                "video_codec": "hevc",
+                "resolution": "3840x2160",
+                "audio_tracks": [],
+                "subtitle_tracks": [],
+            },
+        ]
+
+        worker = FilePropertyExtractionWorker()
+        worker.run()
+
+        # Check: 203 is skipped, so get_detailed_file_info only called twice (for 201 and 202)
+        assert mock_info.call_count == 2
+        mock_info.assert_any_call("/season1_ep1.mkv")
+        mock_info.assert_any_call("/season1_ep2.mkv")
+
+        # Check: 201 and 202 are both in season_1, so their database writes are batched in a single call
+        mock_update_batch.assert_called_once()
+        batch_arg = mock_update_batch.call_args[0][0]
+        assert len(batch_arg) == 2
+        assert batch_arg[0]["item_identifier"] == 201
+        assert batch_arg[1]["item_identifier"] == 202

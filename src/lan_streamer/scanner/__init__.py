@@ -7,8 +7,9 @@ from .parser import (
     _is_video_file,
     has_video_files,
 )
-from .runtime import (
+from .file_property_scanner import (
     get_detailed_file_info,
+    get_stub_file_info,
     _extract_video_runtime,
 )
 from .metadata import (
@@ -52,6 +53,7 @@ __all__ = [
     "_is_video_file",
     "has_video_files",
     "get_detailed_file_info",
+    "get_stub_file_info",
     "_extract_video_runtime",
     "clean_series_data",
     "_build_locked_tv_tmdb_stub",

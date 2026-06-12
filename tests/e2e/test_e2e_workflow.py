@@ -1194,14 +1194,16 @@ def test_controller_additional_coverage() -> None:
     assert movie_selected_emitted == ["Movie1"]
 
     # 6. trigger_runtime_extraction, _on_runtime_progress, _on_runtime_finished
-    with patch("lan_streamer.ui_views.RuntimeExtractionWorker") as mock_worker_class:
+    with patch(
+        "lan_streamer.ui_views.FilePropertyExtractionWorker"
+    ) as mock_worker_class:
         controller_instance.trigger_runtime_extraction()
         mock_worker_class.assert_called_once()
         mock_worker_instance = mock_worker_class.return_value
         mock_worker_instance.start.assert_called_once()
 
         # concurrency check
-        controller_instance.runtime_worker_instance = mock_worker_instance
+        controller_instance.file_property_worker_instance = mock_worker_instance
         mock_worker_instance.isRunning.return_value = True
         controller_instance.trigger_runtime_extraction()
         assert mock_worker_class.call_count == 1

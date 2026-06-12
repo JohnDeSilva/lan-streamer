@@ -6,7 +6,10 @@ from typing import Dict, List, Any, Optional
 
 from lan_streamer.db import natural_sort_key
 from lan_streamer.scanner.proxy import tmdb_client, clean_series_data, scanner_proxy
-from lan_streamer.scanner.runtime import get_detailed_file_info
+from lan_streamer.scanner.file_property_scanner import (
+    get_detailed_file_info,
+    get_stub_file_info,
+)
 from lan_streamer.scanner.parser import (
     VIDEO_EXTENSIONS,
     has_video_files,
@@ -140,6 +143,7 @@ def scan_directories(
     detail_callback: Any = None,
     root_directory_label: str = "",
     show_future_episodes: bool = True,
+    offline: bool = False,
 ) -> LibraryDict:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -244,6 +248,7 @@ def scan_directories(
                     cleanup=cleanup,
                     single_item_refresh=single_item_refresh,
                     detail_callback=detail_callback,
+                    offline=offline,
                 )
                 if not series_data:
                     if detail_callback:
@@ -269,6 +274,7 @@ def scan_directories(
                     single_item_refresh=single_item_refresh,
                     detail_callback=detail_callback,
                     show_future_episodes=show_future_episodes,
+                    offline=offline,
                 )
                 if is_locked:
                     series_data["metadata"]["locked_metadata"] = True
@@ -349,6 +355,7 @@ def scan_movie(
     cleanup: bool = False,
     single_item_refresh: bool = False,
     detail_callback: Any = None,
+    offline: bool = False,
 ) -> Dict[str, Any] | None:
     folder_name = movie_directory.name
     title, year = _parse_movie_folder(folder_name)
@@ -373,7 +380,10 @@ def scan_movie(
         if existing_v and not force_refresh:
             versions.append(existing_v)
         else:
-            versions.append(get_detailed_file_info(path_str))
+            if offline:
+                versions.append(get_stub_file_info(path_str))
+            else:
+                versions.append(get_detailed_file_info(path_str))
 
     default_path = (
         existing_movie_data.get("default_path") if existing_movie_data else None
@@ -412,7 +422,7 @@ def scan_movie(
             f"New file detected for movie '{folder_name}'. Automatically pulling fresh metadata."
         )
         force_refresh = True
-        if existing_tmdb_id and not tmdb_movie:
+        if existing_tmdb_id and not tmdb_movie and not offline:
             full = tmdb_client.get_movie_by_id(existing_tmdb_id)
             if full:
                 tmdb_movie = full
@@ -451,34 +461,37 @@ def scan_movie(
             movie_data["runtime"] = 0
         return movie_data
 
-    if tmdb_movie and "title" not in tmdb_movie and "id" in tmdb_movie:
-        if single_item_refresh or not movie_metadata.get("tmdb_name"):
-            full = tmdb_client.get_movie_by_id(tmdb_movie["id"])
-            if full:
-                tmdb_movie = full
+    if not offline:
+        if tmdb_movie and "title" not in tmdb_movie and "id" in tmdb_movie:
+            if single_item_refresh or not movie_metadata.get("tmdb_name"):
+                full = tmdb_client.get_movie_by_id(tmdb_movie["id"])
+                if full:
+                    tmdb_movie = full
 
-    if not tmdb_movie:
-        if movie_metadata["tmdb_identifier"]:
-            tmdb_movie = {
-                "id": movie_metadata["tmdb_identifier"],
-                "title": movie_metadata["tmdb_name"],
-                "overview": movie_metadata["overview"],
-                "poster_path": movie_metadata["poster_path"],
-                "release_date": f"{movie_metadata['year']}-01-01"
-                if movie_metadata["year"]
-                else "",
-            }
-        elif not is_locked and (
-            single_item_refresh or not existing_movie_data or not existing_tmdb_id
-        ):
-            tmdb_movie = tmdb_client.search_movie(title, year)
+        if not tmdb_movie:
+            if movie_metadata["tmdb_identifier"]:
+                tmdb_movie = {
+                    "id": movie_metadata["tmdb_identifier"],
+                    "title": movie_metadata["tmdb_name"],
+                    "overview": movie_metadata["overview"],
+                    "poster_path": movie_metadata["poster_path"],
+                    "release_date": f"{movie_metadata['year']}-01-01"
+                    if movie_metadata["year"]
+                    else "",
+                }
+            elif not is_locked and (
+                single_item_refresh or not existing_movie_data or not existing_tmdb_id
+            ):
+                tmdb_movie = tmdb_client.search_movie(title, year)
 
-    if tmdb_movie:
-        _apply_tmdb_movie_data(movie_metadata, tmdb_movie, existing_movie_data)
+        if tmdb_movie:
+            _apply_tmdb_movie_data(
+                movie_metadata, tmdb_movie, existing_movie_data, offline
+            )
 
-    movie_metadata["jellyfin_id"] = _resolve_movie_jellyfin_id(
-        movie_metadata, video_path, jellyfin_data
-    )
+        movie_metadata["jellyfin_id"] = _resolve_movie_jellyfin_id(
+            movie_metadata, video_path, jellyfin_data
+        )
 
     movie_data = {
         "name": folder_name,
@@ -530,6 +543,7 @@ def scan_series(
     single_item_refresh: bool = False,
     detail_callback: Any = None,
     show_future_episodes: bool = True,
+    offline: bool = False,
 ) -> Dict[str, Any]:
     """
     Scans a single series directory and fetches metadata from TMDB.
@@ -592,6 +606,7 @@ def scan_series(
         force_refresh,
         cleanup,
         single_item_refresh,
+        offline=offline,
     )
     if is_early_return:
         if not show_future_episodes:
@@ -623,6 +638,7 @@ def scan_series(
                 existing_episodes_by_path,
                 force_refresh,
                 single_item_refresh,
+                offline=offline,
             )
         )
 
@@ -670,6 +686,7 @@ def scan_series(
                     jellyfin_data,
                     existing_episodes_by_path,
                     existing_series_data,
+                    offline=offline,
                 )
                 scanned_episodes.append(episode_record)
                 if detail_callback:
@@ -719,7 +736,10 @@ def scan_series(
                 if existing_v and not force_refresh:
                     versions.append(existing_v)
                 else:
-                    versions.append(get_detailed_file_info(path_str))
+                    if offline:
+                        versions.append(get_stub_file_info(path_str))
+                    else:
+                        versions.append(get_detailed_file_info(path_str))
 
             default_path = None
             if existing_series_data:

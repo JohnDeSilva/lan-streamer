@@ -68,8 +68,8 @@ def test_scan_all_libraries_worker_with_root_dirs(tmp_path) -> None:
 
         assert finished == [True]
         # scan_directories called once per root_dir
-        mock_scan.assert_called_once()
-        mock_save.assert_called_once()
+        assert mock_scan.call_count == 2
+        assert mock_save.call_count == 2
         assert "start_root" in detail_events
         assert "finish_root" in detail_events
         assert "finish_library" in detail_events
@@ -109,7 +109,7 @@ def test_scan_all_libraries_worker_with_root_dirs_movie(tmp_path) -> None:
         worker.run()
 
         assert finished == [True]
-        mock_save_movie.assert_called_once()
+        assert mock_save_movie.call_count == 2
 
 
 def test_scan_all_libraries_worker_with_jellyfin(tmp_path) -> None:

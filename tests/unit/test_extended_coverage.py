@@ -531,8 +531,8 @@ def test_scan_all_libraries_worker_no_root_dirs() -> None:
         worker.run()
 
         assert finished == [True]
-        mock_scan.assert_called_once()
-        mock_save.assert_called_once()
+        assert mock_scan.call_count == 2
+        assert mock_save.call_count == 2
 
 
 def test_scan_all_libraries_worker_movie_library() -> None:

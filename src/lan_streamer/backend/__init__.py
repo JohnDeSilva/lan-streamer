@@ -9,7 +9,7 @@ from lan_streamer.backend.jellyfin_workers import (
     JellyfinPushWorker,
 )
 from lan_streamer.backend.metadata_workers import (
-    RuntimeExtractionWorker,
+    FilePropertyExtractionWorker,
     SubtitleMergeWorker,
     MetadataEmbedWorker,
     SeriesMetadataEmbedWorker,
@@ -27,7 +27,7 @@ __all__ = [
     "ScanAllLibrariesWorker",
     "JellyfinPullWorker",
     "JellyfinPushWorker",
-    "RuntimeExtractionWorker",
+    "FilePropertyExtractionWorker",
     "SubtitleMergeWorker",
     "MetadataEmbedWorker",
     "SeriesMetadataEmbedWorker",

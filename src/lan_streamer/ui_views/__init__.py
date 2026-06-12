@@ -14,7 +14,7 @@ from lan_streamer.backend import (
     JellyfinPullWorker,
     JellyfinPushWorker,
     ScanAllLibrariesWorker,
-    RuntimeExtractionWorker,
+    FilePropertyExtractionWorker,
 )
 
 # Expose core UI views components
@@ -54,7 +54,7 @@ __all__ = [
     "JellyfinPullWorker",
     "JellyfinPushWorker",
     "ScanAllLibrariesWorker",
-    "RuntimeExtractionWorker",
+    "FilePropertyExtractionWorker",
     "get_application_stylesheet",
     "SegmentedProgressBar",
     "ScanProgressTree",

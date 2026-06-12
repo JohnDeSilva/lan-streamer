@@ -7,7 +7,6 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -200,5 +199,40 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
 
     if not info.get("runtime"):
         info["runtime"] = _extract_video_runtime(file_path)
+
+    return info
+
+
+def get_stub_file_info(file_path: str) -> Dict[str, Any]:
+    """
+    Instantly returns basic size/type file info without doing heavy FFmpeg/ffprobe calls.
+    Sets codec/resolution/runtime to default placeholder values.
+    """
+    info: Dict[str, Any] = {
+        "path": file_path,
+        "size_bytes": None,
+        "video_type": None,
+        "resolution": "Unknown",
+        "video_codec": "Unknown",
+        "bit_rate": None,
+        "audio_tracks": [],
+        "subtitle_tracks": [],
+        "runtime": 0,
+    }
+
+    if not file_path:
+        return info
+
+    path_obj = Path(file_path)
+    try:
+        if path_obj.exists():
+            info["size_bytes"] = path_obj.stat().st_size
+    except Exception as stat_error:
+        logger.error(
+            f"get_stub_file_info: Failed to read file stats/size for '{file_path}': {stat_error}"
+        )
+
+    suffix = path_obj.suffix
+    info["video_type"] = suffix.upper().replace(".", "") if suffix else None
 
     return info

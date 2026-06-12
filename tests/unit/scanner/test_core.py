@@ -1311,7 +1311,7 @@ def test_extract_video_runtime_failure(tmp_path) -> None:
 
 
 def test_get_ffprobe_command_path_resolved() -> None:
-    from lan_streamer.scanner.runtime import _get_ffprobe_command
+    from lan_streamer.scanner.file_property_scanner import _get_ffprobe_command
 
     _get_ffprobe_command.cache_clear()
 
@@ -1321,7 +1321,7 @@ def test_get_ffprobe_command_path_resolved() -> None:
 
 
 def test_get_ffprobe_command_mac_fallback() -> None:
-    from lan_streamer.scanner.runtime import _get_ffprobe_command
+    from lan_streamer.scanner.file_property_scanner import _get_ffprobe_command
 
     _get_ffprobe_command.cache_clear()
 
@@ -1339,7 +1339,7 @@ def test_get_ffprobe_command_mac_fallback() -> None:
 
 
 def test_get_ffprobe_command_default() -> None:
-    from lan_streamer.scanner.runtime import _get_ffprobe_command
+    from lan_streamer.scanner.file_property_scanner import _get_ffprobe_command
 
     _get_ffprobe_command.cache_clear()
 
@@ -2260,10 +2260,10 @@ def test_scan_series_warns_on_nested_too_deep_files(tmp_path) -> None:
 
 
 def test_get_detailed_file_info_and_runtime_worker(tmp_path) -> None:
-    """Verify that get_detailed_file_info parses technical metadata and RuntimeExtractionWorker saves it to the DB."""
+    """Verify that get_detailed_file_info parses technical metadata and FilePropertyExtractionWorker saves it to the DB."""
     import json
     from lan_streamer.scanner import get_detailed_file_info
-    from lan_streamer.backend import RuntimeExtractionWorker
+    from lan_streamer.backend import FilePropertyExtractionWorker
     import lan_streamer.db as db
 
     video_file = tmp_path / "detailed_video.mkv"
@@ -2347,6 +2347,7 @@ def test_get_detailed_file_info_and_runtime_worker(tmp_path) -> None:
 
         episode_id = episode.id
         movie_id = movie.id
+        season_id = season.id
 
     # Touch the movie file too so it exists
     Path(str(video_file.absolute()) + ".movie.mkv").touch()
@@ -2354,7 +2355,12 @@ def test_get_detailed_file_info_and_runtime_worker(tmp_path) -> None:
     # Mock get_items_missing_runtime to return our test items
     with patch("lan_streamer.db.get_items_missing_runtime") as mock_get_missing:
         mock_get_missing.return_value = [
-            {"id": episode_id, "path": str(video_file.absolute()), "type": "episode"},
+            {
+                "id": episode_id,
+                "path": str(video_file.absolute()),
+                "type": "episode",
+                "season_id": season_id,
+            },
             {
                 "id": movie_id,
                 "path": str(video_file.absolute()) + ".movie.mkv",
@@ -2362,7 +2368,7 @@ def test_get_detailed_file_info_and_runtime_worker(tmp_path) -> None:
             },
         ]
 
-        worker = RuntimeExtractionWorker()
+        worker = FilePropertyExtractionWorker()
 
         # Mock subprocess.run inside the worker's run thread
         with patch("subprocess.run", return_value=mock_process):

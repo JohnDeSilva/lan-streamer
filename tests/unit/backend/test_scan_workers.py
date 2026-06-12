@@ -21,7 +21,7 @@ def test_scan_worker_execution() -> None:
         worker = ScanWorker(["/path", "/unavailable/path"], "tv", {})
         worker.finished.connect(emitted_results.append)
         worker.run()
-        mock_scan.assert_called_once()
+        assert mock_scan.call_count == 2
         assert emitted_results == [{"Cosmos": {}}]
         assert worker.unavailable_directories == ["/unavailable/path"]
 
@@ -91,7 +91,7 @@ def test_scan_all_libraries_worker_execution() -> None:
         ),
         patch(
             "lan_streamer.backend.scan_workers.scan_directories",
-            side_effect=[lib_tv, lib_movie],
+            side_effect=[lib_tv, lib_tv, lib_movie, lib_movie],
         ) as mock_scan,
         patch("lan_streamer.backend.scan_workers.db.save_library") as mock_save_tv,
         patch(
@@ -116,9 +116,9 @@ def test_scan_all_libraries_worker_execution() -> None:
         worker.finished.connect(lambda: finished_emitted.append(True))
         worker.run()
 
-        assert len(mock_scan.call_args_list) == 2
-        mock_save_tv.assert_called_once_with("TV_Lib", {"new_data": {}})
-        mock_save_movie.assert_called_once_with("Movie_Lib", {"new_data": {}})
+        assert len(mock_scan.call_args_list) == 4
+        assert mock_save_tv.call_count == 2
+        assert mock_save_movie.call_count == 2
         assert progress_emitted == [("TV_Lib", 1, 2), ("Movie_Lib", 2, 2)]
         assert finished_emitted == [True]
         assert worker.unavailable_directories == [
@@ -196,19 +196,29 @@ def test_scan_worker_detail_progress() -> None:
         worker.run()
 
         mock_discover.assert_called_once_with(["/path"], "tv")
-        mock_scan.assert_called_once()
+        assert mock_scan.call_count == 2
 
         # Verify the progress signals emitted
-        assert len(emitted_details) == 3
+        assert len(emitted_details) == 7
         assert emitted_details[0] == (
             "init_library_scan",
             {"roots": mock_tree, "roots_order": ["/path"]},
         )
-        assert emitted_details[1] == (
+        assert emitted_details[1] == ("start_offline_scan", {"library": ""})
+        assert emitted_details[2] == (
             "start_folder",
             {"root": "/path", "folder": "Series A"},
         )
-        assert emitted_details[2] == (
+        assert emitted_details[3] == (
+            "finish_folder",
+            {"root": "/path", "folder": "Series A", "skipped": False},
+        )
+        assert emitted_details[4] == ("start_metadata_resolution", {"library": ""})
+        assert emitted_details[5] == (
+            "start_folder",
+            {"root": "/path", "folder": "Series A"},
+        )
+        assert emitted_details[6] == (
             "finish_folder",
             {"root": "/path", "folder": "Series A", "skipped": False},
         )
