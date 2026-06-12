@@ -55,7 +55,7 @@ def test_natural_sort_key_none() -> None:
 
 def test_trigger_mal_push_async_not_configured(mock_db_file) -> None:
     """Should not start a thread if MAL is not configured or not authenticated."""
-    from lan_streamer.db.queries import _trigger_mal_push_async
+    from lan_streamer.db.queries_playback import _trigger_mal_push_async
     from lan_streamer.providers.myanimelist import myanimelist_client
 
     with (
@@ -72,7 +72,7 @@ def test_trigger_mal_push_async_not_configured(mock_db_file) -> None:
 
 def test_trigger_mal_push_async_configured(mock_db_file) -> None:
     """When configured+authenticated a daemon thread is started to push status."""
-    from lan_streamer.db.queries import _trigger_mal_push_async
+    from lan_streamer.db.queries_playback import _trigger_mal_push_async
     from lan_streamer.providers.myanimelist import myanimelist_client
 
     with (
@@ -169,7 +169,7 @@ def test_update_episode_watched_status_movie_with_mal(mock_db_file) -> None:
         session.add(movie)
         session.commit()
 
-    with patch("lan_streamer.db.queries._trigger_mal_push_async") as mock_push:
+    with patch("lan_streamer.db.queries_playback._trigger_mal_push_async") as mock_push:
         db.update_episode_watched_status("/movies/mal_movie.mkv", True)
         mock_push.assert_called_once_with(111, 1)
 
@@ -196,7 +196,7 @@ def test_update_episode_watched_status_episode_with_mal(mock_db_file) -> None:
         session.add(ep)
         session.commit()
 
-    with patch("lan_streamer.db.queries._trigger_mal_push_async") as mock_push:
+    with patch("lan_streamer.db.queries_playback._trigger_mal_push_async") as mock_push:
         db.update_episode_watched_status("/mal/ep1.mkv", True)
         mock_push.assert_called_once_with(555, 1)
 
@@ -236,7 +236,7 @@ def test_update_season_watched_status_with_mal(mock_db_file) -> None:
         session.add_all([ep1, ep2])
         session.commit()
 
-    with patch("lan_streamer.db.queries._trigger_mal_push_async") as mock_push:
+    with patch("lan_streamer.db.queries_playback._trigger_mal_push_async") as mock_push:
         db.update_season_watched_status("Lib", "MAL Season Show", "Season 1", True)
         # Should be called with max episode number (2)
         mock_push.assert_called_once_with(777, 2)
@@ -282,7 +282,7 @@ def test_update_series_watched_status_with_mal(mock_db_file) -> None:
         session.add_all([ep1, ep2])
         session.commit()
 
-    with patch("lan_streamer.db.queries._trigger_mal_push_async") as mock_push:
+    with patch("lan_streamer.db.queries_playback._trigger_mal_push_async") as mock_push:
         db.update_series_watched_status("Lib", "MAL Series Show", True)
         mock_push.assert_called_once_with(888, 3)
 
@@ -689,7 +689,7 @@ def test_update_episode_path_exception() -> None:
 
 def test_get_app_config_missing_key_returns_default() -> None:
     """A key absent from the DB returns the supplied default."""
-    from lan_streamer.db.queries import get_app_config
+    from lan_streamer.db.queries_config import get_app_config
 
     result = get_app_config("__nonexistent_key__", "my_default")
     assert result == "my_default"
@@ -697,7 +697,7 @@ def test_get_app_config_missing_key_returns_default() -> None:
 
 def test_get_app_config_missing_key_seeds_default_into_db() -> None:
     """When a key is absent and a non-None default is given it is written to the DB."""
-    from lan_streamer.db.queries import get_app_config
+    from lan_streamer.db.queries_config import get_app_config
 
     key = "__seed_test_key__"
     # First read — key is missing, default should be seeded
@@ -711,7 +711,7 @@ def test_get_app_config_missing_key_seeds_default_into_db() -> None:
 
 def test_get_app_config_missing_key_none_default_not_seeded() -> None:
     """When default is None the key must NOT be written to the DB."""
-    from lan_streamer.db.queries import get_app_config
+    from lan_streamer.db.queries_config import get_app_config
     from lan_streamer.db.connection import get_session
     from lan_streamer.db.models import AppConfig
     from sqlalchemy import select
@@ -729,7 +729,7 @@ def test_get_app_config_missing_key_none_default_not_seeded() -> None:
 def test_get_app_config_missing_key_logs_debug(caplog) -> None:
     """A debug message is emitted when the key is absent from the DB."""
     import logging
-    from lan_streamer.db.queries import get_app_config
+    from lan_streamer.db.queries_config import get_app_config
 
     with caplog.at_level(logging.DEBUG, logger="lan_streamer.db.queries"):
         get_app_config("__debug_log_key__", "val")
@@ -743,7 +743,7 @@ def test_get_app_config_missing_key_logs_debug(caplog) -> None:
 def test_get_app_config_db_error_returns_default_and_logs_warning(caplog) -> None:
     """A DB error is swallowed, the default is returned, and a WARNING is logged (no traceback)."""
     import logging
-    from lan_streamer.db.queries import get_app_config
+    from lan_streamer.db.queries_config import get_app_config
 
     with (
         patch("lan_streamer.db.connection.get_session") as mock_session,
@@ -761,12 +761,12 @@ def test_get_app_config_db_error_returns_default_and_logs_warning(caplog) -> Non
 
 def test_get_app_config_existing_key_not_reseeded() -> None:
     """An existing key is read from the DB without triggering set_app_config."""
-    from lan_streamer.db.queries import get_app_config, set_app_config
+    from lan_streamer.db.queries_config import get_app_config, set_app_config
 
     key = "__existing_key__"
     set_app_config(key, "stored_value")
 
-    with patch("lan_streamer.db.queries.set_app_config") as mock_set:
+    with patch("lan_streamer.db.queries_config.set_app_config") as mock_set:
         result = get_app_config(key, "other_default")
 
     assert result == "stored_value"
@@ -780,7 +780,7 @@ def test_get_app_config_existing_key_not_reseeded() -> None:
 
 def test_get_secret_missing_row_returns_empty_dict() -> None:
     """A secret type with no DB row returns an empty dict."""
-    from lan_streamer.db.queries import get_secret
+    from lan_streamer.db.queries_config import get_secret
     from lan_streamer.db.models import SecretType, AppSecret
     from lan_streamer.db.connection import get_session
     from sqlalchemy import select
@@ -802,7 +802,7 @@ def test_get_secret_missing_row_returns_empty_dict() -> None:
 def test_get_secret_missing_row_logs_debug(caplog) -> None:
     """A debug message is emitted when no secret row exists for a type."""
     import logging
-    from lan_streamer.db.queries import get_secret
+    from lan_streamer.db.queries_config import get_secret
     from lan_streamer.db.models import SecretType, AppSecret
     from lan_streamer.db.connection import get_session
     from sqlalchemy import select
@@ -829,7 +829,7 @@ def test_get_secret_missing_row_logs_debug(caplog) -> None:
 def test_get_secret_db_error_returns_empty_dict_and_logs_warning(caplog) -> None:
     """A DB error is swallowed, an empty dict is returned, and a WARNING is logged (no traceback)."""
     import logging
-    from lan_streamer.db.queries import get_secret
+    from lan_streamer.db.queries_config import get_secret
     from lan_streamer.db.models import SecretType
 
     with (
@@ -852,7 +852,7 @@ def test_get_secret_db_error_returns_empty_dict_and_logs_warning(caplog) -> None
 
 
 def test_get_all_app_configs_empty(mock_db_file) -> None:
-    from lan_streamer.db.queries import get_all_app_configs
+    from lan_streamer.db.queries_config import get_all_app_configs
     from lan_streamer.db.connection import get_session
     from lan_streamer.db.models import AppConfig
 
@@ -864,7 +864,7 @@ def test_get_all_app_configs_empty(mock_db_file) -> None:
 
 
 def test_bulk_set_and_get_all_app_configs(mock_db_file) -> None:
-    from lan_streamer.db.queries import bulk_set_app_configs, get_all_app_configs
+    from lan_streamer.db.queries_config import bulk_set_app_configs, get_all_app_configs
     from lan_streamer.db.connection import get_session
     from lan_streamer.db.models import AppConfig
 
@@ -907,7 +907,7 @@ def test_bulk_set_and_get_all_app_configs(mock_db_file) -> None:
 
 def test_get_all_app_configs_db_error(caplog) -> None:
     import logging
-    from lan_streamer.db.queries import get_all_app_configs
+    from lan_streamer.db.queries_config import get_all_app_configs
 
     with (
         patch("lan_streamer.db.connection.get_session") as mock_session,
@@ -925,7 +925,7 @@ def test_get_all_app_configs_db_error(caplog) -> None:
 
 def test_bulk_set_app_configs_db_error(caplog) -> None:
     import logging
-    from lan_streamer.db.queries import bulk_set_app_configs
+    from lan_streamer.db.queries_config import bulk_set_app_configs
 
     with (
         patch("lan_streamer.db.connection.get_session") as mock_session,
@@ -945,7 +945,7 @@ def test_load_from_db_calls_bulk_apis(mock_db_file) -> None:
     from lan_streamer.system.config import Config
     from lan_streamer.db.connection import get_session
     from lan_streamer.db.models import AppConfig
-    import lan_streamer.db.queries as db_queries
+    import lan_streamer.db.queries_config as db_queries
 
     with get_session() as session:
         session.query(AppConfig).delete()
@@ -971,7 +971,7 @@ def test_load_from_db_calls_bulk_apis(mock_db_file) -> None:
 
 
 def test_get_all_secrets_empty(mock_db_file) -> None:
-    from lan_streamer.db.queries import get_all_secrets
+    from lan_streamer.db.queries_config import get_all_secrets
     from lan_streamer.db.connection import get_session
     from lan_streamer.db.models import AppSecret
 
@@ -984,7 +984,7 @@ def test_get_all_secrets_empty(mock_db_file) -> None:
 
 
 def test_get_all_secrets_success(mock_db_file) -> None:
-    from lan_streamer.db.queries import get_all_secrets, set_secret
+    from lan_streamer.db.queries_config import get_all_secrets, set_secret
     from lan_streamer.db.models import SecretType, AppSecret
     from lan_streamer.db.connection import get_session
 
@@ -1005,7 +1005,7 @@ def test_get_all_secrets_success(mock_db_file) -> None:
 
 def test_get_all_secrets_db_error(caplog) -> None:
     import logging
-    from lan_streamer.db.queries import get_all_secrets
+    from lan_streamer.db.queries_config import get_all_secrets
 
     with (
         patch("lan_streamer.db.connection.get_session") as mock_session,
@@ -1025,7 +1025,7 @@ def test_load_from_db_calls_get_all_secrets(mock_db_file) -> None:
     from lan_streamer.system.config import Config
     from lan_streamer.db.connection import get_session
     from lan_streamer.db.models import AppSecret
-    import lan_streamer.db.queries as db_queries
+    import lan_streamer.db.queries_config as db_queries
 
     with get_session() as session:
         session.query(AppSecret).delete()

@@ -17,9 +17,9 @@ def get_session() -> Any:
 
 def _trigger_mal_push_async(anime_id: int, num_watched_episodes: int) -> None:
     """Helper to asynchronously push watch status to MyAnimeList."""
-    import lan_streamer.db.queries
+    import lan_streamer.db.queries_playback
 
-    target = lan_streamer.db.queries._trigger_mal_push_async
+    target = lan_streamer.db.queries_playback._trigger_mal_push_async
     if target is not _trigger_mal_push_async:
         target(anime_id, num_watched_episodes)
         return

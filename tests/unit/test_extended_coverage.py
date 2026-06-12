@@ -479,7 +479,9 @@ def test_exchange_auth_code_includes_client_secret(mal_client) -> None:
 
 def test_discover_single_library_tree_nonexistent_dir(tmp_path) -> None:
     """When a root dir doesn't exist, it maps to an empty list."""
-    from lan_streamer.backend.scan_workers import _discover_single_library_tree_impl
+    from lan_streamer.backend.scan_worker_single import (
+        _discover_single_library_tree_impl,
+    )
 
     result = _discover_single_library_tree_impl(["/nonexistent/dir/xyz_12345"], "tv")
     assert "/nonexistent/dir/xyz_12345" in result
@@ -488,7 +490,9 @@ def test_discover_single_library_tree_nonexistent_dir(tmp_path) -> None:
 
 def test_discover_single_library_tree_existing_dir(tmp_path) -> None:
     """Pre-discovery works for actual directories containing video files."""
-    from lan_streamer.backend.scan_workers import _discover_single_library_tree_impl
+    from lan_streamer.backend.scan_worker_single import (
+        _discover_single_library_tree_impl,
+    )
 
     # Create a fake series folder with a video file
     series_dir = tmp_path / "My Show"
@@ -509,17 +513,17 @@ def test_scan_all_libraries_worker_no_root_dirs() -> None:
     empty_lib.unavailable_directories = []
 
     with (
-        patch("lan_streamer.backend.scan_workers.config") as mock_config,
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
         patch(
-            "lan_streamer.backend.scan_workers.jellyfin_client.is_configured",
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
             return_value=False,
         ),
         patch(
-            "lan_streamer.backend.scan_workers.scan_directories",
+            "lan_streamer.backend.scan_worker_all.scan_directories",
             return_value=empty_lib,
         ) as mock_scan,
-        patch("lan_streamer.backend.scan_workers.db.load_library", return_value={}),
-        patch("lan_streamer.backend.scan_workers.db.save_library") as mock_save,
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch("lan_streamer.backend.scan_worker_all.db.save_library") as mock_save,
     ):
         mock_config.libraries = {
             "EmptyLib": {"paths": [], "type": "tv"},
@@ -544,20 +548,21 @@ def test_scan_all_libraries_worker_movie_library() -> None:
     movie_lib.unavailable_directories = []
 
     with (
-        patch("lan_streamer.backend.scan_workers.config") as mock_config,
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
         patch(
-            "lan_streamer.backend.scan_workers.jellyfin_client.is_configured",
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
             return_value=False,
         ),
         patch(
-            "lan_streamer.backend.scan_workers.scan_directories",
+            "lan_streamer.backend.scan_worker_all.scan_directories",
             return_value=movie_lib,
         ),
         patch(
-            "lan_streamer.backend.scan_workers.db.load_movie_library", return_value={}
+            "lan_streamer.backend.scan_worker_all.db.load_movie_library",
+            return_value={},
         ),
         patch(
-            "lan_streamer.backend.scan_workers.db.save_movie_library"
+            "lan_streamer.backend.scan_worker_all.db.save_movie_library"
         ) as mock_save_movie,
     ):
         mock_config.libraries = {

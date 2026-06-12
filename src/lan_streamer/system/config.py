@@ -212,7 +212,7 @@ class Config:
         """
         logger.debug("Loading DB-backed config settings from database.")
         try:
-            from lan_streamer.db.queries import (
+            from lan_streamer.db.queries_config import (
                 get_all_app_configs,
                 bulk_set_app_configs,
                 get_all_secrets,
@@ -304,7 +304,7 @@ class Config:
         """
         logger.debug("Saving DB-backed config settings to database.")
         try:
-            from lan_streamer.db.queries import set_app_config, set_secret
+            from lan_streamer.db.queries_config import set_app_config, set_secret
             from lan_streamer.db.models import SecretType
 
             # General settings
@@ -374,7 +374,7 @@ class Config:
     ) -> Any:
         """Return a per-series preference value from the database."""
         try:
-            from lan_streamer.db.queries import get_series_pref
+            from lan_streamer.db.queries_config import get_series_pref
 
             return get_series_pref(library_name, series_name, key, default)
         except Exception:
@@ -389,7 +389,7 @@ class Config:
     ) -> None:
         """Persist a per-series preference value to the database."""
         try:
-            from lan_streamer.db.queries import set_series_pref
+            from lan_streamer.db.queries_config import set_series_pref
 
             set_series_pref(library_name, series_name, key, value)
         except Exception:
@@ -439,7 +439,7 @@ class Config:
     def _persist_libraries(self) -> None:
         """Write the libraries dict to the database."""
         try:
-            from lan_streamer.db.queries import set_app_config
+            from lan_streamer.db.queries_config import set_app_config
 
             set_app_config("libraries", self.libraries)
         except Exception:

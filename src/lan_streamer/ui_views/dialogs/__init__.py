@@ -11,16 +11,3 @@ from lan_streamer.ui_views.dialogs.details import (
 from lan_streamer.ui_views.dialogs.rename import EpisodeMatchDialog, RenamePreviewDialog
 from lan_streamer.ui_views.dialogs.settings import SettingsDialog
 from lan_streamer.ui_views.dialogs.update_dialog import UpdateDialog
-
-__all__ = [
-    "MetadataMatchDialog",
-    "JellyfinMatchDialog",
-    "SubtitleSearchDialog",
-    "EpisodeDetailsDialog",
-    "MovieDetailsDialog",
-    "SeriesDetailsDialog",
-    "EpisodeMatchDialog",
-    "RenamePreviewDialog",
-    "SettingsDialog",
-    "UpdateDialog",
-]

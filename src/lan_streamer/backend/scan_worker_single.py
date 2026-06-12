@@ -7,6 +7,12 @@ from lan_streamer.scanner import (
     LibraryDict,
     has_video_files,
 )
+from lan_streamer.backend.proxy import (
+    config,
+    jellyfin_client,
+    scan_directories,
+    discover_single_library_tree,
+)
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -69,15 +75,13 @@ class ScanWorker(QThread):
 
     def run(self) -> None:
         try:
-            import lan_streamer.backend.scan_workers as sw
-
             logger.info(
                 f"ScanWorker starting run for directories: {self.root_directories}"
             )
             self.unavailable_directories = []
 
             # Pre-discover the library tree structure and emit init_library_scan
-            tree_structure = sw.discover_single_library_tree(
+            tree_structure = discover_single_library_tree(
                 self.root_directories, self.library_type
             )
             self.detail_progress.emit(
@@ -87,13 +91,13 @@ class ScanWorker(QThread):
 
             # Fetch Jellyfin correlation data if configured
             jellyfin_data: Optional[Dict[str, Any]] = None
-            if sw.jellyfin_client.is_configured():
-                jellyfin_data = sw.jellyfin_client.get_jellyfin_correlation_data()
+            if jellyfin_client.is_configured():
+                jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
             def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
                 self.detail_progress.emit(event, payload)
 
-            library_config = sw.config.libraries.get(self.library_name, {})
+            library_config = config.libraries.get(self.library_name, {})
             show_future = library_config.get("show_future_episodes", True)
 
             # Pass 1: Offline local file scanner
@@ -103,7 +107,7 @@ class ScanWorker(QThread):
             self.detail_progress.emit(
                 "start_offline_scan", {"library": self.library_name}
             )
-            library: LibraryDict = sw.scan_directories(
+            library: LibraryDict = scan_directories(
                 self.root_directories,
                 library_type=self.library_type,
                 existing_library=self.existing_library,
@@ -128,7 +132,7 @@ class ScanWorker(QThread):
             self.detail_progress.emit(
                 "start_metadata_resolution", {"library": self.library_name}
             )
-            library = sw.scan_directories(
+            library = scan_directories(
                 self.root_directories,
                 library_type=self.library_type,
                 existing_library=library,

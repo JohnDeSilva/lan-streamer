@@ -2,6 +2,8 @@ import logging
 from typing import List, Dict, Any, Optional
 from PySide6.QtCore import Signal, QThread
 
+from lan_streamer.backend.proxy import db, get_detailed_file_info
+
 logger = logging.getLogger("lan_streamer.backend")
 
 
@@ -14,19 +16,17 @@ class FilePropertyExtractionWorker(QThread):
 
     def run(self) -> None:
         try:
-            import lan_streamer.backend.metadata_workers as mw
-
             logger.info("FilePropertyExtractionWorker starting run")
             logger.info(
                 "Starting Pass 3 (Technical Metadata Extraction) for candidates..."
             )
 
-            items_list: List[Dict[str, Any]] = mw.db.get_items_missing_runtime()
+            items_list: List[Dict[str, Any]] = db.get_items_missing_runtime()
 
             # Filter out any files that already have both complete technical and creative metadata
             candidates = []
             for item in items_list:
-                if mw.db.has_tech_and_metadata(item["id"], item["type"]):
+                if db.has_tech_and_metadata(item["id"], item["type"]):
                     logger.info(
                         f"Skipping {item['path']} as it already has technical and creative metadata"
                     )
@@ -61,7 +61,7 @@ class FilePropertyExtractionWorker(QThread):
                     logger.info(
                         f"Probing episode [{completed_count + 1}/{total_count}]: {file_path}"
                     )
-                    info = mw.get_detailed_file_info(file_path)
+                    info = get_detailed_file_info(file_path)
                     extracted_runtime = info.get("runtime")
                     runtime_val = (
                         extracted_runtime if extracted_runtime is not None else 0
@@ -101,7 +101,7 @@ class FilePropertyExtractionWorker(QThread):
                     logger.info(
                         f"Committing batch write for season {season_id} ({len(season_updates)} episodes)"
                     )
-                    mw.db.update_items_runtime_batch(season_updates)
+                    db.update_items_runtime_batch(season_updates)
 
             # Process movies individually
             for movie in movies:
@@ -109,7 +109,7 @@ class FilePropertyExtractionWorker(QThread):
                 logger.info(
                     f"Probing movie [{completed_count + 1}/{total_count}]: {file_path}"
                 )
-                info = mw.get_detailed_file_info(file_path)
+                info = get_detailed_file_info(file_path)
                 extracted_runtime = info.get("runtime")
                 runtime_val = extracted_runtime if extracted_runtime is not None else 0
 
@@ -121,7 +121,7 @@ class FilePropertyExtractionWorker(QThread):
 
                 if runtime_val > 0 or has_tech_info:
                     logger.info(f"Committing write for movie {file_path}")
-                    mw.db.update_items_runtime_batch(
+                    db.update_items_runtime_batch(
                         [
                             {
                                 "item_identifier": movie["id"],

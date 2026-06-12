@@ -37,17 +37,17 @@ def test_scan_all_libraries_worker_with_root_dirs(tmp_path) -> None:
     root_dir = str(tmp_path / "tv")
 
     with (
-        patch("lan_streamer.backend.scan_workers.config") as mock_config,
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
         patch(
-            "lan_streamer.backend.scan_workers.jellyfin_client.is_configured",
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
             return_value=False,
         ),
         patch(
-            "lan_streamer.backend.scan_workers.scan_directories",
+            "lan_streamer.backend.scan_worker_all.scan_directories",
             return_value=_empty_lib_dict(),
         ) as mock_scan,
-        patch("lan_streamer.backend.scan_workers.db.load_library", return_value={}),
-        patch("lan_streamer.backend.scan_workers.db.save_library") as mock_save,
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch("lan_streamer.backend.scan_worker_all.db.save_library") as mock_save,
     ):
         mock_config.libraries = {
             "TVLib": {"paths": [root_dir], "type": "tv", "show_future_episodes": True},
@@ -83,20 +83,21 @@ def test_scan_all_libraries_worker_with_root_dirs_movie(tmp_path) -> None:
     root_dir = str(tmp_path / "movies")
 
     with (
-        patch("lan_streamer.backend.scan_workers.config") as mock_config,
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
         patch(
-            "lan_streamer.backend.scan_workers.jellyfin_client.is_configured",
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
             return_value=False,
         ),
         patch(
-            "lan_streamer.backend.scan_workers.scan_directories",
+            "lan_streamer.backend.scan_worker_all.scan_directories",
             return_value=_empty_lib_dict(),
         ),
         patch(
-            "lan_streamer.backend.scan_workers.db.load_movie_library", return_value={}
+            "lan_streamer.backend.scan_worker_all.db.load_movie_library",
+            return_value={},
         ),
         patch(
-            "lan_streamer.backend.scan_workers.db.save_movie_library"
+            "lan_streamer.backend.scan_worker_all.db.save_movie_library"
         ) as mock_save_movie,
     ):
         mock_config.libraries = {
@@ -117,21 +118,21 @@ def test_scan_all_libraries_worker_with_jellyfin(tmp_path) -> None:
     from lan_streamer.backend import ScanAllLibrariesWorker
 
     with (
-        patch("lan_streamer.backend.scan_workers.config") as mock_config,
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
         patch(
-            "lan_streamer.backend.scan_workers.jellyfin_client.is_configured",
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
             return_value=True,
         ),
         patch(
-            "lan_streamer.backend.scan_workers.jellyfin_client.get_jellyfin_correlation_data",
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.get_jellyfin_correlation_data",
             return_value={"path_map": {}},
         ) as mock_jf,
         patch(
-            "lan_streamer.backend.scan_workers.scan_directories",
+            "lan_streamer.backend.scan_worker_all.scan_directories",
             return_value=_empty_lib_dict(),
         ),
-        patch("lan_streamer.backend.scan_workers.db.load_library", return_value={}),
-        patch("lan_streamer.backend.scan_workers.db.save_library"),
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch("lan_streamer.backend.scan_worker_all.db.save_library"),
     ):
         mock_config.libraries = {
             "TVLib": {"paths": [], "type": "tv"},
@@ -150,10 +151,10 @@ def test_scan_all_libraries_worker_error() -> None:
     """ScanAllLibrariesWorker emits error signal on exception."""
     from lan_streamer.backend import ScanAllLibrariesWorker
 
-    with patch("lan_streamer.backend.scan_workers.config") as mock_config:
+    with patch("lan_streamer.backend.scan_worker_all.config") as mock_config:
         mock_config.libraries = {"Bad": {"paths": [], "type": "tv"}}
         with patch(
-            "lan_streamer.backend.scan_workers.scan_directories",
+            "lan_streamer.backend.scan_worker_all.scan_directories",
             side_effect=RuntimeError("Scan failed"),
         ):
             errors = []
@@ -171,22 +172,22 @@ def test_scan_worker_with_jellyfin() -> None:
 
     with (
         patch(
-            "lan_streamer.backend.scan_workers.jellyfin_client.is_configured",
+            "lan_streamer.backend.scan_worker_single.jellyfin_client.is_configured",
             return_value=True,
         ),
         patch(
-            "lan_streamer.backend.scan_workers.jellyfin_client.get_jellyfin_correlation_data",
+            "lan_streamer.backend.scan_worker_single.jellyfin_client.get_jellyfin_correlation_data",
             return_value={"path_map": {}},
         ) as mock_jf,
         patch(
-            "lan_streamer.backend.scan_workers.discover_single_library_tree",
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree",
             return_value={"/root": []},
         ),
         patch(
-            "lan_streamer.backend.scan_workers.scan_directories",
+            "lan_streamer.backend.scan_worker_single.scan_directories",
             return_value=_empty_lib_dict(),
         ),
-        patch("lan_streamer.backend.scan_workers.config") as mock_config,
+        patch("lan_streamer.backend.scan_worker_single.config") as mock_config,
     ):
         mock_config.libraries = {
             "Lib": {"paths": ["/root"], "type": "tv", "show_future_episodes": True}
@@ -208,10 +209,10 @@ def test_scan_worker_with_jellyfin() -> None:
 
 def test_cleanup_worker_success() -> None:
     """CleanupWorker emits finished with cleanup results."""
-    from lan_streamer.backend.scan_workers import CleanupWorker
+    from lan_streamer.backend.scan_worker_cleanup import CleanupWorker
 
     with patch(
-        "lan_streamer.backend.scan_workers.db.cleanup_library",
+        "lan_streamer.backend.scan_worker_cleanup.db.cleanup_library",
         return_value={"removed": 2},
     ) as mock_cleanup:
         finished = []
@@ -225,10 +226,10 @@ def test_cleanup_worker_success() -> None:
 
 def test_cleanup_worker_error() -> None:
     """CleanupWorker emits error on exception."""
-    from lan_streamer.backend.scan_workers import CleanupWorker
+    from lan_streamer.backend.scan_worker_cleanup import CleanupWorker
 
     with patch(
-        "lan_streamer.backend.scan_workers.db.cleanup_library",
+        "lan_streamer.backend.scan_worker_cleanup.db.cleanup_library",
         side_effect=RuntimeError("cleanup failed"),
     ):
         errors = []
@@ -252,7 +253,7 @@ def test_scan_all_libraries_worker_discover_tree(tmp_path) -> None:
     season_dir.mkdir()
     (season_dir / "ep1.mkv").write_bytes(b"\x00")
 
-    with patch("lan_streamer.backend.scan_workers.config") as mock_config:
+    with patch("lan_streamer.backend.scan_worker_all.config") as mock_config:
         mock_config.libraries = {
             "TVLib": {"paths": [str(tv_root)], "type": "tv"},
         }
@@ -365,7 +366,7 @@ def test_init_db_creates_backup_if_db_exists(tmp_path) -> None:
 def test_build_episode_dict_corrupt_json(mock_db_file) -> None:
     """Episode with corrupt JSON in audio_tracks falls back to empty list."""
     from lan_streamer.db import get_session
-    from lan_streamer.db.queries import _build_episode_dict
+    from lan_streamer.db.queries_file_discovery import _build_episode_dict
     from lan_streamer.db.models import Episode, Season, Series
 
     with get_session() as session:
@@ -393,7 +394,7 @@ def test_build_episode_dict_corrupt_json(mock_db_file) -> None:
 def test_build_movie_dict_corrupt_json(mock_db_file) -> None:
     """Movie with corrupt JSON in audio_tracks falls back to empty list."""
     from lan_streamer.db import get_session
-    from lan_streamer.db.queries import _build_movie_dict
+    from lan_streamer.db.queries_file_discovery import _build_movie_dict
     from lan_streamer.db.models import Movie
 
     with get_session() as session:

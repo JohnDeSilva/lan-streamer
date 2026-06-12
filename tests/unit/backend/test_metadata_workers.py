@@ -319,8 +319,11 @@ def test_refresh_series_worker_success(tmp_path, mock_db_save):
     )
 
     with (
-        patch("lan_streamer.backend.metadata_workers.scan_series") as mock_scan,
-        patch("lan_streamer.backend.metadata_workers.clean_series_data", lambda x: x),
+        patch("lan_streamer.backend.metadata_worker_refresh.scan_series") as mock_scan,
+        patch(
+            "lan_streamer.backend.metadata_worker_refresh.clean_series_data",
+            lambda x: x,
+        ),
     ):
         mock_scan.return_value = {
             "metadata": {"tmdb_identifier": "id_123", "tmdb_name": "Fresh Show"},
