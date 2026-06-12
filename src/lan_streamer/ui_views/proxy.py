@@ -13,7 +13,7 @@ from lan_streamer.backend import (
     JellyfinPullWorker as JellyfinPullWorker_real,
     JellyfinPushWorker as JellyfinPushWorker_real,
     ScanAllLibrariesWorker as ScanAllLibrariesWorker_real,
-    RuntimeExtractionWorker as RuntimeExtractionWorker_real,
+    FilePropertyExtractionWorker as FilePropertyExtractionWorker_real,
 )
 from lan_streamer.providers.jellyfin import jellyfin_client as jellyfin_client_real
 from lan_streamer.providers.tmdb import tmdb_client as tmdb_client_real
@@ -73,8 +73,8 @@ JellyfinPushWorker = PatchedClass("JellyfinPushWorker", lambda: JellyfinPushWork
 ScanAllLibrariesWorker = PatchedClass(
     "ScanAllLibrariesWorker", lambda: ScanAllLibrariesWorker_real
 )
-RuntimeExtractionWorker = PatchedClass(
-    "RuntimeExtractionWorker", lambda: RuntimeExtractionWorker_real
+FilePropertyExtractionWorker = PatchedClass(
+    "FilePropertyExtractionWorker", lambda: FilePropertyExtractionWorker_real
 )
 
 jellyfin_client = PatchedClass("jellyfin_client", lambda: jellyfin_client_real)

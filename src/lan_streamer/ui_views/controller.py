@@ -17,7 +17,7 @@ if TYPE_CHECKING:
         JellyfinPullWorker,
         JellyfinPushWorker,
         ScanAllLibrariesWorker,
-        RuntimeExtractionWorker,
+        FilePropertyExtractionWorker,
     )
 else:
     from lan_streamer.ui_views.proxy import (
@@ -28,7 +28,7 @@ else:
         JellyfinPullWorker,
         JellyfinPushWorker,
         ScanAllLibrariesWorker,
-        RuntimeExtractionWorker,
+        FilePropertyExtractionWorker,
     )
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,9 @@ class Controller(QObject):
         self.pull_worker_instance: Optional[JellyfinPullWorker] = None
         self.push_worker_instance: Optional[JellyfinPushWorker] = None
         self.scan_all_worker_instance: Optional[ScanAllLibrariesWorker] = None
-        self.runtime_worker_instance: Optional[RuntimeExtractionWorker] = None
+        self.file_property_worker_instance: Optional[FilePropertyExtractionWorker] = (
+            None
+        )
         self.merge_subtitle_worker_instance: Optional[Any] = None
         self.embed_metadata_worker_instance: Optional[Any] = None
         self.is_video_playing: bool = False
@@ -551,18 +553,20 @@ class Controller(QObject):
 
     def trigger_runtime_extraction(self) -> None:
         if (
-            self.runtime_worker_instance is not None
-            and self.runtime_worker_instance.isRunning()
+            self.file_property_worker_instance is not None
+            and self.file_property_worker_instance.isRunning()
         ):
-            logger.info("RuntimeExtractionWorker is already running.")
+            logger.info("FilePropertyExtractionWorker is already running.")
             return
 
         self.status_changed.emit("Extracting missing video runtimes in background...")
-        self.runtime_worker_instance = RuntimeExtractionWorker()
-        self.runtime_worker_instance.progress_updated.connect(self._on_runtime_progress)
-        self.runtime_worker_instance.finished.connect(self._on_runtime_finished)
-        self.runtime_worker_instance.error.connect(self._on_worker_error)
-        self.runtime_worker_instance.start()
+        self.file_property_worker_instance = FilePropertyExtractionWorker()
+        self.file_property_worker_instance.progress_updated.connect(
+            self._on_runtime_progress
+        )
+        self.file_property_worker_instance.finished.connect(self._on_runtime_finished)
+        self.file_property_worker_instance.error.connect(self._on_worker_error)
+        self.file_property_worker_instance.start()
 
     def _on_runtime_progress(self, completed_count: int, total_count: int) -> None:
         self.global_progress_updated.emit(

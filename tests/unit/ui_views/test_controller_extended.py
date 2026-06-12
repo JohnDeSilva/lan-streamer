@@ -463,7 +463,9 @@ def test_on_scan_all_finished_combined_view() -> None:
 
 def test_trigger_runtime_extraction_starts_worker() -> None:
     c = Controller()
-    with patch("lan_streamer.ui_views.controller.RuntimeExtractionWorker") as mock_cls:
+    with patch(
+        "lan_streamer.ui_views.controller.FilePropertyExtractionWorker"
+    ) as mock_cls:
         c.trigger_runtime_extraction()
         mock_cls.assert_called_once()
         mock_cls.return_value.start.assert_called_once()
@@ -473,9 +475,11 @@ def test_trigger_runtime_extraction_skips_if_running() -> None:
     c = Controller()
     mock_worker = MagicMock()
     mock_worker.isRunning.return_value = True
-    c.runtime_worker_instance = mock_worker
+    c.file_property_worker_instance = mock_worker
 
-    with patch("lan_streamer.ui_views.controller.RuntimeExtractionWorker") as mock_cls:
+    with patch(
+        "lan_streamer.ui_views.controller.FilePropertyExtractionWorker"
+    ) as mock_cls:
         c.trigger_runtime_extraction()
         mock_cls.assert_not_called()
 

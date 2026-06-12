@@ -166,6 +166,7 @@ def _resolve_movie_poster(
     tmdb_movie: Dict[str, Any],
     tmdb_id: str,
     existing_movie_data: Dict[str, Any] | None,
+    offline: bool = False,
 ) -> str:
     """
     Three-step poster resolution for a movie:
@@ -189,7 +190,8 @@ def _resolve_movie_poster(
     if poster_path:
         if tmdb_movie.get("_is_prefetched") and not poster_path.startswith("/"):
             return poster_path
-        return tmdb_client.download_image(poster_path, f"tmdb_movie_{tmdb_id}")
+        if not offline:
+            return tmdb_client.download_image(poster_path, f"tmdb_movie_{tmdb_id}")
 
     return ""
 
@@ -198,6 +200,7 @@ def _apply_tmdb_movie_data(
     movie_metadata: Dict[str, Any],
     tmdb_movie: Dict[str, Any],
     existing_movie_data: Dict[str, Any] | None,
+    offline: bool = False,
 ) -> None:
     """
     Fills *movie_metadata* with TMDB fields including poster, runtime,
@@ -215,11 +218,11 @@ def _apply_tmdb_movie_data(
         movie_metadata["year"] = movie_metadata.get("year") or 0
 
     movie_metadata["poster_path"] = _resolve_movie_poster(
-        tmdb_movie, tmdb_id, existing_movie_data
+        tmdb_movie, tmdb_id, existing_movie_data, offline
     )
 
     # Fetch full details for runtime / rating / genre when not already present
-    if "runtime" not in tmdb_movie:
+    if "runtime" not in tmdb_movie and not offline:
         full = tmdb_client.get_movie_by_id(tmdb_id)
         if full:
             tmdb_movie = full
@@ -302,6 +305,7 @@ def _resolve_series_poster(
     tmdb_series: Dict[str, Any],
     tmdb_identifier: str,
     existing_series_data: Dict[str, Any] | None,
+    offline: bool = False,
 ) -> str:
     """
     Three-step poster resolution for a TV series:
@@ -325,7 +329,10 @@ def _resolve_series_poster(
     if poster_path:
         if tmdb_series.get("_is_prefetched") and not poster_path.startswith("/"):
             return poster_path
-        return tmdb_client.download_image(poster_path, f"tmdb_series_{tmdb_identifier}")
+        if not offline:
+            return tmdb_client.download_image(
+                poster_path, f"tmdb_series_{tmdb_identifier}"
+            )
 
     return ""
 
@@ -426,6 +433,7 @@ def _process_series_metadata(
     force_refresh: bool,
     cleanup: bool,
     single_item_refresh: bool = False,
+    offline: bool = False,
 ) -> tuple[Dict[str, Any], bool, Dict[str, Any] | None, Dict[str, Any], bool]:
     series_name = series_directory.name
 
@@ -444,7 +452,7 @@ def _process_series_metadata(
         else False
     )
 
-    if has_new_files and not is_locked:
+    if has_new_files and not is_locked and not offline:
         logger.info(
             f"New files detected in series '{series_name}'. Automatically pulling fresh metadata."
         )
@@ -500,112 +508,120 @@ def _process_series_metadata(
                     episode["runtime"] = 0
         return series_data, True, tmdb_series, existing_episodes_by_path, force_refresh
 
-    if tmdb_series and "name" not in tmdb_series and "id" in tmdb_series:
-        if single_item_refresh or not series_metadata.get("tmdb_name"):
-            full = tmdb_client.get_series_by_id(tmdb_series["id"])
-            if full:
-                tmdb_series = full
-
-    if not tmdb_series:
-        if series_metadata["tmdb_identifier"]:
-            if force_refresh or single_item_refresh:
-                full = tmdb_client.get_series_by_id(series_metadata["tmdb_identifier"])
-                if full:
-                    tmdb_series = full
-            if not tmdb_series:
-                tmdb_series = {
-                    "id": series_metadata["tmdb_identifier"],
-                    "name": series_metadata["tmdb_name"],
-                    "overview": series_metadata["overview"],
-                    "poster_path": series_metadata["poster_path"],
-                    "first_air_date": series_metadata.get("first_air_date", ""),
-                }
-        elif not is_locked and (
-            single_item_refresh
-            or not existing_series_data
-            or not existing_tmdb_identifier
-        ):
-            tmdb_series = tmdb_client.search_series(series_name)
-
     tmdb_seasons: list[Any] = []
     episode_group_details = None
 
-    if tmdb_series:
-        tmdb_identifier = str(tmdb_series.get("id") or "")
-        series_metadata["tmdb_identifier"] = tmdb_identifier
-        series_metadata["overview"] = tmdb_series.get("overview", "")
-        series_metadata["tmdb_name"] = tmdb_series.get("name", "")
-        series_metadata["first_air_date"] = tmdb_series.get("first_air_date", "")
+    if not offline:
+        if tmdb_series and "name" not in tmdb_series and "id" in tmdb_series:
+            if single_item_refresh or not series_metadata.get("tmdb_name"):
+                full = tmdb_client.get_series_by_id(tmdb_series["id"])
+                if full:
+                    tmdb_series = full
 
-        if tmdb_identifier:
-            series_metadata["poster_path"] = _resolve_series_poster(
-                tmdb_series, tmdb_identifier, existing_series_data
-            )
-        else:
-            if not series_metadata.get("poster_path"):
-                series_metadata["poster_path"] = ""
-
-        if tmdb_identifier and not is_locked:
-            if force_refresh or single_item_refresh or not existing_series_data:
-                episode_group_details = None
-                existing_metadata = (
-                    existing_series_data.get("metadata", {})
-                    if existing_series_data
-                    else {}
-                )
-                saved_group_id = existing_metadata.get("tmdb_episode_group_id")
-                if saved_group_id and saved_group_id != "default":
-                    try:
-                        episode_group_details = tmdb_client.get_episode_group_details(
-                            saved_group_id
-                        )
-                        logger.info(
-                            f"Using saved default group ID {saved_group_id} for series '{series_name}' metadata scan"
-                        )
-                    except Exception as e:
-                        logger.exception(
-                            f"Failed to fetch saved group details {saved_group_id}: {e}"
-                        )
-                if saved_group_id == "default":
-                    episode_group_details = None
-                elif not episode_group_details:
-                    episode_group_details = tmdb_client.get_season_based_episode_group(
-                        tmdb_identifier
+        if not tmdb_series:
+            if series_metadata["tmdb_identifier"]:
+                if force_refresh or single_item_refresh:
+                    full = tmdb_client.get_series_by_id(
+                        series_metadata["tmdb_identifier"]
                     )
-                if (
-                    episode_group_details
-                    and isinstance(episode_group_details, dict)
-                    and "groups" in episode_group_details
-                ):
-                    tmdb_seasons = []
-                    for group in episode_group_details.get("groups", []):
-                        group_name = group.get("name") or ""
-                        season_num_match = re.search(r"\d+", group_name)
-                        season_num = (
-                            int(season_num_match.group())
-                            if season_num_match
-                            else group.get("order", -1)
-                        )
-                        if group_name.lower() == "specials":
-                            season_num = 0
-                        if season_num >= 0:
-                            tmdb_seasons.append(
-                                {
-                                    "season_number": season_num,
-                                    "name": group_name,
-                                    "id": group.get("id"),
-                                    "episode_count": len(group.get("episodes", [])),
-                                    "poster_path": "",
-                                }
-                            )
-                else:
-                    episode_group_details = None
-                    if tmdb_series and "seasons" in tmdb_series:
-                        tmdb_seasons = tmdb_series["seasons"]
-                    else:
-                        tmdb_seasons = tmdb_client.get_seasons(tmdb_identifier)
+                    if full:
+                        tmdb_series = full
+                if not tmdb_series:
+                    tmdb_series = {
+                        "id": series_metadata["tmdb_identifier"],
+                        "name": series_metadata["tmdb_name"],
+                        "overview": series_metadata["overview"],
+                        "poster_path": series_metadata["poster_path"],
+                        "first_air_date": series_metadata.get("first_air_date", ""),
+                    }
+            elif not is_locked and (
+                single_item_refresh
+                or not existing_series_data
+                or not existing_tmdb_identifier
+            ):
+                tmdb_series = tmdb_client.search_series(series_name)
 
-    if not series_metadata["jellyfin_id"] and jellyfin_data and tmdb_series:
+        if tmdb_series:
+            tmdb_identifier = str(tmdb_series.get("id") or "")
+            series_metadata["tmdb_identifier"] = tmdb_identifier
+            series_metadata["overview"] = tmdb_series.get("overview", "")
+            series_metadata["tmdb_name"] = tmdb_series.get("name", "")
+            series_metadata["first_air_date"] = tmdb_series.get("first_air_date", "")
+
+            if tmdb_identifier:
+                series_metadata["poster_path"] = _resolve_series_poster(
+                    tmdb_series, tmdb_identifier, existing_series_data, offline
+                )
+            else:
+                if not series_metadata.get("poster_path"):
+                    series_metadata["poster_path"] = ""
+
+            if tmdb_identifier and not is_locked:
+                if force_refresh or single_item_refresh or not existing_series_data:
+                    episode_group_details = None
+                    existing_metadata = (
+                        existing_series_data.get("metadata", {})
+                        if existing_series_data
+                        else {}
+                    )
+                    saved_group_id = existing_metadata.get("tmdb_episode_group_id")
+                    if saved_group_id and saved_group_id != "default":
+                        try:
+                            episode_group_details = (
+                                tmdb_client.get_episode_group_details(saved_group_id)
+                            )
+                            logger.info(
+                                f"Using saved default group ID {saved_group_id} for series '{series_name}' metadata scan"
+                            )
+                        except Exception as e:
+                            logger.exception(
+                                f"Failed to fetch saved group details {saved_group_id}: {e}"
+                            )
+                    if saved_group_id == "default":
+                        episode_group_details = None
+                    elif not episode_group_details:
+                        episode_group_details = (
+                            tmdb_client.get_season_based_episode_group(tmdb_identifier)
+                        )
+                    if (
+                        episode_group_details
+                        and isinstance(episode_group_details, dict)
+                        and "groups" in episode_group_details
+                    ):
+                        tmdb_seasons = []
+                        for group in episode_group_details.get("groups", []):
+                            group_name = group.get("name") or ""
+                            season_num_match = re.search(r"\d+", group_name)
+                            season_num = (
+                                int(season_num_match.group())
+                                if season_num_match
+                                else group.get("order", -1)
+                            )
+                            if group_name.lower() == "specials":
+                                season_num = 0
+                            if season_num >= 0:
+                                tmdb_seasons.append(
+                                    {
+                                        "season_number": season_num,
+                                        "name": group_name,
+                                        "id": group.get("id"),
+                                        "episode_count": len(group.get("episodes", [])),
+                                        "poster_path": "",
+                                    }
+                                )
+                    else:
+                        episode_group_details = None
+                        if tmdb_series and "seasons" in tmdb_series:
+                            tmdb_seasons = tmdb_series["seasons"]
+                        else:
+                            tmdb_seasons = tmdb_client.get_seasons(tmdb_identifier)
+
+    if (
+        not series_metadata["jellyfin_id"]
+        and jellyfin_data
+        and tmdb_series
+        and not offline
+    ):
         tmdb_id = str(tmdb_series.get("id") or "")
         if tmdb_id:
             series_metadata["jellyfin_id"] = jellyfin_data.get(
@@ -631,6 +647,7 @@ def _process_season_metadata(
     existing_episodes_by_path: Dict[str, Any],
     force_refresh: bool = False,
     single_item_refresh: bool = False,
+    offline: bool = False,
 ) -> tuple[str, int, Dict[str, Any], list[Any]]:
     season_name = season_directory.name
     season_metadata: Dict[str, Any] = {
@@ -691,7 +708,7 @@ def _process_season_metadata(
             season_metadata["poster_path"] = existing_season_poster
         else:
             artwork = matched_tmdb_season.get("poster_path") or ""
-            if artwork and season_tmdb_identifier:
+            if artwork and season_tmdb_identifier and not offline:
                 season_metadata["poster_path"] = tmdb_client.download_image(
                     artwork, f"tmdb_season_{season_tmdb_identifier}"
                 )
@@ -711,8 +728,10 @@ def _process_season_metadata(
             len(existing_series_data["seasons"][season_name].get("episodes", [])) > 0
         )
 
-    needs_episode_search = not is_locked and (
-        force_refresh or single_item_refresh or not season_already_has_episodes
+    needs_episode_search = (
+        not is_locked
+        and not offline
+        and (force_refresh or single_item_refresh or not season_already_has_episodes)
     )
 
     tmdb_episodes = []
@@ -779,6 +798,7 @@ def _process_episode_file(
     jellyfin_data: Dict[str, dict] | None,
     existing_episodes_by_path: Dict[str, Any],
     existing_series_data: Dict[str, Any] | None = None,
+    offline: bool = False,
 ) -> Dict[str, Any]:
     episode_path = str(episode_file.absolute())
     episode_name = episode_file.name
@@ -897,20 +917,24 @@ def _process_episode_file(
         logger.debug(f"Could not read ctime for {episode_path}: {error_instance}")
         ctime = 0
 
-    jellyfin_id, new_series_jf_id, new_season_jf_id = _resolve_episode_jellyfin_id(
-        episode_path=episode_path,
-        episode_name=episode_name,
-        episode_file=episode_file,
-        tmdb_episode_identifier=tmdb_episode_identifier,
-        tmdb_name=tmdb_name,
-        tmdb_number=tmdb_number,
-        season_name=season_name,
-        series_directory=series_directory,
-        series_data=series_data,
-        season_metadata=season_metadata,
-        tmdb_series=tmdb_series,
-        jellyfin_data=jellyfin_data,
-    )
+    jellyfin_id = ""
+    new_series_jf_id = ""
+    new_season_jf_id = ""
+    if not offline:
+        jellyfin_id, new_series_jf_id, new_season_jf_id = _resolve_episode_jellyfin_id(
+            episode_path=episode_path,
+            episode_name=episode_name,
+            episode_file=episode_file,
+            tmdb_episode_identifier=tmdb_episode_identifier,
+            tmdb_name=tmdb_name,
+            tmdb_number=tmdb_number,
+            season_name=season_name,
+            series_directory=series_directory,
+            series_data=series_data,
+            season_metadata=season_metadata,
+            tmdb_series=tmdb_series,
+            jellyfin_data=jellyfin_data,
+        )
 
     if new_series_jf_id and not series_data["metadata"].get("jellyfin_id"):
         series_data["metadata"]["jellyfin_id"] = new_series_jf_id
@@ -922,6 +946,7 @@ def _process_episode_file(
         not series_metadata.get("jellyfin_id")
         and series_data.get("_tmdb_series_id")
         and jellyfin_data
+        and not offline
     ):
         series_metadata["jellyfin_id"] = jellyfin_data.get("tmdb_series_map", {}).get(
             str(series_data["_tmdb_series_id"]), ""
