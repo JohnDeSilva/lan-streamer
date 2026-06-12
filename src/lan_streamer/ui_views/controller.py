@@ -1,7 +1,7 @@
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Signal, QFileSystemWatcher, QTimer
 
@@ -348,7 +348,13 @@ class Controller(QObject):
             ):
                 self.library_loaded.emit()
         if self._running_pass3_after_scan and not self._doing_scan_and_update:
-            self.trigger_runtime_extraction()
+            changed_seasons = getattr(
+                self.scan_worker_instance, "changed_season_ids", None
+            )
+            changed_movies = getattr(
+                self.scan_worker_instance, "changed_movie_ids", None
+            )
+            self.trigger_runtime_extraction(changed_seasons, changed_movies)
         elif not self._doing_scan_and_update:
             self.scan_completed.emit()
 
@@ -460,7 +466,13 @@ class Controller(QObject):
             f"{series_removed} series removed, {episodes_nulled} episode paths updated."
         )
         if self._running_pass3_after_scan:
-            self.trigger_runtime_extraction()
+            changed_seasons = getattr(
+                self.scan_worker_instance, "changed_season_ids", None
+            )
+            changed_movies = getattr(
+                self.scan_worker_instance, "changed_movie_ids", None
+            )
+            self.trigger_runtime_extraction(changed_seasons, changed_movies)
         else:
             self.scan_completed.emit()
 
@@ -565,11 +577,21 @@ class Controller(QObject):
             else:
                 self.select_library(self.current_library_name, reset_selection=False)
         if self._running_pass3_after_scan:
-            self.trigger_runtime_extraction()
+            changed_seasons = getattr(
+                self.scan_all_worker_instance, "changed_season_ids", None
+            )
+            changed_movies = getattr(
+                self.scan_all_worker_instance, "changed_movie_ids", None
+            )
+            self.trigger_runtime_extraction(changed_seasons, changed_movies)
         else:
             self.scan_completed.emit()
 
-    def trigger_runtime_extraction(self) -> None:
+    def trigger_runtime_extraction(
+        self,
+        changed_season_ids: Optional[Set[str]] = None,
+        changed_movie_ids: Optional[Set[str]] = None,
+    ) -> None:
         if (
             self.file_property_worker_instance is not None
             and self.file_property_worker_instance.isRunning()
@@ -578,7 +600,10 @@ class Controller(QObject):
             return
 
         self.status_changed.emit("Extracting missing video runtimes in background...")
-        self.file_property_worker_instance = FilePropertyExtractionWorker()
+        self.file_property_worker_instance = FilePropertyExtractionWorker(
+            changed_season_ids=changed_season_ids,
+            changed_movie_ids=changed_movie_ids,
+        )
         self.file_property_worker_instance.progress_updated.connect(
             self._on_runtime_progress
         )

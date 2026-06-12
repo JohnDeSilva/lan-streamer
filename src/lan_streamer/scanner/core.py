@@ -365,6 +365,16 @@ def scan_movie(
     folder_name = movie_directory.name
     title, year = _parse_movie_folder(folder_name)
 
+    is_movie_changed = True
+    if existing_movie_data:
+        if offline:
+            is_movie_changed = _has_movie_files_changed(
+                movie_directory, existing_movie_data
+            )
+        else:
+            is_movie_changed = existing_movie_data.get("_changed", True)
+    movie_offline = offline or not is_movie_changed
+
     video_files = []
     for file in movie_directory.rglob("*"):
         if file.is_file() and file.suffix.lower() in VIDEO_EXTENSIONS:
@@ -385,7 +395,7 @@ def scan_movie(
         if existing_v and not force_refresh:
             versions.append(existing_v)
         else:
-            if offline:
+            if movie_offline:
                 versions.append(get_stub_file_info(path_str))
             else:
                 versions.append(get_detailed_file_info(path_str))
@@ -427,7 +437,7 @@ def scan_movie(
             f"New file detected for movie '{folder_name}'. Automatically pulling fresh metadata."
         )
         force_refresh = True
-        if existing_tmdb_id and not tmdb_movie and not offline:
+        if existing_tmdb_id and not tmdb_movie and not movie_offline:
             full = tmdb_client.get_movie_by_id(existing_tmdb_id)
             if full:
                 tmdb_movie = full
@@ -466,7 +476,7 @@ def scan_movie(
             movie_data["runtime"] = 0
         return movie_data
 
-    if not offline:
+    if not movie_offline:
         if tmdb_movie and "title" not in tmdb_movie and "id" in tmdb_movie:
             if single_item_refresh or not movie_metadata.get("tmdb_name"):
                 full = tmdb_client.get_movie_by_id(tmdb_movie["id"])
@@ -491,7 +501,7 @@ def scan_movie(
 
         if tmdb_movie:
             _apply_tmdb_movie_data(
-                movie_metadata, tmdb_movie, existing_movie_data, offline
+                movie_metadata, tmdb_movie, existing_movie_data, movie_offline
             )
 
         movie_metadata["jellyfin_id"] = _resolve_movie_jellyfin_id(
@@ -527,6 +537,7 @@ def scan_movie(
         "subtitle_tracks": active_version.get("subtitle_tracks"),
         "versions": versions,
         "default_path": default_path,
+        "_changed": is_movie_changed,
     }
 
     if detail_callback:
@@ -535,6 +546,99 @@ def scan_movie(
         )
 
     return movie_data
+
+
+def _has_season_files_changed(
+    season_dir: Path, existing_season_data: Dict[str, Any]
+) -> bool:
+    """
+    Checks if files have been added, modified, or removed in a season folder
+    by comparing local paths/sizes to the pre-existing season metadata.
+    """
+    existing_episodes = existing_season_data.get("episodes", [])
+    existing_by_path = {ep["path"]: ep for ep in existing_episodes if ep.get("path")}
+
+    try:
+        disk_files = [
+            f
+            for f in season_dir.iterdir()
+            if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS
+        ]
+    except PermissionError, FileNotFoundError:
+        return True
+
+    # Filter out episodes without paths (e.g., TMDb future/placeholder episodes)
+    existing_phys_eps = [ep for ep in existing_episodes if ep.get("path")]
+    if len(disk_files) != len(existing_phys_eps):
+        return True
+
+    for disk_file in disk_files:
+        path_str = str(disk_file.absolute())
+        if path_str not in existing_by_path:
+            return True
+
+        # Check for size difference
+        existing_ep = existing_by_path[path_str]
+        sizes = [existing_ep.get("size_bytes")]
+        if existing_ep.get("versions"):
+            for v in existing_ep["versions"]:
+                if v.get("path") == path_str:
+                    sizes.append(v.get("size_bytes"))
+        # Filter out None values
+        sizes = [s for s in sizes if s is not None]
+
+        try:
+            disk_size = disk_file.stat().st_size
+        except Exception:
+            return True
+
+        if not any(s == disk_size for s in sizes):
+            return True
+
+    return False
+
+
+def _has_movie_files_changed(
+    movie_dir: Path, existing_movie_data: Dict[str, Any]
+) -> bool:
+    """
+    Checks if the files for a movie have changed in its folder.
+    """
+    try:
+        disk_files = [
+            f
+            for f in movie_dir.rglob("*")
+            if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS
+        ]
+    except Exception:
+        return True
+
+    existing_versions = existing_movie_data.get("versions", [])
+    existing_by_path = {v["path"]: v for v in existing_versions if v.get("path")}
+    if not existing_by_path and existing_movie_data.get("path"):
+        existing_by_path[existing_movie_data["path"]] = existing_movie_data
+
+    if len(disk_files) != len(existing_by_path):
+        return True
+
+    for disk_file in disk_files:
+        path_str = str(disk_file.absolute())
+        if path_str not in existing_by_path:
+            return True
+
+        existing_item = existing_by_path[path_str]
+        sizes = [existing_item.get("size_bytes")]
+        sizes = [s for s in sizes if s is not None]
+
+        try:
+            disk_size = disk_file.stat().st_size
+        except Exception:
+            return True
+
+        if not any(s == disk_size for s in sizes):
+            return True
+
+    return False
 
 
 def scan_series(
@@ -636,6 +740,22 @@ def scan_series(
         if not season_directory.is_dir() or season_directory.name.startswith("."):
             continue
 
+        season_name = season_directory.name
+        is_season_changed = True
+        if existing_series_data and season_name in existing_series_data.get(
+            "seasons", {}
+        ):
+            if offline:
+                is_season_changed = _has_season_files_changed(
+                    season_directory, existing_series_data["seasons"][season_name]
+                )
+            else:
+                is_season_changed = existing_series_data["seasons"][season_name].get(
+                    "_changed", True
+                )
+
+        season_offline = offline or not is_season_changed
+
         season_name, season_index, season_metadata, tmdb_episodes = (
             _process_season_metadata(
                 season_directory,
@@ -644,7 +764,7 @@ def scan_series(
                 existing_episodes_by_path,
                 force_refresh,
                 single_item_refresh,
-                offline=offline,
+                offline=season_offline,
             )
         )
 
@@ -658,6 +778,7 @@ def scan_series(
             "metadata": season_metadata,
             "episodes": [],
             "_tmdb_episodes": tmdb_episodes,
+            "_changed": is_season_changed,
         }
 
         scanned_episodes = []
@@ -692,7 +813,7 @@ def scan_series(
                     jellyfin_data,
                     existing_episodes_by_path,
                     existing_series_data,
-                    offline=offline,
+                    offline=season_offline,
                 )
                 scanned_episodes.append(episode_record)
                 if detail_callback:
@@ -742,7 +863,7 @@ def scan_series(
                 if existing_v and not force_refresh:
                     versions.append(existing_v)
                 else:
-                    if offline:
+                    if season_offline:
                         versions.append(get_stub_file_info(path_str))
                     else:
                         versions.append(get_detailed_file_info(path_str))
