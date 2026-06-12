@@ -339,6 +339,7 @@ def test_update_item_runtime_episode_with_tech_info(mock_db_file) -> None:
         resolution="1920x1080",
         audio_tracks=[{"language": "eng"}],
         subtitle_tracks=[{"language": "spa"}],
+        size_bytes=987654,
     )
 
     with get_session() as session:
@@ -350,6 +351,8 @@ def test_update_item_runtime_episode_with_tech_info(mock_db_file) -> None:
         assert updated.resolution == "1920x1080"
         assert json.loads(updated.audio_tracks) == [{"language": "eng"}]
         assert json.loads(updated.subtitle_tracks) == [{"language": "spa"}]
+        assert updated.media_files[0].video_codec == "h264"
+        assert updated.media_files[0].size_bytes == 987654
 
 
 def test_update_item_runtime_movie_with_tech_info(mock_db_file) -> None:
@@ -375,6 +378,7 @@ def test_update_item_runtime_movie_with_tech_info(mock_db_file) -> None:
         resolution="3840x2160",
         audio_tracks=[{"language": "eng"}, {"language": "fre"}],
         subtitle_tracks=[],
+        size_bytes=123456,
     )
 
     with get_session() as session:
@@ -389,6 +393,8 @@ def test_update_item_runtime_movie_with_tech_info(mock_db_file) -> None:
             {"language": "fre"},
         ]
         assert json.loads(updated.subtitle_tracks) == []
+        assert updated.media_files[0].video_codec == "hevc"
+        assert updated.media_files[0].size_bytes == 123456
 
 
 def test_update_item_runtime_episode_not_found(mock_db_file) -> None:
