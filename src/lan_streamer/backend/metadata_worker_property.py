@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from PySide6.QtCore import Signal, QThread
 
 from lan_streamer.backend.proxy import db, get_detailed_file_info
@@ -14,6 +14,16 @@ class FilePropertyExtractionWorker(QThread):
     finished = Signal(int)
     error = Signal(str)
 
+    def __init__(
+        self,
+        changed_season_ids: Optional[Set[str]] = None,
+        changed_movie_ids: Optional[Set[str]] = None,
+        parent: Optional[QThread] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.changed_season_ids = changed_season_ids
+        self.changed_movie_ids = changed_movie_ids
+
     def run(self) -> None:
         try:
             logger.info("FilePropertyExtractionWorker starting run")
@@ -26,6 +36,19 @@ class FilePropertyExtractionWorker(QThread):
             # Filter out any files that already have both complete technical and creative metadata
             candidates = []
             for item in items_list:
+                if item["type"] == "episode":
+                    if (
+                        self.changed_season_ids is not None
+                        and item.get("season_id") not in self.changed_season_ids
+                    ):
+                        continue
+                else:
+                    if (
+                        self.changed_movie_ids is not None
+                        and item.get("id") not in self.changed_movie_ids
+                    ):
+                        continue
+
                 if db.has_tech_and_metadata(item["id"], item["type"]):
                     logger.info(
                         f"Skipping {item['path']} as it already has technical and creative metadata"

@@ -888,6 +888,7 @@ def save_season_data(
                 )
 
             session.commit()
+            stats["season_id"] = season.id
             logger.info(
                 f"Successfully saved season '{season_name}' of series '{series_name}' to database. "
                 f"Stats: {stats}"
@@ -985,6 +986,7 @@ def save_movie_data(
             _apply_movie_fields(movie, movie_data)
 
             session.commit()
+            stats["movie_id"] = movie.id
             logger.info(
                 f"Successfully saved movie '{movie_name}' to database. Stats: {stats}"
             )

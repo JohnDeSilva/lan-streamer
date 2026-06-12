@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from PySide6.QtCore import QObject, Signal, QThread
 
 from lan_streamer.scanner import (
@@ -75,6 +75,8 @@ class ScanWorker(QThread):
         self.library_name: str = library_name
         self.problems: List[Dict[str, Any]] = []
         self.stats: Dict[str, int] = {}
+        self.changed_season_ids: Set[str] = set()
+        self.changed_movie_ids: Set[str] = set()
 
     def run(self) -> None:
         self.problems = []
@@ -135,6 +137,8 @@ class ScanWorker(QThread):
                         for key in self.stats:
                             if key in stats:
                                 self.stats[key] += stats[key]
+                        if season_data.get("_changed", True) and "season_id" in stats:
+                            self.changed_season_ids.add(stats["season_id"])
                 except Exception as e:
                     err_msg = str(e)
                     clean_msg = err_msg.split("\n")[0].strip()
@@ -166,6 +170,8 @@ class ScanWorker(QThread):
                         for key in self.stats:
                             if key in stats:
                                 self.stats[key] += stats[key]
+                        if movie_data.get("_changed", True) and "movie_id" in stats:
+                            self.changed_movie_ids.add(stats["movie_id"])
                 except Exception as e:
                     err_msg = str(e)
                     clean_msg = err_msg.split("\n")[0].strip()
