@@ -56,6 +56,8 @@ from lan_streamer.db.library import (
     _apply_movie_fields,
     _cleanup_movie_library,
     _cleanup_tv_library,
+    save_season_data,
+    save_movie_data,
 )
 from lan_streamer.db.sync import (
     sync_watched_from_jellyfin_data,

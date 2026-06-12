@@ -144,6 +144,8 @@ def scan_directories(
     root_directory_label: str = "",
     show_future_episodes: bool = True,
     offline: bool = False,
+    season_callback: Any = None,
+    movie_callback: Any = None,
 ) -> LibraryDict:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -262,6 +264,8 @@ def scan_directories(
                         )
                     continue
                 cleaned = series_data
+                if movie_callback and cleaned:
+                    movie_callback(series_name, cleaned)
             else:
                 series_data = scan_series(
                     series_directory,
@@ -275,6 +279,7 @@ def scan_directories(
                     detail_callback=detail_callback,
                     show_future_episodes=show_future_episodes,
                     offline=offline,
+                    season_callback=season_callback,
                 )
                 if is_locked:
                     series_data["metadata"]["locked_metadata"] = True
@@ -544,6 +549,7 @@ def scan_series(
     detail_callback: Any = None,
     show_future_episodes: bool = True,
     offline: bool = False,
+    season_callback: Any = None,
 ) -> Dict[str, Any]:
     """
     Scans a single series directory and fetches metadata from TMDB.
@@ -816,6 +822,18 @@ def scan_series(
                     episode_record["myanimelist_anime_id"] = mal_id
                     episode_record["myanimelist_episode_number"] = ep_num
                 series_data["seasons"][season_name]["episodes"].append(episode_record)
+
+        if season_callback:
+            series_name_val = (
+                series_data.get("metadata", {}).get("name") or series_directory.name
+            )
+            clean_season_data = {
+                "metadata": season_metadata,
+                "episodes": series_data["seasons"][season_name]["episodes"],
+            }
+            season_callback(
+                series_name_val, series_data, season_name, clean_season_data
+            )
 
         if detail_callback:
             detail_callback(

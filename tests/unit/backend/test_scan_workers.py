@@ -222,3 +222,178 @@ def test_scan_worker_detail_progress() -> None:
             "finish_folder",
             {"root": "/path", "folder": "Series A", "skipped": False},
         )
+
+
+def test_scan_workers_reporting() -> None:
+    from lan_streamer.scanner import LibraryDict
+
+    # 1. Test ScanWorker reporting
+    lib = LibraryDict({"Cosmos": {}})
+    lib.unavailable_directories = ["/unavailable/root"]
+
+    # We want to mock db methods called inside callbacks
+    with (
+        patch(
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree",
+            return_value={},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
+        ) as mock_scan,
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_season_data"
+        ) as mock_save_season,
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_movie_data",
+            side_effect=Exception("DB Fail Movie"),
+        ),
+        patch("lan_streamer.backend.scan_worker_single.logger") as mock_log,
+    ):
+        mock_save_season.return_value = {
+            "series": 1,
+            "seasons": 1,
+            "episodes": 1,
+            "deleted": 0,
+            "issues": [
+                {
+                    "type": "Name Conflict Resolution",
+                    "item": "Episode 'Ep 1' (Season: 'Season 1')",
+                    "error": "A renamed to B",
+                }
+            ],
+        }
+
+        # Simulate scan_directories invoking callbacks
+        def fake_scan(*args, **kwargs):
+            season_cb = kwargs.get("season_callback")
+            movie_cb = kwargs.get("movie_callback")
+            if season_cb:
+                season_cb("Cosmos", {}, "Season 1", {})
+            if movie_cb:
+                movie_cb("Inception", {})
+            return lib
+
+        mock_scan.side_effect = fake_scan
+
+        worker = ScanWorker(
+            ["/path", "/unavailable/root"], "tv", {}, library_name="TV_Lib"
+        )
+        worker.run()
+
+        # Check issues gathered in problems list
+        assert len(worker.problems) == 5
+
+        # Issue 1: Name Conflict Resolution (returned in stats from save_season_data) from Pass 1
+        assert worker.problems[0]["type"] == "Name Conflict Resolution"
+        assert "A renamed to B" in worker.problems[0]["error"]
+
+        # Issue 2: Database Write Failure (from save_movie_data exception) from Pass 1
+        assert worker.problems[1]["type"] == "Database Write Failure"
+        assert "DB Fail Movie" in worker.problems[1]["error"]
+
+        # Issue 3: Name Conflict Resolution (returned in stats from save_season_data) from Pass 2
+        assert worker.problems[2]["type"] == "Name Conflict Resolution"
+        assert "A renamed to B" in worker.problems[2]["error"]
+
+        # Issue 4: Database Write Failure (from save_movie_data exception) from Pass 2
+        assert worker.problems[3]["type"] == "Database Write Failure"
+        assert "DB Fail Movie" in worker.problems[3]["error"]
+
+        # Issue 5: Unavailable Directory
+        assert worker.problems[4]["type"] == "Unavailable Directory"
+        assert "/unavailable/root" in worker.problems[4]["item"]
+
+        # Verify logs were prefixed correctly
+        log_warnings = [call.args[0] for call in mock_log.warning.call_args_list]
+        assert any(
+            "[SCAN_ISSUE] Type=Database Write Failure" in w for w in log_warnings
+        )
+        assert any("[SCAN_ISSUE] Type=Unavailable Directory" in w for w in log_warnings)
+
+        log_infos = [call.args[0] for call in mock_log.info.call_args_list]
+        report_logs = [log for log in log_infos if "[SCAN_REPORT]" in log]
+        assert len(report_logs) > 0
+        assert any("SCAN RUN ISSUES REPORT" in log for log in report_logs)
+        assert any("Type: Name Conflict Resolution" in log for log in report_logs)
+        assert any("Type: Database Write Failure" in log for log in report_logs)
+        assert any("Type: Unavailable Directory" in log for log in report_logs)
+
+    # 2. Test ScanAllLibrariesWorker reporting
+    lib_all = LibraryDict({"Cosmos": {}})
+    lib_all.unavailable_directories = ["/unavailable_all"]
+
+    with (
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+        patch(
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
+            return_value=False,
+        ),
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch(
+            "lan_streamer.backend.scan_worker_all.db.save_library",
+            side_effect=Exception("DB Fail Library Save"),
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_all.scan_directories",
+            return_value=lib_all,
+        ) as mock_scan_all,
+        patch(
+            "lan_streamer.backend.scan_worker_all.db.save_season_data",
+            side_effect=Exception("DB Fail Progressive Season"),
+        ),
+        patch("lan_streamer.backend.scan_worker_all.logger") as mock_log_all,
+    ):
+        mock_config.libraries = {
+            "TV_Lib": {"paths": ["/unavailable_all"], "type": "tv"}
+        }
+
+        # Simulate callbacks being invoked during scanning
+        def fake_scan_all(*args, **kwargs):
+            season_cb = kwargs.get("season_callback")
+            if season_cb:
+                season_cb("Cosmos", {}, "Season 1", {})
+            return lib_all
+
+        mock_scan_all.side_effect = fake_scan_all
+
+        worker_all = ScanAllLibrariesWorker()
+        worker_all.run()
+
+        # Check issues gathered
+        assert len(worker_all.problems) == 5
+
+        # 1. Progressive season save failure (Pass 1)
+        assert worker_all.problems[0]["type"] == "Database Write Failure"
+        assert "DB Fail Progressive Season" in worker_all.problems[0]["error"]
+
+        # 2. Unavailable directory (Pass 1)
+        assert worker_all.problems[1]["type"] == "Unavailable Directory"
+        assert "/unavailable_all" in worker_all.problems[1]["item"]
+
+        # 3. Library-wide save failure (Pass 1)
+        assert worker_all.problems[2]["type"] == "Database Write Failure"
+        assert "DB Fail Library Save" in worker_all.problems[2]["error"]
+
+        # 4. Progressive season save failure (Pass 2)
+        assert worker_all.problems[3]["type"] == "Database Write Failure"
+        assert "DB Fail Progressive Season" in worker_all.problems[3]["error"]
+
+        # 5. Library-wide save failure (Pass 2)
+        assert worker_all.problems[4]["type"] == "Database Write Failure"
+        assert "DB Fail Library Save" in worker_all.problems[4]["error"]
+
+        # Verify prefixes in logs
+        log_warnings_all = [
+            call.args[0] for call in mock_log_all.warning.call_args_list
+        ]
+        assert any(
+            "[SCAN_ISSUE] Type=Database Write Failure" in w for w in log_warnings_all
+        )
+        assert any(
+            "[SCAN_ISSUE] Type=Unavailable Directory" in w for w in log_warnings_all
+        )
+
+        log_infos_all = [call.args[0] for call in mock_log_all.info.call_args_list]
+        report_logs_all = [log for log in log_infos_all if "[SCAN_REPORT]" in log]
+        assert len(report_logs_all) > 0
+        assert any("SCAN RUN ISSUES REPORT" in log for log in report_logs_all)

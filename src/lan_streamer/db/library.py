@@ -24,6 +24,19 @@ def get_session() -> Any:
 logger = logging.getLogger(__name__)
 
 
+def _update_field_safely(existing_val: Any, incoming_val: Any) -> Any:
+    """
+    Prevents overwriting valid database values with null, empty, or placeholder "Unknown" values.
+    """
+    if incoming_val is None:
+        return existing_val
+    if isinstance(incoming_val, str) and incoming_val in ("", "Unknown"):
+        return existing_val
+    if isinstance(incoming_val, (list, dict)) and not incoming_val:
+        return existing_val
+    return incoming_val
+
+
 def _sync_media_files(
     session: Session, owner: Any, versions_data: List[Dict[str, Any]] | None
 ) -> None:
@@ -62,17 +75,18 @@ def _sync_media_files(
                 owner.media_files.append(mf)
                 session.add(mf)
 
-        mf.size_bytes = v.get("size_bytes")
-        mf.video_type = v.get("video_type")
-        mf.video_codec = v.get("video_codec")
-        mf.resolution = v.get("resolution")
-        mf.bit_rate = v.get("bit_rate")
-        mf.audio_tracks = (
-            json.dumps(v.get("audio_tracks")) if v.get("audio_tracks") else None
-        )
-        mf.subtitle_tracks = (
-            json.dumps(v.get("subtitle_tracks")) if v.get("subtitle_tracks") else None
-        )
+        mf.size_bytes = _update_field_safely(mf.size_bytes, v.get("size_bytes"))
+        mf.video_type = _update_field_safely(mf.video_type, v.get("video_type"))
+        mf.video_codec = _update_field_safely(mf.video_codec, v.get("video_codec"))
+        mf.resolution = _update_field_safely(mf.resolution, v.get("resolution"))
+        mf.bit_rate = _update_field_safely(mf.bit_rate, v.get("bit_rate"))
+
+        incoming_audio = v.get("audio_tracks")
+        if incoming_audio is not None and len(incoming_audio) > 0:
+            mf.audio_tracks = json.dumps(incoming_audio)
+        incoming_subs = v.get("subtitle_tracks")
+        if incoming_subs is not None and len(incoming_subs) > 0:
+            mf.subtitle_tracks = json.dumps(incoming_subs)
 
 
 def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> None:
@@ -100,27 +114,23 @@ def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> None:
     movie.last_played_position = (
         movie_data.get("last_played_position") or movie.last_played_position or 0
     )
-    if "video_codec" in movie_data:
-        movie.video_codec = movie_data.get("video_codec") or movie.video_codec
-    if "resolution" in movie_data:
-        movie.resolution = movie_data.get("resolution") or movie.resolution
-    if "bit_rate" in movie_data:
-        movie.bit_rate = movie_data.get("bit_rate") or movie.bit_rate
-    if "default_path" in movie_data:
-        movie.default_path = movie_data.get("default_path") or movie.default_path
+    movie.video_codec = _update_field_safely(
+        movie.video_codec, movie_data.get("video_codec")
+    )
+    movie.resolution = _update_field_safely(
+        movie.resolution, movie_data.get("resolution")
+    )
+    movie.bit_rate = _update_field_safely(movie.bit_rate, movie_data.get("bit_rate"))
+    movie.default_path = _update_field_safely(
+        movie.default_path, movie_data.get("default_path")
+    )
 
-    if "audio_tracks" in movie_data:
-        movie.audio_tracks = (
-            json.dumps(movie_data["audio_tracks"])
-            if movie_data["audio_tracks"]
-            else movie.audio_tracks
-        )
-    if "subtitle_tracks" in movie_data:
-        movie.subtitle_tracks = (
-            json.dumps(movie_data["subtitle_tracks"])
-            if movie_data["subtitle_tracks"]
-            else movie.subtitle_tracks
-        )
+    incoming_audio = movie_data.get("audio_tracks")
+    if incoming_audio is not None and len(incoming_audio) > 0:
+        movie.audio_tracks = json.dumps(incoming_audio)
+    incoming_subs = movie_data.get("subtitle_tracks")
+    if incoming_subs is not None and len(incoming_subs) > 0:
+        movie.subtitle_tracks = json.dumps(incoming_subs)
 
 
 def _cleanup_movie_library(
@@ -226,7 +236,7 @@ def _save_series_record(
     series_name: str,
     series_data: Dict[str, Any],
     existing_series: Dict[str, Series],
-    stats: Dict[str, int],
+    stats: Dict[str, Any],
 ) -> Series:
     series = existing_series.get(series_name)
     if not series:
@@ -258,7 +268,7 @@ def _save_season_record(
     season_name: str,
     season_data: Dict[str, Any],
     existing_seasons: Dict[str, Season],
-    stats: Dict[str, int],
+    stats: Dict[str, Any],
 ) -> Season:
     season = existing_seasons.get(season_name)
     if not season:
@@ -281,7 +291,7 @@ def _save_episode_record(
     existing_by_path: Dict[str, Episode],
     existing_by_number: Dict[int, Episode],
     existing_by_name: Dict[str, Episode],
-    stats: Dict[str, int],
+    stats: Dict[str, Any],
 ) -> Episode:
     path = episode_data.get("path") or None
     tmdb_num = episode_data.get("tmdb_number")
@@ -381,10 +391,21 @@ def _save_episode_record(
             counter += 1
             new_name = f"{base_name} ({counter})"
         target_name = new_name
-        logger.warning(
+        msg = (
             f"Duplicate episode name conflict in season '{season.name}': "
             f"'{base_name}' renamed to '{target_name}' to prevent UNIQUE constraint violation."
         )
+        logger.warning(
+            f"[SCAN_ISSUE] Type=Name Conflict Resolution | Item=Episode '{base_name}' (Season: '{season.name}') | Error={msg}"
+        )
+        if "issues" in stats:
+            stats["issues"].append(
+                {
+                    "type": "Name Conflict Resolution",
+                    "item": f"Episode '{base_name}' (Season: '{season.name}')",
+                    "error": msg,
+                }
+            )
     episode.name = target_name
     episode.path = episode_data.get("path") or episode.path
     episode.jellyfin_id = episode_data.get("jellyfin_id") or episode.jellyfin_id
@@ -416,37 +437,41 @@ def _save_episode_record(
         ]
     _sync_media_files(session, episode, versions)
 
-    if "video_codec" in episode_data:
-        episode.video_codec = episode_data.get("video_codec") or episode.video_codec
-    if "resolution" in episode_data:
-        episode.resolution = episode_data.get("resolution") or episode.resolution
-    if "bit_rate" in episode_data:
-        episode.bit_rate = episode_data.get("bit_rate") or episode.bit_rate
-    if "default_path" in episode_data:
-        episode.default_path = episode_data.get("default_path") or episode.default_path
+    episode.video_codec = _update_field_safely(
+        episode.video_codec, episode_data.get("video_codec")
+    )
+    episode.resolution = _update_field_safely(
+        episode.resolution, episode_data.get("resolution")
+    )
+    episode.bit_rate = _update_field_safely(
+        episode.bit_rate, episode_data.get("bit_rate")
+    )
+    episode.default_path = _update_field_safely(
+        episode.default_path, episode_data.get("default_path")
+    )
 
-    if "audio_tracks" in episode_data:
-        episode.audio_tracks = (
-            json.dumps(episode_data["audio_tracks"])
-            if episode_data["audio_tracks"]
-            else episode.audio_tracks
-        )
-    if "subtitle_tracks" in episode_data:
-        episode.subtitle_tracks = (
-            json.dumps(episode_data["subtitle_tracks"])
-            if episode_data["subtitle_tracks"]
-            else episode.subtitle_tracks
-        )
+    incoming_audio = episode_data.get("audio_tracks")
+    if incoming_audio is not None and len(incoming_audio) > 0:
+        episode.audio_tracks = json.dumps(incoming_audio)
+    incoming_subs = episode_data.get("subtitle_tracks")
+    if incoming_subs is not None and len(incoming_subs) > 0:
+        episode.subtitle_tracks = json.dumps(incoming_subs)
     return episode
 
 
-def save_library(library_name: str, library: Dict[str, Any]) -> None:
+def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
     """
     Updates the database for the given library name using SQLAlchemy ORM.
     """
 
     start_time = time.time()
-    stats = {"series": 0, "seasons": 0, "episodes": 0, "deleted": 0}
+    stats: Dict[str, Any] = {
+        "series": 0,
+        "seasons": 0,
+        "episodes": 0,
+        "deleted": 0,
+        "issues": [],
+    }
 
     try:
         with get_session() as session:
@@ -536,8 +561,15 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
                         session.delete(ep_obj)
                         stats["deleted"] += 1
 
-    except Exception:
+    except Exception as e:
         logger.exception(f"Error saving library '{library_name}' to database")
+        stats["issues"].append(
+            {
+                "type": "Database Write Failure",
+                "item": f"Library '{library_name}'",
+                "error": str(e),
+            }
+        )
 
     duration = time.time() - start_time
     logger.info(
@@ -545,6 +577,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> None:
         f"{stats['series']} series, {stats['seasons']} seasons, {stats['episodes']} episodes saved. "
         f"{stats['deleted']} stale items removed."
     )
+    return stats
 
 
 def load_movie_library(library_name: str) -> Dict[str, Any]:
@@ -579,13 +612,13 @@ def load_movie_library(library_name: str) -> Dict[str, Any]:
     return library_data
 
 
-def save_movie_library(library_name: str, library: Dict[str, Any]) -> None:
+def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
     """
     Updates the database for the given movie library name using SQLAlchemy ORM.
     """
 
     start_time = time.time()
-    stats = {"movies": 0, "deleted": 0}
+    stats: Dict[str, Any] = {"movies": 0, "deleted": 0, "issues": []}
 
     try:
         with get_session() as session:
@@ -677,14 +710,22 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> None:
                 _sync_media_files(session, movie, versions)
                 _apply_movie_fields(movie, movie_data)
 
-    except Exception:
+    except Exception as e:
         logger.exception(f"Error saving movie library '{library_name}' to database")
+        stats["issues"].append(
+            {
+                "type": "Database Write Failure",
+                "item": f"Movie Library '{library_name}'",
+                "error": str(e),
+            }
+        )
 
     duration = time.time() - start_time
     logger.info(
         f"Movie library '{library_name}' updated in {duration:.3f}s: "
         f"{stats['movies']} movies saved. "
     )
+    return stats
 
 
 def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str, int]:
@@ -722,3 +763,178 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
         raise
 
     return stats
+
+
+def save_season_data(
+    library_name: str,
+    series_name: str,
+    series_data: Dict[str, Any],
+    season_name: str,
+    season_data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Saves or updates a single season of a series in the database.
+    """
+    stats: Dict[str, Any] = {
+        "series": 0,
+        "seasons": 0,
+        "episodes": 0,
+        "deleted": 0,
+        "issues": [],
+    }
+    try:
+        with get_session() as session:
+            existing_series = {
+                series_obj.name: series_obj
+                for series_obj in session.scalars(
+                    select(Series)
+                    .where(Series.library_name == library_name)
+                    .where(Series.name == series_name)
+                ).all()
+                if series_obj.name is not None
+            }
+            series = _save_series_record(
+                session,
+                library_name,
+                series_name,
+                series_data,
+                existing_series,
+                stats,
+            )
+
+            existing_seasons = {
+                season_obj.name: season_obj
+                for season_obj in series.seasons
+                if season_obj.name is not None
+            }
+            season = _save_season_record(
+                session,
+                series,
+                season_name,
+                season_data,
+                existing_seasons,
+                stats,
+            )
+
+            existing_by_path = {}
+            existing_by_number = {}
+            existing_by_name = {}
+            for episode_obj in season.episodes:
+                is_missing = False
+                if episode_obj.path is not None:
+                    try:
+                        if not Path(episode_obj.path).exists():
+                            is_missing = True
+                    except Exception:
+                        is_missing = True
+
+                if episode_obj.path is not None and not is_missing:
+                    existing_by_path[episode_obj.path] = episode_obj
+                else:
+                    if episode_obj.path is not None:
+                        existing_by_path[episode_obj.path] = episode_obj
+                    if episode_obj.tmdb_number is not None:
+                        existing_by_number[episode_obj.tmdb_number] = episode_obj
+
+                if episode_obj.name is not None:
+                    existing_by_name[episode_obj.name] = episode_obj
+
+            for episode_data in season_data.get("episodes", []):
+                _save_episode_record(
+                    session,
+                    season,
+                    episode_data,
+                    existing_by_path,
+                    existing_by_number,
+                    existing_by_name,
+                    stats,
+                )
+
+            session.commit()
+            logger.info(
+                f"Successfully saved season '{season_name}' of series '{series_name}' to database. "
+                f"Stats: {stats}"
+            )
+            return stats
+    except Exception as e:
+        logger.exception(
+            f"Failed to save season '{season_name}' of series '{series_name}' to database: {e}"
+        )
+        raise e
+
+
+def save_movie_data(
+    library_name: str, movie_name: str, movie_data: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Saves or updates a single movie in the database.
+    """
+    stats: Dict[str, Any] = {"movies": 0, "deleted": 0, "issues": []}
+    try:
+        with get_session() as session:
+            existing_movie = session.scalars(
+                select(Movie)
+                .where(Movie.library_name == library_name)
+                .where(Movie.name == movie_name)
+            ).first()
+
+            path = movie_data.get("path")
+            movie = None
+            if path:
+                movie = session.scalars(
+                    select(Movie).join(MediaFile).where(MediaFile.path == path)
+                ).first()
+
+            if not movie:
+                movie = existing_movie
+
+            if not movie:
+                tmdb_id = movie_data.get("tmdb_identifier")
+                if tmdb_id:
+                    movie = session.scalars(
+                        select(Movie)
+                        .where(Movie.library_name == library_name)
+                        .where(Movie.tmdb_identifier == tmdb_id)
+                    ).first()
+
+            if not movie:
+                movie = Movie(library_name=library_name, name=movie_name)
+                session.add(movie)
+            else:
+                if movie.name != movie_name:
+                    stale_movie = existing_movie
+                    if stale_movie and stale_movie is not movie:
+                        logger.info(
+                            f"Removing stale movie record '{movie_name}' to avoid name collision."
+                        )
+                        session.delete(stale_movie)
+                        session.flush()
+
+                movie.library_name = library_name
+                movie.name = movie_name
+
+            stats["movies"] += 1
+
+            versions = movie_data.get("versions")
+            if versions is None and movie_data.get("path"):
+                versions = [
+                    {
+                        "path": movie_data.get("path"),
+                        "video_codec": movie_data.get("video_codec"),
+                        "resolution": movie_data.get("resolution"),
+                        "bit_rate": movie_data.get("bit_rate"),
+                        "audio_tracks": movie_data.get("audio_tracks"),
+                        "subtitle_tracks": movie_data.get("subtitle_tracks"),
+                    }
+                ]
+            _sync_media_files(session, movie, versions)
+            _apply_movie_fields(movie, movie_data)
+
+            session.commit()
+            logger.info(
+                f"Successfully saved movie '{movie_name}' to database. Stats: {stats}"
+            )
+            return stats
+    except Exception as e:
+        logger.exception(f"Failed to save movie '{movie_name}' to database: {e}")
+        raise e
