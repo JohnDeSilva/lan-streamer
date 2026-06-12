@@ -1421,3 +1421,103 @@ def test_save_library_duplicate_name_and_versions_deduplication() -> None:
     assert len(eps_merged) == 1
     assert eps_merged[0]["name"] == "Episode One.mkv"
     assert len(eps_merged[0]["versions"]) == 2
+
+
+def test_save_season_and_movie_data_progressive_and_safe_update() -> None:
+    lib_name = "ProgressiveLib"
+
+    # 1. Test save_season_data
+    series_data = {
+        "metadata": {"overview": "Original Overview", "jellyfin_id": "orig_jf"},
+        "seasons": {},
+    }
+    season_data = {
+        "metadata": {"jellyfin_id": "seas_jf"},
+        "episodes": [
+            {
+                "name": "S01E01 - Ep 1",
+                "path": "/path/ep1.mkv",
+                "tmdb_number": 1,
+                "video_codec": "h264",
+                "resolution": "1080p",
+                "audio_tracks": [{"codec": "aac"}],
+            }
+        ],
+    }
+    db.save_season_data(
+        lib_name, "Progressive Show", series_data, "Season 1", season_data
+    )
+
+    loaded = db.load_library(lib_name)
+    assert "Progressive Show" in loaded
+    show = loaded["Progressive Show"]
+    assert show["metadata"]["overview"] == "Original Overview"
+    assert "Season 1" in show["seasons"]
+    season = show["seasons"]["Season 1"]
+    assert season["metadata"]["jellyfin_id"] == "seas_jf"
+    assert len(season["episodes"]) == 1
+    ep = season["episodes"][0]
+    assert ep["name"] == "S01E01 - Ep 1"
+    assert ep["video_codec"] == "h264"
+    assert ep["resolution"] == "1080p"
+
+    # 2. Test safe update on save_season_data with partial stub (avoid overwriting valid specs with placeholders)
+    partial_season_data = {
+        "metadata": {"jellyfin_id": "seas_jf"},
+        "episodes": [
+            {
+                "name": "S01E01 - Ep 1",
+                "path": "/path/ep1.mkv",
+                "tmdb_number": 1,
+                "video_codec": "Unknown",
+                "resolution": "Unknown",
+                "audio_tracks": [],
+            }
+        ],
+    }
+    db.save_season_data(
+        lib_name, "Progressive Show", series_data, "Season 1", partial_season_data
+    )
+
+    loaded_partial = db.load_library(lib_name)
+    ep_partial = loaded_partial["Progressive Show"]["seasons"]["Season 1"]["episodes"][
+        0
+    ]
+    # Existing h264/1080p should NOT have been overwritten by Unknown/[]
+    assert ep_partial["video_codec"] == "h264"
+    assert ep_partial["resolution"] == "1080p"
+    assert ep_partial["audio_tracks"] == [{"codec": "aac"}]
+
+    # 3. Test save_movie_data
+    movie_data = {
+        "path": "/movies/movie.mkv",
+        "tmdb_identifier": "m_123",
+        "video_codec": "hevc",
+        "resolution": "4K",
+        "audio_tracks": [{"codec": "dts"}],
+    }
+    db.save_movie_data(lib_name, "Progressive Movie", movie_data)
+
+    loaded_movies = db.load_movie_library(lib_name)
+    assert "Progressive Movie" in loaded_movies
+    movie = loaded_movies["Progressive Movie"]
+    assert movie["tmdb_identifier"] == "m_123"
+    assert movie["video_codec"] == "hevc"
+    assert movie["resolution"] == "4K"
+
+    # 4. Test safe update on save_movie_data with partial stub
+    partial_movie_data = {
+        "path": "/movies/movie.mkv",
+        "tmdb_identifier": "m_123",
+        "video_codec": "Unknown",
+        "resolution": "Unknown",
+        "audio_tracks": [],
+    }
+    db.save_movie_data(lib_name, "Progressive Movie", partial_movie_data)
+
+    loaded_movies_partial = db.load_movie_library(lib_name)
+    movie_partial = loaded_movies_partial["Progressive Movie"]
+    # Existing hevc/4K/dts should NOT have been overwritten by Unknown/[]
+    assert movie_partial["video_codec"] == "hevc"
+    assert movie_partial["resolution"] == "4K"
+    assert movie_partial["audio_tracks"] == [{"codec": "dts"}]

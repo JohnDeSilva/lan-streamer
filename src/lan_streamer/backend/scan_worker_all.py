@@ -29,6 +29,7 @@ class ScanAllLibrariesWorker(QThread):
         super().__init__(parent)
         self.force_refresh: bool = force_refresh
         self.unavailable_directories: List[str] = []
+        self.problems: List[Dict[str, Any]] = []
 
     def _discover_tree(self) -> Dict[str, Any]:
         """
@@ -81,6 +82,7 @@ class ScanAllLibrariesWorker(QThread):
         return tree
 
     def run(self) -> None:
+        self.problems = []
         try:
             logger.info("ScanAllLibrariesWorker starting global scan run")
             libraries_dictionary = config.libraries
@@ -129,6 +131,87 @@ class ScanAllLibrariesWorker(QThread):
 
                     return _detail_callback
 
+                def _season_callback(
+                    series_name: str,
+                    series_data: Dict[str, Any],
+                    season_name: str,
+                    season_data: Dict[str, Any],
+                ) -> None:
+                    logger.info(
+                        f"ScanAllLibrariesWorker writing season '{season_name}' of series '{series_name}' to database..."
+                    )
+                    try:
+                        stats = db.save_season_data(
+                            library_name,
+                            series_name,
+                            series_data,
+                            season_name,
+                            season_data,
+                        )
+                        if stats and "issues" in stats:
+                            for issue in stats["issues"]:
+                                self.problems.append(issue)
+                    except Exception as e:
+                        err_msg = str(e)
+                        logger.warning(
+                            f"[SCAN_ISSUE] Type=Database Write Failure | Item=Season '{season_name}' of series '{series_name}' (Library: '{library_name}') | Error={err_msg}"
+                        )
+                        self.problems.append(
+                            {
+                                "type": "Database Write Failure",
+                                "item": f"Season '{season_name}' of series '{series_name}' (Library: '{library_name}')",
+                                "error": err_msg,
+                            }
+                        )
+
+                def _movie_callback(
+                    movie_name: str, movie_data: Dict[str, Any]
+                ) -> None:
+                    logger.info(
+                        f"ScanAllLibrariesWorker writing movie '{movie_name}' to database..."
+                    )
+                    try:
+                        stats = db.save_movie_data(library_name, movie_name, movie_data)
+                        if stats and "issues" in stats:
+                            for issue in stats["issues"]:
+                                self.problems.append(issue)
+                    except Exception as e:
+                        err_msg = str(e)
+                        logger.warning(
+                            f"[SCAN_ISSUE] Type=Database Write Failure | Item=Movie '{movie_name}' (Library: '{library_name}') | Error={err_msg}"
+                        )
+                        self.problems.append(
+                            {
+                                "type": "Database Write Failure",
+                                "item": f"Movie '{movie_name}' (Library: '{library_name}')",
+                                "error": err_msg,
+                            }
+                        )
+
+                def _save_lib_data() -> None:
+                    try:
+                        if library_type == "movie":
+                            stats = db.save_movie_library(
+                                library_name, existing_library_data
+                            )
+                        else:
+                            stats = db.save_library(library_name, existing_library_data)
+                        if stats and "issues" in stats:
+                            for issue in stats["issues"]:
+                                self.problems.append(issue)
+                    except Exception as e:
+                        err_msg = str(e)
+                        logger.warning(
+                            f"[SCAN_ISSUE] Type=Database Write Failure | Item=Library '{library_name}' | Error={err_msg}"
+                        )
+                        self.problems.append(
+                            {
+                                "type": "Database Write Failure",
+                                "item": f"Library '{library_name}'",
+                                "error": err_msg,
+                            }
+                        )
+
                 # Scan root directories one by one
                 if not root_directories:
                     # Pass 1: Offline local file scanner
@@ -146,19 +229,30 @@ class ScanAllLibrariesWorker(QThread):
                         detail_callback=_make_detail_callback(library_name),
                         show_future_episodes=show_future,
                         offline=True,
+                        season_callback=_season_callback,
+                        movie_callback=_movie_callback,
                     )
                     logger.info(
                         f"Finished Pass 1 (Offline Scan) for empty library '{library_name}'. Found {len(updated_library_data)} stubs/entries."
                     )
-                    self.unavailable_directories.extend(
-                        updated_library_data.unavailable_directories
-                    )
+                    if updated_library_data.unavailable_directories:
+                        for root in updated_library_data.unavailable_directories:
+                            if root not in self.unavailable_directories:
+                                self.unavailable_directories.append(root)
+                                err_msg = f"Root directory '{root}' in library '{library_name}' is unavailable on filesystem."
+                                logger.warning(
+                                    f"[SCAN_ISSUE] Type=Unavailable Directory | Item={root} (Library: '{library_name}') | Error={err_msg}"
+                                )
+                                self.problems.append(
+                                    {
+                                        "type": "Unavailable Directory",
+                                        "item": f"{root} (Library: '{library_name}')",
+                                        "error": err_msg,
+                                    }
+                                )
                     existing_library_data = updated_library_data
 
-                    if library_type == "movie":
-                        db.save_movie_library(library_name, existing_library_data)
-                    else:
-                        db.save_library(library_name, existing_library_data)
+                    _save_lib_data()
 
                     # Pass 2: Online metadata matching & resolver
                     logger.info(
@@ -175,16 +269,30 @@ class ScanAllLibrariesWorker(QThread):
                         detail_callback=_make_detail_callback(library_name),
                         show_future_episodes=show_future,
                         offline=False,
+                        season_callback=_season_callback,
+                        movie_callback=_movie_callback,
                     )
                     logger.info(
                         f"Finished Pass 2 (Online Metadata Resolution Scan) for empty library '{library_name}'"
                     )
+                    if updated_library_data.unavailable_directories:
+                        for root in updated_library_data.unavailable_directories:
+                            if root not in self.unavailable_directories:
+                                self.unavailable_directories.append(root)
+                                err_msg = f"Root directory '{root}' in library '{library_name}' is unavailable on filesystem."
+                                logger.warning(
+                                    f"[SCAN_ISSUE] Type=Unavailable Directory | Item={root} (Library: '{library_name}') | Error={err_msg}"
+                                )
+                                self.problems.append(
+                                    {
+                                        "type": "Unavailable Directory",
+                                        "item": f"{root} (Library: '{library_name}')",
+                                        "error": err_msg,
+                                    }
+                                )
                     existing_library_data = updated_library_data
 
-                    if library_type == "movie":
-                        db.save_movie_library(library_name, existing_library_data)
-                    else:
-                        db.save_library(library_name, existing_library_data)
+                    _save_lib_data()
                 else:
                     for root_dir in root_directories:
                         self.detail_progress.emit(
@@ -206,16 +314,30 @@ class ScanAllLibrariesWorker(QThread):
                             detail_callback=_make_detail_callback(library_name),
                             show_future_episodes=show_future,
                             offline=True,
+                            season_callback=_season_callback,
+                            movie_callback=_movie_callback,
                         )
                         logger.info(
                             f"Finished Pass 1 (Offline Scan) for library '{library_name}', root: '{root_dir}'. Found {len(updated_library_data)} stubs/entries."
                         )
+                        if updated_library_data.unavailable_directories:
+                            for root in updated_library_data.unavailable_directories:
+                                if root not in self.unavailable_directories:
+                                    self.unavailable_directories.append(root)
+                                    err_msg = f"Root directory '{root}' in library '{library_name}' is unavailable on filesystem."
+                                    logger.warning(
+                                        f"[SCAN_ISSUE] Type=Unavailable Directory | Item={root} (Library: '{library_name}') | Error={err_msg}"
+                                    )
+                                    self.problems.append(
+                                        {
+                                            "type": "Unavailable Directory",
+                                            "item": f"{root} (Library: '{library_name}')",
+                                            "error": err_msg,
+                                        }
+                                    )
                         existing_library_data = updated_library_data
 
-                        if library_type == "movie":
-                            db.save_movie_library(library_name, existing_library_data)
-                        else:
-                            db.save_library(library_name, existing_library_data)
+                        _save_lib_data()
 
                         # Pass 2: Online metadata matching & resolver
                         logger.info(
@@ -232,19 +354,30 @@ class ScanAllLibrariesWorker(QThread):
                             detail_callback=_make_detail_callback(library_name),
                             show_future_episodes=show_future,
                             offline=False,
+                            season_callback=_season_callback,
+                            movie_callback=_movie_callback,
                         )
                         logger.info(
                             f"Finished Pass 2 (Online Metadata Resolution Scan) for library '{library_name}', root: '{root_dir}'"
                         )
-                        self.unavailable_directories.extend(
-                            updated_library_data.unavailable_directories
-                        )
+                        if updated_library_data.unavailable_directories:
+                            for root in updated_library_data.unavailable_directories:
+                                if root not in self.unavailable_directories:
+                                    self.unavailable_directories.append(root)
+                                    err_msg = f"Root directory '{root}' in library '{library_name}' is unavailable on filesystem."
+                                    logger.warning(
+                                        f"[SCAN_ISSUE] Type=Unavailable Directory | Item={root} (Library: '{library_name}') | Error={err_msg}"
+                                    )
+                                    self.problems.append(
+                                        {
+                                            "type": "Unavailable Directory",
+                                            "item": f"{root} (Library: '{library_name}')",
+                                            "error": err_msg,
+                                        }
+                                    )
                         existing_library_data = updated_library_data
 
-                        if library_type == "movie":
-                            db.save_movie_library(library_name, existing_library_data)
-                        else:
-                            db.save_library(library_name, existing_library_data)
+                        _save_lib_data()
 
                         self.detail_progress.emit(
                             "finish_root", {"library": library_name, "root": root_dir}
@@ -253,6 +386,38 @@ class ScanAllLibrariesWorker(QThread):
                 completed_count += 1
                 self.detail_progress.emit("finish_library", {"library": library_name})
                 self.library_progress.emit(library_name, completed_count, total_count)
+
+            if self.problems:
+                grouped = {}
+                for prob in self.problems:
+                    t = prob["type"]
+                    e = prob["error"]
+                    item = prob["item"]
+                    if t not in grouped:
+                        grouped[t] = {}
+                    if e not in grouped[t]:
+                        grouped[t][e] = []
+                    grouped[t][e].append(item)
+
+                logger.info(
+                    "[SCAN_REPORT] ==================================================="
+                )
+                logger.info("[SCAN_REPORT]               SCAN RUN ISSUES REPORT")
+                logger.info(
+                    "[SCAN_REPORT] ==================================================="
+                )
+                for t, errors in grouped.items():
+                    logger.info(f"[SCAN_REPORT] Type: {t}")
+                    for err, items in errors.items():
+                        logger.info(f"[SCAN_REPORT]   Error: {err}")
+                        for item in items:
+                            logger.info(f"[SCAN_REPORT]     - {item}")
+                    logger.info(
+                        "[SCAN_REPORT] ---------------------------------------------------"
+                    )
+                logger.info(
+                    "[SCAN_REPORT] ==================================================="
+                )
 
             logger.info("ScanAllLibrariesWorker finished successfully")
             self.finished.emit()

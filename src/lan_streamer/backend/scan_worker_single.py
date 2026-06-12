@@ -8,6 +8,7 @@ from lan_streamer.scanner import (
     has_video_files,
 )
 from lan_streamer.backend.proxy import (
+    db,
     config,
     jellyfin_client,
     scan_directories,
@@ -72,8 +73,10 @@ class ScanWorker(QThread):
         self.cleanup: bool = cleanup
         self.unavailable_directories: List[str] = []
         self.library_name: str = library_name
+        self.problems: List[Dict[str, Any]] = []
 
     def run(self) -> None:
+        self.problems = []
         try:
             logger.info(
                 f"ScanWorker starting run for directories: {self.root_directories}"
@@ -97,6 +100,61 @@ class ScanWorker(QThread):
             def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
                 self.detail_progress.emit(event, payload)
 
+            def _season_callback(
+                series_name: str,
+                series_data: Dict[str, Any],
+                season_name: str,
+                season_data: Dict[str, Any],
+            ) -> None:
+                logger.info(
+                    f"ScanWorker writing season '{season_name}' of series '{series_name}' to database..."
+                )
+                try:
+                    stats = db.save_season_data(
+                        self.library_name,
+                        series_name,
+                        series_data,
+                        season_name,
+                        season_data,
+                    )
+                    if stats and "issues" in stats:
+                        for issue in stats["issues"]:
+                            self.problems.append(issue)
+                except Exception as e:
+                    err_msg = str(e)
+                    logger.warning(
+                        f"[SCAN_ISSUE] Type=Database Write Failure | Item=Season '{season_name}' of series '{series_name}' | Error={err_msg}"
+                    )
+                    self.problems.append(
+                        {
+                            "type": "Database Write Failure",
+                            "item": f"Season '{season_name}' of series '{series_name}'",
+                            "error": err_msg,
+                        }
+                    )
+
+            def _movie_callback(movie_name: str, movie_data: Dict[str, Any]) -> None:
+                logger.info(f"ScanWorker writing movie '{movie_name}' to database...")
+                try:
+                    stats = db.save_movie_data(
+                        self.library_name, movie_name, movie_data
+                    )
+                    if stats and "issues" in stats:
+                        for issue in stats["issues"]:
+                            self.problems.append(issue)
+                except Exception as e:
+                    err_msg = str(e)
+                    logger.warning(
+                        f"[SCAN_ISSUE] Type=Database Write Failure | Item=Movie '{movie_name}' | Error={err_msg}"
+                    )
+                    self.problems.append(
+                        {
+                            "type": "Database Write Failure",
+                            "item": f"Movie '{movie_name}'",
+                            "error": err_msg,
+                        }
+                    )
+
             library_config = config.libraries.get(self.library_name, {})
             show_future = library_config.get("show_future_episodes", True)
 
@@ -118,6 +176,8 @@ class ScanWorker(QThread):
                 detail_callback=_detail_callback,
                 show_future_episodes=show_future,
                 offline=True,
+                season_callback=_season_callback,
+                movie_callback=_movie_callback,
             )
             logger.info(
                 f"Finished Pass 1 (Offline Scan) for library '{self.library_name}'. Found {len(library)} stubs/entries."
@@ -143,11 +203,60 @@ class ScanWorker(QThread):
                 detail_callback=_detail_callback,
                 show_future_episodes=show_future,
                 offline=False,
+                season_callback=_season_callback,
+                movie_callback=_movie_callback,
             )
             self.unavailable_directories = library.unavailable_directories
+            if self.unavailable_directories:
+                for root in self.unavailable_directories:
+                    err_msg = f"Root directory '{root}' is unavailable on filesystem."
+                    logger.warning(
+                        f"[SCAN_ISSUE] Type=Unavailable Directory | Item={root} | Error={err_msg}"
+                    )
+                    self.problems.append(
+                        {
+                            "type": "Unavailable Directory",
+                            "item": root,
+                            "error": err_msg,
+                        }
+                    )
+
             logger.info(
                 f"Finished Pass 2 (Online Metadata Resolution Scan) for library '{self.library_name}'"
             )
+
+            if self.problems:
+                grouped = {}
+                for prob in self.problems:
+                    t = prob["type"]
+                    e = prob["error"]
+                    item = prob["item"]
+                    if t not in grouped:
+                        grouped[t] = {}
+                    if e not in grouped[t]:
+                        grouped[t][e] = []
+                    grouped[t][e].append(item)
+
+                logger.info(
+                    "[SCAN_REPORT] ==================================================="
+                )
+                logger.info("[SCAN_REPORT]               SCAN RUN ISSUES REPORT")
+                logger.info(
+                    "[SCAN_REPORT] ==================================================="
+                )
+                for t, errors in grouped.items():
+                    logger.info(f"[SCAN_REPORT] Type: {t}")
+                    for err, items in errors.items():
+                        logger.info(f"[SCAN_REPORT]   Error: {err}")
+                        for item in items:
+                            logger.info(f"[SCAN_REPORT]     - {item}")
+                    logger.info(
+                        "[SCAN_REPORT] ---------------------------------------------------"
+                    )
+                logger.info(
+                    "[SCAN_REPORT] ==================================================="
+                )
+
             logger.info("ScanWorker finished successfully")
             self.finished.emit(library)
         except Exception as exc:
