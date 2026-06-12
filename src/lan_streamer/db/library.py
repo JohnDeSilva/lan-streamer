@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from lan_streamer.db.models import Series, Season, Episode, Movie, MediaFile
 from lan_streamer.system.config import config
-from lan_streamer.db.queries import (
+from lan_streamer.db.queries_file_discovery import (
     _build_series_dict,
     _build_movie_dict,
 )
@@ -332,7 +332,60 @@ def _save_episode_record(
 
     stats["episodes"] += 1
 
-    episode.name = episode_data["name"]
+    # Deduplicate/merge any pre-existing Episode records that represent versions of this episode
+    v_list = episode_data.get("versions")
+    if v_list is None and episode_data.get("path"):
+        v_list = [{"path": episode_data.get("path")}]
+    if v_list:
+        for v in v_list:
+            v_path = v.get("path")
+            if v_path:
+                dup_ep = existing_by_path.get(v_path)
+                if dup_ep and dup_ep != episode:
+                    logger.info(
+                        f"Merging duplicate episode record '{dup_ep.name}' (path={v_path}) "
+                        f"into main episode '{episode.name or episode_data['name']}'"
+                    )
+                    # Merge watched status and playback position
+                    episode.watched = episode.watched or dup_ep.watched
+                    if dup_ep.last_played_at and (
+                        not episode.last_played_at
+                        or dup_ep.last_played_at > episode.last_played_at
+                    ):
+                        episode.last_played_at = dup_ep.last_played_at
+                        episode.last_played_position = dup_ep.last_played_position
+
+                    # Delete duplicate from session and remove from tracking dicts
+                    session.delete(dup_ep)
+                    stats["deleted"] += 1
+
+                    if dup_ep.path in existing_by_path:
+                        existing_by_path.pop(dup_ep.path, None)
+                    if dup_ep.tmdb_number in existing_by_number:
+                        existing_by_number.pop(dup_ep.tmdb_number, None)
+                    if dup_ep.name in existing_by_name:
+                        existing_by_name.pop(dup_ep.name, None)
+
+    target_name = episode_data["name"]
+    # Ensure name is unique within the season to avoid UNIQUE constraint violation
+    existing_names = {
+        ep.name
+        for ep in season.episodes
+        if ep is not episode and ep.name is not None and ep not in session.deleted
+    }
+    if target_name in existing_names:
+        base_name = target_name
+        counter = 1
+        new_name = f"{base_name} ({counter})"
+        while new_name in existing_names:
+            counter += 1
+            new_name = f"{base_name} ({counter})"
+        target_name = new_name
+        logger.warning(
+            f"Duplicate episode name conflict in season '{season.name}': "
+            f"'{base_name}' renamed to '{target_name}' to prevent UNIQUE constraint violation."
+        )
+    episode.name = target_name
     episode.path = episode_data.get("path") or episode.path
     episode.jellyfin_id = episode_data.get("jellyfin_id") or episode.jellyfin_id
     episode.tmdb_episode_identifier = (

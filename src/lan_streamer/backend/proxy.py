@@ -57,7 +57,9 @@ def _get_scan_directories() -> Any:
 
 
 def _get_discover_single_library_tree() -> Any:
-    from lan_streamer.backend.scan_workers import _discover_single_library_tree_impl
+    from lan_streamer.backend.scan_worker_single import (
+        _discover_single_library_tree_impl,
+    )
 
     return _discover_single_library_tree_impl
 

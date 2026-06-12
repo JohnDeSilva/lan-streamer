@@ -15,7 +15,7 @@ def test_scan_worker_execution() -> None:
     lib = LibraryDict({"Cosmos": {}})
     lib.unavailable_directories = ["/unavailable/path"]
     with patch(
-        "lan_streamer.backend.scan_workers.scan_directories", return_value=lib
+        "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
     ) as mock_scan:
         emitted_results: List[Dict[str, Any]] = []
         worker = ScanWorker(["/path", "/unavailable/path"], "tv", {})
@@ -27,7 +27,7 @@ def test_scan_worker_execution() -> None:
 
     # Exception run
     with patch(
-        "lan_streamer.backend.scan_workers.scan_directories",
+        "lan_streamer.backend.scan_worker_single.scan_directories",
         side_effect=Exception("Scan error"),
     ):
         emitted_errors: List[str] = []
@@ -40,7 +40,7 @@ def test_scan_worker_execution() -> None:
 def test_cleanup_worker_execution() -> None:
     # Successful run
     with patch(
-        "lan_streamer.backend.scan_workers.db.cleanup_library",
+        "lan_streamer.backend.scan_worker_cleanup.db.cleanup_library",
         return_value={"series": 1},
     ) as mock_clean:
         emitted_results: List[Dict[str, Any]] = []
@@ -52,7 +52,7 @@ def test_cleanup_worker_execution() -> None:
 
     # Exception run
     with patch(
-        "lan_streamer.backend.scan_workers.db.cleanup_library",
+        "lan_streamer.backend.scan_worker_cleanup.db.cleanup_library",
         side_effect=Exception("Cleanup error"),
     ):
         emitted_errors: List[str] = []
@@ -72,30 +72,30 @@ def test_scan_all_libraries_worker_execution() -> None:
     lib_movie.unavailable_directories = ["/unavailable_movie"]
 
     with (
-        patch("lan_streamer.backend.scan_workers.config") as mock_config,
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
         patch(
-            "lan_streamer.backend.scan_workers.jellyfin_client.is_configured",
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
             return_value=True,
         ),
         patch(
-            "lan_streamer.backend.scan_workers.jellyfin_client.get_jellyfin_correlation_data",
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.get_jellyfin_correlation_data",
             return_value={"map": {}},
         ),
         patch(
-            "lan_streamer.backend.scan_workers.db.load_library",
+            "lan_streamer.backend.scan_worker_all.db.load_library",
             return_value={"old_tv": {}},
         ),
         patch(
-            "lan_streamer.backend.scan_workers.db.load_movie_library",
+            "lan_streamer.backend.scan_worker_all.db.load_movie_library",
             return_value={"old_movie": {}},
         ),
         patch(
-            "lan_streamer.backend.scan_workers.scan_directories",
+            "lan_streamer.backend.scan_worker_all.scan_directories",
             side_effect=[lib_tv, lib_tv, lib_movie, lib_movie],
         ) as mock_scan,
-        patch("lan_streamer.backend.scan_workers.db.save_library") as mock_save_tv,
+        patch("lan_streamer.backend.scan_worker_all.db.save_library") as mock_save_tv,
         patch(
-            "lan_streamer.backend.scan_workers.db.save_movie_library"
+            "lan_streamer.backend.scan_worker_all.db.save_movie_library"
         ) as mock_save_movie,
     ):
         mock_config.libraries = {
@@ -143,10 +143,10 @@ def test_scan_all_libraries_worker_execution() -> None:
         ) in detail_emitted
 
     # Exception run
-    with patch("lan_streamer.backend.scan_workers.config") as mock_config:
+    with patch("lan_streamer.backend.scan_worker_all.config") as mock_config:
         mock_config.libraries = {"TV_Lib": {}}
         with patch(
-            "lan_streamer.backend.scan_workers.scan_directories",
+            "lan_streamer.backend.scan_worker_all.scan_directories",
             side_effect=Exception("Global scan error"),
         ):
             errors_emitted: List[str] = []
@@ -167,11 +167,11 @@ def test_scan_worker_detail_progress() -> None:
 
     with (
         patch(
-            "lan_streamer.backend.scan_workers.discover_single_library_tree",
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree",
             return_value=mock_tree,
         ) as mock_discover,
         patch(
-            "lan_streamer.backend.scan_workers.scan_directories", return_value=lib
+            "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
         ) as mock_scan,
     ):
         emitted_details = []

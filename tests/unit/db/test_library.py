@@ -1364,3 +1364,60 @@ class TestMultiRootDirectoryCleanup:
         stats = db.cleanup_library(self.LIBRARY, [])
         assert stats["series"] >= 2
         assert db.load_library(self.LIBRARY) == {}
+
+
+def test_save_library_duplicate_name_and_versions_deduplication() -> None:
+    library_name = "TestDuplicatesLib"
+
+    # 1. Test name collision resolution (uniquifier)
+    lib_data = {
+        "Show A": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {"name": "Episode One.mkv", "path": "/path/to/ep1_v1.mkv"},
+                        {"name": "Episode One.mkv", "path": "/path/to/ep1_v2.mkv"},
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library(library_name, lib_data)
+
+    loaded = db.load_library(library_name)
+    eps = loaded["Show A"]["seasons"]["Season 1"]["episodes"]
+    assert len(eps) == 2
+    names = {e["name"] for e in eps}
+    assert "Episode One.mkv" in names
+    assert "Episode One.mkv (1)" in names
+
+    # 2. Test version deduplication
+    lib_data_merged = {
+        "Show A": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode One.mkv",
+                            "path": "/path/to/ep1_v1.mkv",
+                            "versions": [
+                                {"path": "/path/to/ep1_v1.mkv", "video_codec": "h264"},
+                                {"path": "/path/to/ep1_v2.mkv", "video_codec": "h264"},
+                            ],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library(library_name, lib_data_merged)
+
+    loaded_merged = db.load_library(library_name)
+    eps_merged = loaded_merged["Show A"]["seasons"]["Season 1"]["episodes"]
+    assert len(eps_merged) == 1
+    assert eps_merged[0]["name"] == "Episode One.mkv"
+    assert len(eps_merged[0]["versions"]) == 2

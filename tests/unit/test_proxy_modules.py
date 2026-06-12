@@ -127,7 +127,9 @@ class TestBackendProxyFactories:
 
     def test_get_discover_single_library_tree_import(self) -> None:
         from lan_streamer.backend.proxy import _get_discover_single_library_tree
-        from lan_streamer.backend.scan_workers import _discover_single_library_tree_impl
+        from lan_streamer.backend.scan_worker_single import (
+            _discover_single_library_tree_impl,
+        )
 
         result = _get_discover_single_library_tree()
         assert result is _discover_single_library_tree_impl

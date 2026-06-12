@@ -2,6 +2,8 @@ import logging
 from typing import List, Optional
 from PySide6.QtCore import QObject, Signal, QThread
 
+from lan_streamer.backend.proxy import db
+
 logger = logging.getLogger("lan_streamer.backend")
 
 
@@ -23,10 +25,8 @@ class CleanupWorker(QThread):
 
     def run(self) -> None:
         try:
-            import lan_streamer.backend.scan_workers as sw
-
             logger.info(f"CleanupWorker starting for library {self.library_name}")
-            results = sw.db.cleanup_library(self.library_name, self.root_directories)
+            results = db.cleanup_library(self.library_name, self.root_directories)
             logger.info(f"CleanupWorker finished with results: {results}")
             self.finished.emit(results)
         except Exception as exc:

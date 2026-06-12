@@ -3,6 +3,15 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from PySide6.QtCore import QObject, Signal, QThread
 
+from lan_streamer.backend.proxy import (
+    db,
+    config,
+    jellyfin_client,
+    scan_movie,
+    scan_series,
+    clean_series_data,
+)
+
 logger = logging.getLogger("lan_streamer.backend")
 
 
@@ -30,8 +39,6 @@ class RefreshSeriesWorker(QThread):
 
     def run(self) -> None:
         try:
-            import lan_streamer.backend.metadata_workers as mw
-
             logger.info(
                 f"RefreshSeriesWorker starting for item: {self.item_name} in library {self.library_name}"
             )
@@ -48,14 +55,14 @@ class RefreshSeriesWorker(QThread):
 
             # Fetch Jellyfin correlation data if configured
             jellyfin_data: Optional[Dict[str, Any]] = None
-            if mw.jellyfin_client.is_configured():
-                jellyfin_data = mw.jellyfin_client.get_jellyfin_correlation_data()
+            if jellyfin_client.is_configured():
+                jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
             existing_item = self.existing_library.get(self.item_name)
             # We want to refresh this item from TMDB, bypassing lock.
             # So we pass tmdb_series/tmdb_movie = None, and single_item_refresh = True.
             if self.library_type == "movie":
-                item_data = mw.scan_movie(
+                item_data = scan_movie(
                     target_dir,
                     tmdb_movie=None,
                     jellyfin_data=jellyfin_data,
@@ -66,10 +73,10 @@ class RefreshSeriesWorker(QThread):
                     single_item_refresh=True,
                 )
             else:
-                show_future = mw.config.libraries.get(self.library_name, {}).get(
+                show_future = config.libraries.get(self.library_name, {}).get(
                     "show_future_episodes", True
                 )
-                item_data = mw.scan_series(
+                item_data = scan_series(
                     target_dir,
                     tmdb_series=None,
                     jellyfin_data=jellyfin_data,
@@ -87,11 +94,11 @@ class RefreshSeriesWorker(QThread):
             # Update the existing library dictionary with the new item data
             updated_library = self.existing_library.copy()
             if self.library_type != "movie":
-                item_data = mw.clean_series_data(item_data)
+                item_data = clean_series_data(item_data)
             updated_library[self.item_name] = item_data
 
             # Persist back to DB
-            mw.db.save_library(self.library_name, updated_library)
+            db.save_library(self.library_name, updated_library)
 
             logger.info("RefreshSeriesWorker finished successfully")
             self.finished.emit(updated_library)

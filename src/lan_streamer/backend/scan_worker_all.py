@@ -8,6 +8,7 @@ from lan_streamer.scanner import (
     VIDEO_EXTENSIONS,
     has_video_files,
 )
+from lan_streamer.backend.proxy import db, config, jellyfin_client, scan_directories
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -35,10 +36,8 @@ class ScanAllLibrariesWorker(QThread):
         so the UI can initialise the tree and segmented progress bar before
         scanning begins.  Returns a structure keyed by library name.
         """
-        import lan_streamer.backend.scan_workers as sw
-
         tree: Dict[str, Any] = {}
-        for library_name, library_configuration in sw.config.libraries.items():
+        for library_name, library_configuration in config.libraries.items():
             root_directories: List[str] = list(library_configuration.get("paths", []))
             library_type: str = library_configuration.get("type", "tv")
             roots: Dict[str, Any] = {}
@@ -83,10 +82,8 @@ class ScanAllLibrariesWorker(QThread):
 
     def run(self) -> None:
         try:
-            import lan_streamer.backend.scan_workers as sw
-
             logger.info("ScanAllLibrariesWorker starting global scan run")
-            libraries_dictionary = sw.config.libraries
+            libraries_dictionary = config.libraries
             total_count: int = len(libraries_dictionary)
             completed_count: int = 0
             self.unavailable_directories = []
@@ -97,13 +94,13 @@ class ScanAllLibrariesWorker(QThread):
                 "init_tree",
                 {
                     "tree": tree_structure,
-                    "library_order": list(sw.config.libraries.keys()),
+                    "library_order": list(config.libraries.keys()),
                 },
             )
 
             jellyfin_data: Optional[Dict[str, Any]] = None
-            if sw.jellyfin_client.is_configured():
-                jellyfin_data = sw.jellyfin_client.get_jellyfin_correlation_data()
+            if jellyfin_client.is_configured():
+                jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
             for library_name, library_configuration in libraries_dictionary.items():
                 logger.info(f"ScanAllLibrariesWorker scanning library: {library_name}")
@@ -119,9 +116,9 @@ class ScanAllLibrariesWorker(QThread):
 
                 existing_library_data: Dict[str, Any] = {}
                 if library_type == "movie":
-                    existing_library_data = sw.db.load_movie_library(library_name)
+                    existing_library_data = db.load_movie_library(library_name)
                 else:
-                    existing_library_data = sw.db.load_library(library_name)
+                    existing_library_data = db.load_library(library_name)
 
                 def _make_detail_callback(lib_name: str) -> Any:
                     worker_self = self
@@ -138,7 +135,7 @@ class ScanAllLibrariesWorker(QThread):
                     logger.info(
                         f"Starting Pass 1 (Offline Scan) for empty library '{library_name}'"
                     )
-                    updated_library_data: LibraryDict = sw.scan_directories(
+                    updated_library_data: LibraryDict = scan_directories(
                         [],
                         library_type=library_type,
                         existing_library=existing_library_data,
@@ -159,15 +156,15 @@ class ScanAllLibrariesWorker(QThread):
                     existing_library_data = updated_library_data
 
                     if library_type == "movie":
-                        sw.db.save_movie_library(library_name, existing_library_data)
+                        db.save_movie_library(library_name, existing_library_data)
                     else:
-                        sw.db.save_library(library_name, existing_library_data)
+                        db.save_library(library_name, existing_library_data)
 
                     # Pass 2: Online metadata matching & resolver
                     logger.info(
                         f"Starting Pass 2 (Online Metadata Resolution Scan) for empty library '{library_name}'"
                     )
-                    updated_library_data = sw.scan_directories(
+                    updated_library_data = scan_directories(
                         [],
                         library_type=library_type,
                         existing_library=existing_library_data,
@@ -185,9 +182,9 @@ class ScanAllLibrariesWorker(QThread):
                     existing_library_data = updated_library_data
 
                     if library_type == "movie":
-                        sw.db.save_movie_library(library_name, existing_library_data)
+                        db.save_movie_library(library_name, existing_library_data)
                     else:
-                        sw.db.save_library(library_name, existing_library_data)
+                        db.save_library(library_name, existing_library_data)
                 else:
                     for root_dir in root_directories:
                         self.detail_progress.emit(
@@ -198,7 +195,7 @@ class ScanAllLibrariesWorker(QThread):
                         logger.info(
                             f"Starting Pass 1 (Offline Scan) for library '{library_name}', root: '{root_dir}'"
                         )
-                        updated_library_data = sw.scan_directories(
+                        updated_library_data = scan_directories(
                             [root_dir],
                             library_type=library_type,
                             existing_library=existing_library_data,
@@ -216,17 +213,15 @@ class ScanAllLibrariesWorker(QThread):
                         existing_library_data = updated_library_data
 
                         if library_type == "movie":
-                            sw.db.save_movie_library(
-                                library_name, existing_library_data
-                            )
+                            db.save_movie_library(library_name, existing_library_data)
                         else:
-                            sw.db.save_library(library_name, existing_library_data)
+                            db.save_library(library_name, existing_library_data)
 
                         # Pass 2: Online metadata matching & resolver
                         logger.info(
                             f"Starting Pass 2 (Online Metadata Resolution Scan) for library '{library_name}', root: '{root_dir}'"
                         )
-                        updated_library_data = sw.scan_directories(
+                        updated_library_data = scan_directories(
                             [root_dir],
                             library_type=library_type,
                             existing_library=existing_library_data,
@@ -247,11 +242,9 @@ class ScanAllLibrariesWorker(QThread):
                         existing_library_data = updated_library_data
 
                         if library_type == "movie":
-                            sw.db.save_movie_library(
-                                library_name, existing_library_data
-                            )
+                            db.save_movie_library(library_name, existing_library_data)
                         else:
-                            sw.db.save_library(library_name, existing_library_data)
+                            db.save_library(library_name, existing_library_data)
 
                         self.detail_progress.emit(
                             "finish_root", {"library": library_name, "root": root_dir}
