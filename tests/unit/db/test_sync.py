@@ -180,14 +180,14 @@ def test_sync_watched_by_ids(mock_db_file) -> None:
 
         ep = (
             session.query(Episode)
-            .join(MediaFile)
+            .join(Episode.media_files)
             .filter(MediaFile.path == "/p1")
             .first()
         )
         assert ep is not None and ep.watched is True
         ep2 = (
             session.query(Episode)
-            .join(MediaFile)
+            .join(Episode.media_files)
             .filter(MediaFile.path == "/p2")
             .first()
         )

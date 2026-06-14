@@ -273,19 +273,18 @@ def test_media_files_orm_relationships_and_cascade(mock_db_file) -> None:
 
         # Test back_populates
         for m in ep.media_files:
-            assert m.episode_id == ep_id
-            assert m.episode is ep
+            assert ep in m.episodes
 
-        # Delete episode, verify cascade delete to media_files
+        # Delete episode, verify media_files are NOT deleted (independent)
         session.delete(ep)
         session.commit()
 
     with db_mod.get_session() as session:
         assert session.get(Episode, ep_id) is None
-        assert session.get(MediaFile, mf1_id) is None
-        assert session.get(MediaFile, mf2_id) is None
+        assert session.get(MediaFile, mf1_id) is not None
+        assert session.get(MediaFile, mf2_id) is not None
 
-    # 2. Test Movie -> MediaFiles relationship and cascade delete
+    # 2. Test Movie -> MediaFiles relationship
     with db_mod.get_session() as session:
         movie = Movie(library_name="Movies", name="Inception")
         mf1 = MediaFile(
@@ -314,19 +313,18 @@ def test_media_files_orm_relationships_and_cascade(mock_db_file) -> None:
 
         # Test back_populates
         for m in mv.media_files:
-            assert m.movie_id == movie_id
-            assert m.movie is mv
+            assert mv in m.movies
 
-        # Delete movie, verify cascade delete
+        # Delete movie, verify media_files are NOT deleted
         session.delete(mv)
         session.commit()
 
     with db_mod.get_session() as session:
         assert session.get(Movie, movie_id) is None
-        assert session.get(MediaFile, mf1_id) is None
-        assert session.get(MediaFile, mf2_id) is None
+        assert session.get(MediaFile, mf1_id) is not None
+        assert session.get(MediaFile, mf2_id) is not None
 
-    # 3. Test Series -> Season -> Episode -> MediaFile cascade delete
+    # 3. Test Series -> Season -> Episode -> MediaFile cascade delete paths
     with db_mod.get_session() as session:
         series = Series(library_name="TV", name="Traversing Cascade")
         season = Season(name="Season 1", series=series)
@@ -352,9 +350,9 @@ def test_media_files_orm_relationships_and_cascade(mock_db_file) -> None:
         assert session.get(Series, series_id) is None
         assert session.get(Season, season_id) is None
         assert session.get(Episode, ep_id) is None
-        assert session.get(MediaFile, mf_id) is None
+        assert session.get(MediaFile, mf_id) is not None
 
-    # 4. Test Season -> Episode -> MediaFile cascade delete
+    # 4. Test Season -> Episode -> MediaFile cascade delete paths
     with db_mod.get_session() as session:
         series = Series(library_name="TV", name="Traversing Cascade 2")
         season = Season(name="Season 1", series=series)
@@ -378,7 +376,7 @@ def test_media_files_orm_relationships_and_cascade(mock_db_file) -> None:
     with db_mod.get_session() as session:
         assert session.get(Season, season_id) is None
         assert session.get(Episode, ep_id) is None
-        assert session.get(MediaFile, mf_id) is None
+        assert session.get(MediaFile, mf_id) is not None
 
     db_mod._engine.dispose()
     db_mod._engine = None

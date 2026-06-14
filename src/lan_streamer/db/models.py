@@ -173,60 +173,42 @@ class Season(Base):
     )
 
 
-class Episode(Base):
-    """Database model representing a single television show episode, including technical video characteristics and watch status."""
+class CompatibilityMixin:
+    """Mixin to provide backward-compatible properties and initialization logic for Episode and Movie."""
 
-    __tablename__ = "episodes"
-
-    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
-    season_id: Mapped[Optional[str]] = mapped_column(
-        UUIDBLOB, ForeignKey("seasons.id", ondelete="CASCADE")
-    )
-    name: Mapped[Optional[str]] = mapped_column(String)
-    jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
-    tmdb_episode_identifier: Mapped[Optional[str]] = mapped_column(String)
-    tmdb_name: Mapped[Optional[str]] = mapped_column(String)
-    tmdb_number: Mapped[Optional[int]] = mapped_column(Integer)
-    watched: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
-    date_added: Mapped[Optional[int]] = mapped_column(Integer, default=0)
-    air_date: Mapped[Optional[str]] = mapped_column(String)
-    runtime: Mapped[Optional[int]] = mapped_column(Integer)
-    myanimelist_anime_id: Mapped[Optional[int]] = mapped_column(Integer)
-    myanimelist_episode_number: Mapped[Optional[int]] = mapped_column(Integer)
-    last_played_position: Mapped[Optional[int]] = mapped_column(Integer, default=0)
-    last_played_at: Mapped[Optional[int]] = mapped_column(Integer, default=0)
-    video_codec: Mapped[Optional[str]] = mapped_column(String)
-    default_path: Mapped[Optional[str]] = mapped_column(String)
-
-    season: Mapped[Optional["Season"]] = relationship(
-        "Season", back_populates="episodes"
-    )
-    media_files: Mapped[List["MediaFile"]] = relationship(
-        "MediaFile",
-        back_populates="episode",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
+    media_files: Mapped[List["MediaFile"]]
+    default_path: Mapped[Optional[str]]
 
     def __init__(self, **kwargs: Any) -> None:
         self._pending_media_attrs: dict[str, Any] = {}
+        self._pending_playback_attrs: dict[str, Any] = {}
         super().__init__(**kwargs)
 
     def _flush_pending_to(self, mf: "MediaFile") -> None:
-        """Apply any buffered media attributes onto a real MediaFile."""
+        """Apply any buffered media and playback attributes onto a real MediaFile and PlaybackState."""
         pending = getattr(self, "_pending_media_attrs", None)
-        if not pending:
-            return
-        for attr, val in pending.items():
-            setattr(mf, attr, val)
-        pending.clear()
+        if pending:
+            for attr, val in pending.items():
+                setattr(mf, attr, val)
+            pending.clear()
+
+        pending_pb = getattr(self, "_pending_playback_attrs", None)
+        if pending_pb:
+            if not mf.playback_state:
+                mf.playback_state = PlaybackState(media_file_id=mf.id)
+            for attr, val in pending_pb.items():
+                setattr(mf.playback_state, attr, val)
+            pending_pb.clear()
 
     def _set_media_attr(self, attr: str, value: Any) -> None:
         """Set a media attribute on the first MediaFile, or buffer it if none exists."""
         if self.media_files:
             setattr(self.media_files[0], attr, value)
         else:
-            if not hasattr(self, "_pending_media_attrs"):
+            if (
+                not hasattr(self, "_pending_media_attrs")
+                or self._pending_media_attrs is None
+            ):
                 self._pending_media_attrs = {}
             self._pending_media_attrs[attr] = value
 
@@ -238,6 +220,34 @@ class Episode(Base):
         if pending:
             return pending.get(attr)
         return None
+
+    def _get_playback_attr(self, attr: str, default: Any) -> Any:
+        if self.media_files:
+            mf = self.media_files[0]
+            if mf.playback_state:
+                return getattr(mf.playback_state, attr)
+            pending_pb = getattr(self, "_pending_playback_attrs", None)
+            if pending_pb:
+                return pending_pb.get(attr, default)
+        else:
+            pending_pb = getattr(self, "_pending_playback_attrs", None)
+            if pending_pb:
+                return pending_pb.get(attr, default)
+        return default
+
+    def _set_playback_attr(self, attr: str, value: Any) -> None:
+        if self.media_files:
+            mf = self.media_files[0]
+            if not mf.playback_state:
+                mf.playback_state = PlaybackState(media_file_id=mf.id)
+            setattr(mf.playback_state, attr, value)
+        else:
+            if (
+                not hasattr(self, "_pending_playback_attrs")
+                or self._pending_playback_attrs is None
+            ):
+                self._pending_playback_attrs = {}
+            self._pending_playback_attrs[attr] = value
 
     @property
     def path(self) -> Optional[str]:
@@ -267,12 +277,44 @@ class Episode(Base):
             self.media_files.clear()
 
     @property
+    def watched(self) -> bool:
+        return self._get_playback_attr("watched", False)
+
+    @watched.setter
+    def watched(self, value: bool) -> None:
+        self._set_playback_attr("watched", value)
+
+    @property
+    def last_played_position(self) -> int:
+        return self._get_playback_attr("last_played_position", 0)
+
+    @last_played_position.setter
+    def last_played_position(self, value: int) -> None:
+        self._set_playback_attr("last_played_position", value)
+
+    @property
+    def last_played_at(self) -> int:
+        return self._get_playback_attr("last_played_at", 0)
+
+    @last_played_at.setter
+    def last_played_at(self, value: int) -> None:
+        self._set_playback_attr("last_played_at", value)
+
+    @property
     def resolution(self) -> Optional[str]:
         return self._get_media_attr("resolution")
 
     @resolution.setter
     def resolution(self, value: Optional[str]) -> None:
         self._set_media_attr("resolution", value)
+
+    @property
+    def video_codec(self) -> Optional[str]:
+        return self._get_media_attr("video_codec")
+
+    @video_codec.setter
+    def video_codec(self, value: Optional[str]) -> None:
+        self._set_media_attr("video_codec", value)
 
     @property
     def audio_tracks(self) -> Optional[str]:
@@ -306,6 +348,39 @@ class Episode(Base):
     def file_runtime(self, value: Optional[int]) -> None:
         self._set_media_attr("runtime", value)
 
+
+class Episode(CompatibilityMixin, Base):
+    """Database model representing a single television show episode, including technical video characteristics and watch status."""
+
+    __tablename__ = "episodes"
+
+    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
+    season_id: Mapped[Optional[str]] = mapped_column(
+        UUIDBLOB, ForeignKey("seasons.id", ondelete="CASCADE")
+    )
+    name: Mapped[Optional[str]] = mapped_column(String)
+    jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_episode_identifier: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_name: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_number: Mapped[Optional[int]] = mapped_column(Integer)
+    date_added: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    air_date: Mapped[Optional[str]] = mapped_column(String)
+    runtime: Mapped[Optional[int]] = mapped_column(Integer)
+    myanimelist_anime_id: Mapped[Optional[int]] = mapped_column(Integer)
+    myanimelist_episode_number: Mapped[Optional[int]] = mapped_column(Integer)
+    default_path: Mapped[Optional[str]] = mapped_column(String)
+
+    season: Mapped[Optional["Season"]] = relationship(
+        "Season", back_populates="episodes"
+    )
+    media_files: Mapped[List["MediaFile"]] = relationship(
+        "MediaFile",
+        secondary="metadata_file_mappings",
+        back_populates="episodes",
+        passive_deletes=True,
+        overlaps="media_files,episodes,movies",
+    )
+
     __table_args__ = (
         UniqueConstraint("season_id", "name", name="uq_episodes_season_id_name"),
         Index("idx_episodes_jellyfin_id", "jellyfin_id"),
@@ -313,7 +388,7 @@ class Episode(Base):
     )
 
 
-class Movie(Base):
+class Movie(CompatibilityMixin, Base):
     """Database model representing a movie, including technical properties and watch status."""
 
     __tablename__ = "movies"
@@ -333,116 +408,15 @@ class Movie(Base):
     rating: Mapped[Optional[str]] = mapped_column(String)
     genre: Mapped[Optional[str]] = mapped_column(String)
     year: Mapped[Optional[int]] = mapped_column(Integer)
-    watched: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
-    last_played_position: Mapped[Optional[int]] = mapped_column(Integer, default=0)
-    last_played_at: Mapped[Optional[int]] = mapped_column(Integer, default=0)
-    video_codec: Mapped[Optional[str]] = mapped_column(String)
     default_path: Mapped[Optional[str]] = mapped_column(String)
 
     media_files: Mapped[List["MediaFile"]] = relationship(
         "MediaFile",
-        back_populates="movie",
-        cascade="all, delete-orphan",
+        secondary="metadata_file_mappings",
+        back_populates="movies",
         passive_deletes=True,
+        overlaps="media_files,episodes,movies",
     )
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._pending_media_attrs: dict[str, Any] = {}
-        super().__init__(**kwargs)
-
-    def _flush_pending_to(self, mf: "MediaFile") -> None:
-        """Apply any buffered media attributes onto a real MediaFile."""
-        pending = getattr(self, "_pending_media_attrs", None)
-        if not pending:
-            return
-        for attr, val in pending.items():
-            setattr(mf, attr, val)
-        pending.clear()
-
-    def _set_media_attr(self, attr: str, value: Any) -> None:
-        """Set a media attribute on the first MediaFile, or buffer it if none exists."""
-        if self.media_files:
-            setattr(self.media_files[0], attr, value)
-        else:
-            if not hasattr(self, "_pending_media_attrs"):
-                self._pending_media_attrs = {}
-            self._pending_media_attrs[attr] = value
-
-    def _get_media_attr(self, attr: str) -> Any:
-        """Read a media attribute from the first MediaFile, or from the pending buffer."""
-        if self.media_files:
-            return getattr(self.media_files[0], attr)
-        pending = getattr(self, "_pending_media_attrs", None)
-        if pending:
-            return pending.get(attr)
-        return None
-
-    @property
-    def path(self) -> Optional[str]:
-        if self.default_path:
-            return self.default_path
-        if self.media_files:
-            return self.media_files[0].path
-        return None
-
-    @path.setter
-    def path(self, value: Optional[str]) -> None:
-        if value == self.path:
-            return
-        self.default_path = value
-        if value:
-            exists = False
-            for mf in self.media_files:
-                if mf.path == value:
-                    exists = True
-                    self._flush_pending_to(mf)
-                    break
-            if not exists:
-                mf = MediaFile(path=value)
-                self._flush_pending_to(mf)
-                self.media_files.append(mf)
-        else:
-            self.media_files.clear()
-
-    @property
-    def resolution(self) -> Optional[str]:
-        return self._get_media_attr("resolution")
-
-    @resolution.setter
-    def resolution(self, value: Optional[str]) -> None:
-        self._set_media_attr("resolution", value)
-
-    @property
-    def audio_tracks(self) -> Optional[str]:
-        return self._get_media_attr("audio_tracks")
-
-    @audio_tracks.setter
-    def audio_tracks(self, value: Optional[str]) -> None:
-        self._set_media_attr("audio_tracks", value)
-
-    @property
-    def subtitle_tracks(self) -> Optional[str]:
-        return self._get_media_attr("subtitle_tracks")
-
-    @subtitle_tracks.setter
-    def subtitle_tracks(self, value: Optional[str]) -> None:
-        self._set_media_attr("subtitle_tracks", value)
-
-    @property
-    def bit_rate(self) -> Optional[int]:
-        return self._get_media_attr("bit_rate")
-
-    @bit_rate.setter
-    def bit_rate(self, value: Optional[int]) -> None:
-        self._set_media_attr("bit_rate", value)
-
-    @property
-    def file_runtime(self) -> Optional[int]:
-        return self._get_media_attr("runtime")
-
-    @file_runtime.setter
-    def file_runtime(self, value: Optional[int]) -> None:
-        self._set_media_attr("runtime", value)
 
     __table_args__ = (
         UniqueConstraint("library_name", "name", name="uq_movies_library_name_name"),
@@ -456,12 +430,6 @@ class MediaFile(Base):
     __tablename__ = "media_files"
 
     id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
-    episode_id: Mapped[Optional[str]] = mapped_column(
-        UUIDBLOB, ForeignKey("episodes.id", ondelete="CASCADE"), nullable=True
-    )
-    movie_id: Mapped[Optional[str]] = mapped_column(
-        UUIDBLOB, ForeignKey("movies.id", ondelete="CASCADE"), nullable=True
-    )
     path: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     size_bytes: Mapped[Optional[int]] = mapped_column(Integer)
     video_type: Mapped[Optional[str]] = mapped_column(String)
@@ -472,9 +440,63 @@ class MediaFile(Base):
     subtitle_tracks: Mapped[Optional[str]] = mapped_column(String)
     runtime: Mapped[Optional[int]] = mapped_column(Integer)
 
-    episode: Mapped[Optional["Episode"]] = relationship(
-        "Episode", back_populates="media_files"
+    episodes: Mapped[List["Episode"]] = relationship(
+        "Episode",
+        secondary="metadata_file_mappings",
+        back_populates="media_files",
+        passive_deletes=True,
+        overlaps="media_files,episodes,movies",
     )
-    movie: Mapped[Optional["Movie"]] = relationship(
-        "Movie", back_populates="media_files"
+    movies: Mapped[List["Movie"]] = relationship(
+        "Movie",
+        secondary="metadata_file_mappings",
+        back_populates="media_files",
+        passive_deletes=True,
+        overlaps="media_files,episodes,movies",
+    )
+    playback_state: Mapped[Optional["PlaybackState"]] = relationship(
+        "PlaybackState",
+        back_populates="media_file",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class MetadataFileMapping(Base):
+    """Many-to-many relationship mapping table between MediaFile and Episode or Movie."""
+
+    __tablename__ = "metadata_file_mappings"
+
+    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
+    media_file_id: Mapped[str] = mapped_column(
+        UUIDBLOB, ForeignKey("media_files.id", ondelete="CASCADE"), nullable=False
+    )
+    episode_id: Mapped[Optional[str]] = mapped_column(
+        UUIDBLOB, ForeignKey("episodes.id", ondelete="CASCADE"), nullable=True
+    )
+    movie_id: Mapped[Optional[str]] = mapped_column(
+        UUIDBLOB, ForeignKey("movies.id", ondelete="CASCADE"), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "media_file_id", "episode_id", "movie_id", name="uq_metadata_file_mappings"
+        ),
+    )
+
+
+class PlaybackState(Base):
+    """Tracks playback/watch state for a specific physical media file."""
+
+    __tablename__ = "playback_states"
+
+    media_file_id: Mapped[str] = mapped_column(
+        UUIDBLOB, ForeignKey("media_files.id", ondelete="CASCADE"), primary_key=True
+    )
+    watched: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_played_position: Mapped[int] = mapped_column(Integer, default=0)
+    last_played_at: Mapped[int] = mapped_column(Integer, default=0)
+
+    media_file: Mapped["MediaFile"] = relationship(
+        "MediaFile", back_populates="playback_state"
     )
