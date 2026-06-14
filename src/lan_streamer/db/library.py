@@ -64,12 +64,9 @@ def _sync_media_files(
             ).first()
             if mf:
                 # Re-parent
-                mf.episode = None
-                mf.movie = None
-                if type(owner).__name__ == "Episode":
-                    mf.episode = owner
-                else:
-                    mf.movie = owner
+                mf.episodes.clear()
+                mf.movies.clear()
+                owner.media_files.append(mf)
             else:
                 mf = MediaFile(path=path)
                 owner.media_files.append(mf)
@@ -91,11 +88,9 @@ def _sync_media_files(
 
 def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> None:
     """
-    Applies all scalar fields from *movie_data* onto the *movie* ORM object.
+    Applies all creative metadata fields from *movie_data* onto the *movie* ORM object.
     Only overrides existing values when the incoming value is non-falsy.
     """
-    path = movie_data.get("path")
-    movie.path = path or movie.path
     movie.jellyfin_id = movie_data.get("jellyfin_id") or movie.jellyfin_id
     movie.tmdb_identifier = movie_data.get("tmdb_identifier") or movie.tmdb_identifier
     movie.poster_path = movie_data.get("poster_path") or movie.poster_path
@@ -110,10 +105,7 @@ def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> None:
     if "myanimelist_anime_id" in movie_data:
         movie.myanimelist_anime_id = movie_data["myanimelist_anime_id"]
     movie.year = movie_data.get("year") or movie.year or 0
-    movie.watched = movie.watched or bool(movie_data.get("watched"))
-    movie.last_played_position = (
-        movie_data.get("last_played_position") or movie.last_played_position or 0
-    )
+
     movie.video_codec = _update_field_safely(
         movie.video_codec, movie_data.get("video_codec")
     )
@@ -121,16 +113,25 @@ def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> None:
         movie.resolution, movie_data.get("resolution")
     )
     movie.bit_rate = _update_field_safely(movie.bit_rate, movie_data.get("bit_rate"))
-    movie.default_path = _update_field_safely(
-        movie.default_path, movie_data.get("default_path")
-    )
-
     incoming_audio = movie_data.get("audio_tracks")
     if incoming_audio is not None and len(incoming_audio) > 0:
         movie.audio_tracks = json.dumps(incoming_audio)
     incoming_subs = movie_data.get("subtitle_tracks")
     if incoming_subs is not None and len(incoming_subs) > 0:
         movie.subtitle_tracks = json.dumps(incoming_subs)
+
+    movie.default_path = _update_field_safely(
+        movie.default_path, movie_data.get("default_path") or movie_data.get("path")
+    )
+
+    watched = bool(movie_data.get("watched"))
+    if watched and movie.media_files:
+        from lan_streamer.db.models import PlaybackState
+
+        for mf in movie.media_files:
+            if not mf.playback_state:
+                mf.playback_state = PlaybackState(media_file_id=mf.id)
+            mf.playback_state.watched = True
 
 
 def _cleanup_movie_library(
@@ -143,10 +144,11 @@ def _cleanup_movie_library(
         select(Movie).where(Movie.library_name == library_name)
     ).all()
     for movie in movie_list:
-        if movie.path and not Path(movie.path).exists():
-            logger.info(
-                f"Cleanup: Removing missing movie '{movie.name}' at '{movie.path}'"
-            )
+        path = movie.default_path or (
+            movie.media_files[0].path if movie.media_files else None
+        )
+        if path and not Path(path).exists():
+            logger.info(f"Cleanup: Removing missing movie '{movie.name}' at '{path}'")
             session.delete(movie)
             stats["movies"] += 1
             stats["movies_removed"] = stats.get("movies_removed", 0) + 1
@@ -160,7 +162,7 @@ def _cleanup_tv_library(
 ) -> None:
     """
     Removes Series records whose folder no longer exists in any root directory.
-    For series whose folder still exists, sets episode.path = None for any
+    For series whose folder still exists, sets episode.default_path = None for any
     episode file that is no longer present on disk (rather than deleting the record).
     Season and episode records are never deleted independently — only cascade-deleted
     when the parent series record is removed.
@@ -193,10 +195,13 @@ def _cleanup_tv_library(
         # Series folder still exists — null out paths for files that are gone
         for season in series.seasons:
             for episode in season.episodes:
-                if episode.path and not Path(episode.path).exists():
+                path = episode.default_path or (
+                    episode.media_files[0].path if episode.media_files else None
+                )
+                if path and not Path(path).exists():
                     logger.info(
                         f"Cleanup: Setting path=None for missing episode "
-                        f"'{episode.name}' (was '{episode.path}')"
+                        f"'{episode.name}' (was '{path}')"
                     )
                     episode.path = None
                     stats["episodes"] += 1
@@ -367,22 +372,16 @@ def _save_episode_record(
                         f"Merging duplicate episode record '{dup_ep.name}' (path={v_path}) "
                         f"into main episode '{episode.name or episode_data['name']}'"
                     )
-                    # Merge watched status and playback position
-                    episode.watched = episode.watched or dup_ep.watched
-                    if dup_ep.last_played_at and (
-                        not episode.last_played_at
-                        or dup_ep.last_played_at > episode.last_played_at
-                    ):
-                        episode.last_played_at = dup_ep.last_played_at
-                        episode.last_played_position = dup_ep.last_played_position
-
                     # Delete duplicate from session and remove from tracking dicts
                     session.delete(dup_ep)
                     stats["deleted"] += 1
                     stats["episodes_removed"] = stats.get("episodes_removed", 0) + 1
 
-                    if dup_ep.path in existing_by_path:
-                        existing_by_path.pop(dup_ep.path, None)
+                    dup_path = dup_ep.default_path or (
+                        dup_ep.media_files[0].path if dup_ep.media_files else None
+                    )
+                    if dup_path in existing_by_path:
+                        existing_by_path.pop(dup_path, None)
                     if dup_ep.tmdb_number in existing_by_number:
                         existing_by_number.pop(dup_ep.tmdb_number, None)
                     if dup_ep.name in existing_by_name:
@@ -419,7 +418,6 @@ def _save_episode_record(
                 }
             )
     episode.name = target_name
-    episode.path = episode_data.get("path") or episode.path
     episode.jellyfin_id = episode_data.get("jellyfin_id") or episode.jellyfin_id
     episode.tmdb_episode_identifier = (
         episode_data.get("tmdb_episode_identifier") or episode.tmdb_episode_identifier
@@ -427,7 +425,6 @@ def _save_episode_record(
     episode.tmdb_name = episode_data.get("tmdb_name") or episode.tmdb_name
     if episode_data.get("tmdb_number") is not None:
         episode.tmdb_number = episode_data["tmdb_number"]
-    episode.watched = episode.watched or bool(episode_data.get("watched"))
     episode.date_added = episode_data.get("date_added") or episode.date_added or 0
     episode.air_date = episode_data.get("air_date") or episode.air_date
     episode.runtime = episode_data.get("runtime") or episode.runtime or 0
@@ -449,25 +446,19 @@ def _save_episode_record(
         ]
     _sync_media_files(session, episode, versions)
 
-    episode.video_codec = _update_field_safely(
-        episode.video_codec, episode_data.get("video_codec")
-    )
-    episode.resolution = _update_field_safely(
-        episode.resolution, episode_data.get("resolution")
-    )
-    episode.bit_rate = _update_field_safely(
-        episode.bit_rate, episode_data.get("bit_rate")
-    )
     episode.default_path = _update_field_safely(
-        episode.default_path, episode_data.get("default_path")
+        episode.default_path,
+        episode_data.get("default_path") or episode_data.get("path"),
     )
 
-    incoming_audio = episode_data.get("audio_tracks")
-    if incoming_audio is not None and len(incoming_audio) > 0:
-        episode.audio_tracks = json.dumps(incoming_audio)
-    incoming_subs = episode_data.get("subtitle_tracks")
-    if incoming_subs is not None and len(incoming_subs) > 0:
-        episode.subtitle_tracks = json.dumps(incoming_subs)
+    watched = bool(episode_data.get("watched"))
+    if watched and episode.media_files:
+        from lan_streamer.db.models import PlaybackState
+
+        for mf in episode.media_files:
+            if not mf.playback_state:
+                mf.playback_state = PlaybackState(media_file_id=mf.id)
+            mf.playback_state.watched = True
     return episode
 
 
@@ -665,7 +656,7 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
                     m.path: m
                     for m in session.scalars(
                         select(Movie)
-                        .join(MediaFile)
+                        .join(Movie.media_files)
                         .where(MediaFile.path.in_(incoming_paths))
                     ).all()
                     if m.path is not None
@@ -935,7 +926,7 @@ def save_movie_data(
             movie = None
             if path:
                 movie = session.scalars(
-                    select(Movie).join(MediaFile).where(MediaFile.path == path)
+                    select(Movie).join(Movie.media_files).where(MediaFile.path == path)
                 ).first()
 
             if not movie:

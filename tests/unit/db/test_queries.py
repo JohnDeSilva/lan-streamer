@@ -252,7 +252,7 @@ def test_runtime_management_functions(mock_db_file) -> None:
 
         updated_episode = (
             session.query(Episode)
-            .join(MediaFile)
+            .join(Episode.media_files)
             .filter(MediaFile.path == "/path/to/missing_ep.mkv")
             .first()
         )
@@ -262,7 +262,7 @@ def test_runtime_management_functions(mock_db_file) -> None:
 
         updated_movie = (
             session.query(Movie)
-            .join(MediaFile)
+            .join(Movie.media_files)
             .filter(MediaFile.path == "/path/to/missing_movie.mkv")
             .first()
         )

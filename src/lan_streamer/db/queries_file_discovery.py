@@ -29,16 +29,53 @@ def natural_sort_key(s: Optional[str]) -> List[Any]:
 
 def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
     """Maps a single Episode ORM row to its plain dictionary representation."""
-    try:
-        audio_tracks = json.loads(episode.audio_tracks) if episode.audio_tracks else []
-    except Exception:
-        audio_tracks = []
-    try:
-        subtitle_tracks = (
-            json.loads(episode.subtitle_tracks) if episode.subtitle_tracks else []
-        )
-    except Exception:
-        subtitle_tracks = []
+    primary_mf = None
+    if episode.media_files:
+        if episode.default_path:
+            for mf in episode.media_files:
+                if mf.path == episode.default_path:
+                    primary_mf = mf
+                    break
+        if not primary_mf:
+            primary_mf = episode.media_files[0]
+
+    # Playback/watch states
+    watched = False
+    last_played_at = 0
+    if primary_mf and primary_mf.playback_state:
+        watched = bool(primary_mf.playback_state.watched)
+        last_played_at = primary_mf.playback_state.last_played_at or 0
+
+    # Technical specs
+    video_codec = ""
+    resolution = ""
+    audio_tracks = []
+    subtitle_tracks = []
+    bit_rate = 0
+    file_runtime = 0
+    path = episode.default_path
+
+    if primary_mf:
+        if not path:
+            path = primary_mf.path
+        video_codec = primary_mf.video_codec or ""
+        resolution = primary_mf.resolution or ""
+        bit_rate = primary_mf.bit_rate or 0
+        file_runtime = primary_mf.runtime or 0
+        try:
+            audio_tracks = (
+                json.loads(primary_mf.audio_tracks) if primary_mf.audio_tracks else []
+            )
+        except Exception:
+            audio_tracks = []
+        try:
+            subtitle_tracks = (
+                json.loads(primary_mf.subtitle_tracks)
+                if primary_mf.subtitle_tracks
+                else []
+            )
+        except Exception:
+            subtitle_tracks = []
 
     versions = []
     for mf in episode.media_files:
@@ -66,24 +103,24 @@ def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
 
     return {
         "name": episode.name,
-        "path": episode.path,
+        "path": path,
         "jellyfin_id": episode.jellyfin_id,
         "tmdb_episode_identifier": episode.tmdb_episode_identifier,
         "tmdb_name": episode.tmdb_name,
         "tmdb_number": episode.tmdb_number,
         "myanimelist_anime_id": episode.myanimelist_anime_id,
         "myanimelist_episode_number": episode.myanimelist_episode_number,
-        "watched": bool(episode.watched),
+        "watched": watched,
         "date_added": episode.date_added or 0,
         "air_date": episode.air_date or "",
         "runtime": episode.runtime or 0,
-        "file_runtime": episode.file_runtime or 0,
-        "last_played_at": episode.last_played_at or 0,
-        "video_codec": episode.video_codec or "",
-        "resolution": episode.resolution or "",
+        "file_runtime": file_runtime,
+        "last_played_at": last_played_at,
+        "video_codec": video_codec,
+        "resolution": resolution,
         "audio_tracks": audio_tracks,
         "subtitle_tracks": subtitle_tracks,
-        "bit_rate": episode.bit_rate or 0,
+        "bit_rate": bit_rate,
         "versions": versions,
         "default_path": episode.default_path or "",
     }
@@ -126,16 +163,55 @@ def _build_series_dict(series: Series) -> Dict[str, Any]:
 
 def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
     """Maps a single Movie ORM row to its plain dictionary representation."""
-    try:
-        audio_tracks = json.loads(movie.audio_tracks) if movie.audio_tracks else []
-    except Exception:
-        audio_tracks = []
-    try:
-        subtitle_tracks = (
-            json.loads(movie.subtitle_tracks) if movie.subtitle_tracks else []
-        )
-    except Exception:
-        subtitle_tracks = []
+    primary_mf = None
+    if movie.media_files:
+        if movie.default_path:
+            for mf in movie.media_files:
+                if mf.path == movie.default_path:
+                    primary_mf = mf
+                    break
+        if not primary_mf:
+            primary_mf = movie.media_files[0]
+
+    # Playback/watch states
+    watched = False
+    last_played_position = 0
+    last_played_at = 0
+    if primary_mf and primary_mf.playback_state:
+        watched = bool(primary_mf.playback_state.watched)
+        last_played_position = primary_mf.playback_state.last_played_position or 0
+        last_played_at = primary_mf.playback_state.last_played_at or 0
+
+    # Technical specs
+    video_codec = ""
+    resolution = ""
+    audio_tracks = []
+    subtitle_tracks = []
+    bit_rate = 0
+    file_runtime = 0
+    path = movie.default_path
+
+    if primary_mf:
+        if not path:
+            path = primary_mf.path
+        video_codec = primary_mf.video_codec or ""
+        resolution = primary_mf.resolution or ""
+        bit_rate = primary_mf.bit_rate or 0
+        file_runtime = primary_mf.runtime or 0
+        try:
+            audio_tracks = (
+                json.loads(primary_mf.audio_tracks) if primary_mf.audio_tracks else []
+            )
+        except Exception:
+            audio_tracks = []
+        try:
+            subtitle_tracks = (
+                json.loads(primary_mf.subtitle_tracks)
+                if primary_mf.subtitle_tracks
+                else []
+            )
+        except Exception:
+            subtitle_tracks = []
 
     versions = []
     for mf in movie.media_files:
@@ -163,7 +239,7 @@ def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
 
     return {
         "name": movie.name,
-        "path": movie.path,
+        "path": path,
         "jellyfin_id": movie.jellyfin_id,
         "tmdb_identifier": movie.tmdb_identifier,
         "poster_path": movie.poster_path,
@@ -173,18 +249,18 @@ def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
         "date_added": movie.date_added or 0,
         "myanimelist_anime_id": movie.myanimelist_anime_id,
         "runtime": movie.runtime or 0,
-        "file_runtime": movie.file_runtime or 0,
+        "file_runtime": file_runtime,
         "rating": movie.rating or "",
         "genre": movie.genre or "",
         "year": movie.year or 0,
-        "watched": bool(movie.watched),
-        "last_played_position": movie.last_played_position or 0,
-        "last_played_at": movie.last_played_at or 0,
-        "video_codec": movie.video_codec or "",
-        "resolution": movie.resolution or "",
+        "watched": watched,
+        "last_played_position": last_played_position,
+        "last_played_at": last_played_at,
+        "video_codec": video_codec,
+        "resolution": resolution,
         "audio_tracks": audio_tracks,
         "subtitle_tracks": subtitle_tracks,
-        "bit_rate": movie.bit_rate or 0,
+        "bit_rate": bit_rate,
         "versions": versions,
         "default_path": movie.default_path or "",
     }
@@ -205,17 +281,19 @@ def update_episode_path(old_path: str, new_path: str) -> None:
             ).first()
             if mf:
                 mf.path = new_path
-                if mf.episode:
-                    if mf.episode.default_path == old_path:
-                        mf.episode.default_path = new_path
+                for ep in mf.episodes:
+                    if ep.default_path == old_path:
+                        ep.default_path = new_path
+                for mv in mf.movies:
+                    if mv.default_path == old_path:
+                        mv.default_path = new_path
                 logger.debug(f"Updated MediaFile path to {new_path}")
             else:
                 episode = session.scalars(
-                    select(Episode).join(MediaFile).where(MediaFile.path == old_path)
+                    select(Episode).where(Episode.default_path == old_path)
                 ).first()
                 if episode:
-                    if episode.default_path == old_path:
-                        episode.default_path = new_path
+                    episode.default_path = new_path
                     logger.debug(f"Updated Episode default_path to {new_path}")
                 else:
                     logger.debug(f"No MediaFile or Episode found for path: {old_path}")
@@ -231,7 +309,7 @@ def is_movie(path: str) -> bool:
             from lan_streamer.db.models import MediaFile
 
             movie = session.scalars(
-                select(Movie).join(MediaFile).where(MediaFile.path == path)
+                select(Movie).join(Movie.media_files).where(MediaFile.path == path)
             ).first()
             result = movie is not None
             logger.debug(f"is_movie query response for path={path}: {result}")
@@ -278,7 +356,7 @@ def delete_episode_record(path: str) -> None:
             from lan_streamer.db.models import MediaFile
 
             episode = session.scalars(
-                select(Episode).join(MediaFile).where(MediaFile.path == path)
+                select(Episode).join(Episode.media_files).where(MediaFile.path == path)
             ).first()
             if episode:
                 session.delete(episode)

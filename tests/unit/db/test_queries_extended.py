@@ -116,7 +116,7 @@ def test_update_episode_watched_status_movie_path(mock_db_file) -> None:
 
         m = (
             session.query(Movie)
-            .join(MediaFile)
+            .join(Movie.media_files)
             .filter(MediaFile.path == "/movies/test.mkv")
             .first()
         )
@@ -146,7 +146,7 @@ def test_update_episode_watched_status_movie_unwatch(mock_db_file) -> None:
 
         m = (
             session.query(Movie)
-            .join(MediaFile)
+            .join(Movie.media_files)
             .filter(MediaFile.path == "/movies/watched.mkv")
             .first()
         )

@@ -2,10 +2,18 @@ import logging
 import time
 from typing import Set, Tuple, Any
 
-from sqlalchemy import select, update, func
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
-from lan_streamer.db.models import Series, Season, Episode, Movie, MediaFile
+from lan_streamer.db.models import (
+    Series,
+    Season,
+    Episode,
+    Movie,
+    MediaFile,
+    PlaybackState,
+    MetadataFileMapping,
+)
 
 
 def get_session() -> Any:
@@ -25,20 +33,38 @@ def _sync_watched_by_ids(session: Session, watched_ids: Set[str]) -> int:
     if not watched_ids:
         return 0
     logger.debug(f"Syncing watched status by ID for {len(watched_ids)} items")
-    count = int(
-        session.execute(
-            update(Episode)
-            .where(Episode.jellyfin_id.in_(watched_ids))
-            .values(watched=True)
-        ).rowcount  # type: ignore[attr-defined]
-        or 0
-    )
-    count += int(
-        session.execute(
-            update(Movie).where(Movie.jellyfin_id.in_(watched_ids)).values(watched=True)
-        ).rowcount  # type: ignore[attr-defined]
-        or 0
-    )
+    count = 0
+
+    # 1. Update playback_states for episodes matching watched_ids
+    ep_mfs = session.scalars(
+        select(MediaFile)
+        .join(MetadataFileMapping)
+        .join(Episode, Episode.id == MetadataFileMapping.episode_id)
+        .where(Episode.jellyfin_id.in_(watched_ids))
+    ).all()
+    for mf in ep_mfs:
+        if not mf.playback_state:
+            mf.playback_state = PlaybackState(media_file_id=mf.id)
+        if not mf.playback_state.watched:
+            mf.playback_state.watched = True
+            mf.playback_state.last_played_at = int(time.time())
+            count += 1
+
+    # 2. Update playback_states for movies matching watched_ids
+    mv_mfs = session.scalars(
+        select(MediaFile)
+        .join(MetadataFileMapping)
+        .join(Movie, Movie.id == MetadataFileMapping.movie_id)
+        .where(Movie.jellyfin_id.in_(watched_ids))
+    ).all()
+    for mf in mv_mfs:
+        if not mf.playback_state:
+            mf.playback_state = PlaybackState(media_file_id=mf.id)
+        if not mf.playback_state.watched:
+            mf.playback_state.watched = True
+            mf.playback_state.last_played_at = int(time.time())
+            count += 1
+
     logger.debug(f"Synced by ID: marked {count} items as watched")
     return count
 
@@ -51,36 +77,17 @@ def _sync_watched_by_paths(session: Session, watched_paths: Set[str]) -> int:
     if not watched_paths:
         return 0
     logger.debug(f"Syncing watched status by path for {len(watched_paths)} items")
-
-    ep_subquery = (
-        select(Episode.id)
-        .join(MediaFile)
-        .where(MediaFile.path.in_(watched_paths))
-        .scalar_subquery()
-    )
-    count = int(
-        session.execute(
-            update(Episode)
-            .where(Episode.watched.is_(False), Episode.id.in_(ep_subquery))
-            .values(watched=True)
-        ).rowcount  # type: ignore[attr-defined]
-        or 0
-    )
-
-    mv_subquery = (
-        select(Movie.id)
-        .join(MediaFile)
-        .where(MediaFile.path.in_(watched_paths))
-        .scalar_subquery()
-    )
-    count += int(
-        session.execute(
-            update(Movie)
-            .where(Movie.watched.is_(False), Movie.id.in_(mv_subquery))
-            .values(watched=True)
-        ).rowcount  # type: ignore[attr-defined]
-        or 0
-    )
+    mfs = session.scalars(
+        select(MediaFile).where(MediaFile.path.in_(watched_paths))
+    ).all()
+    count = 0
+    for mf in mfs:
+        if not mf.playback_state:
+            mf.playback_state = PlaybackState(media_file_id=mf.id)
+        if not mf.playback_state.watched:
+            mf.playback_state.watched = True
+            mf.playback_state.last_played_at = int(time.time())
+            count += 1
     logger.debug(f"Synced by path: marked {count} items as watched")
     return count
 
@@ -97,30 +104,23 @@ def _sync_watched_by_names(
     logger.debug(f"Syncing watched status by names for {len(watched_names)} pairs")
     count = 0
     for series_name, episode_name in watched_names:
-        episode_ids = list(
-            session.scalars(
-                select(Episode.id)
-                .join(Season)
-                .join(Series)
-                .where(
-                    Episode.watched.is_(False),
-                    func.lower(Series.name) == series_name.lower(),
-                    func.lower(Episode.name) == episode_name.lower(),
-                )
-            ).all()
-        )
-        if episode_ids:
-            logger.debug(
-                f"Found match: series '{series_name}', episode '{episode_name}' -> Episode IDs: {episode_ids}"
+        episodes = session.scalars(
+            select(Episode)
+            .join(Season)
+            .join(Series)
+            .where(
+                func.lower(Series.name) == series_name.lower(),
+                func.lower(Episode.name) == episode_name.lower(),
             )
-            count += int(
-                session.execute(
-                    update(Episode)
-                    .where(Episode.id.in_(episode_ids))
-                    .values(watched=True)
-                ).rowcount  # type: ignore[attr-defined]
-                or 0
-            )
+        ).all()
+        for ep in episodes:
+            for mf in ep.media_files:
+                if not mf.playback_state:
+                    mf.playback_state = PlaybackState(media_file_id=mf.id)
+                if not mf.playback_state.watched:
+                    mf.playback_state.watched = True
+                    mf.playback_state.last_played_at = int(time.time())
+                    count += 1
     logger.debug(f"Synced by names: marked {count} items as watched")
     return count
 
@@ -136,8 +136,6 @@ def sync_watched_from_jellyfin_data(
     OR whose (series_name, episode_name) is in watched_names.
     Returns the total number of rows updated.
     """
-    pass
-
     if not watched_ids and not watched_paths and not watched_names:
         logger.info("No watched IDs, paths, or names provided for Jellyfin sync.")
         return 0
@@ -167,8 +165,6 @@ def sync_watched_from_jellyfin_data(
 
 def get_all_episodes_with_jellyfin_id() -> list:
     """Returns a list of all episodes and movies that have a Jellyfin ID associated."""
-    pass
-
     items: list = []
     try:
         with get_session() as session:
@@ -181,12 +177,19 @@ def get_all_episodes_with_jellyfin_id() -> list:
                     )
                 ).all()
                 for row in rows:
+                    path = row.default_path or (
+                        row.media_files[0].path if row.media_files else None
+                    )
+                    watched = any(
+                        mf.playback_state and mf.playback_state.watched
+                        for mf in row.media_files
+                    )
                     items.append(
                         {
                             "name": row.name,
-                            "path": row.path,
+                            "path": path,
                             "jellyfin_id": row.jellyfin_id,
-                            "watched": row.watched,
+                            "watched": watched,
                         }
                     )
     except Exception:

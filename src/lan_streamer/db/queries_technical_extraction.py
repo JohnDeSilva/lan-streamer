@@ -20,9 +20,14 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
     try:
         logger.debug("Executing DB query: get_items_missing_runtime")
         with get_session() as session:
+            from lan_streamer.db.models import MetadataFileMapping
+
             episodes = session.scalars(
                 select(Episode)
-                .outerjoin(Episode.media_files)
+                .outerjoin(
+                    MetadataFileMapping, MetadataFileMapping.episode_id == Episode.id
+                )
+                .outerjoin(MediaFile, MediaFile.id == MetadataFileMapping.media_file_id)
                 .where(
                     (MediaFile.id.is_(None))
                     | (MediaFile.runtime.is_(None))
@@ -39,11 +44,14 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
                 .distinct()
             ).all()
             for episode in episodes:
-                if episode.path:
+                path = episode.default_path or (
+                    episode.media_files[0].path if episode.media_files else None
+                )
+                if path:
                     items_list.append(
                         {
                             "id": episode.id,
-                            "path": episode.path,
+                            "path": path,
                             "type": "episode",
                             "season_id": episode.season_id,
                         }
@@ -51,7 +59,10 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
 
             movies = session.scalars(
                 select(Movie)
-                .outerjoin(Movie.media_files)
+                .outerjoin(
+                    MetadataFileMapping, MetadataFileMapping.movie_id == Movie.id
+                )
+                .outerjoin(MediaFile, MediaFile.id == MetadataFileMapping.media_file_id)
                 .where(
                     (MediaFile.id.is_(None))
                     | (MediaFile.runtime.is_(None))
@@ -68,10 +79,11 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
                 .distinct()
             ).all()
             for movie in movies:
-                if movie.path:
-                    items_list.append(
-                        {"id": movie.id, "path": movie.path, "type": "movie"}
-                    )
+                path = movie.default_path or (
+                    movie.media_files[0].path if movie.media_files else None
+                )
+                if path:
+                    items_list.append({"id": movie.id, "path": path, "type": "movie"})
         logger.debug(
             f"get_items_missing_runtime query response: found {len(items_list)} items"
         )
@@ -107,21 +119,22 @@ def update_item_runtime(
                         runtime_minutes > 0 or not episode.file_runtime
                     ):
                         episode.file_runtime = runtime_minutes
-                    if video_codec:
-                        episode.video_codec = video_codec
-                        if episode.media_files:
-                            episode.media_files[0].video_codec = video_codec
-                    if resolution:
-                        episode.resolution = resolution
-                    if bit_rate is not None:
-                        episode.bit_rate = bit_rate
-                    if audio_tracks is not None:
-                        episode.audio_tracks = json.dumps(audio_tracks)
-                    if subtitle_tracks is not None:
-                        episode.subtitle_tracks = json.dumps(subtitle_tracks)
-                    if size_bytes is not None:
-                        if episode.media_files:
-                            episode.media_files[0].size_bytes = size_bytes
+                    if episode.media_files:
+                        mf = episode.media_files[0]
+                        if video_codec:
+                            mf.video_codec = video_codec
+                        if resolution:
+                            mf.resolution = resolution
+                        if bit_rate is not None:
+                            mf.bit_rate = bit_rate
+                        if audio_tracks is not None:
+                            mf.audio_tracks = json.dumps(audio_tracks)
+                        if subtitle_tracks is not None:
+                            mf.subtitle_tracks = json.dumps(subtitle_tracks)
+                        if size_bytes is not None:
+                            mf.size_bytes = size_bytes
+                        if runtime_minutes is not None:
+                            mf.runtime = runtime_minutes
             elif item_type == "movie":
                 movie = session.scalars(
                     select(Movie).where(Movie.id == item_identifier)
@@ -131,21 +144,22 @@ def update_item_runtime(
                         runtime_minutes > 0 or not movie.file_runtime
                     ):
                         movie.file_runtime = runtime_minutes
-                    if video_codec:
-                        movie.video_codec = video_codec
-                        if movie.media_files:
-                            movie.media_files[0].video_codec = video_codec
-                    if resolution:
-                        movie.resolution = resolution
-                    if bit_rate is not None:
-                        movie.bit_rate = bit_rate
-                    if audio_tracks is not None:
-                        movie.audio_tracks = json.dumps(audio_tracks)
-                    if subtitle_tracks is not None:
-                        movie.subtitle_tracks = json.dumps(subtitle_tracks)
-                    if size_bytes is not None:
-                        if movie.media_files:
-                            movie.media_files[0].size_bytes = size_bytes
+                    if movie.media_files:
+                        mf = movie.media_files[0]
+                        if video_codec:
+                            mf.video_codec = video_codec
+                        if resolution:
+                            mf.resolution = resolution
+                        if bit_rate is not None:
+                            mf.bit_rate = bit_rate
+                        if audio_tracks is not None:
+                            mf.audio_tracks = json.dumps(audio_tracks)
+                        if subtitle_tracks is not None:
+                            mf.subtitle_tracks = json.dumps(subtitle_tracks)
+                        if size_bytes is not None:
+                            mf.size_bytes = size_bytes
+                        if runtime_minutes is not None:
+                            mf.runtime = runtime_minutes
         logger.debug(f"Saved DB updates for {item_type} ID {item_identifier!r}")
     except Exception:
         logger.exception(
@@ -180,21 +194,22 @@ def update_items_runtime_batch(updates: List[Dict[str, Any]]) -> None:
                             runtime_minutes > 0 or not episode.file_runtime
                         ):
                             episode.file_runtime = runtime_minutes
-                        if video_codec:
-                            episode.video_codec = video_codec
-                            if episode.media_files:
-                                episode.media_files[0].video_codec = video_codec
-                        if resolution:
-                            episode.resolution = resolution
-                        if bit_rate is not None:
-                            episode.bit_rate = bit_rate
-                        if audio_tracks is not None:
-                            episode.audio_tracks = json.dumps(audio_tracks)
-                        if subtitle_tracks is not None:
-                            episode.subtitle_tracks = json.dumps(subtitle_tracks)
-                        if size_bytes is not None:
-                            if episode.media_files:
-                                episode.media_files[0].size_bytes = size_bytes
+                        if episode.media_files:
+                            mf = episode.media_files[0]
+                            if video_codec:
+                                mf.video_codec = video_codec
+                            if resolution:
+                                mf.resolution = resolution
+                            if bit_rate is not None:
+                                mf.bit_rate = bit_rate
+                            if audio_tracks is not None:
+                                mf.audio_tracks = json.dumps(audio_tracks)
+                            if subtitle_tracks is not None:
+                                mf.subtitle_tracks = json.dumps(subtitle_tracks)
+                            if size_bytes is not None:
+                                mf.size_bytes = size_bytes
+                            if runtime_minutes is not None:
+                                mf.runtime = runtime_minutes
                 elif item_type == "movie":
                     movie = session.scalars(
                         select(Movie).where(Movie.id == item_identifier)
@@ -204,21 +219,22 @@ def update_items_runtime_batch(updates: List[Dict[str, Any]]) -> None:
                             runtime_minutes > 0 or not movie.file_runtime
                         ):
                             movie.file_runtime = runtime_minutes
-                        if video_codec:
-                            movie.video_codec = video_codec
-                            if movie.media_files:
-                                movie.media_files[0].video_codec = video_codec
-                        if resolution:
-                            movie.resolution = resolution
-                        if bit_rate is not None:
-                            movie.bit_rate = bit_rate
-                        if audio_tracks is not None:
-                            movie.audio_tracks = json.dumps(audio_tracks)
-                        if subtitle_tracks is not None:
-                            movie.subtitle_tracks = json.dumps(subtitle_tracks)
-                        if size_bytes is not None:
-                            if movie.media_files:
-                                movie.media_files[0].size_bytes = size_bytes
+                        if movie.media_files:
+                            mf = movie.media_files[0]
+                            if video_codec:
+                                mf.video_codec = video_codec
+                            if resolution:
+                                mf.resolution = resolution
+                            if bit_rate is not None:
+                                mf.bit_rate = bit_rate
+                            if audio_tracks is not None:
+                                mf.audio_tracks = json.dumps(audio_tracks)
+                            if subtitle_tracks is not None:
+                                mf.subtitle_tracks = json.dumps(subtitle_tracks)
+                            if size_bytes is not None:
+                                mf.size_bytes = size_bytes
+                            if runtime_minutes is not None:
+                                mf.runtime = runtime_minutes
         logger.debug(f"Saved DB batch updates for {len(updates)} items")
     except Exception:
         logger.exception("Error during batch update of runtimes and technical info")
