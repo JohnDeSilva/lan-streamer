@@ -1,6 +1,8 @@
 import logging
+import os
 import re
 from pathlib import Path
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +55,56 @@ def _is_video_file(file_path: Path) -> bool:
     return file_path.is_file() and file_path.suffix.lower() in VIDEO_EXTENSIONS
 
 
+def find_video_files(directory: Path) -> List[Path]:
+    """
+    Recursively finds all video files under directory using fast os.scandir traversal.
+    Skips hidden folders/files starting with '.' to speed up scanning.
+    """
+    video_files = []
+    stack = [str(directory)]
+    while stack:
+        curr_dir = stack.pop()
+        try:
+            with os.scandir(curr_dir) as it:
+                for entry in it:
+                    if entry.name.startswith("."):
+                        continue
+                    try:
+                        if entry.is_file(follow_symlinks=True):
+                            _, ext = os.path.splitext(entry.name)
+                            if ext.lower() in VIDEO_EXTENSIONS:
+                                video_files.append(Path(entry.path))
+                        elif entry.is_dir(follow_symlinks=True):
+                            stack.append(entry.path)
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+    return video_files
+
+
 def has_video_files(directory: Path) -> bool:
     """Recursively checks if the directory contains any video files."""
     try:
-        for path in directory.rglob("*"):
-            if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS:
-                return True
-    except OSError:
+        stack = [str(directory)]
+        while stack:
+            curr_dir = stack.pop()
+            try:
+                with os.scandir(curr_dir) as it:
+                    for entry in it:
+                        if entry.name.startswith("."):
+                            continue
+                        try:
+                            if entry.is_file(follow_symlinks=True):
+                                _, ext = os.path.splitext(entry.name)
+                                if ext.lower() in VIDEO_EXTENSIONS:
+                                    return True
+                            elif entry.is_dir(follow_symlinks=True):
+                                stack.append(entry.path)
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+    except Exception:
         pass
     return False

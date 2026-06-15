@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from lan_streamer.db.models import Series, Season, Episode, Movie, MediaFile
 from lan_streamer.system.config import config
@@ -173,7 +173,9 @@ def _cleanup_movie_library(
 ) -> None:
     """Removes Movie records whose file path no longer exists on disk."""
     movie_list = session.scalars(
-        select(Movie).where(Movie.library_name == library_name)
+        select(Movie)
+        .where(Movie.library_name == library_name)
+        .options(selectinload(Movie.media_files))
     ).all()
     for movie in movie_list:
         path = movie.default_path or (
@@ -200,7 +202,13 @@ def _cleanup_tv_library(
     when the parent series record is removed.
     """
     series_list = session.scalars(
-        select(Series).where(Series.library_name == library_name)
+        select(Series)
+        .where(Series.library_name == library_name)
+        .options(
+            selectinload(Series.seasons)
+            .selectinload(Season.episodes)
+            .selectinload(Episode.media_files)
+        )
     ).all()
 
     for series in series_list:
@@ -253,6 +261,14 @@ def load_library(library_name: str) -> Dict[str, Any]:
             series_list = session.scalars(
                 select(Series)
                 .where(Series.library_name == library_name)
+                .options(
+                    selectinload(Series.seasons)
+                    .selectinload(Season.episodes)
+                    .selectinload(Episode.media_files),
+                    selectinload(Series.seasons)
+                    .selectinload(Season.episodes)
+                    .selectinload(Episode.playback_state),
+                )
                 .order_by(Series.name)
             ).all()
 
@@ -555,7 +571,16 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
             existing_series = {
                 series_obj.name: series_obj
                 for series_obj in session.scalars(
-                    select(Series).where(Series.library_name == library_name)
+                    select(Series)
+                    .where(Series.library_name == library_name)
+                    .options(
+                        selectinload(Series.seasons)
+                        .selectinload(Season.episodes)
+                        .selectinload(Episode.media_files),
+                        selectinload(Series.seasons)
+                        .selectinload(Season.episodes)
+                        .selectinload(Episode.playback_state),
+                    )
                 ).all()
                 if series_obj.name is not None
             }
@@ -672,6 +697,9 @@ def load_movie_library(library_name: str) -> Dict[str, Any]:
             movie_list = session.scalars(
                 select(Movie)
                 .where(Movie.library_name == library_name)
+                .options(
+                    selectinload(Movie.media_files), selectinload(Movie.playback_state)
+                )
                 .order_by(Movie.name)
             ).all()
 
@@ -709,7 +737,12 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
             existing_movies_by_name = {
                 m.name: m
                 for m in session.scalars(
-                    select(Movie).where(Movie.library_name == library_name)
+                    select(Movie)
+                    .where(Movie.library_name == library_name)
+                    .options(
+                        selectinload(Movie.media_files),
+                        selectinload(Movie.playback_state),
+                    )
                 ).all()
                 if m.name is not None
             }
@@ -724,6 +757,10 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
                         select(Movie)
                         .join(Movie.media_files)
                         .where(MediaFile.path.in_(incoming_paths))
+                        .options(
+                            selectinload(Movie.media_files),
+                            selectinload(Movie.playback_state),
+                        )
                     ).all()
                     if m.path is not None
                 }
@@ -926,6 +963,14 @@ def save_season_data(
                     select(Series)
                     .where(Series.library_name == library_name)
                     .where(Series.name == series_name)
+                    .options(
+                        selectinload(Series.seasons)
+                        .selectinload(Season.episodes)
+                        .selectinload(Episode.media_files),
+                        selectinload(Series.seasons)
+                        .selectinload(Season.episodes)
+                        .selectinload(Episode.playback_state),
+                    )
                 ).all()
                 if series_obj.name is not None
             }
@@ -1028,13 +1073,22 @@ def save_movie_data(
                 select(Movie)
                 .where(Movie.library_name == library_name)
                 .where(Movie.name == movie_name)
+                .options(
+                    selectinload(Movie.media_files), selectinload(Movie.playback_state)
+                )
             ).first()
 
             path = movie_data.get("path")
             movie = None
             if path:
                 movie = session.scalars(
-                    select(Movie).join(Movie.media_files).where(MediaFile.path == path)
+                    select(Movie)
+                    .join(Movie.media_files)
+                    .where(MediaFile.path == path)
+                    .options(
+                        selectinload(Movie.media_files),
+                        selectinload(Movie.playback_state),
+                    )
                 ).first()
 
             if not movie:
@@ -1047,6 +1101,10 @@ def save_movie_data(
                         select(Movie)
                         .where(Movie.library_name == library_name)
                         .where(Movie.tmdb_identifier == tmdb_id)
+                        .options(
+                            selectinload(Movie.media_files),
+                            selectinload(Movie.playback_state),
+                        )
                     ).first()
 
             if not movie:
