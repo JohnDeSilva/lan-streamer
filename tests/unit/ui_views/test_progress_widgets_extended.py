@@ -192,6 +192,39 @@ class TestSegmentedProgressBar:
         finally:
             config.libraries = {}
 
+    def test_set_pass3_progress_zero_total(self, qtbot) -> None:
+        bar = SegmentedProgressBar()
+        qtbot.addWidget(bar)
+        bar.set_pass3_progress(0, 0)
+        assert bar._pass3_fraction == 1.0
+
+    def test_paint_event_passes(self, qtbot) -> None:
+        bar = SegmentedProgressBar()
+        qtbot.addWidget(bar)
+        tree = {
+            "Shows": {
+                "type": "tv",
+                "roots": {"/shows1": {"A": {}}},
+            }
+        }
+        bar.init_from_tree(
+            tree, library_config_source={"Shows": {"paths": ["/shows1"]}}
+        )
+        bar.mark_library_active("Shows")
+        bar.resize(400, 60)
+        bar.show()
+
+        # Pass 1
+        bar.repaint()
+
+        # Pass 2
+        bar.set_current_pass(2)
+        bar.repaint()
+
+        # Pass 3
+        bar.set_pass3_progress(1, 2)
+        bar.repaint()
+
 
 # ===========================================================================
 # ScanProgressTree
@@ -417,6 +450,18 @@ class TestScanProgressTree:
         w.mark_file_active(new_ep_path, "Shows", "My Show", season="")
         assert new_ep_path in w._file_nodes
 
+    def test_mark_file_active_no_parent(self, qtbot) -> None:
+        w = ScanProgressTree()
+        qtbot.addWidget(w)
+        w.init_from_tree(_tv_tree(), library_config_source=_config_source)
+        w.mark_file_active(
+            "/shows/My Show/Season 1/nonexistent_file.mkv",
+            "NonexistentLib",
+            "NonexistentFolder",
+            "Season 1",
+        )
+        assert "/shows/My Show/Season 1/nonexistent_file.mkv" not in w._file_nodes
+
 
 # ===========================================================================
 # LibraryScanProgressBar
@@ -513,3 +558,37 @@ class TestLibraryScanProgressBar:
         bar.resize(400, 20)
         bar.show()
         bar.repaint()  # Should paint root in DONE state, no crash
+
+    def test_set_pass3_progress_zero_total(self, qtbot) -> None:
+        bar = LibraryScanProgressBar()
+        qtbot.addWidget(bar)
+        bar.set_pass3_progress(0, 0)
+        assert bar._pass3_fraction == 1.0
+
+    def test_paint_event_empty_roots(self, qtbot) -> None:
+        bar = LibraryScanProgressBar()
+        qtbot.addWidget(bar)
+        bar.resize(400, 20)
+        bar.show()
+        bar.repaint()
+
+    def test_paint_event_passes(self, qtbot) -> None:
+        bar = LibraryScanProgressBar()
+        qtbot.addWidget(bar)
+        roots = {"/tv": ["ShowA"]}
+        bar.init_from_roots(roots, ["/tv"])
+        bar.mark_folder_active("/tv", "ShowA")
+        bar.resize(400, 20)
+        bar.show()
+
+        # Pass 1
+        bar.set_current_pass(1)
+        bar.repaint()
+
+        # Pass 2
+        bar.set_current_pass(2)
+        bar.repaint()
+
+        # Pass 3
+        bar.set_pass3_progress(1, 2)
+        bar.repaint()
