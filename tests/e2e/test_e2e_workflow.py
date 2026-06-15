@@ -911,12 +911,44 @@ def test_settings_dialog_global_actions(qtbot: Any) -> None:
     qtbot.addWidget(dialog_instance)
 
     with patch.object(controller_instance, "trigger_scan_all") as mock_scan_all:
-        dialog_instance.trigger_global_scan_files()
-        mock_scan_all.assert_called_once_with(False)
+        dialog_instance.trigger_full_scan_files()
+        mock_scan_all.assert_called_once_with(
+            force_refresh=False,
+            run_pass1=True,
+            run_pass2=True,
+            chain_pass3=True,
+            chain_cleanup=True,
+        )
 
-        dialog_instance.force_refresh_checkbox.setChecked(True)
-        dialog_instance.trigger_global_refresh_metadata()
-        mock_scan_all.assert_called_with(True)
+        mock_scan_all.reset_mock()
+        dialog_instance.trigger_pass1_scan()
+        mock_scan_all.assert_called_once_with(
+            force_refresh=False,
+            run_pass1=True,
+            run_pass2=False,
+            chain_pass3=False,
+            chain_cleanup=False,
+        )
+
+        mock_scan_all.reset_mock()
+        dialog_instance.trigger_pass2_scan()
+        mock_scan_all.assert_called_once_with(
+            force_refresh=False,
+            run_pass1=False,
+            run_pass2=True,
+            chain_pass3=False,
+            chain_cleanup=False,
+        )
+
+    with patch.object(
+        controller_instance, "trigger_runtime_extraction"
+    ) as mock_runtime:
+        dialog_instance.trigger_pass3_scan()
+        mock_runtime.assert_called_once()
+
+    with patch.object(controller_instance, "trigger_global_cleanup") as mock_cleanup:
+        dialog_instance.trigger_garbage_cleanup()
+        mock_cleanup.assert_called_once()
 
     with patch.object(controller_instance, "trigger_jellyfin_pull") as mock_pull:
         dialog_instance.trigger_global_jellyfin_pull()
@@ -977,9 +1009,11 @@ def test_settings_dialog_global_actions(qtbot: Any) -> None:
 
     # Test no controller instance handles safely
     dialog_no_controller = SettingsDialog(None)
-    dialog_no_controller.trigger_global_scan_files()
-
-    dialog_no_controller.trigger_global_refresh_metadata()
+    dialog_no_controller.trigger_full_scan_files()
+    dialog_no_controller.trigger_pass1_scan()
+    dialog_no_controller.trigger_pass2_scan()
+    dialog_no_controller.trigger_pass3_scan()
+    dialog_no_controller.trigger_garbage_cleanup()
     dialog_no_controller.trigger_global_jellyfin_pull()
     dialog_no_controller.trigger_global_jellyfin_push()
 
