@@ -1,3 +1,26 @@
+## v0.30.0 (2026-06-15)
+
+### Feat
+
+- **scanner**: Decouple scanning pipeline into Pass 1 (Offline) and Pass 2 (Online Metadata-Only)
+
+### Fix
+
+- **scan**: flush deletes immediatly to minimize unique constraint errors
+- improve next up filtering
+- **ui**: updaet UI to reflect multipass scan
+- **db**: implement Plex/Jellyfin-style "Next Up" continuation and sorting rules
+- **db**: cleanup deleted and renamed files
+
+### Refactor
+
+- **db**: couple playback and watch states to creative metadata records
+- **db**: decouple physical media files and playback states from metadata
+
+### Perf
+
+- **db**: optimize join performance on large libraries
+
 ## v0.29.0 (2026-06-12)
 
 ### Feat
