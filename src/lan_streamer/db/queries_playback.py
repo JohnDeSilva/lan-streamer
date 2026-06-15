@@ -353,7 +353,7 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
             f"get_combined_next_up: fetching next up items for libraries={library_names}"
         )
         with get_session() as session:
-            from lan_streamer.db.models import PlaybackState, MetadataFileMapping
+            from lan_streamer.db.models import PlaybackState
 
             # Find series that have any episode where watched is True or last_played_at > 0, and the episode has a file path (not missing/future)
             series_stmt = (
@@ -361,11 +361,9 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
                 .join(Season)
                 .join(Episode)
                 .join(PlaybackState, PlaybackState.episode_id == Episode.id)
-                .join(MetadataFileMapping, MetadataFileMapping.episode_id == Episode.id)
-                .join(MediaFile, MediaFile.id == MetadataFileMapping.media_file_id)
                 .where(
-                    (MediaFile.path.isnot(None))
-                    & (MediaFile.path != "")
+                    (Episode.default_path.isnot(None))
+                    & (Episode.default_path != "")
                     & (
                         (PlaybackState.watched.is_(True))
                         | (PlaybackState.last_played_at > 0)
