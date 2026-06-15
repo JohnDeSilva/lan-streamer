@@ -495,6 +495,8 @@ class MetadataFileMapping(Base):
         UniqueConstraint(
             "media_file_id", "episode_id", "movie_id", name="uq_metadata_file_mappings"
         ),
+        Index("idx_metadata_file_mappings_episode", "episode_id", "media_file_id"),
+        Index("idx_metadata_file_mappings_movie", "movie_id", "media_file_id"),
     )
 
 
