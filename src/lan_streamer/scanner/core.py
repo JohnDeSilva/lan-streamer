@@ -13,8 +13,8 @@ from lan_streamer.scanner.file_property_scanner import (
 from lan_streamer.scanner.parser import (
     VIDEO_EXTENSIONS,
     has_video_files,
-    _is_video_file,
     _parse_movie_folder,
+    find_video_files,
 )
 from lan_streamer.scanner.metadata import (
     _resolve_existing_jellyfin_id,
@@ -518,10 +518,7 @@ def scan_movie(
         video_file = Path(video_path)
         ctime = existing_movie_data.get("date_added") or 0
     else:
-        video_files = []
-        for file in movie_directory.rglob("*"):
-            if file.is_file() and file.suffix.lower() in VIDEO_EXTENSIONS:
-                video_files.append(file)
+        video_files = find_video_files(movie_directory)
 
         if not video_files:
             return None
@@ -752,11 +749,7 @@ def _has_movie_files_changed(
     Checks if the files for a movie have changed in its folder.
     """
     try:
-        disk_files = [
-            f
-            for f in movie_dir.rglob("*")
-            if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS
-        ]
+        disk_files = find_video_files(movie_dir)
     except Exception:
         return True
 
@@ -810,31 +803,30 @@ def scan_series(
     outside_file_paths = []
     nested_too_deeply = []
     if not metadata_only:
-        for file_path in series_directory.rglob("*"):
-            if file_path.is_file() and _is_video_file(file_path):
-                try:
-                    rel_path = file_path.relative_to(series_directory)
-                    parts = rel_path.parts
-                    if len(parts) == 1:
+        for file_path in find_video_files(series_directory):
+            try:
+                rel_path = file_path.relative_to(series_directory)
+                parts = rel_path.parts
+                if len(parts) == 1:
+                    outside_file_paths.append(file_path)
+                else:
+                    first_dir = parts[0]
+                    first_dir_lower = first_dir.lower()
+                    is_valid = (
+                        "season" in first_dir_lower
+                        or "special" in first_dir_lower
+                        or "extra" in first_dir_lower
+                        or "featurette" in first_dir_lower
+                        or "bonus" in first_dir_lower
+                        or "shorts" in first_dir_lower
+                        or bool(re.search(r"\d+", first_dir))
+                    )
+                    if not is_valid:
                         outside_file_paths.append(file_path)
-                    else:
-                        first_dir = parts[0]
-                        first_dir_lower = first_dir.lower()
-                        is_valid = (
-                            "season" in first_dir_lower
-                            or "special" in first_dir_lower
-                            or "extra" in first_dir_lower
-                            or "featurette" in first_dir_lower
-                            or "bonus" in first_dir_lower
-                            or "shorts" in first_dir_lower
-                            or bool(re.search(r"\d+", first_dir))
-                        )
-                        if not is_valid:
-                            outside_file_paths.append(file_path)
-                        elif len(parts) > 2:
-                            nested_too_deeply.append(file_path)
-                except Exception:
-                    pass
+                    elif len(parts) > 2:
+                        nested_too_deeply.append(file_path)
+            except Exception:
+                pass
 
         if outside_file_paths:
             logger.warning(

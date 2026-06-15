@@ -7,8 +7,8 @@ from typing import Dict, List, Any
 from lan_streamer.scanner.proxy import tmdb_client, _parse_episode_number
 from lan_streamer.db import natural_sort_key
 from lan_streamer.scanner.parser import (
-    _is_video_file,
     _parse_season_number,
+    find_video_files,
 )
 
 logger = logging.getLogger("lan_streamer.scanner")
@@ -262,34 +262,33 @@ def _detect_new_series_files(
     Returns True when at least one video file inside *series_directory* is not
     present in *existing_episodes_by_path*, indicating the library has grown.
     """
-    for file_path in series_directory.rglob("*"):
-        if _is_video_file(file_path):
-            try:
-                rel_path = file_path.relative_to(series_directory)
-                parts = rel_path.parts
-                if len(parts) > 2:
-                    first_dir = parts[0]
-                    first_dir_lower = first_dir.lower()
-                    is_valid_season = (
-                        "season" in first_dir_lower
-                        or "special" in first_dir_lower
-                        or "extra" in first_dir_lower
-                        or "featurette" in first_dir_lower
-                        or "bonus" in first_dir_lower
-                        or "shorts" in first_dir_lower
-                        or bool(re.search(r"\d+", first_dir))
-                    )
-                    if is_valid_season:
-                        continue
-            except Exception:
-                pass
-
-            abs_path = str(file_path.absolute())
-            if abs_path not in existing_episodes_by_path:
-                logger.debug(
-                    f"New/unindexed file detected in '{series_directory.name}': '{abs_path}'"
+    for file_path in find_video_files(series_directory):
+        try:
+            rel_path = file_path.relative_to(series_directory)
+            parts = rel_path.parts
+            if len(parts) > 2:
+                first_dir = parts[0]
+                first_dir_lower = first_dir.lower()
+                is_valid_season = (
+                    "season" in first_dir_lower
+                    or "special" in first_dir_lower
+                    or "extra" in first_dir_lower
+                    or "featurette" in first_dir_lower
+                    or "bonus" in first_dir_lower
+                    or "shorts" in first_dir_lower
+                    or bool(re.search(r"\d+", first_dir))
                 )
-                return True
+                if is_valid_season:
+                    continue
+        except Exception:
+            pass
+
+        abs_path = str(file_path.absolute())
+        if abs_path not in existing_episodes_by_path:
+            logger.debug(
+                f"New/unindexed file detected in '{series_directory.name}': '{abs_path}'"
+            )
+            return True
     return False
 
 
