@@ -825,6 +825,63 @@ def test_get_combined_next_up_plex_style(mock_db_file) -> None:
     assert results[2]["series_name"] == "Show 3"
 
 
+def test_get_combined_next_up_ignores_specials_and_uses_default_grouping(
+    mock_db_file,
+) -> None:
+    from lan_streamer.db import get_session, get_combined_next_up
+
+    with get_session() as session:
+        # Create a series with a Specials season and Season 1
+        series = Series(name="Show X", library_name="TV Shows")
+        session.add(series)
+        session.flush()
+
+        specials_season = Season(series_id=series.id, name="Specials")
+        season1 = Season(series_id=series.id, name="Season 1")
+        session.add_all([specials_season, season1])
+        session.flush()
+
+        # Episode in Specials (watched, last_played_at is highest)
+        spec_ep = Episode(
+            season_id=specials_season.id,
+            name="Special Episode.mkv",
+            path="/p/spec_ep.mkv",
+            watched=True,
+            last_played_at=2000,
+            tmdb_number=1,
+        )
+        # Episodes in Season 1
+        # ep1 is watched, but named "B Title.mkv"
+        # ep2 is unwatched, but named "A Title.mkv"
+        ep2 = Episode(
+            season_id=season1.id,
+            name="A Title.mkv",
+            path="/p/ep2.mkv",
+            watched=False,
+            tmdb_number=2,
+        )
+        ep1 = Episode(
+            season_id=season1.id,
+            name="B Title.mkv",
+            path="/p/ep1.mkv",
+            watched=True,
+            last_played_at=1000,
+            tmdb_number=1,
+        )
+        session.add_all([spec_ep, ep1, ep2])
+        session.commit()
+
+    # Call get_combined_next_up
+    results = get_combined_next_up(["TV Shows"])
+
+    # Specials must be completely ignored.
+    # The next up episode should be Ep 2 (unwatched) in Season 1.
+    assert len(results) == 1
+    assert results[0]["series_name"] == "Show X"
+    assert results[0]["season_name"] == "Season 1"
+    assert results[0]["last_played_at"] == 1000  # From ep1, spec_ep is ignored
+
+
 def test_get_combined_smart_row_next_up(mock_db_file) -> None:
     from lan_streamer.db import get_session, get_combined_smart_row
 
