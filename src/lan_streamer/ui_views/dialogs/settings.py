@@ -680,58 +680,75 @@ class SettingsDialog(QDialog):
         management_layout: QVBoxLayout = QVBoxLayout(management_tab)
         management_layout.setSpacing(15)
 
-        self.scan_all_button: QPushButton = QPushButton(
-            "Scan New Files (All Libraries)"
+        self.scan_files_button: QPushButton = QPushButton("Scan Files")
+        self.scan_files_button.setStyleSheet(
+            "QPushButton {"
+            "    background-color: #2a82da;"
+            "    color: #ffffff;"
+            "    font-size: 16px;"
+            "    font-weight: bold;"
+            "    padding: 12px 24px;"
+            "    border: none;"
+            "    border-radius: 6px;"
+            "}"
+            "QPushButton:hover {"
+            "    background-color: #3592ea;"
+            "}"
+            "QPushButton:pressed {"
+            "    background-color: #1a62ba;"
+            "}"
+            "QPushButton:disabled {"
+            "    background-color: #3a3a3a;"
+            "    color: #888888;"
+            "}"
         )
-        self.scan_all_button.setObjectName("accentButton")
-        self.scan_all_button.clicked.connect(self.trigger_global_scan_files)
-        management_layout.addWidget(self.scan_all_button)
+        self.scan_files_button.clicked.connect(self.trigger_full_scan_files)
+        management_layout.addWidget(self.scan_files_button)
 
-        self.extract_runtime_button: QPushButton = QPushButton(
-            "Extract Missing Video Runtimes (Background)"
-        )
-        self.extract_runtime_button.clicked.connect(
-            self.trigger_global_runtime_extraction
-        )
-        management_layout.addWidget(self.extract_runtime_button)
-
-        # Refresh Metadata Group
-        self.refresh_frame: QFrame = QFrame()
-        self.refresh_frame.setStyleSheet(
+        # Individual scan passes group
+        self.passes_frame: QFrame = QFrame()
+        self.passes_frame.setStyleSheet(
             "QFrame { background-color: #222222; border: 1px solid #333333; border-radius: 6px; }"
         )
-        refresh_layout: QVBoxLayout = QVBoxLayout(self.refresh_frame)
-        refresh_layout.setSpacing(10)
+        passes_layout: QVBoxLayout = QVBoxLayout(self.passes_frame)
+        passes_layout.setSpacing(10)
 
-        refresh_all_button: QPushButton = QPushButton(
-            "Refresh Metadata (All Libraries)"
+        passes_title = QLabel("Individual Scan Passes")
+        passes_title.setStyleSheet(
+            "font-size: 14px; font-weight: bold; color: #e2e8f0; border: none;"
         )
-        refresh_all_button.clicked.connect(self.trigger_global_refresh_metadata)
-        refresh_layout.addWidget(refresh_all_button)
+        passes_layout.addWidget(passes_title)
 
-        refresh_layout.addWidget(self.force_refresh_checkbox)
-        management_layout.addWidget(self.refresh_frame)
+        self.pass1_button: QPushButton = QPushButton("File Scan")
+        self.pass1_button.clicked.connect(self.trigger_pass1_scan)
+        passes_layout.addWidget(self.pass1_button)
 
-        # Jellyfin Sync Group
-        self.jellyfin_frame: QFrame = QFrame()
-        self.jellyfin_frame.setStyleSheet(
-            "QFrame { background-color: #222222; border: 1px solid #333333; border-radius: 6px; }"
+        self.pass2_button: QPushButton = QPushButton("Metadata Resolution")
+        self.pass2_button.clicked.connect(self.trigger_pass2_scan)
+        passes_layout.addWidget(self.pass2_button)
+
+        self.pass3_button: QPushButton = QPushButton("Runtime Extraction")
+        self.pass3_button.clicked.connect(self.trigger_pass3_scan)
+        passes_layout.addWidget(self.pass3_button)
+
+        self.cleanup_button: QPushButton = QPushButton("Garbage Cleanup")
+        self.cleanup_button.clicked.connect(self.trigger_garbage_cleanup)
+        passes_layout.addWidget(self.cleanup_button)
+
+        management_layout.addWidget(self.passes_frame)
+
+        # Watch history sync buttons
+        self.pull_watch_history_button: QPushButton = QPushButton("Pull Watch History")
+        self.pull_watch_history_button.clicked.connect(
+            self.trigger_global_jellyfin_pull
         )
-        jellyfin_layout: QVBoxLayout = QVBoxLayout(self.jellyfin_frame)
-        jellyfin_layout.setSpacing(10)
+        management_layout.addWidget(self.pull_watch_history_button)
 
-        pull_all_button: QPushButton = QPushButton(
-            "Pull Watch History from Jellyfin (All Libraries)"
+        self.push_watch_history_button: QPushButton = QPushButton("Push Watch History")
+        self.push_watch_history_button.clicked.connect(
+            self.trigger_global_jellyfin_push
         )
-        pull_all_button.clicked.connect(self.trigger_global_jellyfin_pull)
-        jellyfin_layout.addWidget(pull_all_button)
-
-        push_all_button: QPushButton = QPushButton(
-            "Push Watch History to Jellyfin (All Libraries)"
-        )
-        push_all_button.clicked.connect(self.trigger_global_jellyfin_push)
-        jellyfin_layout.addWidget(push_all_button)
-        management_layout.addWidget(self.jellyfin_frame)
+        management_layout.addWidget(self.push_watch_history_button)
 
         management_layout.addSpacing(10)
         management_layout.addWidget(QLabel("Global Operation Progress:"))
@@ -1685,10 +1702,10 @@ class SettingsDialog(QDialog):
         self._scan_running = False
         self.scan_report_display.moveCursor(QTextCursor.MoveOperation.End)
         self.scan_report_display.insertPlainText("\n*** SCAN COMPLETED ***\n")
-        self.scan_all_button.setVisible(True)
-        self.extract_runtime_button.setVisible(True)
-        self.refresh_frame.setVisible(True)
-        self.jellyfin_frame.setVisible(True)
+        self.scan_files_button.setVisible(True)
+        self.passes_frame.setVisible(True)
+        self.pull_watch_history_button.setVisible(True)
+        self.push_watch_history_button.setVisible(True)
         self.scan_detail_label.setText("Scan Detail:")
 
     def _show_scan_progress_widgets(self) -> None:
@@ -1700,29 +1717,60 @@ class SettingsDialog(QDialog):
         self._scan_running = True
         self.current_scan_logs = []
         self._appended_report_lines = set()
-        self.scan_all_button.setVisible(False)
-        self.extract_runtime_button.setVisible(False)
-        self.refresh_frame.setVisible(False)
-        self.jellyfin_frame.setVisible(False)
+        self.scan_files_button.setVisible(False)
+        self.passes_frame.setVisible(False)
+        self.pull_watch_history_button.setVisible(False)
+        self.push_watch_history_button.setVisible(False)
         self.scan_detail_label.setText("Scan Report:")
 
     @Slot()
-    def trigger_global_scan_files(self) -> None:
+    def trigger_full_scan_files(self) -> None:
         if self.controller is not None:
             self._show_scan_progress_widgets()
-            self.controller.trigger_scan_all(False)
+            self.controller.trigger_scan_all(
+                force_refresh=False,
+                run_pass1=True,
+                run_pass2=True,
+                chain_pass3=True,
+                chain_cleanup=True,
+            )
 
     @Slot()
-    def trigger_global_runtime_extraction(self) -> None:
+    def trigger_pass1_scan(self) -> None:
         if self.controller is not None:
-            self.global_progress_bar.setVisible(True)
+            self._show_scan_progress_widgets()
+            self.controller.trigger_scan_all(
+                force_refresh=False,
+                run_pass1=True,
+                run_pass2=False,
+                chain_pass3=False,
+                chain_cleanup=False,
+            )
+
+    @Slot()
+    def trigger_pass2_scan(self) -> None:
+        if self.controller is not None:
+            self._show_scan_progress_widgets()
+            self.controller.trigger_scan_all(
+                force_refresh=False,
+                run_pass1=False,
+                run_pass2=True,
+                chain_pass3=False,
+                chain_cleanup=False,
+            )
+
+    @Slot()
+    def trigger_pass3_scan(self) -> None:
+        if self.controller is not None:
+            self._show_scan_progress_widgets()
+            # Pass 3 uses the file property extractor, which notifies detail_progress_updated
             self.controller.trigger_runtime_extraction()
 
     @Slot()
-    def trigger_global_refresh_metadata(self) -> None:
+    def trigger_garbage_cleanup(self) -> None:
         if self.controller is not None:
             self._show_scan_progress_widgets()
-            self.controller.trigger_scan_all(self.force_refresh_checkbox.isChecked())
+            self.controller.trigger_global_cleanup()
 
     @Slot()
     def trigger_global_jellyfin_pull(self) -> None:
