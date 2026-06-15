@@ -386,6 +386,63 @@ def test_load_library_handles_exception(mock_db_file) -> None:
 
 
 # ---------------------------------------------------------------------------
+# cleanup_library: prunes missing MediaFile records
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_library_prunes_missing_media_files(mock_db_file, tmp_path) -> None:
+    """cleanup_library should prune MediaFile records when the physical file is missing from disk,
+    but only if they are within the library's root directories.
+    """
+    from lan_streamer.db.models import MediaFile
+
+    # Setup directories
+    library_root = tmp_path / "TV"
+    library_root.mkdir()
+    other_root = tmp_path / "Other"
+    other_root.mkdir()
+
+    # Create dummy files
+    existing_file = library_root / "existing.mp4"
+    existing_file.touch()
+
+    # Paths for DB entries
+    path_existing = str(existing_file)
+    path_missing_in_root = str(library_root / "missing.mp4")
+    path_missing_outside_root = str(other_root / "missing_outside.mp4")
+
+    # Add to DB
+    with get_session() as session:
+        mf_existing = MediaFile(path=path_existing)
+        mf_missing_in_root = MediaFile(path=path_missing_in_root)
+        mf_missing_outside_root = MediaFile(path=path_missing_outside_root)
+        session.add_all([mf_existing, mf_missing_in_root, mf_missing_outside_root])
+        session.commit()
+
+    config.libraries["TVLib"] = {"type": "tv", "paths": [str(library_root)]}
+
+    # Run cleanup
+    stats = db.cleanup_library("TVLib", [str(library_root)])
+
+    # Verify return stats
+    assert stats["media_files_removed"] == 1
+
+    # Verify DB state
+    with get_session() as session:
+        from sqlalchemy import select
+
+        mfs = session.scalars(select(MediaFile)).all()
+        mf_paths = {mf.path for mf in mfs}
+
+        # Existing file within root must remain
+        assert path_existing in mf_paths
+        # Missing file within root must be removed
+        assert path_missing_in_root not in mf_paths
+        # Missing file outside root must remain (ignored during this library's cleanup)
+        assert path_missing_outside_root in mf_paths
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 

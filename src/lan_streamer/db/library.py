@@ -767,6 +767,39 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
     return stats
 
 
+def _cleanup_orphaned_media_files(
+    session: Session, root_directories: List[str], stats: Dict[str, int]
+) -> None:
+    """Removes MediaFile records under root_directories whose physical file no longer exists on disk."""
+    media_files = session.scalars(select(MediaFile)).all()
+    removed_count = 0
+    for mf in media_files:
+        in_library = False
+        try:
+            mf_path = Path(mf.path)
+            for root in root_directories:
+                try:
+                    mf_path.relative_to(Path(root))
+                    in_library = True
+                    break
+                except ValueError:
+                    continue
+        except Exception:
+            pass
+
+        if in_library:
+            try:
+                if not Path(mf.path).exists():
+                    logger.info(
+                        f"Cleanup: Removing missing MediaFile record at '{mf.path}'"
+                    )
+                    session.delete(mf)
+                    removed_count += 1
+            except Exception:
+                pass
+    stats["media_files_removed"] = stats.get("media_files_removed", 0) + removed_count
+
+
 def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str, int]:
     """
     Removes series/seasons/episodes or movies that are no longer present on the file system.
@@ -774,7 +807,13 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
     """
 
     start_time = time.time()
-    stats = {"series": 0, "seasons": 0, "episodes": 0, "movies": 0}
+    stats = {
+        "series": 0,
+        "seasons": 0,
+        "episodes": 0,
+        "movies": 0,
+        "media_files_removed": 0,
+    }
 
     library_config = config.libraries.get(library_name, {})
     library_type = library_config.get("type", "tv")
@@ -785,17 +824,20 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
                 _cleanup_movie_library(session, library_name, stats)
             else:
                 _cleanup_tv_library(session, library_name, root_directories, stats)
+            _cleanup_orphaned_media_files(session, root_directories, stats)
 
         duration = time.time() - start_time
         if library_type == "movie":
             logger.info(
                 f"Cleanup for movie library '{library_name}' completed in {duration:.3f}s: "
-                f"{stats['movies']} movies removed."
+                f"{stats['movies']} movies removed. "
+                f"Removed {stats['media_files_removed']} missing MediaFile records."
             )
         else:
             logger.info(
                 f"Cleanup for tv library '{library_name}' completed in {duration:.3f}s: "
-                f"{stats['series']} series, {stats['seasons']} seasons, {stats['episodes']} episodes removed."
+                f"{stats['series']} series, {stats['seasons']} seasons, {stats['episodes']} episodes removed. "
+                f"Removed {stats['media_files_removed']} missing MediaFile records."
             )
     except Exception:
         logger.exception(f"Error during library cleanup for '{library_name}'")
