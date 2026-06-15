@@ -3040,3 +3040,155 @@ def test_scan_series_myanimelist_auto_mapping(tmp_path) -> None:
     assert eps[2]["path"] is None
     assert eps[2]["myanimelist_anime_id"] == 12345
     assert eps[2]["myanimelist_episode_number"] == 3
+
+
+def test_scan_directories_metadata_only_offline() -> None:
+    """
+    Test that scan_directories with metadata_only=True runs completely offline relative
+    to the filesystem (i.e. handles non-existent paths, doesn't walk directories, etc.).
+    """
+    # Define an existing library for TV show
+    existing_tv_library = {
+        "Series A": {
+            "metadata": {
+                "tmdb_identifier": "123",
+                "tmdb_name": "Series A Name",
+                "poster_path": "/series_a_old_poster.jpg",
+            },
+            "seasons": {
+                "Season 1": {
+                    "metadata": {
+                        "tmdb_identifier": "456",
+                        "poster_path": "/season_1_old_poster.jpg",
+                    },
+                    "episodes": [
+                        {
+                            "name": "S01E01 - Episode 1",
+                            "path": "/nonexistent/path/Series A/Season 1/S01E01.mkv",
+                            "tmdb_identifier": "789",
+                            "tmdb_number": 1,
+                            "versions": [
+                                {
+                                    "path": "/nonexistent/path/Series A/Season 1/S01E01.mkv",
+                                    "resolution": "1080p",
+                                    "video_codec": "h264",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+
+    # Define an existing library for Movie
+    existing_movie_library = {
+        "Movie A": {
+            "tmdb_identifier": "999",
+            "tmdb_name": "Movie A",
+            "poster_path": "/old/movie_poster.jpg",
+            "path": "/old/path/movie.mkv",
+            "versions": [
+                {
+                    "path": "/nonexistent/path/Movie A/movie.mkv",
+                    "resolution": "1080p",
+                    "video_codec": "h264",
+                }
+            ],
+        }
+    }
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.is_configured.return_value = True
+
+    # Mock TMDB returns for series and movie
+    mock_tmdb.get_series_by_id.return_value = {
+        "id": "123",
+        "name": "Series A Updated Name",
+        "overview": "Updated overview for Series A",
+        "first_air_date": "2026-01-01",
+        "seasons": [
+            {
+                "season_number": 1,
+                "id": "456",
+                "name": "Season 1",
+                "poster_path": "/new_season_poster.jpg",
+            }
+        ],
+    }
+    mock_tmdb.get_episodes.return_value = [
+        {
+            "id": "789",
+            "episode_number": 1,
+            "name": "Episode 1 Updated Name",
+            "runtime": 45,
+            "air_date": "2026-01-01",
+        },
+        {
+            "id": "888",
+            "episode_number": 2,
+            "name": "Episode 2 TBA",
+            "runtime": 45,
+            "air_date": "2026-01-08",
+        },
+    ]
+    mock_tmdb.get_movie_by_id.return_value = {
+        "id": "999",
+        "title": "Movie A Updated Title",
+        "overview": "Updated overview for Movie A",
+        "poster_path": "/movie_new_poster.jpg",
+    }
+
+    # Patch TMDB client and run the TV scan
+    with (
+        patch("lan_streamer.scanner.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.metadata.tmdb_client", mock_tmdb),
+    ):
+        tv_res = scan_directories(
+            ["/this/directory/does/not/exist"],
+            library_type="tv",
+            existing_library=existing_tv_library,
+            metadata_only=True,
+            force_refresh=True,
+        )
+
+    # Verify that the Series metadata is updated without filesystem access errors
+    assert "Series A" in tv_res
+    assert tv_res["Series A"]["metadata"]["tmdb_name"] == "Series A Updated Name"
+    assert tv_res["Series A"]["metadata"]["overview"] == "Updated overview for Series A"
+    assert tv_res["Series A"]["metadata"]["poster_path"] == "/series_a_old_poster.jpg"
+
+    # Verify that Season 1 is preserved and resolved
+    assert "Season 1" in tv_res["Series A"]["seasons"]
+    season_metadata = tv_res["Series A"]["seasons"]["Season 1"]["metadata"]
+    assert season_metadata["poster_path"] == "/season_1_old_poster.jpg"
+
+    # Verify S01E01 is updated, and S01E02 placeholder is created
+    eps = tv_res["Series A"]["seasons"]["Season 1"]["episodes"]
+    assert len(eps) == 2
+    assert eps[0]["name"] == "S01E01.mkv"
+    assert eps[0]["path"] == "/nonexistent/path/Series A/Season 1/S01E01.mkv"
+    assert eps[0]["versions"][0]["resolution"] == "1080p"
+
+    assert eps[1]["path"] is None
+    assert eps[1]["tmdb_number"] == 2
+
+    # Patch TMDB client and run the Movie scan
+    with (
+        patch("lan_streamer.scanner.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.metadata.tmdb_client", mock_tmdb),
+    ):
+        movie_res = scan_directories(
+            ["/this/directory/does/not/exist"],
+            library_type="movie",
+            existing_library=existing_movie_library,
+            metadata_only=True,
+            force_refresh=True,
+        )
+
+    # Verify Movie A is updated and preserved
+    assert "Movie A" in movie_res
+    assert movie_res["Movie A"]["tmdb_name"] == "Movie A Updated Title"
+    assert movie_res["Movie A"]["overview"] == "Updated overview for Movie A"
+    assert movie_res["Movie A"]["poster_path"] == "/old/movie_poster.jpg"
+    assert movie_res["Movie A"]["path"] == "/nonexistent/path/Movie A/movie.mkv"

@@ -49,25 +49,59 @@ def _sync_media_files(
     existing_files = {mf.path: mf for mf in owner.media_files}
     for path, mf in list(existing_files.items()):
         if path not in incoming_paths:
-            session.delete(mf)
             owner.media_files.remove(mf)
+            # Only delete the media file from database if it's no longer referenced
+            has_other_refs = any(ep != owner for ep in mf.episodes) or any(
+                mv != owner for mv in mf.movies
+            )
+            if not has_other_refs:
+                session.delete(mf)
 
     # Add or update files
     for v in versions_data:
         path = v.get("path")
         if not path:
             continue
-        mf = existing_files.get(path)
-        if not mf:
-            mf = session.scalars(
-                select(MediaFile).where(MediaFile.path == path)
-            ).first()
-            if mf:
-                # Re-parent
-                mf.episodes.clear()
-                mf.movies.clear()
-                owner.media_files.append(mf)
-            else:
+        # Look for the correct MediaFile in the session or database
+        db_mf = session.scalars(select(MediaFile).where(MediaFile.path == path)).first()
+
+        if db_mf and db_mf in session.deleted:
+            # Un-delete the object since it is being reused
+            session.add(db_mf)
+
+        if not db_mf:
+            for obj in session.new:
+                if (
+                    isinstance(obj, MediaFile)
+                    and obj.path == path
+                    and obj not in owner.media_files
+                ):
+                    db_mf = obj
+                    break
+
+        if db_mf:
+            # Remove any incorrect duplicate MediaFile record from owner.media_files
+            incorrect_mfs = [
+                mf_obj
+                for mf_obj in owner.media_files
+                if mf_obj.path == path and mf_obj != db_mf
+            ]
+            for mf_obj in incorrect_mfs:
+                owner.media_files.remove(mf_obj)
+                if mf_obj in session:
+                    session.expunge(mf_obj)
+
+            if db_mf not in owner.media_files:
+                owner.media_files.append(db_mf)
+            mf = db_mf
+        else:
+            # Check if owner.media_files already has one (e.g. created by path setter)
+            mf = None
+            for existing_mf in owner.media_files:
+                if existing_mf.path == path:
+                    mf = existing_mf
+                    break
+            if not mf:
                 mf = MediaFile(path=path)
                 owner.media_files.append(mf)
                 session.add(mf)
@@ -310,6 +344,13 @@ def _save_episode_record(
     episode = None
     if path:
         episode = existing_by_path.get(path)
+        if (
+            episode
+            and tmdb_num is not None
+            and episode.tmdb_number is not None
+            and episode.tmdb_number != tmdb_num
+        ):
+            episode = None
         # If not found by path, check if there was a missing/future episode placeholder
         if not episode and tmdb_num is not None:
             episode = existing_by_number.get(tmdb_num)
@@ -416,7 +457,10 @@ def _save_episode_record(
     existing_names = {
         ep.name
         for ep in season.episodes
-        if ep is not episode and ep.name is not None and ep not in session.deleted
+        if ep is not episode
+        and ep.name is not None
+        and ep in session
+        and ep not in session.deleted
     }
     if target_name in existing_names:
         base_name = target_name

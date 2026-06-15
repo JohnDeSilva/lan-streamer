@@ -201,6 +201,7 @@ def _apply_tmdb_movie_data(
     tmdb_movie: Dict[str, Any],
     existing_movie_data: Dict[str, Any] | None,
     offline: bool = False,
+    metadata_only: bool = False,
 ) -> None:
     """
     Fills *movie_metadata* with TMDB fields including poster, runtime,
@@ -217,9 +218,14 @@ def _apply_tmdb_movie_data(
     else:
         movie_metadata["year"] = movie_metadata.get("year") or 0
 
-    movie_metadata["poster_path"] = _resolve_movie_poster(
-        tmdb_movie, tmdb_id, existing_movie_data, offline
-    )
+    if metadata_only:
+        movie_metadata["poster_path"] = (
+            existing_movie_data.get("poster_path", "") if existing_movie_data else ""
+        )
+    else:
+        movie_metadata["poster_path"] = _resolve_movie_poster(
+            tmdb_movie, tmdb_id, existing_movie_data, offline
+        )
 
     # Fetch full details for runtime / rating / genre when not already present
     if "runtime" not in tmdb_movie and not offline:
@@ -434,6 +440,7 @@ def _process_series_metadata(
     cleanup: bool,
     single_item_refresh: bool = False,
     offline: bool = False,
+    metadata_only: bool = False,
 ) -> tuple[Dict[str, Any], bool, Dict[str, Any] | None, Dict[str, Any], bool]:
     series_name = series_directory.name
 
@@ -448,7 +455,7 @@ def _process_series_metadata(
 
     has_new_files = (
         _detect_new_series_files(series_directory, existing_episodes_by_path)
-        if existing_series_data
+        if (existing_series_data and not metadata_only)
         else False
     )
 
@@ -549,9 +556,16 @@ def _process_series_metadata(
             series_metadata["first_air_date"] = tmdb_series.get("first_air_date", "")
 
             if tmdb_identifier:
-                series_metadata["poster_path"] = _resolve_series_poster(
-                    tmdb_series, tmdb_identifier, existing_series_data, offline
-                )
+                if metadata_only:
+                    series_metadata["poster_path"] = (
+                        existing_series_data.get("metadata", {}).get("poster_path", "")
+                        if existing_series_data
+                        else ""
+                    )
+                else:
+                    series_metadata["poster_path"] = _resolve_series_poster(
+                        tmdb_series, tmdb_identifier, existing_series_data, offline
+                    )
             else:
                 if not series_metadata.get("poster_path"):
                     series_metadata["poster_path"] = ""
@@ -648,6 +662,7 @@ def _process_season_metadata(
     force_refresh: bool = False,
     single_item_refresh: bool = False,
     offline: bool = False,
+    metadata_only: bool = False,
 ) -> tuple[str, int, Dict[str, Any], list[Any]]:
     season_name = season_directory.name
     season_metadata: Dict[str, Any] = {
@@ -697,23 +712,26 @@ def _process_season_metadata(
             str(season_tmdb_identifier) if season_tmdb_identifier else ""
         )
 
-        cached_season_poster = (
-            tmdb_client.get_cached_image(f"tmdb_season_{season_tmdb_identifier}")
-            if season_tmdb_identifier
-            else ""
-        )
-        if cached_season_poster and isinstance(cached_season_poster, str):
-            season_metadata["poster_path"] = cached_season_poster
-        elif existing_season_poster:
+        if metadata_only:
             season_metadata["poster_path"] = existing_season_poster
         else:
-            artwork = matched_tmdb_season.get("poster_path") or ""
-            if artwork and season_tmdb_identifier and not offline:
-                season_metadata["poster_path"] = tmdb_client.download_image(
-                    artwork, f"tmdb_season_{season_tmdb_identifier}"
-                )
+            cached_season_poster = (
+                tmdb_client.get_cached_image(f"tmdb_season_{season_tmdb_identifier}")
+                if season_tmdb_identifier
+                else ""
+            )
+            if cached_season_poster and isinstance(cached_season_poster, str):
+                season_metadata["poster_path"] = cached_season_poster
+            elif existing_season_poster:
+                season_metadata["poster_path"] = existing_season_poster
             else:
-                season_metadata["poster_path"] = ""
+                artwork = matched_tmdb_season.get("poster_path") or ""
+                if artwork and season_tmdb_identifier and not offline:
+                    season_metadata["poster_path"] = tmdb_client.download_image(
+                        artwork, f"tmdb_season_{season_tmdb_identifier}"
+                    )
+                else:
+                    season_metadata["poster_path"] = ""
     else:
         season_metadata["tmdb_identifier"] = existing_season_id
         season_metadata["poster_path"] = existing_season_poster
@@ -799,6 +817,7 @@ def _process_episode_file(
     existing_episodes_by_path: Dict[str, Any],
     existing_series_data: Dict[str, Any] | None = None,
     offline: bool = False,
+    metadata_only: bool = False,
 ) -> Dict[str, Any]:
     episode_path = str(episode_file.absolute())
     episode_name = episode_file.name
@@ -911,11 +930,14 @@ def _process_episode_file(
                     )
                     break
 
-    try:
-        ctime = os.path.getctime(episode_path)
-    except OSError as error_instance:
-        logger.debug(f"Could not read ctime for {episode_path}: {error_instance}")
-        ctime = 0
+    if metadata_only:
+        ctime = existing_episode.get("date_added") or 0 if existing_episode else 0
+    else:
+        try:
+            ctime = os.path.getctime(episode_path)
+        except OSError as error_instance:
+            logger.debug(f"Could not read ctime for {episode_path}: {error_instance}")
+            ctime = 0
 
     jellyfin_id = ""
     new_series_jf_id = ""

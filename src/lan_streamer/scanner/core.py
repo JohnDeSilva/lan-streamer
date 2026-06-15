@@ -146,6 +146,7 @@ def scan_directories(
     offline: bool = False,
     season_callback: Any = None,
     movie_callback: Any = None,
+    metadata_only: bool = False,
 ) -> LibraryDict:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -153,6 +154,131 @@ def scan_directories(
     """
     library = LibraryDict()
     existing_library = existing_library or {}
+
+    if metadata_only:
+        total_folders = len(existing_library)
+        if detail_callback:
+            detail_callback(
+                "root_total",
+                {"root": root_directory_label or "Library", "total": total_folders},
+            )
+
+        for series_name, existing_series in existing_library.items():
+            if detail_callback:
+                detail_callback(
+                    "start_folder",
+                    {"root": root_directory_label or "Library", "folder": series_name},
+                )
+
+            tmdb_series = None
+            is_locked = False
+            existing_jellyfin_id = None
+            has_meta = False
+
+            existing_jellyfin_id = _resolve_existing_jellyfin_id(
+                existing_series, library_type
+            )
+            if library_type == "movie":
+                is_locked = bool(existing_series.get("locked_metadata", False))
+                has_meta = bool(existing_series.get("tmdb_identifier"))
+                if is_locked:
+                    tmdb_series = _build_locked_movie_tmdb_stub(
+                        existing_series, series_name
+                    )
+            else:
+                is_locked = bool(
+                    existing_series.get("metadata", {}).get("locked_metadata", False)
+                )
+                has_meta = bool(
+                    existing_series.get("metadata", {}).get("tmdb_identifier")
+                )
+                if is_locked:
+                    tmdb_series = _build_locked_tv_tmdb_stub(existing_series)
+
+            series_force_refresh = (
+                (force_refresh or single_item_refresh or not has_meta)
+                if not is_locked
+                else False
+            )
+            cleaned = None
+            dummy_path = Path(series_name)
+
+            if library_type == "movie":
+                series_data = scan_movie(
+                    dummy_path,
+                    tmdb_movie=tmdb_series,
+                    jellyfin_data=jellyfin_data,
+                    manual_jellyfin_id=existing_jellyfin_id,
+                    existing_movie_data=existing_series,
+                    force_refresh=series_force_refresh,
+                    cleanup=cleanup,
+                    single_item_refresh=single_item_refresh,
+                    detail_callback=detail_callback,
+                    offline=offline,
+                    metadata_only=True,
+                )
+                if not series_data:
+                    if detail_callback:
+                        detail_callback(
+                            "finish_folder",
+                            {
+                                "root": root_directory_label or "Library",
+                                "folder": series_name,
+                                "skipped": True,
+                            },
+                        )
+                    continue
+                cleaned = series_data
+                if movie_callback and cleaned:
+                    movie_callback(series_name, cleaned)
+            else:
+                series_data = scan_series(
+                    dummy_path,
+                    tmdb_series=tmdb_series,
+                    jellyfin_data=jellyfin_data,
+                    manual_jellyfin_id=existing_jellyfin_id,
+                    existing_series_data=existing_series,
+                    force_refresh=series_force_refresh,
+                    cleanup=cleanup,
+                    single_item_refresh=single_item_refresh,
+                    detail_callback=detail_callback,
+                    show_future_episodes=show_future_episodes,
+                    offline=offline,
+                    season_callback=season_callback,
+                    metadata_only=True,
+                )
+                if is_locked:
+                    series_data["metadata"]["locked_metadata"] = True
+
+                cleaned = clean_series_data(series_data)
+                if not cleaned:
+                    if detail_callback:
+                        detail_callback(
+                            "finish_folder",
+                            {
+                                "root": root_directory_label or "Library",
+                                "folder": series_name,
+                                "skipped": True,
+                            },
+                        )
+                    continue
+
+            library[series_name] = cleaned
+
+            if detail_callback:
+                detail_callback(
+                    "finish_folder",
+                    {
+                        "root": root_directory_label or "Library",
+                        "folder": series_name,
+                        "skipped": False,
+                    },
+                )
+
+            if callback:
+                callback(library)
+
+        return library
 
     logger.info(f"Starting directory scan. Root directories: {root_directories}")
 
@@ -361,6 +487,7 @@ def scan_movie(
     single_item_refresh: bool = False,
     detail_callback: Any = None,
     offline: bool = False,
+    metadata_only: bool = False,
 ) -> Dict[str, Any] | None:
     folder_name = movie_directory.name
     title, year = _parse_movie_folder(folder_name)
@@ -375,49 +502,65 @@ def scan_movie(
             is_movie_changed = existing_movie_data.get("_changed", True)
     movie_offline = offline or not is_movie_changed
 
-    video_files = []
-    for file in movie_directory.rglob("*"):
-        if file.is_file() and file.suffix.lower() in VIDEO_EXTENSIONS:
-            video_files.append(file)
+    if metadata_only:
+        if not existing_movie_data:
+            return None
+        versions = existing_movie_data.get("versions", [])
+        if not versions and existing_movie_data.get("path"):
+            versions = [get_stub_file_info(existing_movie_data["path"])]
+        default_path = existing_movie_data.get(
+            "default_path"
+        ) or existing_movie_data.get("path")
+        active_version = choose_active_version(versions, default_path)
+        video_path = active_version.get("path")
+        if not video_path:
+            return None
+        video_file = Path(video_path)
+        ctime = existing_movie_data.get("date_added") or 0
+    else:
+        video_files = []
+        for file in movie_directory.rglob("*"):
+            if file.is_file() and file.suffix.lower() in VIDEO_EXTENSIONS:
+                video_files.append(file)
 
-    if not video_files:
-        return None
+        if not video_files:
+            return None
 
-    versions = []
-    for file in video_files:
-        path_str = str(file.absolute())
-        existing_v = None
-        if existing_movie_data and existing_movie_data.get("versions"):
-            for ev in existing_movie_data["versions"]:
-                if ev.get("path") == path_str:
-                    existing_v = ev
-                    break
-        if existing_v and not force_refresh:
-            versions.append(existing_v)
-        else:
-            if movie_offline:
-                versions.append(get_stub_file_info(path_str))
+        versions = []
+        for file in video_files:
+            path_str = str(file.absolute())
+            existing_v = None
+            if existing_movie_data and existing_movie_data.get("versions"):
+                for ev in existing_movie_data["versions"]:
+                    if ev.get("path") == path_str:
+                        existing_v = ev
+                        break
+            if existing_v and not force_refresh:
+                versions.append(existing_v)
             else:
-                versions.append(get_detailed_file_info(path_str))
+                if movie_offline:
+                    versions.append(get_stub_file_info(path_str))
+                else:
+                    versions.append(get_detailed_file_info(path_str))
 
-    default_path = (
-        existing_movie_data.get("default_path") if existing_movie_data else None
-    )
-    active_version = choose_active_version(versions, default_path)
-    video_path = active_version.get("path")
-    if not video_path:
-        return None
-    video_file = Path(video_path)
-
-    if detail_callback:
-        detail_callback(
-            "start_file", {"file": str(video_file), "folder": movie_directory.name}
+        default_path = (
+            existing_movie_data.get("default_path") if existing_movie_data else None
         )
+        active_version = choose_active_version(versions, default_path)
+        video_path = active_version.get("path")
+        if not video_path:
+            return None
+        video_file = Path(video_path)
 
-    try:
-        ctime = os.path.getctime(video_file)
-    except OSError:
-        ctime = 0
+        if detail_callback:
+            detail_callback(
+                "start_file", {"file": str(video_file), "folder": movie_directory.name}
+            )
+
+        try:
+            ctime = os.path.getctime(video_file)
+        except OSError:
+            ctime = 0
 
     is_locked = (
         existing_movie_data.get("locked_metadata", False)
@@ -501,7 +644,11 @@ def scan_movie(
 
         if tmdb_movie:
             _apply_tmdb_movie_data(
-                movie_metadata, tmdb_movie, existing_movie_data, movie_offline
+                movie_metadata,
+                tmdb_movie,
+                existing_movie_data,
+                movie_offline,
+                metadata_only=metadata_only,
             )
 
         movie_metadata["jellyfin_id"] = _resolve_movie_jellyfin_id(
@@ -654,6 +801,7 @@ def scan_series(
     show_future_episodes: bool = True,
     offline: bool = False,
     season_callback: Any = None,
+    metadata_only: bool = False,
 ) -> Dict[str, Any]:
     """
     Scans a single series directory and fetches metadata from TMDB.
@@ -661,45 +809,46 @@ def scan_series(
     # Check for files outside of season or specials/extras folders
     outside_file_paths = []
     nested_too_deeply = []
-    for file_path in series_directory.rglob("*"):
-        if file_path.is_file() and _is_video_file(file_path):
-            try:
-                rel_path = file_path.relative_to(series_directory)
-                parts = rel_path.parts
-                if len(parts) == 1:
-                    outside_file_paths.append(file_path)
-                else:
-                    first_dir = parts[0]
-                    first_dir_lower = first_dir.lower()
-                    is_valid = (
-                        "season" in first_dir_lower
-                        or "special" in first_dir_lower
-                        or "extra" in first_dir_lower
-                        or "featurette" in first_dir_lower
-                        or "bonus" in first_dir_lower
-                        or "shorts" in first_dir_lower
-                        or bool(re.search(r"\d+", first_dir))
-                    )
-                    if not is_valid:
+    if not metadata_only:
+        for file_path in series_directory.rglob("*"):
+            if file_path.is_file() and _is_video_file(file_path):
+                try:
+                    rel_path = file_path.relative_to(series_directory)
+                    parts = rel_path.parts
+                    if len(parts) == 1:
                         outside_file_paths.append(file_path)
-                    elif len(parts) > 2:
-                        nested_too_deeply.append(file_path)
-            except Exception:
-                pass
+                    else:
+                        first_dir = parts[0]
+                        first_dir_lower = first_dir.lower()
+                        is_valid = (
+                            "season" in first_dir_lower
+                            or "special" in first_dir_lower
+                            or "extra" in first_dir_lower
+                            or "featurette" in first_dir_lower
+                            or "bonus" in first_dir_lower
+                            or "shorts" in first_dir_lower
+                            or bool(re.search(r"\d+", first_dir))
+                        )
+                        if not is_valid:
+                            outside_file_paths.append(file_path)
+                        elif len(parts) > 2:
+                            nested_too_deeply.append(file_path)
+                except Exception:
+                    pass
 
-    if outside_file_paths:
-        logger.warning(
-            f"Series '{series_directory.name}' has {len(outside_file_paths)} video file(s) "
-            f"outside of season or specials/extras folders. "
-            f"Example: '{outside_file_paths[0].name}'"
-        )
+        if outside_file_paths:
+            logger.warning(
+                f"Series '{series_directory.name}' has {len(outside_file_paths)} video file(s) "
+                f"outside of season or specials/extras folders. "
+                f"Example: '{outside_file_paths[0].name}'"
+            )
 
-    if nested_too_deeply:
-        logger.warning(
-            f"Series '{series_directory.name}' has {len(nested_too_deeply)} video file(s) "
-            f"nested too deeply inside season folders. These files will not be indexed. "
-            f"Example: '{nested_too_deeply[0].relative_to(series_directory)}'"
-        )
+        if nested_too_deeply:
+            logger.warning(
+                f"Series '{series_directory.name}' has {len(nested_too_deeply)} video file(s) "
+                f"nested too deeply inside season folders. These files will not be indexed. "
+                f"Example: '{nested_too_deeply[0].relative_to(series_directory)}'"
+            )
 
     (
         series_data,
@@ -717,6 +866,7 @@ def scan_series(
         cleanup,
         single_item_refresh,
         offline=offline,
+        metadata_only=metadata_only,
     )
     if is_early_return:
         if not show_future_episodes:
@@ -736,24 +886,33 @@ def scan_series(
                 season_data["episodes"] = filtered_episodes
         return series_data
 
-    for season_directory in series_directory.iterdir():
-        if not season_directory.is_dir() or season_directory.name.startswith("."):
-            continue
+    seasons_to_process = []
+    if metadata_only:
+        if existing_series_data and existing_series_data.get("seasons"):
+            for season_name, existing_season in existing_series_data["seasons"].items():
+                seasons_to_process.append((season_name, True, existing_season))
+    else:
+        for season_directory in series_directory.iterdir():
+            if not season_directory.is_dir() or season_directory.name.startswith("."):
+                continue
 
-        season_name = season_directory.name
-        is_season_changed = True
-        if existing_series_data and season_name in existing_series_data.get(
-            "seasons", {}
-        ):
-            if offline:
-                is_season_changed = _has_season_files_changed(
-                    season_directory, existing_series_data["seasons"][season_name]
-                )
-            else:
-                is_season_changed = existing_series_data["seasons"][season_name].get(
-                    "_changed", True
-                )
+            season_name = season_directory.name
+            is_season_changed = True
+            existing_season = None
+            if existing_series_data and season_name in existing_series_data.get(
+                "seasons", {}
+            ):
+                existing_season = existing_series_data["seasons"][season_name]
+                if offline:
+                    is_season_changed = _has_season_files_changed(
+                        season_directory, existing_season
+                    )
+                else:
+                    is_season_changed = existing_season.get("_changed", True)
+            seasons_to_process.append((season_name, is_season_changed, existing_season))
 
+    for season_name, is_season_changed, existing_season in seasons_to_process:
+        season_directory = series_directory / season_name
         season_offline = offline or not is_season_changed
 
         season_name, season_index, season_metadata, tmdb_episodes = (
@@ -765,6 +924,7 @@ def scan_series(
                 force_refresh,
                 single_item_refresh,
                 offline=season_offline,
+                metadata_only=metadata_only,
             )
         )
 
@@ -782,49 +942,90 @@ def scan_series(
         }
 
         scanned_episodes = []
-        for episode_file in season_directory.iterdir():
-            if episode_file.is_dir() and not episode_file.name.startswith("."):
-                logger.warning(
-                    f"Ignoring subdirectory in season folder: '{episode_file.relative_to(series_directory)}'"
-                )
-                continue
+        if metadata_only:
+            if existing_season:
+                for ep in existing_season.get("episodes", []):
+                    ep_path = ep.get("path")
+                    if not ep_path:
+                        continue
+                    episode_file = Path(ep_path)
+                    if detail_callback:
+                        detail_callback(
+                            "start_file",
+                            {
+                                "file": str(episode_file),
+                                "folder": series_directory.name,
+                                "season": season_name,
+                            },
+                        )
+                    episode_record = _process_episode_file(
+                        episode_file,
+                        season_name,
+                        series_directory,
+                        series_data,
+                        season_metadata,
+                        tmdb_episodes,
+                        tmdb_series,
+                        jellyfin_data,
+                        existing_episodes_by_path,
+                        existing_series_data,
+                        offline=season_offline,
+                        metadata_only=True,
+                    )
+                    scanned_episodes.append(episode_record)
+                    if detail_callback:
+                        detail_callback(
+                            "finish_file",
+                            {
+                                "file": str(episode_file),
+                                "folder": series_directory.name,
+                                "season": season_name,
+                            },
+                        )
+        else:
+            for episode_file in season_directory.iterdir():
+                if episode_file.is_dir() and not episode_file.name.startswith("."):
+                    logger.warning(
+                        f"Ignoring subdirectory in season folder: '{episode_file.relative_to(series_directory)}'"
+                    )
+                    continue
 
-            if (
-                episode_file.is_file()
-                and episode_file.suffix.lower() in VIDEO_EXTENSIONS
-            ):
-                if detail_callback:
-                    detail_callback(
-                        "start_file",
-                        {
-                            "file": str(episode_file),
-                            "folder": series_directory.name,
-                            "season": season_name,
-                        },
+                if (
+                    episode_file.is_file()
+                    and episode_file.suffix.lower() in VIDEO_EXTENSIONS
+                ):
+                    if detail_callback:
+                        detail_callback(
+                            "start_file",
+                            {
+                                "file": str(episode_file),
+                                "folder": series_directory.name,
+                                "season": season_name,
+                            },
+                        )
+                    episode_record = _process_episode_file(
+                        episode_file,
+                        season_name,
+                        series_directory,
+                        series_data,
+                        season_metadata,
+                        tmdb_episodes,
+                        tmdb_series,
+                        jellyfin_data,
+                        existing_episodes_by_path,
+                        existing_series_data,
+                        offline=season_offline,
                     )
-                episode_record = _process_episode_file(
-                    episode_file,
-                    season_name,
-                    series_directory,
-                    series_data,
-                    season_metadata,
-                    tmdb_episodes,
-                    tmdb_series,
-                    jellyfin_data,
-                    existing_episodes_by_path,
-                    existing_series_data,
-                    offline=season_offline,
-                )
-                scanned_episodes.append(episode_record)
-                if detail_callback:
-                    detail_callback(
-                        "finish_file",
-                        {
-                            "file": str(episode_file),
-                            "folder": series_directory.name,
-                            "season": season_name,
-                        },
-                    )
+                    scanned_episodes.append(episode_record)
+                    if detail_callback:
+                        detail_callback(
+                            "finish_file",
+                            {
+                                "file": str(episode_file),
+                                "folder": series_directory.name,
+                                "season": season_name,
+                            },
+                        )
 
         # Group by tmdb_number (or name if tmdb_number is None)
         grouped_episodes = {}
@@ -860,10 +1061,10 @@ def scan_series(
                                     break
                         if existing_v:
                             break
-                if existing_v and not force_refresh:
+                if existing_v and (not force_refresh or metadata_only):
                     versions.append(existing_v)
                 else:
-                    if season_offline:
+                    if season_offline or metadata_only:
                         versions.append(get_stub_file_info(path_str))
                     else:
                         versions.append(get_detailed_file_info(path_str))
@@ -987,7 +1188,7 @@ def scan_series(
                     old_num = old_episode.get("tmdb_number")
                     if old_path:
                         if old_path not in found_paths:
-                            if Path(old_path).exists():
+                            if metadata_only or Path(old_path).exists():
                                 logger.info(
                                     f"Preserving missing episode file '{old_episode['name']}' (non-destructive)"
                                 )
