@@ -219,13 +219,13 @@ Below is the structured textual representation of all major class inheritance pa
 ---
 
 ### `ScanAllLibrariesWorker`
-- **Defined in**: [scan_workers.py](../src/lan_streamer/backend/scan_workers.py#L149) (line 149)
+- **Defined in**: [scan_worker_all.py](../src/lan_streamer/backend/scan_worker_all.py)
 - **Inherits from**: `QThread`
 
 > Scans all configured libraries sequentially using TMDB for metadata.
 
 **Methods**:
-- `def __init__(self, force_refresh: bool=False, parent: Optional[QObject]=None) -> None`
+- `def __init__(self, force_refresh: bool = False, run_pass1: bool = True, run_pass2: bool = True, parent: Optional[QObject] = None) -> None`
 
 - `def _discover_tree(self) -> Dict[str, Any]`
   > Pre-walks all library directories to count total folders and files

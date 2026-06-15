@@ -6,12 +6,19 @@ This document details the main logic flows, execution paths, user choices, and d
 
 ## 1. Library Scanning Flow
 
-The library scanning workflow reads files in configured media directories, resolves metadata from online services, and populates the SQLite database.
+The library scanning workflow consists of a decoupled multi-pass pipeline that separates filesystem crawling from metadata matching. This allows the online metadata resolution pass (Pass 2) to execute on the in-memory scanner results, bypassing redundant disk checks and filesystem walks.
+
+### Multi-Pass Pipeline Steps
+1. **File Scan (Pass 1)**: Crawls configured directories, discovers new/removed files, and registers them in the local database structure.
+2. **Metadata Resolution (Pass 2)**: Resolves series, season, episode, and movie metadata from TMDb. When executed as part of the pipeline (or individually), it runs with `metadata_only=True` to read files directly from the in-memory output of Pass 1, skipping physical disk checks and asset directory walks.
+3. **Runtime Extraction (Pass 3)**: Discovers files with missing or empty metadata runtimes, then invokes `ffprobe` (or falls back to `libvlc`) in the background to extract codecs, dimensions, and streams.
+4. **Garbage Cleanup**: Scans the database and purges orphaned media file records that are no longer linked to physical directories.
 
 ### Workflow Description & User Choices
-When initiating a scan, the user can choose to trigger a standard scan or a **Force Refresh**:
-1. **Standard (Incremental) Scan**: The scanner only queries external APIs for directories or files that do not currently exist in the database, preserving existing metadata and manual corrections.
-2. **Force Refresh**: The scanner ignores cached states and re-queries external APIs for all items, overwriting existing records unless metadata is explicitly locked.
+From the "Library Management" tab in Settings, the user can choose:
+* **Scan Files**: Sequentially runs the complete pipeline (Pass 1 -> Pass 2 -> Pass 3 -> Garbage Cleanup) across all libraries.
+* **Individual Scan Passes**: Individually triggers **File Scan**, **Metadata Resolution**, **Runtime Extraction**, or **Garbage Cleanup**.
+* **Force Refresh**: Ignores cached metadata states and re-queries external APIs for all items (excluding locked items).
 
 ### Logical Decision Gates
 During execution, the scanner processes each media directory and evaluates the following logic gates:
@@ -23,12 +30,12 @@ During execution, the scanner processes each media directory and evaluates the f
   - **TV Series**: Scanned recursively for season subdirectories. Video files are parsed via regular expressions (e.g. `S\d+E\d+`, `\d+x\d+`) to extract season and episode numbers, which are then matched to TMDB episode structures.
 
 ### Execution Path
-1. **Scan Request**: The user triggers the scan from the UI.
-2. **Thread Offloading**: The `Controller` instantiates a `ScanWorker` (`QThread`), keeping the main UI responsive.
-3. **Directory Discovery**: The worker pre-walks directories to establish file counts, emitting `init_library_scan` to initialize progress bars.
-4. **Metadata Loop**: The core scanner walks the tree, calling the TMDB API, resolving matches, and emitting partial progress updates to the UI.
-5. **Database Transaction**: Scanned results are structured into model dictionaries and saved to the SQLite database via SQLAlchemy (`db.save_library`).
-6. **UI Refresh**: The worker emits `finished`, triggering the main view to reload posters, titles, and stats.
+1. **Scan Request**: The user triggers the scan (full or pass-specific) from the UI.
+2. **Thread Offloading**: The `Controller` instantiates a `ScanAllLibrariesWorker` or `ScanWorker` (`QThread`), keeping the main UI responsive.
+3. **Directory Discovery / Memory Loading**: Depending on configuration, the worker pre-walks directories (Pass 1) or accesses cached in-memory structures (Pass 2 under `metadata_only`).
+4. **Metadata Loop**: The core scanner walks the tree, calling the TMDB API, resolving matches, and emitting progress updates to the UI.
+5. **Database Transaction**: Scanned results are saved to the database via SQLAlchemy.
+6. **UI Refresh**: The worker emits a completion signal, updating the settings progress metrics and reloading posters/stats in the main view.
 
 ---
 
