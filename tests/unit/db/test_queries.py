@@ -672,6 +672,159 @@ def test_get_combined_next_up_ignores_placeholders(mock_db_file) -> None:
     assert results[0]["watched_count"] == 0
 
 
+def test_get_combined_next_up_plex_style(mock_db_file) -> None:
+    from lan_streamer.db import get_session, get_combined_next_up
+
+    with get_session() as session:
+        # 1. Show 3: S01E01 (watched), S01E02 (unwatched) -> IN PROGRESS (points to Season 1)
+        s3 = Series(name="Show 3", library_name="TV Shows")
+        session.add(s3)
+        session.flush()
+        s3_season1 = Season(series_id=s3.id, name="Season 1")
+        session.add(s3_season1)
+        session.flush()
+        s3_ep1 = Episode(
+            season_id=s3_season1.id,
+            name="S01E01.mkv",
+            path="/p/s3_ep1.mkv",
+            watched=True,
+            last_played_at=1000,
+        )
+        s3_ep2 = Episode(
+            season_id=s3_season1.id,
+            name="S01E02.mkv",
+            path="/p/s3_ep2.mkv",
+            watched=False,
+        )
+        session.add_all([s3_ep1, s3_ep2])
+
+        # 2. Show 4: S01E01 (watched), S01E02 (watched) -> FULLY WATCHED (excluded)
+        s4 = Series(name="Show 4", library_name="TV Shows")
+        session.add(s4)
+        session.flush()
+        s4_season1 = Season(series_id=s4.id, name="Season 1")
+        session.add(s4_season1)
+        session.flush()
+        s4_ep1 = Episode(
+            season_id=s4_season1.id,
+            name="S01E01.mkv",
+            path="/p/s4_ep1.mkv",
+            watched=True,
+            last_played_at=1000,
+        )
+        s4_ep2 = Episode(
+            season_id=s4_season1.id,
+            name="S01E02.mkv",
+            path="/p/s4_ep2.mkv",
+            watched=True,
+            last_played_at=1200,
+        )
+        session.add_all([s4_ep1, s4_ep2])
+
+        # 3. Show 5: S01E01 (unwatched), S01E02 (watched) -> NO UNWATCHED EPISODES AFTER THE WATCHED ONE (excluded)
+        s5 = Series(name="Show 5", library_name="TV Shows")
+        session.add(s5)
+        session.flush()
+        s5_season1 = Season(series_id=s5.id, name="Season 1")
+        session.add(s5_season1)
+        session.flush()
+        s5_ep1 = Episode(
+            season_id=s5_season1.id,
+            name="S01E01.mkv",
+            path="/p/s5_ep1.mkv",
+            watched=False,
+        )
+        s5_ep2 = Episode(
+            season_id=s5_season1.id,
+            name="S01E02.mkv",
+            path="/p/s5_ep2.mkv",
+            watched=True,
+            last_played_at=1300,
+        )
+        session.add_all([s5_ep1, s5_ep2])
+
+        # 4. Show 6: S01E01 (unwatched), S01E02 (unwatched) -> UNSTARTED (excluded)
+        s6 = Series(name="Show 6", library_name="TV Shows")
+        session.add(s6)
+        session.flush()
+        s6_season1 = Season(series_id=s6.id, name="Season 1")
+        session.add(s6_season1)
+        session.flush()
+        s6_ep1 = Episode(
+            season_id=s6_season1.id,
+            name="S01E01.mkv",
+            path="/p/s6_ep1.mkv",
+            watched=False,
+        )
+        s6_ep2 = Episode(
+            season_id=s6_season1.id,
+            name="S01E02.mkv",
+            path="/p/s6_ep2.mkv",
+            watched=False,
+        )
+        session.add_all([s6_ep1, s6_ep2])
+
+        # 5. Show 7 & Show 8: both have watched & unwatched after.
+        # Let's test sorting:
+        # Show 7: last_played_at=2000, air_date="2026-06-01"
+        # Show 8: last_played_at=2000, air_date="2026-06-15" (should be first because of air_date tie breaker)
+        s7 = Series(name="Show 7", library_name="TV Shows")
+        session.add(s7)
+        session.flush()
+        s7_season1 = Season(series_id=s7.id, name="Season 1")
+        session.add(s7_season1)
+        session.flush()
+        s7_ep1 = Episode(
+            season_id=s7_season1.id,
+            name="S01E01.mkv",
+            path="/p/s7_ep1.mkv",
+            watched=True,
+            last_played_at=2000,
+            air_date="2026-06-01",
+        )
+        s7_ep2 = Episode(
+            season_id=s7_season1.id,
+            name="S01E02.mkv",
+            path="/p/s7_ep2.mkv",
+            watched=False,
+        )
+        session.add_all([s7_ep1, s7_ep2])
+
+        s8 = Series(name="Show 8", library_name="TV Shows")
+        session.add(s8)
+        session.flush()
+        s8_season1 = Season(series_id=s8.id, name="Season 1")
+        session.add(s8_season1)
+        session.flush()
+        s8_ep1 = Episode(
+            season_id=s8_season1.id,
+            name="S01E01.mkv",
+            path="/p/s8_ep1.mkv",
+            watched=True,
+            last_played_at=2000,
+            air_date="2026-06-15",
+        )
+        s8_ep2 = Episode(
+            season_id=s8_season1.id,
+            name="S01E02.mkv",
+            path="/p/s8_ep2.mkv",
+            watched=False,
+        )
+        session.add_all([s8_ep1, s8_ep2])
+
+        session.commit()
+
+    # Call get_combined_next_up
+    results = get_combined_next_up(["TV Shows"])
+
+    # We expect results to contain Show 8 (index 0), Show 7 (index 1), Show 3 (index 2)
+    # Show 4, 5, 6 should be excluded.
+    assert len(results) == 3
+    assert results[0]["series_name"] == "Show 8"
+    assert results[1]["series_name"] == "Show 7"
+    assert results[2]["series_name"] == "Show 3"
+
+
 def test_get_combined_smart_row_next_up(mock_db_file) -> None:
     from lan_streamer.db import get_session, get_combined_smart_row
 

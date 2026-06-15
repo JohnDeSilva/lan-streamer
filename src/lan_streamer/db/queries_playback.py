@@ -376,80 +376,95 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
 
             results = []
             for series in series_list:
-                # Get all seasons of this series
+                # Get all episodes of the series, sorted naturally by season name and episode name
+                all_episodes = []
                 seasons = sorted(
                     series.seasons, key=lambda s: natural_sort_key(s.name or "")
                 )
-                next_season = None
-
-                # Find the first season that is not fully watched
                 for season in seasons:
-                    # Do not consider missing or future episodes (those with no path)
-                    episodes = [
-                        ep
-                        for ep in season.episodes
-                        if ep.default_path or ep.media_files
-                    ]
-                    if not episodes:
-                        continue
-                    # Check if all episodes in this season are watched
-                    fully_watched = all(
-                        ep.playback_state and ep.playback_state.watched
-                        for ep in episodes
+                    eps = sorted(
+                        season.episodes, key=lambda e: natural_sort_key(e.name or "")
                     )
-                    if not fully_watched:
-                        next_season = season
+                    for ep in eps:
+                        if ep.default_path or ep.media_files:
+                            all_episodes.append(ep)
+
+                if not all_episodes:
+                    continue
+
+                # Find the index of the latest watched episode
+                last_watched_idx = -1
+                for idx, ep in enumerate(all_episodes):
+                    if ep.playback_state and ep.playback_state.watched:
+                        last_watched_idx = idx
+
+                # If no episode has been watched, it is not "in progress" (Next Up)
+                if last_watched_idx == -1:
+                    continue
+
+                # Find the first unwatched episode AFTER the latest watched episode
+                next_up_ep = None
+                for idx in range(last_watched_idx + 1, len(all_episodes)):
+                    ep = all_episodes[idx]
+                    if not (ep.playback_state and ep.playback_state.watched):
+                        next_up_ep = ep
                         break
 
-                if next_season:
-                    # Find max last_played_at, date_added, and air_date across all episodes in the series that have a path
-                    max_lp = 0
-                    max_date_added = 0
-                    max_air_date = ""
-                    for s in series.seasons:
-                        for ep in s.episodes:
-                            if not (ep.default_path or ep.media_files):
-                                continue
-                            if ep.playback_state:
-                                val = ep.playback_state.last_played_at or 0
-                                if val > max_lp:
-                                    max_lp = val
-                            added_val = ep.date_added or 0
-                            if added_val > max_date_added:
-                                max_date_added = added_val
-                            air_val = ep.air_date or ""
-                            if air_val > max_air_date:
-                                max_air_date = air_val
+                # If there are no unwatched episodes after the last watched episode, the show is fully watched
+                if not next_up_ep:
+                    continue
 
-                    season_episodes = [
-                        ep
-                        for ep in next_season.episodes
-                        if ep.default_path or ep.media_files
-                    ]
-                    watched_count = sum(
-                        1
-                        for ep in season_episodes
-                        if ep.playback_state and ep.playback_state.watched
-                    )
-                    total_count = len(season_episodes)
+                next_season = next_up_ep.season
 
-                    results.append(
-                        {
-                            "type": "season",
-                            "series_name": series.name,
-                            "season_name": next_season.name,
-                            "poster_path": next_season.poster_path
-                            or series.poster_path,
-                            "library_name": series.library_name,
-                            "last_played_at": max_lp,
-                            "date_added": max_date_added,
-                            "air_date": max_air_date or series.first_air_date or "",
-                            "watched_count": watched_count,
-                            "total_count": total_count,
-                        }
-                    )
+                # Find max last_played_at, date_added, and air_date across all episodes in the series that have a path
+                max_lp = 0
+                max_date_added = 0
+                max_air_date = ""
+                for s in series.seasons:
+                    for ep in s.episodes:
+                        if not (ep.default_path or ep.media_files):
+                            continue
+                        if ep.playback_state:
+                            val = ep.playback_state.last_played_at or 0
+                            if val > max_lp:
+                                max_lp = val
+                        added_val = ep.date_added or 0
+                        if added_val > max_date_added:
+                            max_date_added = added_val
+                        air_val = ep.air_date or ""
+                        if air_val > max_air_date:
+                            max_air_date = air_val
 
-            # Sort by last_played_at descending
+                season_episodes = [
+                    ep
+                    for ep in next_season.episodes
+                    if ep.default_path or ep.media_files
+                ]
+                watched_count = sum(
+                    1
+                    for ep in season_episodes
+                    if ep.playback_state and ep.playback_state.watched
+                )
+                total_count = len(season_episodes)
+
+                results.append(
+                    {
+                        "type": "season",
+                        "series_name": series.name,
+                        "season_name": next_season.name,
+                        "poster_path": next_season.poster_path or series.poster_path,
+                        "library_name": series.library_name,
+                        "last_played_at": max_lp,
+                        "date_added": max_date_added,
+                        "air_date": max_air_date or series.first_air_date or "",
+                        "watched_count": watched_count,
+                        "total_count": total_count,
+                    }
+                )
+
+            # Sort by air_date descending first (secondary sort)
+            results.sort(key=lambda x: x["air_date"] or "", reverse=True)
+            # Sort by last_played_at descending second (primary sort)
             results.sort(key=lambda x: int(x["last_played_at"] or 0), reverse=True)
             logger.info(f"get_combined_next_up: returning {len(results)} seasons")
             logger.debug(f"get_combined_next_up query response: returning {results}")
