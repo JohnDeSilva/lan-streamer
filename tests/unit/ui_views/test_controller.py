@@ -305,7 +305,9 @@ def test_controller_global_triggers() -> None:
         "lan_streamer.ui_views.controller.ScanAllLibrariesWorker"
     ) as mock_scan_all:
         controller_instance.trigger_scan_all(force_refresh=True)
-        mock_scan_all.assert_called_once_with(force_refresh=True)
+        mock_scan_all.assert_called_once_with(
+            force_refresh=True, run_pass1=True, run_pass2=True
+        )
         mock_scan_all.return_value.start.assert_called_once()
 
         # Test concurrency protection

@@ -53,25 +53,25 @@ def test_settings_dialog_scan_layout_toggles(qtbot) -> None:
     qtbot.addWidget(dialog)
 
     # Initial state
-    assert not dialog.scan_all_button.isHidden()
-    assert not dialog.extract_runtime_button.isHidden()
-    assert not dialog.refresh_frame.isHidden()
-    assert not dialog.jellyfin_frame.isHidden()
+    assert not dialog.scan_files_button.isHidden()
+    assert not dialog.passes_frame.isHidden()
+    assert not dialog.pull_watch_history_button.isHidden()
+    assert not dialog.push_watch_history_button.isHidden()
 
     # During scan
     dialog._show_scan_progress_widgets()
-    assert dialog.scan_all_button.isHidden()
-    assert dialog.extract_runtime_button.isHidden()
-    assert dialog.refresh_frame.isHidden()
-    assert dialog.jellyfin_frame.isHidden()
+    assert dialog.scan_files_button.isHidden()
+    assert dialog.passes_frame.isHidden()
+    assert dialog.pull_watch_history_button.isHidden()
+    assert dialog.push_watch_history_button.isHidden()
     assert dialog.scan_detail_label.text() == "Scan Report:"
 
     # After scan
     dialog._on_scan_completed()
-    assert not dialog.scan_all_button.isHidden()
-    assert not dialog.extract_runtime_button.isHidden()
-    assert not dialog.refresh_frame.isHidden()
-    assert not dialog.jellyfin_frame.isHidden()
+    assert not dialog.scan_files_button.isHidden()
+    assert not dialog.passes_frame.isHidden()
+    assert not dialog.pull_watch_history_button.isHidden()
+    assert not dialog.push_watch_history_button.isHidden()
     assert dialog.scan_detail_label.text() == "Scan Detail:"
 
 

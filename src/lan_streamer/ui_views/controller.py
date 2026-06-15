@@ -79,6 +79,7 @@ class Controller(QObject):
         self.embed_metadata_worker_instance: Optional[Any] = None
         self.is_video_playing: bool = False
         self._running_pass3_after_scan: bool = False
+        self._running_cleanup_after_scan: bool = False
         self._doing_scan_and_update: bool = False
 
         self.debounce_timer = QTimer(self)
@@ -385,6 +386,47 @@ class Controller(QObject):
             f"Cleanup finished: removed {series_removed} series, {seasons_removed} seasons, {episodes_removed} episodes."
         )
 
+    def trigger_global_cleanup(self) -> None:
+        config.load()
+        self._cleanup_queue = list(config.libraries.keys())
+        self.status_changed.emit("Starting global library cleanup...")
+        self._run_next_global_cleanup()
+
+    def _run_next_global_cleanup(self) -> None:
+        if not self._cleanup_queue:
+            self.status_changed.emit("Global library cleanup completed.")
+            self.scan_completed.emit()
+            return
+
+        lib_name = self._cleanup_queue.pop(0)
+        library_config = config.libraries.get(lib_name, {})
+        root_directories: List[str] = library_config.get("paths", [])
+        self.status_changed.emit(f"Cleaning up missing files in '{lib_name}'...")
+
+        self.cleanup_worker_instance = CleanupWorker(
+            library_name=lib_name, root_directories=root_directories
+        )
+        self.cleanup_worker_instance.finished.connect(
+            self._on_global_cleanup_step_finished
+        )
+        self.cleanup_worker_instance.error.connect(self._on_global_cleanup_step_error)
+        self.cleanup_worker_instance.start()
+
+    def _on_global_cleanup_step_finished(self, statistics: Dict[str, Any]) -> None:
+        if self.current_library_name:
+            self.select_library(self.current_library_name, reset_selection=False)
+        series_removed: int = statistics.get("series", 0)
+        seasons_removed: int = statistics.get("seasons", 0)
+        episodes_removed: int = statistics.get("episodes", 0)
+        logger.info(
+            f"Cleanup finished for library step: removed {series_removed} series, {seasons_removed} seasons, {episodes_removed} episodes."
+        )
+        self._run_next_global_cleanup()
+
+    def _on_global_cleanup_step_error(self, error_message: str) -> None:
+        logger.error(f"Global cleanup step worker error: {error_message}")
+        self._run_next_global_cleanup()
+
     def trigger_scan_and_update(self, force_refresh: bool = False) -> None:
         """
         Combines a library scan (discovers new files, updates paths) with a
@@ -510,7 +552,14 @@ class Controller(QObject):
             f"Watch history pushed successfully: synchronized {pushed_count} episodes."
         )
 
-    def trigger_scan_all(self, force_refresh: bool = False) -> None:
+    def trigger_scan_all(
+        self,
+        force_refresh: bool = False,
+        run_pass1: bool = True,
+        run_pass2: bool = True,
+        chain_pass3: bool = True,
+        chain_cleanup: bool = False,
+    ) -> None:
         if (
             self.scan_all_worker_instance is not None
             and self.scan_all_worker_instance.isRunning()
@@ -520,9 +569,12 @@ class Controller(QObject):
 
         config.load()
         self.status_changed.emit("Scanning all libraries...")
-        self._running_pass3_after_scan = True
+        self._running_pass3_after_scan = chain_pass3
+        self._running_cleanup_after_scan = chain_cleanup
         self.scan_all_worker_instance = ScanAllLibrariesWorker(
-            force_refresh=force_refresh
+            force_refresh=force_refresh,
+            run_pass1=run_pass1,
+            run_pass2=run_pass2,
         )
         self.scan_all_worker_instance.library_progress.connect(
             self.global_progress_updated.emit
@@ -584,6 +636,8 @@ class Controller(QObject):
                 self.scan_all_worker_instance, "changed_movie_ids", None
             )
             self.trigger_runtime_extraction(changed_seasons, changed_movies)
+        elif self._running_cleanup_after_scan:
+            self.trigger_global_cleanup()
         else:
             self.scan_completed.emit()
 
@@ -627,7 +681,11 @@ class Controller(QObject):
         if self.current_library_name:
             self.select_library(self.current_library_name, reset_selection=False)
         self._running_pass3_after_scan = False
-        self.scan_completed.emit()
+        if self._running_cleanup_after_scan:
+            self._running_cleanup_after_scan = False
+            self.trigger_global_cleanup()
+        else:
+            self.scan_completed.emit()
 
     def _on_worker_error(self, error_message: str) -> None:
         self.status_changed.emit(f"Worker Error: {error_message}")

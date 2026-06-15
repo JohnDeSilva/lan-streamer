@@ -46,17 +46,18 @@ def get_target_asset_name() -> str:
     """
     Determines the release asset file name expected on GitHub for the current platform.
     """
+    asset_name = ""
     if sys.platform == "win32":
-        return "lan-streamer-windows.exe"
+        asset_name = "lan-streamer-windows.exe"
     elif sys.platform == "darwin":
-        return "lan-streamer-macos.dmg"
+        asset_name = "lan-streamer-macos.dmg"
     elif sys.platform.startswith("linux"):
         distro = get_linux_distro()
         if distro in ("fedora", "rhel", "centos"):
-            return "lan-streamer-fedora"
+            asset_name = "lan-streamer-fedora"
         else:
-            return "lan-streamer-ubuntu"
-    return ""
+            asset_name = "lan-streamer-ubuntu"
+    return asset_name
 
 
 class UpdateCheckWorker(QThread):

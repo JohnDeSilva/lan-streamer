@@ -26,7 +26,7 @@ class JellyfinClient:
             }
         )
         self.session.trust_env = True
-        self._cached_user_id = None
+        self._cached_user_id: str | None = None
 
     # ------------------------------------------------------------------
     # Configuration

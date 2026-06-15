@@ -368,24 +368,47 @@ def test_on_detail_progress_shows_tree(dialog_with_controller) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_trigger_global_scan_files_with_controller(dialog_with_controller) -> None:
+def test_trigger_full_scan_files_with_controller(dialog_with_controller) -> None:
     dialog, ctrl = dialog_with_controller
     with patch.object(ctrl, "trigger_scan_all") as mock_scan:
-        dialog.trigger_global_scan_files()
-        mock_scan.assert_called_once()
+        dialog.trigger_full_scan_files()
+        mock_scan.assert_called_once_with(
+            force_refresh=False,
+            run_pass1=True,
+            run_pass2=True,
+            chain_pass3=True,
+            chain_cleanup=True,
+        )
 
 
-def test_trigger_global_scan_files_without_controller(dialog) -> None:
-    dialog.trigger_global_scan_files()  # Should not crash
+def test_trigger_full_scan_files_without_controller(dialog) -> None:
+    dialog.trigger_full_scan_files()  # Should not crash
 
 
-def test_trigger_global_refresh_metadata_with_controller(
-    dialog_with_controller,
-) -> None:
+def test_trigger_pass1_scan_with_controller(dialog_with_controller) -> None:
     dialog, ctrl = dialog_with_controller
     with patch.object(ctrl, "trigger_scan_all") as mock_scan:
-        dialog.trigger_global_refresh_metadata()
-        mock_scan.assert_called_once()
+        dialog.trigger_pass1_scan()
+        mock_scan.assert_called_once_with(
+            force_refresh=False,
+            run_pass1=True,
+            run_pass2=False,
+            chain_pass3=False,
+            chain_cleanup=False,
+        )
+
+
+def test_trigger_pass2_scan_with_controller(dialog_with_controller) -> None:
+    dialog, ctrl = dialog_with_controller
+    with patch.object(ctrl, "trigger_scan_all") as mock_scan:
+        dialog.trigger_pass2_scan()
+        mock_scan.assert_called_once_with(
+            force_refresh=False,
+            run_pass1=False,
+            run_pass2=True,
+            chain_pass3=False,
+            chain_cleanup=False,
+        )
 
 
 def test_trigger_global_jellyfin_pull_with_controller(dialog_with_controller) -> None:
@@ -402,13 +425,18 @@ def test_trigger_global_jellyfin_push_with_controller(dialog_with_controller) ->
         mock_push.assert_called_once()
 
 
-def test_trigger_global_runtime_extraction_with_controller(
-    dialog_with_controller,
-) -> None:
+def test_trigger_pass3_scan_with_controller(dialog_with_controller) -> None:
     dialog, ctrl = dialog_with_controller
     with patch.object(ctrl, "trigger_runtime_extraction") as mock_rt:
-        dialog.trigger_global_runtime_extraction()
+        dialog.trigger_pass3_scan()
         mock_rt.assert_called_once()
+
+
+def test_trigger_garbage_cleanup_with_controller(dialog_with_controller) -> None:
+    dialog, ctrl = dialog_with_controller
+    with patch.object(ctrl, "trigger_global_cleanup") as mock_cleanup:
+        dialog.trigger_garbage_cleanup()
+        mock_cleanup.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
