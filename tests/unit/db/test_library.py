@@ -1422,6 +1422,51 @@ def test_save_library_duplicate_name_and_versions_deduplication() -> None:
     assert eps_merged[0]["name"] == "Episode One.mkv"
     assert len(eps_merged[0]["versions"]) == 2
 
+    # 3. Test version deduplication with name clash (where target name matches duplicate record's name)
+    lib_data_clash = {
+        "Show A": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {"name": "Episode One.mkv", "path": "/path/to/ep1_v1.mkv"},
+                        {"name": "Episode Two.mkv", "path": "/path/to/ep1_v2.mkv"},
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library(library_name, lib_data_clash)
+
+    lib_data_merge_clash = {
+        "Show A": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode Two.mkv",
+                            "path": "/path/to/ep1_v1.mkv",
+                            "versions": [
+                                {"path": "/path/to/ep1_v1.mkv", "video_codec": "h264"},
+                                {"path": "/path/to/ep1_v2.mkv", "video_codec": "h264"},
+                            ],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    # This should not raise IntegrityError
+    db.save_library(library_name, lib_data_merge_clash)
+
+    loaded_clash = db.load_library(library_name)
+    eps_clash = loaded_clash["Show A"]["seasons"]["Season 1"]["episodes"]
+    assert len(eps_clash) == 1
+    assert eps_clash[0]["name"] == "Episode Two.mkv"
+
 
 def test_save_season_and_movie_data_progressive_and_safe_update() -> None:
     lib_name = "ProgressiveLib"

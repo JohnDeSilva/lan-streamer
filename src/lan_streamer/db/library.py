@@ -125,13 +125,8 @@ def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> None:
     )
 
     watched = bool(movie_data.get("watched"))
-    if watched and movie.media_files:
-        from lan_streamer.db.models import PlaybackState
-
-        for mf in movie.media_files:
-            if not mf.playback_state:
-                mf.playback_state = PlaybackState(media_file_id=mf.id)
-            mf.playback_state.watched = True
+    if watched:
+        movie.watched = True
 
 
 def _cleanup_movie_library(
@@ -372,8 +367,37 @@ def _save_episode_record(
                         f"Merging duplicate episode record '{dup_ep.name}' (path={v_path}) "
                         f"into main episode '{episode.name or episode_data['name']}'"
                     )
+                    # Transfer media files from duplicate to main episode
+                    for mf in list(dup_ep.media_files):
+                        if mf not in episode.media_files:
+                            episode.media_files.append(mf)
+
+                    # Transfer/merge playback state
+                    if dup_ep.playback_state:
+                        if not episode.playback_state:
+                            from lan_streamer.db.models import _new_uuid_str
+
+                            if not episode.id:
+                                episode.id = _new_uuid_str()
+                            episode.playback_state = dup_ep.playback_state
+                            dup_ep.playback_state = None
+                        else:
+                            if (dup_ep.playback_state.last_played_at or 0) > (
+                                episode.playback_state.last_played_at or 0
+                            ):
+                                episode.playback_state.last_played_at = (
+                                    dup_ep.playback_state.last_played_at
+                                )
+                                episode.playback_state.last_played_position = (
+                                    dup_ep.playback_state.last_played_position
+                                )
+                            if dup_ep.playback_state.watched:
+                                episode.playback_state.watched = True
+                            session.delete(dup_ep.playback_state)
+
                     # Delete duplicate from session and remove from tracking dicts
                     session.delete(dup_ep)
+                    session.flush()
                     stats["deleted"] += 1
                     stats["episodes_removed"] = stats.get("episodes_removed", 0) + 1
 
@@ -452,13 +476,8 @@ def _save_episode_record(
     )
 
     watched = bool(episode_data.get("watched"))
-    if watched and episode.media_files:
-        from lan_streamer.db.models import PlaybackState
-
-        for mf in episode.media_files:
-            if not mf.playback_state:
-                mf.playback_state = PlaybackState(media_file_id=mf.id)
-            mf.playback_state.watched = True
+    if watched:
+        episode.watched = True
     return episode
 
 

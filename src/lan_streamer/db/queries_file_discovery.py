@@ -42,9 +42,9 @@ def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
     # Playback/watch states
     watched = False
     last_played_at = 0
-    if primary_mf and primary_mf.playback_state:
-        watched = bool(primary_mf.playback_state.watched)
-        last_played_at = primary_mf.playback_state.last_played_at or 0
+    if episode.playback_state:
+        watched = bool(episode.playback_state.watched)
+        last_played_at = episode.playback_state.last_played_at or 0
 
     # Technical specs
     video_codec = ""
@@ -177,10 +177,10 @@ def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
     watched = False
     last_played_position = 0
     last_played_at = 0
-    if primary_mf and primary_mf.playback_state:
-        watched = bool(primary_mf.playback_state.watched)
-        last_played_position = primary_mf.playback_state.last_played_position or 0
-        last_played_at = primary_mf.playback_state.last_played_at or 0
+    if movie.playback_state:
+        watched = bool(movie.playback_state.watched)
+        last_played_position = movie.playback_state.last_played_position or 0
+        last_played_at = movie.playback_state.last_played_at or 0
 
     # Technical specs
     video_codec = ""
