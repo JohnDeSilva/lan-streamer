@@ -3107,6 +3107,7 @@ def test_scan_directories_metadata_only_offline() -> None:
         "name": "Series A Updated Name",
         "overview": "Updated overview for Series A",
         "first_air_date": "2026-01-01",
+        "poster_path": "/new_series_poster.jpg",
         "seasons": [
             {
                 "season_number": 1,
@@ -3139,6 +3140,12 @@ def test_scan_directories_metadata_only_offline() -> None:
         "poster_path": "/movie_new_poster.jpg",
     }
 
+    def mock_download(path, key):
+        return f"/cached{path}"
+
+    mock_tmdb.download_image.side_effect = mock_download
+    mock_tmdb.get_cached_image.return_value = ""
+
     # Patch TMDB client and run the TV scan
     with (
         patch("lan_streamer.scanner.tmdb_client", mock_tmdb),
@@ -3156,12 +3163,14 @@ def test_scan_directories_metadata_only_offline() -> None:
     assert "Series A" in tv_res
     assert tv_res["Series A"]["metadata"]["tmdb_name"] == "Series A Updated Name"
     assert tv_res["Series A"]["metadata"]["overview"] == "Updated overview for Series A"
-    assert tv_res["Series A"]["metadata"]["poster_path"] == "/series_a_old_poster.jpg"
+    assert (
+        tv_res["Series A"]["metadata"]["poster_path"] == "/cached/new_series_poster.jpg"
+    )
 
     # Verify that Season 1 is preserved and resolved
     assert "Season 1" in tv_res["Series A"]["seasons"]
     season_metadata = tv_res["Series A"]["seasons"]["Season 1"]["metadata"]
-    assert season_metadata["poster_path"] == "/season_1_old_poster.jpg"
+    assert season_metadata["poster_path"] == "/cached/new_season_poster.jpg"
 
     # Verify S01E01 is updated, and S01E02 placeholder is created
     eps = tv_res["Series A"]["seasons"]["Season 1"]["episodes"]
@@ -3190,5 +3199,127 @@ def test_scan_directories_metadata_only_offline() -> None:
     assert "Movie A" in movie_res
     assert movie_res["Movie A"]["tmdb_name"] == "Movie A Updated Title"
     assert movie_res["Movie A"]["overview"] == "Updated overview for Movie A"
-    assert movie_res["Movie A"]["poster_path"] == "/old/movie_poster.jpg"
+    assert movie_res["Movie A"]["poster_path"] == "/cached/movie_new_poster.jpg"
     assert movie_res["Movie A"]["path"] == "/nonexistent/path/Movie A/movie.mkv"
+
+
+def test_scan_directories_metadata_only_preserves_existing_poster_files(
+    tmp_path,
+) -> None:
+    """Verify that scan_directories with metadata_only=True preserves existing valid local poster files."""
+    old_movie_poster = tmp_path / "movie_old_poster.jpg"
+    old_movie_poster.touch()
+    old_series_poster = tmp_path / "series_old_poster.jpg"
+    old_series_poster.touch()
+    old_season_poster = tmp_path / "season_old_poster.jpg"
+    old_season_poster.touch()
+
+    existing_tv_library = {
+        "Series A": {
+            "metadata": {
+                "tmdb_identifier": "123",
+                "tmdb_name": "Series A Name",
+                "poster_path": str(old_series_poster),
+            },
+            "seasons": {
+                "Season 1": {
+                    "metadata": {
+                        "tmdb_identifier": "456",
+                        "poster_path": str(old_season_poster),
+                    },
+                    "episodes": [
+                        {
+                            "name": "S01E01 - Episode 1",
+                            "path": "/nonexistent/path/Series A/Season 1/S01E01.mkv",
+                            "tmdb_identifier": "789",
+                            "tmdb_number": 1,
+                            "versions": [
+                                {
+                                    "path": "/nonexistent/path/Series A/Season 1/S01E01.mkv",
+                                    "resolution": "1080p",
+                                    "video_codec": "h264",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+
+    existing_movie_library = {
+        "Movie A": {
+            "tmdb_identifier": "999",
+            "tmdb_name": "Movie A",
+            "poster_path": str(old_movie_poster),
+            "path": "/old/path/movie.mkv",
+            "versions": [
+                {
+                    "path": "/nonexistent/path/Movie A/movie.mkv",
+                    "resolution": "1080p",
+                    "video_codec": "h264",
+                }
+            ],
+        }
+    }
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.is_configured.return_value = True
+    mock_tmdb.get_series_by_id.return_value = {
+        "id": "123",
+        "name": "Series A Updated Name",
+        "overview": "Updated overview for Series A",
+        "first_air_date": "2026-01-01",
+        "poster_path": "/new_series_poster.jpg",
+        "seasons": [
+            {
+                "season_number": 1,
+                "id": "456",
+                "name": "Season 1",
+                "poster_path": "/new_season_poster.jpg",
+            }
+        ],
+    }
+    mock_tmdb.get_episodes.return_value = [
+        {
+            "id": "789",
+            "episode_number": 1,
+            "name": "Episode 1 Updated Name",
+            "runtime": 45,
+            "air_date": "2026-01-01",
+        }
+    ]
+    mock_tmdb.get_movie_by_id.return_value = {
+        "id": "999",
+        "title": "Movie A Updated Title",
+        "overview": "Updated overview for Movie A",
+        "poster_path": "/movie_new_poster.jpg",
+    }
+    mock_tmdb.get_cached_image.return_value = ""
+
+    with (
+        patch("lan_streamer.scanner.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.metadata.tmdb_client", mock_tmdb),
+    ):
+        tv_res = scan_directories(
+            ["/this/directory/does/not/exist"],
+            library_type="tv",
+            existing_library=existing_tv_library,
+            metadata_only=True,
+            force_refresh=True,
+        )
+        movie_res = scan_directories(
+            ["/this/directory/does/not/exist"],
+            library_type="movie",
+            existing_library=existing_movie_library,
+            metadata_only=True,
+            force_refresh=True,
+        )
+
+    # Verify that the existing local files were preserved rather than re-resolved/downloaded
+    assert tv_res["Series A"]["metadata"]["poster_path"] == str(old_series_poster)
+    assert tv_res["Series A"]["seasons"]["Season 1"]["metadata"]["poster_path"] == str(
+        old_season_poster
+    )
+    assert movie_res["Movie A"]["poster_path"] == str(old_movie_poster)
+    mock_tmdb.download_image.assert_not_called()
