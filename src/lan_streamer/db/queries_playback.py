@@ -281,12 +281,16 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
             # Construct flat list of all episodes in series in natural order
             ordered_episodes: List[Tuple[Episode, Season, int]] = []
             for season in seasons:
-                # Sort episodes in this season naturally by name, excluding missing/future episodes
+                # Sort episodes in this season by TMDB number (default grouping), excluding missing/future episodes
                 valid_episodes = [
                     e for e in season.episodes if e.default_path or e.media_files
                 ]
                 season_episodes: List[Episode] = sorted(
-                    valid_episodes, key=lambda e: natural_sort_key(e.name)
+                    valid_episodes,
+                    key=lambda e: (
+                        e.tmdb_number if e.tmdb_number is not None else 9999,
+                        natural_sort_key(e.name or ""),
+                    ),
                 )
                 for index, episode in enumerate(season_episodes):
                     ordered_episodes.append((episode, season, index + 1))
@@ -378,12 +382,30 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
             for series in series_list:
                 # Get all episodes of the series, sorted naturally by season name and episode name
                 all_episodes = []
+                filtered_seasons = []
+                for s in series.seasons:
+                    if not s.name:
+                        continue
+                    s_lower = s.name.lower()
+                    if (
+                        s_lower == "specials"
+                        or s_lower == "special"
+                        or "special" in s_lower
+                        or s_lower.startswith("season 0")
+                    ):
+                        continue
+                    filtered_seasons.append(s)
+
                 seasons = sorted(
-                    series.seasons, key=lambda s: natural_sort_key(s.name or "")
+                    filtered_seasons, key=lambda s: natural_sort_key(s.name or "")
                 )
                 for season in seasons:
                     eps = sorted(
-                        season.episodes, key=lambda e: natural_sort_key(e.name or "")
+                        season.episodes,
+                        key=lambda e: (
+                            e.tmdb_number if e.tmdb_number is not None else 9999,
+                            natural_sort_key(e.name or ""),
+                        ),
                     )
                     for ep in eps:
                         if ep.default_path or ep.media_files:
@@ -416,11 +438,11 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
 
                 next_season = next_up_ep.season
 
-                # Find max last_played_at, date_added, and air_date across all episodes in the series that have a path
+                # Find max last_played_at, date_added, and air_date across all episodes in standard seasons that have a path
                 max_lp = 0
                 max_date_added = 0
                 max_air_date = ""
-                for s in series.seasons:
+                for s in seasons:
                     for ep in s.episodes:
                         if not (ep.default_path or ep.media_files):
                             continue
