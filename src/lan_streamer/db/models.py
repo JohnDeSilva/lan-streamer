@@ -176,8 +176,10 @@ class Season(Base):
 class CompatibilityMixin:
     """Mixin to provide backward-compatible properties and initialization logic for Episode and Movie."""
 
+    id: Mapped[str]
     media_files: Mapped[List["MediaFile"]]
     default_path: Mapped[Optional[str]]
+    playback_state: Mapped[Optional["PlaybackState"]]
 
     def __init__(self, **kwargs: Any) -> None:
         self._pending_media_attrs: dict[str, Any] = {}
@@ -185,20 +187,30 @@ class CompatibilityMixin:
         super().__init__(**kwargs)
 
     def _flush_pending_to(self, mf: "MediaFile") -> None:
-        """Apply any buffered media and playback attributes onto a real MediaFile and PlaybackState."""
+        """Apply any buffered media attributes onto a real MediaFile."""
         pending = getattr(self, "_pending_media_attrs", None)
         if pending:
             for attr, val in pending.items():
                 setattr(mf, attr, val)
             pending.clear()
 
-        pending_pb = getattr(self, "_pending_playback_attrs", None)
-        if pending_pb:
-            if not mf.playback_state:
-                mf.playback_state = PlaybackState(media_file_id=mf.id)
-            for attr, val in pending_pb.items():
-                setattr(mf.playback_state, attr, val)
-            pending_pb.clear()
+    def _ensure_playback_state(self) -> "PlaybackState":
+        if not self.playback_state:
+            from lan_streamer.db.models import PlaybackState
+
+            if not self.id:
+                self.id = _new_uuid_str()
+            if hasattr(self, "season_id"):  # Episode
+                self.playback_state = PlaybackState(episode_id=self.id)
+            else:  # Movie
+                self.playback_state = PlaybackState(movie_id=self.id)
+
+            pending_pb = getattr(self, "_pending_playback_attrs", None)
+            if pending_pb:
+                for attr, val in pending_pb.items():
+                    setattr(self.playback_state, attr, val)
+                pending_pb.clear()
+        return self.playback_state
 
     def _set_media_attr(self, attr: str, value: Any) -> None:
         """Set a media attribute on the first MediaFile, or buffer it if none exists."""
@@ -222,25 +234,16 @@ class CompatibilityMixin:
         return None
 
     def _get_playback_attr(self, attr: str, default: Any) -> Any:
-        if self.media_files:
-            mf = self.media_files[0]
-            if mf.playback_state:
-                return getattr(mf.playback_state, attr)
-            pending_pb = getattr(self, "_pending_playback_attrs", None)
-            if pending_pb:
-                return pending_pb.get(attr, default)
-        else:
-            pending_pb = getattr(self, "_pending_playback_attrs", None)
-            if pending_pb:
-                return pending_pb.get(attr, default)
+        if self.playback_state:
+            return getattr(self.playback_state, attr)
+        pending_pb = getattr(self, "_pending_playback_attrs", None)
+        if pending_pb:
+            return pending_pb.get(attr, default)
         return default
 
     def _set_playback_attr(self, attr: str, value: Any) -> None:
-        if self.media_files:
-            mf = self.media_files[0]
-            if not mf.playback_state:
-                mf.playback_state = PlaybackState(media_file_id=mf.id)
-            setattr(mf.playback_state, attr, value)
+        if self.playback_state:
+            setattr(self.playback_state, attr, value)
         else:
             if (
                 not hasattr(self, "_pending_playback_attrs")
@@ -282,6 +285,7 @@ class CompatibilityMixin:
 
     @watched.setter
     def watched(self, value: bool) -> None:
+        self._ensure_playback_state()
         self._set_playback_attr("watched", value)
 
     @property
@@ -290,6 +294,7 @@ class CompatibilityMixin:
 
     @last_played_position.setter
     def last_played_position(self, value: int) -> None:
+        self._ensure_playback_state()
         self._set_playback_attr("last_played_position", value)
 
     @property
@@ -298,6 +303,7 @@ class CompatibilityMixin:
 
     @last_played_at.setter
     def last_played_at(self, value: int) -> None:
+        self._ensure_playback_state()
         self._set_playback_attr("last_played_at", value)
 
     @property
@@ -380,6 +386,12 @@ class Episode(CompatibilityMixin, Base):
         passive_deletes=True,
         overlaps="media_files,episodes,movies",
     )
+    playback_state: Mapped[Optional["PlaybackState"]] = relationship(
+        "PlaybackState",
+        back_populates="episode",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     __table_args__ = (
         UniqueConstraint("season_id", "name", name="uq_episodes_season_id_name"),
@@ -416,6 +428,12 @@ class Movie(CompatibilityMixin, Base):
         back_populates="movies",
         passive_deletes=True,
         overlaps="media_files,episodes,movies",
+    )
+    playback_state: Mapped[Optional["PlaybackState"]] = relationship(
+        "PlaybackState",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     __table_args__ = (
@@ -454,12 +472,7 @@ class MediaFile(Base):
         passive_deletes=True,
         overlaps="media_files,episodes,movies",
     )
-    playback_state: Mapped[Optional["PlaybackState"]] = relationship(
-        "PlaybackState",
-        back_populates="media_file",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
+    # playback_state relationship removed, as playback state is now coupled to creative metadata.
 
 
 class MetadataFileMapping(Base):
@@ -486,17 +499,30 @@ class MetadataFileMapping(Base):
 
 
 class PlaybackState(Base):
-    """Tracks playback/watch state for a specific physical media file."""
+    """Tracks playback/watch state for an episode or movie metadata record."""
 
     __tablename__ = "playback_states"
 
-    media_file_id: Mapped[str] = mapped_column(
-        UUIDBLOB, ForeignKey("media_files.id", ondelete="CASCADE"), primary_key=True
+    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
+    episode_id: Mapped[Optional[str]] = mapped_column(
+        UUIDBLOB,
+        ForeignKey("episodes.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
+    )
+    movie_id: Mapped[Optional[str]] = mapped_column(
+        UUIDBLOB,
+        ForeignKey("movies.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
     )
     watched: Mapped[bool] = mapped_column(Boolean, default=False)
     last_played_position: Mapped[int] = mapped_column(Integer, default=0)
     last_played_at: Mapped[int] = mapped_column(Integer, default=0)
 
-    media_file: Mapped["MediaFile"] = relationship(
-        "MediaFile", back_populates="playback_state"
+    episode: Mapped[Optional["Episode"]] = relationship(
+        "Episode", back_populates="playback_state"
+    )
+    movie: Mapped[Optional["Movie"]] = relationship(
+        "Movie", back_populates="playback_state"
     )

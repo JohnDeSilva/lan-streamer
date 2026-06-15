@@ -60,18 +60,23 @@ def update_episode_watched_status(path: str, watched: bool) -> None:
                 select(MediaFile).where(MediaFile.path == path)
             ).first()
             if mf:
-                if not mf.playback_state:
-                    mf.playback_state = PlaybackState(media_file_id=mf.id)
-                mf.playback_state.watched = watched
-                if watched:
-                    mf.playback_state.last_played_at = int(time.time())
-                    for ep in mf.episodes:
+                for ep in mf.episodes:
+                    if not ep.playback_state:
+                        ep.playback_state = PlaybackState(episode_id=ep.id)
+                    ep.playback_state.watched = watched
+                    if watched:
+                        ep.playback_state.last_played_at = int(time.time())
                         if ep.myanimelist_anime_id and ep.myanimelist_episode_number:
                             _trigger_mal_push_async(
                                 ep.myanimelist_anime_id,
                                 ep.myanimelist_episode_number,
                             )
-                    for mv in mf.movies:
+                for mv in mf.movies:
+                    if not mv.playback_state:
+                        mv.playback_state = PlaybackState(movie_id=mv.id)
+                    mv.playback_state.watched = watched
+                    if watched:
+                        mv.playback_state.last_played_at = int(time.time())
                         if mv.myanimelist_anime_id:
                             _trigger_mal_push_async(mv.myanimelist_anime_id, 1)
                 logger.debug(
@@ -96,10 +101,16 @@ def update_episode_playback_position(path: str, position: int) -> bool:
                 select(MediaFile).where(MediaFile.path == path)
             ).first()
             if mf:
-                if not mf.playback_state:
-                    mf.playback_state = PlaybackState(media_file_id=mf.id)
-                mf.playback_state.last_played_position = position
-                mf.playback_state.last_played_at = int(time.time())
+                for ep in mf.episodes:
+                    if not ep.playback_state:
+                        ep.playback_state = PlaybackState(episode_id=ep.id)
+                    ep.playback_state.last_played_position = position
+                    ep.playback_state.last_played_at = int(time.time())
+                for mv in mf.movies:
+                    if not mv.playback_state:
+                        mv.playback_state = PlaybackState(movie_id=mv.id)
+                    mv.playback_state.last_played_position = position
+                    mv.playback_state.last_played_at = int(time.time())
                 return True
     except Exception:
         logger.exception(f"Error updating playback position for {path}")
@@ -114,11 +125,15 @@ def get_episode_playback_position(path: str) -> int:
             mf = session.scalars(
                 select(MediaFile).where(MediaFile.path == path)
             ).first()
-            if mf and mf.playback_state and mf.playback_state.last_played_position:
-                logger.debug(
-                    f"Playback position for '{path}' is {mf.playback_state.last_played_position}s"
-                )
-                return int(mf.playback_state.last_played_position)
+            if mf:
+                if mf.episodes and mf.episodes[0].playback_state:
+                    pos = mf.episodes[0].playback_state.last_played_position
+                    logger.debug(f"Playback position for '{path}' is {pos}s")
+                    return int(pos or 0)
+                if mf.movies and mf.movies[0].playback_state:
+                    pos = mf.movies[0].playback_state.last_played_position
+                    logger.debug(f"Playback position for '{path}' is {pos}s")
+                    return int(pos or 0)
     except Exception:
         logger.exception(f"Error retrieving playback position for {path}")
     return 0
@@ -147,24 +162,14 @@ def update_season_watched_status(
                 )
             ).first()
             if season:
-                ep_ids = [ep.id for ep in season.episodes]
-                if ep_ids:
-                    from lan_streamer.db.models import (
-                        MetadataFileMapping,
-                        PlaybackState,
-                    )
+                from lan_streamer.db.models import PlaybackState
 
-                    mfs = session.scalars(
-                        select(MediaFile)
-                        .join(MetadataFileMapping)
-                        .where(MetadataFileMapping.episode_id.in_(ep_ids))
-                    ).all()
-                    for mf in mfs:
-                        if not mf.playback_state:
-                            mf.playback_state = PlaybackState(media_file_id=mf.id)
-                        mf.playback_state.watched = watched
-                        if watched:
-                            mf.playback_state.last_played_at = int(time.time())
+                for ep in season.episodes:
+                    if not ep.playback_state:
+                        ep.playback_state = PlaybackState(episode_id=ep.id)
+                    ep.playback_state.watched = watched
+                    if watched:
+                        ep.playback_state.last_played_at = int(time.time())
                 if watched:
                     mal_updates = {}
                     for ep in season.episodes:
@@ -207,27 +212,15 @@ def update_series_watched_status(
                 )
             ).first()
             if series:
-                ep_ids = []
+                from lan_streamer.db.models import PlaybackState
+
                 for season in series.seasons:
                     for ep in season.episodes:
-                        ep_ids.append(ep.id)
-                if ep_ids:
-                    from lan_streamer.db.models import (
-                        MetadataFileMapping,
-                        PlaybackState,
-                    )
-
-                    mfs = session.scalars(
-                        select(MediaFile)
-                        .join(MetadataFileMapping)
-                        .where(MetadataFileMapping.episode_id.in_(ep_ids))
-                    ).all()
-                    for mf in mfs:
-                        if not mf.playback_state:
-                            mf.playback_state = PlaybackState(media_file_id=mf.id)
-                        mf.playback_state.watched = watched
+                        if not ep.playback_state:
+                            ep.playback_state = PlaybackState(episode_id=ep.id)
+                        ep.playback_state.watched = watched
                         if watched:
-                            mf.playback_state.last_played_at = int(time.time())
+                            ep.playback_state.last_played_at = int(time.time())
 
                 mal_updates = {}
                 for season in series.seasons:
@@ -367,9 +360,9 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
                 select(Series)
                 .join(Season)
                 .join(Episode)
+                .join(PlaybackState, PlaybackState.episode_id == Episode.id)
                 .join(MetadataFileMapping, MetadataFileMapping.episode_id == Episode.id)
                 .join(MediaFile, MediaFile.id == MetadataFileMapping.media_file_id)
-                .join(PlaybackState, PlaybackState.media_file_id == MediaFile.id)
                 .where(
                     (MediaFile.path.isnot(None))
                     & (MediaFile.path != "")
@@ -403,10 +396,7 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
                         continue
                     # Check if all episodes in this season are watched
                     fully_watched = all(
-                        any(
-                            mf.playback_state and mf.playback_state.watched
-                            for mf in ep.media_files
-                        )
+                        ep.playback_state and ep.playback_state.watched
                         for ep in episodes
                     )
                     if not fully_watched:
@@ -422,11 +412,10 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
                         for ep in s.episodes:
                             if not (ep.default_path or ep.media_files):
                                 continue
-                            for mf in ep.media_files:
-                                if mf.playback_state:
-                                    val = mf.playback_state.last_played_at or 0
-                                    if val > max_lp:
-                                        max_lp = val
+                            if ep.playback_state:
+                                val = ep.playback_state.last_played_at or 0
+                                if val > max_lp:
+                                    max_lp = val
                             added_val = ep.date_added or 0
                             if added_val > max_date_added:
                                 max_date_added = added_val
@@ -442,10 +431,7 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
                     watched_count = sum(
                         1
                         for ep in season_episodes
-                        if any(
-                            mf.playback_state and mf.playback_state.watched
-                            for mf in ep.media_files
-                        )
+                        if ep.playback_state and ep.playback_state.watched
                     )
                     total_count = len(season_episodes)
 
@@ -521,10 +507,7 @@ def get_combined_smart_row(
                         if not (ep.default_path or ep.media_files):
                             continue
                         total_episodes += 1
-                        if any(
-                            mf.playback_state and mf.playback_state.watched
-                            for mf in ep.media_files
-                        ):
+                        if ep.playback_state and ep.playback_state.watched:
                             watched_episodes += 1
                         val = ep.date_added or 0
                         if val > max_date_added:
@@ -568,9 +551,8 @@ def get_combined_smart_row(
             movies = session.scalars(movie_stmt).all()
 
             for movie in movies:
-                movie_watched = any(
-                    mf.playback_state and mf.playback_state.watched
-                    for mf in movie.media_files
+                movie_watched = bool(
+                    movie.playback_state and movie.playback_state.watched
                 )
                 keep = True
                 if filter_mode == "Watched":
