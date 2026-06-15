@@ -1566,3 +1566,127 @@ def test_save_season_and_movie_data_progressive_and_safe_update() -> None:
     assert movie_partial["video_codec"] == "hevc"
     assert movie_partial["resolution"] == "4K"
     assert movie_partial["audio_tracks"] == [{"codec": "dts"}]
+
+
+def test_sync_media_files_flushing_and_deduplication(mock_db_file) -> None:
+    from sqlalchemy import select
+    from lan_streamer.db import get_session
+    from lan_streamer.db.models import Series, Season, Episode, MediaFile
+
+    # 1. Create a series with an episode and a media file
+    with get_session() as session:
+        series = Series(name="Show Flushing", library_name="Lib")
+        session.add(series)
+        session.flush()
+
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+
+        ep = Episode(
+            season_id=season.id,
+            name="Episode 1",
+            default_path="/path/to/ep1.mkv",
+        )
+        session.add(ep)
+        session.flush()
+
+        mf = MediaFile(path="/path/to/ep1.mkv", size_bytes=100)
+        ep.media_files.append(mf)
+        session.commit()
+
+    # 2. Simulate replacing the media file with the same path and adding another version
+    lib_data = {
+        "Show Flushing": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/path/to/ep1.mkv",
+                            "versions": [
+                                {"path": "/path/to/ep1.mkv", "size_bytes": 200},
+                                {"path": "/path/to/ep2.mkv", "size_bytes": 300},
+                            ],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library("Lib", lib_data)
+
+    # Load and verify
+    with get_session() as session:
+        ep_db = session.scalars(
+            select(Episode).where(Episode.name == "Episode 1")
+        ).first()
+        assert ep_db is not None
+        assert len(ep_db.media_files) == 2
+        paths = {mf.path for mf in ep_db.media_files}
+        assert "/path/to/ep1.mkv" in paths
+        assert "/path/to/ep2.mkv" in paths
+
+        # Verify sizes were updated correctly
+        mf1 = next(mf for mf in ep_db.media_files if mf.path == "/path/to/ep1.mkv")
+        mf2 = next(mf for mf in ep_db.media_files if mf.path == "/path/to/ep2.mkv")
+        assert mf1.size_bytes == 200
+        assert mf2.size_bytes == 300
+
+    # 3. Simulate moving a version (delete and add with path overlap) in the same transaction
+    with get_session() as session:
+        # Create Episode 2
+        season_db = session.scalars(
+            select(Season).where(Season.name == "Season 1")
+        ).first()
+        ep2 = Episode(
+            season_id=season_db.id,
+            name="Episode 2",
+            default_path="/path/to/ep2.mkv",
+        )
+        session.add(ep2)
+        session.commit()
+
+    lib_data_move = {
+        "Show Flushing": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/path/to/ep1.mkv",
+                            "versions": [
+                                {"path": "/path/to/ep1.mkv", "size_bytes": 200},
+                            ],
+                        },
+                        {
+                            "name": "Episode 2",
+                            "path": "/path/to/ep2.mkv",
+                            "versions": [
+                                {"path": "/path/to/ep2.mkv", "size_bytes": 400},
+                            ],
+                        },
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library("Lib", lib_data_move)
+
+    with get_session() as session:
+        # Check that ep1 has only ep1.mkv and ep2 has only ep2.mkv
+        ep1_db = session.scalars(
+            select(Episode).where(Episode.name == "Episode 1")
+        ).first()
+        ep2_db = session.scalars(
+            select(Episode).where(Episode.name == "Episode 2")
+        ).first()
+        assert len(ep1_db.media_files) == 1
+        assert ep1_db.media_files[0].path == "/path/to/ep1.mkv"
+        assert len(ep2_db.media_files) == 1
+        assert ep2_db.media_files[0].path == "/path/to/ep2.mkv"
+        assert ep2_db.media_files[0].size_bytes == 400

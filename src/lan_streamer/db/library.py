@@ -47,6 +47,7 @@ def _sync_media_files(
 
     # Remove existing files not in incoming
     existing_files = {mf.path: mf for mf in owner.media_files}
+    deleted_any = False
     for path, mf in list(existing_files.items()):
         if path not in incoming_paths:
             owner.media_files.remove(mf)
@@ -56,19 +57,21 @@ def _sync_media_files(
             )
             if not has_other_refs:
                 session.delete(mf)
+                deleted_any = True
+
+    # Flush deletes immediately so the database unique constraint is freed
+    if deleted_any:
+        session.flush()
 
     # Add or update files
     for v in versions_data:
         path = v.get("path")
         if not path:
             continue
-        # Look for the correct MediaFile in the session or database
+        # Look for the correct MediaFile in the database
         db_mf = session.scalars(select(MediaFile).where(MediaFile.path == path)).first()
 
-        if db_mf and db_mf in session.deleted:
-            # Un-delete the object since it is being reused
-            session.add(db_mf)
-
+        # If not in DB, check transient objects in session.new to reuse the same instance
         if not db_mf:
             for obj in session.new:
                 if (
