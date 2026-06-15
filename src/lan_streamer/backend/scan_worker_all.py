@@ -488,6 +488,7 @@ class ScanAllLibrariesWorker(QThread):
                         offline=False,
                         season_callback=_season_callback,
                         movie_callback=_movie_callback,
+                        metadata_only=True,
                     )
                     if updated_library_data.unavailable_directories:
                         for root in updated_library_data.unavailable_directories:
@@ -524,6 +525,7 @@ class ScanAllLibrariesWorker(QThread):
                             offline=False,
                             season_callback=_season_callback,
                             movie_callback=_movie_callback,
+                            metadata_only=True,
                         )
                         if updated_library_data.unavailable_directories:
                             for root in updated_library_data.unavailable_directories:

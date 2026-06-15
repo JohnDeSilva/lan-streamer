@@ -442,6 +442,82 @@ def test_cleanup_library_prunes_missing_media_files(mock_db_file, tmp_path) -> N
         assert path_missing_outside_root in mf_paths
 
 
+def test_save_library_shared_media_files_no_unique_constraint_failure(
+    mock_db_file,
+) -> None:
+    """save_library should succeed without UNIQUE constraint failures on media_files.path
+    when multiple episodes or movies reference the exact same media file path,
+    and both records should successfully map to the same MediaFile record.
+    """
+    from lan_streamer.db.models import MediaFile
+    from sqlalchemy import select
+
+    # Mock TV library structure
+    shared_path = "/storage/nas/tv/SharedShow/Season 1/SharedFile_S01E01_S01E02.mkv"
+    library_data = {
+        "SharedShow": {
+            "metadata": {
+                "tmdb_identifier": "1234",
+                "tmdb_name": "SharedShow",
+            },
+            "seasons": {
+                "Season 1": {
+                    "metadata": {
+                        "tmdb_identifier": "5678",
+                    },
+                    "episodes": [
+                        {
+                            "name": "S01E01 - Episode 1",
+                            "path": shared_path,
+                            "tmdb_identifier": "ep1_id",
+                            "tmdb_number": 1,
+                            "versions": [
+                                {
+                                    "path": shared_path,
+                                    "size_bytes": 1024,
+                                    "video_type": "MKV",
+                                }
+                            ],
+                        },
+                        {
+                            "name": "S01E02 - Episode 2",
+                            "path": shared_path,
+                            "tmdb_identifier": "ep2_id",
+                            "tmdb_number": 2,
+                            "versions": [
+                                {
+                                    "path": shared_path,
+                                    "size_bytes": 1024,
+                                    "video_type": "MKV",
+                                }
+                            ],
+                        },
+                    ],
+                }
+            },
+        }
+    }
+
+    # Call save_library
+    # This should execute cleanly without raising sqlite3.IntegrityError
+    db.save_library("TV", library_data)
+
+    # Verify database state
+    with get_session() as session:
+        # Check that there is only exactly one MediaFile created for that path
+        media_files = session.scalars(
+            select(MediaFile).where(MediaFile.path == shared_path)
+        ).all()
+        assert len(media_files) == 1
+
+        # Verify that both Episode 1 and Episode 2 are associated with this MediaFile
+        mf = media_files[0]
+        assert len(mf.episodes) == 2
+        episode_names = {ep.name for ep in mf.episodes}
+        assert "S01E01 - Episode 1" in episode_names
+        assert "S01E02 - Episode 2" in episode_names
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

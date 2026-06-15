@@ -240,6 +240,7 @@ class ScanWorker(QThread):
                 offline=False,
                 season_callback=_season_callback,
                 movie_callback=_movie_callback,
+                metadata_only=True,
             )
             self.unavailable_directories = library.unavailable_directories
             if self.unavailable_directories:
