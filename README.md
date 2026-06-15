@@ -280,10 +280,7 @@ erDiagram
         string tmdb_episode_identifier
         string tmdb_name
         int tmdb_number
-        boolean watched
         int myanimelist_episode_number
-        int last_played_position
-        int last_played_at
         string video_codec
         string default_path
     }
@@ -303,9 +300,6 @@ erDiagram
         string rating
         string genre
         int year
-        boolean watched
-        int last_played_position
-        int last_played_at
         string video_codec
         string default_path
     }
@@ -322,6 +316,14 @@ erDiagram
         string audio_tracks
         string subtitle_tracks
     }
+    PLAYBACK_STATES {
+        bytes id PK
+        bytes episode_id FK
+        bytes movie_id FK
+        boolean watched
+        int last_played_position
+        int last_played_at
+    }
     APP_CONFIG {
         string key PK
         string value
@@ -337,6 +339,8 @@ erDiagram
     SEASONS ||--o{ EPISODES : "contains"
     EPISODES ||--o{ MEDIA_FILES : "mapped_to"
     MOVIES ||--o{ MEDIA_FILES : "mapped_to"
+    EPISODES ||--o| PLAYBACK_STATES : "tracks"
+    MOVIES ||--o| PLAYBACK_STATES : "tracks"
 ```
 
 ---
