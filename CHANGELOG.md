@@ -1,3 +1,15 @@
+## v0.30.1 (2026-06-15)
+
+### Fix
+
+- **dev-dependency**: bump ruff from 0.15.16 to 0.15.17
+- restore vlc mock in test_playback_init.py to prevent test hang
+- **scanner**: fix poster download skip
+
+### Perf
+
+- optimize database queries and filesystem directory scanning
+
 ## v0.30.0 (2026-06-15)
 
 ### Feat
