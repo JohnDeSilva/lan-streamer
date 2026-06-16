@@ -107,7 +107,10 @@ clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 
 revision:
+	export LAN_STREAMER_DB=./alembic_db.db
+	PYTHONPATH=src $(PYTHON) -m alembic upgrade head
 	PYTHONPATH=src $(PYTHON) -m alembic revision --autogenerate -m "$(name)"
+	rm -f ./alembic_db.db ./alembic_db.db-wal ./alembic_db.db-shm
 
 
 
