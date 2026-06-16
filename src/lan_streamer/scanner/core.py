@@ -156,127 +156,185 @@ def scan_directories(
     existing_library = existing_library or {}
 
     if metadata_only:
-        total_folders = len(existing_library)
-        if detail_callback:
-            detail_callback(
-                "root_total",
-                {"root": root_directory_label or "Library", "total": total_folders},
+        items_by_root: Dict[str, List[tuple[str, Any]]] = {}
+        if not root_directories:
+            items_by_root[root_directory_label or "Library"] = list(
+                existing_library.items()
             )
+        else:
+            resolved_roots = []
+            for r in root_directories:
+                try:
+                    resolved_roots.append(str(Path(r).resolve()))
+                except Exception:
+                    resolved_roots.append(r)
+            for series_name, existing_series in existing_library.items():
+                m_root = None
+                paths = []
+                if library_type == "movie":
+                    if existing_series.get("path"):
+                        paths.append(existing_series["path"])
+                    if existing_series.get("default_path"):
+                        paths.append(existing_series["default_path"])
+                    for version in existing_series.get("versions", []):
+                        if version.get("path"):
+                            paths.append(version["path"])
+                else:
+                    for season in existing_series.get("seasons", {}).values():
+                        for episode in season.get("episodes", []):
+                            if episode.get("path"):
+                                paths.append(episode["path"])
+                for p in paths:
+                    p_path = Path(p)
+                    for root in resolved_roots:
+                        root_path = Path(root)
+                        try:
+                            p_path.resolve().relative_to(root_path)
+                            m_root = root
+                            break
+                        except ValueError:
+                            pass
+                        except Exception:
+                            pass
+                    if m_root:
+                        break
+                if not m_root:
+                    for root in resolved_roots:
+                        root_path = Path(root)
+                        if (root_path / series_name).exists():
+                            m_root = root
+                            break
+                if not m_root:
+                    if resolved_roots:
+                        m_root = resolved_roots[0]
+                    else:
+                        m_root = root_directory_label or "Library"
+                if m_root not in items_by_root:
+                    items_by_root[m_root] = []
+                items_by_root[m_root].append((series_name, existing_series))
 
-        for series_name, existing_series in existing_library.items():
+        for m_root, items in items_by_root.items():
             if detail_callback:
                 detail_callback(
-                    "start_folder",
-                    {"root": root_directory_label or "Library", "folder": series_name},
+                    "root_total",
+                    {"root": m_root, "total": len(items)},
                 )
-
-            tmdb_series = None
-            is_locked = False
-            existing_jellyfin_id = None
-            has_meta = False
-
-            existing_jellyfin_id = _resolve_existing_jellyfin_id(
-                existing_series, library_type
-            )
-            if library_type == "movie":
-                is_locked = bool(existing_series.get("locked_metadata", False))
-                has_meta = bool(existing_series.get("tmdb_identifier"))
-                if is_locked:
-                    tmdb_series = _build_locked_movie_tmdb_stub(
-                        existing_series, series_name
+            for series_name, existing_series in items:
+                if detail_callback:
+                    detail_callback(
+                        "start_folder",
+                        {"root": m_root, "folder": series_name},
                     )
-            else:
-                is_locked = bool(
-                    existing_series.get("metadata", {}).get("locked_metadata", False)
-                )
-                has_meta = bool(
-                    existing_series.get("metadata", {}).get("tmdb_identifier")
-                )
-                if is_locked:
-                    tmdb_series = _build_locked_tv_tmdb_stub(existing_series)
 
-            series_force_refresh = (
-                (force_refresh or single_item_refresh or not has_meta)
-                if not is_locked
-                else False
-            )
-            cleaned = None
-            dummy_path = Path(series_name)
+                tmdb_series = None
+                is_locked = False
+                existing_jellyfin_id = None
+                has_meta = False
 
-            if library_type == "movie":
-                series_data = scan_movie(
-                    dummy_path,
-                    tmdb_movie=tmdb_series,
-                    jellyfin_data=jellyfin_data,
-                    manual_jellyfin_id=existing_jellyfin_id,
-                    existing_movie_data=existing_series,
-                    force_refresh=series_force_refresh,
-                    cleanup=cleanup,
-                    single_item_refresh=single_item_refresh,
-                    detail_callback=detail_callback,
-                    offline=offline,
-                    metadata_only=True,
+                existing_jellyfin_id = _resolve_existing_jellyfin_id(
+                    existing_series, library_type
                 )
-                if not series_data:
-                    if detail_callback:
-                        detail_callback(
-                            "finish_folder",
-                            {
-                                "root": root_directory_label or "Library",
-                                "folder": series_name,
-                                "skipped": True,
-                            },
+                if library_type == "movie":
+                    is_locked = bool(existing_series.get("locked_metadata", False))
+                    has_meta = bool(existing_series.get("tmdb_identifier"))
+                    if is_locked:
+                        tmdb_series = _build_locked_movie_tmdb_stub(
+                            existing_series, series_name
                         )
-                    continue
-                cleaned = series_data
-                if movie_callback and cleaned:
-                    movie_callback(series_name, cleaned)
-            else:
-                series_data = scan_series(
-                    dummy_path,
-                    tmdb_series=tmdb_series,
-                    jellyfin_data=jellyfin_data,
-                    manual_jellyfin_id=existing_jellyfin_id,
-                    existing_series_data=existing_series,
-                    force_refresh=series_force_refresh,
-                    cleanup=cleanup,
-                    single_item_refresh=single_item_refresh,
-                    detail_callback=detail_callback,
-                    show_future_episodes=show_future_episodes,
-                    offline=offline,
-                    season_callback=season_callback,
-                    metadata_only=True,
-                )
-                if is_locked:
-                    series_data["metadata"]["locked_metadata"] = True
-
-                cleaned = clean_series_data(series_data)
-                if not cleaned:
-                    if detail_callback:
-                        detail_callback(
-                            "finish_folder",
-                            {
-                                "root": root_directory_label or "Library",
-                                "folder": series_name,
-                                "skipped": True,
-                            },
+                else:
+                    is_locked = bool(
+                        existing_series.get("metadata", {}).get(
+                            "locked_metadata", False
                         )
-                    continue
+                    )
+                    has_meta = bool(
+                        existing_series.get("metadata", {}).get("tmdb_identifier")
+                    )
+                    if is_locked:
+                        tmdb_series = _build_locked_tv_tmdb_stub(existing_series)
 
-            library[series_name] = cleaned
-
-            if detail_callback:
-                detail_callback(
-                    "finish_folder",
-                    {
-                        "root": root_directory_label or "Library",
-                        "folder": series_name,
-                        "skipped": False,
-                    },
+                series_force_refresh = (
+                    (force_refresh or single_item_refresh or not has_meta)
+                    if not is_locked
+                    else False
                 )
+                cleaned = None
+                dummy_path = Path(series_name)
 
-            if callback:
-                callback(library)
+                if library_type == "movie":
+                    series_data = scan_movie(
+                        dummy_path,
+                        tmdb_movie=tmdb_series,
+                        jellyfin_data=jellyfin_data,
+                        manual_jellyfin_id=existing_jellyfin_id,
+                        existing_movie_data=existing_series,
+                        force_refresh=series_force_refresh,
+                        cleanup=cleanup,
+                        single_item_refresh=single_item_refresh,
+                        detail_callback=detail_callback,
+                        offline=offline,
+                        metadata_only=True,
+                    )
+                    if not series_data:
+                        if detail_callback:
+                            detail_callback(
+                                "finish_folder",
+                                {
+                                    "root": m_root,
+                                    "folder": series_name,
+                                    "skipped": True,
+                                },
+                            )
+                        continue
+                    cleaned = series_data
+                    if movie_callback and cleaned:
+                        movie_callback(series_name, cleaned)
+                else:
+                    series_data = scan_series(
+                        dummy_path,
+                        tmdb_series=tmdb_series,
+                        jellyfin_data=jellyfin_data,
+                        manual_jellyfin_id=existing_jellyfin_id,
+                        existing_series_data=existing_series,
+                        force_refresh=series_force_refresh,
+                        cleanup=cleanup,
+                        single_item_refresh=single_item_refresh,
+                        detail_callback=detail_callback,
+                        show_future_episodes=show_future_episodes,
+                        offline=offline,
+                        season_callback=season_callback,
+                        metadata_only=True,
+                    )
+                    if is_locked:
+                        series_data["metadata"]["locked_metadata"] = True
+
+                    cleaned = clean_series_data(series_data)
+                    if not cleaned:
+                        if detail_callback:
+                            detail_callback(
+                                "finish_folder",
+                                {
+                                    "root": m_root,
+                                    "folder": series_name,
+                                    "skipped": True,
+                                },
+                            )
+                        continue
+
+                library[series_name] = cleaned
+
+                if detail_callback:
+                    detail_callback(
+                        "finish_folder",
+                        {
+                            "root": m_root,
+                            "folder": series_name,
+                            "skipped": False,
+                        },
+                    )
+
+                if callback:
+                    callback(library)
 
         return library
 
