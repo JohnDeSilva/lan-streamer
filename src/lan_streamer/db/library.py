@@ -45,6 +45,23 @@ def _sync_media_files(
 
     incoming_paths = {v["path"] for v in versions_data if v.get("path")}
 
+    # First, resolve/deduplicate any transient MediaFile objects created by setters
+    # against existing database records to avoid UNIQUE constraint violations on flush.
+    for path in incoming_paths:
+        db_mf = session.scalars(select(MediaFile).where(MediaFile.path == path)).first()
+        if db_mf:
+            incorrect_mfs = [
+                mf_obj
+                for mf_obj in list(owner.media_files)
+                if mf_obj.path == path and mf_obj != db_mf
+            ]
+            for mf_obj in incorrect_mfs:
+                owner.media_files.remove(mf_obj)
+                if mf_obj in session:
+                    session.expunge(mf_obj)
+            if db_mf not in owner.media_files:
+                owner.media_files.append(db_mf)
+
     # Remove existing files not in incoming
     existing_files = {mf.path: mf for mf in owner.media_files}
     deleted_any = False
@@ -68,43 +85,33 @@ def _sync_media_files(
         path = v.get("path")
         if not path:
             continue
-        # Look for the correct MediaFile in the database
-        db_mf = session.scalars(select(MediaFile).where(MediaFile.path == path)).first()
 
-        # If not in DB, check transient objects in session.new to reuse the same instance
-        if not db_mf:
-            for obj in session.new:
-                if (
-                    isinstance(obj, MediaFile)
-                    and obj.path == path
-                    and obj not in owner.media_files
-                ):
-                    db_mf = obj
-                    break
+        mf = None
+        for existing_mf in owner.media_files:
+            if existing_mf.path == path:
+                mf = existing_mf
+                break
 
-        if db_mf:
-            # Remove any incorrect duplicate MediaFile record from owner.media_files
-            incorrect_mfs = [
-                mf_obj
-                for mf_obj in owner.media_files
-                if mf_obj.path == path and mf_obj != db_mf
-            ]
-            for mf_obj in incorrect_mfs:
-                owner.media_files.remove(mf_obj)
-                if mf_obj in session:
-                    session.expunge(mf_obj)
+        if not mf:
+            # Look for the correct MediaFile in the database or session.new
+            db_mf = session.scalars(
+                select(MediaFile).where(MediaFile.path == path)
+            ).first()
+            if not db_mf:
+                for obj in session.new:
+                    if (
+                        isinstance(obj, MediaFile)
+                        and obj.path == path
+                        and obj not in owner.media_files
+                    ):
+                        db_mf = obj
+                        break
 
-            if db_mf not in owner.media_files:
-                owner.media_files.append(db_mf)
-            mf = db_mf
-        else:
-            # Check if owner.media_files already has one (e.g. created by path setter)
-            mf = None
-            for existing_mf in owner.media_files:
-                if existing_mf.path == path:
-                    mf = existing_mf
-                    break
-            if not mf:
+            if db_mf:
+                if db_mf not in owner.media_files:
+                    owner.media_files.append(db_mf)
+                mf = db_mf
+            else:
                 mf = MediaFile(path=path)
                 owner.media_files.append(mf)
                 session.add(mf)
@@ -365,11 +372,21 @@ def _save_episode_record(
         episode = existing_by_path.get(path)
         if (
             episode
-            and tmdb_num is not None
             and episode.tmdb_number is not None
             and episode.tmdb_number != tmdb_num
         ):
+            # File is being mapped to a different episode!
+            # Clear path from the old episode record to remove the old mapping.
+            logger.info(
+                f"File '{path}' is being remapped from episode S{season.name} E{episode.tmdb_number} to E{tmdb_num or 'None'}. "
+                f"Clearing path from the old episode record."
+            )
+            episode.path = None
+            existing_by_path.pop(path, None)
+            if episode.tmdb_number is not None:
+                existing_by_number[episode.tmdb_number] = episode
             episode = None
+
         # If not found by path, check if there was a missing/future episode placeholder
         if not episode and tmdb_num is not None:
             episode = existing_by_number.get(tmdb_num)
@@ -378,7 +395,10 @@ def _save_episode_record(
                 logger.info(
                     f"Promoting placeholder episode S{season.name} E{tmdb_num} to local path {path}"
                 )
+                old_path = episode.path
                 episode.path = path
+                if old_path and old_path in existing_by_path:
+                    existing_by_path.pop(old_path, None)
     elif tmdb_num is not None:
         episode = existing_by_number.get(tmdb_num)
 
@@ -389,10 +409,13 @@ def _save_episode_record(
             logger.debug(
                 f"Matched existing episode by name fallback: S{season.name} '{name}'"
             )
+            old_path = episode.path
             if path and not episode.path:
                 episode.path = path
             if tmdb_num is not None and episode.tmdb_number is None:
                 episode.tmdb_number = tmdb_num
+            if old_path and old_path != episode.path and old_path in existing_by_path:
+                existing_by_path.pop(old_path, None)
 
     if not episode:
         episode = Episode(path=path, season=season)

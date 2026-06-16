@@ -794,3 +794,133 @@ def test_series_details_dialog_manual_mapper_missing_data_handling(
 
         # No subgroups loaded due to exception
         assert dialog.subgroup_combo.count() == 1  # Select Subgroup...
+
+
+def test_manual_mapping_remapping_and_unmapping_db(mock_series_controller):
+    from lan_streamer.db.library import save_library, load_library
+    from lan_streamer.db import get_session
+    from lan_streamer.db.models import Episode
+
+    # 1. Setup initial library state in memory
+    library_data = {
+        "Cosmos": {
+            "metadata": {
+                "tmdb_name": "Cosmos",
+                "tmdb_identifier": "12345",
+                "locked_metadata": False,
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "path": "/media/tv/Cosmos/S01E01.mkv",
+                            "name": "S01E01 - Episode 1",
+                            "tmdb_number": 1,
+                            "tmdb_episode_identifier": "101",
+                            "tmdb_identifier": "101",
+                            "air_date": "1980-01-01",
+                            "runtime": 45,
+                        },
+                        {
+                            "path": "/media/tv/Cosmos/S01E02.mkv",
+                            "name": "S01E02 - Episode 2",
+                            "tmdb_number": 2,
+                            "tmdb_episode_identifier": "102",
+                            "tmdb_identifier": "102",
+                            "air_date": "1980-01-08",
+                            "runtime": 45,
+                        },
+                    ]
+                }
+            },
+        }
+    }
+
+    # Save initial state to the database
+    save_library("TV", library_data)
+
+    # Verify initial database state
+    with get_session() as session:
+        episodes = session.query(Episode).all()
+        assert len(episodes) == 2
+        ep1 = [e for e in episodes if e.tmdb_number == 1][0]
+        ep2 = [e for e in episodes if e.tmdb_number == 2][0]
+        assert ep1.default_path == "/media/tv/Cosmos/S01E01.mkv"
+        assert ep2.default_path == "/media/tv/Cosmos/S01E02.mkv"
+        assert len(ep1.media_files) == 1
+        assert ep1.media_files[0].path == "/media/tv/Cosmos/S01E01.mkv"
+
+    # 2. Simulate Remapping: Map S01E01.mkv to Episode 2, and S01E02.mkv to Unmapped
+    # This leaves Episode 1 completely unmapped.
+    updated_library_data = {
+        "Cosmos": {
+            "metadata": {
+                "tmdb_name": "Cosmos",
+                "tmdb_identifier": "12345",
+                "locked_metadata": False,
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            # S01E01.mkv now remapped to Episode 2 (tmdb_number=2, identifier="102")
+                            "path": "/media/tv/Cosmos/S01E01.mkv",
+                            "name": "S01E01 - Episode 1",
+                            "tmdb_number": 2,
+                            "tmdb_episode_identifier": "102",
+                            "tmdb_identifier": "102",
+                            "air_date": "1980-01-08",
+                            "runtime": 45,
+                        },
+                        {
+                            # S01E02.mkv now unmapped (tmdb_number=None, identifier="")
+                            "path": "/media/tv/Cosmos/S01E02.mkv",
+                            "name": "S01E02 - Episode 2",
+                            "tmdb_number": None,
+                            "tmdb_episode_identifier": "",
+                            "tmdb_identifier": "",
+                            "air_date": "",
+                            "runtime": 0,
+                        },
+                    ]
+                }
+            },
+        }
+    }
+
+    # Save the updated state (which simulates applying manual mapping changes)
+    save_library("TV", updated_library_data)
+
+    # Verify updated database state
+    with get_session() as session:
+        episodes = session.query(Episode).all()
+
+        ep_num_1 = [e for e in episodes if e.tmdb_number == 1]
+        assert (
+            len(ep_num_1) == 0
+        )  # Episode 1 is deleted as stale placeholder because it has no path
+
+        ep_num_2 = [e for e in episodes if e.tmdb_number == 2]
+        assert len(ep_num_2) == 1
+        assert ep_num_2[0].default_path == "/media/tv/Cosmos/S01E01.mkv"
+        assert len(ep_num_2[0].media_files) == 1
+        assert ep_num_2[0].media_files[0].path == "/media/tv/Cosmos/S01E01.mkv"
+
+        ep_unmapped = [e for e in episodes if e.tmdb_number is None]
+        assert len(ep_unmapped) == 1
+        assert ep_unmapped[0].default_path == "/media/tv/Cosmos/S01E02.mkv"
+        assert len(ep_unmapped[0].media_files) == 1
+        assert ep_unmapped[0].media_files[0].path == "/media/tv/Cosmos/S01E02.mkv"
+
+    # Also verify by loading library from the DB
+    loaded = load_library("TV")
+    cosmos_eps = loaded["Cosmos"]["seasons"]["Season 1"]["episodes"]
+    # Check that S01E01.mkv is mapped to tmdb_number=2
+    ep_s01e01 = [e for e in cosmos_eps if e["path"] == "/media/tv/Cosmos/S01E01.mkv"][0]
+    assert ep_s01e01["tmdb_number"] == 2
+    assert ep_s01e01["tmdb_episode_identifier"] == "102"
+
+    # Check that S01E02.mkv is unmapped (tmdb_number=None)
+    ep_s01e02 = [e for e in cosmos_eps if e["path"] == "/media/tv/Cosmos/S01E02.mkv"][0]
+    assert ep_s01e02["tmdb_number"] is None
+    assert ep_s01e02["tmdb_episode_identifier"] in (None, "")
