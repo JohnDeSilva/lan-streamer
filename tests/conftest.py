@@ -59,7 +59,8 @@ def get_template_db(tmp_path_factory) -> Path:
     global _TEMPLATE_DB_PATH
     if _TEMPLATE_DB_PATH is None:
         temp_dir = tmp_path_factory.getbasetemp()
-        template_db = temp_dir / "template_library.db"
+        worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+        template_db = temp_dir / f"template_library_{worker_id}.db"
 
         import lan_streamer.db
 
@@ -244,8 +245,10 @@ def generated_video_asset(tmp_path_factory) -> str:
 
 
 def pytest_xdist_auto_num_workers(config) -> int:
-    """Dynamically determine the number of workers when -n auto is specified to use half of the available CPU cores."""
+    """Dynamically determine the number of workers when -n auto is specified."""
     import os
 
     num_cores = os.cpu_count() or 1
+    if os.environ.get("GITHUB_ACTIONS"):
+        return num_cores
     return max(1, num_cores // 2)
