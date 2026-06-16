@@ -1,3 +1,10 @@
+## v0.30.2 (2026-06-15)
+
+### Fix
+
+- **db**: resolve unique constraint and placeholder delete errors
+- **db**: resolve manual metadata remapping issues and uniqueness violations
+
 ## v0.30.1 (2026-06-15)
 
 ### Fix
