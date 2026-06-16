@@ -2884,9 +2884,11 @@ def test_save_library_prunes_placeholders() -> None:
         patch("lan_streamer.db.library._save_series_record", return_value=mock_series),
         patch("lan_streamer.db.library._save_season_record", return_value=mock_season),
         patch("lan_streamer.db.library._save_episode_record") as mock_save_ep_rec,
+        patch("lan_streamer.db.library.inspect") as mock_inspect,
     ):
         mock_get_session.return_value.__enter__.return_value = mock_session
         mock_session.scalars.return_value.all.return_value = [mock_series]
+        mock_inspect.return_value.key = ("Episode", (2,))
 
         save_library("TestLib", library_data)
 
