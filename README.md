@@ -347,6 +347,9 @@ erDiagram
 
 ## 🧪 Development & Quality Assurance
 
+### Codebase Onboarding & Assistant Guidelines
+For developers and AI coding assistants, there is a comprehensive guide detailing repository architecture, package layouts, and development standards at [docs/codebase_guide.md](file:///home/sadmin/antigravity/lan-streamer/docs/codebase_guide.md). Assistants should read this document at the start of each session to understand the codebase design and developer workflow.
+
 ### Technical Stack
 *   **UI**: PySide6 (Qt 6)
 *   **Database**: SQLite with SQLAlchemy ORM (using strictly 2.0 query syntax)
