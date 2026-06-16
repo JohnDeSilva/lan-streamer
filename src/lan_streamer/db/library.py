@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Dict, Any, List
 
-from sqlalchemy import select
+from sqlalchemy import select, inspect
 from sqlalchemy.orm import Session, selectinload
 
 from lan_streamer.db.models import Series, Season, Episode, Movie, MediaFile
@@ -49,6 +49,11 @@ def _sync_media_files(
     # against existing database records to avoid UNIQUE constraint violations on flush.
     for path in incoming_paths:
         db_mf = session.scalars(select(MediaFile).where(MediaFile.path == path)).first()
+        if not db_mf:
+            for obj in session.new:
+                if isinstance(obj, MediaFile) and obj.path == path:
+                    db_mf = obj
+                    break
         if db_mf:
             incorrect_mfs = [
                 mf_obj
@@ -362,6 +367,7 @@ def _save_episode_record(
     existing_by_number: Dict[int, Episode],
     existing_by_name: Dict[str, Episode],
     stats: Dict[str, Any],
+    processed_episodes: set[Episode] | None = None,
 ) -> Episode:
     path = episode_data.get("path") or None
     tmdb_num = episode_data.get("tmdb_number")
@@ -375,17 +381,22 @@ def _save_episode_record(
             and episode.tmdb_number is not None
             and episode.tmdb_number != tmdb_num
         ):
-            # File is being mapped to a different episode!
-            # Clear path from the old episode record to remove the old mapping.
-            logger.info(
-                f"File '{path}' is being remapped from episode S{season.name} E{episode.tmdb_number} to E{tmdb_num or 'None'}. "
-                f"Clearing path from the old episode record."
-            )
-            episode.path = None
-            existing_by_path.pop(path, None)
-            if episode.tmdb_number is not None:
-                existing_by_number[episode.tmdb_number] = episode
-            episode = None
+            if processed_episodes is None or episode not in processed_episodes:
+                # File is being mapped to a different episode!
+                # Clear path from the old episode record to remove the old mapping.
+                logger.info(
+                    f"File '{path}' is being remapped from episode S{season.name} E{episode.tmdb_number} to E{tmdb_num or 'None'}. "
+                    f"Clearing path from the old episode record."
+                )
+                episode.path = None
+                existing_by_path.pop(path, None)
+                if episode.tmdb_number is not None:
+                    existing_by_number[episode.tmdb_number] = episode
+                episode = None
+            else:
+                # Shared/multi-episode path. We don't clear the path of the processed episode,
+                # and we resolve episode to None so a new Episode is created/found.
+                episode = None
 
         # If not found by path, check if there was a missing/future episode placeholder
         if not episode and tmdb_num is not None:
@@ -564,6 +575,8 @@ def _save_episode_record(
     watched = bool(episode_data.get("watched"))
     if watched:
         episode.watched = True
+    if processed_episodes is not None:
+        processed_episodes.add(episode)
     return episode
 
 
@@ -659,6 +672,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                         if episode_obj.name is not None:
                             existing_by_name[episode_obj.name] = episode_obj
 
+                    processed_episodes = set()
                     for episode_data in season_data.get("episodes", []):
                         _save_episode_record(
                             session,
@@ -668,6 +682,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                             existing_by_number,
                             existing_by_name,
                             stats,
+                            processed_episodes,
                         )
 
                     # Delete stale placeholders (which have path=None)
@@ -683,7 +698,14 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                         logger.info(
                             f"Removing stale placeholder episode S{season.name} E{ep_obj.tmdb_number} from database"
                         )
-                        session.delete(ep_obj)
+                        if ep_obj in season.episodes:
+                            season.episodes.remove(ep_obj)
+                        state = inspect(ep_obj)
+                        if state.key is None:
+                            if ep_obj in session:
+                                session.expunge(ep_obj)
+                        else:
+                            session.delete(ep_obj)
                         stats["deleted"] += 1
                         stats["episodes_removed"] = stats.get("episodes_removed", 0) + 1
 
@@ -1043,6 +1065,7 @@ def save_season_data(
                 if episode_obj.name is not None:
                     existing_by_name[episode_obj.name] = episode_obj
 
+            processed_episodes = set()
             for episode_data in season_data.get("episodes", []):
                 _save_episode_record(
                     session,
@@ -1052,6 +1075,7 @@ def save_season_data(
                     existing_by_number,
                     existing_by_name,
                     stats,
+                    processed_episodes,
                 )
 
             session.commit()
