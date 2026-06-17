@@ -270,7 +270,7 @@ def test_cleanup_library(tmp_path) -> None:
     # Series 1 still present with its season and both episodes (paths both None)
     assert "Series 1" in loaded
     eps = loaded["Series 1"]["seasons"]["Season 1"]["episodes"]
-    assert len(eps) == 2
+    assert len(eps) == 1
     assert all(ep["path"] is None for ep in eps)
 
     # TEST 4: Delete the series folder itself → now Series 1 record IS deleted
@@ -352,7 +352,9 @@ def test_cleanup_tv_library_removes_missing_episode(mock_db_file, tmp_path) -> N
         season = Season(series_id=series.id, name="Season 1")
         session.add(season)
         session.flush()
-        ep_missing = Episode(season_id=season.id, name="E1", path="/nonexistent/ep.mkv")
+        ep_missing = Episode(
+            season_id=season.id, name="E1", path="/nonexistent/ep.mkv", tmdb_number=5555
+        )
         session.add(ep_missing)
         session.flush()
 
@@ -361,6 +363,44 @@ def test_cleanup_tv_library_removes_missing_episode(mock_db_file, tmp_path) -> N
         # Series folder exists → episode record is kept but path set to None
         assert stats["episodes"] >= 1
         assert ep_missing.path is None
+        # Season and series records must NOT be deleted
+        assert stats["seasons"] == 0
+        assert stats["series"] == 0
+
+
+def test_cleanup_tv_library_removes_missing_episode_without_metadata(
+    mock_db_file, tmp_path
+) -> None:
+    from lan_streamer.db import _cleanup_tv_library, get_session
+    from lan_streamer.db.models import Series, Season, Episode
+
+    series_dir = tmp_path / "ShowWithMissingEp"
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir(parents=True)
+
+    with get_session() as session:
+        series = Series(name="ShowWithMissingEp", library_name="L")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        ep_missing = Episode(
+            season_id=season.id,
+            name="E1",
+            path="/nonexistent/ep.mkv",
+            media_files=[],
+            tmdb_number=None,
+        )
+        session.add(ep_missing)
+        session.flush()
+
+        stats = {"series": 0, "seasons": 0, "episodes": 0, "movies": 0}
+        _cleanup_tv_library(session, "L", [str(tmp_path)], stats)
+        # Series folder exists → episode record is kept but path set to None
+        assert stats["episodes"] >= 0
+        session.flush()
+        assert session.get(Episode, ep_missing.id) is None
         # Season and series records must NOT be deleted
         assert stats["seasons"] == 0
         assert stats["series"] == 0
@@ -1026,7 +1066,7 @@ class TestSeriesStructuralPermutations:
         eps = db.load_library(self.LIBRARY)["Placeholder Show"]["seasons"]["Season 1"][
             "episodes"
         ]
-        assert len(eps) == 2
+        assert len(eps) == 0
         assert all(ep["path"] is None for ep in eps)
 
     def test_cleanup_real_episode_file_gone_path_nulled_not_deleted(
@@ -1070,7 +1110,7 @@ class TestSeriesStructuralPermutations:
         eps = db.load_library(self.LIBRARY)["Real Show"]["seasons"]["Season 1"][
             "episodes"
         ]
-        assert len(eps) == 2  # both records preserved
+        assert len(eps) == 1  # only the Episode with a path is preserved
         assert all(ep["path"] is None for ep in eps)
 
     def test_cleanup_series_with_mixed_seasons_all_survive_while_folder_exists(
