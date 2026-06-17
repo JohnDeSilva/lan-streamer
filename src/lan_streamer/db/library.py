@@ -250,7 +250,14 @@ def _cleanup_tv_library(
                 path = episode.default_path or (
                     episode.media_files[0].path if episode.media_files else None
                 )
-                if path and not Path(path).exists():
+                if episode.media_files == [] and episode.tmdb_number is None:
+                    logger.info(
+                        f"Cleanup: Removing unmatched episode S{season.name} E{episode.name} "
+                        f"('{episode.name}') at '{path}'"
+                    )
+                    session.delete(episode)
+                    stats["episodes_removed"] = stats.get("episodes_removed", 0) + 1
+                elif path and not Path(path).exists():
                     logger.info(
                         f"Cleanup: Setting path=None for missing episode "
                         f"'{episode.name}' (was '{path}')"
