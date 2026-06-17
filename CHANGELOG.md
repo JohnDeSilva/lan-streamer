@@ -1,3 +1,9 @@
+## v0.30.3 (2026-06-16)
+
+### Fix
+
+- **db**: removes episode records without tmdb id or media file path
+
 ## v0.30.2 (2026-06-15)
 
 ### Fix
