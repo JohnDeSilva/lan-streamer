@@ -1,5 +1,8 @@
+import logging
 import sys
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 
 class PatchedAttribute:
@@ -63,6 +66,8 @@ def _get_discover_single_library_tree() -> Any:
 
     return _discover_single_library_tree_impl
 
+
+logger.debug("backend.proxy: initialising lazy proxy objects")
 
 db = PatchedAttribute("db", _get_db)
 config = PatchedAttribute("config", _get_config)

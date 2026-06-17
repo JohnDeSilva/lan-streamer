@@ -41,12 +41,20 @@ class JellyfinPushWorker(QThread):
         try:
             logger.info("JellyfinPushWorker starting run")
             episodes_list: List[Dict[str, Any]] = db.get_all_episodes_with_jellyfin_id()
+            total_episodes = len(episodes_list)
+            logger.info(
+                f"JellyfinPushWorker pushing {total_episodes} episodes to Jellyfin"
+            )
             pushed_count: int = 0
             for episode_record in episodes_list:
                 jellyfin_client.set_watched_status(
                     episode_record["jellyfin_id"], bool(episode_record["watched"])
                 )
                 pushed_count += 1
+                if pushed_count % 50 == 0:
+                    logger.debug(
+                        f"JellyfinPushWorker progress: {pushed_count}/{total_episodes} episodes pushed"
+                    )
             logger.info(f"JellyfinPushWorker finished, pushed {pushed_count} episodes")
             self.finished.emit(pushed_count)
         except Exception as exc:

@@ -1,5 +1,8 @@
+import logging
 import sys
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 
 class PatchedAttribute:
@@ -55,6 +58,8 @@ def _get_scan_movie() -> Any:
 
     return scan_movie
 
+
+logger.debug("scanner.proxy: initialising lazy proxy objects")
 
 tmdb_client = PatchedAttribute("tmdb_client", _get_tmdb_client)
 _parse_episode_number = PatchedCallable(

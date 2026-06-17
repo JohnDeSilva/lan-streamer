@@ -373,6 +373,7 @@ def scan_directories(
 
         for series_directory in series_dirs:
             series_name = series_directory.name
+            logger.debug(f"Scanning folder '{series_name}' in root '{root_directory}'")
             if detail_callback:
                 detail_callback(
                     "start_folder",

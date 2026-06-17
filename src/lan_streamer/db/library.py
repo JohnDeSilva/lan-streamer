@@ -323,6 +323,9 @@ def _save_series_record(
         series = Series(library_name=library_name, name=series_name)
         session.add(series)
         stats["series_added"] = stats.get("series_added", 0) + 1
+        logger.info(
+            f"New series record created: '{series_name}' in library '{library_name}'"
+        )
     stats["series"] += 1
 
     series_metadata = series_data.get("metadata", {})
@@ -356,6 +359,9 @@ def _save_season_record(
         season = Season(name=season_name, series=series)
         session.add(season)
         stats["seasons_added"] = stats.get("seasons_added", 0) + 1
+        logger.info(
+            f"New season record created: '{season_name}' for series '{series.name}'"
+        )
     stats["seasons"] += 1
 
     season_metadata = season_data.get("metadata", {})
