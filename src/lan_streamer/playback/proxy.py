@@ -1,5 +1,8 @@
+import logging
 import sys
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 
 class PatchedAttribute:
@@ -49,6 +52,8 @@ def _get_cache_worker() -> Any:
 
     return CacheWorker
 
+
+logger.debug("playback.proxy: initialising lazy proxy objects")
 
 vlc = PatchedAttribute("vlc", _get_vlc)
 CacheWorker = PatchedCallable("CacheWorker", _get_cache_worker)
