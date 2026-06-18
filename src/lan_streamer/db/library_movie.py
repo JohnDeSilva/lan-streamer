@@ -1,0 +1,363 @@
+"""
+Movie library persistence functions — load, save, and cleanup of Movie records.
+"""
+
+import logging
+import time
+import json
+from pathlib import Path
+from typing import Dict, Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+
+from lan_streamer.db.models import Movie, MediaFile
+from lan_streamer.db.library_shared import (
+    get_session,
+    _update_field_safely,
+    _sync_media_files,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> None:
+    """
+    Applies all creative metadata fields from *movie_data* onto the *movie* ORM object.
+    Only overrides existing values when the incoming value is non-falsy.
+    """
+    movie.jellyfin_id = movie_data.get("jellyfin_id") or movie.jellyfin_id
+    movie.tmdb_identifier = movie_data.get("tmdb_identifier") or movie.tmdb_identifier
+    movie.poster_path = movie_data.get("poster_path") or movie.poster_path
+    movie.overview = movie_data.get("overview") or movie.overview
+    movie.tmdb_name = movie_data.get("tmdb_name") or movie.tmdb_name
+    if "locked_metadata" in movie_data:
+        movie.locked_metadata = bool(movie_data["locked_metadata"])
+    movie.date_added = movie_data.get("date_added") or movie.date_added or 0
+    movie.runtime = movie_data.get("runtime") or movie.runtime or 0
+    movie.rating = movie_data.get("rating") or movie.rating or ""
+    movie.genre = movie_data.get("genre") or movie.genre or ""
+    if "myanimelist_anime_id" in movie_data:
+        movie.myanimelist_anime_id = movie_data["myanimelist_anime_id"]
+    movie.year = movie_data.get("year") or movie.year or 0
+
+    movie.video_codec = _update_field_safely(
+        movie.video_codec, movie_data.get("video_codec")
+    )
+    movie.resolution = _update_field_safely(
+        movie.resolution, movie_data.get("resolution")
+    )
+    movie.bit_rate = _update_field_safely(movie.bit_rate, movie_data.get("bit_rate"))
+    incoming_audio = movie_data.get("audio_tracks")
+    if incoming_audio is not None and len(incoming_audio) > 0:
+        movie.audio_tracks = json.dumps(incoming_audio)
+    incoming_subs = movie_data.get("subtitle_tracks")
+    if incoming_subs is not None and len(incoming_subs) > 0:
+        movie.subtitle_tracks = json.dumps(incoming_subs)
+
+    movie.default_path = _update_field_safely(
+        movie.default_path, movie_data.get("default_path") or movie_data.get("path")
+    )
+
+    watched = bool(movie_data.get("watched"))
+    if watched:
+        movie.watched = True
+
+
+def _cleanup_movie_library(
+    session: Session,
+    library_name: str,
+    stats: Dict[str, int],
+) -> None:
+    """Removes Movie records whose file path no longer exists on disk."""
+    movie_list = session.scalars(
+        select(Movie)
+        .where(Movie.library_name == library_name)
+        .options(selectinload(Movie.media_files))
+    ).all()
+    for movie in movie_list:
+        path = movie.default_path or (
+            movie.media_files[0].path if movie.media_files else None
+        )
+        if path and not Path(path).exists():
+            logger.info(f"Cleanup: Removing missing movie '{movie.name}' at '{path}'")
+            session.delete(movie)
+            stats["movies"] += 1
+            stats["movies_removed"] = stats.get("movies_removed", 0) + 1
+
+
+def load_movie_library(library_name: str) -> Dict[str, Any]:
+    """
+    Loads the movie library from the database and constructs a dictionary structure.
+    """
+    from lan_streamer.db.queries_file_discovery import _build_movie_dict
+
+    start_time = time.time()
+    library_data = {}
+    stats = {"movies": 0}
+
+    try:
+        with get_session() as session:
+            movie_list = session.scalars(
+                select(Movie)
+                .where(Movie.library_name == library_name)
+                .options(
+                    selectinload(Movie.media_files), selectinload(Movie.playback_state)
+                )
+                .order_by(Movie.name)
+            ).all()
+
+            for movie in movie_list:
+                stats["movies"] += 1
+                if movie.name is not None:
+                    library_data[movie.name] = _build_movie_dict(movie)
+    except Exception:
+        logger.exception(f"Error loading movie library '{library_name}' from database")
+        return {}
+
+    duration = time.time() - start_time
+    logger.info(
+        f"Loaded movie library '{library_name}' in {duration:.3f}s: {stats['movies']} movies."
+    )
+    return library_data
+
+
+def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Updates the database for the given movie library name using SQLAlchemy ORM.
+    """
+
+    start_time = time.time()
+    stats: Dict[str, Any] = {
+        "movies": 0,
+        "deleted": 0,
+        "issues": [],
+        "movies_added": 0,
+        "movies_removed": 0,
+    }
+
+    try:
+        with get_session() as session:
+            existing_movies_by_name = {
+                m.name: m
+                for m in session.scalars(
+                    select(Movie)
+                    .where(Movie.library_name == library_name)
+                    .options(
+                        selectinload(Movie.media_files),
+                        selectinload(Movie.playback_state),
+                    )
+                ).all()
+                if m.name is not None
+            }
+            incoming_paths = [
+                data.get("path") for data in library.values() if data.get("path")
+            ]
+            existing_movies_by_path = {}
+            if incoming_paths:
+                existing_movies_by_path = {
+                    m.path: m
+                    for m in session.scalars(
+                        select(Movie)
+                        .join(Movie.media_files)
+                        .where(MediaFile.path.in_(incoming_paths))
+                        .options(
+                            selectinload(Movie.media_files),
+                            selectinload(Movie.playback_state),
+                        )
+                    ).all()
+                    if m.path is not None
+                }
+
+            existing_movies_by_tmdb = {}
+            for m in list(existing_movies_by_name.values()):
+                if m.tmdb_identifier:
+                    is_missing = False
+                    if m.path:
+                        try:
+                            if not Path(m.path).exists():
+                                is_missing = True
+                        except Exception:
+                            is_missing = True
+                    if is_missing:
+                        existing_movies_by_tmdb[m.tmdb_identifier] = m
+
+            touched_movie_names = set()
+
+            for movie_name, movie_data in library.items():
+                touched_movie_names.add(movie_name)
+                path = movie_data.get("path")
+
+                movie = None
+                if path and path in existing_movies_by_path:
+                    movie = existing_movies_by_path[path]
+                elif movie_name in existing_movies_by_name:
+                    movie = existing_movies_by_name[movie_name]
+                else:
+                    tmdb_id = movie_data.get("tmdb_identifier")
+                    if tmdb_id and tmdb_id in existing_movies_by_tmdb:
+                        movie = existing_movies_by_tmdb[tmdb_id]
+
+                if not movie:
+                    movie = Movie(library_name=library_name, name=movie_name)
+                    session.add(movie)
+                    stats["movies_added"] = stats.get("movies_added", 0) + 1
+                else:
+                    if movie.name != movie_name:
+                        stale_movie = existing_movies_by_name.get(movie_name)
+                        if stale_movie and stale_movie is not movie:
+                            logger.info(
+                                f"Removing stale movie record '{movie_name}' to avoid name collision."
+                            )
+                            session.delete(stale_movie)
+                            session.flush()
+                            stats["movies_removed"] = stats.get("movies_removed", 0) + 1
+                            del existing_movies_by_name[movie_name]
+                    movie.library_name = library_name
+                    movie.name = movie_name
+
+                stats["movies"] += 1
+
+                if path:
+                    existing_movies_by_path[path] = movie
+                existing_movies_by_name[movie_name] = movie
+
+                versions = movie_data.get("versions")
+                if versions is None and movie_data.get("path"):
+                    versions = [
+                        {
+                            "path": movie_data.get("path"),
+                            "video_codec": movie_data.get("video_codec"),
+                            "resolution": movie_data.get("resolution"),
+                            "bit_rate": movie_data.get("bit_rate"),
+                            "audio_tracks": movie_data.get("audio_tracks"),
+                            "subtitle_tracks": movie_data.get("subtitle_tracks"),
+                        }
+                    ]
+                _sync_media_files(session, movie, versions)
+                _apply_movie_fields(movie, movie_data)
+
+    except Exception as e:
+        logger.exception(f"Error saving movie library '{library_name}' to database")
+        stats["issues"].append(
+            {
+                "type": "Database Write Failure",
+                "item": f"Movie Library '{library_name}'",
+                "error": str(e),
+            }
+        )
+
+    duration = time.time() - start_time
+    logger.info(
+        f"Movie library '{library_name}' updated in {duration:.3f}s: "
+        f"{stats['movies']} movies saved. "
+    )
+    return stats
+
+
+def save_movie_data(
+    library_name: str, movie_name: str, movie_data: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Saves or updates a single movie in the database.
+    """
+    stats: Dict[str, Any] = {
+        "series": 0,
+        "seasons": 0,
+        "episodes": 0,
+        "movies": 0,
+        "deleted": 0,
+        "issues": [],
+        "series_added": 0,
+        "series_removed": 0,
+        "seasons_added": 0,
+        "seasons_removed": 0,
+        "episodes_added": 0,
+        "episodes_removed": 0,
+        "movies_added": 0,
+        "movies_removed": 0,
+    }
+    try:
+        with get_session() as session:
+            existing_movie = session.scalars(
+                select(Movie)
+                .where(Movie.library_name == library_name)
+                .where(Movie.name == movie_name)
+                .options(
+                    selectinload(Movie.media_files), selectinload(Movie.playback_state)
+                )
+            ).first()
+
+            path = movie_data.get("path")
+            movie = None
+            if path:
+                movie = session.scalars(
+                    select(Movie)
+                    .join(Movie.media_files)
+                    .where(MediaFile.path == path)
+                    .options(
+                        selectinload(Movie.media_files),
+                        selectinload(Movie.playback_state),
+                    )
+                ).first()
+
+            if not movie:
+                movie = existing_movie
+
+            if not movie:
+                tmdb_id = movie_data.get("tmdb_identifier")
+                if tmdb_id:
+                    movie = session.scalars(
+                        select(Movie)
+                        .where(Movie.library_name == library_name)
+                        .where(Movie.tmdb_identifier == tmdb_id)
+                        .options(
+                            selectinload(Movie.media_files),
+                            selectinload(Movie.playback_state),
+                        )
+                    ).first()
+
+            if not movie:
+                movie = Movie(library_name=library_name, name=movie_name)
+                session.add(movie)
+                stats["movies_added"] = stats.get("movies_added", 0) + 1
+            else:
+                if movie.name != movie_name:
+                    stale_movie = existing_movie
+                    if stale_movie and stale_movie is not movie:
+                        logger.info(
+                            f"Removing stale movie record '{movie_name}' to avoid name collision."
+                        )
+                        session.delete(stale_movie)
+                        session.flush()
+                        stats["movies_removed"] = stats.get("movies_removed", 0) + 1
+
+                movie.library_name = library_name
+                movie.name = movie_name
+
+            stats["movies"] += 1
+
+            versions = movie_data.get("versions")
+            if versions is None and movie_data.get("path"):
+                versions = [
+                    {
+                        "path": movie_data.get("path"),
+                        "video_codec": movie_data.get("video_codec"),
+                        "resolution": movie_data.get("resolution"),
+                        "bit_rate": movie_data.get("bit_rate"),
+                        "audio_tracks": movie_data.get("audio_tracks"),
+                        "subtitle_tracks": movie_data.get("subtitle_tracks"),
+                    }
+                ]
+            _sync_media_files(session, movie, versions)
+            _apply_movie_fields(movie, movie_data)
+
+            session.commit()
+            stats["movie_id"] = movie.id
+            logger.info(
+                f"Successfully saved movie '{movie_name}' to database. Stats: {stats}"
+            )
+            return stats
+    except Exception as e:
+        logger.exception(f"Failed to save movie '{movie_name}' to database: {e}")
+        raise e
