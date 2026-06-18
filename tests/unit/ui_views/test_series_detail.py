@@ -339,14 +339,16 @@ def test_series_details_dialog_manual_mapper(qtbot: Any) -> None:
     }
 
     with (
-        patch("lan_streamer.ui_views.dialogs.details.tmdb_client") as mock_tmdb,
-        patch("lan_streamer.ui_views.dialogs.details.db.save_library") as mock_save,
+        patch("lan_streamer.ui_views.dialogs.series_details.tmdb_client") as mock_tmdb,
         patch(
-            "lan_streamer.ui_views.dialogs.details.QMessageBox.question",
+            "lan_streamer.ui_views.dialogs.series_details.db.save_library"
+        ) as mock_save,
+        patch(
+            "lan_streamer.ui_views.dialogs.series_details.QMessageBox.question",
             return_value=QMessageBox.StandardButton.Yes,
         ),
         patch(
-            "lan_streamer.ui_views.dialogs.details.QMessageBox.information"
+            "lan_streamer.ui_views.dialogs.series_details.QMessageBox.information"
         ) as mock_info,
     ):
         mock_tmdb.get_episode_groups.return_value = mock_groups
@@ -479,15 +481,17 @@ def test_series_details_dialog_anime_mal_status(qtbot: Any) -> None:
 
     with (
         patch(
-            "lan_streamer.ui_views.dialogs.details.myanimelist_client"
+            "lan_streamer.ui_views.dialogs.series_details.myanimelist_client"
         ) as mock_mal_client,
-        patch("lan_streamer.ui_views.dialogs.details.db.save_library") as mock_save,
         patch(
-            "lan_streamer.ui_views.dialogs.details.QMessageBox.question",
+            "lan_streamer.ui_views.dialogs.series_details.db.save_library"
+        ) as mock_save,
+        patch(
+            "lan_streamer.ui_views.dialogs.series_details.QMessageBox.question",
             return_value=QMessageBox.StandardButton.Yes,
         ),
         patch(
-            "lan_streamer.ui_views.dialogs.details.QMessageBox.information"
+            "lan_streamer.ui_views.dialogs.series_details.QMessageBox.information"
         ) as mock_info,
     ):
         mock_mal_client.is_configured.return_value = True

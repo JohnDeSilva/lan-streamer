@@ -557,15 +557,15 @@ def test_series_details_dialog_manual_mapper_default_tv_order(
 
     with (
         patch(
-            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_episode_groups",
+            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_episode_groups",
             return_value=[],
         ),
         patch(
-            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_seasons",
+            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_seasons",
             return_value=mock_seasons,
         ),
         patch(
-            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_episodes",
+            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_episodes",
             return_value=mock_episodes,
         ),
     ):
@@ -644,11 +644,11 @@ def test_series_details_dialog_manual_mapper_custom_group_order(
 
     with (
         patch(
-            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_episode_groups",
+            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_episode_groups",
             return_value=mock_groups,
         ),
         patch(
-            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_episode_group_details",
+            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_episode_group_details",
             return_value=mock_group_details,
         ),
     ):
@@ -720,15 +720,15 @@ def test_series_details_dialog_manual_mapper_unmapped_clearing(
 
     with (
         patch(
-            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_episode_groups",
+            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_episode_groups",
             return_value=[],
         ),
         patch(
-            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_seasons",
+            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_seasons",
             return_value=mock_seasons,
         ),
         patch(
-            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_episodes",
+            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_episodes",
             return_value=mock_episodes,
         ),
     ):
@@ -774,11 +774,11 @@ def test_series_details_dialog_manual_mapper_missing_data_handling(
 
     with (
         patch(
-            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_episode_groups",
+            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_episode_groups",
             side_effect=Exception("API limit exceeded"),
         ),
         patch(
-            "lan_streamer.ui_views.dialogs.details.tmdb_client.get_seasons",
+            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_seasons",
             side_effect=Exception("JSON Decode Error"),
         ),
     ):
