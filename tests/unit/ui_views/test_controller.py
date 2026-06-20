@@ -535,3 +535,19 @@ def test_controller_delete_episode(mock_controller) -> None:
         mock_controller.delete_episode("/path/to/ep.mkv")
         mock_db_delete.assert_called_once_with("/path/to/ep.mkv")
         mock_select.assert_called_once_with("test_lib", reset_selection=False)
+
+
+# ------------------------------------------------------------------
+# Constructor fallback tests
+# ------------------------------------------------------------------
+
+
+def test_controller_fallback_to_default_clients() -> None:
+    """When dependencies are None, Controller falls back to default globals."""
+    c = Controller(tmdb_client=None, jellyfin_client=None, config=None, db=None)
+    assert c._tmdb_client is not None
+    assert c._jellyfin_client is not None
+    assert c._config is not None
+    assert c._db is not None
+    assert callable(getattr(c._tmdb_client, "get_episodes", None))
+    assert callable(getattr(c._jellyfin_client, "is_configured", None))

@@ -608,3 +608,24 @@ def test_get_season_based_episode_group_seasons_name_preferred_over_cours(tmdb) 
     res = tmdb.get_season_based_episode_group(1234)
     assert res is not None
     assert res["id"] == "g_seasons"
+
+
+# ------------------------------------------------------------------
+# Constructor fallback tests
+# ------------------------------------------------------------------
+
+
+def test_tmdb_fallback_to_config_api_key() -> None:
+    """When api_key is None, _effective_api_key reads from config."""
+    with patch("lan_streamer.providers.tmdb.config.tmdb_api_key", "fallback-key"):
+        client = TMDBClient(api_key=None, cache_dir="/tmp")
+        assert client._effective_api_key == "fallback-key"
+        assert client.is_configured() is True
+
+
+def test_tmdb_fallback_to_default_cache_dir() -> None:
+    """When cache_dir is None, _effective_cache_dir uses the default."""
+    client = TMDBClient(api_key="test", cache_dir=None)
+    from lan_streamer.providers.tmdb import CACHE_DIR
+
+    assert client._effective_cache_dir == CACHE_DIR

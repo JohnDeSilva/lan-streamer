@@ -27,14 +27,10 @@ class JellyfinClient:
         self.session = session or requests.Session()
         self._jellyfin_url = jellyfin_url
         self._jellyfin_api_key = jellyfin_api_key
-        if hasattr(self.session, "headers") and hasattr(
-            self.session.headers, "setdefault"
-        ):
-            self.session.headers.setdefault(
-                "User-Agent",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            )
         if session is None:
+            self.session.headers["User-Agent"] = (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
             self.session.trust_env = True
         self._cached_user_id: str | None = None
 
