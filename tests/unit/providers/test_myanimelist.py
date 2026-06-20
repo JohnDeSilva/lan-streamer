@@ -1,12 +1,18 @@
 import pytest
 import time
+import requests
 from unittest.mock import MagicMock, patch
 from lan_streamer.providers.myanimelist import MyAnimeListClient
 from lan_streamer.system.config import config
 
 
 @pytest.fixture
-def mal() -> None:
+def mock_session() -> MagicMock:
+    return MagicMock(spec=requests.Session)
+
+
+@pytest.fixture
+def mal(mock_session) -> None:
     with (
         patch.object(config, "myanimelist_client_id", "test-client-id"),
         patch.object(config, "myanimelist_client_secret", "test-client-secret"),
@@ -14,7 +20,7 @@ def mal() -> None:
         patch.object(config, "myanimelist_refresh_token", "test-refresh-token"),
         patch.object(config, "myanimelist_token_expires_at", time.time() + 3600),
     ):
-        client = MyAnimeListClient()
+        client = MyAnimeListClient(session=mock_session)
         yield client
 
 
