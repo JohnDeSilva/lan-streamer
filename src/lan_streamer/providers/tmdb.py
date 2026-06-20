@@ -23,13 +23,11 @@ class TMDBClient:
 
     def __init__(self, session: requests.Session | None = None) -> None:
         self.session = session or requests.Session()
-        if session is None:
-            self.session.headers.update(
-                {
-                    "User-Agent": "LanStreamer/1.0",
-                    "Accept": "application/json",
-                }
-            )
+        if hasattr(self.session, "headers") and hasattr(
+            self.session.headers, "setdefault"
+        ):
+            self.session.headers.setdefault("User-Agent", "LanStreamer/1.0")
+            self.session.headers.setdefault("Accept", "application/json")
 
     # ------------------------------------------------------------------
     # Configuration
