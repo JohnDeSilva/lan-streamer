@@ -21,8 +21,15 @@ CACHE_DIR = Path.home() / ".config" / "lan-streamer" / "cache" / "images"
 class TMDBClient:
     """Client for interacting with The Movie Database (TMDB) API to fetch movie and TV metadata."""
 
-    def __init__(self, session: requests.Session | None = None) -> None:
+    def __init__(
+        self,
+        session: requests.Session | None = None,
+        api_key: str | None = None,
+        cache_dir: str | Path | None = None,
+    ) -> None:
         self.session = session or requests.Session()
+        self._api_key = api_key
+        self._cache_dir = Path(cache_dir) if cache_dir else None
         if hasattr(self.session, "headers") and hasattr(
             self.session.headers, "setdefault"
         ):
@@ -33,14 +40,23 @@ class TMDBClient:
     # Configuration
     # ------------------------------------------------------------------
 
+    @property
+    def _effective_api_key(self) -> str:
+        return self._api_key if self._api_key is not None else config.tmdb_api_key
+
+    @property
+    def _effective_cache_dir(self) -> Path:
+        return self._cache_dir if self._cache_dir is not None else CACHE_DIR
+
     def is_configured(self) -> bool:
-        return bool(config.tmdb_api_key)
+        return bool(self._effective_api_key)
 
     def _params(self, extra: dict | None = None) -> dict:
         """Returns base query params (api_key) merged with any extras."""
         parameters = {}
-        if config.tmdb_api_key:
-            parameters["api_key"] = config.tmdb_api_key.strip()
+        api_key = self._effective_api_key
+        if api_key:
+            parameters["api_key"] = api_key.strip()
         if extra:
             parameters.update(extra)
         return parameters
@@ -426,8 +442,9 @@ class TMDBClient:
         """Checks the /cache/images directory first to see if a poster already exists for the given cache_key."""
         if not cache_key:
             return ""
-        if CACHE_DIR.exists():
-            for file_path in CACHE_DIR.glob(f"{cache_key}.*"):
+        cache_dir = self._effective_cache_dir
+        if cache_dir.exists():
+            for file_path in cache_dir.glob(f"{cache_key}.*"):
                 if file_path.is_file():
                     logger.debug(
                         f"Found existing cached poster for {cache_key}: {file_path}"
@@ -465,9 +482,10 @@ class TMDBClient:
         else:
             image_url = poster_path
 
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_dir = self._effective_cache_dir
+        cache_dir.mkdir(parents=True, exist_ok=True)
         suffix = Path(image_url.split("?")[0]).suffix or ".jpg"
-        image_path = CACHE_DIR / f"{cache_key}{suffix}"
+        image_path = cache_dir / f"{cache_key}{suffix}"
 
         if image_path.exists():
             return str(image_path)

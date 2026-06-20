@@ -2,7 +2,6 @@ import pytest
 import requests
 from unittest.mock import MagicMock, patch
 from lan_streamer.providers.jellyfin import JellyfinClient
-from lan_streamer.system.config import config
 
 
 @pytest.fixture
@@ -11,13 +10,13 @@ def mock_session() -> MagicMock:
 
 
 @pytest.fixture
-def jf_client(mock_session) -> None:
-    with (
-        patch.object(config, "jellyfin_url", "http://test-jf"),
-        patch.object(config, "jellyfin_api_key", "test-key"),
-    ):
-        client = JellyfinClient(session=mock_session)
-        yield client
+def jf_client(mock_session) -> JellyfinClient:
+    client = JellyfinClient(
+        session=mock_session,
+        jellyfin_url="http://test-jf",
+        jellyfin_api_key="test-key",
+    )
+    return client
 
 
 def test_jellyfin_is_configured(jf_client) -> None:
@@ -25,9 +24,7 @@ def test_jellyfin_is_configured(jf_client) -> None:
 
 
 def test_jellyfin_not_configured() -> None:
-    client = JellyfinClient()
-    config.jellyfin_url = ""
-    config.jellyfin_api_key = ""
+    client = JellyfinClient(jellyfin_url="", jellyfin_api_key="")
     assert client.is_configured() is False
     assert client.get_current_user_id() is None
     # set_watched_status should just return silently
@@ -197,45 +194,52 @@ def test_validate_credentials_ip(jf_client) -> None:
 
 
 def test_get_base_url_logic(jf_client) -> None:
-    config.jellyfin_url = "jellyfin.local"
+    original_url = jf_client._jellyfin_url
+    jf_client._jellyfin_url = "jellyfin.local"
     assert jf_client._get_base_url() == "https://jellyfin.local"
 
-    config.jellyfin_url = "localhost"
+    jf_client._jellyfin_url = "localhost"
     assert jf_client._get_base_url() == "http://localhost"
 
-    config.jellyfin_url = "192.168.1.10"
+    jf_client._jellyfin_url = "192.168.1.10"
     assert jf_client._get_base_url() == "http://192.168.1.10"
 
-    config.jellyfin_url = ""
+    jf_client._jellyfin_url = ""
     assert jf_client._get_base_url() == ""
+    jf_client._jellyfin_url = original_url
 
 
-def test_get_current_user_id_https_retry(jf_client) -> None:
-    with (
-        patch.object(config, "jellyfin_url", "test.com"),
-        patch.object(config, "jellyfin_api_key", "key"),
-    ):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = [{"Id": "u1"}]
+def test_get_current_user_id_https_retry() -> None:
+    client = JellyfinClient(
+        session=MagicMock(spec=requests.Session),
+        jellyfin_url="test.com",
+        jellyfin_api_key="key",
+    )
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = [{"Id": "u1"}]
 
-        def side_effect(url, **kwargs) -> None:
-            if url.startswith("https://"):
-                raise requests.exceptions.ConnectionError("Force retry")
-            return mock_resp
+    def side_effect(url, **kwargs) -> None:
+        if url.startswith("https://"):
+            raise requests.exceptions.ConnectionError("Force retry")
+        return mock_resp
 
-        jf_client.session.get = MagicMock(side_effect=side_effect)
+    client.session.get = MagicMock(side_effect=side_effect)
 
-        user_id = jf_client.get_current_user_id()
-        assert user_id == "u1"
-        assert jf_client.session.get.call_count == 2
-        assert jf_client.session.get.call_args_list[0][0][0].startswith("https://")
-        assert jf_client.session.get.call_args_list[1][0][0].startswith("http://")
+    user_id = client.get_current_user_id()
+    assert user_id == "u1"
+    assert client.session.get.call_count == 2
+    assert client.session.get.call_args_list[0][0][0].startswith("https://")
+    assert client.session.get.call_args_list[1][0][0].startswith("http://")
 
 
-def test_get_current_user_id_https_retry_failure(jf_client) -> None:
-    with patch.object(config, "jellyfin_url", "test.com"):
-        jf_client.session.get = MagicMock(side_effect=Exception("Both failed"))
-        assert jf_client.get_current_user_id() is None
+def test_get_current_user_id_https_retry_failure() -> None:
+    client = JellyfinClient(
+        session=MagicMock(spec=requests.Session),
+        jellyfin_url="test.com",
+        jellyfin_api_key="key",
+    )
+    client.session.get = MagicMock(side_effect=Exception("Both failed"))
+    assert client.get_current_user_id() is None
 
 
 def test_get_headers(jf_client) -> None:
@@ -308,9 +312,13 @@ def test_search_series(jf_client) -> None:
     assert results[0]["Id"] == "s1"
 
 
-def test_search_series_not_configured(jf_client) -> None:
-    with patch.object(config, "jellyfin_url", ""):
-        assert jf_client.search_series("Test") == []
+def test_search_series_not_configured() -> None:
+    client = JellyfinClient(
+        session=MagicMock(spec=requests.Session),
+        jellyfin_url="",
+        jellyfin_api_key="",
+    )
+    assert client.search_series("Test") == []
 
 
 def test_search_series_error(jf_client) -> None:
@@ -371,9 +379,13 @@ def test_search_movie(jf_client) -> None:
     assert results[0]["Id"] == "m1"
 
 
-def test_search_movie_not_configured(jf_client) -> None:
-    with patch.object(config, "jellyfin_url", ""):
-        assert jf_client.search_movie("Test") == []
+def test_search_movie_not_configured() -> None:
+    client = JellyfinClient(
+        session=MagicMock(spec=requests.Session),
+        jellyfin_url="",
+        jellyfin_api_key="",
+    )
+    assert client.search_movie("Test") == []
 
 
 def test_search_movie_error(jf_client) -> None:
@@ -409,39 +421,41 @@ def test_jellyfin_validate_credentials_extra_paths(jf_client) -> None:
 
 
 def test_jellyfin_get_current_user_id_unconfigured() -> None:
-    client = JellyfinClient()
-    with (
-        patch.object(config, "jellyfin_url", "http://test"),
-        patch.object(config, "jellyfin_api_key", "key"),
-    ):
-        # mock session get to return empty list
-        client.session.get = MagicMock()
-        client.session.get.return_value.json.return_value = []
-        assert client.get_current_user_id() is None
+    client = JellyfinClient(
+        session=MagicMock(spec=requests.Session),
+        jellyfin_url="http://test",
+        jellyfin_api_key="key",
+    )
+    client.session.get = MagicMock()
+    client.session.get.return_value.json.return_value = []
+    assert client.get_current_user_id() is None
 
 
-def test_get_current_user_id_https_retry_error(jf_client) -> None:
-    with (
-        patch.object(config, "jellyfin_url", "test.com"),
-        patch.object(config, "jellyfin_api_key", "key"),
-    ):
-        # First call fails on HTTPS, second call fails on HTTP
-        from requests.exceptions import ConnectionError
+def test_get_current_user_id_https_retry_error() -> None:
+    client = JellyfinClient(
+        session=MagicMock(spec=requests.Session),
+        jellyfin_url="test.com",
+        jellyfin_api_key="key",
+    )
+    from requests.exceptions import ConnectionError
 
-        jf_client.session.get = MagicMock(
-            side_effect=[ConnectionError("HTTPS fail"), Exception("HTTP fail")]
-        )
-        assert jf_client.get_current_user_id() is None
+    client.session.get = MagicMock(
+        side_effect=[ConnectionError("HTTPS fail"), Exception("HTTP fail")]
+    )
+    assert client.get_current_user_id() is None
 
 
-def test_jellyfin_get_correlation_data_unconfigured(jf_client) -> None:
-    # 1. Unconfigured
-    with patch.object(config, "jellyfin_url", ""):
-        assert jf_client.get_jellyfin_correlation_data() == {}
+def test_jellyfin_get_correlation_data_unconfigured() -> None:
+    client = JellyfinClient(
+        session=MagicMock(spec=requests.Session),
+        jellyfin_url="",
+        jellyfin_api_key="",
+    )
+    assert client.get_jellyfin_correlation_data() == {}
 
     # 2. No user_id
-    jf_client.get_current_user_id = MagicMock(return_value=None)
-    assert jf_client.get_jellyfin_correlation_data() == {}
+    client.get_current_user_id = MagicMock(return_value=None)
+    assert client.get_jellyfin_correlation_data() == {}
 
 
 def test_jellyfin_correlation_data_pagination_and_exceptions(jf_client) -> None:
@@ -509,11 +523,15 @@ def test_jellyfin_correlation_data_exceptions(jf_client) -> None:
 
 def test_jellyfin_played_status_edge_cases(jf_client) -> None:
     # 1. Unconfigured
-    with patch.object(config, "jellyfin_url", ""):
-        assert jf_client.mark_as_played("item1") is False
-        assert jf_client.unmark_as_played("item1") is False
-        assert jf_client.get_series_episodes("s1") == []
-        jf_client.set_watched_status("item1", True)  # Should return immediately
+    unconfigured = JellyfinClient(
+        session=MagicMock(spec=requests.Session),
+        jellyfin_url="",
+        jellyfin_api_key="",
+    )
+    assert unconfigured.mark_as_played("item1") is False
+    assert unconfigured.unmark_as_played("item1") is False
+    assert unconfigured.get_series_episodes("s1") == []
+    unconfigured.set_watched_status("item1", True)  # Should return immediately
 
     # 2. No user_id
     jf_client.get_current_user_id = MagicMock(return_value=None)

@@ -30,7 +30,7 @@ def mock_db_save():
 @pytest.fixture
 def ctrl(mock_db_save):
     """A controller with a simple TV library and config set up."""
-    c = Controller()
+    c = Controller(tmdb_client=MagicMock())
     c.current_library_name = "TestLib"
     c.cached_library_data = {
         "ShowA": {
@@ -367,28 +367,34 @@ def test_trigger_cleanup_no_library_name() -> None:
 
 
 def test_trigger_jellyfin_pull_not_configured() -> None:
-    c = Controller()
+    mock_jellyfin = MagicMock()
+    mock_jellyfin.is_configured.return_value = False
+    c = Controller(
+        config=MagicMock(),
+        db=MagicMock(),
+        jellyfin_client=mock_jellyfin,
+        tmdb_client=MagicMock(),
+    )
     statuses: List[str] = []
     c.status_changed.connect(statuses.append)
 
-    with patch(
-        "lan_streamer.ui_views.controller.jellyfin_client.is_configured",
-        return_value=False,
-    ):
-        c.trigger_jellyfin_pull()
+    c.trigger_jellyfin_pull()
     assert any("not configured" in s for s in statuses)
 
 
 def test_trigger_jellyfin_push_not_configured() -> None:
-    c = Controller()
+    mock_jellyfin = MagicMock()
+    mock_jellyfin.is_configured.return_value = False
+    c = Controller(
+        config=MagicMock(),
+        db=MagicMock(),
+        jellyfin_client=mock_jellyfin,
+        tmdb_client=MagicMock(),
+    )
     statuses: List[str] = []
     c.status_changed.connect(statuses.append)
 
-    with patch(
-        "lan_streamer.ui_views.controller.jellyfin_client.is_configured",
-        return_value=False,
-    ):
-        c.trigger_jellyfin_push()
+    c.trigger_jellyfin_push()
     assert any("not configured" in s for s in statuses)
 
 
@@ -520,11 +526,8 @@ def test_download_provider_artwork_downloads_when_configured(ctrl) -> None:
     target = {"tmdb_identifier": "999"}
     match = {"poster_path": "/p/image.jpg"}
 
-    with patch(
-        "lan_streamer.ui_views.controller.tmdb_client.download_image",
-        return_value="/cached/img.jpg",
-    ):
-        ctrl._download_provider_artwork(target, match, is_movie=False)
+    ctrl._tmdb_client.download_image.return_value = "/cached/img.jpg"
+    ctrl._download_provider_artwork(target, match, is_movie=False)
 
     assert target["poster_path"] == "/cached/img.jpg"
 
@@ -533,10 +536,8 @@ def test_download_provider_artwork_fallback_when_no_download(ctrl) -> None:
     target = {"tmdb_identifier": "999"}
     match = {"poster_path": "/p/image.jpg"}
 
-    with patch(
-        "lan_streamer.ui_views.controller.tmdb_client.download_image", return_value=None
-    ):
-        ctrl._download_provider_artwork(target, match, is_movie=False)
+    ctrl._tmdb_client.download_image.return_value = None
+    ctrl._download_provider_artwork(target, match, is_movie=False)
 
     assert target["poster_path"] == "/p/image.jpg"
 

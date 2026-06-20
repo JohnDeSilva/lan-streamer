@@ -3,7 +3,6 @@ from unittest.mock import patch, MagicMock
 from typing import Any, Dict, List
 
 from lan_streamer.ui_views import Controller
-from lan_streamer.system.config import config
 
 
 @pytest.fixture
@@ -58,7 +57,19 @@ def mock_db_save():
 
 @pytest.fixture
 def mock_controller(mock_db_save):
-    controller = Controller()
+    mock_config = MagicMock()
+    mock_config.libraries = {"test_lib": {"type": "tv", "paths": ["/media/tv"]}}
+    mock_config.sort_mode = "Alphabetical"
+    mock_config.sort_descending = False
+    mock_config.filter_out_watched = False
+    from lan_streamer import db as _real_db
+
+    controller = Controller(
+        config=mock_config,
+        db=_real_db,
+        jellyfin_client=MagicMock(),
+        tmdb_client=MagicMock(),
+    )
     controller.cached_library_data = {
         "Test Show": {
             "metadata": {
@@ -89,12 +100,16 @@ def mock_controller(mock_db_save):
     }
     controller.current_library_name = "test_lib"
     controller.selected_series_name = "Test Show"
-    config.libraries = {"test_lib": {"type": "tv", "paths": ["/media/tv"]}}
     return controller
 
 
 def test_controller_metrics_caching(sample_library_dictionary: Dict[str, Any]) -> None:
-    controller_instance = Controller()
+    controller_instance = Controller(
+        config=MagicMock(),
+        db=MagicMock(),
+        jellyfin_client=MagicMock(),
+        tmdb_client=MagicMock(),
+    )
     controller_instance.cached_library_data = sample_library_dictionary
     controller_instance._cache_series_metrics()
 
@@ -122,7 +137,16 @@ def test_controller_library_selection(
 
 
 def test_controller_sorting_and_filtering() -> None:
-    controller_instance = Controller()
+    mock_config = MagicMock()
+    mock_config.sort_mode = "Alphabetical"
+    mock_config.sort_descending = False
+    mock_config.filter_out_watched = False
+    controller_instance = Controller(
+        config=mock_config,
+        db=MagicMock(),
+        jellyfin_client=MagicMock(),
+        tmdb_client=MagicMock(),
+    )
     loaded_signals_emitted: List[bool] = []
     controller_instance.library_loaded.connect(
         lambda: loaded_signals_emitted.append(True)
@@ -135,20 +159,26 @@ def test_controller_sorting_and_filtering() -> None:
     )
     controller_instance.set_sort_mode(target_mode)
     assert controller_instance.sort_mode == target_mode
-    assert config.sort_mode == target_mode
+    assert mock_config.sort_mode == target_mode
     assert len(loaded_signals_emitted) == 1
 
     initial_filter: bool = controller_instance.filter_out_watched
     controller_instance.set_filter_out_watched(not initial_filter)
     assert controller_instance.filter_out_watched is not initial_filter
-    assert config.filter_out_watched is not initial_filter
+    assert mock_config.filter_out_watched is not initial_filter
     assert len(loaded_signals_emitted) == 2
 
 
 def test_controller_triggers() -> None:
-    controller_instance = Controller()
+    mock_config = MagicMock()
+    mock_config.libraries = {"Test Lib": {"type": "tv", "paths": ["/path/to/media"]}}
+    controller_instance = Controller(
+        config=mock_config,
+        db=MagicMock(),
+        jellyfin_client=MagicMock(),
+        tmdb_client=MagicMock(),
+    )
     controller_instance.current_library_name = "Test Lib"
-    config.libraries["Test Lib"] = {"type": "tv", "paths": ["/path/to/media"]}
 
     with patch("lan_streamer.ui_views.controller.ScanWorker") as mock_scan:
         controller_instance.trigger_scan(force_refresh=True)
@@ -162,18 +192,21 @@ def test_controller_triggers() -> None:
 
 
 def test_controller_jellyfin_sync_triggers() -> None:
-    controller_instance = Controller()
-    with patch(
-        "lan_streamer.ui_views.controller.jellyfin_client.is_configured",
-        return_value=True,
-    ):
-        with patch("lan_streamer.ui_views.controller.JellyfinPullWorker") as mock_pull:
-            controller_instance.trigger_jellyfin_pull()
-            mock_pull.assert_called_once()
+    mock_jellyfin = MagicMock()
+    mock_jellyfin.is_configured.return_value = True
+    controller_instance = Controller(
+        config=MagicMock(),
+        db=MagicMock(),
+        jellyfin_client=mock_jellyfin,
+        tmdb_client=MagicMock(),
+    )
+    with patch("lan_streamer.ui_views.controller.JellyfinPullWorker") as mock_pull:
+        controller_instance.trigger_jellyfin_pull()
+        mock_pull.assert_called_once()
 
-        with patch("lan_streamer.ui_views.controller.JellyfinPushWorker") as mock_push:
-            controller_instance.trigger_jellyfin_push()
-            mock_push.assert_called_once()
+    with patch("lan_streamer.ui_views.controller.JellyfinPushWorker") as mock_push:
+        controller_instance.trigger_jellyfin_push()
+        mock_push.assert_called_once()
 
 
 def test_controller_worker_slots(sample_library_dictionary: Dict[str, Any]) -> None:
@@ -259,12 +292,19 @@ def test_controller_partial_scan_updates() -> None:
 def test_controller_file_system_monitoring(
     sample_library_dictionary: Dict[str, Any], tmp_path: Any
 ) -> None:
-    controller_instance = Controller()
+    mock_config = MagicMock()
+    mock_config.libraries = {}
+    controller_instance = Controller(
+        config=mock_config,
+        db=MagicMock(),
+        jellyfin_client=MagicMock(),
+        tmdb_client=MagicMock(),
+    )
     media_directory = tmp_path / "cinematic_roots"
     media_directory.mkdir()
     directory_path_string = str(media_directory)
 
-    config.libraries["ActiveMonitoredLib"] = {
+    mock_config.libraries["ActiveMonitoredLib"] = {
         "type": "tv",
         "paths": [directory_path_string],
     }
@@ -348,7 +388,7 @@ def test_controller_toggle_series_lock(mock_controller, mock_db_save):
     )
 
     # Test Movie lock (type="movie")
-    config.libraries["test_lib"]["type"] = "movie"
+    mock_controller._config.libraries["test_lib"]["type"] = "movie"
     mock_controller.toggle_series_lock("Test Movie", True)
     assert mock_controller.cached_library_data["Test Movie"]["locked_metadata"] is True
     mock_movie_save.assert_called_once()
@@ -363,28 +403,28 @@ def test_controller_trigger_series_refresh(mock_controller):
 def test_controller_refresh_episode_metadata(mock_controller, mock_db_save):
     mock_save, _ = mock_db_save
 
-    with patch("lan_streamer.ui_views.controller.tmdb_client") as mock_tmdb:
-        mock_tmdb.get_episodes.return_value = [
-            {
-                "episode_number": 1,
-                "name": "Fresh Episode Title",
-                "overview": "Fresh Episode Overview",
-                "air_date": "2020-01-01",
-                "runtime": 45,
-            }
-        ]
+    mock_tmdb = mock_controller._tmdb_client
+    mock_tmdb.get_episodes.return_value = [
+        {
+            "episode_number": 1,
+            "name": "Fresh Episode Title",
+            "overview": "Fresh Episode Overview",
+            "air_date": "2020-01-01",
+            "runtime": 45,
+        }
+    ]
 
-        mock_controller.refresh_episode_metadata(
-            "Test Show", "/media/tv/Test Show/Season 1/S01E01.mkv"
-        )
+    mock_controller.refresh_episode_metadata(
+        "Test Show", "/media/tv/Test Show/Season 1/S01E01.mkv"
+    )
 
-        ep = mock_controller.cached_library_data["Test Show"]["seasons"]["Season 1"][
-            "episodes"
-        ][0]
-        assert ep["name"] == "Fresh Episode Title"
-        assert ep["overview"] == "Fresh Episode Overview"
-        assert ep["runtime"] == 45
-        mock_save.assert_called_once()
+    ep = mock_controller.cached_library_data["Test Show"]["seasons"]["Season 1"][
+        "episodes"
+    ][0]
+    assert ep["name"] == "Fresh Episode Title"
+    assert ep["overview"] == "Fresh Episode Overview"
+    assert ep["runtime"] == 45
+    mock_save.assert_called_once()
 
 
 def test_controller_embed_metadata_series_trigger(mock_controller):
@@ -451,25 +491,25 @@ def test_controller_update_metadata_match_syncs_with_episode_groups(
         ],
     }
 
-    with patch("lan_streamer.ui_views.controller.tmdb_client") as mock_tmdb:
-        mock_tmdb.get_season_based_episode_group.return_value = mock_group_details
+    mock_tmdb = mock_controller._tmdb_client
+    mock_tmdb.get_season_based_episode_group.return_value = mock_group_details
 
-        mock_controller.apply_metadata_match(
-            "Test Show",
-            {"id": "999", "name": "Matched Show Title", "first_air_date": "2020-01-01"},
-        )
+    mock_controller.apply_metadata_match(
+        "Test Show",
+        {"id": "999", "name": "Matched Show Title", "first_air_date": "2020-01-01"},
+    )
 
-        mock_tmdb.get_season_based_episode_group.assert_called_once_with("999")
-        mock_tmdb.get_episodes.assert_not_called()
+    mock_tmdb.get_season_based_episode_group.assert_called_once_with("999")
+    mock_tmdb.get_episodes.assert_not_called()
 
-        updated_ep = mock_controller.cached_library_data["Test Show"]["seasons"][
-            "Season 1"
-        ]["episodes"][0]
-        assert updated_ep["tmdb_episode_identifier"] == "ep-sync-999"
-        assert updated_ep["tmdb_name"] == "Synced Episode Name"
-        assert updated_ep["runtime"] == 50
-        assert updated_ep["tmdb_number"] == 1
-        mock_save.assert_called_once()
+    updated_ep = mock_controller.cached_library_data["Test Show"]["seasons"][
+        "Season 1"
+    ]["episodes"][0]
+    assert updated_ep["tmdb_episode_identifier"] == "ep-sync-999"
+    assert updated_ep["tmdb_name"] == "Synced Episode Name"
+    assert updated_ep["runtime"] == 50
+    assert updated_ep["tmdb_number"] == 1
+    mock_save.assert_called_once()
 
 
 def test_controller_delete_series(mock_controller) -> None:

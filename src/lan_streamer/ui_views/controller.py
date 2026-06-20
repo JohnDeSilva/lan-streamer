@@ -5,12 +5,14 @@ from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Signal, QFileSystemWatcher, QTimer
 
-from lan_streamer.system.config import config
-from lan_streamer import db
+from lan_streamer.system.config import config as _config_default
+from lan_streamer import db as _db_default
 
 if TYPE_CHECKING:
-    from lan_streamer.providers.jellyfin import jellyfin_client
-    from lan_streamer.providers.tmdb import tmdb_client
+    from lan_streamer.providers.jellyfin import (
+        jellyfin_client as _proxy_jellyfin_default,
+    )
+    from lan_streamer.providers.tmdb import tmdb_client as _proxy_tmdb_default
     from lan_streamer.backend import (
         ScanWorker,
         CleanupWorker,
@@ -21,8 +23,8 @@ if TYPE_CHECKING:
     )
 else:
     from lan_streamer.ui_views.proxy import (
-        jellyfin_client,
-        tmdb_client,
+        jellyfin_client as _proxy_jellyfin_default,
+        tmdb_client as _proxy_tmdb_default,
         ScanWorker,
         CleanupWorker,
         JellyfinPullWorker,
@@ -32,6 +34,10 @@ else:
     )
 
 logger = logging.getLogger(__name__)
+
+# Backward-compatible aliases for tests that patch module-level names
+jellyfin_client = _proxy_jellyfin_default
+tmdb_client = _proxy_tmdb_default
 
 
 class Controller(QObject):
@@ -59,14 +65,29 @@ class Controller(QObject):
     file_system_watcher: QFileSystemWatcher
     debounce_timer: QTimer
 
-    def __init__(self, parent: Optional[QObject] = None) -> None:
+    def __init__(
+        self,
+        parent: Optional[QObject] = None,
+        config: Any = None,
+        db: Any = None,
+        jellyfin_client: Any = None,
+        tmdb_client: Any = None,
+    ) -> None:
         super().__init__(parent)
+        self._config = config if config is not None else _config_default
+        self._db = db if db is not None else _db_default
+        self._jellyfin_client = (
+            jellyfin_client if jellyfin_client is not None else _proxy_jellyfin_default
+        )
+        self._tmdb_client = (
+            tmdb_client if tmdb_client is not None else _proxy_tmdb_default
+        )
         self.current_library_name: str = ""
         self.cached_library_data: Dict[str, Any] = {}
         self.selected_series_name: str = ""
-        self.sort_mode: str = config.sort_mode
-        self.sort_descending: bool = config.sort_descending
-        self.filter_out_watched: bool = config.filter_out_watched
+        self.sort_mode: str = self._config.sort_mode
+        self.sort_descending: bool = self._config.sort_descending
+        self.filter_out_watched: bool = self._config.filter_out_watched
         self.scan_worker_instance: Optional[ScanWorker] = None
         self.cleanup_worker_instance: Optional[CleanupWorker] = None
         self.pull_worker_instance: Optional[JellyfinPullWorker] = None
@@ -92,11 +113,11 @@ class Controller(QObject):
 
     def select_library(self, library_name: str, reset_selection: bool = True) -> None:
         logger.info(f"Controller loading library: {library_name}")
-        config.load()
+        self._config.load()
         self.current_library_name = library_name
         self.status_changed.emit(f"Loading library: {library_name}...")
 
-        library_config = config.libraries.get(library_name, {})
+        library_config = self._config.libraries.get(library_name, {})
 
         existing_directories = self.file_system_watcher.directories()
         if existing_directories:
@@ -108,9 +129,9 @@ class Controller(QObject):
                 self.file_system_watcher.addPath(directory_path)
 
         if library_config.get("type", "tv") == "movie":
-            self.cached_library_data = db.load_movie_library(library_name)
+            self.cached_library_data = self._db.load_movie_library(library_name)
         else:
-            self.cached_library_data = db.load_library(library_name)
+            self.cached_library_data = self._db.load_library(library_name)
         self._cache_series_metrics()
 
         if reset_selection:
@@ -187,8 +208,8 @@ class Controller(QObject):
         if self.sort_mode != mode:
             logger.info(f"Sort mode changed from '{self.sort_mode}' to '{mode}'")
             self.sort_mode = mode
-            config.sort_mode = mode
-            config.save_to_db()
+            self._config.sort_mode = mode
+            self._config.save_to_db()
             self.library_loaded.emit()
 
     def set_sort_descending(self, descending: bool) -> None:
@@ -197,22 +218,22 @@ class Controller(QObject):
                 f"Sort direction changed to {'descending' if descending else 'ascending'}"
             )
             self.sort_descending = descending
-            config.sort_descending = descending
-            config.save_to_db()
+            self._config.sort_descending = descending
+            self._config.save_to_db()
             self.library_loaded.emit()
 
     def set_filter_out_watched(self, enabled: bool) -> None:
         if self.filter_out_watched != enabled:
             self.filter_out_watched = enabled
-            config.filter_out_watched = enabled
-            config.save_to_db()
+            self._config.filter_out_watched = enabled
+            self._config.save_to_db()
             self.library_loaded.emit()
 
     def mark_episode_watched(self, absolute_path: str, watched: bool) -> None:
         logger.info(
             f"Controller marking episode watched={watched} for path: {absolute_path}"
         )
-        db.update_episode_watched_status(absolute_path, watched)
+        self._db.update_episode_watched_status(absolute_path, watched)
 
         # Update cached state in memory
         for series_data in self.cached_library_data.values():
@@ -236,7 +257,7 @@ class Controller(QObject):
         logger.info(
             f"Controller marking season watched for series '{series_name}', season '{season_name}'"
         )
-        db.update_season_watched_status(
+        self._db.update_season_watched_status(
             self.current_library_name, series_name, season_name, True
         )
 
@@ -253,7 +274,9 @@ class Controller(QObject):
 
     def mark_series_watched(self, series_name: str) -> None:
         logger.info(f"Controller marking entire series watched: '{series_name}'")
-        db.update_series_watched_status(self.current_library_name, series_name, True)
+        self._db.update_series_watched_status(
+            self.current_library_name, series_name, True
+        )
 
         series_data: Dict[str, Any] = self.cached_library_data.get(series_name, {})
         for season_data in series_data.get("seasons", {}).values():
@@ -278,8 +301,8 @@ class Controller(QObject):
             )
             return
 
-        config.load()
-        library_config = config.libraries.get(self.current_library_name, {})
+        self._config.load()
+        library_config = self._config.libraries.get(self.current_library_name, {})
         root_directories: List[str] = library_config.get("paths", [])
         library_type: str = library_config.get("type", "tv")
         self.status_changed.emit(
@@ -320,11 +343,11 @@ class Controller(QObject):
             else self.current_library_name
         )
         if scanned_library_name:
-            library_config = config.libraries.get(scanned_library_name, {})
+            library_config = self._config.libraries.get(scanned_library_name, {})
             if library_config.get("type", "tv") == "movie":
-                db.save_movie_library(scanned_library_name, updated_library)
+                self._db.save_movie_library(scanned_library_name, updated_library)
             else:
-                db.save_library(scanned_library_name, updated_library)
+                self._db.save_library(scanned_library_name, updated_library)
 
             if self.current_library_name == scanned_library_name:
                 self.cached_library_data = updated_library
@@ -364,7 +387,7 @@ class Controller(QObject):
             self.status_changed.emit("Select a library first.")
             return
 
-        library_config = config.libraries.get(self.current_library_name, {})
+        library_config = self._config.libraries.get(self.current_library_name, {})
         root_directories: List[str] = library_config.get("paths", [])
         self.status_changed.emit(
             f"Cleaning up missing files in '{self.current_library_name}'..."
@@ -387,8 +410,8 @@ class Controller(QObject):
         )
 
     def trigger_global_cleanup(self) -> None:
-        config.load()
-        self._cleanup_queue = list(config.libraries.keys())
+        self._config.load()
+        self._cleanup_queue = list(self._config.libraries.keys())
         self.status_changed.emit("Starting global library cleanup...")
         self._run_next_global_cleanup()
 
@@ -399,7 +422,7 @@ class Controller(QObject):
             return
 
         lib_name = self._cleanup_queue.pop(0)
-        library_config = config.libraries.get(lib_name, {})
+        library_config = self._config.libraries.get(lib_name, {})
         root_directories: List[str] = library_config.get("paths", [])
         self.status_changed.emit(f"Cleaning up missing files in '{lib_name}'...")
 
@@ -446,8 +469,8 @@ class Controller(QObject):
             )
             return
 
-        config.load()
-        library_config = config.libraries.get(self.current_library_name, {})
+        self._config.load()
+        library_config = self._config.libraries.get(self.current_library_name, {})
         root_directories: List[str] = library_config.get("paths", [])
         library_type: str = library_config.get("type", "tv")
         self.status_changed.emit(
@@ -484,7 +507,7 @@ class Controller(QObject):
         # Now chain into cleanup
         if not self.current_library_name:
             return
-        library_config = config.libraries.get(self.current_library_name, {})
+        library_config = self._config.libraries.get(self.current_library_name, {})
         root_directories: List[str] = library_config.get("paths", [])
         self.status_changed.emit(
             f"Scan complete. Updating paths in '{self.current_library_name}'..."
@@ -519,7 +542,7 @@ class Controller(QObject):
             self.scan_completed.emit()
 
     def trigger_jellyfin_pull(self) -> None:
-        if not jellyfin_client.is_configured():
+        if not self._jellyfin_client.is_configured():
             self.status_changed.emit("Jellyfin is not configured.")
             return
 
@@ -537,7 +560,7 @@ class Controller(QObject):
         )
 
     def trigger_jellyfin_push(self) -> None:
-        if not jellyfin_client.is_configured():
+        if not self._jellyfin_client.is_configured():
             self.status_changed.emit("Jellyfin is not configured.")
             return
 
@@ -567,7 +590,7 @@ class Controller(QObject):
             logger.info("ScanAllLibrariesWorker is already running.")
             return
 
-        config.load()
+        self._config.load()
         self.status_changed.emit("Scanning all libraries...")
         self._running_pass3_after_scan = chain_pass3
         self._running_cleanup_after_scan = chain_cleanup
@@ -598,13 +621,15 @@ class Controller(QObject):
                 if self.current_library_name == "Combined View":
                     self.library_loaded.emit()
                 else:
-                    library_config = config.libraries.get(self.current_library_name, {})
+                    library_config = self._config.libraries.get(
+                        self.current_library_name, {}
+                    )
                     if library_config.get("type", "tv") == "movie":
-                        self.cached_library_data = db.load_movie_library(
+                        self.cached_library_data = self._db.load_movie_library(
                             self.current_library_name
                         )
                     else:
-                        self.cached_library_data = db.load_library(
+                        self.cached_library_data = self._db.load_library(
                             self.current_library_name
                         )
                     self._cache_series_metrics()
@@ -703,7 +728,7 @@ class Controller(QObject):
             tmdb_identifier_value: str = target_dict.get("tmdb_identifier", "")
             if raw_poster_path and tmdb_identifier_value:
                 prefix = "tmdb_movie_" if is_movie else "tmdb_series_"
-                cached_image_path: Optional[str] = tmdb_client.download_image(
+                cached_image_path: Optional[str] = self._tmdb_client.download_image(
                     raw_poster_path, f"{prefix}{tmdb_identifier_value}"
                 )
                 target_dict["poster_path"] = cached_image_path or raw_poster_path
@@ -717,7 +742,7 @@ class Controller(QObject):
         saved_group_id = series_record.get("metadata", {}).get("tmdb_episode_group_id")
         if saved_group_id and saved_group_id != "default":
             try:
-                episode_group_details = tmdb_client.get_episode_group_details(
+                episode_group_details = self._tmdb_client.get_episode_group_details(
                     saved_group_id
                 )
             except Exception as e:
@@ -725,7 +750,7 @@ class Controller(QObject):
                     f"Failed to fetch saved group details {saved_group_id}: {e}"
                 )
         if not episode_group_details:
-            episode_group_details = tmdb_client.get_season_based_episode_group(
+            episode_group_details = self._tmdb_client.get_season_based_episode_group(
                 new_tmdb_identifier
             )
         group_seasons = {}
@@ -779,7 +804,7 @@ class Controller(QObject):
                             }
                         )
                 else:
-                    fetched_episodes_list = tmdb_client.get_episodes(
+                    fetched_episodes_list = self._tmdb_client.get_episodes(
                         new_tmdb_identifier, target_season_number
                     )
                 for episode_item_dict in season_data_dict.get("episodes", []):
@@ -841,7 +866,7 @@ class Controller(QObject):
         if series_name not in self.cached_library_data:
             return
 
-        library_config = config.libraries.get(self.current_library_name, {})
+        library_config = self._config.libraries.get(self.current_library_name, {})
         is_movie = library_config.get("type", "tv") == "movie"
 
         series_record: Dict[str, Any] = self.cached_library_data[series_name]
@@ -887,11 +912,13 @@ class Controller(QObject):
 
         if self.current_library_name:
             if is_movie:
-                db.save_movie_library(
+                self._db.save_movie_library(
                     self.current_library_name, self.cached_library_data
                 )
             else:
-                db.save_library(self.current_library_name, self.cached_library_data)
+                self._db.save_library(
+                    self.current_library_name, self.cached_library_data
+                )
 
         self.status_changed.emit(
             f"Successfully applied metadata match to '{series_name}'."
@@ -912,7 +939,7 @@ class Controller(QObject):
         if series_name not in self.cached_library_data:
             return
 
-        library_config = config.libraries.get(self.current_library_name, {})
+        library_config = self._config.libraries.get(self.current_library_name, {})
         is_movie = library_config.get("type", "tv") == "movie"
 
         series_record: Dict[str, Any] = self.cached_library_data[series_name]
@@ -925,11 +952,13 @@ class Controller(QObject):
 
         if self.current_library_name:
             if is_movie:
-                db.save_movie_library(
+                self._db.save_movie_library(
                     self.current_library_name, self.cached_library_data
                 )
             else:
-                db.save_library(self.current_library_name, self.cached_library_data)
+                self._db.save_library(
+                    self.current_library_name, self.cached_library_data
+                )
 
         self.status_changed.emit(
             f"Successfully linked Jellyfin watch history for '{series_name}'."
@@ -978,7 +1007,9 @@ class Controller(QObject):
 
         if episode_found:
             if self.current_library_name:
-                db.save_library(self.current_library_name, self.cached_library_data)
+                self._db.save_library(
+                    self.current_library_name, self.cached_library_data
+                )
 
             self.status_changed.emit(
                 f"Successfully applied episode metadata match to '{series_name}'."
@@ -1012,7 +1043,9 @@ class Controller(QObject):
 
         if episode_found:
             if self.current_library_name:
-                db.save_library(self.current_library_name, self.cached_library_data)
+                self._db.save_library(
+                    self.current_library_name, self.cached_library_data
+                )
             self.library_loaded.emit()
             if self.selected_series_name == series_name:
                 self.series_selected.emit(series_name)
@@ -1025,14 +1058,14 @@ class Controller(QObject):
         if series_name not in self.cached_library_data:
             return
 
-        library_config = config.libraries.get(self.current_library_name, {})
+        library_config = self._config.libraries.get(self.current_library_name, {})
         is_movie = library_config.get("type", "tv") == "movie"
 
         series_record: Dict[str, Any] = self.cached_library_data[series_name]
         if is_movie:
             series_record["locked_metadata"] = locked
             if self.current_library_name:
-                db.save_movie_library(
+                self._db.save_movie_library(
                     self.current_library_name, self.cached_library_data
                 )
             self.movie_selected.emit(series_name)
@@ -1041,7 +1074,9 @@ class Controller(QObject):
                 series_record["metadata"] = {}
             series_record["metadata"]["locked_metadata"] = locked
             if self.current_library_name:
-                db.save_library(self.current_library_name, self.cached_library_data)
+                self._db.save_library(
+                    self.current_library_name, self.cached_library_data
+                )
             self.series_selected.emit(series_name)
 
         self.library_loaded.emit()
@@ -1056,7 +1091,7 @@ class Controller(QObject):
             self.status_changed.emit("A scan is already in progress.")
             return
 
-        library_config = config.libraries.get(self.current_library_name, {})
+        library_config = self._config.libraries.get(self.current_library_name, {})
         library_type = library_config.get("type", "tv")
         root_directories = library_config.get("paths", [])
 
@@ -1146,7 +1181,7 @@ class Controller(QObject):
             return
 
         try:
-            tmdb_episodes = tmdb_client.get_episodes(series_tmdb_id, season_index)
+            tmdb_episodes = self._tmdb_client.get_episodes(series_tmdb_id, season_index)
             matched_ep = None
             for ep in tmdb_episodes:
                 if ep.get("episode_number") == episode_num:
@@ -1160,7 +1195,9 @@ class Controller(QObject):
                 target_episode["air_date"] = matched_ep.get("air_date", "")
                 target_episode["runtime"] = matched_ep.get("runtime", 0)
 
-                db.save_library(self.current_library_name, self.cached_library_data)
+                self._db.save_library(
+                    self.current_library_name, self.cached_library_data
+                )
                 self.library_loaded.emit()
                 if self.selected_series_name == series_name:
                     self.series_selected.emit(series_name)
@@ -1186,7 +1223,7 @@ class Controller(QObject):
         movie_data.update(metadata)
 
         # Persistence
-        db.save_library(self.current_library_name, self.cached_library_data)
+        self._db.save_library(self.current_library_name, self.cached_library_data)
         self._cache_series_metrics()
         self.library_loaded.emit()
 
@@ -1284,7 +1321,7 @@ class Controller(QObject):
         series_data = self.cached_library_data.pop(old_name)
         self.cached_library_data[new_name] = series_data
 
-        db.save_library(self.current_library_name, self.cached_library_data)
+        self._db.save_library(self.current_library_name, self.cached_library_data)
         self._cache_series_metrics()
         self.library_loaded.emit()
         # Trigger re-selection to update UI
@@ -1298,7 +1335,7 @@ class Controller(QObject):
         from lan_streamer.scanner.renamer import perform_rename
 
         def on_rename_success(old_path_string: str, new_path_string: str) -> None:
-            db.update_episode_path(old_path_string, new_path_string)
+            self._db.update_episode_path(old_path_string, new_path_string)
             for series_dictionary in self.cached_library_data.values():
                 for season_dictionary in series_dictionary.get("seasons", {}).values():
                     for episode_dictionary in season_dictionary.get("episodes", []):
@@ -1316,7 +1353,7 @@ class Controller(QObject):
         perform_rename(preview_results, on_rename_success)
 
         if self.current_library_name:
-            db.save_library(self.current_library_name, self.cached_library_data)
+            self._db.save_library(self.current_library_name, self.cached_library_data)
 
         self.status_changed.emit("Batch renaming completed successfully.")
         self.library_loaded.emit()
@@ -1329,7 +1366,9 @@ class Controller(QObject):
         if not is_playing:
             self.library_loaded.emit()
             if self.selected_series_name:
-                library_config = config.libraries.get(self.current_library_name, {})
+                library_config = self._config.libraries.get(
+                    self.current_library_name, {}
+                )
                 if library_config.get("type", "tv") == "movie":
                     self.movie_selected.emit(self.selected_series_name)
                 else:
@@ -1342,7 +1381,7 @@ class Controller(QObject):
             return
 
         try:
-            db.delete_series_record(self.current_library_name, series_name)
+            self._db.delete_series_record(self.current_library_name, series_name)
         except Exception as e:
             logger.exception(f"Failed to delete series record for {series_name}: {e}")
 
@@ -1352,7 +1391,7 @@ class Controller(QObject):
         """Deletes an episode record from database."""
         logger.info(f"Controller deleting episode: {absolute_path}")
         try:
-            db.delete_episode_record(absolute_path)
+            self._db.delete_episode_record(absolute_path)
         except Exception as e:
             logger.exception(
                 f"Failed to delete episode record for {absolute_path}: {e}"
