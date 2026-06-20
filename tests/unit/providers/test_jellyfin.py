@@ -5,11 +5,6 @@ from lan_streamer.providers.jellyfin import JellyfinClient
 
 
 @pytest.fixture
-def mock_session() -> MagicMock:
-    return MagicMock(spec=requests.Session)
-
-
-@pytest.fixture
 def jf_client(mock_session) -> JellyfinClient:
     client = JellyfinClient(
         session=mock_session,
@@ -209,9 +204,9 @@ def test_get_base_url_logic(jf_client) -> None:
     jf_client._jellyfin_url = original_url
 
 
-def test_get_current_user_id_https_retry() -> None:
+def test_get_current_user_id_https_retry(mock_session) -> None:
     client = JellyfinClient(
-        session=MagicMock(spec=requests.Session),
+        session=mock_session,
         jellyfin_url="test.com",
         jellyfin_api_key="key",
     )
@@ -232,9 +227,9 @@ def test_get_current_user_id_https_retry() -> None:
     assert client.session.get.call_args_list[1][0][0].startswith("http://")
 
 
-def test_get_current_user_id_https_retry_failure() -> None:
+def test_get_current_user_id_https_retry_failure(mock_session) -> None:
     client = JellyfinClient(
-        session=MagicMock(spec=requests.Session),
+        session=mock_session,
         jellyfin_url="test.com",
         jellyfin_api_key="key",
     )
@@ -312,9 +307,9 @@ def test_search_series(jf_client) -> None:
     assert results[0]["Id"] == "s1"
 
 
-def test_search_series_not_configured() -> None:
+def test_search_series_not_configured(mock_session) -> None:
     client = JellyfinClient(
-        session=MagicMock(spec=requests.Session),
+        session=mock_session,
         jellyfin_url="",
         jellyfin_api_key="",
     )
@@ -379,9 +374,9 @@ def test_search_movie(jf_client) -> None:
     assert results[0]["Id"] == "m1"
 
 
-def test_search_movie_not_configured() -> None:
+def test_search_movie_not_configured(mock_session) -> None:
     client = JellyfinClient(
-        session=MagicMock(spec=requests.Session),
+        session=mock_session,
         jellyfin_url="",
         jellyfin_api_key="",
     )
@@ -420,9 +415,9 @@ def test_jellyfin_validate_credentials_extra_paths(jf_client) -> None:
         assert "HTTP Error" in msg
 
 
-def test_jellyfin_get_current_user_id_unconfigured() -> None:
+def test_jellyfin_get_current_user_id_unconfigured(mock_session) -> None:
     client = JellyfinClient(
-        session=MagicMock(spec=requests.Session),
+        session=mock_session,
         jellyfin_url="http://test",
         jellyfin_api_key="key",
     )
@@ -431,9 +426,9 @@ def test_jellyfin_get_current_user_id_unconfigured() -> None:
     assert client.get_current_user_id() is None
 
 
-def test_get_current_user_id_https_retry_error() -> None:
+def test_get_current_user_id_https_retry_error(mock_session) -> None:
     client = JellyfinClient(
-        session=MagicMock(spec=requests.Session),
+        session=mock_session,
         jellyfin_url="test.com",
         jellyfin_api_key="key",
     )
@@ -445,9 +440,9 @@ def test_get_current_user_id_https_retry_error() -> None:
     assert client.get_current_user_id() is None
 
 
-def test_jellyfin_get_correlation_data_unconfigured() -> None:
+def test_jellyfin_get_correlation_data_unconfigured(mock_session) -> None:
     client = JellyfinClient(
-        session=MagicMock(spec=requests.Session),
+        session=mock_session,
         jellyfin_url="",
         jellyfin_api_key="",
     )
@@ -521,10 +516,10 @@ def test_jellyfin_correlation_data_exceptions(jf_client) -> None:
     }
 
 
-def test_jellyfin_played_status_edge_cases(jf_client) -> None:
+def test_jellyfin_played_status_edge_cases(jf_client, mock_session) -> None:
     # 1. Unconfigured
     unconfigured = JellyfinClient(
-        session=MagicMock(spec=requests.Session),
+        session=mock_session,
         jellyfin_url="",
         jellyfin_api_key="",
     )

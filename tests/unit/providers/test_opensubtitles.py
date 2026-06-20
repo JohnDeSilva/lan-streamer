@@ -2,7 +2,6 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
-import requests
 
 from lan_streamer.providers.opensubtitles import OpenSubtitlesClient
 
@@ -10,13 +9,6 @@ from lan_streamer.providers.opensubtitles import OpenSubtitlesClient
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def mock_session() -> MagicMock:
-    """Fixture that returns a MagicMock session conforming to requests.Session."""
-    session = MagicMock(spec=requests.Session)
-    return session
 
 
 @pytest.fixture

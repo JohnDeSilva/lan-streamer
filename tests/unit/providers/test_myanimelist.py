@@ -1,14 +1,8 @@
 import pytest
 import time
-import requests
 from unittest.mock import MagicMock, patch
 from lan_streamer.providers.myanimelist import MyAnimeListClient
 from lan_streamer.system.config import config
-
-
-@pytest.fixture
-def mock_session() -> MagicMock:
-    return MagicMock(spec=requests.Session)
 
 
 @pytest.fixture
