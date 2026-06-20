@@ -6,12 +6,17 @@ from lan_streamer.system.config import config
 
 
 @pytest.fixture
-def tmdb(tmp_path) -> None:
+def mock_session() -> MagicMock:
+    return MagicMock(spec=requests.Session)
+
+
+@pytest.fixture
+def tmdb(tmp_path, mock_session) -> None:
     with (
         patch.object(config, "tmdb_api_key", "test-tmdb-key"),
         patch("lan_streamer.providers.tmdb.CACHE_DIR", tmp_path),
     ):
-        client = TMDBClient()
+        client = TMDBClient(session=mock_session)
         yield client
 
 

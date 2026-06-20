@@ -6,12 +6,17 @@ from lan_streamer.system.config import config
 
 
 @pytest.fixture
-def jf_client() -> None:
+def mock_session() -> MagicMock:
+    return MagicMock(spec=requests.Session)
+
+
+@pytest.fixture
+def jf_client(mock_session) -> None:
     with (
         patch.object(config, "jellyfin_url", "http://test-jf"),
         patch.object(config, "jellyfin_api_key", "test-key"),
     ):
-        client = JellyfinClient()
+        client = JellyfinClient(session=mock_session)
         yield client
 
 
