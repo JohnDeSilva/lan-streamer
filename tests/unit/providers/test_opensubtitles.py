@@ -1,38 +1,39 @@
-"""Tests for the OpenSubtitles client module (0% → ~95% coverage)."""
+"""Tests for the OpenSubtitles client module utilizing dependency injection."""
 
-from unittest.mock import patch, MagicMock
-from typing import Optional
+import pytest
+from unittest.mock import MagicMock, patch
+import requests
 
 from lan_streamer.providers.opensubtitles import OpenSubtitlesClient
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Fixtures
 # ---------------------------------------------------------------------------
 
 
-def _make_client(
-    api_key: str = "test_api_key",
-    username: str = "user",
-    password: str = "pass",
-    token: Optional[str] = None,
-) -> OpenSubtitlesClient:
-    """Return a freshly instantiated client with config stubbed."""
-    client = OpenSubtitlesClient()
-    client.token = token
-    return client
+@pytest.fixture
+def mock_session() -> MagicMock:
+    """Fixture that returns a MagicMock session conforming to requests.Session."""
+    session = MagicMock(spec=requests.Session)
+    return session
 
 
-def _mock_config(
-    api_key: str = "test_api_key",
-    username: str = "user",
-    password: str = "pass",
-) -> MagicMock:
-    mock = MagicMock()
-    mock.opensubtitles_api_key = api_key
-    mock.opensubtitles_username = username
-    mock.opensubtitles_password = password
-    return mock
+@pytest.fixture
+def mock_config() -> MagicMock:
+    """Fixture that returns a mock configuration."""
+    cfg = MagicMock()
+    cfg.opensubtitles_api_key = "test_api_key"
+    cfg.opensubtitles_username = "user"
+    cfg.opensubtitles_password = "pass"
+    return cfg
+
+
+@pytest.fixture
+def client(mock_session, mock_config) -> OpenSubtitlesClient:
+    """Fixture returning an OpenSubtitlesClient with injected mock session and patched config."""
+    with patch("lan_streamer.providers.opensubtitles.config", mock_config):
+        yield OpenSubtitlesClient(session=mock_session)
 
 
 # ---------------------------------------------------------------------------
@@ -40,22 +41,17 @@ def _mock_config(
 # ---------------------------------------------------------------------------
 
 
-def test_get_headers_without_token() -> None:
-    client = _make_client()
-    with patch("lan_streamer.providers.opensubtitles.config", _mock_config()):
-        headers = client._get_headers()
-
+def test_get_headers_without_token(client) -> None:
+    headers = client._get_headers()
     assert headers["Api-Key"] == "test_api_key"
     assert "Authorization" not in headers
     assert headers["Content-Type"] == "application/json"
     assert headers["Accept"] == "application/json"
 
 
-def test_get_headers_with_token() -> None:
-    client = _make_client(token="my_jwt_token")
-    with patch("lan_streamer.providers.opensubtitles.config", _mock_config()):
-        headers = client._get_headers()
-
+def test_get_headers_with_token(client) -> None:
+    client.token = "my_jwt_token"
+    headers = client._get_headers()
     assert headers["Authorization"] == "Bearer my_jwt_token"
 
 
@@ -64,66 +60,60 @@ def test_get_headers_with_token() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_login_missing_credentials_returns_false() -> None:
-    client = _make_client()
-    mock_cfg = _mock_config(username="", password="")
-    with patch("lan_streamer.providers.opensubtitles.config", mock_cfg):
-        result = client.login()
-
+@pytest.mark.parametrize(
+    "username,password",
+    [
+        ("", ""),
+        ("", "pass"),
+        ("user", ""),
+    ],
+)
+def test_login_missing_credentials_returns_false(
+    client, mock_config, username, password
+) -> None:
+    mock_config.opensubtitles_username = username
+    mock_config.opensubtitles_password = password
+    result = client.login()
     assert result is False
     assert client.token is None
 
 
-def test_login_missing_username_only() -> None:
-    client = _make_client()
-    mock_cfg = _mock_config(username="", password="secret")
-    with patch("lan_streamer.providers.opensubtitles.config", mock_cfg):
-        result = client.login()
-    assert result is False
-
-
-def test_login_success() -> None:
-    client = _make_client()
+def test_login_success(client, mock_session) -> None:
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"token": "jwt_abc123"}
+    mock_session.post.return_value = mock_response
 
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.post", return_value=mock_response) as mock_post,
-    ):
-        result = client.login()
+    result = client.login()
 
     assert result is True
     assert client.token == "jwt_abc123"
-    mock_post.assert_called_once()
+    mock_session.post.assert_called_once()
+    args, kwargs = mock_session.post.call_args
+    assert args[0] == "https://api.opensubtitles.com/api/v1/login"
+    assert kwargs["json"] == {"username": "user", "password": "pass"}
 
 
-def test_login_http_error_returns_false() -> None:
-    client = _make_client()
-    mock_response = MagicMock()
-    mock_response.status_code = 401
-    mock_response.text = "Unauthorized"
+@pytest.mark.parametrize(
+    "status_code, text, side_effect, expected_result",
+    [
+        (401, "Unauthorized", None, False),
+        (500, "Internal Error", None, False),
+        (200, "", ConnectionError("Connection dropped"), False),
+    ],
+)
+def test_login_failures(
+    client, mock_session, status_code, text, side_effect, expected_result
+) -> None:
+    if side_effect:
+        mock_session.post.side_effect = side_effect
+    else:
+        mock_response = MagicMock()
+        mock_response.status_code = status_code
+        mock_response.text = text
+        mock_session.post.return_value = mock_response
 
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.post", return_value=mock_response),
-    ):
-        result = client.login()
-
-    assert result is False
-    assert client.token is None
-
-
-def test_login_network_exception_returns_false() -> None:
-    client = _make_client()
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.post", side_effect=ConnectionError("Network failure")),
-    ):
-        result = client.login()
-
-    assert result is False
+    assert client.login() == expected_result
     assert client.token is None
 
 
@@ -132,96 +122,78 @@ def test_login_network_exception_returns_false() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_search_subtitles_missing_api_key_returns_empty() -> None:
-    client = _make_client()
-    mock_cfg = _mock_config(api_key="")
-    with patch("lan_streamer.providers.opensubtitles.config", mock_cfg):
-        results = client.search_subtitles(query="The Matrix")
-
+def test_search_subtitles_missing_api_key_returns_empty(client, mock_config) -> None:
+    mock_config.opensubtitles_api_key = ""
+    results = client.search_subtitles(query="The Matrix")
     assert results == []
 
 
-def test_search_subtitles_by_tmdb_id_success() -> None:
-    client = _make_client()
+def test_search_subtitles_by_tmdb_id_success(client, mock_session) -> None:
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"data": [{"id": "sub1"}, {"id": "sub2"}]}
+    mock_session.get.return_value = mock_response
 
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.get", return_value=mock_response) as mock_get,
-    ):
-        results = client.search_subtitles(
-            tmdb_id=603, season_number=1, episode_number=2
-        )
+    results = client.search_subtitles(tmdb_id=603, season_number=1, episode_number=2)
 
     assert len(results) == 2
     assert results[0]["id"] == "sub1"
-    # Check params were built correctly
-    call_kwargs = mock_get.call_args
-    assert call_kwargs.kwargs["params"]["tmdb_id"] == 603
-    assert call_kwargs.kwargs["params"]["season_number"] == 1
-    assert call_kwargs.kwargs["params"]["episode_number"] == 2
+    mock_session.get.assert_called_once()
+    kwargs = mock_session.get.call_args.kwargs
+    assert kwargs["params"]["tmdb_id"] == 603
+    assert kwargs["params"]["season_number"] == 1
+    assert kwargs["params"]["episode_number"] == 2
+    assert kwargs["params"]["languages"] == "en"
 
 
-def test_search_subtitles_by_tmdb_id_no_season_episode() -> None:
-    """tmdb_id present but season/episode omitted should not include those keys."""
-    client = _make_client()
+def test_search_subtitles_by_tmdb_id_no_season_episode(client, mock_session) -> None:
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"data": []}
+    mock_session.get.return_value = mock_response
 
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.get", return_value=mock_response) as mock_get,
-    ):
-        client.search_subtitles(tmdb_id=603)
+    client.search_subtitles(tmdb_id=603)
 
-    params = mock_get.call_args.kwargs["params"]
+    mock_session.get.assert_called_once()
+    params = mock_session.get.call_args.kwargs["params"]
+    assert params["tmdb_id"] == 603
     assert "season_number" not in params
     assert "episode_number" not in params
 
 
-def test_search_subtitles_by_query_success() -> None:
-    client = _make_client()
+def test_search_subtitles_by_query_success(client, mock_session) -> None:
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"data": [{"id": "sub99"}]}
+    mock_session.get.return_value = mock_response
 
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.get", return_value=mock_response) as mock_get,
-    ):
-        results = client.search_subtitles(query="some movie")
+    results = client.search_subtitles(query="some movie")
 
     assert len(results) == 1
-    params = mock_get.call_args.kwargs["params"]
+    params = mock_session.get.call_args.kwargs["params"]
     assert params["query"] == "some movie"
 
 
-def test_search_subtitles_http_error_returns_empty() -> None:
-    client = _make_client()
-    mock_response = MagicMock()
-    mock_response.status_code = 429
-    mock_response.text = "Too Many Requests"
+@pytest.mark.parametrize(
+    "status_code, text, side_effect",
+    [
+        (429, "Too Many Requests", None),
+        (500, "Internal Server Error", None),
+        (200, "", TimeoutError("timed out")),
+    ],
+)
+def test_search_subtitles_failures(
+    client, mock_session, status_code, text, side_effect
+) -> None:
+    if side_effect:
+        mock_session.get.side_effect = side_effect
+    else:
+        mock_response = MagicMock()
+        mock_response.status_code = status_code
+        mock_response.text = text
+        mock_session.get.return_value = mock_response
 
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.get", return_value=mock_response),
-    ):
-        results = client.search_subtitles(query="test")
-
-    assert results == []
-
-
-def test_search_subtitles_network_exception_returns_empty() -> None:
-    client = _make_client()
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.get", side_effect=TimeoutError("timed out")),
-    ):
-        results = client.search_subtitles(query="test")
-
+    results = client.search_subtitles(query="test")
     assert results == []
 
 
@@ -230,24 +202,24 @@ def test_search_subtitles_network_exception_returns_empty() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_download_link_already_authenticated() -> None:
-    client = _make_client(token="existing_token")
+def test_get_download_link_already_authenticated(client, mock_session) -> None:
+    client.token = "existing_token"
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"link": "https://cdn.example.com/sub.srt"}
+    mock_session.post.return_value = mock_response
 
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.post", return_value=mock_response),
-    ):
-        link = client.get_download_link(file_id=98765)
+    link = client.get_download_link(file_id=98765)
 
     assert link == "https://cdn.example.com/sub.srt"
+    mock_session.post.assert_called_once()
+    args, kwargs = mock_session.post.call_args
+    assert args[0] == "https://api.opensubtitles.com/api/v1/download"
+    assert kwargs["json"] == {"file_id": 98765}
 
 
-def test_get_download_link_triggers_login_when_no_token() -> None:
-    """When no token present, get_download_link should call login first."""
-    client = _make_client(token=None)
+def test_get_download_link_triggers_login_when_no_token(client, mock_session) -> None:
+    client.token = None
 
     login_response = MagicMock()
     login_response.status_code = 200
@@ -257,54 +229,49 @@ def test_get_download_link_triggers_login_when_no_token() -> None:
     download_response.status_code = 200
     download_response.json.return_value = {"link": "https://example.com/file.srt"}
 
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.post", side_effect=[login_response, download_response]),
-    ):
-        link = client.get_download_link(file_id=111)
+    mock_session.post.side_effect = [login_response, download_response]
+
+    link = client.get_download_link(file_id=111)
 
     assert link == "https://example.com/file.srt"
     assert client.token == "new_token"
+    assert mock_session.post.call_count == 2
 
 
-def test_get_download_link_login_fails_returns_none() -> None:
-    """If login fails and token is still None, returns None."""
-    client = _make_client(token=None)
+def test_get_download_link_login_fails_returns_none(
+    client, mock_config, mock_session
+) -> None:
+    client.token = None
+    mock_config.opensubtitles_username = ""
+    mock_config.opensubtitles_password = ""
 
-    with (
-        patch(
-            "lan_streamer.providers.opensubtitles.config",
-            _mock_config(username="", password=""),
-        ),
-    ):
-        link = client.get_download_link(file_id=222)
+    link = client.get_download_link(file_id=222)
 
     assert link is None
+    mock_session.post.assert_not_called()
 
 
-def test_get_download_link_http_error_returns_none() -> None:
-    client = _make_client(token="tok")
-    mock_response = MagicMock()
-    mock_response.status_code = 406
-    mock_response.text = "Download quota exceeded"
+@pytest.mark.parametrize(
+    "status_code, text, side_effect",
+    [
+        (406, "Download quota exceeded", None),
+        (500, "Internal error", None),
+        (200, "", RuntimeError("network dead")),
+    ],
+)
+def test_get_download_link_failures(
+    client, mock_session, status_code, text, side_effect
+) -> None:
+    client.token = "tok"
+    if side_effect:
+        mock_session.post.side_effect = side_effect
+    else:
+        mock_response = MagicMock()
+        mock_response.status_code = status_code
+        mock_response.text = text
+        mock_session.post.return_value = mock_response
 
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.post", return_value=mock_response),
-    ):
-        link = client.get_download_link(file_id=333)
-
-    assert link is None
-
-
-def test_get_download_link_network_exception_returns_none() -> None:
-    client = _make_client(token="tok")
-    with (
-        patch("lan_streamer.providers.opensubtitles.config", _mock_config()),
-        patch("requests.post", side_effect=RuntimeError("network dead")),
-    ):
-        link = client.get_download_link(file_id=444)
-
+    link = client.get_download_link(file_id=333)
     assert link is None
 
 
@@ -313,33 +280,36 @@ def test_get_download_link_network_exception_returns_none() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_download_subtitle_success() -> None:
-    client = _make_client()
+def test_download_subtitle_success(client, mock_session) -> None:
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.content = b"1\n00:00:00,000 --> 00:00:01,000\nHello\n"
+    mock_session.get.return_value = mock_response
 
-    with patch("requests.get", return_value=mock_response):
-        content = client.download_subtitle("https://example.com/sub.srt")
+    content = client.download_subtitle("https://example.com/sub.srt")
 
     assert content == b"1\n00:00:00,000 --> 00:00:01,000\nHello\n"
+    mock_session.get.assert_called_once_with("https://example.com/sub.srt", timeout=30)
 
 
-def test_download_subtitle_http_error_returns_none() -> None:
-    client = _make_client()
-    mock_response = MagicMock()
-    mock_response.status_code = 403
-    mock_response.text = "Forbidden"
+@pytest.mark.parametrize(
+    "status_code, text, side_effect",
+    [
+        (403, "Forbidden", None),
+        (500, "Server Error", None),
+        (200, "", ConnectionError("dropped")),
+    ],
+)
+def test_download_subtitle_failures(
+    client, mock_session, status_code, text, side_effect
+) -> None:
+    if side_effect:
+        mock_session.get.side_effect = side_effect
+    else:
+        mock_response = MagicMock()
+        mock_response.status_code = status_code
+        mock_response.text = text
+        mock_session.get.return_value = mock_response
 
-    with patch("requests.get", return_value=mock_response):
-        content = client.download_subtitle("https://example.com/sub.srt")
-
-    assert content is None
-
-
-def test_download_subtitle_network_exception_returns_none() -> None:
-    client = _make_client()
-    with patch("requests.get", side_effect=ConnectionError("dropped")):
-        content = client.download_subtitle("https://example.com/sub.srt")
-
+    content = client.download_subtitle("https://example.com/sub.srt")
     assert content is None

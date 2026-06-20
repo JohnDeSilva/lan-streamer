@@ -12,9 +12,10 @@ USER_AGENT = "LAN-Streamer/0.14.1"
 class OpenSubtitlesClient:
     """Client for interacting with the OpenSubtitles.com REST API."""
 
-    def __init__(self) -> None:
+    def __init__(self, session: Optional[requests.Session] = None) -> None:
         """Initialize the OpenSubtitles client with no active token."""
         self.token: Optional[str] = None
+        self.session = session or requests.Session()
 
     def _get_headers(self) -> Dict[str, str]:
         """Generate API headers including authentication token and API Key."""
@@ -41,7 +42,7 @@ class OpenSubtitlesClient:
             "password": config.opensubtitles_password,
         }
         try:
-            response = requests.post(
+            response = self.session.post(
                 url, json=payload, headers=self._get_headers(), timeout=15
             )
             if response.status_code == 200:
@@ -83,7 +84,7 @@ class OpenSubtitlesClient:
 
         logger.info(f"Searching OpenSubtitles with parameters: {params}")
         try:
-            response = requests.get(
+            response = self.session.get(
                 url, params=params, headers=self._get_headers(), timeout=15
             )
             if response.status_code == 200:
@@ -115,7 +116,7 @@ class OpenSubtitlesClient:
         url = f"{OPENSUBTITLES_API_BASE}download"
         payload = {"file_id": file_id}
         try:
-            response = requests.post(
+            response = self.session.post(
                 url, json=payload, headers=self._get_headers(), timeout=15
             )
             if response.status_code == 200:
@@ -138,7 +139,7 @@ class OpenSubtitlesClient:
             f"Downloading subtitle content from OpenSubtitles URL: '{download_url}'"
         )
         try:
-            response = requests.get(download_url, timeout=30)
+            response = self.session.get(download_url, timeout=30)
             if response.status_code == 200:
                 logger.info(
                     "Successfully downloaded subtitle content from OpenSubtitles."

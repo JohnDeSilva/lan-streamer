@@ -21,14 +21,15 @@ CACHE_DIR = Path.home() / ".config" / "lan-streamer" / "cache" / "images"
 class TMDBClient:
     """Client for interacting with The Movie Database (TMDB) API to fetch movie and TV metadata."""
 
-    def __init__(self) -> None:
-        self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "User-Agent": "LanStreamer/1.0",
-                "Accept": "application/json",
-            }
-        )
+    def __init__(self, session: requests.Session | None = None) -> None:
+        self.session = session or requests.Session()
+        if session is None:
+            self.session.headers.update(
+                {
+                    "User-Agent": "LanStreamer/1.0",
+                    "Accept": "application/json",
+                }
+            )
 
     # ------------------------------------------------------------------
     # Configuration
