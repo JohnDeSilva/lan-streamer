@@ -15,12 +15,14 @@ class MyAnimeListClient:
 
     def __init__(self, session: requests.Session | None = None) -> None:
         self.session = session or requests.Session()
-        if session is None:
-            self.session.headers.update(
-                {
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                }
+        if hasattr(self.session, "headers") and hasattr(
+            self.session.headers, "setdefault"
+        ):
+            self.session.headers.setdefault(
+                "User-Agent",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             )
+        if session is None:
             self.session.trust_env = True
 
     def is_configured(self) -> bool:
