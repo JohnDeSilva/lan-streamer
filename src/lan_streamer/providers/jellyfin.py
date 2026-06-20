@@ -18,8 +18,15 @@ logger = logging.getLogger(__name__)
 class JellyfinClient:
     """Client for interacting with the Jellyfin server API to sync played/unplayed watched history states."""
 
-    def __init__(self, session: requests.Session | None = None) -> None:
+    def __init__(
+        self,
+        session: requests.Session | None = None,
+        jellyfin_url: str | None = None,
+        jellyfin_api_key: str | None = None,
+    ) -> None:
         self.session = session or requests.Session()
+        self._jellyfin_url = jellyfin_url
+        self._jellyfin_api_key = jellyfin_api_key
         if hasattr(self.session, "headers") and hasattr(
             self.session.headers, "setdefault"
         ):
@@ -35,11 +42,27 @@ class JellyfinClient:
     # Configuration
     # ------------------------------------------------------------------
 
+    @property
+    def _effective_url(self) -> str:
+        return (
+            self._jellyfin_url
+            if self._jellyfin_url is not None
+            else config.jellyfin_url
+        )
+
+    @property
+    def _effective_api_key(self) -> str:
+        return (
+            self._jellyfin_api_key
+            if self._jellyfin_api_key is not None
+            else config.jellyfin_api_key
+        )
+
     def is_configured(self) -> bool:
-        return bool(config.jellyfin_url and config.jellyfin_api_key)
+        return bool(self._effective_url and self._effective_api_key)
 
     def _get_headers(self) -> dict:
-        token = config.jellyfin_api_key.strip()
+        token = self._effective_api_key.strip()
         auth = f'MediaBrowser Client="LanStreamer", Device="Desktop", DeviceId="lan-streamer-1", Version="1.0.0", Token="{token}"'
         return {
             "Authorization": auth,
@@ -47,7 +70,7 @@ class JellyfinClient:
         }
 
     def _get_base_url(self) -> str:
-        url = config.jellyfin_url.strip().rstrip("/")
+        url = self._effective_url.strip().rstrip("/")
         if not url:
             return ""
         if not url.startswith("http"):
@@ -82,7 +105,7 @@ class JellyfinClient:
                 return self._cached_user_id
         except requests.exceptions.ConnectionError:
             logger.exception(f"Connection error reaching Jellyfin at {base_url}")
-            if base_url.startswith("https://") and not config.jellyfin_url.startswith(
+            if base_url.startswith("https://") and not self._effective_url.startswith(
                 "https://"
             ):
                 logger.info("Retrying Jellyfin with http...")
