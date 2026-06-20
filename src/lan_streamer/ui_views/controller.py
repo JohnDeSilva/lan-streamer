@@ -1,18 +1,27 @@
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
+from typing import (
+    List,
+    Dict,
+    Any,
+    Optional,
+    Set,
+    Protocol,
+    TYPE_CHECKING,
+)
 
 from PySide6.QtCore import QObject, Signal, QFileSystemWatcher, QTimer
 
 from lan_streamer.system.config import config as _config_default
 from lan_streamer import db as _db_default
 
+
 if TYPE_CHECKING:
     from lan_streamer.providers.jellyfin import (
-        jellyfin_client as _proxy_jellyfin_default,
+        jellyfin_client as _jellyfin_default,
     )
-    from lan_streamer.providers.tmdb import tmdb_client as _proxy_tmdb_default
+    from lan_streamer.providers.tmdb import tmdb_client as _tmdb_default
     from lan_streamer.backend import (
         ScanWorker,
         CleanupWorker,
@@ -23,8 +32,8 @@ if TYPE_CHECKING:
     )
 else:
     from lan_streamer.ui_views.proxy import (
-        jellyfin_client as _proxy_jellyfin_default,
-        tmdb_client as _proxy_tmdb_default,
+        jellyfin_client as _jellyfin_default,
+        tmdb_client as _tmdb_default,
         ScanWorker,
         CleanupWorker,
         JellyfinPullWorker,
@@ -35,9 +44,31 @@ else:
 
 logger = logging.getLogger(__name__)
 
+# ------------------------------------------------------------------
+# Protocols for dependency injection interfaces
+# ------------------------------------------------------------------
+
+
+class JellyfinClientProtocol(Protocol):
+    """Interface abstracting methods of JellyfinClient used by Controller."""
+
+    def is_configured(self) -> bool: ...
+
+
+class TMDBClientProtocol(Protocol):
+    """Interface abstracting methods of TMDBClient used by Controller."""
+
+    def download_image(self, poster_path: str, cache_key: str) -> str | None: ...
+    def get_episode_group_details(self, group_id: str) -> dict | None: ...
+    def get_season_based_episode_group(
+        self, tmdb_identifier: str | int
+    ) -> dict | None: ...
+    def get_episodes(self, tmdb_identifier: str | int, season_num: int) -> list: ...
+
+
 # Backward-compatible aliases for tests that patch module-level names
-jellyfin_client = _proxy_jellyfin_default
-tmdb_client = _proxy_tmdb_default
+jellyfin_client: JellyfinClientProtocol = _jellyfin_default
+tmdb_client: TMDBClientProtocol = _tmdb_default
 
 
 class Controller(QObject):
@@ -70,18 +101,16 @@ class Controller(QObject):
         parent: Optional[QObject] = None,
         config: Any = None,
         db: Any = None,
-        jellyfin_client: Any = None,
-        tmdb_client: Any = None,
+        jellyfin_client: Optional[JellyfinClientProtocol] = None,
+        tmdb_client: Optional[TMDBClientProtocol] = None,
     ) -> None:
         super().__init__(parent)
         self._config = config if config is not None else _config_default
         self._db = db if db is not None else _db_default
         self._jellyfin_client = (
-            jellyfin_client if jellyfin_client is not None else _proxy_jellyfin_default
+            jellyfin_client if jellyfin_client is not None else _jellyfin_default
         )
-        self._tmdb_client = (
-            tmdb_client if tmdb_client is not None else _proxy_tmdb_default
-        )
+        self._tmdb_client = tmdb_client if tmdb_client is not None else _tmdb_default
         self.current_library_name: str = ""
         self.cached_library_data: Dict[str, Any] = {}
         self.selected_series_name: str = ""

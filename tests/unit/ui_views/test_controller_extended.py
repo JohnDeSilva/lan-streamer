@@ -560,8 +560,7 @@ def test_apply_metadata_match_jellyfin_provider(ctrl, mock_db_save) -> None:
         "tmdb_id": "tmdb-789",
         "name": "ShowA",
     }
-    with patch("lan_streamer.ui_views.controller.tmdb_client"):
-        ctrl.apply_metadata_match("ShowA", match)
+    ctrl.apply_metadata_match("ShowA", match)
 
     meta = ctrl.cached_library_data["ShowA"]["metadata"]
     assert meta["jellyfin_id"] == "jelly-abc"
@@ -629,8 +628,7 @@ def test_apply_metadata_match_emits_series_selected(ctrl, mock_db_save) -> None:
     ctrl.series_selected.connect(received.append)
 
     match = {"id": "111", "name": "ShowA"}
-    with patch("lan_streamer.ui_views.controller.tmdb_client"):
-        ctrl.apply_metadata_match("ShowA", match)
+    ctrl.apply_metadata_match("ShowA", match)
 
     assert "ShowA" in received
 
@@ -638,3 +636,172 @@ def test_apply_metadata_match_emits_series_selected(ctrl, mock_db_save) -> None:
 def test_apply_metadata_match_unknown_series_no_crash(ctrl, mock_db_save) -> None:
     match = {"id": "111", "name": "Unknown"}
     ctrl.apply_metadata_match("NonExistent", match)  # Should not crash
+
+
+# ---------------------------------------------------------------------------
+# trigger_global_cleanup — full chain
+# ---------------------------------------------------------------------------
+
+
+def test_trigger_global_cleanup_queue(ctrl, mock_db_save) -> None:
+    """Global cleanup processes all libraries from the config."""
+    mock_save, _ = mock_db_save
+    config.libraries = {"LibA": {"paths": ["/a"]}, "LibB": {"paths": ["/b"]}}
+
+    with patch("lan_streamer.ui_views.controller.CleanupWorker") as mock_cls:
+        ctrl.trigger_global_cleanup()
+        # Should have created a worker for the first library
+        mock_cls.assert_called_once_with(library_name="LibA", root_directories=["/a"])
+        mock_cls.return_value.start.assert_called_once()
+
+
+def test_trigger_global_cleanup_empty_queue(ctrl, mock_db_save) -> None:
+    """Global cleanup with empty library list emits completion."""
+    config.libraries = {}
+    statuses: List[str] = []
+    ctrl.status_changed.connect(statuses.append)
+
+    ctrl.trigger_global_cleanup()
+
+    assert any("completed" in s for s in statuses)
+
+
+def test_global_cleanup_step_finished_resumes(ctrl, mock_db_save) -> None:
+    """_on_global_cleanup_step_finished chains to next library."""
+    config.libraries = {"LibA": {"paths": ["/a"]}, "LibB": {"paths": ["/b"]}}
+
+    with patch("lan_streamer.ui_views.controller.CleanupWorker") as mock_cls:
+        ctrl.trigger_global_cleanup()
+        # Simulate first step finishing
+        ctrl._on_global_cleanup_step_finished({"series": 0, "episodes": 0})
+        # Should have created a worker for the second library
+        assert mock_cls.call_count == 2
+        mock_cls.assert_called_with(library_name="LibB", root_directories=["/b"])
+
+
+def test_global_cleanup_step_error_resumes(ctrl, mock_db_save) -> None:
+    """_on_global_cleanup_step_error chains to next library."""
+    config.libraries = {"LibA": {"paths": ["/a"]}, "LibB": {"paths": ["/b"]}}
+
+    with patch("lan_streamer.ui_views.controller.CleanupWorker") as mock_cls:
+        ctrl.trigger_global_cleanup()
+        # Simulate first step error
+        ctrl._on_global_cleanup_step_error("Something went wrong")
+        # Should have created a worker for the second library
+        assert mock_cls.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# _on_scan_and_update_scan_finished — no current_library_name
+# ---------------------------------------------------------------------------
+
+
+def test_scan_and_update_scan_finished_no_library_name(ctrl, mock_db_save) -> None:
+    """When current_library_name is empty, skip cleanup chaining."""
+    ctrl.current_library_name = ""
+
+    with patch("lan_streamer.ui_views.controller.CleanupWorker") as mock_cls:
+        ctrl._on_scan_and_update_scan_finished(ctrl.cached_library_data)
+        mock_cls.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _on_pass3_finished and _on_runtime_extraction_finished — cleanup after scan
+# ---------------------------------------------------------------------------
+
+
+def test_on_scan_all_finished_chains_global_cleanup(ctrl, mock_db_save) -> None:
+    """When _running_cleanup_after_scan is True, scan-all finished chains to global cleanup."""
+    ctrl._running_pass3_after_scan = False
+    ctrl._running_cleanup_after_scan = True
+
+    with patch.object(ctrl, "trigger_global_cleanup") as mock_trigger:
+        ctrl._on_scan_all_finished()
+        mock_trigger.assert_called_once()
+
+
+def test_on_runtime_finished_chains_global_cleanup(ctrl, mock_db_save) -> None:
+    """When _running_cleanup_after_scan is True, runtime finished chains to global cleanup."""
+    ctrl._running_cleanup_after_scan = True
+    ctrl._running_pass3_after_scan = True
+
+    with patch.object(ctrl, "trigger_global_cleanup") as mock_trigger:
+        ctrl._on_runtime_finished(0)
+        mock_trigger.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# toggle_series_lock — TV series without metadata key
+# ---------------------------------------------------------------------------
+
+
+def test_toggle_series_lock_tv_creates_metadata_key(ctrl, mock_db_save) -> None:
+    """When a TV series record has no 'metadata' key, it's created."""
+    del ctrl.cached_library_data["ShowA"]["metadata"]
+
+    ctrl.toggle_series_lock("ShowA", True)
+
+    assert "metadata" in ctrl.cached_library_data["ShowA"]
+    assert ctrl.cached_library_data["ShowA"]["metadata"]["locked_metadata"] is True
+
+
+# ---------------------------------------------------------------------------
+# refresh_episode_metadata — series not in cache
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_episode_metadata_unknown_series(ctrl, mock_db_save) -> None:
+    """refresh_episode_metadata returns early when series is not cached."""
+    ctrl.refresh_episode_metadata("NonExistent", "/fake/path.mkv")
+    # No crash means success
+
+
+# ---------------------------------------------------------------------------
+# update_movie_metadata — movie not in cache
+# ---------------------------------------------------------------------------
+
+
+def test_update_movie_metadata_unknown_movie(ctrl, mock_db_save) -> None:
+    """update_movie_metadata returns early when movie is not cached."""
+    ctrl.update_movie_metadata("NonExistent", "/fake/path.mkv", {})
+    # No crash means success
+
+
+# ---------------------------------------------------------------------------
+# apply_rename_batch — default_path and version path updates
+# ---------------------------------------------------------------------------
+
+
+def test_apply_rename_batch_updates_default_path(ctrl, mock_db_save) -> None:
+    """apply_rename_batch updates default_path and version path on rename."""
+    old_path = "/tv/ShowA/S01E01.mkv"
+    new_path = "/tv/ShowA/S01E01_renamed.mkv"
+    # Add default_path and a version entry
+    ep = ctrl.cached_library_data["ShowA"]["seasons"]["Season 1"]["episodes"][0]
+    ep["default_path"] = old_path
+    ep["versions"] = [{"path": old_path}]
+
+    with patch("lan_streamer.scanner.renamer.perform_rename") as mock_rename:
+        ctrl.apply_rename_batch([{"old": old_path, "new": new_path}])
+        # Invoke the success callback
+        on_success = mock_rename.call_args[0][1]
+        on_success(old_path, new_path)
+
+    assert ep["default_path"] == new_path
+    assert ep["versions"][0]["path"] == new_path
+
+
+# ---------------------------------------------------------------------------
+# _cache_series_metrics — last_played_at update
+# ---------------------------------------------------------------------------
+
+
+def test_cache_series_metrics_last_played_at(ctrl, mock_db_save) -> None:
+    """_cache_series_metrics tracks the highest last_played_at value."""
+    ep = ctrl.cached_library_data["ShowA"]["seasons"]["Season 1"]["episodes"][0]
+    ep["last_played_at"] = 42
+
+    ctrl._cache_series_metrics()
+
+    metrics = ctrl.cached_library_data["ShowA"]["metrics"]
+    assert metrics["last_played_at"] == 42
