@@ -30,9 +30,8 @@ class TMDBClient:
         self.session = session or requests.Session()
         self._api_key = api_key
         self._cache_dir = Path(cache_dir) if cache_dir else None
-        if session is None:
-            self.session.headers["User-Agent"] = "LanStreamer/1.0"
-            self.session.headers["Accept"] = "application/json"
+        self.session.headers.setdefault("User-Agent", "LanStreamer/1.0")
+        self.session.headers.setdefault("Accept", "application/json")
 
     # ------------------------------------------------------------------
     # Configuration

@@ -252,3 +252,13 @@ def pytest_xdist_auto_num_workers(config) -> int:
     if os.environ.get("GITHUB_ACTIONS"):
         return num_cores
     return max(1, num_cores // 2)
+
+
+@pytest.fixture
+def mock_session() -> MagicMock:
+    """Shared fixture for simulating a requests.Session with clean dictionaries."""
+    import requests
+
+    session = MagicMock(spec=requests.Session)
+    session.headers = {}
+    return session

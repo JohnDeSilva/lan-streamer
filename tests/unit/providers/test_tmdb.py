@@ -5,11 +5,6 @@ from lan_streamer.providers.tmdb import TMDBClient
 
 
 @pytest.fixture
-def mock_session() -> MagicMock:
-    return MagicMock(spec=requests.Session)
-
-
-@pytest.fixture
 def tmdb(tmp_path, mock_session) -> TMDBClient:
     client = TMDBClient(
         session=mock_session,
