@@ -293,6 +293,237 @@ def test_save_episode_record_name_fallback_strips_suffix_no_number(
         assert ep_b.path == "/new/ep1.mkv"
 
 
+def test_save_episode_record_two_tba_files_incremental_scan(mock_db_file) -> None:
+    """Bug B exact scenario: two files both scan as 'TBA' from TMDB.
+    First matches 'TBA', second must match 'TBA (1)' via suffix fallback.
+    No tmdb_number available (offline scan)."""
+    from lan_streamer.db.library import _save_episode_record
+
+    with get_session() as session:
+        series = Series(name="TBAShow", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+
+        ep_a = Episode(season=season, name="TBA", path="/tv/Show S01E05.mkv")
+        ep_b = Episode(season=season, name="TBA (1)", path="/tv/Show S01E06.mkv")
+        session.add_all([ep_a, ep_b])
+        session.flush()
+
+        existing_by_path = {"/tv/Show S01E05.mkv": ep_a, "/tv/Show S01E06.mkv": ep_b}
+        existing_by_number = {}
+        existing_by_name = {"TBA": ep_a, "TBA (1)": ep_b}
+        stats = {"episodes": 0, "issues": []}
+
+        # Scan first file — matches by exact name "TBA"
+        _save_episode_record(
+            session,
+            season,
+            {"name": "TBA", "path": "/tv/Show S01E05.mkv", "tmdb_number": None},
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        # Scan second file — must match "TBA (1)" via suffix fallback
+        _save_episode_record(
+            session,
+            season,
+            {"name": "TBA", "path": "/new/Show S01E06.mkv", "tmdb_number": None},
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        assert ep_a.path == "/tv/Show S01E05.mkv"
+        assert ep_b.path == "/new/Show S01E06.mkv"
+
+
+def test_save_episode_record_three_same_name_creates_new(mock_db_file) -> None:
+    """Three files all named 'Episode 1': first matches exact, second matches
+    suffix, third creates a new record."""
+    from lan_streamer.db.library import _save_episode_record
+
+    with get_session() as session:
+        series = Series(name="TripleShow", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+
+        ep_a = Episode(season=season, name="Episode 1", path="/a/ep1.mkv")
+        ep_b = Episode(season=season, name="Episode 1 (1)", path="/b/ep1.mkv")
+        session.add_all([ep_a, ep_b])
+        session.flush()
+
+        existing_by_path = {"/a/ep1.mkv": ep_a, "/b/ep1.mkv": ep_b}
+        existing_by_number = {}
+        existing_by_name = {"Episode 1": ep_a, "Episode 1 (1)": ep_b}
+        stats = {"episodes": 0, "issues": []}
+
+        # First scan — matches exact "Episode 1"
+        _save_episode_record(
+            session,
+            season,
+            {"name": "Episode 1", "path": "/a/ep1.mkv", "tmdb_number": None},
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        # Second scan — matches suffixed "Episode 1 (1)"
+        _save_episode_record(
+            session,
+            season,
+            {"name": "Episode 1", "path": "/new/ep1.mkv", "tmdb_number": None},
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        # Third scan — no match, creates new Episode
+        ep_c = _save_episode_record(
+            session,
+            season,
+            {"name": "Episode 1", "path": "/c/ep1.mkv", "tmdb_number": None},
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        assert ep_a.path == "/a/ep1.mkv"
+        assert ep_b.path == "/new/ep1.mkv"
+        assert ep_c.path == "/c/ep1.mkv"
+        assert ep_c.name == "Episode 1 (2)"  # counter suffix applied
+
+
+def test_save_episode_record_tmdb_number_takes_priority_over_name(mock_db_file) -> None:
+    """When tmdb_number matches, it takes priority over name fallback —
+    even if the name would also match a different suffixed record."""
+    from lan_streamer.db.library import _save_episode_record
+
+    with get_session() as session:
+        series = Series(name="PriorityShow", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+
+        ep_a = Episode(season=season, name="TBA", path="/a/TBA.mkv", tmdb_number=5)
+        ep_b = Episode(season=season, name="TBA (1)", path="/b/TBA.mkv", tmdb_number=6)
+        session.add_all([ep_a, ep_b])
+        session.flush()
+
+        existing_by_path = {"/a/TBA.mkv": ep_a, "/b/TBA.mkv": ep_b}
+        existing_by_number = {5: ep_a, 6: ep_b}
+        existing_by_name = {"TBA": ep_a, "TBA (1)": ep_b}
+        stats = {"episodes": 0, "issues": []}
+
+        # Scan file with name "TBA" but tmdb_number=6 — should match ep_b by number
+        _save_episode_record(
+            session,
+            season,
+            {"name": "TBA", "path": "/new/TBA.mkv", "tmdb_number": 6},
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        assert ep_b.path == "/new/TBA.mkv"
+        assert ep_a.path == "/a/TBA.mkv"
+
+
+def test_save_episode_record_no_match_creates_new_episode(mock_db_file) -> None:
+    """When no path, tmdb_number, or name matches, a new Episode is created."""
+    from lan_streamer.db.library import _save_episode_record
+
+    with get_session() as session:
+        series = Series(name="NoMatchShow", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+
+        ep_a = Episode(season=season, name="Other", path="/a/other.mkv")
+        session.add(ep_a)
+        session.flush()
+
+        existing_by_path = {"/a/other.mkv": ep_a}
+        existing_by_number = {}
+        existing_by_name = {"Other": ep_a}
+        stats = {"episodes": 0, "issues": []}
+
+        new_ep = _save_episode_record(
+            session,
+            season,
+            {"name": "Brand New", "path": "/x/new.mkv", "tmdb_number": None},
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        assert new_ep.path == "/x/new.mkv"
+        assert new_ep.name == "Brand New"
+        assert stats["episodes"] == 1
+
+
+def test_save_episode_record_exact_name_match_takes_priority(mock_db_file) -> None:
+    """Exact name match takes priority over suffixed fallback."""
+    from lan_streamer.db.library import _save_episode_record
+
+    with get_session() as session:
+        series = Series(name="ExactPriorityShow", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+
+        ep_a = Episode(season=season, name="Special", path=None)
+        ep_b = Episode(season=season, name="Special (1)", path=None)
+        session.add_all([ep_a, ep_b])
+        session.flush()
+
+        existing_by_path = {}
+        existing_by_number = {}
+        existing_by_name = {"Special": ep_a, "Special (1)": ep_b}
+        stats = {"episodes": 0, "issues": []}
+
+        # Should match exact "Special", not "Special (1)"
+        _save_episode_record(
+            session,
+            season,
+            {"name": "Special", "path": "/new/special.mkv", "tmdb_number": None},
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        assert ep_a.path == "/new/special.mkv"
+        assert ep_b.path is None
+
+
 def test_save_episode_record_myanimelist_fields(mock_db_file) -> None:
     """Episode records should save myanimelist fields."""
     from lan_streamer.db.library import _save_episode_record
