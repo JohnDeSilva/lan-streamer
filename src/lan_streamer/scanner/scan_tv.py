@@ -13,68 +13,19 @@ from lan_streamer.scanner.file_property_scanner import (
     get_detailed_file_info,
     get_stub_file_info,
 )
-from lan_streamer.scanner.metadata import (
-    _merge_season_episodes,  # noqa: F401
+from lan_streamer.services.metadata_resolution import (
     _process_episode_file,
     _process_season_metadata,
     _process_series_metadata,
+    _merge_season_episodes,  # noqa: F401
 )
+from lan_streamer.services.file_discovery import detect_tv_file_changes
 from lan_streamer.scanner.parser import VIDEO_EXTENSIONS
 
 logger = logging.getLogger("lan_streamer.scanner")
 
 # Computed once per process start; accurate enough for a single scan run.
 _TODAY_STR = datetime.date.today().isoformat()
-
-
-def _has_season_files_changed(
-    season_dir: Path, existing_season_data: Dict[str, Any]
-) -> bool:
-    """
-    Checks if files have been added, modified, or removed in a season folder
-    by comparing local paths/sizes to the pre-existing season metadata.
-    """
-    existing_episodes = existing_season_data.get("episodes", [])
-    existing_by_path = {ep["path"]: ep for ep in existing_episodes if ep.get("path")}
-
-    try:
-        disk_files = [
-            f
-            for f in season_dir.iterdir()
-            if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS
-        ]
-    except PermissionError, FileNotFoundError:
-        return True
-
-    # Filter out episodes without paths (e.g., TMDb future/placeholder episodes)
-    existing_phys_eps = [ep for ep in existing_episodes if ep.get("path")]
-    if len(disk_files) != len(existing_phys_eps):
-        return True
-
-    for disk_file in disk_files:
-        path_str = str(disk_file.absolute())
-        if path_str not in existing_by_path:
-            return True
-
-        # Check for size difference
-        existing_ep = existing_by_path[path_str]
-        sizes = [existing_ep.get("size_bytes")]
-        if existing_ep.get("versions"):
-            for v in existing_ep["versions"]:
-                if v.get("path") == path_str:
-                    sizes.append(v.get("size_bytes"))
-        # Filter out None values
-        sizes = [s for s in sizes if s is not None]
-
-        try:
-            disk_size = disk_file.stat().st_size
-        except Exception:
-            return True
-
-        if not any(s == disk_size for s in sizes):
-            return True
-
-    return False
 
 
 def scan_series(
@@ -195,7 +146,7 @@ def scan_series(
             ):
                 existing_season = existing_series_data["seasons"][season_name]
                 if offline:
-                    is_season_changed = _has_season_files_changed(
+                    is_season_changed = detect_tv_file_changes(
                         season_directory, existing_season
                     )
                 else:

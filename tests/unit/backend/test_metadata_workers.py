@@ -16,12 +16,12 @@ from lan_streamer.backend import (
 def test_runtime_extraction_worker_execution() -> None:
     # Successful run
     with (
-        patch("lan_streamer.backend.db.get_items_missing_runtime") as mock_get_items,
-        patch("lan_streamer.backend.db.has_tech_and_metadata", return_value=False),
-        patch("lan_streamer.scanner.get_detailed_file_info") as mock_info,
+        patch("lan_streamer.db.get_items_missing_runtime") as mock_get_items,
+        patch("lan_streamer.db.has_tech_and_metadata", return_value=False),
         patch(
-            "lan_streamer.backend.db.update_items_runtime_batch"
-        ) as mock_update_batch,
+            "lan_streamer.backend.metadata_worker_property.get_detailed_file_info"
+        ) as mock_info,
+        patch("lan_streamer.db.update_items_runtime_batch") as mock_update_batch,
     ):
         mock_get_items.return_value = [
             {
@@ -80,7 +80,7 @@ def test_runtime_extraction_worker_execution() -> None:
 
     # Exception run
     with patch(
-        "lan_streamer.backend.db.get_items_missing_runtime",
+        "lan_streamer.db.get_items_missing_runtime",
         side_effect=Exception("DB connection error"),
     ):
         errors_emitted: List[str] = []
@@ -392,12 +392,12 @@ def test_subtitle_merge_worker_direct():
 def test_file_property_extraction_worker_skips_and_batches() -> None:
     """Verify that FilePropertyExtractionWorker skips fully populated files and groups/batches database writes per season."""
     with (
-        patch("lan_streamer.backend.db.get_items_missing_runtime") as mock_get_items,
-        patch("lan_streamer.backend.db.has_tech_and_metadata") as mock_has_tech,
-        patch("lan_streamer.scanner.get_detailed_file_info") as mock_info,
+        patch("lan_streamer.db.get_items_missing_runtime") as mock_get_items,
+        patch("lan_streamer.db.has_tech_and_metadata") as mock_has_tech,
         patch(
-            "lan_streamer.backend.db.update_items_runtime_batch"
-        ) as mock_update_batch,
+            "lan_streamer.backend.metadata_worker_property.get_detailed_file_info"
+        ) as mock_info,
+        patch("lan_streamer.db.update_items_runtime_batch") as mock_update_batch,
     ):
         # 1. Mock get_items_missing_runtime
         # We have three episode candidates:

@@ -12,8 +12,7 @@ from .file_property_scanner import (
     get_stub_file_info,
     _extract_video_runtime,
 )
-from .metadata import (
-    clean_series_data,
+from lan_streamer.services.metadata_resolution import (
     _build_locked_tv_tmdb_stub,
     _build_locked_movie_tmdb_stub,
     _resolve_existing_jellyfin_id,
@@ -32,6 +31,7 @@ from .metadata import (
     _process_season_metadata,
     _process_episode_file,
 )
+from lan_streamer.services.metadata_updates import clean_series_data
 from .versioning import get_version_score_key, choose_active_version
 from .core import (
     LibraryDict,

@@ -1,23 +1,25 @@
 import logging
-import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 from lan_streamer.db.utils import natural_sort_key
 from lan_streamer.scanner.versioning import get_version_score_key, choose_active_version  # noqa: F401
-from lan_streamer.scanner.proxy import tmdb_client, clean_series_data, scanner_proxy  # noqa: F401
 from lan_streamer.scanner.parser import (
     has_video_files,
     _parse_movie_folder,  # noqa: F401
 )
-from lan_streamer.scanner.metadata import (
+from lan_streamer.services.file_discovery import (
+    has_season_subdirectories as _has_season_subdirs,
+)
+from lan_streamer.services.metadata_resolution import (
     _resolve_existing_jellyfin_id,
     _build_locked_movie_tmdb_stub,
     _build_locked_tv_tmdb_stub,
     _merge_season_episodes,
 )
-from lan_streamer.scanner.scan_movie import scan_movie, _has_movie_files_changed  # noqa: F401
-from lan_streamer.scanner.scan_tv import scan_series, _has_season_files_changed  # noqa: F401
+from lan_streamer.services.metadata_updates import clean_series_data
+from lan_streamer.scanner.scan_movie import scan_movie
+from lan_streamer.scanner.scan_tv import scan_series
 
 logger = logging.getLogger("lan_streamer.scanner")
 
@@ -31,33 +33,6 @@ class LibraryDict(dict[str, Any]):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.unavailable_directories: List[str] = []
-
-
-def _has_season_subdirs(directory: Path) -> bool:
-    """
-    Returns True if *directory* contains at least one subdirectory whose name
-    looks like a season folder (contains 'season', 'special', 'extra',
-    'featurette', 'bonus', 'shorts', or any digit sequence). This allows
-    series folders with no local video files to still be indexed so that
-    TMDB placeholder episodes can be seeded into the database.
-    """
-    try:
-        for child in directory.iterdir():
-            if child.is_dir() and not child.name.startswith("."):
-                name_lower = child.name.lower()
-                if (
-                    "season" in name_lower
-                    or "special" in name_lower
-                    or "extra" in name_lower
-                    or "featurette" in name_lower
-                    or "bonus" in name_lower
-                    or "shorts" in name_lower
-                    or bool(re.search(r"\d+", child.name))
-                ):
-                    return True
-    except PermissionError:
-        pass
-    return False
 
 
 def scan_directories(
@@ -354,7 +329,7 @@ def scan_directories(
             )
             cleaned: Optional[Dict[str, Any]] = None
             if library_type == "movie":
-                series_data = scanner_proxy.scan_movie(
+                series_data = scan_movie(
                     series_directory,
                     tmdb_movie=tmdb_series,
                     jellyfin_data=jellyfin_data,

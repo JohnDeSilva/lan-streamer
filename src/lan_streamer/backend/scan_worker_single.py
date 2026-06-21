@@ -7,13 +7,10 @@ from lan_streamer.scanner import (
     LibraryDict,
     has_video_files,
 )
-from lan_streamer.backend.proxy import (
-    db,
-    config,
-    jellyfin_client,
-    scan_directories,
-    discover_single_library_tree,
-)
+from lan_streamer import db
+from lan_streamer.system.config import config
+from lan_streamer.providers.jellyfin import jellyfin_client
+from lan_streamer.scanner import scan_directories
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -121,7 +118,7 @@ class ScanWorker(QThread):
             self.unavailable_directories = []
 
             # Pre-discover the library tree structure and emit init_library_scan
-            tree_structure = discover_single_library_tree(
+            tree_structure = _discover_single_library_tree_impl(
                 self.root_directories, self.library_type
             )
             self.detail_progress.emit(
