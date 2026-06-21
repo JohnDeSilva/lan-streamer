@@ -1354,7 +1354,7 @@ class TestProcessEpisodeFile:
             jellyfin_data=None,
             existing_episodes_by_path={},
         )
-        assert result["name"] == "S01E01.mkv"
+        assert result["name"] == "Episode 1"
         assert result["tmdb_number"] == 1
         assert result["tmdb_name"] == "Episode 1"
         assert result["tmdb_episode_identifier"] == "ep1"
@@ -1549,7 +1549,7 @@ class TestProcessEpisodeFile:
             existing_episodes_by_path={},
             existing_series_data=existing_series_data,
         )
-        assert result["name"] == "S01E02.mkv"
+        assert result["name"] == "Placeholder Title"
         assert result["path"] == ep_path
         assert result["tmdb_episode_identifier"] == "placeholder_ep_2"
         assert result["tmdb_name"] == "Placeholder Title"

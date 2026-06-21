@@ -82,13 +82,13 @@ def test_scan_directories_with_mock(tmp_path) -> None:
 
     s1_eps = library["Series A"]["seasons"]["Season 1"]["episodes"]
     assert len(s1_eps) == 2
-    assert s1_eps[0]["name"] == "S01E01.mkv"
+    assert s1_eps[0]["name"] == "S01E01"
     assert s1_eps[0]["path"] == str(ep1_path.absolute())
 
     assert "Series B" in library
     sb_eps = library["Series B"]["seasons"]["Season 1"]["episodes"]
     assert len(sb_eps) == 2
-    assert sb_eps[0]["name"] == "S01E01.mkv"
+    assert sb_eps[0]["name"] == "S01E01"
     assert sb_eps[1]["name"] == "S01E02 - TBA"
     assert sb_eps[1]["path"] is None
 
@@ -3140,12 +3140,12 @@ def test_scan_series_myanimelist_auto_mapping(tmp_path) -> None:
     assert len(eps) == 3
 
     # 2. Existing S01E01 mapping should be preserved
-    assert eps[0]["name"] == "S01E01.mkv"
+    assert eps[0]["name"] == "Episode 1"
     assert eps[0]["myanimelist_anime_id"] == 12345
     assert eps[0]["myanimelist_episode_number"] == 1
 
     # 3. New S01E02 should be automatically mapped using season's myanimelist_id
-    assert eps[1]["name"] == "S01E02.mkv"
+    assert eps[1]["name"] == "Episode 2"
     assert eps[1]["myanimelist_anime_id"] == 12345
     assert eps[1]["myanimelist_episode_number"] == 2
 
@@ -3288,7 +3288,7 @@ def test_scan_directories_metadata_only_offline() -> None:
     # Verify S01E01 is updated, and S01E02 placeholder is created
     eps = tv_res["Series A"]["seasons"]["Season 1"]["episodes"]
     assert len(eps) == 2
-    assert eps[0]["name"] == "S01E01.mkv"
+    assert eps[0]["name"] == "Episode 1 Updated Name"
     assert eps[0]["path"] == "/nonexistent/path/Series A/Season 1/S01E01.mkv"
     assert eps[0]["versions"][0]["resolution"] == "1080p"
 
@@ -3438,3 +3438,124 @@ def test_scan_directories_metadata_only_preserves_existing_poster_files(
     )
     assert movie_res["Movie A"]["poster_path"] == str(old_movie_poster)
     mock_tmdb.download_image.assert_not_called()
+
+
+def test_scan_series_multiple_files_same_episode_grouped(tmp_path) -> None:
+    """Multiple quality variants of the same episode should map to one Episode
+    record with a TMDB ID, not create duplicate episode records."""
+    from lan_streamer.scanner import scan_series
+
+    series_dir = tmp_path / "Multi File Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    # Two files for S01E01 with different quality tags
+    (season_dir / "Multi File Show S01E01 1080p.mkv").write_text("video")
+    (season_dir / "Multi File Show S01E01 720p.mkv").write_text("video")
+
+    with (
+        patch("lan_streamer.services.metadata_series.tmdb_client") as mock_tmdb,
+        patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
+    ):
+        mock_tmdb.is_configured.return_value = True
+        mock_tmdb.search_series.return_value = {
+            "id": "s1",
+            "tmdb_identifier": "s1",
+            "name": "Multi File Show",
+            "overview": "",
+            "poster_path": "",
+        }
+        mock_tmdb.get_seasons.return_value = [
+            {
+                "id": "se1",
+                "episode_number": 1,
+                "name": "Season 1",
+                "season_number": 1,
+                "image": "",
+            }
+        ]
+        mock_tmdb.get_episodes.return_value = [
+            {"id": "ep1", "episode_number": 1, "name": "Episode 1"}
+        ]
+        mock_tmdb.download_image.return_value = ""
+
+        series_data = scan_series(series_dir)
+
+        episodes = series_data["seasons"]["Season 1"]["episodes"]
+        assert len(episodes) == 1, (
+            f"Expected 1 episode, got {len(episodes)}: {[e.get('name') for e in episodes]}"
+        )
+        assert episodes[0]["tmdb_number"] == 1
+        assert len(episodes[0].get("versions", [])) == 2
+
+
+def test_scan_series_cross_root_dedup(tmp_path) -> None:
+    """Same episode in two different root directories should not create
+    duplicate episode records — dedup by tmdb_episode_identifier."""
+    from lan_streamer.db.library_tv import save_library
+
+    root_a = tmp_path / "RootA"
+    root_b = tmp_path / "RootB"
+    series_a = root_a / "Test Show"
+    series_a.mkdir(parents=True)
+    season_a = series_a / "Season 1"
+    season_a.mkdir()
+    ep_a = season_a / "Test Show S01E01.mkv"
+    ep_a.write_text("video a")
+
+    series_b = root_b / "Test Show"
+    series_b.mkdir(parents=True)
+    season_b = series_b / "Season 1"
+    season_b.mkdir()
+    ep_b = season_b / "Test Show S01E01.mkv"
+    ep_b.write_text("video b")
+
+    # Simulate scan results from both roots — same TMDB data, different paths
+    library_data = {
+        "Test Show": {
+            "metadata": {"tmdb_identifier": "s1", "name": "Test Show"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": str(ep_a.absolute()),
+                            "tmdb_episode_identifier": "tmdb_ep_1",
+                            "tmdb_number": 1,
+                            "tmdb_name": "Episode 1",
+                        },
+                        {
+                            "name": "Episode 1",
+                            "path": str(ep_b.absolute()),
+                            "tmdb_episode_identifier": "tmdb_ep_1",
+                            "tmdb_number": 1,
+                            "tmdb_name": "Episode 1",
+                        },
+                    ],
+                }
+            },
+        }
+    }
+
+    from lan_streamer.db.models import Episode
+
+    with (
+        patch("lan_streamer.db.library_tv.get_session") as mock_session_ctx,
+    ):
+        mock_session = MagicMock()
+        mock_session_ctx.return_value.__enter__ = lambda s: mock_session
+        mock_session_ctx.return_value.__exit__ = MagicMock(return_value=False)
+        mock_session.scalars.return_value.all.return_value = []
+
+        save_library("TestLib", library_data)
+
+        # Should create only 1 episode, not 2
+        added_episodes = [
+            call
+            for call in mock_session.add.call_args_list
+            if isinstance(call[0][0], Episode)
+        ]
+        assert len(added_episodes) == 1, (
+            f"Expected 1 episode added, got {len(added_episodes)}"
+        )

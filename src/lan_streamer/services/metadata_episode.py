@@ -254,6 +254,19 @@ def _process_episode_file(
         runtime = existing_episode.get("runtime", 0)
         jellyfin_id = existing_episode.get("jellyfin_id", "")
         logger.debug(f"Reusing existing metadata for '{episode_name}'")
+        # Fill in missing tmdb_name from TMDB episode list when we have
+        # a tmdb_number but no cached name.
+        if tmdb_name is None and tmdb_number is not None and tmdb_episodes:
+            for tmdb_ep in tmdb_episodes:
+                if tmdb_ep.get("episode_number") == tmdb_number:
+                    tmdb_name = tmdb_ep.get("name")
+                    if not tmdb_episode_identifier:
+                        tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
+                    if not air_date:
+                        air_date = tmdb_ep.get("air_date", "")
+                    if not runtime:
+                        runtime = tmdb_ep.get("runtime", 0)
+                    break
         if tmdb_number is None:
             if cached_tmdb_episode_identifier and tmdb_episodes:
                 for tmdb_ep in tmdb_episodes:
@@ -312,6 +325,7 @@ def _process_episode_file(
             )
         elif parsed:
             _, episode_number = parsed
+            tmdb_number = episode_number
             for tmdb_episode in tmdb_episodes:
                 if tmdb_episode.get("episode_number") == episode_number:
                     tmdb_episode_identifier = str(tmdb_episode.get("id", ""))
@@ -385,7 +399,13 @@ def _process_episode_file(
         )
 
     res = {
-        "name": episode_name,
+        "name": tmdb_name
+        or (
+            f"S{int(season_match.group()):02d}E{tmdb_number:02d}"
+            if tmdb_number is not None
+            and (season_match := re.search(r"\d+", season_name))
+            else episode_name
+        ),
         "path": episode_path,
         "tmdb_identifier": tmdb_episode_identifier,
         "tmdb_episode_identifier": tmdb_episode_identifier,
