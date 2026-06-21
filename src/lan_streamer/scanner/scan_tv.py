@@ -295,6 +295,7 @@ def scan_series(
 
         for key, ep_list in grouped_episodes.items():
             versions = []
+            incoming_paths = {ep["path"] for ep in ep_list if ep.get("path")}
             for ep in ep_list:
                 path_str = ep["path"]
                 existing_v = None
@@ -317,6 +318,17 @@ def scan_series(
                         versions.append(get_stub_file_info(path_str))
                     else:
                         versions.append(get_detailed_file_info(path_str))
+
+            for ex_ep in existing_season_eps:
+                match = (
+                    ep_list[0].get("tmdb_number") is not None
+                    and ex_ep.get("tmdb_number") == ep_list[0].get("tmdb_number")
+                ) or ep_list[0].get("name") == ex_ep.get("name")
+                if match and ex_ep.get("versions"):
+                    for ev in ex_ep["versions"]:
+                        ev_path = ev.get("path")
+                        if ev_path and ev_path not in incoming_paths:
+                            versions.append(ev)
 
             default_path = None
             for ex_ep in existing_season_eps:
@@ -411,11 +423,13 @@ def scan_series(
                 )
                 series_data["seasons"][old_season_name] = old_season_data
             else:
-                found_paths = {
-                    episode["path"]
-                    for episode in series_data["seasons"][old_season_name]["episodes"]
-                    if episode.get("path")
-                }
+                found_paths = set()
+                for episode in series_data["seasons"][old_season_name]["episodes"]:
+                    if episode.get("path"):
+                        found_paths.add(episode["path"])
+                    for version in episode.get("versions", []):
+                        if version.get("path"):
+                            found_paths.add(version["path"])
                 found_numbers = {
                     episode["tmdb_number"]
                     for episode in series_data["seasons"][old_season_name]["episodes"]
