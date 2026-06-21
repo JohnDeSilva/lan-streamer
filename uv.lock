@@ -322,7 +322,7 @@ wheels = [
 
 [[package]]
 name = "lan-streamer"
-version = "0.30.3"
+version = "0.30.4"
 source = { virtual = "." }
 dependencies = [
     { name = "alembic" },

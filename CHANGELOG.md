@@ -1,3 +1,35 @@
+## v0.30.4 (2026-06-21)
+
+### Fix
+
+- **db**: handle counter-suffixed episode names in name-based fallback
+- **scanner**: fix dedupe bug
+- **scanner**: use TMDB metadata as episode name, not filenames
+- **jellyfin**: only push watched episodes to jellyfin
+- **logging**: improved Logging depth
+
+### Refactor
+
+- **services**: remove unused media_mapping and mapping_updates modules
+- **services**: remove dead code and unused re-exports
+- **services**: split metadata_tv.py into metadata_series and metadata_episode
+- **services**: split metadata_resolution.py into domain-specific modules
+- **wiring**: wire services into callers and remove proxies
+- **services**: add file_discovery, metadata_resolution, media_mapping, mapping_updates, and metadata_updates services
+- **services**: create services package
+- **scanner**: extract versioning to break circular imports
+- **db**: extract MAL push side-effect from queries_playback
+- **db**: remove empty queries_metadata_matching placeholder
+- **db**: rename queries_file_discovery to orm_serialization
+- **db**: extract natural_sort_key to db/utils.py
+- simplify client constructors and consolidate mock session fixture
+- add Protocols, fix hasattr guards, achieve 100% controller coverage
+- implement constructor-based dependency injection for providers and controller
+- **providers**: apply setdefault to retain headers in injected sessions
+- **providers**: implement constructor-based dependency injection for clients
+- Add missing __init__.py files
+- splits db, scanner, and dialog code into smaller easier to read files
+
 ## v0.30.3 (2026-06-16)
 
 ### Fix
