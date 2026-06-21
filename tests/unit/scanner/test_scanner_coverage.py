@@ -270,6 +270,118 @@ class TestMergeSeasonEpisodes:
         _merge_season_episodes(existing, new_ep, "Season 1")
         assert len(existing) == 2
 
+    def test_multiple_tba_files_all_added(self) -> None:
+        """Bug A scenario: two files both named 'TBA' from TMDB should both
+        be added when they have different paths."""
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
+
+        existing = []
+        new_eps = [
+            {"name": "TBA", "path": "/tv/Show S01E05.mkv", "tmdb_number": 5},
+            {"name": "TBA", "path": "/tv/Show S01E06.mkv", "tmdb_number": 6},
+        ]
+        _merge_season_episodes(existing, new_eps, "Season 1")
+        assert len(existing) == 2
+        assert existing[0]["path"] == "/tv/Show S01E05.mkv"
+        assert existing[1]["path"] == "/tv/Show S01E06.mkv"
+
+    def test_multiple_tba_no_tmdb_number_all_added(self) -> None:
+        """Two 'TBA' files with no tmdb_number and different paths are both added."""
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
+
+        existing = []
+        new_eps = [
+            {"name": "TBA", "path": "/a/ep.mkv"},
+            {"name": "TBA", "path": "/b/ep.mkv"},
+        ]
+        _merge_season_episodes(existing, new_eps, "Season 1")
+        assert len(existing) == 2
+
+    def test_skips_same_tmdb_number_different_path(self) -> None:
+        """Episodes with the same tmdb_number are deduped even with different paths."""
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
+
+        existing = [{"name": "Episode 1", "path": "/a/ep1.mkv", "tmdb_number": 1}]
+        new_ep = [{"name": "Episode 1", "path": "/b/ep1.mkv", "tmdb_number": 1}]
+        _merge_season_episodes(existing, new_ep, "Season 1")
+        assert len(existing) == 1
+
+    def test_skips_same_tmdb_episode_identifier(self) -> None:
+        """Episodes with the same tmdb_episode_identifier are deduped (cross-root)."""
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
+
+        existing = [
+            {
+                "name": "Fallout",
+                "path": "/root1/Fallout S01E01.mkv",
+                "tmdb_episode_identifier": "12345-1-1",
+            }
+        ]
+        new_ep = [
+            {
+                "name": "Fallout",
+                "path": "/root2/Fallout S01E01.mkv",
+                "tmdb_episode_identifier": "12345-1-1",
+            }
+        ]
+        _merge_season_episodes(existing, new_ep, "Season 1")
+        assert len(existing) == 1
+
+    def test_different_tmdb_numbers_all_added(self) -> None:
+        """Episodes with different tmdb_numbers are all added."""
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
+
+        existing = [{"name": "TBA", "path": "/a/ep.mkv", "tmdb_number": 5}]
+        new_ep = [{"name": "TBA", "path": "/b/ep.mkv", "tmdb_number": 6}]
+        _merge_season_episodes(existing, new_ep, "Season 1")
+        assert len(existing) == 2
+
+    def test_mixed_dedup_keys(self) -> None:
+        """Three new episodes: one path dup, one tmdb_number dup, one unique — only unique added."""
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
+
+        existing = [
+            {"name": "A", "path": "/a.mkv", "tmdb_number": 1},
+            {"name": "B", "path": "/b.mkv", "tmdb_number": 2},
+        ]
+        new_eps = [
+            {"name": "A copy", "path": "/a.mkv", "tmdb_number": 1},  # path + number dup
+            {"name": "B v2", "path": "/b2.mkv", "tmdb_number": 2},  # number dup
+            {"name": "C", "path": "/c.mkv", "tmdb_number": 3},  # unique
+        ]
+        _merge_season_episodes(existing, new_eps, "Season 1")
+        assert len(existing) == 3
+        assert existing[2]["name"] == "C"
+
+    def test_empty_existing_list(self) -> None:
+        """Merging into an empty list adds all episodes."""
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
+
+        new_eps = [
+            {"name": "E1", "path": "/e1.mkv"},
+            {"name": "E2", "path": "/e2.mkv"},
+        ]
+        existing: list = []
+        _merge_season_episodes(existing, new_eps, "Season 1")
+        assert len(existing) == 2
+
+    def test_empty_new_list(self) -> None:
+        """Merging an empty list changes nothing."""
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
+
+        existing = [{"name": "E1", "path": "/e1.mkv"}]
+        _merge_season_episodes(existing, [], "Season 1")
+        assert len(existing) == 1
+
+    def test_tmdb_identifier_fallback_for_dedup(self) -> None:
+        """tmdb_identifier is used for dedup when tmdb_episode_identifier is absent."""
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
+
+        existing = [{"name": "Ep", "path": "/a.mkv", "tmdb_identifier": "999"}]
+        new_ep = [{"name": "Ep", "path": "/b.mkv", "tmdb_identifier": "999"}]
+        _merge_season_episodes(existing, new_ep, "Season 1")
+        assert len(existing) == 1
+
 
 # ---------------------------------------------------------------------------
 # scanner/metadata.py - _build_movie_metadata_defaults
