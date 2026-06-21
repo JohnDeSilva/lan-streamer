@@ -1550,16 +1550,15 @@ def test_merge_season_episodes_path_duplicate() -> None:
     assert len(existing) == 1
 
 
-def test_merge_season_episodes_name_duplicate_skips() -> None:
-    """When a new episode has the same name but different path, it is skipped."""
+def test_merge_season_episodes_name_duplicate_adds() -> None:
+    """Different paths with the same name are added (name is not a dedup key)."""
     from lan_streamer.scanner import _merge_season_episodes
 
     existing: list = [{"name": "S01E01.mkv", "path": "/a/S01E01.mkv"}]
     _merge_season_episodes(
         existing, [{"name": "S01E01.mkv", "path": "/b/S01E01.mkv"}], "Season 1"
     )
-    # Episode count must not grow — name duplicate is rejected
-    assert len(existing) == 1
+    assert len(existing) == 2
 
 
 def test_build_movie_metadata_defaults() -> None:

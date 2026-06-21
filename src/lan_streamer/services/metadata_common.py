@@ -81,7 +81,12 @@ def _merge_season_episodes(
     season_name: str,
 ) -> None:
     """Merges *new_episodes* into *existing_episodes* in-place, skipping
-    duplicates by path (exact copy) or by name (different path same title).
+    duplicates by path (exact copy) or by TMDB identity.
+
+    Dedup uses ``path`` for exact copies and ``tmdb_number`` /
+    ``tmdb_episode_identifier`` for TMDB-level identity.  The ``name``
+    field is *not* used for dedup because multiple files can share the
+    same display name (e.g. "TBA" or "Episode 1").
 
     Args:
         existing_episodes: The list of existing episode dictionaries to
@@ -90,18 +95,41 @@ def _merge_season_episodes(
         season_name: Human-readable season name used in log messages.
     """
     existing_paths: set[str] = {ep["path"] for ep in existing_episodes}
-    existing_names: set[str] = {ep["name"] for ep in existing_episodes}
+    existing_tmdb_ids: set[str] = {
+        str(ep.get("tmdb_episode_identifier") or ep.get("tmdb_identifier") or "")
+        for ep in existing_episodes
+    }
+    existing_numbers: set[int] = {
+        ep["tmdb_number"]
+        for ep in existing_episodes
+        if ep.get("tmdb_number") is not None
+    }
     for episode in new_episodes:
-        if (
-            episode["path"] not in existing_paths
-            and episode["name"] not in existing_names
-        ):
-            logger.debug(f"Adding episode '{episode['name']}' from '{episode['path']}'")
-            existing_episodes.append(episode)
-        elif episode["path"] not in existing_paths:
-            logger.warning(
-                f"Skipping episode '{episode['name']}' from '{episode['path']}' "
-                f"because an episode with the same name already exists in {season_name}."
+        ep_path = episode["path"]
+        ep_tmdb_id = str(
+            episode.get("tmdb_episode_identifier")
+            or episode.get("tmdb_identifier")
+            or ""
+        )
+        ep_number = episode.get("tmdb_number")
+
+        if ep_path in existing_paths:
+            logger.debug(f"Skipping exact duplicate path: {ep_path}")
+            continue
+
+        if ep_tmdb_id and ep_tmdb_id in existing_tmdb_ids:
+            logger.debug(
+                f"Skipping episode '{episode['name']}' — same tmdb_episode_identifier "
+                f"already exists in {season_name}"
             )
-        else:
-            logger.debug(f"Skipping exact duplicate path: {episode['path']}")
+            continue
+
+        if ep_number is not None and ep_number in existing_numbers:
+            logger.debug(
+                f"Skipping episode '{episode['name']}' — same tmdb_number "
+                f"already exists in {season_name}"
+            )
+            continue
+
+        logger.debug(f"Adding episode '{episode['name']}' from '{ep_path}'")
+        existing_episodes.append(episode)

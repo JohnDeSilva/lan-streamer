@@ -262,12 +262,13 @@ class TestMergeSeasonEpisodes:
         assert len(existing) == 1
 
     def test_skips_same_name_different_path(self) -> None:
+        """Same name but different path is added (name is not a dedup key)."""
         from lan_streamer.services.metadata_resolution import _merge_season_episodes
 
         existing = [{"name": "ep1.mkv", "path": "/ep1.mkv"}]
-        new_ep = [{"name": "ep1.mkv", "path": "/other/ep1.mkv"}]  # same name
+        new_ep = [{"name": "ep1.mkv", "path": "/other/ep1.mkv"}]
         _merge_season_episodes(existing, new_ep, "Season 1")
-        assert len(existing) == 1
+        assert len(existing) == 2
 
 
 # ---------------------------------------------------------------------------
