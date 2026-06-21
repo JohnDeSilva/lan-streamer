@@ -1194,59 +1194,7 @@ Below is the structured textual representation of all major class inheritance pa
 ## Dynamic Proxies & Monkey Patching
 
 ### `PatchedAttribute`
-- **Defined in**: [proxy.py](../src/lan_streamer/scanner/proxy.py#L5) (line 5)
-- **Inherits from**: *None (Base Class)*
-
-> *No class-level docstring provided.*
-
-**Methods**:
-- `def __init__(self, attr_name: str, default_factory: Callable[[], Any]) -> None`
-
-- `def _get_target(self) -> Any`
-
----
-
-### `PatchedAttribute`
-- **Defined in**: [proxy.py](../src/lan_streamer/backend/proxy.py#L5) (line 5)
-- **Inherits from**: *None (Base Class)*
-
-> *No class-level docstring provided.*
-
-**Methods**:
-- `def __init__(self, attr_name: str, default_factory: Callable[[], Any]) -> None`
-
-- `def _get_target(self) -> Any`
-
----
-
-### `PatchedAttribute`
 - **Defined in**: [proxy.py](../src/lan_streamer/playback/proxy.py#L5) (line 5)
-- **Inherits from**: *None (Base Class)*
-
-> *No class-level docstring provided.*
-
-**Methods**:
-- `def __init__(self, attr_name: str, default_factory: Callable[[], Any]) -> None`
-
-- `def _get_target(self) -> Any`
-
----
-
-### `PatchedCallable`
-- **Defined in**: [proxy.py](../src/lan_streamer/scanner/proxy.py#L20) (line 20)
-- **Inherits from**: *None (Base Class)*
-
-> *No class-level docstring provided.*
-
-**Methods**:
-- `def __init__(self, attr_name: str, default_factory: Callable[[], Any]) -> None`
-
-- `def _get_target(self) -> Any`
-
----
-
-### `PatchedCallable`
-- **Defined in**: [proxy.py](../src/lan_streamer/backend/proxy.py#L20) (line 20)
 - **Inherits from**: *None (Base Class)*
 
 > *No class-level docstring provided.*
@@ -1281,27 +1229,6 @@ Below is the structured textual representation of all major class inheritance pa
 - `def __init__(self, attr_name: str, default_factory: Callable[[], Any]) -> None`
 
 - `def _get_target(self) -> Any`
-
----
-
-### `PatchedScannerCallable`
-- **Defined in**: [proxy.py](../src/lan_streamer/backend/proxy.py#L74) (line 74)
-- **Inherits from**: *None (Base Class)*
-
-> *No class-level docstring provided.*
-
-**Methods**:
-- `def __init__(self, attr_name: str, default_factory: Callable[[], Any]) -> None`
-
-- `def _get_target(self) -> Any`
-
----
-
-### `ScannerProxy`
-- **Defined in**: [proxy.py](../src/lan_streamer/scanner/proxy.py#L67) (line 67)
-- **Inherits from**: *None (Base Class)*
-
-> *No class-level docstring provided.*
 
 ---
 
