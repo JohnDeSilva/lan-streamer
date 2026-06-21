@@ -32,6 +32,7 @@ from .metadata import (
     _process_season_metadata,
     _process_episode_file,
 )
+from .versioning import get_version_score_key, choose_active_version
 from .core import (
     LibraryDict,
     scan_directories,

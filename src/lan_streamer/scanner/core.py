@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 from lan_streamer.db.utils import natural_sort_key
+from lan_streamer.scanner.versioning import get_version_score_key, choose_active_version  # noqa: F401
 from lan_streamer.scanner.proxy import tmdb_client, clean_series_data, scanner_proxy  # noqa: F401
 from lan_streamer.scanner.parser import (
     has_video_files,
@@ -19,66 +20,6 @@ from lan_streamer.scanner.scan_movie import scan_movie, _has_movie_files_changed
 from lan_streamer.scanner.scan_tv import scan_series, _has_season_files_changed  # noqa: F401
 
 logger = logging.getLogger("lan_streamer.scanner")
-
-
-def get_version_score_key(version: Dict[str, Any]) -> tuple:
-    res = version.get("resolution") or ""
-    res_score = 0
-    if "x" in res:
-        try:
-            w, h = res.split("x")
-            res_score = int(w) * int(h)
-        except Exception:
-            pass
-
-    bit_rate = version.get("bit_rate") or 0
-    try:
-        bit_rate = int(bit_rate)
-    except Exception:
-        bit_rate = 0
-
-    video_codec = (version.get("video_codec") or "").lower()
-    video_ranks = {"av1": 4, "hevc": 3, "h265": 3, "h264": 2, "avc": 2}
-    video_codec_score = 1
-    for k, v in video_ranks.items():
-        if k in video_codec:
-            video_codec_score = max(video_codec_score, v)
-
-    audio_tracks = version.get("audio_tracks") or []
-    audio_ranks = {
-        "truehd": 6,
-        "atmos": 6,
-        "dts-hd": 5,
-        "dts": 4,
-        "eac3": 3,
-        "ac3": 3,
-        "aac": 2,
-        "opus": 2,
-        "mp3": 1,
-    }
-    audio_codec_score = 0
-    for track in audio_tracks:
-        codec = (track.get("codec") or "").lower()
-        track_score = 1
-        for k, v in audio_ranks.items():
-            if k in codec:
-                track_score = max(track_score, v)
-        audio_codec_score = max(audio_codec_score, track_score)
-
-    return (res_score, bit_rate, video_codec_score, audio_codec_score)
-
-
-def choose_active_version(
-    versions: List[Dict[str, Any]], default_path: Optional[str] = None
-) -> Dict[str, Any]:
-    if not versions:
-        return {}
-    if default_path:
-        for v in versions:
-            if v.get("path") == default_path:
-                return v
-    sorted_versions = sorted(versions, key=get_version_score_key, reverse=True)
-    return sorted_versions[0]
 
 
 class LibraryDict(dict[str, Any]):
