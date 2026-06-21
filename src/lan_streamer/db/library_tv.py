@@ -3,6 +3,7 @@ TV library persistence functions — load, save, and cleanup of Series/Season/Ep
 """
 
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Dict, Any, List
@@ -18,6 +19,19 @@ from lan_streamer.db.library_shared import (
 )
 
 logger = logging.getLogger(__name__)
+
+_COUNTER_SUFFIX_RE = re.compile(r" \(\d+\)$")
+
+
+def _strip_counter_suffix(name: str) -> str:
+    """Strips a trailing counter suffix like `` (1)`` from *name*.
+
+    The database appends ``(1)``, ``(2)`` etc. to avoid UNIQUE constraint
+    violations when multiple episodes share the same TMDB name.  This
+    helper recovers the base name so that name-based matching can find
+    suffixed records.
+    """
+    return _COUNTER_SUFFIX_RE.sub("", name)
 
 
 def load_library(library_name: str) -> Dict[str, Any]:
@@ -181,13 +195,31 @@ def _save_episode_record(
     elif tmdb_num is not None:
         episode = existing_by_number.get(tmdb_num)
 
-    # Fallback to name-based matching if still not found, to avoid UNIQUE constraint violation on name
+    # Fallback to name-based matching if still not found, to avoid UNIQUE constraint violation on name.
+    # The database appends counter suffixes like "TBA (1)" when multiple episodes
+    # share the same name, so we also try matching suffixed variants.
     if not episode and name:
         episode = existing_by_name.get(name)
         if episode:
             logger.debug(
                 f"Matched existing episode by name fallback: S{season.name} '{name}'"
             )
+        else:
+            # Try suffixed variants: "TBA (1)", "TBA (2)", etc.
+            # This handles the case where the exact name was already consumed
+            # by a previous episode and the DB stored it with a counter suffix.
+            candidate_keys = [
+                k
+                for k in existing_by_name
+                if _strip_counter_suffix(k) == name and k != name
+            ]
+            if candidate_keys:
+                episode = existing_by_name[candidate_keys[0]]
+                logger.debug(
+                    f"Matched existing episode by suffixed name fallback: "
+                    f"S{season.name} '{name}' -> '{episode.name}'"
+                )
+        if episode:
             old_path = episode.path
             if path and not episode.path:
                 episode.path = path
