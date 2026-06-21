@@ -8,8 +8,8 @@ from lan_streamer.db.connection import (
     get_session,
     init_db,
 )
+from lan_streamer.db.utils import natural_sort_key
 from lan_streamer.db.queries_file_discovery import (
-    natural_sort_key,
     _build_episode_dict,
     _build_season_dict,
     _build_series_dict,

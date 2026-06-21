@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Dict, Any
 
-from lan_streamer.db import natural_sort_key
+from lan_streamer.db.utils import natural_sort_key
 from lan_streamer.scanner.file_property_scanner import (
     get_detailed_file_info,
     get_stub_file_info,
