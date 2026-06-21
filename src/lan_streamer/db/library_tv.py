@@ -155,6 +155,23 @@ def _save_episode_record(
     tmdb_num = episode_data.get("tmdb_number")
     name = episode_data.get("name")
 
+    if path and processed_episodes:
+        for processed_ep in processed_episodes:
+            if (
+                episode_data.get("tmdb_number") is not None
+                and processed_ep.tmdb_number is not None
+                and episode_data.get("tmdb_number") != processed_ep.tmdb_number
+            ):
+                continue
+            if processed_ep.media_files:
+                for mf in processed_ep.media_files:
+                    if mf.path == path:
+                        logger.info(
+                            f"Skipping duplicate episode record save for path '{path}' "
+                            f"as it is already mapped as a version to episode '{processed_ep.name}'."
+                        )
+                        return processed_ep
+
     episode = None
     if path:
         episode = existing_by_path.get(path)
@@ -261,6 +278,9 @@ def _save_episode_record(
         # Remove from tracking dicts so it's not reused/considered stale
         if episode.path in existing_by_path:
             existing_by_path.pop(episode.path, None)
+        for mf in episode.media_files:
+            if mf.path in existing_by_path:
+                existing_by_path.pop(mf.path, None)
         if episode.tmdb_number in existing_by_number:
             existing_by_number.pop(episode.tmdb_number, None)
         if episode.name in existing_by_name:
@@ -474,19 +494,11 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                     existing_by_number = {}
                     existing_by_name = {}
                     for episode_obj in season.episodes:
-                        is_missing = False
                         if episode_obj.path is not None:
-                            try:
-                                if not Path(episode_obj.path).exists():
-                                    is_missing = True
-                            except Exception:
-                                is_missing = True
-
-                        if episode_obj.path is not None and not is_missing:
                             existing_by_path[episode_obj.path] = episode_obj
-                        else:
-                            if episode_obj.path is not None:
-                                existing_by_path[episode_obj.path] = episode_obj
+                        for mf in episode_obj.media_files:
+                            if mf.path:
+                                existing_by_path[mf.path] = episode_obj
 
                         if episode_obj.tmdb_number is not None:
                             existing_by_number[episode_obj.tmdb_number] = episode_obj
@@ -686,21 +698,14 @@ def save_season_data(
             existing_by_number = {}
             existing_by_name = {}
             for episode_obj in season.episodes:
-                is_missing = False
                 if episode_obj.path is not None:
-                    try:
-                        if not Path(episode_obj.path).exists():
-                            is_missing = True
-                    except Exception:
-                        is_missing = True
-
-                if episode_obj.path is not None and not is_missing:
                     existing_by_path[episode_obj.path] = episode_obj
-                else:
-                    if episode_obj.path is not None:
-                        existing_by_path[episode_obj.path] = episode_obj
-                    if episode_obj.tmdb_number is not None:
-                        existing_by_number[episode_obj.tmdb_number] = episode_obj
+                for mf in episode_obj.media_files:
+                    if mf.path:
+                        existing_by_path[mf.path] = episode_obj
+
+                if episode_obj.tmdb_number is not None:
+                    existing_by_number[episode_obj.tmdb_number] = episode_obj
 
                 if episode_obj.name is not None:
                     existing_by_name[episode_obj.name] = episode_obj

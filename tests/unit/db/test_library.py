@@ -1730,3 +1730,85 @@ def test_sync_media_files_flushing_and_deduplication(mock_db_file) -> None:
         assert len(ep2_db.media_files) == 1
         assert ep2_db.media_files[0].path == "/path/to/ep2.mkv"
         assert ep2_db.media_files[0].size_bytes == 400
+
+
+def test_save_library_multi_root_scan_preserves_versions() -> None:
+    library_name = "TestMultiRootLib"
+
+    # Step 1: Simulate scanning Root 1. It finds ep1_v1.
+    lib_data_root1 = {
+        "Show M": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode One.mkv",
+                            "path": "/root1/Show M/Season 1/ep1_v1.mkv",
+                            "tmdb_number": 1,
+                            "versions": [
+                                {
+                                    "path": "/root1/Show M/Season 1/ep1_v1.mkv",
+                                    "video_codec": "h264",
+                                },
+                            ],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library(library_name, lib_data_root1)
+
+    # Verify Root 1 saved correctly
+    loaded = db.load_library(library_name)
+    eps = loaded["Show M"]["seasons"]["Season 1"]["episodes"]
+    assert len(eps) == 1
+    assert len(eps[0]["versions"]) == 1
+    assert eps[0]["versions"][0]["path"] == "/root1/Show M/Season 1/ep1_v1.mkv"
+
+    # Step 2: Simulate scanning Root 2 (which contains the same series/episode).
+    # The versions list passed to save_library contains BOTH paths because they are preserved.
+    # We want to verify that when save_library is called with the incoming Root 2 data
+    # (where the primary path is updated to the Root 2 file but versions has both paths),
+    # the matching finds the existing record via tmdb_number (since path is different),
+    # preserves the record (doesn't create a duplicate), updates path, and maps both versions.
+    lib_data_root2 = {
+        "Show M": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode One.mkv",
+                            "path": "/root2/Show M/Season 1/ep1_v2.mkv",
+                            "tmdb_number": 1,
+                            "versions": [
+                                {
+                                    "path": "/root2/Show M/Season 1/ep1_v2.mkv",
+                                    "video_codec": "h264",
+                                },
+                                {
+                                    "path": "/root1/Show M/Season 1/ep1_v1.mkv",
+                                    "video_codec": "h264",
+                                },
+                            ],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library(library_name, lib_data_root2)
+
+    # Verify both versions are present under a single episode record (no duplicates created/added)
+    loaded_after = db.load_library(library_name)
+    eps_after = loaded_after["Show M"]["seasons"]["Season 1"]["episodes"]
+    assert len(eps_after) == 1
+    assert eps_after[0]["name"] == "Episode One.mkv"
+    assert len(eps_after[0]["versions"]) == 2
+    paths = {v["path"] for v in eps_after[0]["versions"]}
+    assert "/root1/Show M/Season 1/ep1_v1.mkv" in paths
+    assert "/root2/Show M/Season 1/ep1_v2.mkv" in paths
