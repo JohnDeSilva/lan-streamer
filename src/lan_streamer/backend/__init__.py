@@ -15,7 +15,3 @@ from lan_streamer.backend.metadata_worker_embed import (
     SeriesMetadataEmbedWorker,
 )
 from lan_streamer.backend.metadata_worker_refresh import RefreshSeriesWorker
-from lan_streamer import db
-from lan_streamer.system.config import config
-from lan_streamer.providers.jellyfin import jellyfin_client
-from lan_streamer.scanner import scan_directories, scan_series, clean_series_data

@@ -109,13 +109,13 @@ class TestScannerParser:
 
 class TestCleanSeriesData:
     def test_clean_series_data_returns_none_for_empty(self) -> None:
-        from lan_streamer.scanner.metadata import clean_series_data
+        from lan_streamer.services.metadata_updates import clean_series_data
 
         result = clean_series_data({"seasons": {}})
         assert result is None
 
     def test_clean_series_data_removes_tmdb_temp_keys(self) -> None:
-        from lan_streamer.scanner.metadata import clean_series_data
+        from lan_streamer.services.metadata_updates import clean_series_data
 
         data = {
             "metadata": {"tmdb_identifier": "123"},
@@ -135,7 +135,7 @@ class TestCleanSeriesData:
         assert "_tmdb_series_id" not in result
 
     def test_clean_series_data_sorts_episodes(self) -> None:
-        from lan_streamer.scanner.metadata import clean_series_data
+        from lan_streamer.services.metadata_updates import clean_series_data
 
         data = {
             "seasons": {
@@ -160,7 +160,7 @@ class TestCleanSeriesData:
 
 class TestTmdbStubBuilders:
     def test_build_locked_tv_tmdb_stub(self) -> None:
-        from lan_streamer.scanner.metadata import _build_locked_tv_tmdb_stub
+        from lan_streamer.services.metadata_resolution import _build_locked_tv_tmdb_stub
 
         existing_series = {
             "metadata": {
@@ -177,7 +177,9 @@ class TestTmdbStubBuilders:
         assert stub["_is_prefetched"] is True
 
     def test_build_locked_movie_tmdb_stub(self) -> None:
-        from lan_streamer.scanner.metadata import _build_locked_movie_tmdb_stub
+        from lan_streamer.services.metadata_resolution import (
+            _build_locked_movie_tmdb_stub,
+        )
 
         existing_movie = {
             "tmdb_identifier": "789",
@@ -191,7 +193,9 @@ class TestTmdbStubBuilders:
         assert stub["_is_prefetched"] is True
 
     def test_build_locked_movie_tmdb_stub_fallback_title(self) -> None:
-        from lan_streamer.scanner.metadata import _build_locked_movie_tmdb_stub
+        from lan_streamer.services.metadata_resolution import (
+            _build_locked_movie_tmdb_stub,
+        )
 
         existing_movie = {"tmdb_identifier": "789"}  # no tmdb_name
         stub = _build_locked_movie_tmdb_stub(existing_movie, "FolderName (2020)")
@@ -205,24 +209,32 @@ class TestTmdbStubBuilders:
 
 class TestResolveExistingJellyfinId:
     def test_movie_type(self) -> None:
-        from lan_streamer.scanner.metadata import _resolve_existing_jellyfin_id
+        from lan_streamer.services.metadata_resolution import (
+            _resolve_existing_jellyfin_id,
+        )
 
         item = {"jellyfin_id": "jf_movie_123"}
         assert _resolve_existing_jellyfin_id(item, "movie") == "jf_movie_123"
 
     def test_movie_type_missing(self) -> None:
-        from lan_streamer.scanner.metadata import _resolve_existing_jellyfin_id
+        from lan_streamer.services.metadata_resolution import (
+            _resolve_existing_jellyfin_id,
+        )
 
         assert _resolve_existing_jellyfin_id({}, "movie") is None
 
     def test_tv_type(self) -> None:
-        from lan_streamer.scanner.metadata import _resolve_existing_jellyfin_id
+        from lan_streamer.services.metadata_resolution import (
+            _resolve_existing_jellyfin_id,
+        )
 
         item = {"metadata": {"jellyfin_id": "jf_tv_456"}}
         assert _resolve_existing_jellyfin_id(item, "tv") == "jf_tv_456"
 
     def test_tv_type_missing(self) -> None:
-        from lan_streamer.scanner.metadata import _resolve_existing_jellyfin_id
+        from lan_streamer.services.metadata_resolution import (
+            _resolve_existing_jellyfin_id,
+        )
 
         assert _resolve_existing_jellyfin_id({}, "tv") is None
 
@@ -234,7 +246,7 @@ class TestResolveExistingJellyfinId:
 
 class TestMergeSeasonEpisodes:
     def test_adds_new_episode(self) -> None:
-        from lan_streamer.scanner.metadata import _merge_season_episodes
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
 
         existing = [{"name": "ep1.mkv", "path": "/ep1.mkv"}]
         new_ep = [{"name": "ep2.mkv", "path": "/ep2.mkv"}]
@@ -242,7 +254,7 @@ class TestMergeSeasonEpisodes:
         assert len(existing) == 2
 
     def test_skips_duplicate_path(self) -> None:
-        from lan_streamer.scanner.metadata import _merge_season_episodes
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
 
         existing = [{"name": "ep1.mkv", "path": "/ep1.mkv"}]
         new_ep = [{"name": "ep1_copy.mkv", "path": "/ep1.mkv"}]  # same path
@@ -250,7 +262,7 @@ class TestMergeSeasonEpisodes:
         assert len(existing) == 1
 
     def test_skips_same_name_different_path(self) -> None:
-        from lan_streamer.scanner.metadata import _merge_season_episodes
+        from lan_streamer.services.metadata_resolution import _merge_season_episodes
 
         existing = [{"name": "ep1.mkv", "path": "/ep1.mkv"}]
         new_ep = [{"name": "ep1.mkv", "path": "/other/ep1.mkv"}]  # same name
@@ -265,7 +277,9 @@ class TestMergeSeasonEpisodes:
 
 class TestBuildMovieMetadataDefaults:
     def test_returns_all_expected_keys(self) -> None:
-        from lan_streamer.scanner.metadata import _build_movie_metadata_defaults
+        from lan_streamer.services.metadata_resolution import (
+            _build_movie_metadata_defaults,
+        )
 
         result = _build_movie_metadata_defaults()
         assert "tmdb_identifier" in result
@@ -286,7 +300,9 @@ class TestBuildMovieMetadataDefaults:
 
 class TestApplyExistingMovieMetadata:
     def test_copies_non_empty_fields(self) -> None:
-        from lan_streamer.scanner.metadata import _apply_existing_movie_metadata
+        from lan_streamer.services.metadata_resolution import (
+            _apply_existing_movie_metadata,
+        )
 
         metadata = {
             "tmdb_identifier": "",
@@ -305,7 +321,9 @@ class TestApplyExistingMovieMetadata:
         assert metadata["runtime"] == 120
 
     def test_manual_jellyfin_id_overrides(self) -> None:
-        from lan_streamer.scanner.metadata import _apply_existing_movie_metadata
+        from lan_streamer.services.metadata_resolution import (
+            _apply_existing_movie_metadata,
+        )
 
         metadata = {"jellyfin_id": "old_id"}
         existing = {"jellyfin_id": "existing_id"}
@@ -320,14 +338,14 @@ class TestApplyExistingMovieMetadata:
 
 class TestResolveMovieJellyfinId:
     def test_no_jellyfin_data(self) -> None:
-        from lan_streamer.scanner.metadata import _resolve_movie_jellyfin_id
+        from lan_streamer.services.metadata_resolution import _resolve_movie_jellyfin_id
 
         metadata = {"jellyfin_id": "existing_jf"}
         result = _resolve_movie_jellyfin_id(metadata, "/path.mkv", None)
         assert result == "existing_jf"
 
     def test_path_map_match(self) -> None:
-        from lan_streamer.scanner.metadata import _resolve_movie_jellyfin_id
+        from lan_streamer.services.metadata_resolution import _resolve_movie_jellyfin_id
 
         metadata = {"jellyfin_id": ""}
         jellyfin_data = {"path_map": {"/movie.mkv": {"id": "jf_path_id"}}}
@@ -335,7 +353,7 @@ class TestResolveMovieJellyfinId:
         assert result == "jf_path_id"
 
     def test_tmdb_map_match(self) -> None:
-        from lan_streamer.scanner.metadata import _resolve_movie_jellyfin_id
+        from lan_streamer.services.metadata_resolution import _resolve_movie_jellyfin_id
 
         metadata = {"jellyfin_id": "", "tmdb_identifier": "tmdb123"}
         jellyfin_data = {
@@ -346,7 +364,7 @@ class TestResolveMovieJellyfinId:
         assert result == "jf_tmdb_id"
 
     def test_no_match_returns_existing(self) -> None:
-        from lan_streamer.scanner.metadata import _resolve_movie_jellyfin_id
+        from lan_streamer.services.metadata_resolution import _resolve_movie_jellyfin_id
 
         metadata = {"jellyfin_id": "kept_existing"}
         jellyfin_data = {"path_map": {}, "tmdb_episode_map": {}}
@@ -361,7 +379,9 @@ class TestResolveMovieJellyfinId:
 
 class TestBuildExistingEpisodesIndex:
     def test_builds_path_index(self) -> None:
-        from lan_streamer.scanner.metadata import _build_existing_episodes_index
+        from lan_streamer.services.metadata_resolution import (
+            _build_existing_episodes_index,
+        )
 
         existing = {
             "seasons": {
@@ -381,7 +401,9 @@ class TestBuildExistingEpisodesIndex:
         assert len(index) == 3
 
     def test_empty_series(self) -> None:
-        from lan_streamer.scanner.metadata import _build_existing_episodes_index
+        from lan_streamer.services.metadata_resolution import (
+            _build_existing_episodes_index,
+        )
 
         assert _build_existing_episodes_index({}) == {}
 
@@ -393,7 +415,7 @@ class TestBuildExistingEpisodesIndex:
 
 class TestDetectNewSeriesFiles:
     def test_detects_new_file(self, tmp_path) -> None:
-        from lan_streamer.scanner.metadata import _detect_new_series_files
+        from lan_streamer.services.metadata_resolution import _detect_new_series_files
 
         series_dir = tmp_path / "My Show"
         series_dir.mkdir()
@@ -407,7 +429,7 @@ class TestDetectNewSeriesFiles:
         assert result is True
 
     def test_no_new_files_when_all_indexed(self, tmp_path) -> None:
-        from lan_streamer.scanner.metadata import _detect_new_series_files
+        from lan_streamer.services.metadata_resolution import _detect_new_series_files
 
         series_dir = tmp_path / "My Show2"
         series_dir.mkdir()
@@ -428,13 +450,17 @@ class TestDetectNewSeriesFiles:
 
 class TestBuildSeriesMetadataDefaults:
     def test_no_jellyfin_id(self) -> None:
-        from lan_streamer.scanner.metadata import _build_series_metadata_defaults
+        from lan_streamer.services.metadata_resolution import (
+            _build_series_metadata_defaults,
+        )
 
         result = _build_series_metadata_defaults(None)
         assert result["jellyfin_id"] == ""
 
     def test_with_manual_jellyfin_id(self) -> None:
-        from lan_streamer.scanner.metadata import _build_series_metadata_defaults
+        from lan_streamer.services.metadata_resolution import (
+            _build_series_metadata_defaults,
+        )
 
         result = _build_series_metadata_defaults("manual_jf_123")
         assert result["jellyfin_id"] == "manual_jf_123"
@@ -447,7 +473,9 @@ class TestBuildSeriesMetadataDefaults:
 
 class TestResolveEpisodeJellyfinId:
     def _make_call(self, episode_path, jellyfin_data, **kwargs) -> tuple:
-        from lan_streamer.scanner.metadata import _resolve_episode_jellyfin_id
+        from lan_streamer.services.metadata_resolution import (
+            _resolve_episode_jellyfin_id,
+        )
 
         defaults = {
             "episode_name": "S01E01.mkv",
@@ -592,7 +620,8 @@ class TestScanMovieNoVideoFile:
 
         callbacks = []
         with patch(
-            "lan_streamer.scanner.core.tmdb_client.search_movie", return_value=None
+            "lan_streamer.scanner.scan_movie.tmdb_client.search_movie",
+            return_value=None,
         ):
             result = scan_movie(
                 movie_dir,
@@ -639,7 +668,7 @@ class TestScanDirectoriesUnavailableRoot:
 
 class TestProcessSeasonMetadata:
     def test_process_season_metadata_specials(self) -> None:
-        from lan_streamer.scanner.metadata import _process_season_metadata
+        from lan_streamer.services.metadata_resolution import _process_season_metadata
         from pathlib import Path
 
         season_dir = Path("/some/path/Specials")
@@ -648,7 +677,9 @@ class TestProcessSeasonMetadata:
             "_tmdb_seasons": [{"season_number": 0, "poster_path": "/p.jpg", "id": 999}],
         }
 
-        with patch("lan_streamer.scanner.metadata.tmdb_client") as mock_tmdb:
+        with patch(
+            "lan_streamer.services.metadata_resolution.tmdb_client"
+        ) as mock_tmdb:
             mock_tmdb.get_episodes.return_value = [
                 {"id": 1, "episode_number": 1, "name": "Spec ep"}
             ]
@@ -664,7 +695,7 @@ class TestProcessSeasonMetadata:
             mock_tmdb.get_episodes.assert_called_once_with("123", 0)
 
     def test_process_season_metadata_valid_season(self) -> None:
-        from lan_streamer.scanner.metadata import _process_season_metadata
+        from lan_streamer.services.metadata_resolution import _process_season_metadata
         from pathlib import Path
 
         season_dir = Path("/some/path/Season 5")
@@ -673,7 +704,9 @@ class TestProcessSeasonMetadata:
             "_tmdb_seasons": [{"season_number": 5, "id": 555}],
         }
 
-        with patch("lan_streamer.scanner.metadata.tmdb_client") as mock_tmdb:
+        with patch(
+            "lan_streamer.services.metadata_resolution.tmdb_client"
+        ) as mock_tmdb:
             mock_tmdb.get_episodes.return_value = []
             name, idx, meta, episodes = _process_season_metadata(
                 season_dir,
@@ -686,7 +719,7 @@ class TestProcessSeasonMetadata:
             mock_tmdb.get_episodes.assert_called_once_with("123", 5)
 
     def test_process_season_metadata_invalid_season_skips_fetch(self) -> None:
-        from lan_streamer.scanner.metadata import _process_season_metadata
+        from lan_streamer.services.metadata_resolution import _process_season_metadata
         from pathlib import Path
 
         season_dir = Path("/some/path/Season X")
@@ -695,7 +728,9 @@ class TestProcessSeasonMetadata:
             "_tmdb_seasons": [],
         }
 
-        with patch("lan_streamer.scanner.metadata.tmdb_client") as mock_tmdb:
+        with patch(
+            "lan_streamer.services.metadata_resolution.tmdb_client"
+        ) as mock_tmdb:
             name, idx, meta, episodes = _process_season_metadata(
                 season_dir,
                 series_data,

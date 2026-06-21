@@ -180,7 +180,7 @@ def test_scan_worker_with_jellyfin() -> None:
             return_value={"path_map": {}},
         ) as mock_jf,
         patch(
-            "lan_streamer.backend.scan_worker_single.discover_single_library_tree",
+            "lan_streamer.backend.scan_worker_single._discover_single_library_tree_impl",
             return_value={"/root": []},
         ),
         patch(
@@ -502,7 +502,7 @@ def test_scan_directories_preserves_existing_series(tmp_path) -> None:
     empty_root = tmp_path / "empty_tv"
     empty_root.mkdir()
 
-    with patch("lan_streamer.scanner.core.tmdb_client", MagicMock()):
+    with patch("lan_streamer.services.metadata_resolution.tmdb_client", MagicMock()):
         result = scan_directories(
             [str(empty_root)],
             library_type="tv",
@@ -528,7 +528,7 @@ def test_scan_directories_cleanup_removes_missing(tmp_path) -> None:
     empty_root = tmp_path / "empty_tv2"
     empty_root.mkdir()
 
-    with patch("lan_streamer.scanner.core.tmdb_client", MagicMock()):
+    with patch("lan_streamer.services.metadata_resolution.tmdb_client", MagicMock()):
         result = scan_directories(
             [str(empty_root)],
             library_type="tv",

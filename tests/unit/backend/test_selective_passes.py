@@ -1,13 +1,13 @@
 from unittest.mock import patch
 
-from lan_streamer.scanner.core import (
-    _has_season_files_changed,
-    _has_movie_files_changed,
+from lan_streamer.services.file_discovery import (
+    detect_tv_file_changes,
+    detect_movie_file_changes,
 )
 from lan_streamer.backend.metadata_worker_property import FilePropertyExtractionWorker
 
 
-def test_has_season_files_changed(tmp_path) -> None:
+def test_detect_tv_file_changes(tmp_path) -> None:
     season_dir = tmp_path / "Season 1"
     season_dir.mkdir()
     ep_file = season_dir / "S01E01.mkv"
@@ -15,7 +15,7 @@ def test_has_season_files_changed(tmp_path) -> None:
 
     # 1. Empty existing season -> changed
     existing = {"episodes": []}
-    assert _has_season_files_changed(season_dir, existing) is True
+    assert detect_tv_file_changes(season_dir, existing) is True
 
     # 2. Matching size and path -> not changed
     disk_size = ep_file.stat().st_size
@@ -27,7 +27,7 @@ def test_has_season_files_changed(tmp_path) -> None:
             }
         ]
     }
-    assert _has_season_files_changed(season_dir, existing) is False
+    assert detect_tv_file_changes(season_dir, existing) is False
 
     # 3. Size mismatch -> changed
     existing = {
@@ -38,10 +38,10 @@ def test_has_season_files_changed(tmp_path) -> None:
             }
         ]
     }
-    assert _has_season_files_changed(season_dir, existing) is True
+    assert detect_tv_file_changes(season_dir, existing) is True
 
 
-def test_has_season_files_changed_extra_file(tmp_path) -> None:
+def test_detect_tv_file_changes_extra_file(tmp_path) -> None:
     season_dir = tmp_path / "Season 1"
     season_dir.mkdir()
     ep1 = season_dir / "S01E01.mkv"
@@ -56,10 +56,10 @@ def test_has_season_files_changed_extra_file(tmp_path) -> None:
             {"path": str(ep1.absolute()), "size_bytes": disk_size},
         ]
     }
-    assert _has_season_files_changed(season_dir, existing) is True
+    assert detect_tv_file_changes(season_dir, existing) is True
 
 
-def test_has_season_files_changed_unknown_path(tmp_path) -> None:
+def test_detect_tv_file_changes_unknown_path(tmp_path) -> None:
     season_dir = tmp_path / "Season 1"
     season_dir.mkdir()
     ep_file = season_dir / "S01E01.mkv"
@@ -72,17 +72,17 @@ def test_has_season_files_changed_unknown_path(tmp_path) -> None:
             {"path": "/some/other/path.mkv", "size_bytes": disk_size},
         ]
     }
-    assert _has_season_files_changed(season_dir, existing) is True
+    assert detect_tv_file_changes(season_dir, existing) is True
 
 
-def test_has_movie_files_changed(tmp_path) -> None:
+def test_detect_movie_file_changes(tmp_path) -> None:
     movie_dir = tmp_path / "Inception"
     movie_dir.mkdir()
     movie_file = movie_dir / "Inception.mkv"
     movie_file.touch()
 
     # 1. Empty existing -> changed
-    assert _has_movie_files_changed(movie_dir, {}) is True
+    assert detect_movie_file_changes(movie_dir, {}) is True
 
     # 2. Match -> unchanged
     disk_size = movie_file.stat().st_size
@@ -91,7 +91,7 @@ def test_has_movie_files_changed(tmp_path) -> None:
         "size_bytes": disk_size,
         "versions": [{"path": str(movie_file.absolute()), "size_bytes": disk_size}],
     }
-    assert _has_movie_files_changed(movie_dir, existing) is False
+    assert detect_movie_file_changes(movie_dir, existing) is False
 
     # 3. Version mismatch -> changed
     existing = {
@@ -101,10 +101,10 @@ def test_has_movie_files_changed(tmp_path) -> None:
             {"path": str(movie_file.absolute()), "size_bytes": disk_size + 50}
         ],
     }
-    assert _has_movie_files_changed(movie_dir, existing) is True
+    assert detect_movie_file_changes(movie_dir, existing) is True
 
 
-def test_has_movie_files_changed_missing_version_path(tmp_path) -> None:
+def test_detect_movie_file_changes_missing_version_path(tmp_path) -> None:
     movie_dir = tmp_path / "Matrix"
     movie_dir.mkdir()
     movie_file = movie_dir / "Matrix.mkv"
@@ -117,7 +117,7 @@ def test_has_movie_files_changed_missing_version_path(tmp_path) -> None:
         "size_bytes": disk_size,
     }
     # No versions key means existing_by_path built from top-level path
-    assert _has_movie_files_changed(movie_dir, existing) is False
+    assert detect_movie_file_changes(movie_dir, existing) is False
 
 
 @patch("lan_streamer.backend.metadata_worker_property.db")

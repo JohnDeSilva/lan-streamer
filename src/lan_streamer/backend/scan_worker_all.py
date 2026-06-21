@@ -7,7 +7,10 @@ from lan_streamer.scanner import (
     VIDEO_EXTENSIONS,
     has_video_files,
 )
-from lan_streamer.backend.proxy import db, config, jellyfin_client, scan_directories
+from lan_streamer import db
+from lan_streamer.system.config import config
+from lan_streamer.providers.jellyfin import jellyfin_client
+from lan_streamer.scanner import scan_directories
 
 logger = logging.getLogger("lan_streamer.backend")
 

@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 from PySide6.QtCore import QObject, Signal, QThread
 
-from lan_streamer.backend.proxy import db
+from lan_streamer import db
 
 logger = logging.getLogger("lan_streamer.backend")
 

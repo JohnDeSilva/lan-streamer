@@ -2,7 +2,8 @@ import logging
 from typing import List, Dict, Any, Optional, Set
 from PySide6.QtCore import Signal, QThread
 
-from lan_streamer.backend.proxy import db, get_detailed_file_info
+from lan_streamer import db
+from lan_streamer.scanner.file_property_scanner import get_detailed_file_info
 
 logger = logging.getLogger("lan_streamer.backend")
 

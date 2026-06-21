@@ -2,7 +2,8 @@ import logging
 from typing import List, Dict, Any
 from PySide6.QtCore import QThread, Signal
 
-from lan_streamer.backend.proxy import db, jellyfin_client
+from lan_streamer import db
+from lan_streamer.providers.jellyfin import jellyfin_client
 
 logger = logging.getLogger("lan_streamer.backend")
 

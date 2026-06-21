@@ -4,8 +4,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
-from lan_streamer.scanner.parser import _parse_season_number
-from lan_streamer.scanner.proxy import _parse_episode_number
+from lan_streamer.scanner.parser import _parse_season_number, _parse_episode_number
 
 logger = logging.getLogger("lan_streamer.services.media_mapping")
 

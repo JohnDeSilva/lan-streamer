@@ -39,7 +39,7 @@ def test_add_root_directory_scans_correctly(tmp_path: Path) -> None:
     mock_tmdb.download_image.return_value = ""
 
     # Phase 1: Scan only root_1 (initial state)
-    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
         lib_phase_1 = scan_directories([str(root_1)])
 
     assert "Show A" in lib_phase_1
@@ -47,7 +47,7 @@ def test_add_root_directory_scans_correctly(tmp_path: Path) -> None:
 
     # Phase 2: Add root_2 to config (simulated here by scanning both paths)
     # We pass the phase 1 result as existing_library
-    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
         lib_phase_2 = scan_directories(
             [str(root_1), str(root_2)], existing_library=lib_phase_1
         )
@@ -99,7 +99,7 @@ def test_add_root_directory_same_series_new_season(tmp_path: Path) -> None:
     mock_tmdb.download_image.return_value = ""
 
     # Phase 1: Scan root_1 only
-    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
         lib_phase_1 = scan_directories([str(root_1)])
 
     assert "Show A" in lib_phase_1
@@ -107,7 +107,7 @@ def test_add_root_directory_same_series_new_season(tmp_path: Path) -> None:
     assert "Season 2" not in lib_phase_1["Show A"]["seasons"]
 
     # Phase 2: Scan both root_1 and root_2
-    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
         lib_phase_2 = scan_directories(
             [str(root_1), str(root_2)], existing_library=lib_phase_1
         )
@@ -160,11 +160,11 @@ def test_add_root_directory_one_by_one(tmp_path: Path) -> None:
     mock_tmdb.download_image.return_value = ""
 
     # Phase 1: Scan root_1 only
-    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
         lib_phase_1 = scan_directories([str(root_1)])
 
     # Phase 2: Scan root_2 only, with existing_library = lib_phase_1
-    with patch("lan_streamer.scanner.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
         lib_phase_2 = scan_directories([str(root_2)], existing_library=lib_phase_1)
 
     # Check if Season 2 and Season 1 are both in lib_phase_2

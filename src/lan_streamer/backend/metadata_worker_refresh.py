@@ -3,14 +3,11 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from PySide6.QtCore import QObject, Signal, QThread
 
-from lan_streamer.backend.proxy import (
-    db,
-    config,
-    jellyfin_client,
-    scan_movie,
-    scan_series,
-    clean_series_data,
-)
+from lan_streamer import db
+from lan_streamer.system.config import config
+from lan_streamer.providers.jellyfin import jellyfin_client
+from lan_streamer.scanner import scan_movie, scan_series
+from lan_streamer.services.metadata_updates import clean_series_data
 
 logger = logging.getLogger("lan_streamer.backend")
 

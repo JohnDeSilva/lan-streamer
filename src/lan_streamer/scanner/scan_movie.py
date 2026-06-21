@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Dict, Any
 
-from lan_streamer.scanner.proxy import tmdb_client
+from lan_streamer.providers.tmdb import tmdb_client
 from lan_streamer.scanner.file_property_scanner import (
     get_detailed_file_info,
     get_stub_file_info,
@@ -16,53 +16,15 @@ from lan_streamer.scanner.parser import (
     _parse_movie_folder,
     find_video_files,
 )
-from lan_streamer.scanner.metadata import (
+from lan_streamer.services.metadata_resolution import (
     _build_movie_metadata_defaults,
     _apply_existing_movie_metadata,
     _apply_tmdb_movie_data,
     _resolve_movie_jellyfin_id,
 )
+from lan_streamer.services.file_discovery import detect_movie_file_changes
 
 logger = logging.getLogger("lan_streamer.scanner")
-
-
-def _has_movie_files_changed(
-    movie_dir: Path, existing_movie_data: Dict[str, Any]
-) -> bool:
-    """
-    Checks if the files for a movie have changed in its folder.
-    """
-    try:
-        disk_files = find_video_files(movie_dir)
-    except Exception:
-        return True
-
-    existing_versions = existing_movie_data.get("versions", [])
-    existing_by_path = {v["path"]: v for v in existing_versions if v.get("path")}
-    if not existing_by_path and existing_movie_data.get("path"):
-        existing_by_path[existing_movie_data["path"]] = existing_movie_data
-
-    if len(disk_files) != len(existing_by_path):
-        return True
-
-    for disk_file in disk_files:
-        path_str = str(disk_file.absolute())
-        if path_str not in existing_by_path:
-            return True
-
-        existing_item = existing_by_path[path_str]
-        sizes = [existing_item.get("size_bytes")]
-        sizes = [s for s in sizes if s is not None]
-
-        try:
-            disk_size = disk_file.stat().st_size
-        except Exception:
-            return True
-
-        if not any(s == disk_size for s in sizes):
-            return True
-
-    return False
 
 
 def scan_movie(
@@ -87,7 +49,7 @@ def scan_movie(
     is_movie_changed = True
     if existing_movie_data:
         if offline:
-            is_movie_changed = _has_movie_files_changed(
+            is_movie_changed = detect_movie_file_changes(
                 movie_directory, existing_movie_data
             )
         else:
