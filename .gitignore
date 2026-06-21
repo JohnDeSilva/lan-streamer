@@ -221,3 +221,5 @@ lan-streamer.log.*
 library.db
 
 coverage-results/*
+# this is a sym link pointing to the actual test libraries directory, which is not tracked by git
+test_libraries
