@@ -264,4 +264,20 @@ class MyAnimeListClient:
             return False
 
 
+def trigger_mal_push_async(anime_id: int, num_watched_episodes: int) -> None:
+    """Asynchronously push watch status to MyAnimeList in a background thread."""
+    if myanimelist_client.is_configured() and myanimelist_client.is_authenticated():
+        import threading
+
+        def _run() -> None:
+            try:
+                myanimelist_client.update_watched_status(anime_id, num_watched_episodes)
+            except Exception:
+                logger.exception(
+                    f"Background MyAnimeList push failed for anime {anime_id}"
+                )
+
+        threading.Thread(target=_run, daemon=True).start()
+
+
 myanimelist_client = MyAnimeListClient()
