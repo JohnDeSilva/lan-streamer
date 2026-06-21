@@ -16,7 +16,7 @@ from lan_streamer.scanner.parser import (
     _parse_movie_folder,
     find_video_files,
 )
-from lan_streamer.services.metadata_resolution import (
+from lan_streamer.services.metadata_movie import (
     _build_movie_metadata_defaults,
     _apply_existing_movie_metadata,
     _apply_tmdb_movie_data,

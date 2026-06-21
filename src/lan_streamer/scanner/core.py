@@ -11,7 +11,7 @@ from lan_streamer.scanner.parser import (
 from lan_streamer.services.file_discovery import (
     has_season_subdirectories as _has_season_subdirs,
 )
-from lan_streamer.services.metadata_resolution import (
+from lan_streamer.services.metadata_common import (
     _resolve_existing_jellyfin_id,
     _build_locked_movie_tmdb_stub,
     _build_locked_tv_tmdb_stub,
