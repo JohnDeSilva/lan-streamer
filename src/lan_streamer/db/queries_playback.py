@@ -24,27 +24,9 @@ def get_session() -> Any:
 
 def _trigger_mal_push_async(anime_id: int, num_watched_episodes: int) -> None:
     """Helper to asynchronously push watch status to MyAnimeList."""
-    import lan_streamer.db.queries_playback
+    from lan_streamer.providers.myanimelist import trigger_mal_push_async
 
-    target = lan_streamer.db.queries_playback._trigger_mal_push_async
-    if target is not _trigger_mal_push_async:
-        target(anime_id, num_watched_episodes)
-        return
-
-    from lan_streamer.providers.myanimelist import myanimelist_client
-
-    if myanimelist_client.is_configured() and myanimelist_client.is_authenticated():
-        import threading
-
-        def _run() -> None:
-            try:
-                myanimelist_client.update_watched_status(anime_id, num_watched_episodes)
-            except Exception:
-                logger.exception(
-                    f"Background MyAnimeList push failed for anime {anime_id}"
-                )
-
-        threading.Thread(target=_run, daemon=True).start()
+    trigger_mal_push_async(anime_id, num_watched_episodes)
 
 
 def update_episode_watched_status(path: str, watched: bool) -> None:
