@@ -196,6 +196,31 @@ def _save_episode_record(
             if old_path and old_path != episode.path and old_path in existing_by_path:
                 existing_by_path.pop(old_path, None)
 
+    # Cross-root dedup: match by tmdb_episode_identifier when the same episode
+    # exists in a different root directory with a different path.
+    tmdb_ep_id = episode_data.get("tmdb_episode_identifier")
+    if not episode and tmdb_ep_id:
+        for existing_ep in season.episodes:
+            if (
+                existing_ep.tmdb_episode_identifier == tmdb_ep_id
+                and existing_ep is not episode
+            ):
+                logger.info(
+                    f"Cross-root dedup: merging '{path}' into existing episode "
+                    f"'{existing_ep.name}' (tmdb_episode_identifier={tmdb_ep_id})"
+                )
+                episode = existing_ep
+                old_path = episode.path
+                if path and not episode.path:
+                    episode.path = path
+                if (
+                    old_path
+                    and old_path != episode.path
+                    and old_path in existing_by_path
+                ):
+                    existing_by_path.pop(old_path, None)
+                break
+
     if not episode:
         episode = Episode(path=path, season=season)
         session.add(episode)
@@ -430,10 +455,9 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                         else:
                             if episode_obj.path is not None:
                                 existing_by_path[episode_obj.path] = episode_obj
-                            if episode_obj.tmdb_number is not None:
-                                existing_by_number[episode_obj.tmdb_number] = (
-                                    episode_obj
-                                )
+
+                        if episode_obj.tmdb_number is not None:
+                            existing_by_number[episode_obj.tmdb_number] = episode_obj
 
                         if episode_obj.name is not None:
                             existing_by_name[episode_obj.name] = episode_obj

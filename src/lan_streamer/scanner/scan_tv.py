@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 from lan_streamer.db.utils import natural_sort_key
+from lan_streamer.scanner.parser import _parse_episode_number
 from lan_streamer.scanner.file_property_scanner import (
     get_detailed_file_info,
     get_stub_file_info,
@@ -269,12 +270,16 @@ def scan_series(
                             },
                         )
 
-        # Group by tmdb_number (or name if tmdb_number is None)
-        grouped_episodes = {}
+        # Group by tmdb_number, parsed episode number, or name as last resort.
+        grouped_episodes: dict[Any, list] = {}
         for ep in scanned_episodes:
-            key = ep.get("tmdb_number")
+            key: Any = ep.get("tmdb_number")
             if key is None:
-                key = ep.get("name")
+                parsed = _parse_episode_number(ep.get("name", ""))
+                if parsed:
+                    key = parsed
+                else:
+                    key = ep.get("name")
             if key not in grouped_episodes:
                 grouped_episodes[key] = []
             grouped_episodes[key].append(ep)

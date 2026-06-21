@@ -1372,8 +1372,6 @@ class Controller(QObject):
                             episode_dictionary["default_path"] = new_path_string
                         if episode_dictionary.get("path") == old_path_string:
                             episode_dictionary["path"] = new_path_string
-                            path_instance = Path(new_path_string)
-                            episode_dictionary["name"] = path_instance.name
                         versions = episode_dictionary.get("versions") or []
                         for v in versions:
                             if v.get("path") == old_path_string:
