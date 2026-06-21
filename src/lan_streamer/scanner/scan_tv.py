@@ -96,7 +96,7 @@ def scan_series(
     Scans a single series directory and fetches metadata from TMDB.
     """
     # Import here to avoid circular dependency with core.choose_active_version
-    from lan_streamer.scanner.core import choose_active_version
+    from lan_streamer.scanner.versioning import choose_active_version
 
     # Check for files outside of season or specials/extras folders
     outside_file_paths = []

@@ -79,7 +79,7 @@ def scan_movie(
     metadata_only: bool = False,
 ) -> Dict[str, Any] | None:
     # Import here to avoid circular dependency with core.choose_active_version
-    from lan_streamer.scanner.core import choose_active_version
+    from lan_streamer.scanner.versioning import choose_active_version
 
     folder_name = movie_directory.name
     title, year = _parse_movie_folder(folder_name)
