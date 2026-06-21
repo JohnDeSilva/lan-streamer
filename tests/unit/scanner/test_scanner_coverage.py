@@ -677,9 +677,7 @@ class TestProcessSeasonMetadata:
             "_tmdb_seasons": [{"season_number": 0, "poster_path": "/p.jpg", "id": 999}],
         }
 
-        with patch(
-            "lan_streamer.services.metadata_resolution.tmdb_client"
-        ) as mock_tmdb:
+        with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
             mock_tmdb.get_episodes.return_value = [
                 {"id": 1, "episode_number": 1, "name": "Spec ep"}
             ]
@@ -704,9 +702,7 @@ class TestProcessSeasonMetadata:
             "_tmdb_seasons": [{"season_number": 5, "id": 555}],
         }
 
-        with patch(
-            "lan_streamer.services.metadata_resolution.tmdb_client"
-        ) as mock_tmdb:
+        with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
             mock_tmdb.get_episodes.return_value = []
             name, idx, meta, episodes = _process_season_metadata(
                 season_dir,
@@ -728,9 +724,7 @@ class TestProcessSeasonMetadata:
             "_tmdb_seasons": [],
         }
 
-        with patch(
-            "lan_streamer.services.metadata_resolution.tmdb_client"
-        ) as mock_tmdb:
+        with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
             name, idx, meta, episodes = _process_season_metadata(
                 season_dir,
                 series_data,

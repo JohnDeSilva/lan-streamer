@@ -70,7 +70,7 @@ def test_scan_directories_with_mock(tmp_path) -> None:
         {"id": "ep1", "episode_number": 1},
         {"id": "ep2", "episode_number": 2},
     ]
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         library = scan_directories([str(tmp_path)])
 
     assert "Series A" in library
@@ -107,7 +107,7 @@ def test_scan_directories_oserror(tmp_path) -> None:
 
     with (
         patch("os.path.getctime", mock_getctime),
-        patch("lan_streamer.services.metadata_resolution.tmdb_client", _mock_tmdb()),
+        patch("lan_streamer.services.metadata_tv.tmdb_client", _mock_tmdb()),
     ):
         library = scan_directories([str(tmp_path)])
         episodes = library["Series A"]["seasons"]["Season 1"]["episodes"]
@@ -140,7 +140,7 @@ def test_scan_series(tmp_path) -> None:
     episode_file = season_dir / "Test Show S01E01.mkv"
     episode_file.write_text("video content")
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.is_configured.return_value = True
         mock_tmdb.search_series.return_value = {
             "id": "series123",
@@ -191,7 +191,7 @@ def test_scan_series_manual_match(tmp_path) -> None:
         "poster_path": "",
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.get_seasons.return_value = []
         mock_tmdb.download_image.return_value = ""
 
@@ -219,7 +219,7 @@ def test_scan_series_manual_match_fetch_by_id(tmp_path) -> None:
         "poster_path": "",
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.get_series_by_id.return_value = full_record
         mock_tmdb.get_seasons.return_value = []
         mock_tmdb.download_image.return_value = ""
@@ -255,7 +255,7 @@ def test_scan_directories_respects_manual_match(tmp_path) -> None:
     }
     mock_tmdb.get_seasons.return_value = []
     mock_tmdb.download_image.return_value = ""
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         library = scan_directories([str(tmp_path)], existing_library=existing_library)
 
     assert (
@@ -294,7 +294,7 @@ def test_scan_directories_gaps(tmp_path) -> None:
 
     mock_tmdb = MagicMock()
     mock_tmdb.search_series.return_value = None
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         res = scanner.scan_directories([str(root_dir)])
     assert "Valid Series" in res
     assert "Season 1" in res["Valid Series"]["seasons"]
@@ -340,7 +340,7 @@ def test_scan_tmdb_no_merge_differently_named_folders(tmp_path) -> None:
         {"id": "e2", "episode_number": 2},
     ]
     mock_tmdb.download_image.return_value = ""
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         library = scan_directories([str(tmp_path)])
     # Both folders should be kept separate per updated requirement
     assert len(library) == 2
@@ -381,7 +381,7 @@ def test_scan_directories_merge_branches(tmp_path) -> None:
     }
 
     with (
-        patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb),
         patch("lan_streamer.scanner._parse_episode_number", lambda x: (1, 1)),
     ):
         # Initial scan
@@ -453,7 +453,7 @@ def test_scan_series_no_poster_branch(tmp_path) -> None:
     ]  # No poster_path in season either
     mock_tmdb.get_episodes.return_value = []
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         data = scan_series(series_dir)
         assert data["metadata"]["poster_path"] == ""
         assert data["seasons"]["Season 1"]["metadata"]["poster_path"] == ""
@@ -481,7 +481,7 @@ def test_scan_series_tmdb_correlation(tmp_path) -> None:
         "tmdb_series_map": {"tmdb_series_1": "jf_series_456"},
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.search_series.return_value = {
             "id": "tmdb_series_1",
             "name": "Correlation Show",
@@ -519,7 +519,7 @@ def test_scan_series_name_correlation(tmp_path) -> None:
         "name_map": {("name correlation show", "episode one"): "jf_ep_name_123"},
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.search_series.return_value = {
             "id": "tmdb_series_2",
             "name": "Name Correlation Show",
@@ -561,7 +561,7 @@ def test_scan_series_manual_jellyfin_correlation(tmp_path) -> None:
         },
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.search_series.return_value = {
             "id": "tmdb123",
             "name": "Manual JF Show",
@@ -614,7 +614,7 @@ def test_scan_series_tmdb_name_fallback(tmp_path) -> None:
         "tmdb_episode_map": {},
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.search_series.return_value = {
             "id": "tmdb1",
             "name": "Name Match Show",
@@ -647,7 +647,7 @@ def test_scan_series_initial_jellyfin_lookup(tmp_path) -> None:
         "tmdb_episode_map": {},
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.search_series.return_value = {
             "id": "tmdb_999",
             "name": "Initial Lookup Show",
@@ -693,7 +693,7 @@ def test_scan_series_force_refresh_false(tmp_path) -> None:
         },
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         # If reuse works, tmdb_client should NOT be called for searching series or episodes
         series_data = scan_series(
             series_dir, existing_series_data=existing_series, force_refresh=False
@@ -743,7 +743,7 @@ def test_scan_series_preserves_watched_status(tmp_path) -> None:
     }
 
     # Mock TMDB to return some metadata so the scan succeeds
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.get_seasons.return_value = [
             {"id": 1, "season_number": 1, "name": "Season 1"}
         ]
@@ -820,7 +820,7 @@ def test_scan_directories_non_destructive_cleanup(tmp_path) -> None:
     mock_tmdb.get_episodes.return_value = [{"episode_number": 1, "id": "e1"}]
     mock_tmdb.download_image.return_value = ""
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         # 1. Non-destructive scan (cleanup=False)
         lib_preserved = scan_directories(
             [str(root)], existing_library=existing_library, cleanup=False
@@ -877,7 +877,7 @@ def test_scan_distinct_series_metadata_collision(tmp_path) -> None:
     mock_tmdb.get_episodes.return_value = [{"id": "e1", "episode_number": 1}]
     mock_tmdb.download_image.return_value = ""
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         library = scan_directories([str(tmp_path)])
 
     assert len(library) == 2
@@ -911,7 +911,7 @@ def test_scan_directories_locked_metadata_bypasses_refresh(tmp_path) -> None:
     mock_tmdb.get_seasons.return_value = []
     mock_tmdb.download_image.return_value = ""
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         library = scan_directories(
             [str(tmp_path)], existing_library=existing_library, force_refresh=True
         )
@@ -972,7 +972,7 @@ def test_scan_directories_force_refresh_calls_tmdb_for_unlocked_series(
     ]
     mock_tmdb.download_image.return_value = ""
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         library = scan_directories(
             [str(tmp_path)], existing_library=existing_library, force_refresh=True
         )
@@ -1023,7 +1023,7 @@ def test_scan_series_auto_refresh_new_files(tmp_path) -> None:
     }
     mock_tmdb.get_seasons.return_value = []
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         res = scanner.scan_directories(
             [str(tmp_path)], existing_library=existing_library, force_refresh=False
         )
@@ -1055,7 +1055,7 @@ def test_scan_movie_auto_refresh_new_files(tmp_path) -> None:
     }
 
     with (
-        patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb),
         patch("lan_streamer.scanner.scan_movie.tmdb_client", mock_tmdb),
     ):
         res = scanner.scan_directories(
@@ -1202,7 +1202,7 @@ def test_scan_directories_merge_existing_episodes(tmp_path) -> None:
     ]
     mock_tmdb.download_image.return_value = ""
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         lib = scanner.scan_directories([str(root1), str(root2)])
 
     assert "Merged Show" in lib
@@ -1237,7 +1237,7 @@ def test_scan_series_uses_cached_image(tmp_path) -> None:
     mock_tmdb.get_cached_image.side_effect = mock_get_cached
     mock_tmdb.download_image.return_value = ""
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         lib = scanner.scan_directories([str(tmp_path)])
 
     assert "Cached Show" in lib
@@ -1650,7 +1650,7 @@ def test_resolve_series_poster_cached() -> None:
 
     mock_tmdb = MagicMock()
     mock_tmdb.get_cached_image.return_value = "/cache/series.jpg"
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         result = _resolve_series_poster({"poster_path": "/remote.jpg"}, "tmdb_1", None)
     assert result == "/cache/series.jpg"
     mock_tmdb.download_image.assert_not_called()
@@ -1664,7 +1664,7 @@ def test_resolve_series_poster_existing_local(tmp_path: Path) -> None:
     mock_tmdb = MagicMock()
     mock_tmdb.get_cached_image.return_value = ""
     existing = {"metadata": {"poster_path": str(local)}}
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         result = _resolve_series_poster({"poster_path": ""}, "tmdb_2", existing)
     assert result == str(local)
     mock_tmdb.download_image.assert_not_called()
@@ -1676,7 +1676,7 @@ def test_resolve_series_poster_downloads() -> None:
     mock_tmdb = MagicMock()
     mock_tmdb.get_cached_image.return_value = ""
     mock_tmdb.download_image.return_value = "/dl/series.jpg"
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         result = _resolve_series_poster(
             {"poster_path": "/remote/poster.jpg"}, "tmdb_3", None
         )
@@ -1689,7 +1689,7 @@ def test_resolve_series_poster_no_poster() -> None:
 
     mock_tmdb = MagicMock()
     mock_tmdb.get_cached_image.return_value = ""
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         assert _resolve_series_poster({"poster_path": ""}, "tmdb_4", None) == ""
 
 
@@ -1698,7 +1698,7 @@ def test_resolve_series_poster_prefetched_local() -> None:
 
     mock_tmdb = MagicMock()
     mock_tmdb.get_cached_image.return_value = ""
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         result = _resolve_series_poster(
             {"poster_path": "local.jpg", "_is_prefetched": True}, "tmdb_5", None
         )
@@ -2048,7 +2048,7 @@ def test_scanner_additional_coverage(tmp_path: Path) -> None:
     mock_tmdb = MagicMock()
     # Ensure tmdb search/get series are not called since they are locked
     with (
-        patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb),
         patch("lan_streamer.scanner.core.scan_movie") as mock_scan_movie,
     ):
         scan_directories(
@@ -2093,9 +2093,7 @@ def test_scanner_additional_coverage(tmp_path: Path) -> None:
     mock_tmdb_series.get_seasons.return_value = []
     mock_tmdb_series.download_image.return_value = ""
 
-    with patch(
-        "lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb_series
-    ):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb_series):
         scanned_data = scan_series(
             series_directory=show_dir,
             existing_series_data=existing_series_data,
@@ -2149,7 +2147,7 @@ def test_scan_directories_skips_empty_folders(tmp_path) -> None:
     mock_tmdb.get_seasons.return_value = []
     mock_tmdb.download_image.return_value = ""
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         library = scan_directories([str(tmp_path)], library_type="tv")
 
     # NestedVideoDir contains a Season folder with video file
@@ -2178,9 +2176,7 @@ def test_scan_directories_skips_empty_folders(tmp_path) -> None:
     }
     mock_tmdb_movie.download_image.return_value = ""
 
-    with patch(
-        "lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb_movie
-    ):
+    with patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb_movie):
         library_movies = scan_directories([str(tmp_path)], library_type="movie")
 
     assert "VideoDir" in library_movies
@@ -2212,7 +2208,7 @@ def test_scan_series_warns_on_files_outside_seasons(tmp_path) -> None:
     mock_tmdb.get_seasons.return_value = []
 
     with (
-        patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb),
         patch("lan_streamer.scanner.logger.warning") as mock_warn,
     ):
         scanner.scan_series(series_dir)
@@ -2249,7 +2245,7 @@ def test_scan_series_warns_on_nested_too_deep_files(tmp_path) -> None:
     mock_tmdb.get_seasons.return_value = []
 
     with (
-        patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb),
         patch("lan_streamer.scanner.logger.warning") as mock_warn,
     ):
         scanner.scan_series(series_dir)
@@ -2444,7 +2440,7 @@ def test_scan_movie_success(tmp_path: Path) -> None:
     mock_tmdb.download_image.return_value = "/cached/avatar.jpg"
 
     with (
-        patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb),
         patch("lan_streamer.scanner.scan_movie.tmdb_client", mock_tmdb),
     ):
         res = scan_movie(movie_dir)
@@ -2485,7 +2481,7 @@ def test_scan_movie_reuse_existing(tmp_path: Path) -> None:
         "locked_metadata": True,
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_movie.tmdb_client") as mock_tmdb:
         res = scan_movie(
             movie_dir, existing_movie_data=existing_data, force_refresh=False
         )
@@ -2512,7 +2508,7 @@ def test_scan_movie_jellyfin_correlation(tmp_path: Path) -> None:
     mock_tmdb = MagicMock()
     mock_tmdb.search_movie.return_value = {"id": 101, "title": "Correlated Movie"}
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb):
         res = scan_movie(movie_dir, jellyfin_data=jellyfin_data)
 
     assert res is not None
@@ -2537,7 +2533,7 @@ def test_scan_movie_uses_cached_image(tmp_path: Path) -> None:
     mock_tmdb.download_image.return_value = ""
 
     with (
-        patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb),
         patch("lan_streamer.scanner.scan_movie.tmdb_client", mock_tmdb),
     ):
         res = scan_movie(movie_dir)
@@ -2631,7 +2627,7 @@ def test_scanner_respects_lock_metadata(tmp_path):
         }
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.get_seasons.return_value = []
         res = scan_directories(
             [str(tmp_path)], existing_library=existing_library, force_refresh=True
@@ -2671,7 +2667,7 @@ def test_scanner_skips_tmdb_during_global_scan(tmp_path):
         }
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         res = scan_directories(
             [str(tmp_path)],
             existing_library=existing_library,
@@ -2704,7 +2700,7 @@ def test_scanner_queries_tmdb_when_single_item_refresh_true(tmp_path):
         }
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.get_series_by_id.return_value = {
             "id": "refresh_id",
             "name": "Fresh Title",
@@ -2737,7 +2733,7 @@ def test_scan_series_show_future_episodes(tmp_path) -> None:
     past_date = (today - datetime.timedelta(days=5)).isoformat()
     future_date = (today + datetime.timedelta(days=5)).isoformat()
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client") as mock_tmdb:
+    with patch("lan_streamer.services.metadata_tv.tmdb_client") as mock_tmdb:
         mock_tmdb.is_configured.return_value = True
         mock_tmdb.search_series.return_value = {
             "id": "series123",
@@ -2843,7 +2839,7 @@ def test_scan_series_preserves_only_past_missing_episodes(tmp_path) -> None:
         },
     }
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client"):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client"):
         # Simulate scanning with show_future_episodes=False to verify preservation filter
         res = scan_series(
             series_dir,
@@ -2961,7 +2957,7 @@ def test_scan_series_with_episode_groups(tmp_path) -> None:
     mock_tmdb.get_season_based_episode_group.return_value = mock_group_details
     mock_tmdb.download_image.return_value = ""
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         res = scan_series(series_dir, force_refresh=True)
 
     # Bypassed standard seasons and episodes endpoints
@@ -3031,7 +3027,7 @@ def test_scan_series_myanimelist_auto_mapping(tmp_path) -> None:
     ]
     mock_tmdb.download_image.return_value = ""
 
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         res = scan_series(
             series_dir, existing_series_data=existing_series, force_refresh=True
         )
@@ -3166,7 +3162,7 @@ def test_scan_directories_metadata_only_offline() -> None:
     mock_tmdb.get_cached_image.return_value = ""
 
     # Patch TMDB client and run the TV scan
-    with patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb):
+    with patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb):
         tv_res = scan_directories(
             ["/this/directory/does/not/exist"],
             library_type="tv",
@@ -3200,7 +3196,7 @@ def test_scan_directories_metadata_only_offline() -> None:
 
     # Patch TMDB client and run the Movie scan
     with (
-        patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb),
         patch("lan_streamer.scanner.scan_movie.tmdb_client", mock_tmdb),
     ):
         movie_res = scan_directories(
@@ -3314,8 +3310,9 @@ def test_scan_directories_metadata_only_preserves_existing_poster_files(
     mock_tmdb.get_cached_image.return_value = ""
 
     with (
-        patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb),
-        patch("lan_streamer.services.metadata_resolution.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_tv.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.scan_movie.tmdb_client", mock_tmdb),
     ):
         tv_res = scan_directories(
             ["/this/directory/does/not/exist"],
