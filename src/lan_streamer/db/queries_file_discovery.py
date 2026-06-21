@@ -1,10 +1,10 @@
 import logging
-import re
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 from sqlalchemy import select
 
 from lan_streamer.db.models import Series, Season, Episode, Movie
+from lan_streamer.db.utils import natural_sort_key
 
 logger = logging.getLogger("lan_streamer.db.queries")
 
@@ -13,18 +13,6 @@ def get_session() -> Any:
     import lan_streamer.db.connection
 
     return lan_streamer.db.connection.get_session()
-
-
-def natural_sort_key(s: Optional[str]) -> List[Any]:
-    """
-    Key function for natural sorting (e.g., "Season 2" < "Season 10").
-    """
-    if s is None:
-        return []
-    return [
-        int(text) if text.isdigit() else text.lower()
-        for text in re.split("([0-9]+)", str(s))
-    ]
 
 
 def _build_episode_dict(episode: Episode) -> Dict[str, Any]:

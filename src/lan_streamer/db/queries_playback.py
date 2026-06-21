@@ -11,7 +11,7 @@ from lan_streamer.db.models import (
     MediaFile,
     MetadataFileMapping,
 )
-from lan_streamer.db.queries_file_discovery import natural_sort_key
+from lan_streamer.db.utils import natural_sort_key
 
 logger = logging.getLogger("lan_streamer.db.queries")
 

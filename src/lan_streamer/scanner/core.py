@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-from lan_streamer.db import natural_sort_key
+from lan_streamer.db.utils import natural_sort_key
 from lan_streamer.scanner.proxy import tmdb_client, clean_series_data, scanner_proxy  # noqa: F401
 from lan_streamer.scanner.parser import (
     has_video_files,

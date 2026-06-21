@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Any
 
 from lan_streamer.scanner.proxy import tmdb_client, _parse_episode_number
-from lan_streamer.db import natural_sort_key
+from lan_streamer.db.utils import natural_sort_key
 from lan_streamer.scanner.parser import (
     _parse_season_number,
     find_video_files,
