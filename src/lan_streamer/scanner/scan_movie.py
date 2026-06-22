@@ -48,12 +48,13 @@ def scan_movie(
 
     is_movie_changed = True
     if existing_movie_data:
-        if offline:
-            is_movie_changed = detect_movie_file_changes(
-                movie_directory, existing_movie_data
+        is_movie_changed = detect_movie_file_changes(
+            movie_directory, existing_movie_data
+        )
+        if not offline:
+            is_movie_changed = is_movie_changed or existing_movie_data.get(
+                "_changed", True
             )
-        else:
-            is_movie_changed = existing_movie_data.get("_changed", True)
     movie_offline = offline or not is_movie_changed
 
     if metadata_only:
