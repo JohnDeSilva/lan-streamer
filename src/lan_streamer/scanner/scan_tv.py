@@ -146,12 +146,13 @@ def scan_series(
                 "seasons", {}
             ):
                 existing_season = existing_series_data["seasons"][season_name]
-                if offline:
-                    is_season_changed = detect_tv_file_changes(
-                        season_directory, existing_season
+                is_season_changed = detect_tv_file_changes(
+                    season_directory, existing_season
+                )
+                if not offline:
+                    is_season_changed = is_season_changed or existing_season.get(
+                        "_changed", True
                     )
-                else:
-                    is_season_changed = existing_season.get("_changed", True)
             seasons_to_process.append((season_name, is_season_changed, existing_season))
 
     for season_name, is_season_changed, existing_season in seasons_to_process:

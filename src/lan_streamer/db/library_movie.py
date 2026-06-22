@@ -187,6 +187,9 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
             for movie_name, movie_data in library.items():
                 touched_movie_names.add(movie_name)
                 path = movie_data.get("path")
+                is_new_file = False
+                if path and path not in existing_movies_by_path:
+                    is_new_file = True
 
                 movie = None
                 if path and path in existing_movies_by_path:
@@ -235,6 +238,8 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
                         }
                     ]
                 _sync_media_files(session, movie, versions)
+                if is_new_file:
+                    movie.watched = False
                 _apply_movie_fields(movie, movie_data)
 
     except Exception as e:

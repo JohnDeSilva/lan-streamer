@@ -155,6 +155,10 @@ def _save_episode_record(
     tmdb_num = episode_data.get("tmdb_number")
     name = episode_data.get("name")
 
+    is_new_file = False
+    if path and path not in existing_by_path:
+        is_new_file = True
+
     if path and processed_episodes:
         for processed_ep in processed_episodes:
             if (
@@ -417,6 +421,8 @@ def _save_episode_record(
         episode_data.get("default_path") or episode_data.get("path"),
     )
 
+    if is_new_file:
+        episode.watched = False
     watched = bool(episode_data.get("watched"))
     if watched:
         episode.watched = True
