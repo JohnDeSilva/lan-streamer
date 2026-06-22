@@ -255,31 +255,14 @@ def main() -> None:
         if hasattr(controller, "set_video_playing"):
             controller.set_video_playing(False)
 
-        finished_path = player_view.current_media_path
-        parent_info = (
-            db.get_parent_media_name_by_path(finished_path) if finished_path else None
-        )
-
-        if parent_info:
-            media_name, lib_type = parent_info
-            controller.selected_series_name = media_name
-            if lib_type == "movie":
-                controller.movie_selected.emit(media_name)
-                stacked_layout.setCurrentIndex(2)
+        index = previous_layout_index[0]
+        if not isinstance(index, int):
+            library_config = config.libraries.get(controller.current_library_name, {})
+            if library_config.get("type") == "movie":
+                index = 2
             else:
-                controller.series_selected.emit(media_name)
-                stacked_layout.setCurrentIndex(1)
-        else:
-            index = previous_layout_index[0]
-            if not isinstance(index, int):
-                library_config = config.libraries.get(
-                    controller.current_library_name, {}
-                )
-                if library_config.get("type") == "movie":
-                    index = 2
-                else:
-                    index = 1
-            stacked_layout.setCurrentIndex(index)
+                index = 1
+        stacked_layout.setCurrentIndex(index)
 
     player_view.back_requested.connect(on_player_back_requested)
 

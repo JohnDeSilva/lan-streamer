@@ -1016,8 +1016,8 @@ def test_next_episode_popup_positioning(qtbot: Any) -> None:
         assert popup_geom.height() == 200
 
 
-def test_next_episode_popup_countdown_flow(qtbot: Any) -> None:
-    """Test that the next episode popup countdown timer ticks down and auto-dismisses the popup."""
+def test_next_episode_popup_flow(qtbot: Any) -> None:
+    """Test that the next episode popup is shown but has no countdown or timer running."""
     with patch("lan_streamer.playback.vlc") as mock_vlc_module:
         mock_vlc_module.Instance.return_value = MagicMock()
         mock_vlc_module.EventType = MagicMock()
@@ -1034,33 +1034,14 @@ def test_next_episode_popup_countdown_flow(qtbot: Any) -> None:
 
         # Initially popup is hidden
         assert widget.next_episode_popup_frame.isHidden() is True
-        assert widget.popup_countdown_timer.isActive() is False
 
         # Show popup
         widget.show_next_episode_popup()
         assert widget.next_episode_popup_frame.isHidden() is False
-        assert widget.popup_countdown_timer.isActive() is True
-        assert widget.countdown_seconds == 20
-        assert "Closing in 20 seconds" in widget.popup_countdown_label.text()
-
-        # Simulate timer tick
-        widget._on_popup_countdown_tick()
-        assert widget.countdown_seconds == 19
-        assert "Closing in 19 seconds" in widget.popup_countdown_label.text()
-        assert widget.next_episode_popup_frame.isHidden() is False
-
-        # Fast forward countdown to 1
-        widget.countdown_seconds = 1
-        widget._on_popup_countdown_tick()
-        # Now it should be 0 and stay visible
-        assert widget.countdown_seconds == 0
-        assert widget.popup_countdown_timer.isActive() is False
-        assert widget.next_episode_popup_frame.isHidden() is False
-        assert widget.popup_countdown_label.text() == "Next episode available"
 
 
-def test_next_episode_popup_video_ends_before_countdown_completes(qtbot: Any) -> None:
-    """Test that the countdown timer is stopped and popup is hidden if the video ends early."""
+def test_next_episode_popup_video_ends_hides_popup(qtbot: Any) -> None:
+    """Test that the next episode popup is hidden if the video ends."""
     with patch("lan_streamer.playback.vlc") as mock_vlc_module:
         mock_vlc_module.Instance.return_value = MagicMock()
         mock_vlc_module.EventType = MagicMock()
@@ -1077,12 +1058,10 @@ def test_next_episode_popup_video_ends_before_countdown_completes(qtbot: Any) ->
 
         widget.show_next_episode_popup()
         assert widget.next_episode_popup_frame.isHidden() is False
-        assert widget.popup_countdown_timer.isActive() is True
 
         # Simulate video ending
         with patch.object(widget, "back_requested"):
             widget._handle_playback_finished()
-            assert widget.popup_countdown_timer.isActive() is False
             assert widget.next_episode_popup_frame.isHidden() is True
 
 
