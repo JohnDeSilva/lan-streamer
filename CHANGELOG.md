@@ -1,3 +1,9 @@
+## v0.30.5 (2026-06-21)
+
+### Fix
+
+- **scanner**: preserve versions of TV episodes across multi-root library directories
+
 ## v0.30.4 (2026-06-21)
 
 ### Fix
