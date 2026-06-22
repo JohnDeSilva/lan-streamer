@@ -1,3 +1,9 @@
+## v0.31.1 (2026-06-22)
+
+### Fix
+
+- **scanner**: resolves issue where new episodes were showing up as unwatched
+
 ## v0.31.0 (2026-06-21)
 
 ### Feat
