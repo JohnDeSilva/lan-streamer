@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QVBoxLayout,
     QHBoxLayout,
+    QBoxLayout,
     QPushButton,
     QSlider,
     QLabel,
@@ -19,9 +20,11 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QMessageBox,
     QMenu,
+    QGraphicsView,
+    QGraphicsScene,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QEvent, QSize
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, QTimer, Signal, Slot, QEvent, QSize, QRectF, QRect
+from PySide6.QtGui import QFont, QPainter, QColor, QIcon
 
 from lan_streamer.system.config import config
 from lan_streamer import db
@@ -31,11 +34,138 @@ from lan_streamer.playback.proxy import vlc, CacheWorker
 logger = logging.getLogger("lan_streamer.player_widget")
 
 
+class RotatedButton(QPushButton):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._rotation: int = 0
+
+    def setRotation(self, rot: int) -> None:
+        if self._rotation != rot:
+            self._rotation = rot
+            self.update()
+
+    def paintEvent(self, event: Any) -> None:
+        if self._rotation == 0:
+            super().paintEvent(event)
+            return
+
+        # Draw background/borders by temporarily clearing text/icon
+        orig_text = self.text()
+        orig_icon = self.icon()
+        self.setText("")
+        self.setIcon(QIcon())
+        try:
+            super().paintEvent(event)
+        finally:
+            self.setText(orig_text)
+            self.setIcon(orig_icon)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+
+        rect = self.rect()
+        painter.translate(rect.center())
+        painter.rotate(self._rotation)
+
+        logical_rect = QRect(
+            -rect.height() // 2, -rect.width() // 2, rect.height(), rect.width()
+        )
+
+        if orig_text:
+            # Color detection based on state & name
+            obj_name = self.objectName()
+            if self.isDown():
+                color_str = "#0284c7"
+            elif self.underMouse():
+                color_str = "#38bdf8"
+            else:
+                if obj_name in ("volumeMinusBtn", "volumePlusBtn"):
+                    color_str = "#94a3b8"
+                else:
+                    color_str = "#f8fafc"
+
+            painter.setFont(self.font())
+            painter.setPen(QColor(color_str))
+            painter.drawText(logical_rect, Qt.AlignmentFlag.AlignCenter, orig_text)
+
+
+class RotatedLabel(QLabel):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._rotation: int = 0
+
+    def setRotation(self, rot: int) -> None:
+        if self._rotation != rot:
+            self._rotation = rot
+            self.update()
+
+    def paintEvent(self, event: Any) -> None:
+        if self._rotation == 0:
+            super().paintEvent(event)
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+
+        rect = self.rect()
+        painter.translate(rect.center())
+        painter.rotate(self._rotation)
+
+        logical_rect = QRect(
+            -rect.height() // 2, -rect.width() // 2, rect.height(), rect.width()
+        )
+
+        painter.setFont(self.font())
+        painter.setPen(QColor("#94a3b8"))
+        painter.drawText(logical_rect, self.alignment(), self.text())
+
+
 class VerticalMediaButton(QWidget):
     """Custom widget wrapper containing a QPushButton and QLabel."""
 
-    button: QPushButton
-    label: QLabel
+    button: RotatedButton
+    label: RotatedLabel
+
+    def setRotation(self, rot: int) -> None:
+        if hasattr(self, "button") and isinstance(self.button, RotatedButton):
+            self.button.setRotation(rot)
+        if hasattr(self, "label") and isinstance(self.label, RotatedLabel):
+            self.label.setRotation(rot)
+            if rot in (90, -90, 270):
+                self.label.hide()
+            else:
+                self.label.show()
+
+        layout = self.layout()
+        if isinstance(layout, QBoxLayout):
+            if rot == -90:  # Left position (clockwise rotation)
+                layout.setDirection(QBoxLayout.Direction.LeftToRight)
+            elif rot == 90:  # Right position (counter-clockwise rotation)
+                layout.setDirection(QBoxLayout.Direction.RightToLeft)
+            else:  # Top/Bottom position (unrotated)
+                layout.setDirection(QBoxLayout.Direction.TopToBottom)
+
+
+class FullscreenControlsView(QGraphicsView):
+    """Custom QGraphicsView to automatically keep the rotated control bar scaled."""
+
+    def __init__(self, scene: QGraphicsScene, parent: Optional[QWidget] = None) -> None:
+        super().__init__(scene, parent)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setFrameShape(QGraphicsView.Shape.NoFrame)
+        self.setStyleSheet("background: transparent; border: none;")
+        self.viewport().setAutoFillBackground(False)
+        self.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
+        self.setSceneRect(0, 0, 1150, 120)
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
 
 class VideoPlayerWidget(QWidget):
@@ -156,7 +286,7 @@ class VideoPlayerWidget(QWidget):
         layout.setSpacing(2)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        btn = QPushButton(icon)
+        btn = RotatedButton(icon)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.clicked.connect(slot)
         btn.setStyleSheet(f"""
@@ -176,7 +306,7 @@ class VideoPlayerWidget(QWidget):
             }}
         """)
 
-        lbl = QLabel(label_text)
+        lbl = RotatedLabel(label_text)
         lbl.setFont(QFont("Inter", 8, QFont.Weight.Bold))
         lbl.setStyleSheet("color: #94a3b8; background: transparent;")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -197,7 +327,7 @@ class VideoPlayerWidget(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(0)
 
-        vol_icon = QPushButton("🔊")
+        vol_icon = RotatedButton("🔊")
         vol_icon.setObjectName("volumeIcon")
         vol_icon.setCursor(Qt.CursorShape.PointingHandCursor)
         vol_icon.setFixedSize(20, 40)
@@ -217,7 +347,7 @@ class VideoPlayerWidget(QWidget):
         """)
         vol_icon.clicked.connect(self.toggle_mute)
 
-        minus_btn = QPushButton("−")
+        minus_btn = RotatedButton("−")
         minus_btn.setObjectName("volumeMinusBtn")
         minus_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         minus_btn.setFixedSize(12, 12)
@@ -272,7 +402,7 @@ class VideoPlayerWidget(QWidget):
             }
         """)
 
-        plus_btn = QPushButton("+")
+        plus_btn = RotatedButton("+")
         plus_btn.setObjectName("volumePlusBtn")
         plus_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         plus_btn.setFixedSize(12, 12)
@@ -311,7 +441,7 @@ class VideoPlayerWidget(QWidget):
 
         layout.addLayout(row)
 
-        percent_lbl = QLabel(f"VOLUME: {slider.value()}%")
+        percent_lbl = RotatedLabel(f"VOLUME: {slider.value()}%")
         percent_lbl.setFont(QFont("Inter", 8, QFont.Weight.Bold))
         percent_lbl.setStyleSheet("color: #94a3b8; background: transparent;")
         percent_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -550,8 +680,11 @@ class VideoPlayerWidget(QWidget):
         overlay_layout.addStretch()
         self.progress_overlay.hide()
 
-        # Fullscreen Overlay
-        self.fullscreen_overlay = QFrame(self)
+        # Fullscreen Scene, View, and Overlay QFrame
+        self.fullscreen_scene = QGraphicsScene(self)
+        self.fullscreen_scene.setBackgroundBrush(Qt.BrushStyle.NoBrush)
+
+        self.fullscreen_overlay = QFrame()
         self.fullscreen_overlay.setObjectName("fullscreenOverlay")
         self.fullscreen_overlay.setStyleSheet("""
             QFrame#fullscreenOverlay {
@@ -561,6 +694,13 @@ class VideoPlayerWidget(QWidget):
             }
         """)
         self.fullscreen_overlay.setFixedWidth(1150)
+
+        self.fullscreen_proxy = self.fullscreen_scene.addWidget(self.fullscreen_overlay)
+        self.fullscreen_proxy.setPos(0, 0)
+
+        self.fullscreen_view = FullscreenControlsView(self.fullscreen_scene, self)
+        self.fullscreen_view.setObjectName("fullscreenView")
+        self.fullscreen_view.hide()
 
         # Legacy fs controls for test compatibility
         self.fs_pause_button = QPushButton("Pause", self.fullscreen_overlay)
@@ -597,13 +737,15 @@ class VideoPlayerWidget(QWidget):
         fs_seek_layout.setContentsMargins(0, 0, 0, 0)
         fs_seek_layout.setSpacing(10)
 
-        self.fs_elapsed_label = QLabel("00:00")
+        self.fs_elapsed_label = RotatedLabel("00:00")
         self.fs_elapsed_label.setFont(QFont("Inter", 10))
         self.fs_elapsed_label.setStyleSheet("color: #94a3b8; background: transparent;")
+        self.fs_elapsed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.fs_duration_label = QLabel("00:00")
+        self.fs_duration_label = RotatedLabel("00:00")
         self.fs_duration_label.setFont(QFont("Inter", 10))
         self.fs_duration_label.setStyleSheet("color: #94a3b8; background: transparent;")
+        self.fs_duration_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         fs_seek_layout.addWidget(self.fs_elapsed_label)
         fs_seek_layout.addWidget(self.fs_seek_slider)
@@ -627,7 +769,7 @@ class VideoPlayerWidget(QWidget):
 
         fs_buttons_layout.addStretch()
 
-        self.fs_subtitles_audio_button = QPushButton()
+        self.fs_subtitles_audio_button = RotatedButton()
         self.fs_subtitles_audio_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.fs_subtitles_audio_button.setText("AUDIO: None\nSUBTITLES: None")
         self.fs_subtitles_audio_button.setStyleSheet("""
@@ -977,7 +1119,11 @@ class VideoPlayerWidget(QWidget):
 
     def _show_fullscreen_controls(self) -> None:
         self.fullscreen_overlay.show()
-        self.fullscreen_overlay.raise_()
+        if hasattr(self, "fullscreen_proxy") and self.fullscreen_proxy:
+            self.fullscreen_proxy.show()
+        if hasattr(self, "fullscreen_view") and self.fullscreen_view:
+            self.fullscreen_view.show()
+            self.fullscreen_view.raise_()
         self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def _hide_fullscreen_controls(self) -> None:
@@ -989,6 +1135,10 @@ class VideoPlayerWidget(QWidget):
                 self.setCursor(Qt.CursorShape.ArrowCursor)
                 return
             self.fullscreen_overlay.hide()
+            if hasattr(self, "fullscreen_proxy") and self.fullscreen_proxy:
+                self.fullscreen_proxy.hide()
+            if hasattr(self, "fullscreen_view") and self.fullscreen_view:
+                self.fullscreen_view.hide()
             self.setCursor(Qt.CursorShape.BlankCursor)
 
     def keyPressEvent(self, event: Any) -> None:
@@ -1024,6 +1174,10 @@ class VideoPlayerWidget(QWidget):
             main_win.showNormal()
             self.controls_widget.show()
             self.fullscreen_overlay.hide()
+            if hasattr(self, "fullscreen_proxy") and self.fullscreen_proxy:
+                self.fullscreen_proxy.hide()
+            if hasattr(self, "fullscreen_view") and self.fullscreen_view:
+                self.fullscreen_view.hide()
             self.setCursor(Qt.CursorShape.ArrowCursor)
             self.hide_controls_timer.stop()
             self.fullscreen_changed.emit(False)
@@ -1048,15 +1202,97 @@ class VideoPlayerWidget(QWidget):
     def _reposition_overlays(self) -> None:
         self.progress_overlay.resize(self.video_frame.size())
 
-        # Center the fullscreen overlay at the bottom
-        fs_size = QSize(1150, 120)
-        self.fullscreen_overlay.resize(fs_size)
-
-        # Position relative to video_frame's geometry in case it's shifted
+        pos = getattr(config, "fullscreen_control_bar_position", "Bottom")
         v_geom = self.video_frame.geometry()
-        x = v_geom.x() + (v_geom.width() - fs_size.width()) // 2
-        y = v_geom.y() + v_geom.height() - fs_size.height() - 20
-        self.fullscreen_overlay.move(x, y)
+
+        is_visible = not self.fullscreen_overlay.isHidden()
+
+        bar_thickness = 150 if pos in ("Left", "Right") else 120
+        fs_size = QSize(1150, bar_thickness)
+        self.fullscreen_overlay.resize(fs_size)
+        self.fullscreen_proxy.setGeometry(QRectF(0, 0, 1150, bar_thickness))
+
+        if pos in ("Left", "Right"):
+            self.fullscreen_scene.setSceneRect(0, 0, bar_thickness, 1150)
+            self.fullscreen_view.setSceneRect(0, 0, bar_thickness, 1150)
+
+            if pos == "Left":
+                self.fullscreen_proxy.setRotation(90)
+                self.fullscreen_proxy.setPos(bar_thickness, 0)
+            else:
+                self.fullscreen_proxy.setRotation(-90)
+                self.fullscreen_proxy.setPos(0, 1150)
+
+            view_width = bar_thickness
+            view_height = min(1150, v_geom.height() - 40)
+            x = (
+                v_geom.x()
+                if pos == "Left"
+                else v_geom.x() + v_geom.width() - view_width
+            )
+            y = v_geom.y() + (v_geom.height() - view_height) // 2
+
+            self.fullscreen_view.setGeometry(x, y, view_width, view_height)
+            self.fullscreen_view.resetTransform()
+            self.fullscreen_view.fitInView(
+                0, 0, bar_thickness, 1150, Qt.AspectRatioMode.KeepAspectRatio
+            )
+        else:
+            self.fullscreen_scene.setSceneRect(0, 0, 1150, bar_thickness)
+            self.fullscreen_view.setSceneRect(0, 0, 1150, bar_thickness)
+
+            self.fullscreen_proxy.setRotation(0)
+            self.fullscreen_proxy.setPos(0, 0)
+
+            view_width = 1150
+            view_height = bar_thickness
+            x = v_geom.x() + (v_geom.width() - view_width) // 2
+            if pos == "Top":
+                y = v_geom.y() + 20
+            else:  # "Bottom"
+                y = v_geom.y() + v_geom.height() - view_height - 20
+
+            self.fullscreen_view.setGeometry(x, y, view_width, view_height)
+            self.fullscreen_view.resetTransform()
+            self.fullscreen_view.fitInView(
+                0, 0, 1150, bar_thickness, Qt.AspectRatioMode.KeepAspectRatio
+            )
+
+        if is_visible:
+            self.fullscreen_overlay.show()
+            self.fullscreen_proxy.show()
+            self.fullscreen_view.show()
+            self.fullscreen_view.raise_()
+        else:
+            self.fullscreen_overlay.hide()
+            self.fullscreen_proxy.hide()
+            self.fullscreen_view.hide()
+
+        # Rotate individual controls to compensate for the toolbar rotation
+        comp_rot = 0
+        if pos == "Left":
+            comp_rot = -90
+        elif pos == "Right":
+            comp_rot = 90
+
+        rotated_widgets = [
+            self.fs_new_rew_btn,
+            self.fs_new_play_btn,
+            self.fs_new_stop_btn,
+            self.fs_new_ff_btn,
+            self.fs_new_rate_btn,
+            self.fs_new_fullscreen_btn,
+            self.fs_vol_icon,
+            self.fs_volume_minus_btn,
+            self.fs_volume_plus_btn,
+            self.fs_vol_percent_label,
+            self.fs_elapsed_label,
+            self.fs_duration_label,
+            self.fs_subtitles_audio_button,
+        ]
+        for w in rotated_widgets:
+            if hasattr(w, "setRotation"):
+                w.setRotation(comp_rot)
 
         # Center OSD label
         self.osd_label.adjustSize()

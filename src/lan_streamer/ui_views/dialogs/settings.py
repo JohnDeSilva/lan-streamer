@@ -117,6 +117,7 @@ class SettingsDialog(QDialog):
         self.watched_threshold_input: QLineEdit = QLineEdit()
         self.max_cache_size_input: QLineEdit = QLineEdit()
         self.vlc_buffer_input: QLineEdit = QLineEdit()
+        self.fullscreen_control_bar_position_selector: QComboBox = QComboBox()
 
         self.db_path_input: QLineEdit = QLineEdit()
         self.log_dir_input: QLineEdit = QLineEdit()
@@ -516,6 +517,16 @@ class SettingsDialog(QDialog):
         vlc_buffer_layout.addStretch()
         player_layout.addLayout(vlc_buffer_layout)
 
+        self.fullscreen_control_bar_position_selector.addItems(
+            ["Bottom", "Top", "Left", "Right"]
+        )
+        position_layout: QHBoxLayout = QHBoxLayout()
+        position_layout.addWidget(QLabel("Fullscreen Control Bar Position:"))
+        self.fullscreen_control_bar_position_selector.setFixedWidth(120)
+        position_layout.addWidget(self.fullscreen_control_bar_position_selector)
+        position_layout.addStretch()
+        player_layout.addLayout(position_layout)
+
         player_layout.addStretch()
 
         # Advanced Settings Pane
@@ -871,6 +882,9 @@ class SettingsDialog(QDialog):
         self.watched_threshold_input.setText(str(int(config.watched_threshold * 100)))
         self.max_cache_size_input.setText(str(config.max_cache_size_gb))
         self.vlc_buffer_input.setText(str(config.vlc_buffer_ms))
+        self.fullscreen_control_bar_position_selector.setCurrentText(
+            config.fullscreen_control_bar_position
+        )
 
         self.db_path_input.setText(config.database_path)
         self.log_dir_input.setText(config.log_directory)
@@ -1389,6 +1403,9 @@ class SettingsDialog(QDialog):
             config.vlc_buffer_ms = int(self.vlc_buffer_input.text().strip())
         except ValueError:
             pass
+        config.fullscreen_control_bar_position = (
+            self.fullscreen_control_bar_position_selector.currentText()
+        )
 
         if self.db_path_input.text().strip():
             config.database_path = self.db_path_input.text().strip()

@@ -39,6 +39,7 @@ class Config:
         "watched_threshold": 0.95,
         "cache_directory": str(Path.home() / ".config" / "lan-streamer" / "cache"),
         "use_embedded_player": True,
+        "fullscreen_control_bar_position": "Bottom",
         "enable_hw_accel": True,
         "vlc_extra_args": [],
         "vlc_buffer_ms": 3000,
@@ -246,6 +247,9 @@ class Config:
             self.watched_threshold = config_dict["watched_threshold"]
             self.cache_directory = config_dict["cache_directory"]
             self.use_embedded_player = config_dict["use_embedded_player"]
+            self.fullscreen_control_bar_position = config_dict[
+                "fullscreen_control_bar_position"
+            ]
             self.enable_hw_accel = config_dict["enable_hw_accel"]
             self.vlc_extra_args = config_dict["vlc_extra_args"]
             self.vlc_buffer_ms = config_dict["vlc_buffer_ms"]
@@ -318,6 +322,9 @@ class Config:
             set_app_config("watched_threshold", self.watched_threshold)
             set_app_config("cache_directory", self.cache_directory)
             set_app_config("use_embedded_player", self.use_embedded_player)
+            set_app_config(
+                "fullscreen_control_bar_position", self.fullscreen_control_bar_position
+            )
             set_app_config("enable_hw_accel", self.enable_hw_accel)
             set_app_config("vlc_extra_args", self.vlc_extra_args)
             set_app_config("vlc_buffer_ms", self.vlc_buffer_ms)

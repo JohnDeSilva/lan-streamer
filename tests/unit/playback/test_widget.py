@@ -1331,3 +1331,87 @@ def test_load_and_play_applies_preferred_audio_device(player_widget) -> None:
         player_widget.mediaplayer.audio_output_device_set.assert_called_with(
             None, "saved_device_id"
         )
+
+
+def test_fullscreen_control_bar_positions(player_widget, qtbot) -> None:
+    """Test all fullscreen control bar positioning and rotation scenarios."""
+    from PySide6.QtCore import QRect
+    from PySide6.QtWidgets import QGraphicsView
+
+    # Mock window to simulate fullscreen mode
+    main_win = MagicMock()
+    main_win.isFullScreen.return_value = True
+
+    with patch.object(player_widget, "window", return_value=main_win):
+        player_widget.video_frame.setGeometry(0, 0, 1920, 1080)
+
+        # 1. Test "Bottom" (Default)
+        config.fullscreen_control_bar_position = "Bottom"
+        player_widget._reposition_overlays()
+
+        # View should be hidden and positioned correctly
+        assert hasattr(player_widget, "fullscreen_view")
+        assert isinstance(player_widget.fullscreen_view, QGraphicsView)
+        assert player_widget.fullscreen_view.isHidden()
+        view_geom = player_widget.fullscreen_view.geometry()
+        # Bottom placement: x = (1920 - 1150)//2 = 385, y = 1080 - 120 - 20 = 940
+        assert view_geom == QRect(385, 940, 1150, 120)
+
+        # 2. Test "Top"
+        config.fullscreen_control_bar_position = "Top"
+        player_widget._reposition_overlays()
+
+        assert hasattr(player_widget, "fullscreen_view")
+        assert isinstance(player_widget.fullscreen_view, QGraphicsView)
+        assert player_widget.fullscreen_view.isHidden()
+        view_geom = player_widget.fullscreen_view.geometry()
+        # Top placement: x = 385, y = 20
+        assert view_geom == QRect(385, 20, 1150, 120)
+
+        # 3. Test "Left"
+        config.fullscreen_control_bar_position = "Left"
+        player_widget._reposition_overlays()
+
+        # Overlay should be wrapped in QGraphicsView
+        assert hasattr(player_widget, "fullscreen_view")
+        assert isinstance(player_widget.fullscreen_view, QGraphicsView)
+        assert player_widget.fullscreen_view.isHidden()
+
+        view_geom = player_widget.fullscreen_view.geometry()
+        # Left placement: width = 140, height = min(1150, 1080 - 40) = 1040
+        # x = 0, y = (1080 - 1040)//2 = 20
+        assert view_geom == QRect(0, 20, 150, 1040)
+
+        # 4. Test "Right"
+        config.fullscreen_control_bar_position = "Right"
+        player_widget._reposition_overlays()
+
+        assert hasattr(player_widget, "fullscreen_view")
+        assert isinstance(player_widget.fullscreen_view, QGraphicsView)
+        assert player_widget.fullscreen_view.isHidden()
+
+        view_geom = player_widget.fullscreen_view.geometry()
+        # Right placement: x = 1920 - 150 = 1770, y = 20, width = 150, height = 1040
+        assert view_geom == QRect(1770, 20, 150, 1040)
+
+        # 5. Test Transition back to "Bottom" from rotated state
+        config.fullscreen_control_bar_position = "Bottom"
+        player_widget._reposition_overlays()
+
+        # View should be hidden and geometry updated
+        assert player_widget.fullscreen_view.isHidden()
+        assert player_widget.fullscreen_view.geometry() == QRect(385, 940, 1150, 120)
+
+        # 6. Test Visibility synchronization
+        config.fullscreen_control_bar_position = "Left"
+        player_widget._reposition_overlays()
+
+        # Show/hide controls should show/hide view
+        player_widget._show_fullscreen_controls()
+        assert not player_widget.fullscreen_overlay.isHidden()
+        assert not player_widget.fullscreen_view.isHidden()
+
+        player_widget.mediaplayer = MagicMock()
+        player_widget._hide_fullscreen_controls()
+        assert player_widget.fullscreen_overlay.isHidden()
+        assert player_widget.fullscreen_view.isHidden()
