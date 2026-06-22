@@ -3,6 +3,37 @@
   "plugin": [
     "opencode-gemini-auth"
   ],
+  "provider": {
+    "ollama": {
+      "type": "llm",
+      "options": {
+        "baseURL": "http://localhost:11434/v1"
+      },
+      "models": {
+        "gemma4:e4b-32k": {
+          "tools": true,
+          "_launch": true,
+          "parameters": {
+            "temperature": 0.2
+          }
+        },
+        "qwen2.5-coder:7b-16k": {
+          "tools": true,
+          "_launch": true,
+          "parameters": {
+            "temperature": 0.2
+          }
+        },
+        "deepseek-coder-v2:16b-8k": {
+          "tools": true,
+          "_launch": true,
+          "parameters": {
+            "temperature": 0.1
+          }
+        }
+      }
+    }
+  },
   "agent": {
     "coder": {
       "mode": "subagent",
@@ -101,6 +132,28 @@
       "prompt": "You are an exploration agent for lan-streamer. Search the codebase to answer questions about architecture, data flow between ui_views, backend, database, and providers. Explain module responsibilities, SQLAlchemy model relationships, and Qt widget hierarchies. Reference specific file paths and line numbers.",
       "permissions": {
         "filesystem": "read"
+      }
+    },
+    "local-coder": {
+      "mode": "subagent",
+      "model": "ollama/qwen2.5-coder:7b-16k",
+      "description": "Local coding specialist using Qwen 2.5 Coder 7B for everyday code generation and fixes.",
+      "temperature": 0.2,
+      "maxSteps": 10,
+      "prompt": "You are a local Python developer for lan-streamer (Qwen 2.5 Coder 7B). Write type-hinted, ruff-compliant Python 3.14+ code using SQLAlchemy 2.0 ORM and PySide6 Qt patterns. Prefer simpler solutions — you have limited context. Focus on isolated, single-file changes that follow existing patterns. Always include Google-style docstrings and pytest tests.",
+      "permissions": {
+        "filesystem": "write"
+      }
+    },
+    "local-refactor": {
+      "mode": "subagent",
+      "model": "ollama/deepseek-coder-v2:16b-8k",
+      "description": "Local agent for large refactors and long-context code analysis (128K context).",
+      "temperature": 0.1,
+      "maxSteps": 12,
+      "prompt": "You are a refactoring specialist for lan-streamer (DeepSeek Coder V2 16B, 128K context). Restructure code across modules while preserving behavior. Extract shared logic, reduce duplication, improve type safety (mypy strict), and align with SQLAlchemy 2.0 best practices. Always update pytest tests alongside refactors and verify with ruff.",
+      "permissions": {
+        "filesystem": "write"
       }
     }
   }
