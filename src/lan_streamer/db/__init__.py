@@ -35,6 +35,7 @@ from lan_streamer.db.queries_playback import (
     get_combined_next_up,
     get_combined_recently_added,
     get_combined_smart_row,
+    get_parent_media_name_by_path,
 )
 from lan_streamer.db.queries_config import (
     get_app_config,

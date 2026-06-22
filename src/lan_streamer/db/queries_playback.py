@@ -612,3 +612,33 @@ def get_combined_smart_row(
     except Exception:
         logger.exception("Error in get_combined_smart_row")
         return []
+
+
+def get_parent_media_name_by_path(path: str) -> Optional[Tuple[str, str]]:
+    """
+    Given a file path, finds the parent series name or movie name,
+    along with its library type ('tv' or 'movie').
+    Returns (media_name, library_type) or None.
+    """
+    try:
+        logger.debug(f"Executing DB get_parent_media_name_by_path: path={path}")
+        with get_session() as session:
+            # 1. Check if it's an episode of a series
+            episode = session.scalars(
+                select(Episode)
+                .join(MetadataFileMapping, MetadataFileMapping.episode_id == Episode.id)
+                .join(MediaFile, MediaFile.id == MetadataFileMapping.media_file_id)
+                .where(MediaFile.path == path)
+            ).first()
+            if episode and episode.season and episode.season.series:
+                return episode.season.series.name, "tv"
+
+            # 2. Check if it's a movie
+            movie = session.scalars(
+                select(Movie).join(Movie.media_files).where(MediaFile.path == path)
+            ).first()
+            if movie:
+                return movie.name or "", "movie"
+    except Exception:
+        logger.exception(f"Error getting parent media name for path {path}")
+    return None
