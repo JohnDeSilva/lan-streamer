@@ -1,3 +1,15 @@
+## v0.31.0 (2026-06-21)
+
+### Feat
+
+- remove auto return on playback finish and next episode popup countdown
+- persist next episode popup visible on expiry, return to series/movie detail page on video completion
+- implement counter-rotation, dynamic bar thickness, and layout direction adjustments for rotated fullscreen control bar
+
+### Fix
+
+- **dependency**: bump sqlalchemy from 2.0.50 to 2.0.51
+
 ## v0.30.5 (2026-06-21)
 
 ### Fix
