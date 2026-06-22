@@ -1052,10 +1052,11 @@ def test_next_episode_popup_countdown_flow(qtbot: Any) -> None:
         # Fast forward countdown to 1
         widget.countdown_seconds = 1
         widget._on_popup_countdown_tick()
-        # Now it should be 0 and dismissed
+        # Now it should be 0 and stay visible
         assert widget.countdown_seconds == 0
         assert widget.popup_countdown_timer.isActive() is False
-        assert widget.next_episode_popup_frame.isHidden() is True
+        assert widget.next_episode_popup_frame.isHidden() is False
+        assert widget.popup_countdown_label.text() == "Next episode available"
 
 
 def test_next_episode_popup_video_ends_before_countdown_completes(qtbot: Any) -> None:

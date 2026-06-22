@@ -1990,15 +1990,16 @@ class VideoPlayerWidget(QWidget):
         logger.debug(
             f"Popup countdown tick: {self.countdown_seconds} seconds remaining"
         )
-        self.popup_countdown_label.setText(
-            f"Closing in {self.countdown_seconds} seconds..."
-        )
-        if hasattr(self, "popup_countdown_progress"):
-            self.popup_countdown_progress.setValue(self.countdown_seconds)
+        if self.countdown_seconds >= 0:
+            self.popup_countdown_label.setText(
+                f"Closing in {self.countdown_seconds} seconds..."
+            )
+            if hasattr(self, "popup_countdown_progress"):
+                self.popup_countdown_progress.setValue(self.countdown_seconds)
         if self.countdown_seconds <= 0:
-            logger.info("Countdown expired. Dismissing next episode popup.")
+            logger.info("Countdown expired. Keeping next episode popup visible.")
             self.popup_countdown_timer.stop()
-            self.ignore_next_episode()
+            self.popup_countdown_label.setText("Next episode available")
 
     def _format_time(self, seconds: int) -> str:
         m, s = divmod(seconds, 60)
