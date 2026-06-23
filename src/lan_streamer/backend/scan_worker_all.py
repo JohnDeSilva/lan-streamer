@@ -387,10 +387,12 @@ class ScanAllLibrariesWorker(QThread):
                                     if self.current_pass == 1
                                     else self.pass2_stats
                                 )
+                                # Only count removal/deletion stats here since
+                                # _season_callback/_movie_callback already
+                                # accumulated additions and updates.
                                 for key in self.stats:
-                                    if key in stats and not (
-                                        key.endswith("_scanned")
-                                        or key.endswith("_skipped")
+                                    if key in stats and (
+                                        key.endswith("_removed") or key == "deleted"
                                     ):
                                         self.stats[key] += stats[key]
                                         target_stats[key] += stats[key]
@@ -679,10 +681,12 @@ class ScanAllLibrariesWorker(QThread):
                                     if self.current_pass == 1
                                     else self.pass2_stats
                                 )
+                                # Only count removal/deletion stats here since
+                                # _season_callback/_movie_callback already
+                                # accumulated additions and updates.
                                 for key in self.stats:
-                                    if key in stats and not (
-                                        key.endswith("_scanned")
-                                        or key.endswith("_skipped")
+                                    if key in stats and (
+                                        key.endswith("_removed") or key == "deleted"
                                     ):
                                         self.stats[key] += stats[key]
                                         target_stats[key] += stats[key]

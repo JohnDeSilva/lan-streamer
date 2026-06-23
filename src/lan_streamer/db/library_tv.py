@@ -434,7 +434,7 @@ def _save_episode_record(
             ("air_date", "air_date"),
         ]:
             val = episode_data.get(key)
-            if val is not None and getattr(episode, attr) != val:
+            if val and getattr(episode, attr) != val:
                 changed = True
         if (
             episode_data.get("tmdb_number") is not None
@@ -442,10 +442,10 @@ def _save_episode_record(
         ):
             changed = True
         val_date = episode_data.get("date_added")
-        if val_date is not None and episode.date_added != int(val_date):
+        if val_date and episode.date_added != int(val_date):
             changed = True
         val_runtime = episode_data.get("runtime")
-        if val_runtime is not None and episode.runtime != val_runtime:
+        if val_runtime and episode.runtime != val_runtime:
             changed = True
         if (
             "myanimelist_anime_id" in episode_data
