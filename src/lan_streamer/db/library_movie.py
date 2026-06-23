@@ -55,9 +55,12 @@ def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> bool:
         ("year", "year", 0),
     ]:
         val = movie_data.get(key)
-        if val and getattr(movie, attr) != val:
-            setattr(movie, attr, val)
-            changed = True
+        if val:
+            if key == "date_added":
+                val = int(val)
+            if getattr(movie, attr) != val:
+                setattr(movie, attr, val)
+                changed = True
 
     if "myanimelist_anime_id" in movie_data:
         val = movie_data["myanimelist_anime_id"]

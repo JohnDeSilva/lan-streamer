@@ -55,6 +55,30 @@ def test_apply_movie_fields_audio_subtitle_json(mock_db_file) -> None:
         assert movie.resolution == "1080p"
 
 
+def test_apply_movie_fields_date_added_int_comparison(mock_db_file) -> None:
+    """_apply_movie_fields should normalize float date_added to int to avoid false changed flag."""
+    from lan_streamer.db.library import _apply_movie_fields
+
+    with get_session() as session:
+        movie = Movie(
+            name="DateAddedMovie",
+            library_name="Lib",
+            date_added=1234567890,
+        )
+        session.add(movie)
+        session.flush()
+
+        movie_data = {
+            "date_added": 1234567890.999,
+        }
+
+        changed = _apply_movie_fields(movie, movie_data)
+        session.commit()
+
+        assert changed is False
+        assert movie.date_added == 1234567890
+
+
 def test_apply_movie_fields_empty_audio_subtitle_keeps_existing(mock_db_file) -> None:
     """When audio_tracks/subtitle_tracks are empty, keeps the existing value."""
     from lan_streamer.db.library import _apply_movie_fields
