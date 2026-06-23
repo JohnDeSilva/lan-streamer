@@ -352,7 +352,7 @@ For developers and AI coding assistants, there is a comprehensive guide detailin
 
 ### Technical Stack
 *   **UI**: PySide6 (Qt 6)
-*   **Database**: SQLite with SQLAlchemy ORM (using strictly 2.0 query syntax)
+*   **Database**: SQLite with SQLAlchemy ORM (using strictly 2.0 query syntax, with eager loading optimizations in `queries_ui.py` to prevent N+1 query overhead for display rows)
 *   **Migrations**: Alembic
 *   **Testing**: pytest, pytest-cov, pytest-qt
 *   **Linting**: Ruff
