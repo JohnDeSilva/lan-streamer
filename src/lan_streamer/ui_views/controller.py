@@ -886,6 +886,25 @@ class Controller(QObject):
                                 "runtime", 0
                             )
 
+                # Add TMDB placeholders if show_future_episodes is enabled
+                show_future = self._config.libraries.get(
+                    self.current_library_name, {}
+                ).get("show_future_episodes", True)
+                if show_future:
+                    from lan_streamer.scanner.scan_tv import (
+                        _create_tmdb_placeholder_episodes,
+                    )
+
+                    season_metadata = season_data_dict.get("metadata", {})
+                    placeholders = _create_tmdb_placeholder_episodes(
+                        fetched_episodes_list,
+                        season_data_dict.get("episodes", []),
+                        season_folder_name,
+                        season_metadata,
+                        show_future_episodes=show_future,
+                    )
+                    season_data_dict["episodes"].extend(placeholders)
+
     def apply_metadata_match(
         self, series_name: str, match_dictionary: Dict[str, Any]
     ) -> None:
@@ -937,6 +956,27 @@ class Controller(QObject):
 
             new_tmdb_identifier: str = target_dict.get("tmdb_identifier", "")
             if new_tmdb_identifier:
+                # Remove any previous metadata records (placeholders with path=None)
+                # and clear old TMDB fields from remaining episodes before redownloading
+                for season_name, season_data in list(
+                    series_record.get("seasons", {}).items()
+                ):
+                    filtered_episodes = []
+                    for ep in season_data.get("episodes", []):
+                        if ep.get("path"):
+                            # Clear old metadata fields
+                            for key in [
+                                "tmdb_name",
+                                "tmdb_identifier",
+                                "tmdb_episode_identifier",
+                                "tmdb_number",
+                                "air_date",
+                                "runtime",
+                            ]:
+                                ep.pop(key, None)
+                            filtered_episodes.append(ep)
+                    season_data["episodes"] = filtered_episodes
+
                 self._sync_tmdb_episodes_for_series(series_record, new_tmdb_identifier)
 
         if self.current_library_name:
