@@ -21,47 +21,91 @@ from lan_streamer.db.library_shared import (
 logger = logging.getLogger(__name__)
 
 
-def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> None:
+def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> bool:
     """
     Applies all creative metadata fields from *movie_data* onto the *movie* ORM object.
     Only overrides existing values when the incoming value is non-falsy.
+    Returns True if any fields were actually changed.
     """
-    movie.jellyfin_id = movie_data.get("jellyfin_id") or movie.jellyfin_id
-    movie.tmdb_identifier = movie_data.get("tmdb_identifier") or movie.tmdb_identifier
-    movie.poster_path = movie_data.get("poster_path") or movie.poster_path
-    movie.overview = movie_data.get("overview") or movie.overview
-    movie.tmdb_name = movie_data.get("tmdb_name") or movie.tmdb_name
-    if "locked_metadata" in movie_data:
-        movie.locked_metadata = bool(movie_data["locked_metadata"])
-    movie.date_added = movie_data.get("date_added") or movie.date_added or 0
-    movie.runtime = movie_data.get("runtime") or movie.runtime or 0
-    movie.rating = movie_data.get("rating") or movie.rating or ""
-    movie.genre = movie_data.get("genre") or movie.genre or ""
-    if "myanimelist_anime_id" in movie_data:
-        movie.myanimelist_anime_id = movie_data["myanimelist_anime_id"]
-    movie.year = movie_data.get("year") or movie.year or 0
+    changed = False
 
-    movie.video_codec = _update_field_safely(
-        movie.video_codec, movie_data.get("video_codec")
-    )
-    movie.resolution = _update_field_safely(
-        movie.resolution, movie_data.get("resolution")
-    )
-    movie.bit_rate = _update_field_safely(movie.bit_rate, movie_data.get("bit_rate"))
+    for attr, key in [
+        ("jellyfin_id", "jellyfin_id"),
+        ("tmdb_identifier", "tmdb_identifier"),
+        ("poster_path", "poster_path"),
+        ("overview", "overview"),
+        ("tmdb_name", "tmdb_name"),
+        ("rating", "rating"),
+        ("genre", "genre"),
+    ]:
+        val = movie_data.get(key)
+        if val and getattr(movie, attr) != val:
+            setattr(movie, attr, val)
+            changed = True
+
+    if "locked_metadata" in movie_data:
+        val = bool(movie_data["locked_metadata"])
+        if movie.locked_metadata != val:
+            movie.locked_metadata = val
+            changed = True
+
+    for attr, key, default_val in [
+        ("date_added", "date_added", 0),
+        ("runtime", "runtime", 0),
+        ("year", "year", 0),
+    ]:
+        val = movie_data.get(key)
+        if val and getattr(movie, attr) != val:
+            setattr(movie, attr, val)
+            changed = True
+
+    if "myanimelist_anime_id" in movie_data:
+        val = movie_data["myanimelist_anime_id"]
+        if movie.myanimelist_anime_id != val:
+            movie.myanimelist_anime_id = val
+            changed = True
+
+    for attr, key in [
+        ("video_codec", "video_codec"),
+        ("resolution", "resolution"),
+        ("bit_rate", "bit_rate"),
+    ]:
+        val = movie_data.get(key)
+        if val is not None:
+            old_val = getattr(movie, attr)
+            new_val = _update_field_safely(old_val, val)
+            if old_val != new_val:
+                setattr(movie, attr, new_val)
+                changed = True
+
     incoming_audio = movie_data.get("audio_tracks")
     if incoming_audio is not None and len(incoming_audio) > 0:
-        movie.audio_tracks = json.dumps(incoming_audio)
+        val = json.dumps(incoming_audio)
+        if movie.audio_tracks != val:
+            movie.audio_tracks = val
+            changed = True
+
     incoming_subs = movie_data.get("subtitle_tracks")
     if incoming_subs is not None and len(incoming_subs) > 0:
-        movie.subtitle_tracks = json.dumps(incoming_subs)
+        val = json.dumps(incoming_subs)
+        if movie.subtitle_tracks != val:
+            movie.subtitle_tracks = val
+            changed = True
 
-    movie.default_path = _update_field_safely(
-        movie.default_path, movie_data.get("default_path") or movie_data.get("path")
-    )
+    new_path = movie_data.get("default_path") or movie_data.get("path")
+    if new_path:
+        old_val = movie.default_path
+        new_val = _update_field_safely(old_val, new_path)
+        if old_val != new_val:
+            movie.default_path = new_val
+            changed = True
 
     watched = bool(movie_data.get("watched"))
-    if watched:
+    if watched and not movie.watched:
         movie.watched = True
+        changed = True
+
+    return changed
 
 
 def _cleanup_movie_library(
@@ -134,6 +178,8 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
         "issues": [],
         "movies_added": 0,
         "movies_removed": 0,
+        "movies_scanned": 0,
+        "movies_updated": 0,
     }
 
     try:
@@ -201,10 +247,12 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
                     if tmdb_id and tmdb_id in existing_movies_by_tmdb:
                         movie = existing_movies_by_tmdb[tmdb_id]
 
+                is_new = False
                 if not movie:
                     movie = Movie(library_name=library_name, name=movie_name)
                     session.add(movie)
                     stats["movies_added"] = stats.get("movies_added", 0) + 1
+                    is_new = True
                 else:
                     if movie.name != movie_name:
                         stale_movie = existing_movies_by_name.get(movie_name)
@@ -240,7 +288,11 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
                 _sync_media_files(session, movie, versions)
                 if is_new_file:
                     movie.watched = False
-                _apply_movie_fields(movie, movie_data)
+                changed = _apply_movie_fields(movie, movie_data)
+
+                if not is_new and changed:
+                    stats["movies_updated"] = stats.get("movies_updated", 0) + 1
+                stats["movies_scanned"] = stats.get("movies_scanned", 0) + 1
 
     except Exception as e:
         logger.exception(f"Error saving movie library '{library_name}' to database")
@@ -281,6 +333,8 @@ def save_movie_data(
         "episodes_removed": 0,
         "movies_added": 0,
         "movies_removed": 0,
+        "movies_scanned": 0,
+        "movies_updated": 0,
     }
     try:
         with get_session() as session:
@@ -322,10 +376,12 @@ def save_movie_data(
                         )
                     ).first()
 
+            is_new = False
             if not movie:
                 movie = Movie(library_name=library_name, name=movie_name)
                 session.add(movie)
                 stats["movies_added"] = stats.get("movies_added", 0) + 1
+                is_new = True
             else:
                 if movie.name != movie_name:
                     stale_movie = existing_movie
@@ -355,10 +411,13 @@ def save_movie_data(
                     }
                 ]
             _sync_media_files(session, movie, versions)
-            _apply_movie_fields(movie, movie_data)
+            changed = _apply_movie_fields(movie, movie_data)
 
             session.commit()
             stats["movie_id"] = movie.id
+            if not is_new and changed:
+                stats["movies_updated"] = stats.get("movies_updated", 0) + 1
+            stats["movies_scanned"] = stats.get("movies_scanned", 0) + 1
             logger.info(
                 f"Successfully saved movie '{movie_name}' to database. Stats: {stats}"
             )

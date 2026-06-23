@@ -88,6 +88,7 @@ def _save_series_record(
     stats: Dict[str, Any],
 ) -> Series:
     series = existing_series.get(series_name)
+    is_new = False
     if not series:
         series = Series(library_name=library_name, name=series_name)
         session.add(series)
@@ -95,23 +96,36 @@ def _save_series_record(
         logger.info(
             f"New series record created: '{series_name}' in library '{library_name}'"
         )
+        is_new = True
     stats["series"] += 1
+    stats["series_scanned"] = stats.get("series_scanned", 0) + 1
 
     series_metadata = series_data.get("metadata", {})
-    series.jellyfin_id = series_metadata.get("jellyfin_id") or series.jellyfin_id
-    series.tmdb_identifier = (
-        series_metadata.get("tmdb_identifier") or series.tmdb_identifier
-    )
-    series.poster_path = series_metadata.get("poster_path") or series.poster_path
-    series.overview = series_metadata.get("overview") or series.overview
-    series.tmdb_name = series_metadata.get("tmdb_name") or series.tmdb_name
+    changed = False
+
+    for attr, key in [
+        ("jellyfin_id", "jellyfin_id"),
+        ("tmdb_identifier", "tmdb_identifier"),
+        ("poster_path", "poster_path"),
+        ("overview", "overview"),
+        ("tmdb_name", "tmdb_name"),
+        ("first_air_date", "first_air_date"),
+        ("tmdb_episode_group_id", "tmdb_episode_group_id"),
+    ]:
+        val = series_metadata.get(key)
+        if val is not None and getattr(series, attr) != val:
+            setattr(series, attr, val)
+            changed = True
+
     if "locked_metadata" in series_metadata:
-        series.locked_metadata = bool(series_metadata["locked_metadata"])
-    series.first_air_date = (
-        series_metadata.get("first_air_date") or series.first_air_date
-    )
-    if "tmdb_episode_group_id" in series_metadata:
-        series.tmdb_episode_group_id = series_metadata.get("tmdb_episode_group_id")
+        val = bool(series_metadata["locked_metadata"])
+        if series.locked_metadata != val:
+            series.locked_metadata = val
+            changed = True
+
+    if not is_new and changed:
+        stats["series_updated"] = stats.get("series_updated", 0) + 1
+
     return series
 
 
@@ -124,6 +138,7 @@ def _save_season_record(
     stats: Dict[str, Any],
 ) -> Season:
     season = existing_seasons.get(season_name)
+    is_new = False
     if not season:
         season = Season(name=season_name, series=series)
         session.add(season)
@@ -131,13 +146,31 @@ def _save_season_record(
         logger.info(
             f"New season record created: '{season_name}' for series '{series.name}'"
         )
+        is_new = True
     stats["seasons"] += 1
+    stats["seasons_scanned"] = stats.get("seasons_scanned", 0) + 1
 
     season_metadata = season_data.get("metadata", {})
-    season.jellyfin_id = season_metadata.get("jellyfin_id") or season.jellyfin_id
-    season.poster_path = season_metadata.get("poster_path") or season.poster_path
+    changed = False
+
+    for attr, key in [
+        ("jellyfin_id", "jellyfin_id"),
+        ("poster_path", "poster_path"),
+    ]:
+        val = season_metadata.get(key)
+        if val is not None and getattr(season, attr) != val:
+            setattr(season, attr, val)
+            changed = True
+
     if "myanimelist_id" in season_metadata:
-        season.myanimelist_id = season_metadata["myanimelist_id"]
+        val = season_metadata["myanimelist_id"]
+        if season.myanimelist_id != val:
+            season.myanimelist_id = val
+            changed = True
+
+    if not is_new and changed:
+        stats["seasons_updated"] = stats.get("seasons_updated", 0) + 1
+
     return season
 
 
@@ -274,10 +307,12 @@ def _save_episode_record(
                     existing_by_path.pop(old_path, None)
                 break
 
+    is_new = False
     if not episode:
         episode = Episode(path=path, season=season)
         session.add(episode)
         stats["episodes_added"] = stats.get("episodes_added", 0) + 1
+        is_new = True
     else:
         # Remove from tracking dicts so it's not reused/considered stale
         if episode.path in existing_by_path:
@@ -387,6 +422,51 @@ def _save_episode_record(
                 "error": msg,
             }
         )
+    # Check for changes if not a new episode record
+    changed = False
+    if not is_new:
+        if episode.name != target_name:
+            changed = True
+        for attr, key in [
+            ("jellyfin_id", "jellyfin_id"),
+            ("tmdb_episode_identifier", "tmdb_episode_identifier"),
+            ("tmdb_name", "tmdb_name"),
+            ("air_date", "air_date"),
+        ]:
+            val = episode_data.get(key)
+            if val is not None and getattr(episode, attr) != val:
+                changed = True
+        if (
+            episode_data.get("tmdb_number") is not None
+            and episode.tmdb_number != episode_data["tmdb_number"]
+        ):
+            changed = True
+        val_date = episode_data.get("date_added")
+        if val_date is not None and episode.date_added != val_date:
+            changed = True
+        val_runtime = episode_data.get("runtime")
+        if val_runtime is not None and episode.runtime != val_runtime:
+            changed = True
+        if (
+            "myanimelist_anime_id" in episode_data
+            and episode.myanimelist_anime_id != episode_data["myanimelist_anime_id"]
+        ):
+            changed = True
+        if (
+            "myanimelist_episode_number" in episode_data
+            and episode.myanimelist_episode_number
+            != episode_data["myanimelist_episode_number"]
+        ):
+            changed = True
+        new_path = episode_data.get("default_path") or episode_data.get("path")
+        if new_path is not None and episode.default_path != new_path:
+            changed = True
+        if is_new_file:
+            changed = True
+        watched = bool(episode_data.get("watched"))
+        if watched and not episode.watched:
+            changed = True
+
     episode.name = target_name
     episode.jellyfin_id = episode_data.get("jellyfin_id") or episode.jellyfin_id
     episode.tmdb_episode_identifier = (
@@ -428,6 +508,11 @@ def _save_episode_record(
         episode.watched = True
     if processed_episodes is not None:
         processed_episodes.add(episode)
+
+    if not is_new and changed:
+        stats["episodes_updated"] = stats.get("episodes_updated", 0) + 1
+
+    stats["episodes_scanned"] = stats.get("episodes_scanned", 0) + 1
     return episode
 
 
@@ -449,6 +534,12 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
         "seasons_removed": 0,
         "episodes_added": 0,
         "episodes_removed": 0,
+        "series_scanned": 0,
+        "series_updated": 0,
+        "seasons_scanned": 0,
+        "seasons_updated": 0,
+        "episodes_scanned": 0,
+        "episodes_updated": 0,
     }
 
     try:
@@ -657,6 +748,12 @@ def save_season_data(
         "seasons_removed": 0,
         "episodes_added": 0,
         "episodes_removed": 0,
+        "series_scanned": 0,
+        "series_updated": 0,
+        "seasons_scanned": 0,
+        "seasons_updated": 0,
+        "episodes_scanned": 0,
+        "episodes_updated": 0,
     }
     try:
         with get_session() as session:
