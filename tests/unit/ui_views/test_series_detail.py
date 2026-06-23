@@ -69,6 +69,13 @@ def test_series_detail_view_hide_missing_future(qtbot: Any) -> None:
         mock_pixmap.return_value.isNull.return_value = False
         view.populate_series_details("Breaking Bad")
 
+    # Test trailers button click
+    with patch("webbrowser.open") as mock_open:
+        view.trailers_button.click()
+        mock_open.assert_called_once_with(
+            "https://www.youtube.com/results?search_query=Breaking%20Bad%20trailer"
+        )
+
     # Season 1 should have 3 episodes in the table (1 local + 2 missing/future)
     season_table = view._season_tables["Season 1"]
     assert season_table.rowCount() == 3
