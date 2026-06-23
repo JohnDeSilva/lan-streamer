@@ -1,3 +1,27 @@
+## v0.32.0 (2026-06-22)
+
+### Feat
+
+- **ui**: add multi-version movie support and rescue technical info for stub scans
+
+### Fix
+
+- **ui**: stop deduplicating SCAN_REPORT lines in scan report display
+- **scan**: restore Movies to all three report sections and add section-order validation
+- **scanner**: stop double-counting and empty-field false changes
+- **db**: normalize movie date_added to int for comparison consistency
+- **scanner**: propagate _changed flag from existing season data in metadata_only mode
+- **db**: normalize date_added to int before comparison to prevent false updates on every scan
+- prevent double-counting of scan stats and enrich scan report details
+- **scanner**: update scan reports to track detailed metrics and add validation tests
+- **metadata**: clear old placeholders and metadata on manual match
+
+### Refactor
+
+- **scan**: move movie stats from TOTAL to PASS 2 breakdown section
+- **scanner**: extract scan_movie into focused sub-functions
+- **scanner**: extract scan_series into focused sub-functions
+
 ## v0.31.1 (2026-06-22)
 
 ### Fix
