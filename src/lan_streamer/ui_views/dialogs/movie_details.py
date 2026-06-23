@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QGridLayout,
     QTabWidget,
+    QComboBox,
 )
 from PySide6.QtCore import Slot
 from PySide6.QtGui import QFont
@@ -73,6 +74,7 @@ class MovieDetailsDialog(QDialog):
         self.resolution_label: QLabel = QLabel()
         self.bit_rate_label: QLabel = QLabel()
         self.file_runtime_label: QLabel = QLabel()
+        self.default_file_combo: QComboBox = QComboBox()
         self.audio_list: QListWidget = QListWidget()
         self.subtitle_list: QListWidget = QListWidget()
         self.external_sub_list: QListWidget = QListWidget()
@@ -184,6 +186,9 @@ class MovieDetailsDialog(QDialog):
         grid.addWidget(QLabel("<b>File Runtime:</b>"), 6, 0)
         grid.addWidget(self.file_runtime_label, 6, 1)
 
+        grid.addWidget(QLabel("<b>Default Version:</b>"), 7, 0)
+        grid.addWidget(self.default_file_combo, 7, 1)
+
         layout.addLayout(grid)
 
         layout.addWidget(QLabel("<b>Internal Audio Tracks:</b>"))
@@ -211,28 +216,80 @@ class MovieDetailsDialog(QDialog):
         return widget
 
     def _refresh_file_info(self) -> None:
-        from lan_streamer.scanner import get_detailed_file_info, SUBTITLE_EXTENSIONS
+        self.default_file_combo.blockSignals(True)
+        self.default_file_combo.clear()
 
-        # Check if we have cached technical metadata in the movie record
-        info: Dict[str, Any]
-        has_db_info = bool(self.movie_record.get("video_codec"))
-        if has_db_info:
-            info = {
-                "path": self.movie_path,
-                "video_codec": self.movie_record.get("video_codec"),
-                "resolution": self.movie_record.get("resolution") or "Unknown",
-                "audio_tracks": self.movie_record.get("audio_tracks") or [],
-                "subtitle_tracks": self.movie_record.get("subtitle_tracks") or [],
-                "bit_rate": self.movie_record.get("bit_rate") or 0,
-                "runtime": self.movie_record.get("file_runtime"),
-            }
-            try:
-                info["size_bytes"] = Path(self.movie_path).stat().st_size
-            except Exception:
-                info["size_bytes"] = 0
-            info["video_type"] = Path(self.movie_path).suffix.upper().replace(".", "")
-        else:
-            info = get_detailed_file_info(self.movie_path)
+        versions = self.movie_record.get("versions") or []
+        if not versions and self.movie_path:
+            versions = [
+                {
+                    "path": self.movie_path,
+                    "video_codec": self.movie_record.get("video_codec"),
+                    "resolution": self.movie_record.get("resolution"),
+                    "bit_rate": self.movie_record.get("bit_rate"),
+                    "audio_tracks": self.movie_record.get("audio_tracks") or [],
+                    "subtitle_tracks": self.movie_record.get("subtitle_tracks") or [],
+                }
+            ]
+
+        default_p = self.movie_record.get("default_path") or self.movie_path
+        active_idx = 0
+        for idx, v in enumerate(versions):
+            path_str = v.get("path")
+            if not path_str:
+                continue
+            name = Path(path_str).name
+            res = v.get("resolution") or "Unknown"
+            codec = v.get("video_codec") or "Unknown"
+            bit_rate_bps = v.get("bit_rate") or 0
+            bit_rate_str = (
+                f" | {bit_rate_bps / 1000000.0:.2f} Mbps" if bit_rate_bps > 0 else ""
+            )
+            display_text = f"{name} ({res} | {codec}{bit_rate_str})"
+            self.default_file_combo.addItem(display_text, path_str)
+            if path_str == default_p:
+                active_idx = idx
+
+        self.default_file_combo.setCurrentIndex(active_idx)
+        self.default_file_combo.blockSignals(False)
+        try:
+            self.default_file_combo.currentIndexChanged.disconnect()
+        except Exception:
+            pass
+        self.default_file_combo.currentIndexChanged.connect(
+            self._on_default_file_changed
+        )
+
+        self._on_default_file_changed()
+
+    def _on_default_file_changed(self) -> None:
+        path = self.default_file_combo.currentData()
+        if not path:
+            return
+
+        from lan_streamer.scanner import get_detailed_file_info
+        import json
+
+        versions = self.movie_record.get("versions") or []
+        info = None
+        for v in versions:
+            if v.get("path") == path:
+                info = v
+                break
+        if not info:
+            has_db_info = bool(self.movie_record.get("video_codec"))
+            if has_db_info and path == self.movie_path:
+                info = {
+                    "path": self.movie_path,
+                    "video_codec": self.movie_record.get("video_codec"),
+                    "resolution": self.movie_record.get("resolution") or "Unknown",
+                    "audio_tracks": self.movie_record.get("audio_tracks") or [],
+                    "subtitle_tracks": self.movie_record.get("subtitle_tracks") or [],
+                    "bit_rate": self.movie_record.get("bit_rate") or 0,
+                    "runtime": self.movie_record.get("file_runtime"),
+                }
+            else:
+                info = get_detailed_file_info(path)
 
         def safe_str(val: Any, default: str = "") -> str:
             if val is None:
@@ -241,7 +298,7 @@ class MovieDetailsDialog(QDialog):
                 return default
             return str(val)
 
-        self.path_label.setText(safe_str(self.movie_path))
+        self.path_label.setText(safe_str(path))
         try:
             size_bytes = info.get("size_bytes")
             if (
@@ -250,7 +307,7 @@ class MovieDetailsDialog(QDialog):
             ):
                 size_bytes = 0
             elif size_bytes is None:
-                size_bytes = Path(self.movie_path).stat().st_size
+                size_bytes = Path(path).stat().st_size
         except Exception:
             size_bytes = 0
 
@@ -260,10 +317,7 @@ class MovieDetailsDialog(QDialog):
             size_mb = 0.0
         self.size_label.setText(f"{size_mb:.2f} MB")
         self.type_label.setText(
-            safe_str(
-                info.get("video_type"),
-                Path(self.movie_path).suffix.upper().replace(".", ""),
-            )
+            safe_str(info.get("video_type"), Path(path).suffix.upper().replace(".", ""))
         )
         self.codec_label.setText(safe_str(info.get("video_codec"), "Unknown"))
         self.resolution_label.setText(safe_str(info.get("resolution"), "Unknown"))
@@ -294,33 +348,63 @@ class MovieDetailsDialog(QDialog):
             self.bit_rate_label.setText("Unknown")
 
         self.audio_list.clear()
-        for track in info["audio_tracks"]:
+        audio_tracks = info.get("audio_tracks") or []
+        if isinstance(audio_tracks, str):
+            try:
+                audio_tracks = json.loads(audio_tracks)
+            except Exception:
+                audio_tracks = []
+        for track in audio_tracks:
             self.audio_list.addItem(
-                f"Track {track['index']}: {track['codec']} ({track['language']}) {track['title']}"
+                f"Track {track.get('index')}: {track.get('codec')} ({track.get('language')}) {track.get('title')}"
             )
 
         self.subtitle_list.clear()
-        for track in info["subtitle_tracks"]:
+        subtitle_tracks = info.get("subtitle_tracks") or []
+        if isinstance(subtitle_tracks, str):
+            try:
+                subtitle_tracks = json.loads(subtitle_tracks)
+            except Exception:
+                subtitle_tracks = []
+        for track in subtitle_tracks:
             self.subtitle_list.addItem(
-                f"Track {track['index']}: {track['codec']} ({track['language']}) {track['title']}"
+                f"Track {track.get('index')}: {track.get('codec')} ({track.get('language')}) {track.get('title')}"
             )
 
-        # Detect external subtitles
+        self._refresh_external_subtitles(path)
+
+    def _refresh_external_subtitles(self, path: str) -> None:
+        from lan_streamer.scanner import SUBTITLE_EXTENSIONS
+
         self.external_sub_list.clear()
         ext_subs = []
-        parent_dir = Path(self.movie_path).parent
-        stem = Path(self.movie_path).stem
-        if parent_dir.exists():
-            for f in parent_dir.iterdir():
-                if f.suffix.lower() in SUBTITLE_EXTENSIONS and f.stem.startswith(stem):
-                    ext_subs.append(str(f.absolute()))
-                    self.external_sub_list.addItem(f.name)
+        try:
+            parent_dir = Path(path).parent
+            stem = Path(path).stem
+            if parent_dir.exists():
+                for f in parent_dir.iterdir():
+                    if f.suffix.lower() in SUBTITLE_EXTENSIONS and f.stem.startswith(
+                        stem
+                    ):
+                        ext_subs.append(str(f.absolute()))
+                        self.external_sub_list.addItem(f.name)
+        except Exception:
+            pass
 
         self.merge_button.setEnabled(len(ext_subs) > 0)
         self._ext_subs = ext_subs
 
     @Slot()
     def _on_save_clicked(self) -> None:
+        selected_path = self.default_file_combo.currentData()
+
+        versions = self.movie_record.get("versions") or []
+        selected_version = None
+        for v in versions:
+            if v.get("path") == selected_path:
+                selected_version = v
+                break
+
         metadata = {
             "tmdb_name": self.title_edit.text(),
             "rating": self.rating_edit.text(),
@@ -342,6 +426,16 @@ class MovieDetailsDialog(QDialog):
                 self, "Invalid Input", "Runtime and Year must be numbers."
             )
             return
+
+        if selected_path:
+            metadata["default_path"] = selected_path
+            metadata["path"] = selected_path
+            if selected_version:
+                metadata["video_codec"] = selected_version.get("video_codec")
+                metadata["resolution"] = selected_version.get("resolution")
+                metadata["bit_rate"] = selected_version.get("bit_rate")
+                metadata["audio_tracks"] = selected_version.get("audio_tracks")
+                metadata["subtitle_tracks"] = selected_version.get("subtitle_tracks")
 
         logger.info(
             f"MovieDetailsDialog saving changes for movie '{self.movie_name}' (Path: '{self.movie_path}'): {metadata}"

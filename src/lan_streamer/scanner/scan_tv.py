@@ -255,7 +255,7 @@ def _group_and_resolve_episode_versions(
 
     finalised_episodes: list[Dict[str, Any]] = []
     for key, ep_list in grouped_episodes.items():
-        versions = []
+        versions: list[Dict[str, Any]] = []
         incoming_paths = {ep["path"] for ep in ep_list if ep.get("path")}
         for ep in ep_list:
             path_str = ep["path"]
@@ -272,7 +272,18 @@ def _group_and_resolve_episode_versions(
                             break
                 if existing_v:
                     break
+            use_existing = False
             if existing_v and (not force_refresh or metadata_only):
+                # If we are online, but the existing version was only a stub (missing technical info),
+                # we should re-scan it to fetch full media details.
+                is_stub = (
+                    existing_v.get("video_codec") == "Unknown"
+                    or existing_v.get("resolution") == "Unknown"
+                )
+                if not (is_stub and not season_offline and not metadata_only):
+                    use_existing = True
+
+            if use_existing and existing_v is not None:
                 versions.append(existing_v)
             else:
                 if season_offline or metadata_only:

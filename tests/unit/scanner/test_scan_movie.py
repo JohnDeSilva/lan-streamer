@@ -252,6 +252,50 @@ def test_scan_files_normal_offline_uses_stub(tmp_path: Path) -> None:
     detailed_mock.assert_not_called()
 
 
+def test_scan_files_normal_online_rescans_stubs(tmp_path: Path) -> None:
+    """Online mode rescans a version that was previously recorded as a stub (Unknown codec/resolution)."""
+    movie_dir = tmp_path / "Movie"
+    movie_dir.mkdir()
+    video = movie_dir / "m.mkv"
+    video.touch()
+    existing = {
+        "versions": [
+            {
+                "path": str(video.absolute()),
+                "video_codec": "Unknown",
+                "resolution": "Unknown",
+            }
+        ],
+        "default_path": str(video.absolute()),
+    }
+
+    with (
+        patch(
+            "lan_streamer.scanner.scan_movie.get_stub_file_info",
+        ) as stub_mock,
+        patch(
+            "lan_streamer.scanner.scan_movie.get_detailed_file_info",
+            return_value={
+                "path": str(video.absolute()),
+                "video_codec": "hevc",
+                "resolution": "1920x1080",
+            },
+        ) as detailed_mock,
+    ):
+        result = _scan_movie_files(
+            movie_dir,
+            existing,
+            movie_offline=False,
+            force_refresh=False,
+            metadata_only=False,
+        )
+    assert result is not None
+    assert result["versions"][0]["video_codec"] == "hevc"
+    assert result["versions"][0]["resolution"] == "1920x1080"
+    detailed_mock.assert_called_once_with(str(video.absolute()))
+    stub_mock.assert_not_called()
+
+
 def test_scan_files_normal_preserves_old_versions(tmp_path: Path) -> None:
     """Preserves old versions from existing data no longer on disk."""
     movie_dir = tmp_path / "Movie"
