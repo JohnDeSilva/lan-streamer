@@ -24,7 +24,7 @@ This document establishes the repository-wide standards, architectural constrain
 - [src/entrypoint.py](file:///home/sadmin/antigravity/lan-streamer/src/entrypoint.py): Startup file for compiled PyInstaller target.
 - [src/lan_streamer/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/):
   - [main.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/main.py): Sets up the application GUI and controller runtime.
-  - [db/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db): ORM schemas ([models.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/models.py)), queries, serialization, and database setup.
+  - [db/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db): ORM schemas ([models.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/models.py)), queries ([queries_playback.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/queries_playback.py), [queries_ui.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/queries_ui.py)), serialization, and database setup.
   - [backend/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend): Background thread workers (`QThread`/`QWorker`) for non-blocking file scanning, Jellyfin sync, and metadata updates.
   - [scanner/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/scanner): Library crawler, filename parser, and bulk-renamer.
   - [services/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/services): Business-logic services (discovery, TMDB/Jellyfin metadata merging).
