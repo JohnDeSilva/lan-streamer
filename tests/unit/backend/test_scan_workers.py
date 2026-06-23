@@ -453,6 +453,33 @@ def test_scan_worker_stats_reporting() -> None:
         assert any("Episodes: Scanned=0 | Added=10" in log for log in report_logs)
         assert any("Movies: Scanned=2 | Added=4" in log for log in report_logs)
 
+        # Verify each entity type appears in ALL three sections
+        section_entities: dict[str, dict[str, int]] = {
+            s: {"Series": 0, "Seasons": 0, "Episodes": 0, "Movies": 0}
+            for s in ("PASS 1", "PASS 2", "TOTAL")
+        }
+        current_section: str | None = None
+        for log in report_logs:
+            if "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN" in log:
+                current_section = "PASS 1"
+            elif "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN" in log:
+                current_section = "PASS 2"
+            elif "TOTAL ACCUMULATED RUN STATS" in log:
+                current_section = "TOTAL"
+            elif "Series: Scanned" in log and current_section:
+                section_entities[current_section]["Series"] += 1
+            elif "Seasons: Scanned" in log and current_section:
+                section_entities[current_section]["Seasons"] += 1
+            elif "Episodes: Scanned" in log and current_section:
+                section_entities[current_section]["Episodes"] += 1
+            elif "Movies: Scanned" in log and current_section:
+                section_entities[current_section]["Movies"] += 1
+        for section in ("PASS 1", "PASS 2", "TOTAL"):
+            for entity in ("Series", "Seasons", "Episodes", "Movies"):
+                assert section_entities[section][entity] == 1, (
+                    f"{section} has {section_entities[section][entity]} {entity} lines (expected 1)"
+                )
+
 
 def test_scan_all_libraries_worker_stats_reporting() -> None:
     from lan_streamer.scanner import LibraryDict
