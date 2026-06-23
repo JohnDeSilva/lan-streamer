@@ -421,6 +421,13 @@ class ScanWorker(QThread):
                     f"Removed={stats_dict.get('episodes_removed', 0)} | "
                     f"Skipped={stats_dict.get('episodes_skipped', 0)}"
                 )
+                logger.info(
+                    f"[SCAN_REPORT]   Movies: Scanned={stats_dict.get('movies_scanned', 0)} | "
+                    f"Added={stats_dict.get('movies_added', 0)} | "
+                    f"Updated={stats_dict.get('movies_updated', 0)} | "
+                    f"Removed={stats_dict.get('movies_removed', 0)} | "
+                    f"Skipped={stats_dict.get('movies_skipped', 0)}"
+                )
 
             _log_stats_breakdown(
                 "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN", self.pass1_stats
@@ -430,13 +437,6 @@ class ScanWorker(QThread):
             )
             _log_stats_breakdown(
                 "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN", self.pass2_stats
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Movies: Scanned={self.stats.get('movies_scanned', 0)} | "
-                f"Added={self.stats.get('movies_added', 0)} | "
-                f"Updated={self.stats.get('movies_updated', 0)} | "
-                f"Removed={self.stats.get('movies_removed', 0)} | "
-                f"Skipped={self.stats.get('movies_skipped', 0)}"
             )
             logger.info(
                 "[SCAN_REPORT] ---------------------------------------------------"
