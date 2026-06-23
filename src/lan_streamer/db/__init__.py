@@ -31,6 +31,8 @@ from lan_streamer.db.queries_playback import (
     get_episode_playback_position,
     update_season_watched_status,
     update_series_watched_status,
+)
+from lan_streamer.db.queries_ui import (
     get_next_episode,
     get_combined_next_up,
     get_combined_recently_added,
