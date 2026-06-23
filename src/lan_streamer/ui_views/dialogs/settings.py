@@ -1983,6 +1983,12 @@ class SettingsDialog(QDialog):
                     self.scan_report_display.moveCursor(QTextCursor.MoveOperation.End)
                     self.scan_report_display.insertPlainText(content + "\n")
                     self.current_scan_logs.append(formatted_message)
+                else:
+                    # Repeated content (e.g. same stats value in multiple
+                    # sections) — still show it but don't add to dedup set
+                    # so identical values in PASS 2 or TOTAL are not hidden.
+                    self.scan_report_display.moveCursor(QTextCursor.MoveOperation.End)
+                    self.scan_report_display.insertPlainText(content + "\n")
             elif "[SCAN_ISSUE]" in formatted_message:
                 idx = formatted_message.index("[SCAN_ISSUE]")
                 content = (

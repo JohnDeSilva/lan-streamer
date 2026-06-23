@@ -75,7 +75,7 @@ def test_settings_dialog_scan_layout_toggles(qtbot) -> None:
     assert dialog.scan_detail_label.text() == "Scan Detail:"
 
 
-def test_settings_dialog_log_deduplication(qtbot) -> None:
+def test_settings_dialog_log_all_lines_shown(qtbot) -> None:
     controller = Controller()
     dialog = SettingsDialog(controller)
     qtbot.addWidget(dialog)
@@ -92,7 +92,7 @@ def test_settings_dialog_log_deduplication(qtbot) -> None:
     dialog._on_log_emitted("[SCAN_REPORT] =====================", "INFO")
 
     text = dialog.scan_report_display.toPlainText()
-    assert text.count("Episode Added: Show A") == 1
+    assert text.count("Episode Added: Show A") == 2
     assert text.count("=====================") == 2
 
 
