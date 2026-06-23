@@ -307,7 +307,7 @@ erDiagram
         bytes id PK
         bytes episode_id FK
         bytes movie_id FK
-        string path UK
+        string path "UK"
         int size_bytes
         string video_type
         string video_codec
@@ -331,7 +331,7 @@ erDiagram
     }
     APP_SECRETS {
         bytes secret_uuid PK
-        string secret_type UK
+        string secret_type "UK"
         string secret
     }
 
