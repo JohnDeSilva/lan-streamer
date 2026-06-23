@@ -371,6 +371,7 @@ class LibraryGridView(QWidget):
             if hasattr(self, "combined_actions_toolbar_widget"):
                 self.combined_actions_toolbar_widget.setVisible(True)
             self.sort_order_container.setVisible(False)
+            self.filter_watched_checkbox.setVisible(False)
             self.combined_scroll_area.setVisible(True)
             self.populate_combined_view()
         else:
@@ -380,6 +381,7 @@ class LibraryGridView(QWidget):
             if hasattr(self, "combined_actions_toolbar_widget"):
                 self.combined_actions_toolbar_widget.setVisible(False)
             self.sort_order_container.setVisible(True)
+            self.filter_watched_checkbox.setVisible(True)
             self.combined_scroll_area.setVisible(False)
             if library_name:
                 self.controller.select_library(library_name)

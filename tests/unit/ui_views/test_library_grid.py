@@ -177,6 +177,7 @@ class TestOnLibraryChanged:
         with patch.object(controller, "select_library") as mock_select:
             view.on_library_changed("ShowLib")
             assert view.series_list_widget.isVisible()
+            assert view.filter_watched_checkbox.isVisible()
             mock_select.assert_called_once_with("ShowLib")
 
     def test_combined_view_shows_combined_scroll(self, grid_view) -> None:
@@ -186,6 +187,7 @@ class TestOnLibraryChanged:
         with patch.object(view, "populate_combined_view") as mock_populate:
             view.on_library_changed("Combined View")
             assert not view.series_list_widget.isVisible()
+            assert not view.filter_watched_checkbox.isVisible()
             assert view.combined_scroll_area.isVisible()
             mock_populate.assert_called_once()
 
