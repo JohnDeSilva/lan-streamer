@@ -108,7 +108,10 @@ def _discover_seasons_to_process(
     if metadata_only:
         if existing_series_data and existing_series_data.get("seasons"):
             for season_name, existing_season in existing_series_data["seasons"].items():
-                seasons_to_process.append((season_name, True, existing_season))
+                is_season_changed = existing_season.get("_changed", True)
+                seasons_to_process.append(
+                    (season_name, is_season_changed, existing_season)
+                )
     else:
         for season_directory in series_directory.iterdir():
             if not season_directory.is_dir() or season_directory.name.startswith("."):
