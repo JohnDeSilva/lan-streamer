@@ -14,6 +14,7 @@ Missing lines to hit: 46, 53, 55, 58, 64, 218, 243-246, 258, 293, 295, 297, 299,
 
 import pytest
 import json
+from typing import Any, Dict
 from unittest.mock import patch
 
 import lan_streamer.db as db
@@ -52,6 +53,30 @@ def test_apply_movie_fields_audio_subtitle_json(mock_db_file) -> None:
         assert movie.myanimelist_anime_id == 12345
         assert movie.video_codec == "H.264"
         assert movie.resolution == "1080p"
+
+
+def test_apply_movie_fields_date_added_int_comparison(mock_db_file) -> None:
+    """_apply_movie_fields should normalize float date_added to int to avoid false changed flag."""
+    from lan_streamer.db.library import _apply_movie_fields
+
+    with get_session() as session:
+        movie = Movie(
+            name="DateAddedMovie",
+            library_name="Lib",
+            date_added=1234567890,
+        )
+        session.add(movie)
+        session.flush()
+
+        movie_data = {
+            "date_added": 1234567890.999,
+        }
+
+        changed = _apply_movie_fields(movie, movie_data)
+        session.commit()
+
+        assert changed is False
+        assert movie.date_added == 1234567890
 
 
 def test_apply_movie_fields_empty_audio_subtitle_keeps_existing(mock_db_file) -> None:
@@ -569,6 +594,109 @@ def test_save_episode_record_myanimelist_fields(mock_db_file) -> None:
         assert json.loads(ep.subtitle_tracks) == [{"lang": "en"}]
         assert ep.video_codec == "HEVC"
         assert ep.resolution == "4K"
+
+
+def test_save_episode_record_date_added_int_comparison(mock_db_file) -> None:
+    """date_added from fs (float) should not trigger false 'updated' when DB stores int."""
+    from lan_streamer.db.library import _save_episode_record
+
+    with get_session() as session:
+        series = Series(name="DateAddedShow", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+
+        existing_ep = Episode(
+            season=season,
+            name="ep1.mkv",
+            path="/existing/ep1.mkv",
+            tmdb_number=1,
+            date_added=1234567890,
+        )
+        session.add(existing_ep)
+        session.flush()
+
+        existing_by_path = {"/existing/ep1.mkv": existing_ep}
+        existing_by_number = {1: existing_ep}
+        existing_by_name = {"ep1.mkv": existing_ep}
+        stats: Dict[str, Any] = {"episodes": 0}
+
+        # Simulate os.path.getctime() returning a float with fractional part
+        episode_data = {
+            "name": "ep1.mkv",
+            "path": "/existing/ep1.mkv",
+            "tmdb_number": 1,
+            "date_added": 1234567890.1234567,
+        }
+
+        _save_episode_record(
+            session,
+            season,
+            episode_data,
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        # The float vs int comparison should NOT trigger an update
+        assert stats.get("episodes_updated", 0) == 0
+        # The stored value should be int
+        assert existing_ep.date_added == 1234567890
+
+
+def test_save_episode_record_date_added_no_false_update_on_repeat(mock_db_file) -> None:
+    """Repeated saves with same float date_added should not count as updates."""
+    from lan_streamer.db.library import _save_episode_record
+
+    with get_session() as session:
+        series = Series(name="RepeatDateShow", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+
+        existing_ep = Episode(
+            season=season,
+            name="ep1.mkv",
+            path="/repeat/ep1.mkv",
+            tmdb_number=1,
+            date_added=987654321,
+        )
+        session.add(existing_ep)
+        session.flush()
+
+        existing_by_path = {"/repeat/ep1.mkv": existing_ep}
+        existing_by_number = {1: existing_ep}
+        existing_by_name = {"ep1.mkv": existing_ep}
+        stats: Dict[str, Any] = {"episodes": 0}
+
+        # First save with float date_added
+        episode_data = {
+            "name": "ep1.mkv",
+            "path": "/repeat/ep1.mkv",
+            "tmdb_number": 1,
+            "date_added": 987654321.999,
+        }
+
+        _save_episode_record(
+            session,
+            season,
+            episode_data,
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        # The DB now stores 987654321 as int.
+        # On next scan, the compare is: int(987654321) != int(987654321.999) → False (no update)
+        assert stats.get("episodes_updated", 0) == 0
 
 
 # ---------------------------------------------------------------------------

@@ -293,6 +293,95 @@ def test_apply_metadata_match_tv_overview_and_air_date(ctrl_tv, mock_db_save) ->
     mock_save.assert_called_once()
 
 
+def test_apply_metadata_match_clears_old_placeholders_and_metadata(
+    ctrl_tv, mock_db_save
+) -> None:
+    mock_save, _ = mock_db_save
+
+    # Pre-populate episodes
+    ctrl_tv.cached_library_data["ShowA"]["seasons"] = {
+        "Season 1": {
+            "metadata": {},
+            "episodes": [
+                {
+                    "name": "S01E01.mkv",
+                    "path": "/tv/S01E01.mkv",
+                    "tmdb_name": "Old Episode Name",
+                    "tmdb_identifier": "old_ep_id",
+                    "tmdb_episode_identifier": "old_ep_id",
+                    "tmdb_number": 1,
+                    "air_date": "2020-01-01",
+                    "runtime": 30,
+                },
+                {
+                    "name": "S01E02 - Missing Placeholder",
+                    "path": None,
+                    "tmdb_name": "Old Missing Name",
+                    "tmdb_identifier": "old_missing_id",
+                    "tmdb_episode_identifier": "old_missing_id",
+                    "tmdb_number": 2,
+                    "air_date": "2020-01-08",
+                    "runtime": 30,
+                },
+            ],
+        }
+    }
+
+    match = {
+        "id": "222",
+        "name": "New Show",
+        "overview": "A great show",
+        "first_air_date": "2022-03-15",
+    }
+
+    mock_new_episodes = [
+        {
+            "id": "new_ep_1_id",
+            "episode_number": 1,
+            "name": "New Episode 1 Name",
+            "air_date": "2022-03-15",
+            "runtime": 45,
+        },
+        {
+            "id": "new_ep_2_id",
+            "episode_number": 2,
+            "name": "New Episode 2 Name",
+            "air_date": "2022-03-22",
+            "runtime": 45,
+        },
+    ]
+
+    ctrl_tv._tmdb_client.get_season_based_episode_group.return_value = None
+    ctrl_tv._tmdb_client.get_episodes.return_value = mock_new_episodes
+
+    # Mock config libraries
+    ctrl_tv._config.libraries = {
+        "TVLib": {"type": "tv", "paths": ["/tv"], "show_future_episodes": True}
+    }
+
+    ctrl_tv.apply_metadata_match("ShowA", match)
+
+    episodes = ctrl_tv.cached_library_data["ShowA"]["seasons"]["Season 1"]["episodes"]
+
+    # We should have 2 episodes (1 physical with updated metadata, 1 new placeholder matching the new show ID)
+    assert len(episodes) == 2
+
+    # First episode (physical) should have its metadata updated to the new show's metadata
+    ep1 = episodes[0]
+    assert ep1["path"] == "/tv/S01E01.mkv"
+    assert ep1["tmdb_name"] == "New Episode 1 Name"
+    assert ep1["tmdb_identifier"] == "new_ep_1_id"
+    assert ep1["air_date"] == "2022-03-15"
+    assert ep1["runtime"] == 45
+
+    # Second episode should be the new placeholder corresponding to the new matched show, NOT the old placeholder
+    ep2 = episodes[1]
+    assert ep2["path"] is None
+    assert ep2["tmdb_name"] == "New Episode 2 Name"
+    assert ep2["tmdb_identifier"] == "new_ep_2_id"
+    assert ep2["tmdb_number"] == 2
+
+
 # ---------------------------------------------------------------------------
 # _on_subtitle_merge_finished and _on_metadata_embed_finished
 # ---------------------------------------------------------------------------

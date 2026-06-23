@@ -75,39 +75,81 @@ class ScanWorker(QThread):
         self.changed_season_ids: Set[str] = set()
         self.changed_movie_ids: Set[str] = set()
         self.current_pass: int = 1
+
         self.pass1_stats: Dict[str, int] = {
+            "series_scanned": 0,
             "series_added": 0,
+            "series_updated": 0,
             "series_removed": 0,
+            "series_skipped": 0,
+            "seasons_scanned": 0,
             "seasons_added": 0,
+            "seasons_updated": 0,
             "seasons_removed": 0,
+            "seasons_skipped": 0,
+            "episodes_scanned": 0,
             "episodes_added": 0,
+            "episodes_updated": 0,
             "episodes_removed": 0,
+            "episodes_skipped": 0,
+            "movies_scanned": 0,
             "movies_added": 0,
+            "movies_updated": 0,
             "movies_removed": 0,
+            "movies_skipped": 0,
         }
         self.pass2_stats: Dict[str, int] = {
+            "series_scanned": 0,
             "series_added": 0,
+            "series_updated": 0,
             "series_removed": 0,
+            "series_skipped": 0,
+            "seasons_scanned": 0,
             "seasons_added": 0,
+            "seasons_updated": 0,
             "seasons_removed": 0,
+            "seasons_skipped": 0,
+            "episodes_scanned": 0,
             "episodes_added": 0,
+            "episodes_updated": 0,
             "episodes_removed": 0,
+            "episodes_skipped": 0,
+            "movies_scanned": 0,
             "movies_added": 0,
+            "movies_updated": 0,
             "movies_removed": 0,
+            "movies_skipped": 0,
         }
 
     def run(self) -> None:
+        import time
+
+        start_time = time.time()
         self.problems = []
         self.stats = {
+            "series_scanned": 0,
             "series_added": 0,
+            "series_updated": 0,
             "series_removed": 0,
+            "series_skipped": 0,
+            "seasons_scanned": 0,
             "seasons_added": 0,
+            "seasons_updated": 0,
             "seasons_removed": 0,
+            "seasons_skipped": 0,
+            "episodes_scanned": 0,
             "episodes_added": 0,
+            "episodes_updated": 0,
             "episodes_removed": 0,
+            "episodes_skipped": 0,
+            "movies_scanned": 0,
             "movies_added": 0,
+            "movies_updated": 0,
             "movies_removed": 0,
+            "movies_skipped": 0,
         }
+        self.pass1_series_scanned = set()
+        self.pass2_series_scanned = set()
         for key in self.pass1_stats:
             self.pass1_stats[key] = 0
             self.pass2_stats[key] = 0
@@ -160,8 +202,40 @@ class ScanWorker(QThread):
                             if self.current_pass == 1
                             else self.pass2_stats
                         )
+                        series_scanned_set = (
+                            self.pass1_series_scanned
+                            if self.current_pass == 1
+                            else self.pass2_series_scanned
+                        )
+                        if series_name not in series_scanned_set:
+                            series_scanned_set.add(series_name)
+                            target_stats["series_scanned"] += 1
+                            self.stats["series_scanned"] += 1
+                            any_changed = any(
+                                s.get("_changed", True)
+                                for s in series_data.get("seasons", {}).values()
+                            )
+                            if not any_changed:
+                                target_stats["series_skipped"] += 1
+                                self.stats["series_skipped"] += 1
+
+                        target_stats["seasons_scanned"] += 1
+                        self.stats["seasons_scanned"] += 1
+
+                        num_eps = len(season_data.get("episodes", []))
+                        target_stats["episodes_scanned"] += num_eps
+                        self.stats["episodes_scanned"] += num_eps
+
+                        if not season_data.get("_changed", True):
+                            target_stats["seasons_skipped"] += 1
+                            self.stats["seasons_skipped"] += 1
+                            target_stats["episodes_skipped"] += num_eps
+                            self.stats["episodes_skipped"] += num_eps
+
                         for key in self.stats:
-                            if key in stats:
+                            if key in stats and not (
+                                key.endswith("_scanned") or key.endswith("_skipped")
+                            ):
                                 self.stats[key] += stats[key]
                                 target_stats[key] += stats[key]
                         if season_data.get("_changed", True) and "season_id" in stats:
@@ -199,8 +273,16 @@ class ScanWorker(QThread):
                             if self.current_pass == 1
                             else self.pass2_stats
                         )
+                        target_stats["movies_scanned"] += 1
+                        self.stats["movies_scanned"] += 1
+                        if not movie_data.get("_changed", True):
+                            target_stats["movies_skipped"] += 1
+                            self.stats["movies_skipped"] += 1
+
                         for key in self.stats:
-                            if key in stats:
+                            if key in stats and not (
+                                key.endswith("_scanned") or key.endswith("_skipped")
+                            ):
                                 self.stats[key] += stats[key]
                                 target_stats[key] += stats[key]
                         if movie_data.get("_changed", True) and "movie_id" in stats:
@@ -296,6 +378,7 @@ class ScanWorker(QThread):
                 f"Finished Pass 2 (Online Metadata Resolution Scan) for library '{self.library_name}'"
             )
 
+            duration = time.time() - start_time
             logger.info(
                 "[SCAN_REPORT] ==================================================="
             )
@@ -303,99 +386,62 @@ class ScanWorker(QThread):
             logger.info(
                 "[SCAN_REPORT] ==================================================="
             )
-            logger.info("[SCAN_REPORT] PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN")
-            logger.info(
-                f"[SCAN_REPORT]   Series Added: {self.pass1_stats.get('series_added', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Series Removed: {self.pass1_stats.get('series_removed', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Seasons Added: {self.pass1_stats.get('seasons_added', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Seasons Removed: {self.pass1_stats.get('seasons_removed', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Episodes Added: {self.pass1_stats.get('episodes_added', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Episodes Removed: {self.pass1_stats.get('episodes_removed', 0)}"
-            )
-            if (
-                self.pass1_stats.get("movies_added", 0) > 0
-                or self.pass1_stats.get("movies_removed", 0) > 0
-            ):
+            logger.info(f"[SCAN_REPORT] Library Name: {self.library_name}")
+            logger.info(f"[SCAN_REPORT] Library Type: {self.library_type}")
+            logger.info(f"[SCAN_REPORT] Root Paths: {', '.join(self.root_directories)}")
+            logger.info(f"[SCAN_REPORT] Total Scan Duration: {duration:.2f} seconds")
+            if self.unavailable_directories:
                 logger.info(
-                    f"[SCAN_REPORT]   Movies Added: {self.pass1_stats.get('movies_added', 0)}"
-                )
-                logger.info(
-                    f"[SCAN_REPORT]   Movies Removed: {self.pass1_stats.get('movies_removed', 0)}"
+                    f"[SCAN_REPORT] Unavailable Root Directories: {', '.join(self.unavailable_directories)}"
                 )
             logger.info(
                 "[SCAN_REPORT] ---------------------------------------------------"
             )
-            logger.info("[SCAN_REPORT] PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN")
-            logger.info(
-                f"[SCAN_REPORT]   Series Added: {self.pass2_stats.get('series_added', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Series Removed: {self.pass2_stats.get('series_removed', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Seasons Added: {self.pass2_stats.get('seasons_added', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Seasons Removed: {self.pass2_stats.get('seasons_removed', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Episodes Added: {self.pass2_stats.get('episodes_added', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Episodes Removed: {self.pass2_stats.get('episodes_removed', 0)}"
-            )
-            if (
-                self.pass2_stats.get("movies_added", 0) > 0
-                or self.pass2_stats.get("movies_removed", 0) > 0
-            ):
+
+            def _log_stats_breakdown(label: str, stats_dict: Dict[str, int]) -> None:
+                logger.info(f"[SCAN_REPORT] {label}")
                 logger.info(
-                    f"[SCAN_REPORT]   Movies Added: {self.pass2_stats.get('movies_added', 0)}"
+                    f"[SCAN_REPORT]   Series: Scanned={stats_dict.get('series_scanned', 0)} | "
+                    f"Added={stats_dict.get('series_added', 0)} | "
+                    f"Updated={stats_dict.get('series_updated', 0)} | "
+                    f"Removed={stats_dict.get('series_removed', 0)} | "
+                    f"Skipped={stats_dict.get('series_skipped', 0)}"
                 )
                 logger.info(
-                    f"[SCAN_REPORT]   Movies Removed: {self.pass2_stats.get('movies_removed', 0)}"
+                    f"[SCAN_REPORT]   Seasons: Scanned={stats_dict.get('seasons_scanned', 0)} | "
+                    f"Added={stats_dict.get('seasons_added', 0)} | "
+                    f"Updated={stats_dict.get('seasons_updated', 0)} | "
+                    f"Removed={stats_dict.get('seasons_removed', 0)} | "
+                    f"Skipped={stats_dict.get('seasons_skipped', 0)}"
                 )
+                logger.info(
+                    f"[SCAN_REPORT]   Episodes: Scanned={stats_dict.get('episodes_scanned', 0)} | "
+                    f"Added={stats_dict.get('episodes_added', 0)} | "
+                    f"Updated={stats_dict.get('episodes_updated', 0)} | "
+                    f"Removed={stats_dict.get('episodes_removed', 0)} | "
+                    f"Skipped={stats_dict.get('episodes_skipped', 0)}"
+                )
+                logger.info(
+                    f"[SCAN_REPORT]   Movies: Scanned={stats_dict.get('movies_scanned', 0)} | "
+                    f"Added={stats_dict.get('movies_added', 0)} | "
+                    f"Updated={stats_dict.get('movies_updated', 0)} | "
+                    f"Removed={stats_dict.get('movies_removed', 0)} | "
+                    f"Skipped={stats_dict.get('movies_skipped', 0)}"
+                )
+
+            _log_stats_breakdown(
+                "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN", self.pass1_stats
+            )
             logger.info(
                 "[SCAN_REPORT] ---------------------------------------------------"
             )
-            logger.info("[SCAN_REPORT] TOTAL ACCUMULATED RUN STATS")
-            logger.info(
-                f"[SCAN_REPORT]   Series Added: {self.stats.get('series_added', 0)}"
+            _log_stats_breakdown(
+                "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN", self.pass2_stats
             )
             logger.info(
-                f"[SCAN_REPORT]   Series Removed: {self.stats.get('series_removed', 0)}"
+                "[SCAN_REPORT] ---------------------------------------------------"
             )
-            logger.info(
-                f"[SCAN_REPORT]   Seasons Added: {self.stats.get('seasons_added', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Seasons Removed: {self.stats.get('seasons_removed', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Episodes Added: {self.stats.get('episodes_added', 0)}"
-            )
-            logger.info(
-                f"[SCAN_REPORT]   Episodes Removed: {self.stats.get('episodes_removed', 0)}"
-            )
-            if (
-                self.stats.get("movies_added", 0) > 0
-                or self.stats.get("movies_removed", 0) > 0
-            ):
-                logger.info(
-                    f"[SCAN_REPORT]   Movies Added: {self.stats.get('movies_added', 0)}"
-                )
-                logger.info(
-                    f"[SCAN_REPORT]   Movies Removed: {self.stats.get('movies_removed', 0)}"
-                )
+            _log_stats_breakdown("TOTAL ACCUMULATED RUN STATS", self.stats)
             logger.info(
                 "[SCAN_REPORT] ==================================================="
             )

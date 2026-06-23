@@ -269,6 +269,70 @@ def test_movie_details_save_metadata(mock_movie_controller, qtbot):
             assert movie["locked_metadata"] is True
 
 
+def test_movie_details_multiple_versions(mock_movie_controller, qtbot):
+    # Setup controller with multiple versions
+    mock_movie_controller.cached_library_data["Test Movie"]["versions"] = [
+        {
+            "path": "/media/Movies/Test Movie 1080p.mkv",
+            "video_codec": "h264",
+            "resolution": "1920x1080",
+            "bit_rate": 5000000,
+            "audio_tracks": [
+                {"index": 1, "codec": "ac3", "language": "en", "title": ""}
+            ],
+            "subtitle_tracks": [],
+        },
+        {
+            "path": "/media/Movies/Test Movie 2160p.mkv",
+            "video_codec": "hevc",
+            "resolution": "3840x2160",
+            "bit_rate": 15000000,
+            "audio_tracks": [
+                {"index": 1, "codec": "truehd", "language": "en", "title": ""}
+            ],
+            "subtitle_tracks": [],
+        },
+    ]
+    mock_movie_controller.cached_library_data["Test Movie"]["default_path"] = (
+        "/media/Movies/Test Movie 1080p.mkv"
+    )
+
+    with patch("lan_streamer.scanner.get_detailed_file_info"):
+        dialog = MovieDetailsDialog(
+            "Test Movie", "/media/Movies/Test Movie 1080p.mkv", mock_movie_controller
+        )
+        qtbot.addWidget(dialog)
+
+        # Check default selection
+        assert dialog.default_file_combo.count() == 2
+        assert (
+            dialog.default_file_combo.currentData()
+            == "/media/Movies/Test Movie 1080p.mkv"
+        )
+        assert dialog.resolution_label.text() == "1920x1080"
+        assert dialog.codec_label.text() == "h264"
+
+        # Switch version in UI
+        dialog.default_file_combo.setCurrentIndex(1)
+        assert (
+            dialog.default_file_combo.currentData()
+            == "/media/Movies/Test Movie 2160p.mkv"
+        )
+        assert dialog.resolution_label.text() == "3840x2160"
+        assert dialog.codec_label.text() == "hevc"
+
+        # Save and verify persistence of new version details
+        with patch("lan_streamer.db.save_library") as mock_save:
+            dialog._on_save_clicked()
+            mock_save.assert_called_once()
+
+            movie = mock_movie_controller.cached_library_data["Test Movie"]
+            assert movie["default_path"] == "/media/Movies/Test Movie 2160p.mkv"
+            assert movie["path"] == "/media/Movies/Test Movie 2160p.mkv"
+            assert movie["video_codec"] == "hevc"
+            assert movie["resolution"] == "3840x2160"
+
+
 def test_movie_details_embed_metadata_trigger(mock_movie_controller, qtbot):
     with patch("lan_streamer.scanner.get_detailed_file_info") as mock_info:
         mock_info.return_value = {

@@ -448,10 +448,37 @@ def test_scan_worker_stats_reporting() -> None:
         log_infos = [call.args[0] for call in mock_log.info.call_args_list]
         report_logs = [log for log in log_infos if "[SCAN_REPORT]" in log]
         assert len(report_logs) > 0
-        assert any("Series Added: 2" in log for log in report_logs)
-        assert any("Seasons Added: 2" in log for log in report_logs)
-        assert any("Episodes Added: 10" in log for log in report_logs)
-        assert any("Movies Added: 4" in log for log in report_logs)
+        assert any("Series: Scanned=2 | Added=2" in log for log in report_logs)
+        assert any("Seasons: Scanned=2 | Added=2" in log for log in report_logs)
+        assert any("Episodes: Scanned=0 | Added=10" in log for log in report_logs)
+        assert any("Movies: Scanned=2 | Added=4" in log for log in report_logs)
+
+        # Verify each entity type appears in ALL three sections
+        section_entities: dict[str, dict[str, int]] = {
+            s: {"Series": 0, "Seasons": 0, "Episodes": 0, "Movies": 0}
+            for s in ("PASS 1", "PASS 2", "TOTAL")
+        }
+        current_section: str | None = None
+        for log in report_logs:
+            if "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN" in log:
+                current_section = "PASS 1"
+            elif "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN" in log:
+                current_section = "PASS 2"
+            elif "TOTAL ACCUMULATED RUN STATS" in log:
+                current_section = "TOTAL"
+            elif "Series: Scanned" in log and current_section:
+                section_entities[current_section]["Series"] += 1
+            elif "Seasons: Scanned" in log and current_section:
+                section_entities[current_section]["Seasons"] += 1
+            elif "Episodes: Scanned" in log and current_section:
+                section_entities[current_section]["Episodes"] += 1
+            elif "Movies: Scanned" in log and current_section:
+                section_entities[current_section]["Movies"] += 1
+        for section in ("PASS 1", "PASS 2", "TOTAL"):
+            for entity in ("Series", "Seasons", "Episodes", "Movies"):
+                assert section_entities[section][entity] == 1, (
+                    f"{section} has {section_entities[section][entity]} {entity} lines (expected 1)"
+                )
 
 
 def test_scan_all_libraries_worker_stats_reporting() -> None:
@@ -505,11 +532,18 @@ def test_scan_all_libraries_worker_stats_reporting() -> None:
         log_infos = [call.args[0] for call in mock_log.info.call_args_list]
         report_logs = [log for log in log_infos if "[SCAN_REPORT]" in log]
         assert len(report_logs) > 0
-        assert any("Series Added: 4" in log for log in report_logs)
-        assert any("Seasons Added: 6" in log for log in report_logs)
-        assert any("Episodes Added: 24" in log for log in report_logs)
-        assert any("Series Removed: 2" in log for log in report_logs)
-        assert any("Seasons Removed: 2" in log for log in report_logs)
+        assert any(
+            "Series: Scanned=2 | Added=4 | Updated=0 | Removed=2" in log
+            for log in report_logs
+        )
+        assert any(
+            "Seasons: Scanned=2 | Added=6 | Updated=0 | Removed=2" in log
+            for log in report_logs
+        )
+        assert any(
+            "Episodes: Scanned=0 | Added=24 | Updated=0 | Removed=0" in log
+            for log in report_logs
+        )
 
 
 def test_scan_worker_formats_multiline_database_error_cleanly() -> None:
@@ -569,3 +603,218 @@ def test_scan_worker_formats_multiline_database_error_cleanly() -> None:
             "[SCAN_ISSUE] Type=Database Write Failure" in w for w in log_warnings
         )
         assert not any("[SQL:" in w for w in log_warnings)
+
+
+def test_detailed_scan_report_counts_validation() -> None:
+    from lan_streamer.scanner import LibraryDict
+
+    lib = LibraryDict({"Cosmos": {}})
+    lib.unavailable_directories = []
+
+    # Mock discover tree impl and scan_directories
+    with (
+        patch(
+            "lan_streamer.backend.scan_worker_single._discover_single_library_tree_impl",
+            return_value={},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
+        ) as mock_scan,
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_season_data"
+        ) as mock_save_season,
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_movie_data"
+        ) as mock_save_movie,
+        patch("lan_streamer.backend.scan_worker_single.logger") as mock_log,
+    ):
+        # Stats returned by DB calls:
+        # Pass 1: 1 series added, 1 season added, 5 episodes added, 1 episode updated.
+        # Pass 2: 1 series updated, 1 season updated, 3 episodes updated.
+        # Movies: Pass 1: 1 movie added. Pass 2: 1 movie updated.
+        mock_save_season.side_effect = [
+            # Pass 1 callback
+            {
+                "series_added": 1,
+                "seasons_added": 1,
+                "episodes_added": 5,
+                "episodes_updated": 1,
+            },
+            # Pass 2 callback
+            {
+                "series_updated": 1,
+                "seasons_updated": 1,
+                "episodes_updated": 3,
+            },
+        ]
+        mock_save_movie.side_effect = [
+            # Pass 1 callback
+            {"movies_added": 1},
+            # Pass 2 callback
+            {"movies_updated": 1},
+        ]
+
+        def fake_scan(*args, **kwargs):
+            # Pass 1 will have changed=True
+            # Pass 2 will have changed=False (skipped)
+            offline = kwargs.get("offline", True)
+            season_cb = kwargs.get("season_callback")
+            movie_cb = kwargs.get("movie_callback")
+
+            if season_cb:
+                # Season 1 has 6 episodes
+                season_data = {
+                    "episodes": [{"path": f"ep{i}.mp4"} for i in range(6)],
+                    "_changed": offline,  # Changed in Pass 1, unchanged (skipped) in Pass 2
+                }
+                season_cb(
+                    "Cosmos",
+                    {"seasons": {"Season 1": season_data}},
+                    "Season 1",
+                    season_data,
+                )
+
+            if movie_cb:
+                movie_data = {
+                    "path": "movie.mp4",
+                    "_changed": offline,
+                }
+                movie_cb("Inception", movie_data)
+            return lib
+
+        mock_scan.side_effect = fake_scan
+
+        worker = ScanWorker(["/path"], "tv", {}, library_name="TV_Lib")
+        worker.run()
+
+        # Check total accumulated stats
+        assert worker.stats["series_scanned"] == 2
+        assert worker.stats["series_added"] == 1
+        assert worker.stats["series_updated"] == 1
+        assert worker.stats["series_skipped"] == 1
+
+        assert worker.stats["seasons_scanned"] == 2
+        assert worker.stats["seasons_added"] == 1
+        assert worker.stats["seasons_updated"] == 1
+        assert worker.stats["seasons_skipped"] == 1
+
+        assert worker.stats["episodes_scanned"] == 12
+        assert worker.stats["episodes_added"] == 5
+        assert worker.stats["episodes_updated"] == 4
+        assert worker.stats["episodes_skipped"] == 6
+
+        assert worker.stats["movies_scanned"] == 2
+        assert worker.stats["movies_added"] == 1
+        assert worker.stats["movies_updated"] == 1
+        assert worker.stats["movies_skipped"] == 1
+
+        # Check Pass 1 stats
+        p1 = worker.pass1_stats
+        assert p1["series_scanned"] == 1
+        assert p1["series_added"] == 1
+        assert p1["series_skipped"] == 0
+        assert p1["seasons_scanned"] == 1
+        assert p1["seasons_added"] == 1
+        assert p1["seasons_skipped"] == 0
+        assert p1["episodes_scanned"] == 6
+        assert p1["episodes_added"] == 5
+        assert p1["episodes_updated"] == 1
+        assert p1["episodes_skipped"] == 0
+        assert p1["movies_scanned"] == 1
+        assert p1["movies_added"] == 1
+        assert p1["movies_skipped"] == 0
+
+        # Check Pass 2 stats
+        p2 = worker.pass2_stats
+        assert p2["series_scanned"] == 1
+        assert p2["series_added"] == 0
+        assert p2["series_updated"] == 1
+        assert p2["series_skipped"] == 1
+        assert p2["seasons_scanned"] == 1
+        assert p2["seasons_added"] == 0
+        assert p2["seasons_updated"] == 1
+        assert p2["seasons_skipped"] == 1
+        assert p2["episodes_scanned"] == 6
+        assert p2["episodes_added"] == 0
+        assert p2["episodes_updated"] == 3
+        assert p2["episodes_skipped"] == 6
+        assert p2["movies_scanned"] == 1
+        assert p2["movies_added"] == 0
+        assert p2["movies_updated"] == 1
+        assert p2["movies_skipped"] == 1
+
+        # Verify logger messages
+        log_infos = [call.args[0] for call in mock_log.info.call_args_list]
+        report_logs = [log for log in log_infos if "[SCAN_REPORT]" in log]
+        assert len(report_logs) > 0
+        assert any(
+            "Series: Scanned=2 | Added=1 | Updated=1 | Removed=0 | Skipped=1" in log
+            for log in report_logs
+        )
+
+
+def test_scan_worker_db_stats_no_double_counting() -> None:
+    from lan_streamer.scanner import LibraryDict
+
+    lib = LibraryDict({"Cosmos": {}})
+    lib.unavailable_directories = []
+
+    with (
+        patch(
+            "lan_streamer.backend.scan_worker_single._discover_single_library_tree_impl",
+            return_value={},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
+        ) as mock_scan,
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_season_data"
+        ) as mock_save_season,
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_movie_data"
+        ) as mock_save_movie,
+        patch("lan_streamer.backend.scan_worker_single.logger"),
+    ):
+        mock_save_season.return_value = {
+            "series_scanned": 1,
+            "seasons_scanned": 1,
+            "episodes_scanned": 6,
+            "series_added": 1,
+            "seasons_added": 1,
+            "episodes_added": 5,
+        }
+        mock_save_movie.return_value = {
+            "movies_scanned": 1,
+            "movies_added": 1,
+        }
+
+        def fake_scan(*args, **kwargs):
+            season_cb = kwargs.get("season_callback")
+            movie_cb = kwargs.get("movie_callback")
+
+            if season_cb:
+                season_data = {
+                    "episodes": [{"path": f"ep{i}.mp4"} for i in range(6)],
+                    "_changed": True,
+                }
+                season_cb(
+                    "Cosmos",
+                    {"seasons": {"Season 1": season_data}},
+                    "Season 1",
+                    season_data,
+                )
+
+            if movie_cb:
+                movie_cb("Inception", {"path": "movie.mp4", "_changed": True})
+            return lib
+
+        mock_scan.side_effect = fake_scan
+
+        worker = ScanWorker(["/path"], "tv", {}, library_name="TV_Lib")
+        worker.run()
+
+        # Check total accumulated stats (should NOT double count despite DB returning scanned/skipped keys)
+        assert worker.stats["episodes_scanned"] == 12
+        assert worker.stats["series_scanned"] == 2
+        assert worker.stats["seasons_scanned"] == 2
+        assert worker.stats["movies_scanned"] == 2
