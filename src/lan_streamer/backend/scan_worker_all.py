@@ -137,6 +137,9 @@ class ScanAllLibrariesWorker(QThread):
         return tree
 
     def run(self) -> None:
+        import time
+
+        start_time = time.time()
         self.problems = []
         self.stats = {
             "series_scanned": 0,
@@ -285,7 +288,10 @@ class ScanAllLibrariesWorker(QThread):
                                     self.stats["episodes_skipped"] += num_eps
 
                                 for key in self.stats:
-                                    if key in stats:
+                                    if key in stats and not (
+                                        key.endswith("_scanned")
+                                        or key.endswith("_skipped")
+                                    ):
                                         self.stats[key] += stats[key]
                                         target_stats[key] += stats[key]
                                 if (
@@ -337,7 +343,10 @@ class ScanAllLibrariesWorker(QThread):
                                     self.stats["movies_skipped"] += 1
 
                                 for key in self.stats:
-                                    if key in stats:
+                                    if key in stats and not (
+                                        key.endswith("_scanned")
+                                        or key.endswith("_skipped")
+                                    ):
                                         self.stats[key] += stats[key]
                                         target_stats[key] += stats[key]
                                 if (
@@ -379,7 +388,10 @@ class ScanAllLibrariesWorker(QThread):
                                     else self.pass2_stats
                                 )
                                 for key in self.stats:
-                                    if key in stats:
+                                    if key in stats and not (
+                                        key.endswith("_scanned")
+                                        or key.endswith("_skipped")
+                                    ):
                                         self.stats[key] += stats[key]
                                         target_stats[key] += stats[key]
                         except Exception as e:
@@ -568,7 +580,10 @@ class ScanAllLibrariesWorker(QThread):
                                     self.stats["episodes_skipped"] += num_eps
 
                                 for key in self.stats:
-                                    if key in stats:
+                                    if key in stats and not (
+                                        key.endswith("_scanned")
+                                        or key.endswith("_skipped")
+                                    ):
                                         self.stats[key] += stats[key]
                                         target_stats[key] += stats[key]
                                 if (
@@ -620,7 +635,10 @@ class ScanAllLibrariesWorker(QThread):
                                     self.stats["movies_skipped"] += 1
 
                                 for key in self.stats:
-                                    if key in stats:
+                                    if key in stats and not (
+                                        key.endswith("_scanned")
+                                        or key.endswith("_skipped")
+                                    ):
                                         self.stats[key] += stats[key]
                                         target_stats[key] += stats[key]
                                 if (
@@ -662,7 +680,10 @@ class ScanAllLibrariesWorker(QThread):
                                     else self.pass2_stats
                                 )
                                 for key in self.stats:
-                                    if key in stats:
+                                    if key in stats and not (
+                                        key.endswith("_scanned")
+                                        or key.endswith("_skipped")
+                                    ):
                                         self.stats[key] += stats[key]
                                         target_stats[key] += stats[key]
                         except Exception as e:
@@ -769,12 +790,27 @@ class ScanAllLibrariesWorker(QThread):
                         library_name, completed_count, total_count
                     )
 
+            duration = time.time() - start_time
             logger.info(
                 "[SCAN_REPORT] ==================================================="
             )
             logger.info("[SCAN_REPORT]               SCAN RUN STATS REPORT")
             logger.info(
                 "[SCAN_REPORT] ==================================================="
+            )
+            logger.info(f"[SCAN_REPORT] Total Scan Duration: {duration:.2f} seconds")
+            logger.info(f"[SCAN_REPORT] Libraries Scanned: {len(libraries_dictionary)}")
+            for lib_name, lib_cfg in libraries_dictionary.items():
+                paths_str = ", ".join(lib_cfg.get("paths", []))
+                logger.info(
+                    f"[SCAN_REPORT]   - {lib_name} ({lib_cfg.get('type', 'tv')}): Paths=[{paths_str}]"
+                )
+            if self.unavailable_directories:
+                logger.info(
+                    f"[SCAN_REPORT] Unavailable Root Directories: {', '.join(self.unavailable_directories)}"
+                )
+            logger.info(
+                "[SCAN_REPORT] ---------------------------------------------------"
             )
 
             def _log_stats_breakdown(label: str, stats_dict: Dict[str, int]) -> None:

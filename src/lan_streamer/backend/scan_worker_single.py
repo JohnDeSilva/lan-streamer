@@ -122,6 +122,9 @@ class ScanWorker(QThread):
         }
 
     def run(self) -> None:
+        import time
+
+        start_time = time.time()
         self.problems = []
         self.stats = {
             "series_scanned": 0,
@@ -230,7 +233,9 @@ class ScanWorker(QThread):
                             self.stats["episodes_skipped"] += num_eps
 
                         for key in self.stats:
-                            if key in stats:
+                            if key in stats and not (
+                                key.endswith("_scanned") or key.endswith("_skipped")
+                            ):
                                 self.stats[key] += stats[key]
                                 target_stats[key] += stats[key]
                         if season_data.get("_changed", True) and "season_id" in stats:
@@ -275,7 +280,9 @@ class ScanWorker(QThread):
                             self.stats["movies_skipped"] += 1
 
                         for key in self.stats:
-                            if key in stats:
+                            if key in stats and not (
+                                key.endswith("_scanned") or key.endswith("_skipped")
+                            ):
                                 self.stats[key] += stats[key]
                                 target_stats[key] += stats[key]
                         if movie_data.get("_changed", True) and "movie_id" in stats:
@@ -371,12 +378,24 @@ class ScanWorker(QThread):
                 f"Finished Pass 2 (Online Metadata Resolution Scan) for library '{self.library_name}'"
             )
 
+            duration = time.time() - start_time
             logger.info(
                 "[SCAN_REPORT] ==================================================="
             )
             logger.info("[SCAN_REPORT]               SCAN RUN STATS REPORT")
             logger.info(
                 "[SCAN_REPORT] ==================================================="
+            )
+            logger.info(f"[SCAN_REPORT] Library Name: {self.library_name}")
+            logger.info(f"[SCAN_REPORT] Library Type: {self.library_type}")
+            logger.info(f"[SCAN_REPORT] Root Paths: {', '.join(self.root_directories)}")
+            logger.info(f"[SCAN_REPORT] Total Scan Duration: {duration:.2f} seconds")
+            if self.unavailable_directories:
+                logger.info(
+                    f"[SCAN_REPORT] Unavailable Root Directories: {', '.join(self.unavailable_directories)}"
+                )
+            logger.info(
+                "[SCAN_REPORT] ---------------------------------------------------"
             )
 
             def _log_stats_breakdown(label: str, stats_dict: Dict[str, int]) -> None:
