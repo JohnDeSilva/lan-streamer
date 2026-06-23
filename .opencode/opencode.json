@@ -10,6 +10,13 @@
         "baseURL": "http://localhost:11434/v1"
       },
       "models": {
+        "qwen3.5:27b-32k": {
+          "tools": true,
+          "_launch": true,
+          "parameters": {
+            "temperature": 0.5
+          }
+        },
         "gemma4:e4b-32k": {
           "tools": true,
           "_launch": true,
