@@ -958,6 +958,8 @@ class Controller(QObject):
             if new_tmdb_identifier:
                 # Remove any previous metadata records (placeholders with path=None)
                 # and clear old TMDB fields from remaining episodes before redownloading
+                total_placeholders_removed = 0
+                total_episodes_cleared = 0
                 for season_name, season_data in list(
                     series_record.get("seasons", {}).items()
                 ):
@@ -975,7 +977,16 @@ class Controller(QObject):
                             ]:
                                 ep.pop(key, None)
                             filtered_episodes.append(ep)
+                            total_episodes_cleared += 1
+                        else:
+                            total_placeholders_removed += 1
                     season_data["episodes"] = filtered_episodes
+
+                logger.info(
+                    f"Cleared manual match metadata for '{series_name}': "
+                    f"removed {total_placeholders_removed} placeholder episode(s), "
+                    f"cleared old TMDB metadata from {total_episodes_cleared} local episode(s)."
+                )
 
                 self._sync_tmdb_episodes_for_series(series_record, new_tmdb_identifier)
 
