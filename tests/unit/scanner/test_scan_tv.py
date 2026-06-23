@@ -128,8 +128,8 @@ def test_discover_seasons_metadata_only(tmp_path: Path) -> None:
 
     existing = {
         "seasons": {
-            "Season 1": {"episodes": []},
-            "Season 2": {"episodes": []},
+            "Season 1": {"episodes": [], "_changed": True},
+            "Season 2": {"episodes": [], "_changed": False},
         }
     }
     result = _discover_seasons_to_process(
@@ -139,9 +139,31 @@ def test_discover_seasons_metadata_only(tmp_path: Path) -> None:
         offline=False,
     )
     assert len(result) == 2
-    for name, changed, existing_season in result:
-        assert changed is True
-        assert existing_season is not None
+    season_map = {name: (changed, data) for name, changed, data in result}
+    assert season_map["Season 1"][0] is True
+    assert season_map["Season 2"][0] is False  # _changed propagated from existing
+    assert season_map["Season 1"][1] is not None
+    assert season_map["Season 2"][1] is not None
+
+
+def test_discover_seasons_metadata_only_missing_changed_flag(tmp_path: Path) -> None:
+    """When existing season lacks a _changed flag, metadata_only defaults to True."""
+    series_dir = tmp_path / "Show"
+    series_dir.mkdir()
+
+    existing = {
+        "seasons": {
+            "Season 1": {"episodes": []},
+        }
+    }
+    result = _discover_seasons_to_process(
+        series_dir,
+        existing_series_data=existing,
+        metadata_only=True,
+        offline=False,
+    )
+    assert len(result) == 1
+    assert result[0][1] is True  # Defaults to True when _changed is missing
 
 
 def test_discover_seasons_skips_dot_dirs(tmp_path: Path) -> None:
