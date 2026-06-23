@@ -11,8 +11,8 @@ from PySide6.QtWidgets import (
     QFrame,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt, Slot, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, Slot, QPoint, Signal
+from PySide6.QtGui import QFont, QIcon, QPainter, QPolygon, QColor
 from lan_streamer.ui_views.proxy import QPixmap
 from lan_streamer.system.config import config
 from lan_streamer.ui_views.controller import Controller
@@ -82,6 +82,12 @@ class MovieDetailView(QWidget):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         info_layout.addWidget(self.overview_label)
+
+        self.trailers_button: QPushButton = QPushButton("Trailers")
+        self.trailers_button.setObjectName("trailersButton")
+        self.trailers_button.setIcon(self._create_youtube_icon())
+        self.trailers_button.clicked.connect(self._on_trailers_clicked)
+        info_layout.addWidget(self.trailers_button)
 
         # Actions Panel
         actions_layout = QHBoxLayout()
@@ -177,6 +183,44 @@ class MovieDetailView(QWidget):
             )
             self.poster_label.clear()
             self.poster_label.setText("No Poster")
+
+    def _create_youtube_icon(self) -> QIcon:
+        """Generates a custom YouTube icon using QPainter."""
+        from PySide6.QtGui import QPixmap
+
+        youtube_pixmap: QPixmap = QPixmap(24, 24)
+        youtube_pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter_instance: QPainter = QPainter(youtube_pixmap)
+        painter_instance.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Red YouTube background rounded rect
+        painter_instance.setBrush(QColor("#FF0000"))
+        painter_instance.setPen(Qt.PenStyle.NoPen)
+        painter_instance.drawRoundedRect(2, 5, 20, 14, 4, 4)
+
+        # White play button triangle
+        painter_instance.setBrush(QColor("#FFFFFF"))
+        triangle_polygon: QPolygon = QPolygon(
+            [QPoint(10, 9), QPoint(10, 15), QPoint(15, 12)]
+        )
+        painter_instance.drawPolygon(triangle_polygon)
+        painter_instance.end()
+
+        return QIcon(youtube_pixmap)
+
+    @Slot()
+    def _on_trailers_clicked(self) -> None:
+        display_title = self.title_label.text()
+        if not display_title:
+            return
+        import urllib.parse
+        import webbrowser
+
+        search_query: str = f"{display_title} trailer"
+        trailer_url: str = f"https://www.youtube.com/results?search_query={urllib.parse.quote(search_query)}"
+        logger.info(f"Opening YouTube search for trailer: '{search_query}'")
+        webbrowser.open(trailer_url)
 
     @Slot()
     def on_library_loaded(self) -> None:

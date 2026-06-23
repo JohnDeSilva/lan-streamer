@@ -42,6 +42,13 @@ def test_movie_detail_view(qtbot: Any) -> None:
     view.play_button.click()
     assert emitted_paths == ["/movies/Avatar/video.mkv"]
 
+    # Test trailers button click
+    with patch("webbrowser.open") as mock_open:
+        view.trailers_button.click()
+        mock_open.assert_called_once_with(
+            "https://www.youtube.com/results?search_query=Avatar%20trailer"
+        )
+
     # Test No Poster branch
     view.populate_movie_details("Non Existent Movie")
     assert view.poster_label.text() == "No Poster"
