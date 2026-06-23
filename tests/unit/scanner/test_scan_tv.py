@@ -411,6 +411,59 @@ def test_group_and_resolve_preserves_existing_versions() -> None:
     assert result[0]["versions"][0]["resolution"] == "1080p"
 
 
+def test_group_and_resolve_rescans_stubs() -> None:
+    """Stub versions should be re-scanned online even if force_refresh is False."""
+    scanned = [{"name": "S01E01", "path": "/show/S01E01.mkv", "tmdb_number": 1}]
+    existing_eps = [
+        {
+            "name": "S01E01",
+            "tmdb_number": 1,
+            "versions": [
+                {
+                    "path": "/show/S01E01.mkv",
+                    "resolution": "Unknown",
+                    "video_codec": "Unknown",
+                }
+            ],
+            "default_path": "/show/S01E01.mkv",
+        }
+    ]
+
+    with (
+        patch(
+            "lan_streamer.scanner.scan_tv.get_detailed_file_info",
+            return_value={
+                "path": "/show/S01E01.mkv",
+                "resolution": "1080p",
+                "video_codec": "hevc",
+            },
+        ) as mock_detailed,
+        patch(
+            "lan_streamer.scanner.scan_tv.get_stub_file_info",
+        ) as mock_stub,
+        patch(
+            "lan_streamer.scanner.versioning.choose_active_version",
+            return_value={
+                "path": "/show/S01E01.mkv",
+                "resolution": "1080p",
+                "video_codec": "hevc",
+            },
+        ),
+    ):
+        result = _group_and_resolve_episode_versions(
+            scanned_episodes=scanned,
+            existing_season_episodes=existing_eps,
+            season_offline=False,
+            force_refresh=False,
+            metadata_only=False,
+        )
+    assert len(result) == 1
+    assert result[0]["versions"][0]["resolution"] == "1080p"
+    assert result[0]["versions"][0]["video_codec"] == "hevc"
+    mock_detailed.assert_called_once_with("/show/S01E01.mkv")
+    mock_stub.assert_not_called()
+
+
 def test_group_and_resolve_fallback_to_name_key() -> None:
     """Episode without tmdb_number should fall back to parsed number or name."""
     scanned = [{"name": "Show.S01E05.mkv", "path": "/show/ep.mkv", "tmdb_number": None}]
