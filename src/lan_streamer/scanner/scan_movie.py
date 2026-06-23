@@ -102,7 +102,18 @@ def _scan_movie_files(
                     if ev.get("path") == path_str:
                         existing_v = ev
                         break
+            use_existing = False
             if existing_v and not force_refresh:
+                # If we are online, but the existing version was only a stub (missing technical info),
+                # we should re-scan it to fetch full media details.
+                is_stub = (
+                    existing_v.get("video_codec") == "Unknown"
+                    or existing_v.get("resolution") == "Unknown"
+                )
+                if not (is_stub and not movie_offline):
+                    use_existing = True
+
+            if use_existing:
                 versions.append(existing_v)
             else:
                 if movie_offline:
