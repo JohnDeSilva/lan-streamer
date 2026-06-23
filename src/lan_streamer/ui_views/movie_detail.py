@@ -83,12 +83,6 @@ class MovieDetailView(QWidget):
         )
         info_layout.addWidget(self.overview_label)
 
-        self.trailers_button: QPushButton = QPushButton("Trailers")
-        self.trailers_button.setObjectName("trailersButton")
-        self.trailers_button.setIcon(self._create_youtube_icon())
-        self.trailers_button.clicked.connect(self._on_trailers_clicked)
-        info_layout.addWidget(self.trailers_button)
-
         # Actions Panel
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(10)
@@ -107,8 +101,15 @@ class MovieDetailView(QWidget):
         )
         actions_layout.addWidget(movie_details_button)
 
-        actions_layout.addStretch()
         info_layout.addLayout(actions_layout)
+
+        self.trailers_button: QPushButton = QPushButton("Trailers")
+        self.trailers_button.setObjectName("trailersButton")
+        self.trailers_button.setIcon(self._create_youtube_icon())
+        self.trailers_button.clicked.connect(self._on_trailers_clicked)
+        actions_layout.addWidget(self.trailers_button)
+
+        actions_layout.addStretch()
 
         header_layout.addLayout(info_layout)
         main_layout.addLayout(header_layout)

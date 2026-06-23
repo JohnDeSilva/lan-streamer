@@ -84,6 +84,12 @@ class SeriesDetailView(QWidget):
         self.poster_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left_layout.addWidget(self.poster_label)
 
+        self.trailers_button: QPushButton = QPushButton("Trailers")
+        self.trailers_button.setObjectName("trailersButton")
+        self.trailers_button.setIcon(self._create_youtube_icon())
+        self.trailers_button.clicked.connect(self._on_trailers_clicked)
+        left_layout.addWidget(self.trailers_button)
+
         self.play_next_button.setObjectName("playEpisodeButton")
         self.play_next_button.clicked.connect(self._on_play_next_clicked)
         left_layout.addWidget(self.play_next_button)
@@ -96,12 +102,6 @@ class SeriesDetailView(QWidget):
         self.overview_label.setWordWrap(True)
         self.overview_label.setStyleSheet("color: #94A3B8;")
         left_layout.addWidget(self.overview_label)
-
-        self.trailers_button: QPushButton = QPushButton("Trailers")
-        self.trailers_button.setObjectName("trailersButton")
-        self.trailers_button.setIcon(self._create_youtube_icon())
-        self.trailers_button.clicked.connect(self._on_trailers_clicked)
-        left_layout.addWidget(self.trailers_button)
 
         # Actions Panel
         actions_layout = QHBoxLayout()
