@@ -724,3 +724,70 @@ def test_detailed_scan_report_counts_validation() -> None:
             "Series: Scanned=2 | Added=1 | Updated=1 | Removed=0 | Skipped=1" in log
             for log in report_logs
         )
+
+
+def test_scan_worker_db_stats_no_double_counting() -> None:
+    from lan_streamer.scanner import LibraryDict
+
+    lib = LibraryDict({"Cosmos": {}})
+    lib.unavailable_directories = []
+
+    with (
+        patch(
+            "lan_streamer.backend.scan_worker_single._discover_single_library_tree_impl",
+            return_value={},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
+        ) as mock_scan,
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_season_data"
+        ) as mock_save_season,
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_movie_data"
+        ) as mock_save_movie,
+        patch("lan_streamer.backend.scan_worker_single.logger"),
+    ):
+        mock_save_season.return_value = {
+            "series_scanned": 1,
+            "seasons_scanned": 1,
+            "episodes_scanned": 6,
+            "series_added": 1,
+            "seasons_added": 1,
+            "episodes_added": 5,
+        }
+        mock_save_movie.return_value = {
+            "movies_scanned": 1,
+            "movies_added": 1,
+        }
+
+        def fake_scan(*args, **kwargs):
+            season_cb = kwargs.get("season_callback")
+            movie_cb = kwargs.get("movie_callback")
+
+            if season_cb:
+                season_data = {
+                    "episodes": [{"path": f"ep{i}.mp4"} for i in range(6)],
+                    "_changed": True,
+                }
+                season_cb(
+                    "Cosmos",
+                    {"seasons": {"Season 1": season_data}},
+                    "Season 1",
+                    season_data,
+                )
+
+            if movie_cb:
+                movie_cb("Inception", {"path": "movie.mp4", "_changed": True})
+            return lib
+
+        mock_scan.side_effect = fake_scan
+
+        worker = ScanWorker(["/path"], "tv", {}, library_name="TV_Lib")
+        worker.run()
+
+        # Check total accumulated stats (should NOT double count despite DB returning scanned/skipped keys)
+        assert worker.stats["episodes_scanned"] == 12
+        assert worker.stats["series_scanned"] == 2
+        assert worker.stats["seasons_scanned"] == 2
+        assert worker.stats["movies_scanned"] == 2
