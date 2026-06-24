@@ -245,6 +245,14 @@ class LibraryGridView(QWidget):
         elif event == "finish_folder":
             self.scan_progress_bar.mark_folder_done(root, folder)
 
+        elif event == "finish_library":
+            library_name: str = payload.get("library", "")
+            self.scan_progress_bar.mark_library_done(library_name)
+
+        elif event == "fail_library":
+            library_name: str = payload.get("library", "")
+            self.scan_progress_bar.mark_library_failed(library_name)
+
         elif event == "start_offline_scan":
             self.scan_progress_bar.set_current_pass(1)
             self.scan_status_label.setText("Starting offline scan (Pass 1 of 3)...")

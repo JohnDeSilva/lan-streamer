@@ -394,20 +394,18 @@ def test_subtitle_merge_worker_direct():
 
 
 def test_file_property_extraction_worker_skips_and_batches() -> None:
-    """Verify that FilePropertyExtractionWorker skips fully populated files and groups/batches database writes per season."""
+    """Verify that FilePropertyExtractionWorker groups/batches database writes per season."""
     with (
         patch("lan_streamer.db.get_items_missing_runtime") as mock_get_items,
-        patch("lan_streamer.db.has_tech_and_metadata") as mock_has_tech,
         patch(
             "lan_streamer.backend.metadata_worker_property.get_detailed_file_info"
         ) as mock_info,
         patch("lan_streamer.db.update_items_runtime_batch") as mock_update_batch,
     ):
         # 1. Mock get_items_missing_runtime
-        # We have three episode candidates:
+        # We have two episode candidates:
         # - Episode 201: season_1, missing specs, will be probed
         # - Episode 202: season_1, missing specs, will be probed
-        # - Episode 203: season_2, already has technical and metadata, should be skipped!
         mock_get_items.return_value = [
             {
                 "id": 201,
@@ -423,17 +421,7 @@ def test_file_property_extraction_worker_skips_and_batches() -> None:
                 "season_id": "season_1",
                 "library_name": "TV",
             },
-            {
-                "id": 203,
-                "path": "/season2_ep1.mkv",
-                "type": "episode",
-                "season_id": "season_2",
-                "library_name": "TV",
-            },
         ]
-
-        # Mock has_tech_and_metadata: True for 203, False for others
-        mock_has_tech.side_effect = lambda item_id, item_type: item_id == 203
 
         # Mock probe info
         mock_info.side_effect = [
@@ -456,7 +444,7 @@ def test_file_property_extraction_worker_skips_and_batches() -> None:
         worker = FilePropertyExtractionWorker()
         worker.run()
 
-        # Check: 203 is skipped, so get_detailed_file_info only called twice (for 201 and 202)
+        # Check: get_detailed_file_info called twice (for 201 and 202)
         assert mock_info.call_count == 2
         mock_info.assert_any_call("/season1_ep1.mkv")
         mock_info.assert_any_call("/season1_ep2.mkv")

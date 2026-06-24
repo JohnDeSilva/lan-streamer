@@ -147,10 +147,10 @@ class ScanAllLibrariesWorker(QThread):
         logger.info("")
 
         # Per-library reports (accumulated stats merged from both passes)
-        for lib_name, lib_cfg in libraries_dictionary.items():
-            paths_str = ", ".join(lib_cfg.get("paths", []))
-            pass1_stats = self.pass1_stats_per_library.get(lib_name, {})
-            pass2_stats = self.pass2_stats_per_library.get(lib_name, {})
+        for library_name, library_configuration in libraries_dictionary.items():
+            paths_str = ", ".join(library_configuration.get("paths", []))
+            pass1_stats = self.pass1_stats_per_library.get(library_name, {})
+            pass2_stats = self.pass2_stats_per_library.get(library_name, {})
             accumulated_stats = merge_stats_dicts_for_report(pass1_stats, pass2_stats)
             status_notes: List[str] = []
             if pass1_stats.get("_skipped"):
@@ -158,7 +158,7 @@ class ScanAllLibrariesWorker(QThread):
             if pass2_stats.get("_skipped"):
                 status_notes.append("Pass 2 FAILED — skipping metadata resolution")
             self._log_per_library_scan_report(
-                lib_name,
+                library_name,
                 paths_str,
                 accumulated_stats,
                 status_notes or None,
@@ -244,7 +244,7 @@ class ScanAllLibrariesWorker(QThread):
         local_changed_season_ids: Set[str] = set()
         local_changed_movie_ids: Set[str] = set()
         local_series_scanned: Set[str] = set()
-        lib_unavailable_dirs: List[str] = []
+        library_unavailable_directories: List[str] = []
 
         self.detail_progress.emit("start_library", {"library": library_name})
 
@@ -252,12 +252,12 @@ class ScanAllLibrariesWorker(QThread):
         # Callback closures — write to local accumulators
         # ------------------------------------------------------------------
 
-        def _make_detail_callback(lib_name: str) -> Any:
+        def _make_detail_callback(library_name_cb: str) -> Any:
             """Create a detail-progress callback that enriches events with the
             library name."""
 
             def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
-                enriched: Dict[str, Any] = {"library": lib_name, **payload}
+                enriched: Dict[str, Any] = {"library": library_name_cb, **payload}
                 self.detail_progress.emit(event, enriched)
 
             return _detail_callback
@@ -293,20 +293,22 @@ class ScanAllLibrariesWorker(QThread):
                         local_series_scanned.add(series_name)
                         local_stats["series_scanned"] += 1
                         any_changed = any(
-                            s_data.get("_changed", True)
-                            for s_data in series_data.get("seasons", {}).values()
+                            season_data_item.get("_changed", True)
+                            for season_data_item in series_data.get(
+                                "seasons", {}
+                            ).values()
                         )
                         if not any_changed:
                             local_stats["series_skipped"] += 1
 
                     local_stats["seasons_scanned"] += 1
 
-                    num_eps: int = len(season_data.get("episodes", []))
-                    local_stats["episodes_scanned"] += num_eps
+                    episode_count: int = len(season_data.get("episodes", []))
+                    local_stats["episodes_scanned"] += episode_count
 
                     if not season_data.get("_changed", True):
                         local_stats["seasons_skipped"] += 1
-                        local_stats["episodes_skipped"] += num_eps
+                        local_stats["episodes_skipped"] += episode_count
 
                     # Add/update/remove counts from db return value
                     for key in local_stats:
@@ -317,12 +319,12 @@ class ScanAllLibrariesWorker(QThread):
 
                     if season_data.get("_changed", True) and "season_id" in stats:
                         local_changed_season_ids.add(stats["season_id"])
-            except Exception as exc:
+            except Exception as error:
                 log_db_write_error(
                     local_problems,
                     f"Season '{season_name}' of series "
                     f"'{series_name}' (Library: '{library_name}')",
-                    exc,
+                    error,
                     logger,
                 )
 
@@ -352,15 +354,15 @@ class ScanAllLibrariesWorker(QThread):
 
                     if movie_data.get("_changed", True) and "movie_id" in stats:
                         local_changed_movie_ids.add(stats["movie_id"])
-            except Exception as exc:
+            except Exception as error:
                 log_db_write_error(
                     local_problems,
                     f"Movie '{movie_name}' (Library: '{library_name}')",
-                    exc,
+                    error,
                     logger,
                 )
 
-        def _save_lib_data(lib_data: Dict[str, Any]) -> None:
+        def _save_library_data(library_data: Dict[str, Any]) -> None:
             """Persist the full library data to the database.
 
             Only ``_removed`` and ``deleted`` keys from the return value are
@@ -370,9 +372,9 @@ class ScanAllLibrariesWorker(QThread):
             try:
                 with self._lock:
                     if library_type == "movie":
-                        stats = db.save_movie_library(library_name, lib_data)
+                        stats = db.save_movie_library(library_name, library_data)
                     else:
-                        stats = db.save_library(library_name, lib_data)
+                        stats = db.save_library(library_name, library_data)
                 if stats:
                     if "issues" in stats:
                         for issue in stats["issues"]:
@@ -382,11 +384,11 @@ class ScanAllLibrariesWorker(QThread):
                             key.endswith("_removed") or key == "deleted"
                         ):
                             local_stats[key] += stats[key]
-            except Exception as exc:
+            except Exception as error:
                 log_db_write_error(
                     local_problems,
                     f"Library '{library_name}'",
-                    exc,
+                    error,
                     logger,
                 )
 
@@ -415,7 +417,7 @@ class ScanAllLibrariesWorker(QThread):
             # Collect unavailable directories from this scan.
             if updated_library_data.unavailable_directories:
                 for root in updated_library_data.unavailable_directories:
-                    lib_unavailable_dirs.append(root)
+                    library_unavailable_directories.append(root)
                     # Only log unavailable directory issues once (in Pass 1)
                     if is_pass1:
                         error_message: str = (
@@ -434,7 +436,7 @@ class ScanAllLibrariesWorker(QThread):
                                 "error": error_message,
                             }
                         )
-            _save_lib_data(updated_library_data)
+            _save_library_data(updated_library_data)
             current_library_data: Dict[str, Any] = updated_library_data
         else:
             current_library_data = existing_library_data
@@ -461,7 +463,7 @@ class ScanAllLibrariesWorker(QThread):
                 # Collect unavailable directories from this root scan.
                 if updated_library_data.unavailable_directories:
                     for root in updated_library_data.unavailable_directories:
-                        lib_unavailable_dirs.append(root)
+                        library_unavailable_directories.append(root)
                         # Only log unavailable directory issues once (in Pass 1)
                         if is_pass1:
                             error_message = (
@@ -481,7 +483,7 @@ class ScanAllLibrariesWorker(QThread):
                                 }
                             )
                 current_library_data = updated_library_data
-                _save_lib_data(updated_library_data)
+                _save_library_data(updated_library_data)
 
                 # Finish-root is only emitted in Pass 2 (metadata resolution).
                 if not is_pass1:
@@ -495,7 +497,7 @@ class ScanAllLibrariesWorker(QThread):
             "library_data": current_library_data,
             "pass_stats": local_stats,
             "problems": local_problems,
-            "unavailable_directories": lib_unavailable_dirs,
+            "unavailable_directories": library_unavailable_directories,
             "changed_season_ids": local_changed_season_ids,
             "changed_movie_ids": local_changed_movie_ids,
         }
@@ -543,12 +545,13 @@ class ScanAllLibrariesWorker(QThread):
                                 "."
                             ):
                                 episodes: List[str] = []
-                                for ep_path in season_path.iterdir():
+                                for episode_path in season_path.iterdir():
                                     if (
-                                        ep_path.is_file()
-                                        and ep_path.suffix.lower() in VIDEO_EXTENSIONS
+                                        episode_path.is_file()
+                                        and episode_path.suffix.lower()
+                                        in VIDEO_EXTENSIONS
                                     ):
-                                        episodes.append(ep_path.name)
+                                        episodes.append(episode_path.name)
                                 seasons[season_path.name] = sorted(episodes)
                         folders[series_name] = {"seasons": seasons}
                     else:
@@ -650,12 +653,16 @@ class ScanAllLibrariesWorker(QThread):
                         library_name = future_to_library[future]
                         try:
                             result: Dict[str, Any] = future.result()
-                        except Exception as exc:
+                        except Exception as error:
                             logger.exception(
                                 f"ScanAllLibrariesWorker Pass 1 failed "
                                 f"for library: {library_name}"
                             )
-                            self.library_error.emit(library_name, str(exc))
+                            self.library_error.emit(library_name, str(error))
+                            self.detail_progress.emit(
+                                "fail_library",
+                                {"library": library_name},
+                            )
                             failed_libraries.add(library_name)
                             self.pass1_stats_per_library[library_name] = {
                                 "_skipped": True
@@ -722,12 +729,16 @@ class ScanAllLibrariesWorker(QThread):
                         library_name = future_to_library[future]
                         try:
                             result = future.result()
-                        except Exception as exc:
+                        except Exception as error:
                             logger.exception(
                                 f"ScanAllLibrariesWorker Pass 2 failed "
                                 f"for library: {library_name}"
                             )
-                            self.library_error.emit(library_name, str(exc))
+                            self.library_error.emit(library_name, str(error))
+                            self.detail_progress.emit(
+                                "fail_library",
+                                {"library": library_name},
+                            )
                             self.pass2_stats_per_library[library_name] = {
                                 "_skipped": True
                             }

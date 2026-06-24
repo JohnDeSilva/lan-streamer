@@ -94,13 +94,7 @@ class FilePropertyExtractionWorker(QThread):
                     ):
                         continue
 
-                if db.has_tech_and_metadata(item["id"], item["type"]):
-                    logger.info(
-                        f"Skipping {item['path']} as it already has "
-                        "technical and creative metadata"
-                    )
-                else:
-                    candidates.append(item)
+                candidates.append(item)
 
             self._total_count = len(candidates)
             logger.info(

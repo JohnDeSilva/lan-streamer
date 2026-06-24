@@ -136,15 +136,15 @@ class ScanWorker(QThread):
                         target_stats["seasons_scanned"] += 1
                         self.stats["seasons_scanned"] += 1
 
-                        num_eps = len(season_data.get("episodes", []))
-                        target_stats["episodes_scanned"] += num_eps
-                        self.stats["episodes_scanned"] += num_eps
+                        episode_count = len(season_data.get("episodes", []))
+                        target_stats["episodes_scanned"] += episode_count
+                        self.stats["episodes_scanned"] += episode_count
 
                         if not season_data.get("_changed", True):
                             target_stats["seasons_skipped"] += 1
                             self.stats["seasons_skipped"] += 1
-                            target_stats["episodes_skipped"] += num_eps
-                            self.stats["episodes_skipped"] += num_eps
+                            target_stats["episodes_skipped"] += episode_count
+                            self.stats["episodes_skipped"] += episode_count
 
                         for key in self.stats:
                             if key in stats and not (
@@ -154,11 +154,11 @@ class ScanWorker(QThread):
                                 target_stats[key] += stats[key]
                         if season_data.get("_changed", True) and "season_id" in stats:
                             self.changed_season_ids.add(stats["season_id"])
-                except Exception as exc:
+                except Exception as error:
                     log_db_write_error(
                         self.problems,
                         f"Season '{season_name}' of series '{series_name}'",
-                        exc,
+                        error,
                         logger,
                     )
 
@@ -191,11 +191,11 @@ class ScanWorker(QThread):
                                 target_stats[key] += stats[key]
                         if movie_data.get("_changed", True) and "movie_id" in stats:
                             self.changed_movie_ids.add(stats["movie_id"])
-                except Exception as exc:
+                except Exception as error:
                     log_db_write_error(
                         self.problems,
                         f"Movie '{movie_name}'",
-                        exc,
+                        error,
                         logger,
                     )
 
@@ -313,6 +313,6 @@ class ScanWorker(QThread):
 
             logger.info("ScanWorker finished successfully")
             self.finished.emit(library)
-        except Exception as exc:
+        except Exception as exception:
             logger.exception("ScanWorker failed")
-            self.error.emit(str(exc))
+            self.error.emit(str(exception))
