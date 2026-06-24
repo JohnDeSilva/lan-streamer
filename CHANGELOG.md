@@ -1,3 +1,11 @@
+## v0.33.2 (2026-06-23)
+
+### Fix
+
+- **dev-dependency**: bump pytest from 9.0.3 to 9.1.0
+- **dev-dependency**: bump ruff from 0.15.17 to 0.15.18
+- **dev-dependency**: bump pyinstaller from 6.20.0 to 6.21.0
+
 ## v0.33.1 (2026-06-23)
 
 ### Refactor
