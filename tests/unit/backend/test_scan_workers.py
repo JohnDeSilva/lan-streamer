@@ -1,6 +1,8 @@
 from unittest.mock import patch
 from typing import List, Dict, Any
 
+from PySide6.QtCore import Qt
+
 from lan_streamer.backend import (
     ScanWorker,
     CleanupWorker,
@@ -66,10 +68,15 @@ def test_scan_all_libraries_worker_execution() -> None:
     # Successful run
     from lan_streamer.scanner import LibraryDict
 
-    lib_tv = LibraryDict({"new_data": {}})
-    lib_tv.unavailable_directories = ["/unavailable_tv"]
-    lib_movie = LibraryDict({"new_data": {}})
-    lib_movie.unavailable_directories = ["/unavailable_movie"]
+    def _scan_side_effect(*args, **kwargs):
+        existing = kwargs.get("existing_library", {})
+        if existing == {"old_tv": {}}:
+            ld = LibraryDict({"new_data": {}})
+            ld.unavailable_directories = ["/unavailable_tv"]
+            return ld
+        ld = LibraryDict({"new_data": {}})
+        ld.unavailable_directories = ["/unavailable_movie"]
+        return ld
 
     with (
         patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
@@ -91,7 +98,7 @@ def test_scan_all_libraries_worker_execution() -> None:
         ),
         patch(
             "lan_streamer.backend.scan_worker_all.scan_directories",
-            side_effect=[lib_tv, lib_tv, lib_movie, lib_movie],
+            side_effect=_scan_side_effect,
         ) as mock_scan,
         patch("lan_streamer.backend.scan_worker_all.db.save_library") as mock_save_tv,
         patch(
@@ -108,22 +115,31 @@ def test_scan_all_libraries_worker_execution() -> None:
 
         worker = ScanAllLibrariesWorker(force_refresh=True)
         worker.library_progress.connect(
-            lambda name, comp, tot: progress_emitted.append((name, comp, tot))
+            lambda name, comp, tot: progress_emitted.append((name, comp, tot)),
+            Qt.DirectConnection,
         )
         worker.detail_progress.connect(
-            lambda ev, payload: detail_emitted.append((ev, payload))
+            lambda ev, payload: detail_emitted.append((ev, payload)),
+            Qt.DirectConnection,
         )
-        worker.finished.connect(lambda: finished_emitted.append(True))
+        worker.finished.connect(
+            lambda: finished_emitted.append(True),
+            Qt.DirectConnection,
+        )
         worker.run()
 
         assert len(mock_scan.call_args_list) == 4
         assert mock_save_tv.call_count == 2
         assert mock_save_movie.call_count == 2
-        assert progress_emitted == [("TV_Lib", 1, 2), ("Movie_Lib", 2, 2)]
+        assert len(progress_emitted) == 2
+        libraries_in_progress = {p[0] for p in progress_emitted}
+        assert libraries_in_progress == {"TV_Lib", "Movie_Lib"}
+        all_total_2 = all(p[2] == 2 for p in progress_emitted)
+        assert all_total_2
         assert finished_emitted == [True]
-        assert worker.unavailable_directories == [
-            "/unavailable_tv",
+        assert sorted(worker.unavailable_directories) == [
             "/unavailable_movie",
+            "/unavailable_tv",
         ]
         assert (
             "start_root",
@@ -142,18 +158,23 @@ def test_scan_all_libraries_worker_execution() -> None:
             {"library": "Movie_Lib", "root": "/movie_path"},
         ) in detail_emitted
 
-    # Exception run
+    # Per-library exception run — task-level failures emit library_error
     with patch("lan_streamer.backend.scan_worker_all.config") as mock_config:
-        mock_config.libraries = {"TV_Lib": {}}
+        mock_config.libraries = {"TV_Lib": {"paths": [], "type": "tv"}}
         with patch(
             "lan_streamer.backend.scan_worker_all.scan_directories",
-            side_effect=Exception("Global scan error"),
+            side_effect=Exception("Scan error"),
         ):
-            errors_emitted: List[str] = []
+            library_errors_emitted: List[tuple] = []
             worker = ScanAllLibrariesWorker()
-            worker.error.connect(errors_emitted.append)
+            worker.library_error.connect(
+                lambda lib, msg: library_errors_emitted.append((lib, msg)),
+                Qt.DirectConnection,
+            )
             worker.run()
-            assert errors_emitted == ["Global scan error"]
+            assert len(library_errors_emitted) == 1
+            assert library_errors_emitted[0][0] == "TV_Lib"
+            assert "Scan error" in library_errors_emitted[0][1]
 
 
 def test_scan_worker_detail_progress() -> None:
