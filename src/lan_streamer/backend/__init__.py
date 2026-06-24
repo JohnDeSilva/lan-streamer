@@ -1,7 +1,7 @@
-from lan_streamer.backend.scan_worker_single import (
-    _discover_single_library_tree_impl as discover_single_library_tree,
-    ScanWorker,
+from lan_streamer.backend.scan_worker_base import (
+    discover_single_library_tree_impl as discover_single_library_tree,
 )
+from lan_streamer.backend.scan_worker_single import ScanWorker
 from lan_streamer.backend.scan_worker_all import ScanAllLibrariesWorker
 from lan_streamer.backend.scan_worker_cleanup import CleanupWorker
 from lan_streamer.backend.jellyfin_workers import (

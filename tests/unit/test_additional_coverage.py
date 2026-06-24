@@ -193,7 +193,7 @@ def test_scan_worker_with_jellyfin() -> None:
             return_value={"path_map": {}},
         ) as mock_jf,
         patch(
-            "lan_streamer.backend.scan_worker_single._discover_single_library_tree_impl",
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree_impl",
             return_value={"/root": []},
         ),
         patch(

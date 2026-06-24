@@ -8,7 +8,7 @@ Tests for:
                                search_anime not configured, search_anime exception,
                                update_watched_status not configured/not authenticated,
                                update_watched_status HTTP non-200, update_watched_status exception)
- - backend/scan_workers.py    (_discover_single_library_tree_impl edge cases,
+  - backend/scan_workers.py    (discover_single_library_tree_impl edge cases,
                                ScanAllLibrariesWorker with no root dirs,
                                ScanAllLibrariesWorker movie library)
  - playback/cache.py          (CacheWorker run – exception path)
@@ -479,19 +479,19 @@ def test_exchange_auth_code_includes_client_secret(mal_client) -> None:
 
 def test_discover_single_library_tree_nonexistent_dir(tmp_path) -> None:
     """When a root dir doesn't exist, it maps to an empty list."""
-    from lan_streamer.backend.scan_worker_single import (
-        _discover_single_library_tree_impl,
+    from lan_streamer.backend.scan_worker_base import (
+        discover_single_library_tree_impl,
     )
 
-    result = _discover_single_library_tree_impl(["/nonexistent/dir/xyz_12345"], "tv")
+    result = discover_single_library_tree_impl(["/nonexistent/dir/xyz_12345"], "tv")
     assert "/nonexistent/dir/xyz_12345" in result
     assert result["/nonexistent/dir/xyz_12345"] == []
 
 
 def test_discover_single_library_tree_existing_dir(tmp_path) -> None:
     """Pre-discovery works for actual directories containing video files."""
-    from lan_streamer.backend.scan_worker_single import (
-        _discover_single_library_tree_impl,
+    from lan_streamer.backend.scan_worker_base import (
+        discover_single_library_tree_impl,
     )
 
     # Create a fake series folder with a video file
@@ -499,7 +499,7 @@ def test_discover_single_library_tree_existing_dir(tmp_path) -> None:
     series_dir.mkdir()
     (series_dir / "episode.mkv").write_bytes(b"\x00" * 100)
 
-    result = _discover_single_library_tree_impl([str(tmp_path)], "tv")
+    result = discover_single_library_tree_impl([str(tmp_path)], "tv")
     assert str(tmp_path) in result
     assert "My Show" in result[str(tmp_path)]
 

@@ -1,0 +1,161 @@
+import logging
+from pathlib import Path
+from typing import List, Dict, Any
+
+from lan_streamer.scanner import has_video_files
+
+logger = logging.getLogger("lan_streamer.backend")
+
+
+def create_empty_stats() -> Dict[str, int]:
+    """Return a fresh zeroed stats dictionary with all 20 keys."""
+    return {
+        "series_scanned": 0,
+        "series_added": 0,
+        "series_updated": 0,
+        "series_removed": 0,
+        "series_skipped": 0,
+        "seasons_scanned": 0,
+        "seasons_added": 0,
+        "seasons_updated": 0,
+        "seasons_removed": 0,
+        "seasons_skipped": 0,
+        "episodes_scanned": 0,
+        "episodes_added": 0,
+        "episodes_updated": 0,
+        "episodes_removed": 0,
+        "episodes_skipped": 0,
+        "movies_scanned": 0,
+        "movies_added": 0,
+        "movies_updated": 0,
+        "movies_removed": 0,
+        "movies_skipped": 0,
+    }
+
+
+def merge_stats_dicts(target: Dict[str, int], source: Dict[str, int]) -> None:
+    """Merge all values from *source* into *target* in-place."""
+    for key, value in source.items():
+        if key in target:
+            target[key] += value
+
+
+def merge_stats_dicts_for_report(
+    stats_a: Dict[str, int], stats_b: Dict[str, int]
+) -> Dict[str, int]:
+    """Merge two stats dicts, returning a new dict with summed values."""
+    merged = dict(stats_a)
+    for key, value in stats_b.items():
+        merged[key] = merged.get(key, 0) + value
+    return merged
+
+
+def log_stats_breakdown(
+    label: str,
+    stats_dict: Dict[str, int],
+    log_target: logging.Logger = logger,
+) -> None:
+    """Log a single stats breakdown section.
+
+    Args:
+        label: Section heading for the log output.
+        stats_dict: Statistics dictionary to log.
+        log_target: Logger to write to (defaults to module logger).
+    """
+    log_target.info(f"[SCAN_REPORT] {label}")
+    log_target.info(
+        f"[SCAN_REPORT]   Series: Scanned={stats_dict.get('series_scanned', 0)} | "
+        f"Added={stats_dict.get('series_added', 0)} | "
+        f"Updated={stats_dict.get('series_updated', 0)} | "
+        f"Removed={stats_dict.get('series_removed', 0)} | "
+        f"Skipped={stats_dict.get('series_skipped', 0)}"
+    )
+    log_target.info(
+        f"[SCAN_REPORT]   Seasons: Scanned={stats_dict.get('seasons_scanned', 0)} | "
+        f"Added={stats_dict.get('seasons_added', 0)} | "
+        f"Updated={stats_dict.get('seasons_updated', 0)} | "
+        f"Removed={stats_dict.get('seasons_removed', 0)} | "
+        f"Skipped={stats_dict.get('seasons_skipped', 0)}"
+    )
+    log_target.info(
+        f"[SCAN_REPORT]   Episodes: Scanned={stats_dict.get('episodes_scanned', 0)} | "
+        f"Added={stats_dict.get('episodes_added', 0)} | "
+        f"Updated={stats_dict.get('episodes_updated', 0)} | "
+        f"Removed={stats_dict.get('episodes_removed', 0)} | "
+        f"Skipped={stats_dict.get('episodes_skipped', 0)}"
+    )
+    log_target.info(
+        f"[SCAN_REPORT]   Movies: Scanned={stats_dict.get('movies_scanned', 0)} | "
+        f"Added={stats_dict.get('movies_added', 0)} | "
+        f"Updated={stats_dict.get('movies_updated', 0)} | "
+        f"Removed={stats_dict.get('movies_removed', 0)} | "
+        f"Skipped={stats_dict.get('movies_skipped', 0)}"
+    )
+
+
+def log_issues_report(
+    problems: List[Dict[str, Any]],
+    log_target: logging.Logger = logger,
+) -> None:
+    """Log grouped issues from the scan run.
+
+    Args:
+        problems: List of problem dicts with keys ``type``, ``error``, ``item``.
+        log_target: Logger to write to (defaults to module logger).
+    """
+    if not problems:
+        return
+
+    grouped: Dict[str, Dict[str, List[str]]] = {}
+    for prob in problems:
+        problem_type = prob["type"]
+        problem_error = prob["error"]
+        problem_item = prob["item"]
+        if problem_type not in grouped:
+            grouped[problem_type] = {}
+        if problem_error not in grouped[problem_type]:
+            grouped[problem_type][problem_error] = []
+        grouped[problem_type][problem_error].append(problem_item)
+
+    log_target.info("[SCAN_REPORT] ===================================================")
+    log_target.info("[SCAN_REPORT]               SCAN RUN ISSUES REPORT")
+    log_target.info("[SCAN_REPORT] ===================================================")
+    for problem_type, errors in grouped.items():
+        log_target.info(f"[SCAN_REPORT] Type: {problem_type}")
+        for problem_error, items in errors.items():
+            log_target.info(f"[SCAN_REPORT]   Error: {problem_error}")
+            for item in items:
+                log_target.info(f"[SCAN_REPORT]     - {item}")
+        log_target.info(
+            "[SCAN_REPORT] ---------------------------------------------------"
+        )
+    log_target.info("[SCAN_REPORT] ===================================================")
+
+
+def discover_single_library_tree_impl(
+    root_directories: List[str], library_type: str
+) -> Dict[str, List[str]]:
+    """
+    Pre-walks all library directories to count total folders and files
+    for a single library so the UI can initialize the segmented progress bar
+    before scanning begins. Returns a structure mapping root_dir -> list of folder names.
+    """
+    roots: Dict[str, List[str]] = {}
+    for root_dir in root_directories:
+        root_path = Path(root_dir)
+        if not root_path.exists() or not root_path.is_dir():
+            roots[root_dir] = []
+            continue
+        folders = []
+        for series_path in sorted(
+            [
+                x
+                for x in root_path.iterdir()
+                if x.is_dir() and not x.name.startswith(".") and has_video_files(x)
+            ],
+            key=lambda x: x.stat().st_mtime,
+            reverse=True,
+        ):
+            folders.append(series_path.name)
+        roots[root_dir] = folders
+    return roots
