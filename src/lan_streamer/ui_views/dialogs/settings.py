@@ -1681,6 +1681,10 @@ class SettingsDialog(QDialog):
             self.global_progress_bar.mark_library_done(library)
             self.scan_progress_tree.mark_library_done(library)
 
+        elif event == "fail_library":
+            self.global_progress_bar.mark_library_failed(library)
+            self.scan_progress_tree.mark_library_failed(library)
+
         elif event == "start_folder":
             self.global_progress_bar.advance_root(root)
             self.scan_progress_tree.mark_folder_active(library, root, folder)

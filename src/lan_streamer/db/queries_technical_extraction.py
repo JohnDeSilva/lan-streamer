@@ -26,7 +26,10 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
             episodes = (
                 session.scalars(
                     select(Episode)
-                    .options(joinedload(Episode.season).joinedload(Season.series))
+                    .options(
+                        joinedload(Episode.season).joinedload(Season.series),
+                        joinedload(Episode.media_files),
+                    )
                     .outerjoin(
                         MetadataFileMapping,
                         MetadataFileMapping.episode_id == Episode.id,
@@ -70,27 +73,34 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
                         }
                     )
 
-            movies = session.scalars(
-                select(Movie)
-                .outerjoin(
-                    MetadataFileMapping, MetadataFileMapping.movie_id == Movie.id
+            movies = (
+                session.scalars(
+                    select(Movie)
+                    .options(joinedload(Movie.media_files))
+                    .outerjoin(
+                        MetadataFileMapping, MetadataFileMapping.movie_id == Movie.id
+                    )
+                    .outerjoin(
+                        MediaFile, MediaFile.id == MetadataFileMapping.media_file_id
+                    )
+                    .where(
+                        (MediaFile.id.is_(None))
+                        | (MediaFile.runtime.is_(None))
+                        | (MediaFile.runtime == 0)
+                        | (MediaFile.video_codec.is_(None))
+                        | (MediaFile.video_codec == "Unknown")
+                        | (MediaFile.video_codec == "")
+                        | (MediaFile.resolution.is_(None))
+                        | (MediaFile.resolution == "Unknown")
+                        | (MediaFile.resolution == "")
+                        | (MediaFile.bit_rate.is_(None))
+                        | (MediaFile.bit_rate <= 0)
+                    )
+                    .distinct()
                 )
-                .outerjoin(MediaFile, MediaFile.id == MetadataFileMapping.media_file_id)
-                .where(
-                    (MediaFile.id.is_(None))
-                    | (MediaFile.runtime.is_(None))
-                    | (MediaFile.runtime == 0)
-                    | (MediaFile.video_codec.is_(None))
-                    | (MediaFile.video_codec == "Unknown")
-                    | (MediaFile.video_codec == "")
-                    | (MediaFile.resolution.is_(None))
-                    | (MediaFile.resolution == "Unknown")
-                    | (MediaFile.resolution == "")
-                    | (MediaFile.bit_rate.is_(None))
-                    | (MediaFile.bit_rate <= 0)
-                )
-                .distinct()
-            ).all()
+                .unique()
+                .all()
+            )
             for movie in movies:
                 path = movie.default_path or (
                     movie.media_files[0].path if movie.media_files else None
@@ -132,7 +142,9 @@ def update_items_runtime_batch(updates: List[Dict[str, Any]]) -> None:
 
                 if item_type == "episode":
                     episode = session.scalars(
-                        select(Episode).where(Episode.id == item_identifier)
+                        select(Episode)
+                        .where(Episode.id == item_identifier)
+                        .options(joinedload(Episode.media_files))
                     ).first()
                     if episode:
                         if runtime_minutes is not None and (
@@ -157,7 +169,9 @@ def update_items_runtime_batch(updates: List[Dict[str, Any]]) -> None:
                                 mf.runtime = runtime_minutes
                 elif item_type == "movie":
                     movie = session.scalars(
-                        select(Movie).where(Movie.id == item_identifier)
+                        select(Movie)
+                        .where(Movie.id == item_identifier)
+                        .options(joinedload(Movie.media_files))
                     ).first()
                     if movie:
                         if runtime_minutes is not None and (
