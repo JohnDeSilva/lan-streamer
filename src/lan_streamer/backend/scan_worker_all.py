@@ -17,6 +17,7 @@ from lan_streamer.scanner import (
 from lan_streamer.system.config import config
 from lan_streamer.backend.scan_worker_base import (
     create_empty_stats,
+    log_db_write_error,
     log_issues_report,
     log_stats_breakdown,
     merge_stats_dicts,
@@ -70,50 +71,8 @@ class ScanAllLibrariesWorker(QThread):
         self.changed_movie_ids: Set[str] = set()
         self.current_pass: int = 1
 
-        self.pass1_stats: Dict[str, int] = {
-            "series_scanned": 0,
-            "series_added": 0,
-            "series_updated": 0,
-            "series_removed": 0,
-            "series_skipped": 0,
-            "seasons_scanned": 0,
-            "seasons_added": 0,
-            "seasons_updated": 0,
-            "seasons_removed": 0,
-            "seasons_skipped": 0,
-            "episodes_scanned": 0,
-            "episodes_added": 0,
-            "episodes_updated": 0,
-            "episodes_removed": 0,
-            "episodes_skipped": 0,
-            "movies_scanned": 0,
-            "movies_added": 0,
-            "movies_updated": 0,
-            "movies_removed": 0,
-            "movies_skipped": 0,
-        }
-        self.pass2_stats: Dict[str, int] = {
-            "series_scanned": 0,
-            "series_added": 0,
-            "series_updated": 0,
-            "series_removed": 0,
-            "series_skipped": 0,
-            "seasons_scanned": 0,
-            "seasons_added": 0,
-            "seasons_updated": 0,
-            "seasons_removed": 0,
-            "seasons_skipped": 0,
-            "episodes_scanned": 0,
-            "episodes_added": 0,
-            "episodes_updated": 0,
-            "episodes_removed": 0,
-            "episodes_skipped": 0,
-            "movies_scanned": 0,
-            "movies_added": 0,
-            "movies_updated": 0,
-            "movies_removed": 0,
-            "movies_skipped": 0,
-        }
+        self.pass1_stats: Dict[str, int] = create_empty_stats()
+        self.pass2_stats: Dict[str, int] = create_empty_stats()
 
         # Per-library per-pass statistics.
         self.pass1_stats_per_library: Dict[str, Dict[str, int]] = {}
@@ -334,27 +293,12 @@ class ScanAllLibrariesWorker(QThread):
                     if season_data.get("_changed", True) and "season_id" in stats:
                         local_changed_season_ids.add(stats["season_id"])
             except Exception as exc:
-                error_message: str = str(exc)
-                clean_message: str = error_message.split("\n")[0].strip()
-                if "\n" in error_message:
-                    logger.debug(
-                        f"Database write failure detailed error: {error_message}"
-                    )
-                logger.warning(
-                    "[SCAN_ISSUE] Type=Database Write Failure | "
-                    f"Item=Season '{season_name}' of series "
-                    f"'{series_name}' (Library: '{library_name}') | "
-                    f"Error={clean_message}"
-                )
-                local_problems.append(
-                    {
-                        "type": "Database Write Failure",
-                        "item": (
-                            f"Season '{season_name}' of series "
-                            f"'{series_name}' (Library: '{library_name}')"
-                        ),
-                        "error": clean_message,
-                    }
+                log_db_write_error(
+                    local_problems,
+                    f"Season '{season_name}' of series "
+                    f"'{series_name}' (Library: '{library_name}')",
+                    exc,
+                    logger,
                 )
 
         def _movie_callback(movie_name: str, movie_data: Dict[str, Any]) -> None:
@@ -383,24 +327,11 @@ class ScanAllLibrariesWorker(QThread):
                     if movie_data.get("_changed", True) and "movie_id" in stats:
                         local_changed_movie_ids.add(stats["movie_id"])
             except Exception as exc:
-                error_message: str = str(exc)
-                clean_message: str = error_message.split("\n")[0].strip()
-                if "\n" in error_message:
-                    logger.debug(
-                        f"Database write failure detailed error: {error_message}"
-                    )
-                logger.warning(
-                    "[SCAN_ISSUE] Type=Database Write Failure | "
-                    f"Item=Movie '{movie_name}' "
-                    f"(Library: '{library_name}') | "
-                    f"Error={clean_message}"
-                )
-                local_problems.append(
-                    {
-                        "type": "Database Write Failure",
-                        "item": (f"Movie '{movie_name}' (Library: '{library_name}')"),
-                        "error": clean_message,
-                    }
+                log_db_write_error(
+                    local_problems,
+                    f"Movie '{movie_name}' (Library: '{library_name}')",
+                    exc,
+                    logger,
                 )
 
         def _save_lib_data(lib_data: Dict[str, Any]) -> None:
@@ -425,23 +356,11 @@ class ScanAllLibrariesWorker(QThread):
                         ):
                             local_stats[key] += stats[key]
             except Exception as exc:
-                error_message: str = str(exc)
-                clean_message: str = error_message.split("\n")[0].strip()
-                if "\n" in error_message:
-                    logger.debug(
-                        f"Database write failure detailed error: {error_message}"
-                    )
-                logger.warning(
-                    "[SCAN_ISSUE] Type=Database Write Failure | "
-                    f"Item=Library '{library_name}' | "
-                    f"Error={clean_message}"
-                )
-                local_problems.append(
-                    {
-                        "type": "Database Write Failure",
-                        "item": f"Library '{library_name}'",
-                        "error": clean_message,
-                    }
+                log_db_write_error(
+                    local_problems,
+                    f"Library '{library_name}'",
+                    exc,
+                    logger,
                 )
 
         # ------------------------------------------------------------------

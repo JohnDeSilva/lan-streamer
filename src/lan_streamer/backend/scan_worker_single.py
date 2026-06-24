@@ -10,6 +10,7 @@ from lan_streamer.scanner import scan_directories
 from lan_streamer.backend.scan_worker_base import (
     create_empty_stats,
     discover_single_library_tree_impl,
+    log_db_write_error,
     log_issues_report,
     log_stats_breakdown,
 )
@@ -49,50 +50,8 @@ class ScanWorker(QThread):
         self.changed_movie_ids: Set[str] = set()
         self.current_pass: int = 1
 
-        self.pass1_stats: Dict[str, int] = {
-            "series_scanned": 0,
-            "series_added": 0,
-            "series_updated": 0,
-            "series_removed": 0,
-            "series_skipped": 0,
-            "seasons_scanned": 0,
-            "seasons_added": 0,
-            "seasons_updated": 0,
-            "seasons_removed": 0,
-            "seasons_skipped": 0,
-            "episodes_scanned": 0,
-            "episodes_added": 0,
-            "episodes_updated": 0,
-            "episodes_removed": 0,
-            "episodes_skipped": 0,
-            "movies_scanned": 0,
-            "movies_added": 0,
-            "movies_updated": 0,
-            "movies_removed": 0,
-            "movies_skipped": 0,
-        }
-        self.pass2_stats: Dict[str, int] = {
-            "series_scanned": 0,
-            "series_added": 0,
-            "series_updated": 0,
-            "series_removed": 0,
-            "series_skipped": 0,
-            "seasons_scanned": 0,
-            "seasons_added": 0,
-            "seasons_updated": 0,
-            "seasons_removed": 0,
-            "seasons_skipped": 0,
-            "episodes_scanned": 0,
-            "episodes_added": 0,
-            "episodes_updated": 0,
-            "episodes_removed": 0,
-            "episodes_skipped": 0,
-            "movies_scanned": 0,
-            "movies_added": 0,
-            "movies_updated": 0,
-            "movies_removed": 0,
-            "movies_skipped": 0,
-        }
+        self.pass1_stats: Dict[str, int] = create_empty_stats()
+        self.pass2_stats: Dict[str, int] = create_empty_stats()
 
     def run(self) -> None:
         import time
@@ -192,22 +151,12 @@ class ScanWorker(QThread):
                                 target_stats[key] += stats[key]
                         if season_data.get("_changed", True) and "season_id" in stats:
                             self.changed_season_ids.add(stats["season_id"])
-                except Exception as e:
-                    err_msg = str(e)
-                    clean_msg = err_msg.split("\n")[0].strip()
-                    if "\n" in err_msg:
-                        logger.debug(
-                            f"Database write failure detailed error: {err_msg}"
-                        )
-                    logger.warning(
-                        f"[SCAN_ISSUE] Type=Database Write Failure | Item=Season '{season_name}' of series '{series_name}' | Error={clean_msg}"
-                    )
-                    self.problems.append(
-                        {
-                            "type": "Database Write Failure",
-                            "item": f"Season '{season_name}' of series '{series_name}'",
-                            "error": clean_msg,
-                        }
+                except Exception as exc:
+                    log_db_write_error(
+                        self.problems,
+                        f"Season '{season_name}' of series '{series_name}'",
+                        exc,
+                        logger,
                     )
 
             def _movie_callback(movie_name: str, movie_data: Dict[str, Any]) -> None:
@@ -239,22 +188,12 @@ class ScanWorker(QThread):
                                 target_stats[key] += stats[key]
                         if movie_data.get("_changed", True) and "movie_id" in stats:
                             self.changed_movie_ids.add(stats["movie_id"])
-                except Exception as e:
-                    err_msg = str(e)
-                    clean_msg = err_msg.split("\n")[0].strip()
-                    if "\n" in err_msg:
-                        logger.debug(
-                            f"Database write failure detailed error: {err_msg}"
-                        )
-                    logger.warning(
-                        f"[SCAN_ISSUE] Type=Database Write Failure | Item=Movie '{movie_name}' | Error={clean_msg}"
-                    )
-                    self.problems.append(
-                        {
-                            "type": "Database Write Failure",
-                            "item": f"Movie '{movie_name}'",
-                            "error": clean_msg,
-                        }
+                except Exception as exc:
+                    log_db_write_error(
+                        self.problems,
+                        f"Movie '{movie_name}'",
+                        exc,
+                        logger,
                     )
 
             library_config = config.libraries.get(self.library_name, {})
