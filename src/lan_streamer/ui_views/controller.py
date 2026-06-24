@@ -728,6 +728,13 @@ class Controller(QObject):
         if self.current_library_name:
             self.select_library(self.current_library_name, reset_selection=False)
         self._running_pass3_after_scan = False
+
+        # Show green (Pass 3 = 100%) before hiding, even if no items were processed.
+        self.detail_progress_updated.emit(
+            "runtime_extraction_progress",
+            {"completed": 0, "total": 0},
+        )
+
         if self._running_cleanup_after_scan:
             self._running_cleanup_after_scan = False
             self.trigger_global_cleanup()
