@@ -169,3 +169,51 @@ def test_scan_all_libraries_database_exceptions() -> None:
         assert "db season error" in errors
         assert "db movie error" in errors
         assert "db lib error" in errors
+
+
+def test_scan_all_libraries_pass2_exception_with_good_pass1() -> None:
+    """Library that succeeds in Pass 1 but fails in Pass 2 emits library_error."""
+    from lan_streamer.backend import ScanAllLibrariesWorker
+    from lan_streamer.scanner.core import LibraryDict
+
+    pass1_lib = LibraryDict({})
+    pass1_lib.unavailable_directories = []
+
+    call_count = [0]
+
+    def _scan_side_effect(*args, **kwargs):
+        call_count[0] += 1
+        offline = kwargs.get("offline", True)
+        if offline:
+            return pass1_lib
+        raise RuntimeError("Pass 2 failure")
+
+    with (
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+        patch(
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
+            return_value=False,
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_all.scan_directories",
+            side_effect=_scan_side_effect,
+        ),
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch("lan_streamer.backend.scan_worker_all.db.save_library"),
+    ):
+        mock_config.libraries = {
+            "Lib1": {"paths": ["/tv"], "type": "tv"},
+            "Lib2": {"paths": ["/tv2"], "type": "tv"},
+        }
+
+        library_error_events = []
+        worker = ScanAllLibrariesWorker()
+        worker.library_error.connect(
+            lambda name, msg: library_error_events.append((name, msg))
+        )
+        worker.run()
+
+        assert any(name == "Lib1" for name, _ in library_error_events)
+        assert any(name == "Lib2" for name, _ in library_error_events)
+        assert all("Pass 2 failure" in msg for _, msg in library_error_events)
+        assert call_count[0] == 4  # 2 libs × 2 passes
