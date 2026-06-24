@@ -26,6 +26,9 @@ This document establishes the repository-wide standards, architectural constrain
   - [main.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/main.py): Sets up the application GUI and controller runtime.
   - [db/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db): ORM schemas ([models.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/models.py)), queries ([queries_playback.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/queries_playback.py), [queries_ui.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/queries_ui.py)), serialization, and database setup.
   - [backend/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend): Background thread workers (`QThread`/`QWorker`) for non-blocking file scanning, Jellyfin sync, and metadata updates.
+    - [scan_worker_base.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend/scan_worker_base.py): Shared scan helpers (`create_empty_stats`, `merge_stats_dicts`, `log_stats_breakdown`, `log_issues_report`, `discover_single_library_tree_impl`).
+    - [scan_worker_all.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend/scan_worker_all.py): `ScanAllLibrariesWorker` — parallel multi-library scan via `ThreadPoolExecutor`.
+    - [scan_worker_single.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend/scan_worker_single.py): `ScanSingleLibraryWorker` — single-library scan.
   - [scanner/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/scanner): Library crawler, filename parser, and bulk-renamer.
   - [services/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/services): Business-logic services (discovery, TMDB/Jellyfin metadata merging).
   - [playback/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/playback): Video player widget wrapper around `libvlc` and OS wake-lock controller.
