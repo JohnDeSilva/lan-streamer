@@ -1,3 +1,9 @@
+## v0.33.1 (2026-06-23)
+
+### Refactor
+
+- Dead code cleanup and reorg
+
 ## v0.33.0 (2026-06-23)
 
 ### Feat
