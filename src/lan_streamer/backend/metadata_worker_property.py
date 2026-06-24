@@ -1,5 +1,6 @@
 import logging
 import os
+import queue
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, List, Optional, Set
@@ -7,6 +8,7 @@ from PySide6.QtCore import Signal, QThread
 
 from lan_streamer import db
 from lan_streamer.scanner.file_property_scanner import get_detailed_file_info
+from lan_streamer.backend.database_writer import DatabaseWriteTask, DatabaseWriterThread
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -69,7 +71,16 @@ class FilePropertyExtractionWorker(QThread):
         self._total_count: int = 0
         self._completed_count: int = 0
 
+        # Database write queue variables.
+        self.database_queue: queue.Queue = queue.Queue()
+        self.database_writer: Optional[DatabaseWriterThread] = None
+
     def run(self) -> None:
+        # Start database writer thread
+        self.database_queue = queue.Queue()
+        self.database_writer = DatabaseWriterThread(self.database_queue)
+        self.database_writer.start()
+
         try:
             logger.info("FilePropertyExtractionWorker starting run")
             logger.info(
@@ -155,16 +166,28 @@ class FilePropertyExtractionWorker(QThread):
                             f"Committing batch write for season "
                             f"{season_id} ({len(season_updates)} episodes)"
                         )
-                        with self._lock:
-                            db.update_items_runtime_batch(season_updates)
+                        task = DatabaseWriteTask(
+                            action="update_items_runtime_batch",
+                            payload={"updates": season_updates},
+                        )
+                        self.database_queue.put(task)
+                        task.event.wait()
+                        if task.error:
+                            raise task.error
 
                 # Process movies individually.
                 for movie in movies:
                     update = _produce_item_update(movie)
                     if update:
                         logger.info(f"Committing write for movie {movie['path']}")
-                        with self._lock:
-                            db.update_items_runtime_batch([update])
+                        task = DatabaseWriteTask(
+                            action="update_items_runtime_batch",
+                            payload={"updates": [update]},
+                        )
+                        self.database_queue.put(task)
+                        task.event.wait()
+                        if task.error:
+                            raise task.error
                         local_updated += 1
 
                     with self._lock:
@@ -200,3 +223,7 @@ class FilePropertyExtractionWorker(QThread):
         except Exception as exception_instance:
             logger.exception("FilePropertyExtractionWorker failed")
             self.error.emit(str(exception_instance))
+        finally:
+            if self.database_writer is not None:
+                self.database_queue.put(None)
+                self.database_writer.join()

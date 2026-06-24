@@ -110,8 +110,10 @@ Each `_scan_library_pass` maintains its own `local_stats` dict. After both passe
 
 Tests run `ScanAllLibrariesWorker.run()` directly (blocking). The `ThreadPoolExecutor` submits tasks, waits for completion via `executor.shutdown(wait=True)`, then merges results — all within the calling thread's stack. No real threading races occur in test mode.
 
-## DB Thread Safety
+## DB Thread Safety & Write Pooling
 
-- SQLite `WAL` mode with `check_same_thread=False` and `busy_timeout=5000`
-- Each `_scan_library_pass` opens its own DB session via `get_session()`
-- `save_season_data` and `save_movie_data` manage their own session lifecycle
+- SQLite `WAL` mode with `check_same_thread=False` and `busy_timeout=5000`.
+- **Database Write Pooling (`database_writer.py`)**: To decouple parallel crawling threads from SQLite database lock contention, a dedicated daemon thread `DatabaseWriterThread` is initialized by `ScanAllLibrariesWorker` and `FilePropertyExtractionWorker`.
+- Tasks (`DatabaseWriteTask`) representing writes (e.g. `save_season`, `save_movie`, `save_library`, `save_movie_library`, `update_items_runtime_batch`) are dispatched to a thread-safe `queue.Queue`.
+- The database writer thread pulls tasks from this queue and executes writes sequentially on a single, isolated session, guaranteeing zero lock contention.
+- Submitting threads block on `task.event.wait()` for synchronous processing or receive notifications upon completion.

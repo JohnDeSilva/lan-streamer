@@ -1,5 +1,6 @@
 import logging
 import os
+import queue
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -23,6 +24,7 @@ from lan_streamer.backend.scan_worker_base import (
     merge_stats_dicts,
     merge_stats_dicts_for_report,
 )
+from lan_streamer.backend.database_writer import DatabaseWriteTask, DatabaseWriterThread
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -77,6 +79,10 @@ class ScanAllLibrariesWorker(QThread):
         # Per-library per-pass statistics.
         self.pass1_stats_per_library: Dict[str, Dict[str, int]] = {}
         self.pass2_stats_per_library: Dict[str, Dict[str, int]] = {}
+
+        # Database write queue variables.
+        self.database_queue: queue.Queue = queue.Queue()
+        self.database_writer: Optional[DatabaseWriterThread] = None
 
     # ------------------------------------------------------------------
     # Helper methods
@@ -275,14 +281,21 @@ class ScanAllLibrariesWorker(QThread):
                 f"'{season_name}' of series '{series_name}' to database..."
             )
             try:
-                with self._lock:
-                    stats = db.save_season_data(
-                        library_name,
-                        series_name,
-                        series_data,
-                        season_name,
-                        season_data,
-                    )
+                task = DatabaseWriteTask(
+                    action="save_season",
+                    payload={
+                        "library_name": library_name,
+                        "series_name": series_name,
+                        "series_data": series_data,
+                        "season_name": season_name,
+                        "season_data": season_data,
+                    },
+                )
+                self.database_queue.put(task)
+                task.event.wait()
+                if task.error:
+                    raise task.error
+                stats = task.result
                 if stats:
                     if "issues" in stats:
                         for issue in stats["issues"]:
@@ -335,8 +348,19 @@ class ScanAllLibrariesWorker(QThread):
                 f"ScanAllLibrariesWorker writing movie '{movie_name}' to database..."
             )
             try:
-                with self._lock:
-                    stats = db.save_movie_data(library_name, movie_name, movie_data)
+                task = DatabaseWriteTask(
+                    action="save_movie",
+                    payload={
+                        "library_name": library_name,
+                        "movie_name": movie_name,
+                        "movie_data": movie_data,
+                    },
+                )
+                self.database_queue.put(task)
+                task.event.wait()
+                if task.error:
+                    raise task.error
+                stats = task.result
                 if stats:
                     if "issues" in stats:
                         for issue in stats["issues"]:
@@ -370,11 +394,21 @@ class ScanAllLibrariesWorker(QThread):
             the per-item callbacks above.
             """
             try:
-                with self._lock:
-                    if library_type == "movie":
-                        stats = db.save_movie_library(library_name, library_data)
-                    else:
-                        stats = db.save_library(library_name, library_data)
+                action = (
+                    "save_movie_library" if library_type == "movie" else "save_library"
+                )
+                task = DatabaseWriteTask(
+                    action=action,
+                    payload={
+                        "library_name": library_name,
+                        "library_data": library_data,
+                    },
+                )
+                self.database_queue.put(task)
+                task.event.wait()
+                if task.error:
+                    raise task.error
+                stats = task.result
                 if stats:
                     if "issues" in stats:
                         for issue in stats["issues"]:
@@ -582,6 +616,11 @@ class ScanAllLibrariesWorker(QThread):
         self.changed_movie_ids = set()
         self.current_pass = 1
 
+        # Start the database writer thread
+        self.database_queue = queue.Queue()
+        self.database_writer = DatabaseWriterThread(self.database_queue)
+        self.database_writer.start()
+
         try:
             logger.info("ScanAllLibrariesWorker starting global scan run")
             libraries_dictionary: Dict[str, Dict[str, Any]] = config.libraries
@@ -788,3 +827,7 @@ class ScanAllLibrariesWorker(QThread):
         except Exception as exception_instance:
             logger.exception("ScanAllLibrariesWorker failed")
             self.error.emit(str(exception_instance))
+        finally:
+            if self.database_writer is not None:
+                self.database_queue.put(None)
+                self.database_writer.join()
