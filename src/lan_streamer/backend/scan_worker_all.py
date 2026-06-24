@@ -155,19 +155,28 @@ class ScanAllLibrariesWorker(QThread):
                 target[key] += value
 
     @staticmethod
+    def _merge_stats_dicts_for_report(
+        stats_a: Dict[str, int], stats_b: Dict[str, int]
+    ) -> Dict[str, int]:
+        """Merge two stats dicts, returning a new dict with summed values."""
+        merged = dict(stats_a)
+        for key, value in stats_b.items():
+            merged[key] = merged.get(key, 0) + value
+        return merged
+
+    @staticmethod
     def _log_per_library_scan_report(
-        library_name: str, pass_label: str, stats_dict: Dict[str, int]
+        library_name: str, paths_str: str, stats_dict: Dict[str, int]
     ) -> None:
-        """Log an individual library scan report.
+        """Log an individual library scan report with accumulated stats.
 
         Args:
             library_name: Name of the library being reported.
-            pass_label: Either ``"PASS 1"`` or ``"PASS 2"``.
-            stats_dict: Statistics dictionary for this library + pass.
+            paths_str: Comma-separated library paths.
+            stats_dict: Accumulated statistics dictionary for this library.
         """
-        logger.info(
-            f"[SCAN_REPORT] --- Per-Library Report: {library_name} ({pass_label}) ---"
-        )
+        logger.info(f"[SCAN_REPORT] --- Per-Library Report: {library_name} ---")
+        logger.info(f"[SCAN_REPORT]   Paths=[{paths_str}]")
         logger.info(
             f"[SCAN_REPORT]   Series: Scanned={stats_dict.get('series_scanned', 0)} | "
             f"Added={stats_dict.get('series_added', 0)} | "
@@ -209,14 +218,21 @@ class ScanAllLibrariesWorker(QThread):
         logger.info("[SCAN_REPORT] ===================================================")
         logger.info("[SCAN_REPORT]               SCAN RUN STATS REPORT")
         logger.info("[SCAN_REPORT] ===================================================")
-        logger.info(f"[SCAN_REPORT] Total Scan Duration: {duration:.2f} seconds")
-        logger.info(f"[SCAN_REPORT] Libraries Scanned: {len(libraries_dictionary)}")
+        logger.info("")
+
+        # Per-library reports (accumulated stats merged from both passes)
         for lib_name, lib_cfg in libraries_dictionary.items():
             paths_str = ", ".join(lib_cfg.get("paths", []))
-            logger.info(
-                f"[SCAN_REPORT]   - {lib_name} ({lib_cfg.get('type', 'tv')}): "
-                f"Paths=[{paths_str}]"
+            pass1_stats = self.pass1_stats_per_library.get(lib_name, {})
+            pass2_stats = self.pass2_stats_per_library.get(lib_name, {})
+            accumulated_stats = self._merge_stats_dicts_for_report(
+                pass1_stats, pass2_stats
             )
+            self._log_per_library_scan_report(lib_name, paths_str, accumulated_stats)
+        logger.info("[SCAN_REPORT] ---------------------------------------------------")
+
+        logger.info(f"[SCAN_REPORT] Total Scan Duration: {duration:.2f} seconds")
+        logger.info(f"[SCAN_REPORT] Libraries Scanned: {len(libraries_dictionary)}")
         if self.unavailable_directories:
             logger.info(
                 "[SCAN_REPORT] Unavailable Root Directories: "
@@ -224,28 +240,13 @@ class ScanAllLibrariesWorker(QThread):
             )
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
 
-        # Per-library breakdowns
-        for lib_name in libraries_dictionary:
-            if lib_name in self.pass1_stats_per_library:
-                self._log_per_library_scan_report(
-                    lib_name, "PASS 1", self.pass1_stats_per_library[lib_name]
-                )
-        for lib_name in libraries_dictionary:
-            if lib_name in self.pass2_stats_per_library:
-                self._log_per_library_scan_report(
-                    lib_name, "PASS 2", self.pass2_stats_per_library[lib_name]
-                )
-            logger.info(
-                "[SCAN_REPORT] ---------------------------------------------------"
-            )
-
         # Combined pass totals
         self._log_stats_breakdown(
-            "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN", self.pass1_stats
+            "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN (PASS 1)", self.pass1_stats
         )
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
         self._log_stats_breakdown(
-            "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN", self.pass2_stats
+            "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN (PASS 2)", self.pass2_stats
         )
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
         self._log_stats_breakdown("TOTAL ACCUMULATED RUN STATS", self.stats)
@@ -920,6 +921,7 @@ class ScanAllLibrariesWorker(QThread):
             # ------------------------------------------------------------------
             duration = time.time() - start_time
             self._log_scan_summary(duration, libraries_dictionary)
+            logger.info("[SCAN_REPORT] *** SCAN COMPLETED ***")
             self._log_issues_report()
 
             logger.info("ScanAllLibrariesWorker finished successfully")
