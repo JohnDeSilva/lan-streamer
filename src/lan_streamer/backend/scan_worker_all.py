@@ -1,27 +1,38 @@
 import logging
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set
-from PySide6.QtCore import QObject, Signal, QThread
+from typing import Any, Dict, List, Optional, Set
 
+from PySide6.QtCore import QObject, QThread, Signal
+
+from lan_streamer import db
+from lan_streamer.providers.jellyfin import jellyfin_client
 from lan_streamer.scanner import (
     VIDEO_EXTENSIONS,
     has_video_files,
+    scan_directories,
 )
-from lan_streamer import db
 from lan_streamer.system.config import config
-from lan_streamer.providers.jellyfin import jellyfin_client
-from lan_streamer.scanner import scan_directories
 
 logger = logging.getLogger("lan_streamer.backend")
 
 
 class ScanAllLibrariesWorker(QThread):
-    """Scans all configured libraries sequentially using TMDB for metadata."""
+    """Scans all configured libraries in parallel using TMDB for metadata.
+
+    Libraries are scanned concurrently within each pass using a
+    ``ThreadPoolExecutor``.  Pass 1 performs offline file discovery; Pass 2
+    resolves online metadata.  Results from each thread-pool task are merged
+    into shared state under a lock.
+    """
 
     library_progress = Signal(str, int, int)
     detail_progress = Signal(str, dict)  # (event_type, payload)
     finished = Signal()
     error = Signal(str)
+    library_error = Signal(str, str)  # (library_name, error_message)
 
     def __init__(
         self,
@@ -30,10 +41,21 @@ class ScanAllLibrariesWorker(QThread):
         run_pass2: bool = True,
         parent: Optional[QObject] = None,
     ) -> None:
+        """Initialise the scan-all-libraries worker.
+
+        Args:
+            force_refresh: If True, re-resolve metadata even for unchanged items.
+            run_pass1: If True, execute offline file-discovery pass.
+            run_pass2: If True, execute online metadata-resolution pass.
+            parent: Optional QObject parent.
+        """
         super().__init__(parent)
         self.force_refresh: bool = force_refresh
         self.run_pass1: bool = run_pass1
         self.run_pass2: bool = run_pass2
+
+        # Shared mutable state — protected by _lock when accessed from threads.
+        self._lock: threading.Lock = threading.Lock()
         self.unavailable_directories: List[str] = []
         self.problems: List[Dict[str, Any]] = []
         self.stats: Dict[str, int] = {}
@@ -86,11 +108,571 @@ class ScanAllLibrariesWorker(QThread):
             "movies_skipped": 0,
         }
 
-    def _discover_tree(self) -> Dict[str, Any]:
+        # Per-library per-pass statistics.
+        self.pass1_stats_per_library: Dict[str, Dict[str, int]] = {}
+        self.pass2_stats_per_library: Dict[str, Dict[str, int]] = {}
+
+    # ------------------------------------------------------------------
+    # Helper methods
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _create_empty_stats() -> Dict[str, int]:
+        """Return a fresh zeroed stats dictionary with all 20 keys."""
+        return {
+            "series_scanned": 0,
+            "series_added": 0,
+            "series_updated": 0,
+            "series_removed": 0,
+            "series_skipped": 0,
+            "seasons_scanned": 0,
+            "seasons_added": 0,
+            "seasons_updated": 0,
+            "seasons_removed": 0,
+            "seasons_skipped": 0,
+            "episodes_scanned": 0,
+            "episodes_added": 0,
+            "episodes_updated": 0,
+            "episodes_removed": 0,
+            "episodes_skipped": 0,
+            "movies_scanned": 0,
+            "movies_added": 0,
+            "movies_updated": 0,
+            "movies_removed": 0,
+            "movies_skipped": 0,
+        }
+
+    @staticmethod
+    def _merge_stats_dicts(target: Dict[str, int], source: Dict[str, int]) -> None:
+        """Merge all values from *source* into *target* in-place.
+
+        Args:
+            target: The dictionary to merge into.
+            source: The dictionary whose values are added to *target*.
         """
-        Pre-walks all library directories to count total folders and files
-        so the UI can initialise the tree and segmented progress bar before
-        scanning begins.  Returns a structure keyed by library name.
+        for key, value in source.items():
+            if key in target:
+                target[key] += value
+
+    @staticmethod
+    def _log_per_library_scan_report(
+        library_name: str, pass_label: str, stats_dict: Dict[str, int]
+    ) -> None:
+        """Log an individual library scan report.
+
+        Args:
+            library_name: Name of the library being reported.
+            pass_label: Either ``"PASS 1"`` or ``"PASS 2"``.
+            stats_dict: Statistics dictionary for this library + pass.
+        """
+        logger.info(
+            f"[SCAN_REPORT] --- Per-Library Report: {library_name} ({pass_label}) ---"
+        )
+        logger.info(
+            f"[SCAN_REPORT]   Series: Scanned={stats_dict.get('series_scanned', 0)} | "
+            f"Added={stats_dict.get('series_added', 0)} | "
+            f"Updated={stats_dict.get('series_updated', 0)} | "
+            f"Removed={stats_dict.get('series_removed', 0)} | "
+            f"Skipped={stats_dict.get('series_skipped', 0)}"
+        )
+        logger.info(
+            f"[SCAN_REPORT]   Seasons: Scanned={stats_dict.get('seasons_scanned', 0)} | "
+            f"Added={stats_dict.get('seasons_added', 0)} | "
+            f"Updated={stats_dict.get('seasons_updated', 0)} | "
+            f"Removed={stats_dict.get('seasons_removed', 0)} | "
+            f"Skipped={stats_dict.get('seasons_skipped', 0)}"
+        )
+        logger.info(
+            f"[SCAN_REPORT]   Episodes: Scanned={stats_dict.get('episodes_scanned', 0)} | "
+            f"Added={stats_dict.get('episodes_added', 0)} | "
+            f"Updated={stats_dict.get('episodes_updated', 0)} | "
+            f"Removed={stats_dict.get('episodes_removed', 0)} | "
+            f"Skipped={stats_dict.get('episodes_skipped', 0)}"
+        )
+        logger.info(
+            f"[SCAN_REPORT]   Movies: Scanned={stats_dict.get('movies_scanned', 0)} | "
+            f"Added={stats_dict.get('movies_added', 0)} | "
+            f"Updated={stats_dict.get('movies_updated', 0)} | "
+            f"Removed={stats_dict.get('movies_removed', 0)} | "
+            f"Skipped={stats_dict.get('movies_skipped', 0)}"
+        )
+
+    def _log_scan_summary(
+        self, duration: float, libraries_dictionary: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """Log the combined scan summary with per-library and pass totals.
+
+        Args:
+            duration: Total elapsed scan time in seconds.
+            libraries_dictionary: The full libraries configuration dict.
+        """
+        logger.info("[SCAN_REPORT] ===================================================")
+        logger.info("[SCAN_REPORT]               SCAN RUN STATS REPORT")
+        logger.info("[SCAN_REPORT] ===================================================")
+        logger.info(f"[SCAN_REPORT] Total Scan Duration: {duration:.2f} seconds")
+        logger.info(f"[SCAN_REPORT] Libraries Scanned: {len(libraries_dictionary)}")
+        for lib_name, lib_cfg in libraries_dictionary.items():
+            paths_str = ", ".join(lib_cfg.get("paths", []))
+            logger.info(
+                f"[SCAN_REPORT]   - {lib_name} ({lib_cfg.get('type', 'tv')}): "
+                f"Paths=[{paths_str}]"
+            )
+        if self.unavailable_directories:
+            logger.info(
+                "[SCAN_REPORT] Unavailable Root Directories: "
+                f"{', '.join(self.unavailable_directories)}"
+            )
+        logger.info("[SCAN_REPORT] ---------------------------------------------------")
+
+        # Per-library breakdowns
+        for lib_name in libraries_dictionary:
+            if lib_name in self.pass1_stats_per_library:
+                self._log_per_library_scan_report(
+                    lib_name, "PASS 1", self.pass1_stats_per_library[lib_name]
+                )
+        for lib_name in libraries_dictionary:
+            if lib_name in self.pass2_stats_per_library:
+                self._log_per_library_scan_report(
+                    lib_name, "PASS 2", self.pass2_stats_per_library[lib_name]
+                )
+            logger.info(
+                "[SCAN_REPORT] ---------------------------------------------------"
+            )
+
+        # Combined pass totals
+        self._log_stats_breakdown(
+            "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN", self.pass1_stats
+        )
+        logger.info("[SCAN_REPORT] ---------------------------------------------------")
+        self._log_stats_breakdown(
+            "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN", self.pass2_stats
+        )
+        logger.info("[SCAN_REPORT] ---------------------------------------------------")
+        self._log_stats_breakdown("TOTAL ACCUMULATED RUN STATS", self.stats)
+        logger.info("[SCAN_REPORT] ===================================================")
+
+    def _log_stats_breakdown(self, label: str, stats_dict: Dict[str, int]) -> None:
+        """Log a single stats breakdown section.
+
+        Args:
+            label: Section heading for the log output.
+            stats_dict: Statistics dictionary to log.
+        """
+        logger.info(f"[SCAN_REPORT] {label}")
+        logger.info(
+            f"[SCAN_REPORT]   Series: Scanned={stats_dict.get('series_scanned', 0)} | "
+            f"Added={stats_dict.get('series_added', 0)} | "
+            f"Updated={stats_dict.get('series_updated', 0)} | "
+            f"Removed={stats_dict.get('series_removed', 0)} | "
+            f"Skipped={stats_dict.get('series_skipped', 0)}"
+        )
+        logger.info(
+            f"[SCAN_REPORT]   Seasons: Scanned={stats_dict.get('seasons_scanned', 0)} | "
+            f"Added={stats_dict.get('seasons_added', 0)} | "
+            f"Updated={stats_dict.get('seasons_updated', 0)} | "
+            f"Removed={stats_dict.get('seasons_removed', 0)} | "
+            f"Skipped={stats_dict.get('seasons_skipped', 0)}"
+        )
+        logger.info(
+            f"[SCAN_REPORT]   Episodes: Scanned={stats_dict.get('episodes_scanned', 0)} | "
+            f"Added={stats_dict.get('episodes_added', 0)} | "
+            f"Updated={stats_dict.get('episodes_updated', 0)} | "
+            f"Removed={stats_dict.get('episodes_removed', 0)} | "
+            f"Skipped={stats_dict.get('episodes_skipped', 0)}"
+        )
+        logger.info(
+            f"[SCAN_REPORT]   Movies: Scanned={stats_dict.get('movies_scanned', 0)} | "
+            f"Added={stats_dict.get('movies_added', 0)} | "
+            f"Updated={stats_dict.get('movies_updated', 0)} | "
+            f"Removed={stats_dict.get('movies_removed', 0)} | "
+            f"Skipped={stats_dict.get('movies_skipped', 0)}"
+        )
+
+    def _log_issues_report(self) -> None:
+        """Log grouped issues from the scan run."""
+        if not self.problems:
+            return
+
+        grouped: Dict[str, Dict[str, List[str]]] = {}
+        for prob in self.problems:
+            problem_type = prob["type"]
+            problem_error = prob["error"]
+            problem_item = prob["item"]
+            if problem_type not in grouped:
+                grouped[problem_type] = {}
+            if problem_error not in grouped[problem_type]:
+                grouped[problem_type][problem_error] = []
+            grouped[problem_type][problem_error].append(problem_item)
+
+        logger.info("[SCAN_REPORT] ===================================================")
+        logger.info("[SCAN_REPORT]               SCAN RUN ISSUES REPORT")
+        logger.info("[SCAN_REPORT] ===================================================")
+        for problem_type, errors in grouped.items():
+            logger.info(f"[SCAN_REPORT] Type: {problem_type}")
+            for problem_error, items in errors.items():
+                logger.info(f"[SCAN_REPORT]   Error: {problem_error}")
+                for item in items:
+                    logger.info(f"[SCAN_REPORT]     - {item}")
+            logger.info(
+                "[SCAN_REPORT] ---------------------------------------------------"
+            )
+        logger.info("[SCAN_REPORT] ===================================================")
+
+    # ------------------------------------------------------------------
+    # Per-library scanning logic (runs inside thread pool workers)
+    # ------------------------------------------------------------------
+
+    def _scan_library_pass(
+        self,
+        library_name: str,
+        library_configuration: Dict[str, Any],
+        existing_library_data: Dict[str, Any],
+        jellyfin_data: Optional[Dict[str, Any]],
+        is_pass1: bool,
+    ) -> Dict[str, Any]:
+        """Execute one scan pass for a single library inside a thread-pool worker.
+
+        Args:
+            library_name: Name of the library to scan.
+            library_configuration: Configuration dict for the library
+                (keys include ``paths``, ``type``, ``show_future_episodes``).
+            existing_library_data: Previously persisted library data loaded
+                from the database.
+            jellyfin_data: Jellyfin correlation data (``None`` for Pass 1).
+            is_pass1: ``True`` for the offline file-discovery pass,
+                ``False`` for the online metadata-resolution pass.
+
+        Returns:
+            A dictionary with the following keys:
+
+            - ``library_name`` (str)
+            - ``library_data`` (dict) — updated LibraryDict from
+              :func:`~lan_streamer.scanner.core.scan_directories`
+            - ``pass_stats`` (Dict[str, int]) — per-pass statistics
+            - ``problems`` (List[Dict]) — issues encountered during the pass
+            - ``unavailable_directories`` (List[str]) — missing root directories
+            - ``changed_season_ids`` (Set[str]) — season IDs that changed
+            - ``changed_movie_ids`` (Set[str]) — movie IDs that changed
+        """
+        root_directories: List[str] = list(library_configuration.get("paths", []))
+        library_type: str = library_configuration.get("type", "tv")
+        show_future_episodes: bool = library_configuration.get(
+            "show_future_episodes", True
+        )
+
+        # Local accumulators (thread-local, not shared)
+        local_stats: Dict[str, int] = self._create_empty_stats()
+        local_problems: List[Dict[str, Any]] = []
+        local_changed_season_ids: Set[str] = set()
+        local_changed_movie_ids: Set[str] = set()
+        local_series_scanned: Set[str] = set()
+        lib_unavailable_dirs: List[str] = []
+
+        self.detail_progress.emit("start_library", {"library": library_name})
+
+        # ------------------------------------------------------------------
+        # Callback closures — write to local accumulators
+        # ------------------------------------------------------------------
+
+        def _make_detail_callback(lib_name: str) -> Any:
+            """Create a detail-progress callback that enriches events with the
+            library name."""
+
+            def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
+                enriched: Dict[str, Any] = {"library": lib_name, **payload}
+                self.detail_progress.emit(event, enriched)
+
+            return _detail_callback
+
+        def _season_callback(
+            series_name: str,
+            series_data: Dict[str, Any],
+            season_name: str,
+            season_data: Dict[str, Any],
+        ) -> None:
+            """Process a single season during scanning, persisting it to the
+            database and accumulating local statistics."""
+            logger.info(
+                f"ScanAllLibrariesWorker writing season "
+                f"'{season_name}' of series '{series_name}' to database..."
+            )
+            try:
+                stats = db.save_season_data(
+                    library_name,
+                    series_name,
+                    series_data,
+                    season_name,
+                    season_data,
+                )
+                if stats:
+                    if "issues" in stats:
+                        for issue in stats["issues"]:
+                            local_problems.append(issue)
+
+                    # Track series-level scan (first season encountered)
+                    if series_name not in local_series_scanned:
+                        local_series_scanned.add(series_name)
+                        local_stats["series_scanned"] += 1
+                        any_changed = any(
+                            s_data.get("_changed", True)
+                            for s_data in series_data.get("seasons", {}).values()
+                        )
+                        if not any_changed:
+                            local_stats["series_skipped"] += 1
+
+                    local_stats["seasons_scanned"] += 1
+
+                    num_eps: int = len(season_data.get("episodes", []))
+                    local_stats["episodes_scanned"] += num_eps
+
+                    if not season_data.get("_changed", True):
+                        local_stats["seasons_skipped"] += 1
+                        local_stats["episodes_skipped"] += num_eps
+
+                    # Add/update/remove counts from db return value
+                    for key in local_stats:
+                        if key in stats and not (
+                            key.endswith("_scanned") or key.endswith("_skipped")
+                        ):
+                            local_stats[key] += stats[key]
+
+                    if season_data.get("_changed", True) and "season_id" in stats:
+                        local_changed_season_ids.add(stats["season_id"])
+            except Exception as exc:
+                error_message: str = str(exc)
+                clean_message: str = error_message.split("\n")[0].strip()
+                if "\n" in error_message:
+                    logger.debug(
+                        f"Database write failure detailed error: {error_message}"
+                    )
+                logger.warning(
+                    "[SCAN_ISSUE] Type=Database Write Failure | "
+                    f"Item=Season '{season_name}' of series "
+                    f"'{series_name}' (Library: '{library_name}') | "
+                    f"Error={clean_message}"
+                )
+                local_problems.append(
+                    {
+                        "type": "Database Write Failure",
+                        "item": (
+                            f"Season '{season_name}' of series "
+                            f"'{series_name}' (Library: '{library_name}')"
+                        ),
+                        "error": clean_message,
+                    }
+                )
+
+        def _movie_callback(movie_name: str, movie_data: Dict[str, Any]) -> None:
+            """Process a single movie during scanning, persisting it to the
+            database and accumulating local statistics."""
+            logger.info(
+                f"ScanAllLibrariesWorker writing movie '{movie_name}' to database..."
+            )
+            try:
+                stats = db.save_movie_data(library_name, movie_name, movie_data)
+                if stats:
+                    if "issues" in stats:
+                        for issue in stats["issues"]:
+                            local_problems.append(issue)
+
+                    local_stats["movies_scanned"] += 1
+                    if not movie_data.get("_changed", True):
+                        local_stats["movies_skipped"] += 1
+
+                    for key in local_stats:
+                        if key in stats and not (
+                            key.endswith("_scanned") or key.endswith("_skipped")
+                        ):
+                            local_stats[key] += stats[key]
+
+                    if movie_data.get("_changed", True) and "movie_id" in stats:
+                        local_changed_movie_ids.add(stats["movie_id"])
+            except Exception as exc:
+                error_message: str = str(exc)
+                clean_message: str = error_message.split("\n")[0].strip()
+                if "\n" in error_message:
+                    logger.debug(
+                        f"Database write failure detailed error: {error_message}"
+                    )
+                logger.warning(
+                    "[SCAN_ISSUE] Type=Database Write Failure | "
+                    f"Item=Movie '{movie_name}' "
+                    f"(Library: '{library_name}') | "
+                    f"Error={clean_message}"
+                )
+                local_problems.append(
+                    {
+                        "type": "Database Write Failure",
+                        "item": (f"Movie '{movie_name}' (Library: '{library_name}')"),
+                        "error": clean_message,
+                    }
+                )
+
+        def _save_lib_data(lib_data: Dict[str, Any]) -> None:
+            """Persist the full library data to the database.
+
+            Only ``_removed`` and ``deleted`` keys from the return value are
+            counted here since additions/updates are already accounted for in
+            the per-item callbacks above.
+            """
+            try:
+                if library_type == "movie":
+                    stats = db.save_movie_library(library_name, lib_data)
+                else:
+                    stats = db.save_library(library_name, lib_data)
+                if stats:
+                    if "issues" in stats:
+                        for issue in stats["issues"]:
+                            local_problems.append(issue)
+                    for key in local_stats:
+                        if key in stats and (
+                            key.endswith("_removed") or key == "deleted"
+                        ):
+                            local_stats[key] += stats[key]
+            except Exception as exc:
+                error_message: str = str(exc)
+                clean_message: str = error_message.split("\n")[0].strip()
+                if "\n" in error_message:
+                    logger.debug(
+                        f"Database write failure detailed error: {error_message}"
+                    )
+                logger.warning(
+                    "[SCAN_ISSUE] Type=Database Write Failure | "
+                    f"Item=Library '{library_name}' | "
+                    f"Error={clean_message}"
+                )
+                local_problems.append(
+                    {
+                        "type": "Database Write Failure",
+                        "item": f"Library '{library_name}'",
+                        "error": clean_message,
+                    }
+                )
+
+        # ------------------------------------------------------------------
+        # Execute the scan
+        # ------------------------------------------------------------------
+
+        if not root_directories:
+            # No root directories — scan with empty path list to trigger
+            # cleanup-only logic.
+            updated_library_data = scan_directories(
+                [],
+                library_type=library_type,
+                existing_library=existing_library_data,
+                jellyfin_data=jellyfin_data if not is_pass1 else None,
+                callback=None,
+                force_refresh=self.force_refresh,
+                cleanup=False,
+                detail_callback=_make_detail_callback(library_name),
+                show_future_episodes=show_future_episodes,
+                offline=is_pass1,
+                season_callback=_season_callback,
+                movie_callback=_movie_callback,
+                metadata_only=not is_pass1,
+            )
+            # Collect unavailable directories from this scan.
+            if updated_library_data.unavailable_directories:
+                for root in updated_library_data.unavailable_directories:
+                    lib_unavailable_dirs.append(root)
+                    # Only log unavailable directory issues once (in Pass 1)
+                    if is_pass1:
+                        error_message: str = (
+                            f"Root directory '{root}' in library "
+                            f"'{library_name}' is unavailable on filesystem."
+                        )
+                        logger.warning(
+                            "[SCAN_ISSUE] Type=Unavailable Directory | "
+                            f"Item={root} (Library: '{library_name}') | "
+                            f"Error={error_message}"
+                        )
+                        local_problems.append(
+                            {
+                                "type": "Unavailable Directory",
+                                "item": (f"{root} (Library: '{library_name}')"),
+                                "error": error_message,
+                            }
+                        )
+            _save_lib_data(updated_library_data)
+            current_library_data: Dict[str, Any] = updated_library_data
+        else:
+            current_library_data = existing_library_data
+            for root_dir in root_directories:
+                self.detail_progress.emit(
+                    "start_root",
+                    {"library": library_name, "root": root_dir},
+                )
+                updated_library_data = scan_directories(
+                    [root_dir],
+                    library_type=library_type,
+                    existing_library=current_library_data,
+                    jellyfin_data=jellyfin_data if not is_pass1 else None,
+                    callback=None,
+                    force_refresh=self.force_refresh,
+                    cleanup=False,
+                    detail_callback=_make_detail_callback(library_name),
+                    show_future_episodes=show_future_episodes,
+                    offline=is_pass1,
+                    season_callback=_season_callback,
+                    movie_callback=_movie_callback,
+                    metadata_only=not is_pass1,
+                )
+                # Collect unavailable directories from this root scan.
+                if updated_library_data.unavailable_directories:
+                    for root in updated_library_data.unavailable_directories:
+                        lib_unavailable_dirs.append(root)
+                        # Only log unavailable directory issues once (in Pass 1)
+                        if is_pass1:
+                            error_message = (
+                                f"Root directory '{root}' in library "
+                                f"'{library_name}' is unavailable on filesystem."
+                            )
+                            logger.warning(
+                                "[SCAN_ISSUE] Type=Unavailable Directory | "
+                                f"Item={root} (Library: '{library_name}') | "
+                                f"Error={error_message}"
+                            )
+                            local_problems.append(
+                                {
+                                    "type": "Unavailable Directory",
+                                    "item": (f"{root} (Library: '{library_name}')"),
+                                    "error": error_message,
+                                }
+                            )
+                current_library_data = updated_library_data
+                _save_lib_data(updated_library_data)
+
+                # Finish-root is only emitted in Pass 2 (metadata resolution).
+                if not is_pass1:
+                    self.detail_progress.emit(
+                        "finish_root",
+                        {"library": library_name, "root": root_dir},
+                    )
+
+        self.detail_progress.emit("finish_library", {"library": library_name})
+
+        return {
+            "library_name": library_name,
+            "library_data": current_library_data,
+            "pass_stats": local_stats,
+            "problems": local_problems,
+            "unavailable_directories": lib_unavailable_dirs,
+            "changed_season_ids": local_changed_season_ids,
+            "changed_movie_ids": local_changed_movie_ids,
+        }
+
+    # ------------------------------------------------------------------
+    # Tree discovery
+    # ------------------------------------------------------------------
+
+    def _discover_tree(self) -> Dict[str, Any]:
+        """Pre-walk all library directories to count total folders and files.
+
+        This allows the UI to initialise the tree and segmented progress bar
+        before scanning begins.
+
+        Returns:
+            A nested dictionary keyed by library name.
         """
         tree: Dict[str, Any] = {}
         for library_name, library_configuration in config.libraries.items():
@@ -136,45 +718,32 @@ class ScanAllLibrariesWorker(QThread):
             tree[library_name] = {"type": library_type, "roots": roots}
         return tree
 
+    # ------------------------------------------------------------------
+    # Main execution entrypoint (runs in the QThread)
+    # ------------------------------------------------------------------
+
     def run(self) -> None:
+        """Execute the full scan run with parallel library scanning."""
         import time
 
         start_time = time.time()
         self.problems = []
-        self.stats = {
-            "series_scanned": 0,
-            "series_added": 0,
-            "series_updated": 0,
-            "series_removed": 0,
-            "series_skipped": 0,
-            "seasons_scanned": 0,
-            "seasons_added": 0,
-            "seasons_updated": 0,
-            "seasons_removed": 0,
-            "seasons_skipped": 0,
-            "episodes_scanned": 0,
-            "episodes_added": 0,
-            "episodes_updated": 0,
-            "episodes_removed": 0,
-            "episodes_skipped": 0,
-            "movies_scanned": 0,
-            "movies_added": 0,
-            "movies_updated": 0,
-            "movies_removed": 0,
-            "movies_skipped": 0,
-        }
-        self.pass1_series_scanned = set()
-        self.pass2_series_scanned = set()
+        self.stats = self._create_empty_stats()
+        self.pass1_series_scanned: Set[str] = set()
+        self.pass2_series_scanned: Set[str] = set()
         for key in self.pass1_stats:
             self.pass1_stats[key] = 0
             self.pass2_stats[key] = 0
+        self.pass1_stats_per_library = {}
+        self.pass2_stats_per_library = {}
+
         try:
             logger.info("ScanAllLibrariesWorker starting global scan run")
-            libraries_dictionary = config.libraries
+            libraries_dictionary: Dict[str, Dict[str, Any]] = config.libraries
             total_count: int = len(libraries_dictionary)
             self.unavailable_directories = []
 
-            # Pre-discover tree structure and tell the UI to initialise it
+            # Pre-discover tree structure and tell the UI to initialise it.
             tree_structure = self._discover_tree()
             self.detail_progress.emit(
                 "init_tree",
@@ -188,9 +757,12 @@ class ScanAllLibrariesWorker(QThread):
             if jellyfin_client.is_configured():
                 jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
-            # Helper dictionary to persist the intermediate library state from Pass 1 to Pass 2
+            # Load existing library data from the database.
             library_data_by_name: Dict[str, Dict[str, Any]] = {}
-            for library_name, library_configuration in libraries_dictionary.items():
+            for (
+                library_name,
+                library_configuration,
+            ) in libraries_dictionary.items():
                 library_type = library_configuration.get("type", "tv")
                 if library_type == "movie":
                     library_data_by_name[library_name] = db.load_movie_library(
@@ -199,706 +771,160 @@ class ScanAllLibrariesWorker(QThread):
                 else:
                     library_data_by_name[library_name] = db.load_library(library_name)
 
+            max_workers: int = max(
+                1,
+                min(
+                    len(libraries_dictionary),
+                    (os.cpu_count() or 4),
+                ),
+            )
+
+            # ------------------------------------------------------------------
+            # PASS 1 — Offline file scan
+            # ------------------------------------------------------------------
             if self.run_pass1:
                 self.current_pass = 1
-                # --- PASS 1: OFFLINE FILE SCAN ---
                 logger.info("ScanAllLibrariesWorker starting Pass 1 (Offline Scan)")
                 self.detail_progress.emit("start_offline_scan", {})
 
-                for library_name, library_configuration in libraries_dictionary.items():
-                    logger.info(
-                        f"ScanAllLibrariesWorker Pass 1 scanning library: {library_name}"
-                    )
-                    root_directories = list(library_configuration.get("paths", []))
-                    library_type = library_configuration.get("type", "tv")
-                    show_future = library_configuration.get(
-                        "show_future_episodes", True
-                    )
-                    existing_library_data = library_data_by_name[library_name]
-
-                    self.detail_progress.emit(
-                        "start_library", {"library": library_name}
-                    )
-
-                    def _make_detail_callback(lib_name: str) -> Any:
-                        worker_self = self
-
-                        def _detail_callback(
-                            event: str, payload: Dict[str, Any]
-                        ) -> None:
-                            enriched = {"library": lib_name, **payload}
-                            worker_self.detail_progress.emit(event, enriched)
-
-                        return _detail_callback
-
-                    def _season_callback(
-                        series_name: str,
-                        series_data: Dict[str, Any],
-                        season_name: str,
-                        season_data: Dict[str, Any],
-                    ) -> None:
-                        logger.info(
-                            f"ScanAllLibrariesWorker writing season '{season_name}' of series '{series_name}' to database..."
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    future_to_library: Dict[Any, str] = {}
+                    for (
+                        library_name,
+                        library_configuration,
+                    ) in libraries_dictionary.items():
+                        future = executor.submit(
+                            self._scan_library_pass,
+                            library_name,
+                            library_configuration,
+                            library_data_by_name[library_name],
+                            None,  # jellyfin_data is None for Pass 1
+                            True,  # is_pass1
                         )
+                        future_to_library[future] = library_name
+
+                    failed_libraries: set = set()
+                    for future in as_completed(future_to_library):
+                        library_name = future_to_library[future]
                         try:
-                            stats = db.save_season_data(
-                                library_name,
-                                series_name,
-                                series_data,
-                                season_name,
-                                season_data,
+                            result: Dict[str, Any] = future.result()
+                        except Exception as exc:
+                            logger.exception(
+                                f"ScanAllLibrariesWorker Pass 1 failed "
+                                f"for library: {library_name}"
                             )
-                            if stats:
-                                if "issues" in stats:
-                                    for issue in stats["issues"]:
-                                        self.problems.append(issue)
-                                target_stats = (
-                                    self.pass1_stats
-                                    if self.current_pass == 1
-                                    else self.pass2_stats
-                                )
-                                series_scanned_set = (
-                                    self.pass1_series_scanned
-                                    if self.current_pass == 1
-                                    else self.pass2_series_scanned
-                                )
-                                if series_name not in series_scanned_set:
-                                    series_scanned_set.add(series_name)
-                                    target_stats["series_scanned"] += 1
-                                    self.stats["series_scanned"] += 1
-                                    any_changed = any(
-                                        s.get("_changed", True)
-                                        for s in series_data.get("seasons", {}).values()
-                                    )
-                                    if not any_changed:
-                                        target_stats["series_skipped"] += 1
-                                        self.stats["series_skipped"] += 1
+                            self.library_error.emit(library_name, str(exc))
+                            failed_libraries.add(library_name)
+                            continue
 
-                                target_stats["seasons_scanned"] += 1
-                                self.stats["seasons_scanned"] += 1
+                        # Merge per-library stats into combined totals
+                        # (single-threaded section — no lock needed).
+                        self._merge_stats_dicts(self.pass1_stats, result["pass_stats"])
+                        self._merge_stats_dicts(self.stats, result["pass_stats"])
+                        self.pass1_stats_per_library[library_name] = result[
+                            "pass_stats"
+                        ]
 
-                                num_eps = len(season_data.get("episodes", []))
-                                target_stats["episodes_scanned"] += num_eps
-                                self.stats["episodes_scanned"] += num_eps
-
-                                if not season_data.get("_changed", True):
-                                    target_stats["seasons_skipped"] += 1
-                                    self.stats["seasons_skipped"] += 1
-                                    target_stats["episodes_skipped"] += num_eps
-                                    self.stats["episodes_skipped"] += num_eps
-
-                                for key in self.stats:
-                                    if key in stats and not (
-                                        key.endswith("_scanned")
-                                        or key.endswith("_skipped")
-                                    ):
-                                        self.stats[key] += stats[key]
-                                        target_stats[key] += stats[key]
-                                if (
-                                    season_data.get("_changed", True)
-                                    and "season_id" in stats
-                                ):
-                                    self.changed_season_ids.add(stats["season_id"])
-                        except Exception as e:
-                            err_msg = str(e)
-                            clean_msg = err_msg.split("\n")[0].strip()
-                            if "\n" in err_msg:
-                                logger.debug(
-                                    f"Database write failure detailed error: {err_msg}"
-                                )
-                            logger.warning(
-                                f"[SCAN_ISSUE] Type=Database Write Failure | Item=Season '{season_name}' of series '{series_name}' (Library: '{library_name}') | Error={clean_msg}"
-                            )
-                            self.problems.append(
-                                {
-                                    "type": "Database Write Failure",
-                                    "item": f"Season '{season_name}' of series '{series_name}' (Library: '{library_name}')",
-                                    "error": clean_msg,
-                                }
-                            )
-
-                    def _movie_callback(
-                        movie_name: str, movie_data: Dict[str, Any]
-                    ) -> None:
-                        logger.info(
-                            f"ScanAllLibrariesWorker writing movie '{movie_name}' to database..."
-                        )
-                        try:
-                            stats = db.save_movie_data(
-                                library_name, movie_name, movie_data
-                            )
-                            if stats:
-                                if "issues" in stats:
-                                    for issue in stats["issues"]:
-                                        self.problems.append(issue)
-                                target_stats = (
-                                    self.pass1_stats
-                                    if self.current_pass == 1
-                                    else self.pass2_stats
-                                )
-                                target_stats["movies_scanned"] += 1
-                                self.stats["movies_scanned"] += 1
-                                if not movie_data.get("_changed", True):
-                                    target_stats["movies_skipped"] += 1
-                                    self.stats["movies_skipped"] += 1
-
-                                for key in self.stats:
-                                    if key in stats and not (
-                                        key.endswith("_scanned")
-                                        or key.endswith("_skipped")
-                                    ):
-                                        self.stats[key] += stats[key]
-                                        target_stats[key] += stats[key]
-                                if (
-                                    movie_data.get("_changed", True)
-                                    and "movie_id" in stats
-                                ):
-                                    self.changed_movie_ids.add(stats["movie_id"])
-                        except Exception as e:
-                            err_msg = str(e)
-                            clean_msg = err_msg.split("\n")[0].strip()
-                            if "\n" in err_msg:
-                                logger.debug(
-                                    f"Database write failure detailed error: {err_msg}"
-                                )
-                            logger.warning(
-                                f"[SCAN_ISSUE] Type=Database Write Failure | Item=Movie '{movie_name}' (Library: '{library_name}') | Error={clean_msg}"
-                            )
-                            self.problems.append(
-                                {
-                                    "type": "Database Write Failure",
-                                    "item": f"Movie '{movie_name}' (Library: '{library_name}')",
-                                    "error": clean_msg,
-                                }
-                            )
-
-                    def _save_lib_data(lib_data: Dict[str, Any]) -> None:
-                        try:
-                            if library_type == "movie":
-                                stats = db.save_movie_library(library_name, lib_data)
-                            else:
-                                stats = db.save_library(library_name, lib_data)
-                            if stats:
-                                if "issues" in stats:
-                                    for issue in stats["issues"]:
-                                        self.problems.append(issue)
-                                target_stats = (
-                                    self.pass1_stats
-                                    if self.current_pass == 1
-                                    else self.pass2_stats
-                                )
-                                # Only count removal/deletion stats here since
-                                # _season_callback/_movie_callback already
-                                # accumulated additions and updates.
-                                for key in self.stats:
-                                    if key in stats and (
-                                        key.endswith("_removed") or key == "deleted"
-                                    ):
-                                        self.stats[key] += stats[key]
-                                        target_stats[key] += stats[key]
-                        except Exception as e:
-                            err_msg = str(e)
-                            clean_msg = err_msg.split("\n")[0].strip()
-                            if "\n" in err_msg:
-                                logger.debug(
-                                    f"Database write failure detailed error: {err_msg}"
-                                )
-                            logger.warning(
-                                f"[SCAN_ISSUE] Type=Database Write Failure | Item=Library '{library_name}' | Error={clean_msg}"
-                            )
-                            self.problems.append(
-                                {
-                                    "type": "Database Write Failure",
-                                    "item": f"Library '{library_name}'",
-                                    "error": clean_msg,
-                                }
-                            )
-
-                    if not root_directories:
-                        updated_library_data = scan_directories(
-                            [],
-                            library_type=library_type,
-                            existing_library=existing_library_data,
-                            jellyfin_data=None,
-                            callback=None,
-                            force_refresh=self.force_refresh,
-                            cleanup=False,
-                            detail_callback=_make_detail_callback(library_name),
-                            show_future_episodes=show_future,
-                            offline=True,
-                            season_callback=_season_callback,
-                            movie_callback=_movie_callback,
-                        )
-                        if updated_library_data.unavailable_directories:
-                            for root in updated_library_data.unavailable_directories:
+                        # Merge shared state under lock.
+                        with self._lock:
+                            self.problems.extend(result["problems"])
+                            for root in result["unavailable_directories"]:
                                 if root not in self.unavailable_directories:
                                     self.unavailable_directories.append(root)
-                                    err_msg = f"Root directory '{root}' in library '{library_name}' is unavailable on filesystem."
-                                    logger.warning(
-                                        f"[SCAN_ISSUE] Type=Unavailable Directory | Item={root} (Library: '{library_name}') | Error={err_msg}"
-                                    )
-                                    self.problems.append(
-                                        {
-                                            "type": "Unavailable Directory",
-                                            "item": f"{root} (Library: '{library_name}')",
-                                            "error": err_msg,
-                                        }
-                                    )
-                        library_data_by_name[library_name] = updated_library_data
-                        _save_lib_data(updated_library_data)
-                    else:
-                        for root_dir in root_directories:
-                            self.detail_progress.emit(
-                                "start_root",
-                                {"library": library_name, "root": root_dir},
-                            )
-                            updated_library_data = scan_directories(
-                                [root_dir],
-                                library_type=library_type,
-                                existing_library=existing_library_data,
-                                jellyfin_data=None,
-                                callback=None,
-                                force_refresh=self.force_refresh,
-                                cleanup=False,
-                                detail_callback=_make_detail_callback(library_name),
-                                show_future_episodes=show_future,
-                                offline=True,
-                                season_callback=_season_callback,
-                                movie_callback=_movie_callback,
-                            )
-                            if updated_library_data.unavailable_directories:
-                                for (
-                                    root
-                                ) in updated_library_data.unavailable_directories:
-                                    if root not in self.unavailable_directories:
-                                        self.unavailable_directories.append(root)
-                                        err_msg = f"Root directory '{root}' in library '{library_name}' is unavailable on filesystem."
-                                        logger.warning(
-                                            f"[SCAN_ISSUE] Type=Unavailable Directory | Item={root} (Library: '{library_name}') | Error={err_msg}"
-                                        )
-                                        self.problems.append(
-                                            {
-                                                "type": "Unavailable Directory",
-                                                "item": f"{root} (Library: '{library_name}')",
-                                                "error": err_msg,
-                                            }
-                                        )
-                            existing_library_data = updated_library_data
-                            library_data_by_name[library_name] = updated_library_data
-                            _save_lib_data(updated_library_data)
-                    self.detail_progress.emit(
-                        "finish_library", {"library": library_name}
-                    )
+                            self.changed_season_ids.update(result["changed_season_ids"])
+                            self.changed_movie_ids.update(result["changed_movie_ids"])
 
+                        # Persist the updated library data for Pass 2.
+                        library_data_by_name[library_name] = result["library_data"]
+
+                        # notify UI that this library finished this pass
+                        self.detail_progress.emit(
+                            "finish_library",
+                            {"library": library_name},
+                        )
+
+            # ------------------------------------------------------------------
+            # PASS 2 — Online metadata resolution
+            # ------------------------------------------------------------------
             if self.run_pass2:
                 self.current_pass = 2
-                # --- PASS 2: ONLINE METADATA RESOLUTION ---
                 logger.info(
-                    "ScanAllLibrariesWorker starting Pass 2 (Online Metadata Resolution)"
+                    "ScanAllLibrariesWorker starting Pass 2 "
+                    "(Online Metadata Resolution)"
                 )
                 self.detail_progress.emit("start_metadata_resolution", {})
 
-                completed_count = 0
-                for library_name, library_configuration in libraries_dictionary.items():
-                    logger.info(
-                        f"ScanAllLibrariesWorker Pass 2 resolving library: {library_name}"
-                    )
-                    root_directories = list(library_configuration.get("paths", []))
-                    library_type = library_configuration.get("type", "tv")
-                    show_future = library_configuration.get(
-                        "show_future_episodes", True
-                    )
-                    existing_library_data = library_data_by_name[library_name]
-
-                    self.detail_progress.emit(
-                        "start_library", {"library": library_name}
-                    )
-
-                    def _make_detail_callback(lib_name: str) -> Any:
-                        worker_self = self
-
-                        def _detail_callback(
-                            event: str, payload: Dict[str, Any]
-                        ) -> None:
-                            enriched = {"library": lib_name, **payload}
-                            worker_self.detail_progress.emit(event, enriched)
-
-                        return _detail_callback
-
-                    def _season_callback(
-                        series_name: str,
-                        series_data: Dict[str, Any],
-                        season_name: str,
-                        season_data: Dict[str, Any],
-                    ) -> None:
-                        logger.info(
-                            f"ScanAllLibrariesWorker writing season '{season_name}' of series '{series_name}' to database..."
+                completed_count: int = 0
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    future_to_library = {}
+                    for (
+                        library_name,
+                        library_configuration,
+                    ) in libraries_dictionary.items():
+                        if library_name in failed_libraries:
+                            continue
+                        future = executor.submit(
+                            self._scan_library_pass,
+                            library_name,
+                            library_configuration,
+                            library_data_by_name[library_name],
+                            jellyfin_data,
+                            False,  # is_pass1
                         )
+                        future_to_library[future] = library_name
+
+                    for future in as_completed(future_to_library):
+                        library_name = future_to_library[future]
                         try:
-                            stats = db.save_season_data(
-                                library_name,
-                                series_name,
-                                series_data,
-                                season_name,
-                                season_data,
+                            result = future.result()
+                        except Exception as exc:
+                            logger.exception(
+                                f"ScanAllLibrariesWorker Pass 2 failed "
+                                f"for library: {library_name}"
                             )
-                            if stats:
-                                if "issues" in stats:
-                                    for issue in stats["issues"]:
-                                        self.problems.append(issue)
-                                target_stats = (
-                                    self.pass1_stats
-                                    if self.current_pass == 1
-                                    else self.pass2_stats
-                                )
-                                series_scanned_set = (
-                                    self.pass1_series_scanned
-                                    if self.current_pass == 1
-                                    else self.pass2_series_scanned
-                                )
-                                if series_name not in series_scanned_set:
-                                    series_scanned_set.add(series_name)
-                                    target_stats["series_scanned"] += 1
-                                    self.stats["series_scanned"] += 1
-                                    any_changed = any(
-                                        s.get("_changed", True)
-                                        for s in series_data.get("seasons", {}).values()
-                                    )
-                                    if not any_changed:
-                                        target_stats["series_skipped"] += 1
-                                        self.stats["series_skipped"] += 1
+                            self.library_error.emit(library_name, str(exc))
+                            continue
 
-                                target_stats["seasons_scanned"] += 1
-                                self.stats["seasons_scanned"] += 1
+                        completed_count += 1
 
-                                num_eps = len(season_data.get("episodes", []))
-                                target_stats["episodes_scanned"] += num_eps
-                                self.stats["episodes_scanned"] += num_eps
+                        # Merge per-library stats into combined totals.
+                        self._merge_stats_dicts(self.pass2_stats, result["pass_stats"])
+                        self._merge_stats_dicts(self.stats, result["pass_stats"])
+                        self.pass2_stats_per_library[library_name] = result[
+                            "pass_stats"
+                        ]
 
-                                if not season_data.get("_changed", True):
-                                    target_stats["seasons_skipped"] += 1
-                                    self.stats["seasons_skipped"] += 1
-                                    target_stats["episodes_skipped"] += num_eps
-                                    self.stats["episodes_skipped"] += num_eps
-
-                                for key in self.stats:
-                                    if key in stats and not (
-                                        key.endswith("_scanned")
-                                        or key.endswith("_skipped")
-                                    ):
-                                        self.stats[key] += stats[key]
-                                        target_stats[key] += stats[key]
-                                if (
-                                    season_data.get("_changed", True)
-                                    and "season_id" in stats
-                                ):
-                                    self.changed_season_ids.add(stats["season_id"])
-                        except Exception as e:
-                            err_msg = str(e)
-                            clean_msg = err_msg.split("\n")[0].strip()
-                            if "\n" in err_msg:
-                                logger.debug(
-                                    f"Database write failure detailed error: {err_msg}"
-                                )
-                            logger.warning(
-                                f"[SCAN_ISSUE] Type=Database Write Failure | Item=Season '{season_name}' of series '{series_name}' (Library: '{library_name}') | Error={clean_msg}"
-                            )
-                            self.problems.append(
-                                {
-                                    "type": "Database Write Failure",
-                                    "item": f"Season '{season_name}' of series '{series_name}' (Library: '{library_name}')",
-                                    "error": clean_msg,
-                                }
-                            )
-
-                    def _movie_callback(
-                        movie_name: str, movie_data: Dict[str, Any]
-                    ) -> None:
-                        logger.info(
-                            f"ScanAllLibrariesWorker writing movie '{movie_name}' to database..."
-                        )
-                        try:
-                            stats = db.save_movie_data(
-                                library_name, movie_name, movie_data
-                            )
-                            if stats:
-                                if "issues" in stats:
-                                    for issue in stats["issues"]:
-                                        self.problems.append(issue)
-                                target_stats = (
-                                    self.pass1_stats
-                                    if self.current_pass == 1
-                                    else self.pass2_stats
-                                )
-                                target_stats["movies_scanned"] += 1
-                                self.stats["movies_scanned"] += 1
-                                if not movie_data.get("_changed", True):
-                                    target_stats["movies_skipped"] += 1
-                                    self.stats["movies_skipped"] += 1
-
-                                for key in self.stats:
-                                    if key in stats and not (
-                                        key.endswith("_scanned")
-                                        or key.endswith("_skipped")
-                                    ):
-                                        self.stats[key] += stats[key]
-                                        target_stats[key] += stats[key]
-                                if (
-                                    movie_data.get("_changed", True)
-                                    and "movie_id" in stats
-                                ):
-                                    self.changed_movie_ids.add(stats["movie_id"])
-                        except Exception as e:
-                            err_msg = str(e)
-                            clean_msg = err_msg.split("\n")[0].strip()
-                            if "\n" in err_msg:
-                                logger.debug(
-                                    f"Database write failure detailed error: {err_msg}"
-                                )
-                            logger.warning(
-                                f"[SCAN_ISSUE] Type=Database Write Failure | Item=Movie '{movie_name}' (Library: '{library_name}') | Error={clean_msg}"
-                            )
-                            self.problems.append(
-                                {
-                                    "type": "Database Write Failure",
-                                    "item": f"Movie '{movie_name}' (Library: '{library_name}')",
-                                    "error": clean_msg,
-                                }
-                            )
-
-                    def _save_lib_data(lib_data: Dict[str, Any]) -> None:
-                        try:
-                            if library_type == "movie":
-                                stats = db.save_movie_library(library_name, lib_data)
-                            else:
-                                stats = db.save_library(library_name, lib_data)
-                            if stats:
-                                if "issues" in stats:
-                                    for issue in stats["issues"]:
-                                        self.problems.append(issue)
-                                target_stats = (
-                                    self.pass1_stats
-                                    if self.current_pass == 1
-                                    else self.pass2_stats
-                                )
-                                # Only count removal/deletion stats here since
-                                # _season_callback/_movie_callback already
-                                # accumulated additions and updates.
-                                for key in self.stats:
-                                    if key in stats and (
-                                        key.endswith("_removed") or key == "deleted"
-                                    ):
-                                        self.stats[key] += stats[key]
-                                        target_stats[key] += stats[key]
-                        except Exception as e:
-                            err_msg = str(e)
-                            clean_msg = err_msg.split("\n")[0].strip()
-                            if "\n" in err_msg:
-                                logger.debug(
-                                    f"Database write failure detailed error: {err_msg}"
-                                )
-                            logger.warning(
-                                f"[SCAN_ISSUE] Type=Database Write Failure | Item=Library '{library_name}' | Error={clean_msg}"
-                            )
-                            self.problems.append(
-                                {
-                                    "type": "Database Write Failure",
-                                    "item": f"Library '{library_name}'",
-                                    "error": clean_msg,
-                                }
-                            )
-
-                    if not root_directories:
-                        updated_library_data = scan_directories(
-                            [],
-                            library_type=library_type,
-                            existing_library=existing_library_data,
-                            jellyfin_data=jellyfin_data,
-                            callback=None,
-                            force_refresh=self.force_refresh,
-                            cleanup=False,
-                            detail_callback=_make_detail_callback(library_name),
-                            show_future_episodes=show_future,
-                            offline=False,
-                            season_callback=_season_callback,
-                            movie_callback=_movie_callback,
-                            metadata_only=True,
-                        )
-                        if updated_library_data.unavailable_directories:
-                            for root in updated_library_data.unavailable_directories:
+                        # Merge shared state under lock.
+                        with self._lock:
+                            self.problems.extend(result["problems"])
+                            for root in result["unavailable_directories"]:
                                 if root not in self.unavailable_directories:
                                     self.unavailable_directories.append(root)
-                                    err_msg = f"Root directory '{root}' in library '{library_name}' is unavailable on filesystem."
-                                    logger.warning(
-                                        f"[SCAN_ISSUE] Type=Unavailable Directory | Item={root} (Library: '{library_name}') | Error={err_msg}"
-                                    )
-                                    self.problems.append(
-                                        {
-                                            "type": "Unavailable Directory",
-                                            "item": f"{root} (Library: '{library_name}')",
-                                            "error": err_msg,
-                                        }
-                                    )
-                        library_data_by_name[library_name] = updated_library_data
-                        _save_lib_data(updated_library_data)
-                    else:
-                        for root_dir in root_directories:
-                            self.detail_progress.emit(
-                                "start_root",
-                                {"library": library_name, "root": root_dir},
-                            )
-                            updated_library_data = scan_directories(
-                                [root_dir],
-                                library_type=library_type,
-                                existing_library=existing_library_data,
-                                jellyfin_data=jellyfin_data,
-                                callback=None,
-                                force_refresh=self.force_refresh,
-                                cleanup=False,
-                                detail_callback=_make_detail_callback(library_name),
-                                show_future_episodes=show_future,
-                                offline=False,
-                                season_callback=_season_callback,
-                                movie_callback=_movie_callback,
-                                metadata_only=True,
-                            )
-                            if updated_library_data.unavailable_directories:
-                                for (
-                                    root
-                                ) in updated_library_data.unavailable_directories:
-                                    if root not in self.unavailable_directories:
-                                        self.unavailable_directories.append(root)
-                                        err_msg = f"Root directory '{root}' in library '{library_name}' is unavailable on filesystem."
-                                        logger.warning(
-                                            f"[SCAN_ISSUE] Type=Unavailable Directory | Item={root} (Library: '{library_name}') | Error={err_msg}"
-                                        )
-                                        self.problems.append(
-                                            {
-                                                "type": "Unavailable Directory",
-                                                "item": f"{root} (Library: '{library_name}')",
-                                                "error": err_msg,
-                                            }
-                                        )
-                            existing_library_data = updated_library_data
-                            library_data_by_name[library_name] = updated_library_data
-                            _save_lib_data(updated_library_data)
-                            self.detail_progress.emit(
-                                "finish_root",
-                                {"library": library_name, "root": root_dir},
-                            )
-                    completed_count += 1
-                    self.detail_progress.emit(
-                        "finish_library", {"library": library_name}
-                    )
-                    self.library_progress.emit(
-                        library_name, completed_count, total_count
-                    )
+                            self.changed_season_ids.update(result["changed_season_ids"])
+                            self.changed_movie_ids.update(result["changed_movie_ids"])
 
+                        library_data_by_name[library_name] = result["library_data"]
+
+                        self.detail_progress.emit(
+                            "finish_library",
+                            {"library": library_name},
+                        )
+                        self.library_progress.emit(
+                            library_name,
+                            completed_count,
+                            total_count,
+                        )
+
+            # ------------------------------------------------------------------
+            # Final summary logging
+            # ------------------------------------------------------------------
             duration = time.time() - start_time
-            logger.info(
-                "[SCAN_REPORT] ==================================================="
-            )
-            logger.info("[SCAN_REPORT]               SCAN RUN STATS REPORT")
-            logger.info(
-                "[SCAN_REPORT] ==================================================="
-            )
-            logger.info(f"[SCAN_REPORT] Total Scan Duration: {duration:.2f} seconds")
-            logger.info(f"[SCAN_REPORT] Libraries Scanned: {len(libraries_dictionary)}")
-            for lib_name, lib_cfg in libraries_dictionary.items():
-                paths_str = ", ".join(lib_cfg.get("paths", []))
-                logger.info(
-                    f"[SCAN_REPORT]   - {lib_name} ({lib_cfg.get('type', 'tv')}): Paths=[{paths_str}]"
-                )
-            if self.unavailable_directories:
-                logger.info(
-                    f"[SCAN_REPORT] Unavailable Root Directories: {', '.join(self.unavailable_directories)}"
-                )
-            logger.info(
-                "[SCAN_REPORT] ---------------------------------------------------"
-            )
-
-            def _log_stats_breakdown(label: str, stats_dict: Dict[str, int]) -> None:
-                logger.info(f"[SCAN_REPORT] {label}")
-                logger.info(
-                    f"[SCAN_REPORT]   Series: Scanned={stats_dict.get('series_scanned', 0)} | "
-                    f"Added={stats_dict.get('series_added', 0)} | "
-                    f"Updated={stats_dict.get('series_updated', 0)} | "
-                    f"Removed={stats_dict.get('series_removed', 0)} | "
-                    f"Skipped={stats_dict.get('series_skipped', 0)}"
-                )
-                logger.info(
-                    f"[SCAN_REPORT]   Seasons: Scanned={stats_dict.get('seasons_scanned', 0)} | "
-                    f"Added={stats_dict.get('seasons_added', 0)} | "
-                    f"Updated={stats_dict.get('seasons_updated', 0)} | "
-                    f"Removed={stats_dict.get('seasons_removed', 0)} | "
-                    f"Skipped={stats_dict.get('seasons_skipped', 0)}"
-                )
-                logger.info(
-                    f"[SCAN_REPORT]   Episodes: Scanned={stats_dict.get('episodes_scanned', 0)} | "
-                    f"Added={stats_dict.get('episodes_added', 0)} | "
-                    f"Updated={stats_dict.get('episodes_updated', 0)} | "
-                    f"Removed={stats_dict.get('episodes_removed', 0)} | "
-                    f"Skipped={stats_dict.get('episodes_skipped', 0)}"
-                )
-                logger.info(
-                    f"[SCAN_REPORT]   Movies: Scanned={stats_dict.get('movies_scanned', 0)} | "
-                    f"Added={stats_dict.get('movies_added', 0)} | "
-                    f"Updated={stats_dict.get('movies_updated', 0)} | "
-                    f"Removed={stats_dict.get('movies_removed', 0)} | "
-                    f"Skipped={stats_dict.get('movies_skipped', 0)}"
-                )
-
-            _log_stats_breakdown(
-                "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN", self.pass1_stats
-            )
-            logger.info(
-                "[SCAN_REPORT] ---------------------------------------------------"
-            )
-            _log_stats_breakdown(
-                "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN", self.pass2_stats
-            )
-            logger.info(
-                "[SCAN_REPORT] ---------------------------------------------------"
-            )
-            _log_stats_breakdown("TOTAL ACCUMULATED RUN STATS", self.stats)
-            logger.info(
-                "[SCAN_REPORT] ==================================================="
-            )
-
-            if self.problems:
-                grouped = {}
-                for prob in self.problems:
-                    t = prob["type"]
-                    e = prob["error"]
-                    item = prob["item"]
-                    if t not in grouped:
-                        grouped[t] = {}
-                    if e not in grouped[t]:
-                        grouped[t][e] = []
-                    grouped[t][e].append(item)
-
-                logger.info(
-                    "[SCAN_REPORT] ==================================================="
-                )
-                logger.info("[SCAN_REPORT]               SCAN RUN ISSUES REPORT")
-                logger.info(
-                    "[SCAN_REPORT] ==================================================="
-                )
-                for t, errors in grouped.items():
-                    logger.info(f"[SCAN_REPORT] Type: {t}")
-                    for err, items in errors.items():
-                        logger.info(f"[SCAN_REPORT]   Error: {err}")
-                        for item in items:
-                            logger.info(f"[SCAN_REPORT]     - {item}")
-                    logger.info(
-                        "[SCAN_REPORT] ---------------------------------------------------"
-                    )
-                logger.info(
-                    "[SCAN_REPORT] ==================================================="
-                )
+            self._log_scan_summary(duration, libraries_dictionary)
+            self._log_issues_report()
 
             logger.info("ScanAllLibrariesWorker finished successfully")
             self.finished.emit()
+
         except Exception as exception_instance:
             logger.exception("ScanAllLibrariesWorker failed")
             self.error.emit(str(exception_instance))
