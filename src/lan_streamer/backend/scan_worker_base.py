@@ -132,6 +132,38 @@ def log_issues_report(
     log_target.info("[SCAN_REPORT] ===================================================")
 
 
+def log_db_write_error(
+    problems_list: List[Dict[str, Any]],
+    item_description: str,
+    error: Exception,
+    log_target: logging.Logger = logger,
+) -> None:
+    """Log and record a database write failure.
+
+    Args:
+        problems_list: List to append the problem dict to.
+        item_description: Human-readable item identifier for the log.
+        error: The exception that was raised.
+        log_target: Logger to write to (defaults to module logger).
+    """
+    error_message: str = str(error)
+    clean_message: str = error_message.split("\n")[0].strip()
+    if "\n" in error_message:
+        log_target.debug(f"Database write failure detailed error: {error_message}")
+    log_target.warning(
+        "[SCAN_ISSUE] Type=Database Write Failure | "
+        f"Item={item_description} | "
+        f"Error={clean_message}"
+    )
+    problems_list.append(
+        {
+            "type": "Database Write Failure",
+            "item": item_description,
+            "error": clean_message,
+        }
+    )
+
+
 def discover_single_library_tree_impl(
     root_directories: List[str], library_type: str
 ) -> Dict[str, List[str]]:
