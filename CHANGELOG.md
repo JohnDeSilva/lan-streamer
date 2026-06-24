@@ -1,3 +1,26 @@
+## v0.34.0 (2026-06-24)
+
+### Feat
+
+- **worker**: implement database write pooling with a single-threaded queue for parallel workers
+- **worker**: emit fail_library signal on scan failure, add UI handlers, optimize queries
+- **worker**: parallelize Pass 3 (FilePropertyExtraction) by library
+- **worker**: parallelize ScanAllLibrariesWorker with ThreadPoolExecutor
+
+### Fix
+
+- **dev-dependency**: bump pytest from 9.1.0 to 9.1.1
+- **worker**: mitigate thread-safety gaps in parallel scan and missing state resets
+- **ui**: set progress bar to green (Pass 3 = 100%) before hiding on scan completion
+- **worker**: initialize failed_libraries before pass1 block, remove double finish_library emit
+
+### Refactor
+
+- **worker**: remove redundant lock segments from sequential merging in ScanAllLibrariesWorker
+- **worker**: replace inline stats dicts with create_empty_stats, extract log_db_write_error
+- **worker**: consolidate shared scan logic into scan_worker_base
+- **worker**: restructure scan report layout with accumulated per-library stats
+
 ## v0.33.2 (2026-06-23)
 
 ### Fix
