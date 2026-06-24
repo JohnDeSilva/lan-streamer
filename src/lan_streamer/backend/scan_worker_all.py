@@ -650,8 +650,6 @@ class ScanAllLibrariesWorker(QThread):
                         {"library": library_name, "root": root_dir},
                     )
 
-        self.detail_progress.emit("finish_library", {"library": library_name})
-
         return {
             "library_name": library_name,
             "library_data": current_library_data,
@@ -780,6 +778,8 @@ class ScanAllLibrariesWorker(QThread):
                 ),
             )
 
+            failed_libraries: set = set()
+
             # ------------------------------------------------------------------
             # PASS 1 — Offline file scan
             # ------------------------------------------------------------------
@@ -803,8 +803,6 @@ class ScanAllLibrariesWorker(QThread):
                             True,  # is_pass1
                         )
                         future_to_library[future] = library_name
-
-                    failed_libraries: set = set()
                     for future in as_completed(future_to_library):
                         library_name = future_to_library[future]
                         try:
