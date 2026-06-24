@@ -1,7 +1,7 @@
 from unittest.mock import patch
 from typing import Any
 from lan_streamer.ui_views import SeriesDetailView, Controller
-from lan_streamer.ui_views.dialogs.details import SeriesDetailsDialog
+from lan_streamer.ui_views.dialogs.series_details import SeriesDetailsDialog
 from lan_streamer.system.config import config
 
 

@@ -2479,7 +2479,7 @@ def test_get_detailed_file_info_and_runtime_worker(tmp_path) -> None:
 
 
 def test_parse_movie_folder() -> None:
-    from lan_streamer.scanner.core import _parse_movie_folder
+    from lan_streamer.scanner.parser import _parse_movie_folder
 
     assert _parse_movie_folder("Avatar (2009)") == ("Avatar", 2009)
     assert _parse_movie_folder("The Godfather (1972)") == ("The Godfather", 1972)

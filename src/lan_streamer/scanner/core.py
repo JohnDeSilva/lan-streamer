@@ -3,11 +3,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 from lan_streamer.db.utils import natural_sort_key
-from lan_streamer.scanner.versioning import get_version_score_key, choose_active_version  # noqa: F401
-from lan_streamer.scanner.parser import (
-    has_video_files,
-    _parse_movie_folder,  # noqa: F401
-)
+from lan_streamer.scanner.parser import has_video_files
 from lan_streamer.services.file_discovery import (
     has_season_subdirectories as _has_season_subdirs,
 )
@@ -398,24 +394,17 @@ def scan_directories(
                     f"Merging '{series_name}' into existing entry '{match_key}'"
                 )
 
-                if library_type == "movie":
-                    pass  # We just keep existing movie for now, no complex merge
-                else:
-                    for season_name, season_data in cleaned.get("seasons", {}).items():
-                        if season_name in existing.get("seasons", {}):
-                            existing_episodes = existing["seasons"][season_name][
-                                "episodes"
-                            ]
-                            _merge_season_episodes(
-                                existing_episodes, season_data["episodes"], season_name
-                            )
-                            existing_episodes.sort(
-                                key=lambda x: natural_sort_key(x["name"])
-                            )
-                        else:
-                            existing.setdefault("seasons", {})[season_name] = (
-                                season_data
-                            )
+                for season_name, season_data in cleaned.get("seasons", {}).items():
+                    if season_name in existing.get("seasons", {}):
+                        existing_episodes = existing["seasons"][season_name]["episodes"]
+                        _merge_season_episodes(
+                            existing_episodes, season_data["episodes"], season_name
+                        )
+                        existing_episodes.sort(
+                            key=lambda x: natural_sort_key(x["name"])
+                        )
+                    else:
+                        existing.setdefault("seasons", {})[season_name] = season_data
             else:
                 library[series_name] = cleaned
 

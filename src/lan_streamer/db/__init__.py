@@ -21,7 +21,6 @@ from lan_streamer.db.orm_serialization import (
 )
 from lan_streamer.db.queries_technical_extraction import (
     get_items_missing_runtime,
-    update_item_runtime,
     update_items_runtime_batch,
     has_tech_and_metadata,
 )
@@ -35,16 +34,12 @@ from lan_streamer.db.queries_playback import (
 from lan_streamer.db.queries_ui import (
     get_next_episode,
     get_combined_next_up,
-    get_combined_recently_added,
     get_combined_smart_row,
-    get_parent_media_name_by_path,
 )
 from lan_streamer.db.queries_config import (
-    get_app_config,
     set_app_config,
     get_all_app_configs,
     bulk_set_app_configs,
-    get_secret,
     get_all_secrets,
     set_secret,
     get_series_pref,
@@ -56,18 +51,12 @@ from lan_streamer.db.library import (
     load_movie_library,
     save_movie_library,
     cleanup_library,
-    _apply_movie_fields,
-    _cleanup_movie_library,
-    _cleanup_tv_library,
     save_season_data,
     save_movie_data,
 )
 from lan_streamer.db.sync import (
     sync_watched_from_jellyfin_data,
     get_all_episodes_with_jellyfin_id,
-    _sync_watched_by_ids,
-    _sync_watched_by_paths,
-    _sync_watched_by_names,
 )
 from lan_streamer.db.models import (
     Base,

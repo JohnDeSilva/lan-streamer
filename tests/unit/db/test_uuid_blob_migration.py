@@ -3,14 +3,13 @@ supporting model/query changes it required.
 
 Coverage areas
 --------------
-1. _new_uuid_bytes() helper – correct format & uniqueness
-2. ORM auto-generated UUID BLOB PKs on insert (Series, Season, Episode,
+1. ORM auto-generated UUID BLOB PKs on insert (Series, Season, Episode,
    Movie, AppSecret)
-3. FK referential integrity with BLOB keys (seasons → series, episodes →
+2. FK referential integrity with BLOB keys (seasons → series, episodes →
    seasons)
-4. set_secret() no longer needs an explicit secret_uuid; the column default
+3. set_secret() no longer needs an explicit secret_uuid; the column default
    supplies it
-5. update_item_runtime() accepts bytes IDs (episode and movie paths)
+4. update_items_runtime_batch() accepts bytes IDs (episode and movie paths)
 6. Alembic upgrade b3f9e1c2d4a5: all five tables migrated to BLOB PKs,
    existing FK links preserved, all column data intact, UUIDs are valid
 7. Alembic downgrade b3f9e1c2d4a5: reverts to integer PKs, FK links
@@ -29,8 +28,6 @@ import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
-
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -75,43 +72,6 @@ def _is_valid_uuid(value: Any) -> bool:
 @pytest.fixture
 def mock_db_file(tmp_path):
     return tmp_path / "library.db"
-
-
-# ---------------------------------------------------------------------------
-# 1. _new_uuid_bytes helper
-# ---------------------------------------------------------------------------
-
-
-def test_new_uuid_bytes_returns_bytes() -> None:
-    """_new_uuid_bytes must return a bytes object."""
-    from lan_streamer.db.models import _new_uuid_bytes
-
-    result = _new_uuid_bytes()
-    assert isinstance(result, bytes)
-
-
-def test_new_uuid_bytes_is_16_bytes() -> None:
-    """UUID4 raw bytes are exactly 16 bytes."""
-    from lan_streamer.db.models import _new_uuid_bytes
-
-    assert len(_new_uuid_bytes()) == 16
-
-
-def test_new_uuid_bytes_is_valid_uuid4() -> None:
-    """The returned bytes must parse as a valid UUID."""
-    from lan_streamer.db.models import _new_uuid_bytes
-
-    raw = _new_uuid_bytes()
-    parsed = uuid.UUID(bytes=raw)
-    assert parsed.version == 4
-
-
-def test_new_uuid_bytes_unique() -> None:
-    """Each call generates a different value (uniqueness sanity check)."""
-    from lan_streamer.db.models import _new_uuid_bytes
-
-    ids = {_new_uuid_bytes() for _ in range(100)}
-    assert len(ids) == 100
 
 
 # ---------------------------------------------------------------------------
@@ -464,12 +424,12 @@ def test_set_secret_upsert_preserves_uuid(mock_db_file) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 5. update_item_runtime() accepts bytes IDs
+# 4. update_items_runtime_batch() accepts bytes IDs
 # ---------------------------------------------------------------------------
 
 
-def test_update_item_runtime_episode_bytes_id(mock_db_file) -> None:
-    """update_item_runtime must update an episode looked up by its bytes UUID."""
+def test_update_items_runtime_batch_episode_bytes_id(mock_db_file) -> None:
+    """update_items_runtime_batch must update an episode looked up by its bytes UUID."""
     import lan_streamer.db as db_mod
 
     db_mod.DB_FILE = mock_db_file
@@ -492,14 +452,18 @@ def test_update_item_runtime_episode_bytes_id(mock_db_file) -> None:
         session.flush()
         ep_id = ep.id  # bytes
 
-    db_mod.update_item_runtime(
-        ep_id,
-        "episode",
-        45,
-        video_codec="h264",
-        resolution="1920x1080",
-        audio_tracks=[{"language": "eng"}],
-        subtitle_tracks=[],
+    db_mod.update_items_runtime_batch(
+        [
+            {
+                "item_identifier": ep_id,
+                "item_type": "episode",
+                "runtime_minutes": 45,
+                "video_codec": "h264",
+                "resolution": "1920x1080",
+                "audio_tracks": [{"language": "eng"}],
+                "subtitle_tracks": [],
+            }
+        ]
     )
 
     with db_mod.get_session() as session:
@@ -520,8 +484,8 @@ def test_update_item_runtime_episode_bytes_id(mock_db_file) -> None:
     db_mod._db_initialized = False
 
 
-def test_update_item_runtime_movie_bytes_id(mock_db_file) -> None:
-    """update_item_runtime must update a movie looked up by its bytes UUID."""
+def test_update_items_runtime_batch_movie_bytes_id(mock_db_file) -> None:
+    """update_items_runtime_batch must update a movie looked up by its bytes UUID."""
     import lan_streamer.db as db_mod
 
     db_mod.DB_FILE = mock_db_file
@@ -538,14 +502,18 @@ def test_update_item_runtime_movie_bytes_id(mock_db_file) -> None:
         session.flush()
         movie_id = movie.id  # bytes
 
-    db_mod.update_item_runtime(
-        movie_id,
-        "movie",
-        120,
-        video_codec="hevc",
-        resolution="3840x2160",
-        audio_tracks=[{"language": "eng"}, {"language": "fre"}],
-        subtitle_tracks=[{"language": "eng"}],
+    db_mod.update_items_runtime_batch(
+        [
+            {
+                "item_identifier": movie_id,
+                "item_type": "movie",
+                "runtime_minutes": 120,
+                "video_codec": "hevc",
+                "resolution": "3840x2160",
+                "audio_tracks": [{"language": "eng"}, {"language": "fre"}],
+                "subtitle_tracks": [{"language": "eng"}],
+            }
+        ]
     )
 
     with db_mod.get_session() as session:
@@ -569,8 +537,8 @@ def test_update_item_runtime_movie_bytes_id(mock_db_file) -> None:
     db_mod._db_initialized = False
 
 
-def test_update_item_runtime_nonexistent_bytes_id_is_noop(mock_db_file) -> None:
-    """update_item_runtime with a UUID that doesn't exist must not raise."""
+def test_update_items_runtime_batch_nonexistent_bytes_id_is_noop(mock_db_file) -> None:
+    """update_items_runtime_batch with a UUID that doesn't exist must not raise."""
     import lan_streamer.db as db_mod
 
     db_mod.DB_FILE = mock_db_file
@@ -581,8 +549,20 @@ def test_update_item_runtime_nonexistent_bytes_id_is_noop(mock_db_file) -> None:
 
     phantom_id = uuid.uuid4().bytes
     # Neither call should raise
-    db_mod.update_item_runtime(phantom_id, "episode", 30)
-    db_mod.update_item_runtime(phantom_id, "movie", 30)
+    db_mod.update_items_runtime_batch(
+        [
+            {
+                "item_identifier": phantom_id,
+                "item_type": "episode",
+                "runtime_minutes": 30,
+            },
+            {
+                "item_identifier": phantom_id,
+                "item_type": "movie",
+                "runtime_minutes": 30,
+            },
+        ]
+    )
 
     db_mod._engine.dispose()
     db_mod._engine = None

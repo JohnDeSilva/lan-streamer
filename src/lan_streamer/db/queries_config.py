@@ -23,33 +23,6 @@ _TYPE_COERCIONS: Dict[str, Callable[[Any], Any]] = {
 }
 
 
-def get_app_config(key: str, default: Any = None) -> Any:
-    """Returns the stored value for *key* from app_config, coerced to its declared type."""
-    try:
-        logger.debug(f"Executing DB query get_app_config: key='{key}'")
-        with get_session() as session:
-            row = session.scalars(
-                select(AppConfig).where(AppConfig.key == key)
-            ).one_or_none()
-            if row is None or row.value is None:
-                logger.debug(
-                    f"No value stored for app_config key '{key}' — returning default value"
-                )
-                # Seed the default into the DB so the key exists going forward.
-                if default is not None:
-                    set_app_config(key, default)
-                return default
-            coerce = _TYPE_COERCIONS.get(row.type or "str", str)
-            val = coerce(row.value)
-            logger.debug(f"get_app_config query response: key='{key}' -> value={val}")
-            return val
-    except Exception:
-        logger.warning(
-            f"Error reading app_config key '{key}' — returning default value"
-        )
-        return default
-
-
 def set_app_config(key: str, value: Any) -> None:
     """Upserts *value* for *key* in app_config."""
     try:
@@ -149,31 +122,6 @@ def bulk_set_app_configs(config_dict: Dict[str, Any]) -> None:
             logger.debug(f"Successfully saved bulk app_configs to DB: {config_dict}")
     except Exception:
         logger.exception("Error writing bulk app_config settings")
-
-
-def get_secret(secret_type: SecretType) -> Dict[str, Any]:
-    """Returns the credential payload dict for *secret_type*."""
-    try:
-        logger.debug(f"Executing DB query get_secret: secret_type={secret_type}")
-        with get_session() as session:
-            row = session.scalars(
-                select(AppSecret).where(AppSecret.secret_type == secret_type.value)
-            ).one_or_none()
-            if row is None or not row.secret:
-                logger.debug(
-                    f"No secret stored for type '{secret_type}' — returning empty dict"
-                )
-                return {}
-            res = json.loads(row.secret)
-            logger.debug(
-                f"get_secret query response for type={secret_type}: [MASKED payload keys: {list(res.keys())}]"
-            )
-            return res
-    except Exception:
-        logger.warning(
-            f"Error reading secret for type '{secret_type}' — returning empty dict"
-        )
-        return {}
 
 
 def get_all_secrets() -> Dict[str, Dict[str, Any]]:

@@ -3,6 +3,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload, joinedload
 
+from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import (
     Series,
     Season,
@@ -14,12 +15,6 @@ from lan_streamer.db.models import (
 from lan_streamer.db.utils import natural_sort_key
 
 logger = logging.getLogger("lan_streamer.db.queries")
-
-
-def get_session() -> Any:
-    import lan_streamer.db.connection
-
-    return lan_streamer.db.connection.get_session()
 
 
 def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
@@ -131,6 +126,8 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
                     continue
 
                 next_season = next_up_episode.season
+                if next_season is None:
+                    continue
 
                 # Find max last_played_at, date_added, and air_date across all episodes in standard seasons that have a path
                 max_last_played = 0
@@ -190,12 +187,6 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
     except Exception:
         logger.exception("Error in get_combined_next_up")
         return []
-
-
-def get_combined_recently_added(library_names: List[str]) -> List[Dict[str, Any]]:
-    """Returns series and movies sorted by their date_added (max episode date_added for series, movie date_added for movies)."""
-    logger.debug(f"get_combined_recently_added called with libraries={library_names}")
-    return get_combined_smart_row(library_names, "Recently Added", "All")
 
 
 def get_combined_smart_row(
@@ -456,38 +447,4 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
             return result
     except Exception:
         logger.exception(f"Error getting next episode for path {current_path}")
-    return None
-
-
-def get_parent_media_name_by_path(path: str) -> Optional[Tuple[str, str]]:
-    """
-    Given a file path, finds the parent series name or movie name,
-    along with its library type ('tv' or 'movie').
-    Returns (media_name, library_type) or None.
-    """
-    try:
-        logger.debug(f"Executing DB get_parent_media_name_by_path: path={path}")
-        with get_session() as session:
-            # 1. Check if it's an episode of a series
-            episode = session.scalars(
-                select(Episode)
-                .join(MetadataFileMapping, MetadataFileMapping.episode_id == Episode.id)
-                .join(MediaFile, MediaFile.id == MetadataFileMapping.media_file_id)
-                .where(MediaFile.path == path)
-                .options(joinedload(Episode.season).joinedload(Season.series))
-            ).first()
-            if episode and episode.season and episode.season.series:
-                return episode.season.series.name, "tv"
-
-            # 2. Check if it's a movie
-            movie = session.scalars(
-                select(Movie)
-                .join(Movie.media_files)
-                .where(MediaFile.path == path)
-                .options(selectinload(Movie.media_files))
-            ).first()
-            if movie:
-                return movie.name or "", "movie"
-    except Exception:
-        logger.exception(f"Error getting parent media name for path {path}")
     return None

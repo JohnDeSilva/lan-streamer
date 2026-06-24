@@ -59,31 +59,6 @@ class TMDBClient:
         return parameters
 
     # ------------------------------------------------------------------
-    # Credential validation
-    # ------------------------------------------------------------------
-
-    def validate_credentials(self, api_key: str) -> tuple[bool, str]:
-        """Tests the given API key without persisting it."""
-        if not api_key:
-            return False, "API Key is required."
-        logger.info("Validating TMDB API Key configuration...")
-        try:
-            response = self.session.get(
-                f"{TMDB_BASE_URL}/configuration",
-                params={"api_key": api_key.strip()},
-                timeout=10,
-            )
-            response.raise_for_status()
-            logger.info("TMDB API Key validation succeeded.")
-            return True, "Connection successful!"
-        except requests.exceptions.HTTPError as exception:
-            if exception.response is not None and exception.response.status_code == 401:
-                return False, "Invalid API Key (Unauthorized)."
-            return False, f"HTTP Error: {exception}"
-        except Exception as exception:
-            return False, f"Connection failed: {exception}"
-
-    # ------------------------------------------------------------------
     # Search helpers
     # ------------------------------------------------------------------
 

@@ -38,7 +38,7 @@ def load_library(library_name: str) -> Dict[str, Any]:
     """
     Loads the library from the database and constructs a nested dictionary structure.
     """
-    from lan_streamer.db.queries_file_discovery import _build_series_dict
+    from lan_streamer.db.orm_serialization import _build_series_dict
 
     start_time = time.time()
     library_data = {}

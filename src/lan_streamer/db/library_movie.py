@@ -137,7 +137,7 @@ def load_movie_library(library_name: str) -> Dict[str, Any]:
     """
     Loads the movie library from the database and constructs a dictionary structure.
     """
-    from lan_streamer.db.queries_file_discovery import _build_movie_dict
+    from lan_streamer.db.orm_serialization import _build_movie_dict
 
     start_time = time.time()
     library_data = {}

@@ -54,56 +54,6 @@ def test_params_without_key() -> None:
 
 
 # ------------------------------------------------------------------
-# validate_credentials
-# ------------------------------------------------------------------
-
-
-def test_validate_credentials_success(tmdb) -> None:
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status.return_value = None
-    tmdb.session.get = MagicMock(return_value=mock_resp)
-
-    ok, msg = tmdb.validate_credentials("my-api-key")
-    assert ok is True
-    assert "successful" in msg
-
-
-def test_validate_credentials_empty(tmdb) -> None:
-    ok, msg = tmdb.validate_credentials("")
-    assert ok is False
-    assert "required" in msg
-
-
-def test_validate_credentials_401(tmdb) -> None:
-    mock_resp = MagicMock()
-    mock_resp.status_code = 401
-    tmdb.session.get = MagicMock(
-        side_effect=requests.exceptions.HTTPError(response=mock_resp)
-    )
-    ok, msg = tmdb.validate_credentials("bad-key")
-    assert ok is False
-    assert "Unauthorized" in msg
-
-
-def test_validate_credentials_http_error(tmdb) -> None:
-    mock_resp = MagicMock()
-    mock_resp.status_code = 500
-    tmdb.session.get = MagicMock(
-        side_effect=requests.exceptions.HTTPError(response=mock_resp)
-    )
-    ok, msg = tmdb.validate_credentials("key")
-    assert ok is False
-    assert "HTTP Error" in msg
-
-
-def test_validate_credentials_generic_error(tmdb) -> None:
-    tmdb.session.get = MagicMock(side_effect=Exception("Boom"))
-    ok, msg = tmdb.validate_credentials("key")
-    assert ok is False
-    assert "Connection failed" in msg
-
-
-# ------------------------------------------------------------------
 # _do_search / search_series / search_series_full
 # ------------------------------------------------------------------
 

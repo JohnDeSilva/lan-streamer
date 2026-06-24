@@ -405,53 +405,6 @@ class Config:
                 f"'{library_name}:{series_name}'"
             )
 
-    # ------------------------------------------------------------------
-    # Library management (delegates persistence to DB via save_to_db)
-    # ------------------------------------------------------------------
-
-    def add_library(self, name: str, library_type: str = "tv") -> None:
-        logger.info(f"Adding library '{name}' with type '{library_type}'")
-        if name not in self.libraries:
-            self.libraries[name] = {
-                "type": library_type,
-                "paths": [],
-                "show_future_episodes": True,
-            }
-            self._persist_libraries()
-
-    def remove_library(self, name: str) -> None:
-        logger.info(f"Removing library '{name}'")
-        if name in self.libraries:
-            del self.libraries[name]
-            self._persist_libraries()
-
-    def add_root_dir(self, library_name: str, path: str) -> None:
-        logger.info(f"Adding root directory '{path}' to library '{library_name}'")
-        if library_name in self.libraries:
-            paths = self.libraries[library_name].get("paths", [])
-            if path not in paths:
-                paths.append(path)
-                self.libraries[library_name]["paths"] = paths
-                self._persist_libraries()
-
-    def remove_root_dir(self, library_name: str, path: str) -> None:
-        logger.info(f"Removing root directory '{path}' from library '{library_name}'")
-        if library_name in self.libraries:
-            paths = self.libraries[library_name].get("paths", [])
-            if path in paths:
-                paths.remove(path)
-                self.libraries[library_name]["paths"] = paths
-                self._persist_libraries()
-
-    def _persist_libraries(self) -> None:
-        """Write the libraries dict to the database."""
-        try:
-            from lan_streamer.db.queries_config import set_app_config
-
-            set_app_config("libraries", self.libraries)
-        except Exception:
-            logger.exception("Error persisting libraries to database")
-
     @property
     def cache_directory(self) -> str:
         return self._cache_directory

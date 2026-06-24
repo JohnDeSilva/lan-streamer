@@ -1,6 +1,6 @@
 import logging
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from sqlalchemy import select
 
 from lan_streamer.db.models import Episode, Movie, MediaFile
@@ -90,81 +90,6 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
     except Exception:
         logger.exception("Error fetching items missing runtime")
     return items_list
-
-
-def update_item_runtime(
-    item_identifier: bytes | str,
-    item_type: str,
-    runtime_minutes: Optional[int],
-    video_codec: Optional[str] = None,
-    resolution: Optional[str] = None,
-    audio_tracks: Optional[List[Dict[str, Any]]] = None,
-    subtitle_tracks: Optional[List[Dict[str, Any]]] = None,
-    bit_rate: Optional[int] = None,
-    size_bytes: Optional[int] = None,
-) -> None:
-    """Updates the runtime and technical info fields for a given episode or movie."""
-    try:
-        logger.debug(
-            f"Executing DB update_item_runtime for {item_type} ID {item_identifier!r} "
-            f"with runtime={runtime_minutes}, codec={video_codec}, resolution={resolution}, size={size_bytes}"
-        )
-        with get_session() as session:
-            if item_type == "episode":
-                episode = session.scalars(
-                    select(Episode).where(Episode.id == item_identifier)
-                ).first()
-                if episode:
-                    if runtime_minutes is not None and (
-                        runtime_minutes > 0 or not episode.file_runtime
-                    ):
-                        episode.file_runtime = runtime_minutes
-                    if episode.media_files:
-                        mf = episode.media_files[0]
-                        if video_codec:
-                            mf.video_codec = video_codec
-                        if resolution:
-                            mf.resolution = resolution
-                        if bit_rate is not None:
-                            mf.bit_rate = bit_rate
-                        if audio_tracks is not None:
-                            mf.audio_tracks = json.dumps(audio_tracks)
-                        if subtitle_tracks is not None:
-                            mf.subtitle_tracks = json.dumps(subtitle_tracks)
-                        if size_bytes is not None:
-                            mf.size_bytes = size_bytes
-                        if runtime_minutes is not None:
-                            mf.runtime = runtime_minutes
-            elif item_type == "movie":
-                movie = session.scalars(
-                    select(Movie).where(Movie.id == item_identifier)
-                ).first()
-                if movie:
-                    if runtime_minutes is not None and (
-                        runtime_minutes > 0 or not movie.file_runtime
-                    ):
-                        movie.file_runtime = runtime_minutes
-                    if movie.media_files:
-                        mf = movie.media_files[0]
-                        if video_codec:
-                            mf.video_codec = video_codec
-                        if resolution:
-                            mf.resolution = resolution
-                        if bit_rate is not None:
-                            mf.bit_rate = bit_rate
-                        if audio_tracks is not None:
-                            mf.audio_tracks = json.dumps(audio_tracks)
-                        if subtitle_tracks is not None:
-                            mf.subtitle_tracks = json.dumps(subtitle_tracks)
-                        if size_bytes is not None:
-                            mf.size_bytes = size_bytes
-                        if runtime_minutes is not None:
-                            mf.runtime = runtime_minutes
-        logger.debug(f"Saved DB updates for {item_type} ID {item_identifier!r}")
-    except Exception:
-        logger.exception(
-            f"Error updating runtime and technical info for {item_type} ID {item_identifier!r}"
-        )
 
 
 def update_items_runtime_batch(updates: List[Dict[str, Any]]) -> None:

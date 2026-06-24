@@ -3,16 +3,11 @@ import json
 from typing import Dict, Any
 from sqlalchemy import select
 
+from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Series, Season, Episode, Movie
 from lan_streamer.db.utils import natural_sort_key
 
 logger = logging.getLogger("lan_streamer.db.orm_serialization")
-
-
-def get_session() -> Any:
-    import lan_streamer.db.connection
-
-    return lan_streamer.db.connection.get_session()
 
 
 def _build_episode_dict(episode: Episode) -> Dict[str, Any]:

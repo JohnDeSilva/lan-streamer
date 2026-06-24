@@ -245,7 +245,15 @@ def test_runtime_management_functions(mock_db_file) -> None:
 
     # Update runtime
     for item in items:
-        db.update_item_runtime(item["id"], item["type"], 45)
+        db.update_items_runtime_batch(
+            [
+                {
+                    "item_identifier": item["id"],
+                    "item_type": item["type"],
+                    "runtime_minutes": 45,
+                }
+            ]
+        )
 
     with get_session() as session:
         from lan_streamer.db.models import MediaFile
@@ -453,7 +461,9 @@ def test_db_more_error_paths() -> None:
         # Ensure these functions don't raise but log exceptions
         db.update_season_watched_status("Lib", "Show", "S1", True)
         db.update_series_watched_status("Lib", "Show", True)
-        db.update_item_runtime(1, "episode", 30)
+        db.update_items_runtime_batch(
+            [{"item_identifier": 1, "item_type": "episode", "runtime_minutes": 30}]
+        )
         db.sync_watched_from_jellyfin_data({"id1"}, {"/path1"}, {("Show", "Ep1")})
 
 
