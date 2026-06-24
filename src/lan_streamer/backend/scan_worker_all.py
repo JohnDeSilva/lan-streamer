@@ -3,7 +3,7 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from PySide6.QtCore import QObject, QThread, Signal
 
@@ -231,8 +231,6 @@ class ScanAllLibrariesWorker(QThread):
             - ``unavailable_directories`` (List[str]) — missing root directories
             - ``changed_season_ids`` (Set[str]) — season IDs that changed
             - ``changed_movie_ids`` (Set[str]) — movie IDs that changed
-            - ``detail_events`` (List[Tuple[str, Dict]]) — queued detail-progress
-              events to be flushed from the main thread
         """
         root_directories: List[str] = list(library_configuration.get("paths", []))
         library_type: str = library_configuration.get("type", "tv")
@@ -247,9 +245,8 @@ class ScanAllLibrariesWorker(QThread):
         local_changed_movie_ids: Set[str] = set()
         local_series_scanned: Set[str] = set()
         lib_unavailable_dirs: List[str] = []
-        local_detail_events: List[Tuple[str, Dict[str, Any]]] = []
 
-        local_detail_events.append(("start_library", {"library": library_name}))
+        self.detail_progress.emit("start_library", {"library": library_name})
 
         # ------------------------------------------------------------------
         # Callback closures — write to local accumulators
@@ -261,7 +258,7 @@ class ScanAllLibrariesWorker(QThread):
 
             def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
                 enriched: Dict[str, Any] = {"library": lib_name, **payload}
-                local_detail_events.append((event, enriched))
+                self.detail_progress.emit(event, enriched)
 
             return _detail_callback
 
@@ -442,8 +439,9 @@ class ScanAllLibrariesWorker(QThread):
         else:
             current_library_data = existing_library_data
             for root_dir in root_directories:
-                local_detail_events.append(
-                    ("start_root", {"library": library_name, "root": root_dir}),
+                self.detail_progress.emit(
+                    "start_root",
+                    {"library": library_name, "root": root_dir},
                 )
                 updated_library_data = scan_directories(
                     [root_dir],
@@ -487,8 +485,9 @@ class ScanAllLibrariesWorker(QThread):
 
                 # Finish-root is only emitted in Pass 2 (metadata resolution).
                 if not is_pass1:
-                    local_detail_events.append(
-                        ("finish_root", {"library": library_name, "root": root_dir}),
+                    self.detail_progress.emit(
+                        "finish_root",
+                        {"library": library_name, "root": root_dir},
                     )
 
         return {
@@ -499,7 +498,6 @@ class ScanAllLibrariesWorker(QThread):
             "unavailable_directories": lib_unavailable_dirs,
             "changed_season_ids": local_changed_season_ids,
             "changed_movie_ids": local_changed_movie_ids,
-            "detail_events": local_detail_events,
         }
 
     # ------------------------------------------------------------------
@@ -681,10 +679,6 @@ class ScanAllLibrariesWorker(QThread):
                             self.changed_season_ids.update(result["changed_season_ids"])
                             self.changed_movie_ids.update(result["changed_movie_ids"])
 
-                        # Flush queued detail events from the pool thread.
-                        for event, payload in result.get("detail_events", []):
-                            self.detail_progress.emit(event, payload)
-
                         # Persist the updated library data for Pass 2.
                         library_data_by_name[library_name] = result["library_data"]
 
@@ -756,10 +750,6 @@ class ScanAllLibrariesWorker(QThread):
                                     self.unavailable_directories.append(root)
                             self.changed_season_ids.update(result["changed_season_ids"])
                             self.changed_movie_ids.update(result["changed_movie_ids"])
-
-                        # Flush queued detail events from the pool thread.
-                        for event, payload in result.get("detail_events", []):
-                            self.detail_progress.emit(event, payload)
 
                         library_data_by_name[library_name] = result["library_data"]
 
