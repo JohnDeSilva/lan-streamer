@@ -188,7 +188,7 @@ def test_scan_worker_detail_progress() -> None:
 
     with (
         patch(
-            "lan_streamer.backend.scan_worker_single._discover_single_library_tree_impl",
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree_impl",
             return_value=mock_tree,
         ) as mock_discover,
         patch(
@@ -255,7 +255,7 @@ def test_scan_workers_reporting() -> None:
     # We want to mock db methods called inside callbacks
     with (
         patch(
-            "lan_streamer.backend.scan_worker_single._discover_single_library_tree_impl",
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree_impl",
             return_value={},
         ),
         patch(
@@ -428,7 +428,7 @@ def test_scan_worker_stats_reporting() -> None:
 
     with (
         patch(
-            "lan_streamer.backend.scan_worker_single._discover_single_library_tree_impl",
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree_impl",
             return_value={},
         ),
         patch(
@@ -581,7 +581,7 @@ def test_scan_worker_formats_multiline_database_error_cleanly() -> None:
 
     with (
         patch(
-            "lan_streamer.backend.scan_worker_single._discover_single_library_tree_impl",
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree_impl",
             return_value={},
         ),
         patch(
@@ -635,7 +635,7 @@ def test_detailed_scan_report_counts_validation() -> None:
     # Mock discover tree impl and scan_directories
     with (
         patch(
-            "lan_streamer.backend.scan_worker_single._discover_single_library_tree_impl",
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree_impl",
             return_value={},
         ),
         patch(
@@ -782,7 +782,7 @@ def test_scan_worker_db_stats_no_double_counting() -> None:
 
     with (
         patch(
-            "lan_streamer.backend.scan_worker_single._discover_single_library_tree_impl",
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree_impl",
             return_value={},
         ),
         patch(

@@ -15,6 +15,13 @@ from lan_streamer.scanner import (
     scan_directories,
 )
 from lan_streamer.system.config import config
+from lan_streamer.backend.scan_worker_base import (
+    create_empty_stats,
+    log_issues_report,
+    log_stats_breakdown,
+    merge_stats_dicts,
+    merge_stats_dicts_for_report,
+)
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -117,54 +124,6 @@ class ScanAllLibrariesWorker(QThread):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _create_empty_stats() -> Dict[str, int]:
-        """Return a fresh zeroed stats dictionary with all 20 keys."""
-        return {
-            "series_scanned": 0,
-            "series_added": 0,
-            "series_updated": 0,
-            "series_removed": 0,
-            "series_skipped": 0,
-            "seasons_scanned": 0,
-            "seasons_added": 0,
-            "seasons_updated": 0,
-            "seasons_removed": 0,
-            "seasons_skipped": 0,
-            "episodes_scanned": 0,
-            "episodes_added": 0,
-            "episodes_updated": 0,
-            "episodes_removed": 0,
-            "episodes_skipped": 0,
-            "movies_scanned": 0,
-            "movies_added": 0,
-            "movies_updated": 0,
-            "movies_removed": 0,
-            "movies_skipped": 0,
-        }
-
-    @staticmethod
-    def _merge_stats_dicts(target: Dict[str, int], source: Dict[str, int]) -> None:
-        """Merge all values from *source* into *target* in-place.
-
-        Args:
-            target: The dictionary to merge into.
-            source: The dictionary whose values are added to *target*.
-        """
-        for key, value in source.items():
-            if key in target:
-                target[key] += value
-
-    @staticmethod
-    def _merge_stats_dicts_for_report(
-        stats_a: Dict[str, int], stats_b: Dict[str, int]
-    ) -> Dict[str, int]:
-        """Merge two stats dicts, returning a new dict with summed values."""
-        merged = dict(stats_a)
-        for key, value in stats_b.items():
-            merged[key] = merged.get(key, 0) + value
-        return merged
-
-    @staticmethod
     def _log_per_library_scan_report(
         library_name: str, paths_str: str, stats_dict: Dict[str, int]
     ) -> None:
@@ -225,9 +184,7 @@ class ScanAllLibrariesWorker(QThread):
             paths_str = ", ".join(lib_cfg.get("paths", []))
             pass1_stats = self.pass1_stats_per_library.get(lib_name, {})
             pass2_stats = self.pass2_stats_per_library.get(lib_name, {})
-            accumulated_stats = self._merge_stats_dicts_for_report(
-                pass1_stats, pass2_stats
-            )
+            accumulated_stats = merge_stats_dicts_for_report(pass1_stats, pass2_stats)
             self._log_per_library_scan_report(lib_name, paths_str, accumulated_stats)
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
 
@@ -241,82 +198,19 @@ class ScanAllLibrariesWorker(QThread):
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
 
         # Combined pass totals
-        self._log_stats_breakdown(
-            "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN (PASS 1)", self.pass1_stats
+        log_stats_breakdown(
+            "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN (PASS 1)",
+            self.pass1_stats,
+            logger,
         )
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
-        self._log_stats_breakdown(
-            "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN (PASS 2)", self.pass2_stats
+        log_stats_breakdown(
+            "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN (PASS 2)",
+            self.pass2_stats,
+            logger,
         )
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
-        self._log_stats_breakdown("TOTAL ACCUMULATED RUN STATS", self.stats)
-        logger.info("[SCAN_REPORT] ===================================================")
-
-    def _log_stats_breakdown(self, label: str, stats_dict: Dict[str, int]) -> None:
-        """Log a single stats breakdown section.
-
-        Args:
-            label: Section heading for the log output.
-            stats_dict: Statistics dictionary to log.
-        """
-        logger.info(f"[SCAN_REPORT] {label}")
-        logger.info(
-            f"[SCAN_REPORT]   Series: Scanned={stats_dict.get('series_scanned', 0)} | "
-            f"Added={stats_dict.get('series_added', 0)} | "
-            f"Updated={stats_dict.get('series_updated', 0)} | "
-            f"Removed={stats_dict.get('series_removed', 0)} | "
-            f"Skipped={stats_dict.get('series_skipped', 0)}"
-        )
-        logger.info(
-            f"[SCAN_REPORT]   Seasons: Scanned={stats_dict.get('seasons_scanned', 0)} | "
-            f"Added={stats_dict.get('seasons_added', 0)} | "
-            f"Updated={stats_dict.get('seasons_updated', 0)} | "
-            f"Removed={stats_dict.get('seasons_removed', 0)} | "
-            f"Skipped={stats_dict.get('seasons_skipped', 0)}"
-        )
-        logger.info(
-            f"[SCAN_REPORT]   Episodes: Scanned={stats_dict.get('episodes_scanned', 0)} | "
-            f"Added={stats_dict.get('episodes_added', 0)} | "
-            f"Updated={stats_dict.get('episodes_updated', 0)} | "
-            f"Removed={stats_dict.get('episodes_removed', 0)} | "
-            f"Skipped={stats_dict.get('episodes_skipped', 0)}"
-        )
-        logger.info(
-            f"[SCAN_REPORT]   Movies: Scanned={stats_dict.get('movies_scanned', 0)} | "
-            f"Added={stats_dict.get('movies_added', 0)} | "
-            f"Updated={stats_dict.get('movies_updated', 0)} | "
-            f"Removed={stats_dict.get('movies_removed', 0)} | "
-            f"Skipped={stats_dict.get('movies_skipped', 0)}"
-        )
-
-    def _log_issues_report(self) -> None:
-        """Log grouped issues from the scan run."""
-        if not self.problems:
-            return
-
-        grouped: Dict[str, Dict[str, List[str]]] = {}
-        for prob in self.problems:
-            problem_type = prob["type"]
-            problem_error = prob["error"]
-            problem_item = prob["item"]
-            if problem_type not in grouped:
-                grouped[problem_type] = {}
-            if problem_error not in grouped[problem_type]:
-                grouped[problem_type][problem_error] = []
-            grouped[problem_type][problem_error].append(problem_item)
-
-        logger.info("[SCAN_REPORT] ===================================================")
-        logger.info("[SCAN_REPORT]               SCAN RUN ISSUES REPORT")
-        logger.info("[SCAN_REPORT] ===================================================")
-        for problem_type, errors in grouped.items():
-            logger.info(f"[SCAN_REPORT] Type: {problem_type}")
-            for problem_error, items in errors.items():
-                logger.info(f"[SCAN_REPORT]   Error: {problem_error}")
-                for item in items:
-                    logger.info(f"[SCAN_REPORT]     - {item}")
-            logger.info(
-                "[SCAN_REPORT] ---------------------------------------------------"
-            )
+        log_stats_breakdown("TOTAL ACCUMULATED RUN STATS", self.stats, logger)
         logger.info("[SCAN_REPORT] ===================================================")
 
     # ------------------------------------------------------------------
@@ -362,7 +256,7 @@ class ScanAllLibrariesWorker(QThread):
         )
 
         # Local accumulators (thread-local, not shared)
-        local_stats: Dict[str, int] = self._create_empty_stats()
+        local_stats: Dict[str, int] = create_empty_stats()
         local_problems: List[Dict[str, Any]] = []
         local_changed_season_ids: Set[str] = set()
         local_changed_movie_ids: Set[str] = set()
@@ -727,7 +621,7 @@ class ScanAllLibrariesWorker(QThread):
 
         start_time = time.time()
         self.problems = []
-        self.stats = self._create_empty_stats()
+        self.stats = create_empty_stats()
         self.pass1_series_scanned: Set[str] = set()
         self.pass2_series_scanned: Set[str] = set()
         for key in self.pass1_stats:
@@ -818,8 +712,8 @@ class ScanAllLibrariesWorker(QThread):
 
                         # Merge per-library stats into combined totals
                         # (single-threaded section — no lock needed).
-                        self._merge_stats_dicts(self.pass1_stats, result["pass_stats"])
-                        self._merge_stats_dicts(self.stats, result["pass_stats"])
+                        merge_stats_dicts(self.pass1_stats, result["pass_stats"])
+                        merge_stats_dicts(self.stats, result["pass_stats"])
                         self.pass1_stats_per_library[library_name] = result[
                             "pass_stats"
                         ]
@@ -887,8 +781,8 @@ class ScanAllLibrariesWorker(QThread):
                         completed_count += 1
 
                         # Merge per-library stats into combined totals.
-                        self._merge_stats_dicts(self.pass2_stats, result["pass_stats"])
-                        self._merge_stats_dicts(self.stats, result["pass_stats"])
+                        merge_stats_dicts(self.pass2_stats, result["pass_stats"])
+                        merge_stats_dicts(self.stats, result["pass_stats"])
                         self.pass2_stats_per_library[library_name] = result[
                             "pass_stats"
                         ]
@@ -920,7 +814,7 @@ class ScanAllLibrariesWorker(QThread):
             duration = time.time() - start_time
             self._log_scan_summary(duration, libraries_dictionary)
             logger.info("[SCAN_REPORT] *** SCAN COMPLETED ***")
-            self._log_issues_report()
+            log_issues_report(self.problems, logger)
 
             logger.info("ScanAllLibrariesWorker finished successfully")
             self.finished.emit()

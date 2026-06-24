@@ -1,47 +1,20 @@
 import logging
-from pathlib import Path
 from typing import List, Dict, Any, Optional, Set
 from PySide6.QtCore import QObject, Signal, QThread
 
-from lan_streamer.scanner import (
-    LibraryDict,
-    has_video_files,
-)
+from lan_streamer.scanner import LibraryDict
 from lan_streamer import db
 from lan_streamer.system.config import config
 from lan_streamer.providers.jellyfin import jellyfin_client
 from lan_streamer.scanner import scan_directories
+from lan_streamer.backend.scan_worker_base import (
+    create_empty_stats,
+    discover_single_library_tree_impl,
+    log_issues_report,
+    log_stats_breakdown,
+)
 
 logger = logging.getLogger("lan_streamer.backend")
-
-
-def _discover_single_library_tree_impl(
-    root_directories: List[str], library_type: str
-) -> Dict[str, List[str]]:
-    """
-    Pre-walks all library directories to count total folders and files
-    for a single library so the UI can initialize the segmented progress bar
-    before scanning begins. Returns a structure mapping root_dir -> list of folder names.
-    """
-    roots: Dict[str, List[str]] = {}
-    for root_dir in root_directories:
-        root_path = Path(root_dir)
-        if not root_path.exists() or not root_path.is_dir():
-            roots[root_dir] = []
-            continue
-        folders = []
-        for series_path in sorted(
-            [
-                x
-                for x in root_path.iterdir()
-                if x.is_dir() and not x.name.startswith(".") and has_video_files(x)
-            ],
-            key=lambda x: x.stat().st_mtime,
-            reverse=True,
-        ):
-            folders.append(series_path.name)
-        roots[root_dir] = folders
-    return roots
 
 
 class ScanWorker(QThread):
@@ -126,28 +99,7 @@ class ScanWorker(QThread):
 
         start_time = time.time()
         self.problems = []
-        self.stats = {
-            "series_scanned": 0,
-            "series_added": 0,
-            "series_updated": 0,
-            "series_removed": 0,
-            "series_skipped": 0,
-            "seasons_scanned": 0,
-            "seasons_added": 0,
-            "seasons_updated": 0,
-            "seasons_removed": 0,
-            "seasons_skipped": 0,
-            "episodes_scanned": 0,
-            "episodes_added": 0,
-            "episodes_updated": 0,
-            "episodes_removed": 0,
-            "episodes_skipped": 0,
-            "movies_scanned": 0,
-            "movies_added": 0,
-            "movies_updated": 0,
-            "movies_removed": 0,
-            "movies_skipped": 0,
-        }
+        self.stats = create_empty_stats()
         self.pass1_series_scanned = set()
         self.pass2_series_scanned = set()
         for key in self.pass1_stats:
@@ -160,7 +112,7 @@ class ScanWorker(QThread):
             self.unavailable_directories = []
 
             # Pre-discover the library tree structure and emit init_library_scan
-            tree_structure = _discover_single_library_tree_impl(
+            tree_structure = discover_single_library_tree_impl(
                 self.root_directories, self.library_type
             )
             self.detail_progress.emit(
@@ -398,85 +350,24 @@ class ScanWorker(QThread):
                 "[SCAN_REPORT] ---------------------------------------------------"
             )
 
-            def _log_stats_breakdown(label: str, stats_dict: Dict[str, int]) -> None:
-                logger.info(f"[SCAN_REPORT] {label}")
-                logger.info(
-                    f"[SCAN_REPORT]   Series: Scanned={stats_dict.get('series_scanned', 0)} | "
-                    f"Added={stats_dict.get('series_added', 0)} | "
-                    f"Updated={stats_dict.get('series_updated', 0)} | "
-                    f"Removed={stats_dict.get('series_removed', 0)} | "
-                    f"Skipped={stats_dict.get('series_skipped', 0)}"
-                )
-                logger.info(
-                    f"[SCAN_REPORT]   Seasons: Scanned={stats_dict.get('seasons_scanned', 0)} | "
-                    f"Added={stats_dict.get('seasons_added', 0)} | "
-                    f"Updated={stats_dict.get('seasons_updated', 0)} | "
-                    f"Removed={stats_dict.get('seasons_removed', 0)} | "
-                    f"Skipped={stats_dict.get('seasons_skipped', 0)}"
-                )
-                logger.info(
-                    f"[SCAN_REPORT]   Episodes: Scanned={stats_dict.get('episodes_scanned', 0)} | "
-                    f"Added={stats_dict.get('episodes_added', 0)} | "
-                    f"Updated={stats_dict.get('episodes_updated', 0)} | "
-                    f"Removed={stats_dict.get('episodes_removed', 0)} | "
-                    f"Skipped={stats_dict.get('episodes_skipped', 0)}"
-                )
-                logger.info(
-                    f"[SCAN_REPORT]   Movies: Scanned={stats_dict.get('movies_scanned', 0)} | "
-                    f"Added={stats_dict.get('movies_added', 0)} | "
-                    f"Updated={stats_dict.get('movies_updated', 0)} | "
-                    f"Removed={stats_dict.get('movies_removed', 0)} | "
-                    f"Skipped={stats_dict.get('movies_skipped', 0)}"
-                )
-
-            _log_stats_breakdown(
-                "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN", self.pass1_stats
+            log_stats_breakdown(
+                "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN", self.pass1_stats, logger
             )
             logger.info(
                 "[SCAN_REPORT] ---------------------------------------------------"
             )
-            _log_stats_breakdown(
-                "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN", self.pass2_stats
+            log_stats_breakdown(
+                "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN", self.pass2_stats, logger
             )
             logger.info(
                 "[SCAN_REPORT] ---------------------------------------------------"
             )
-            _log_stats_breakdown("TOTAL ACCUMULATED RUN STATS", self.stats)
+            log_stats_breakdown("TOTAL ACCUMULATED RUN STATS", self.stats, logger)
             logger.info(
                 "[SCAN_REPORT] ==================================================="
             )
 
-            if self.problems:
-                grouped = {}
-                for prob in self.problems:
-                    t = prob["type"]
-                    e = prob["error"]
-                    item = prob["item"]
-                    if t not in grouped:
-                        grouped[t] = {}
-                    if e not in grouped[t]:
-                        grouped[t][e] = []
-                    grouped[t][e].append(item)
-
-                logger.info(
-                    "[SCAN_REPORT] ==================================================="
-                )
-                logger.info("[SCAN_REPORT]               SCAN RUN ISSUES REPORT")
-                logger.info(
-                    "[SCAN_REPORT] ==================================================="
-                )
-                for t, errors in grouped.items():
-                    logger.info(f"[SCAN_REPORT] Type: {t}")
-                    for err, items in errors.items():
-                        logger.info(f"[SCAN_REPORT]   Error: {err}")
-                        for item in items:
-                            logger.info(f"[SCAN_REPORT]     - {item}")
-                    logger.info(
-                        "[SCAN_REPORT] ---------------------------------------------------"
-                    )
-                logger.info(
-                    "[SCAN_REPORT] ==================================================="
-                )
+            log_issues_report(self.problems, logger)
 
             logger.info("ScanWorker finished successfully")
             self.finished.emit(library)
