@@ -64,6 +64,9 @@ class ScanWorker(QThread):
         for key in self.pass1_stats:
             self.pass1_stats[key] = 0
             self.pass2_stats[key] = 0
+        self.changed_season_ids = set()
+        self.changed_movie_ids = set()
+        self.current_pass = 1
         try:
             logger.info(
                 f"ScanWorker starting run for directories: {self.root_directories}"
