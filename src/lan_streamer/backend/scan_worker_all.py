@@ -716,14 +716,13 @@ class ScanAllLibrariesWorker(QThread):
                             "pass_stats"
                         ]
 
-                        # Merge shared state under lock.
-                        with self._lock:
-                            self.problems.extend(result["problems"])
-                            for root in result["unavailable_directories"]:
-                                if root not in self.unavailable_directories:
-                                    self.unavailable_directories.append(root)
-                            self.changed_season_ids.update(result["changed_season_ids"])
-                            self.changed_movie_ids.update(result["changed_movie_ids"])
+                        # Merge shared state.
+                        self.problems.extend(result["problems"])
+                        for root in result["unavailable_directories"]:
+                            if root not in self.unavailable_directories:
+                                self.unavailable_directories.append(root)
+                        self.changed_season_ids.update(result["changed_season_ids"])
+                        self.changed_movie_ids.update(result["changed_movie_ids"])
 
                         # Persist the updated library data for Pass 2.
                         library_data_by_name[library_name] = result["library_data"]
@@ -792,14 +791,13 @@ class ScanAllLibrariesWorker(QThread):
                             "pass_stats"
                         ]
 
-                        # Merge shared state under lock.
-                        with self._lock:
-                            self.problems.extend(result["problems"])
-                            for root in result["unavailable_directories"]:
-                                if root not in self.unavailable_directories:
-                                    self.unavailable_directories.append(root)
-                            self.changed_season_ids.update(result["changed_season_ids"])
-                            self.changed_movie_ids.update(result["changed_movie_ids"])
+                        # Merge shared state.
+                        self.problems.extend(result["problems"])
+                        for root in result["unavailable_directories"]:
+                            if root not in self.unavailable_directories:
+                                self.unavailable_directories.append(root)
+                        self.changed_season_ids.update(result["changed_season_ids"])
+                        self.changed_movie_ids.update(result["changed_movie_ids"])
 
                         library_data_by_name[library_name] = result["library_data"]
 
