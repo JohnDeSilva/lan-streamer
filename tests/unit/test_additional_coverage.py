@@ -14,6 +14,7 @@ Additional targeted tests for:
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from PySide6.QtCore import Qt
 
 
 # ---------------------------------------------------------------------------
@@ -59,11 +60,18 @@ def test_scan_all_libraries_worker_with_root_dirs(tmp_path) -> None:
         finished = []
 
         worker = ScanAllLibrariesWorker()
-        worker.detail_progress.connect(lambda ev, pl: detail_events.append(ev))
-        worker.library_progress.connect(
-            lambda lib, done, total: progress_events.append((lib, done, total))
+        worker.detail_progress.connect(
+            lambda ev, pl: detail_events.append(ev),
+            Qt.DirectConnection,
         )
-        worker.finished.connect(lambda: finished.append(True))
+        worker.library_progress.connect(
+            lambda lib, done, total: progress_events.append((lib, done, total)),
+            Qt.DirectConnection,
+        )
+        worker.finished.connect(
+            lambda: finished.append(True),
+            Qt.DirectConnection,
+        )
         worker.run()
 
         assert finished == [True]
@@ -148,7 +156,8 @@ def test_scan_all_libraries_worker_with_jellyfin(tmp_path) -> None:
 
 
 def test_scan_all_libraries_worker_error() -> None:
-    """ScanAllLibrariesWorker emits error signal on exception."""
+    """ScanAllLibrariesWorker emits library_error on per-library failure."""
+    from PySide6.QtCore import Qt
     from lan_streamer.backend import ScanAllLibrariesWorker
 
     with patch("lan_streamer.backend.scan_worker_all.config") as mock_config:
@@ -157,13 +166,17 @@ def test_scan_all_libraries_worker_error() -> None:
             "lan_streamer.backend.scan_worker_all.scan_directories",
             side_effect=RuntimeError("Scan failed"),
         ):
-            errors = []
+            library_errors = []
             worker = ScanAllLibrariesWorker()
-            worker.error.connect(errors.append)
+            worker.library_error.connect(
+                lambda lib, msg: library_errors.append((lib, msg)),
+                Qt.DirectConnection,
+            )
             worker.run()
 
-            assert len(errors) == 1
-            assert "Scan failed" in errors[0]
+            assert len(library_errors) == 1
+            assert library_errors[0][0] == "Bad"
+            assert "Scan failed" in library_errors[0][1]
 
 
 def test_scan_worker_with_jellyfin() -> None:
