@@ -1,9 +1,10 @@
 import logging
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
-from lan_streamer.db.models import Episode, Movie, MediaFile
+from lan_streamer.db.models import Episode, Movie, MediaFile, Season
 
 logger = logging.getLogger("lan_streamer.db.queries")
 
@@ -22,38 +23,50 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
         with get_session() as session:
             from lan_streamer.db.models import MetadataFileMapping
 
-            episodes = session.scalars(
-                select(Episode)
-                .outerjoin(
-                    MetadataFileMapping, MetadataFileMapping.episode_id == Episode.id
+            episodes = (
+                session.scalars(
+                    select(Episode)
+                    .options(joinedload(Episode.season).joinedload(Season.series))
+                    .outerjoin(
+                        MetadataFileMapping,
+                        MetadataFileMapping.episode_id == Episode.id,
+                    )
+                    .outerjoin(
+                        MediaFile, MediaFile.id == MetadataFileMapping.media_file_id
+                    )
+                    .where(
+                        (MediaFile.id.is_(None))
+                        | (MediaFile.runtime.is_(None))
+                        | (MediaFile.runtime == 0)
+                        | (MediaFile.video_codec.is_(None))
+                        | (MediaFile.video_codec == "Unknown")
+                        | (MediaFile.video_codec == "")
+                        | (MediaFile.resolution.is_(None))
+                        | (MediaFile.resolution == "Unknown")
+                        | (MediaFile.resolution == "")
+                        | (MediaFile.bit_rate.is_(None))
+                        | (MediaFile.bit_rate <= 0)
+                    )
+                    .distinct()
                 )
-                .outerjoin(MediaFile, MediaFile.id == MetadataFileMapping.media_file_id)
-                .where(
-                    (MediaFile.id.is_(None))
-                    | (MediaFile.runtime.is_(None))
-                    | (MediaFile.runtime == 0)
-                    | (MediaFile.video_codec.is_(None))
-                    | (MediaFile.video_codec == "Unknown")
-                    | (MediaFile.video_codec == "")
-                    | (MediaFile.resolution.is_(None))
-                    | (MediaFile.resolution == "Unknown")
-                    | (MediaFile.resolution == "")
-                    | (MediaFile.bit_rate.is_(None))
-                    | (MediaFile.bit_rate <= 0)
-                )
-                .distinct()
-            ).all()
+                .unique()
+                .all()
+            )
             for episode in episodes:
                 path = episode.default_path or (
                     episode.media_files[0].path if episode.media_files else None
                 )
                 if path:
+                    library_name: Optional[str] = None
+                    if episode.season and episode.season.series:
+                        library_name = episode.season.series.library_name
                     items_list.append(
                         {
                             "id": episode.id,
                             "path": path,
                             "type": "episode",
                             "season_id": episode.season_id,
+                            "library_name": library_name,
                         }
                     )
 
@@ -83,7 +96,14 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
                     movie.media_files[0].path if movie.media_files else None
                 )
                 if path:
-                    items_list.append({"id": movie.id, "path": path, "type": "movie"})
+                    items_list.append(
+                        {
+                            "id": movie.id,
+                            "path": path,
+                            "type": "movie",
+                            "library_name": movie.library_name,
+                        }
+                    )
         logger.debug(
             f"get_items_missing_runtime query response: found {len(items_list)} items"
         )

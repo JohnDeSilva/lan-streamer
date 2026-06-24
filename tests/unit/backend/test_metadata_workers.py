@@ -2,6 +2,8 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from typing import List, Dict, Any
 
+from PySide6.QtCore import Qt
+
 import pytest
 
 from lan_streamer.backend import (
@@ -29,8 +31,9 @@ def test_runtime_extraction_worker_execution() -> None:
                 "path": "/vid1.mkv",
                 "type": "episode",
                 "season_id": "season_1",
+                "library_name": "TV",
             },
-            {"id": 102, "path": "/vid2.mkv", "type": "movie"},
+            {"id": 102, "path": "/vid2.mkv", "type": "movie", "library_name": "TV"},
         ]
         mock_info.side_effect = [
             {
@@ -54,7 +57,8 @@ def test_runtime_extraction_worker_execution() -> None:
 
         worker = FilePropertyExtractionWorker()
         worker.progress_updated.connect(
-            lambda completed, total: progress_emitted.append((completed, total))
+            lambda completed, total: progress_emitted.append((completed, total)),
+            Qt.DirectConnection,
         )
         worker.finished.connect(finished_emitted.append)
         worker.run()
@@ -410,18 +414,21 @@ def test_file_property_extraction_worker_skips_and_batches() -> None:
                 "path": "/season1_ep1.mkv",
                 "type": "episode",
                 "season_id": "season_1",
+                "library_name": "TV",
             },
             {
                 "id": 202,
                 "path": "/season1_ep2.mkv",
                 "type": "episode",
                 "season_id": "season_1",
+                "library_name": "TV",
             },
             {
                 "id": 203,
                 "path": "/season2_ep1.mkv",
                 "type": "episode",
                 "season_id": "season_2",
+                "library_name": "TV",
             },
         ]
 
