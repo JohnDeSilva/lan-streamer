@@ -3,7 +3,7 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from PySide6.QtCore import QObject, QThread, Signal
 
@@ -84,7 +84,10 @@ class ScanAllLibrariesWorker(QThread):
 
     @staticmethod
     def _log_per_library_scan_report(
-        library_name: str, paths_str: str, stats_dict: Dict[str, int]
+        library_name: str,
+        paths_str: str,
+        stats_dict: Dict[str, Any],
+        status_notes: Optional[List[str]] = None,
     ) -> None:
         """Log an individual library scan report with accumulated stats.
 
@@ -92,9 +95,14 @@ class ScanAllLibrariesWorker(QThread):
             library_name: Name of the library being reported.
             paths_str: Comma-separated library paths.
             stats_dict: Accumulated statistics dictionary for this library.
+            status_notes: Optional list of per-pass status messages
+                (e.g. ``"Pass 1 FAILED"``).
         """
         logger.info(f"[SCAN_REPORT] --- Per-Library Report: {library_name} ---")
         logger.info(f"[SCAN_REPORT]   Paths=[{paths_str}]")
+        if status_notes:
+            for note in status_notes:
+                logger.info(f"[SCAN_REPORT]   ** {note} **")
         logger.info(
             f"[SCAN_REPORT]   Series: Scanned={stats_dict.get('series_scanned', 0)} | "
             f"Added={stats_dict.get('series_added', 0)} | "
@@ -144,7 +152,17 @@ class ScanAllLibrariesWorker(QThread):
             pass1_stats = self.pass1_stats_per_library.get(lib_name, {})
             pass2_stats = self.pass2_stats_per_library.get(lib_name, {})
             accumulated_stats = merge_stats_dicts_for_report(pass1_stats, pass2_stats)
-            self._log_per_library_scan_report(lib_name, paths_str, accumulated_stats)
+            status_notes: List[str] = []
+            if pass1_stats.get("_skipped"):
+                status_notes.append("Pass 1 FAILED — no offline data")
+            if pass2_stats.get("_skipped"):
+                status_notes.append("Pass 2 FAILED — skipping metadata resolution")
+            self._log_per_library_scan_report(
+                lib_name,
+                paths_str,
+                accumulated_stats,
+                status_notes or None,
+            )
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
 
         logger.info(f"[SCAN_REPORT] Total Scan Duration: {duration:.2f} seconds")
@@ -196,6 +214,12 @@ class ScanAllLibrariesWorker(QThread):
             is_pass1: ``True`` for the offline file-discovery pass,
                 ``False`` for the online metadata-resolution pass.
 
+        .. note::
+
+           ``scan_directories`` is called **synchronously** inside this method.
+           The callback closures close over this stack frame; they are valid
+           because the frame stays alive for the full duration of the call.
+
         Returns:
             A dictionary with the following keys:
 
@@ -207,6 +231,8 @@ class ScanAllLibrariesWorker(QThread):
             - ``unavailable_directories`` (List[str]) — missing root directories
             - ``changed_season_ids`` (Set[str]) — season IDs that changed
             - ``changed_movie_ids`` (Set[str]) — movie IDs that changed
+            - ``detail_events`` (List[Tuple[str, Dict]]) — queued detail-progress
+              events to be flushed from the main thread
         """
         root_directories: List[str] = list(library_configuration.get("paths", []))
         library_type: str = library_configuration.get("type", "tv")
@@ -221,8 +247,9 @@ class ScanAllLibrariesWorker(QThread):
         local_changed_movie_ids: Set[str] = set()
         local_series_scanned: Set[str] = set()
         lib_unavailable_dirs: List[str] = []
+        local_detail_events: List[Tuple[str, Dict[str, Any]]] = []
 
-        self.detail_progress.emit("start_library", {"library": library_name})
+        local_detail_events.append(("start_library", {"library": library_name}))
 
         # ------------------------------------------------------------------
         # Callback closures — write to local accumulators
@@ -234,7 +261,7 @@ class ScanAllLibrariesWorker(QThread):
 
             def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
                 enriched: Dict[str, Any] = {"library": lib_name, **payload}
-                self.detail_progress.emit(event, enriched)
+                local_detail_events.append((event, enriched))
 
             return _detail_callback
 
@@ -251,13 +278,14 @@ class ScanAllLibrariesWorker(QThread):
                 f"'{season_name}' of series '{series_name}' to database..."
             )
             try:
-                stats = db.save_season_data(
-                    library_name,
-                    series_name,
-                    series_data,
-                    season_name,
-                    season_data,
-                )
+                with self._lock:
+                    stats = db.save_season_data(
+                        library_name,
+                        series_name,
+                        series_data,
+                        season_name,
+                        season_data,
+                    )
                 if stats:
                     if "issues" in stats:
                         for issue in stats["issues"]:
@@ -308,7 +336,8 @@ class ScanAllLibrariesWorker(QThread):
                 f"ScanAllLibrariesWorker writing movie '{movie_name}' to database..."
             )
             try:
-                stats = db.save_movie_data(library_name, movie_name, movie_data)
+                with self._lock:
+                    stats = db.save_movie_data(library_name, movie_name, movie_data)
                 if stats:
                     if "issues" in stats:
                         for issue in stats["issues"]:
@@ -342,10 +371,11 @@ class ScanAllLibrariesWorker(QThread):
             the per-item callbacks above.
             """
             try:
-                if library_type == "movie":
-                    stats = db.save_movie_library(library_name, lib_data)
-                else:
-                    stats = db.save_library(library_name, lib_data)
+                with self._lock:
+                    if library_type == "movie":
+                        stats = db.save_movie_library(library_name, lib_data)
+                    else:
+                        stats = db.save_library(library_name, lib_data)
                 if stats:
                     if "issues" in stats:
                         for issue in stats["issues"]:
@@ -412,9 +442,8 @@ class ScanAllLibrariesWorker(QThread):
         else:
             current_library_data = existing_library_data
             for root_dir in root_directories:
-                self.detail_progress.emit(
-                    "start_root",
-                    {"library": library_name, "root": root_dir},
+                local_detail_events.append(
+                    ("start_root", {"library": library_name, "root": root_dir}),
                 )
                 updated_library_data = scan_directories(
                     [root_dir],
@@ -458,9 +487,8 @@ class ScanAllLibrariesWorker(QThread):
 
                 # Finish-root is only emitted in Pass 2 (metadata resolution).
                 if not is_pass1:
-                    self.detail_progress.emit(
-                        "finish_root",
-                        {"library": library_name, "root": root_dir},
+                    local_detail_events.append(
+                        ("finish_root", {"library": library_name, "root": root_dir}),
                     )
 
         return {
@@ -471,6 +499,7 @@ class ScanAllLibrariesWorker(QThread):
             "unavailable_directories": lib_unavailable_dirs,
             "changed_season_ids": local_changed_season_ids,
             "changed_movie_ids": local_changed_movie_ids,
+            "detail_events": local_detail_events,
         }
 
     # ------------------------------------------------------------------
@@ -548,6 +577,9 @@ class ScanAllLibrariesWorker(QThread):
             self.pass2_stats[key] = 0
         self.pass1_stats_per_library = {}
         self.pass2_stats_per_library = {}
+        self.changed_season_ids = set()
+        self.changed_movie_ids = set()
+        self.current_pass = 1
 
         try:
             logger.info("ScanAllLibrariesWorker starting global scan run")
@@ -627,6 +659,9 @@ class ScanAllLibrariesWorker(QThread):
                             )
                             self.library_error.emit(library_name, str(exc))
                             failed_libraries.add(library_name)
+                            self.pass1_stats_per_library[library_name] = {
+                                "_skipped": True
+                            }
                             continue
 
                         # Merge per-library stats into combined totals
@@ -645,6 +680,10 @@ class ScanAllLibrariesWorker(QThread):
                                     self.unavailable_directories.append(root)
                             self.changed_season_ids.update(result["changed_season_ids"])
                             self.changed_movie_ids.update(result["changed_movie_ids"])
+
+                        # Flush queued detail events from the pool thread.
+                        for event, payload in result.get("detail_events", []):
+                            self.detail_progress.emit(event, payload)
 
                         # Persist the updated library data for Pass 2.
                         library_data_by_name[library_name] = result["library_data"]
@@ -695,6 +734,9 @@ class ScanAllLibrariesWorker(QThread):
                                 f"for library: {library_name}"
                             )
                             self.library_error.emit(library_name, str(exc))
+                            self.pass2_stats_per_library[library_name] = {
+                                "_skipped": True
+                            }
                             continue
 
                         completed_count += 1
@@ -714,6 +756,10 @@ class ScanAllLibrariesWorker(QThread):
                                     self.unavailable_directories.append(root)
                             self.changed_season_ids.update(result["changed_season_ids"])
                             self.changed_movie_ids.update(result["changed_movie_ids"])
+
+                        # Flush queued detail events from the pool thread.
+                        for event, payload in result.get("detail_events", []):
+                            self.detail_progress.emit(event, payload)
 
                         library_data_by_name[library_name] = result["library_data"]
 
