@@ -1,3 +1,19 @@
+## v0.33.0 (2026-06-23)
+
+### Feat
+
+- **ui**: add trailers button to details views
+
+### Fix
+
+- **ui**: reposition trailers button
+- **ui**: hide watched checkbox on combined view page
+- **db**: create queries_ui module with eager loading optimizations
+
+### Refactor
+
+- Dead code cleanup and reorg
+
 ## v0.32.0 (2026-06-22)
 
 ### Feat
