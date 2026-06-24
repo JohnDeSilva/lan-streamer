@@ -839,3 +839,219 @@ def test_scan_worker_db_stats_no_double_counting() -> None:
         assert worker.stats["series_scanned"] == 2
         assert worker.stats["seasons_scanned"] == 2
         assert worker.stats["movies_scanned"] == 2
+
+
+def test_scan_worker_changed_ids_in_callbacks() -> None:
+    """ScanWorker callbacks populate changed_season_ids and changed_movie_ids."""
+    from lan_streamer.scanner import LibraryDict
+
+    lib = LibraryDict({"Cosmos": {}})
+    lib.unavailable_directories = []
+
+    with (
+        patch(
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree_impl",
+            return_value={},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
+        ) as mock_scan,
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_season_data",
+            return_value={
+                "season_id": "sid_1",
+                "series_added": 1,
+                "seasons_added": 1,
+                "episodes_added": 3,
+            },
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_single.db.save_movie_data",
+            return_value={"movie_id": "mid_1", "movies_added": 1},
+        ),
+        patch("lan_streamer.backend.scan_worker_single.logger"),
+    ):
+
+        def fake_scan(*args, **kwargs):
+            offline = kwargs.get("offline", True)
+            season_cb = kwargs.get("season_callback")
+            movie_cb = kwargs.get("movie_callback")
+            if season_cb:
+                season_cb(
+                    "Cosmos",
+                    {"seasons": {"Season 1": {"episodes": [{}], "_changed": True}}},
+                    "Season 1",
+                    {"episodes": [{"path": "ep1.mp4"}], "_changed": offline},
+                )
+            if movie_cb:
+                movie_cb("Inception", {"path": "movie.mp4", "_changed": offline})
+            return lib
+
+        mock_scan.side_effect = fake_scan
+
+        worker = ScanWorker(["/path"], "tv", {}, library_name="TV_Lib")
+        worker.run()
+
+        assert "sid_1" in worker.changed_season_ids
+        assert "mid_1" in worker.changed_movie_ids
+
+
+def test_scan_all_libraries_pass2_only() -> None:
+    """ScanAllLibrariesWorker with run_pass1=False skips offline pass."""
+    from lan_streamer.scanner import LibraryDict
+
+    empty_lib = LibraryDict({})
+    empty_lib.unavailable_directories = []
+
+    with (
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+        patch(
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
+            return_value=False,
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_all.scan_directories",
+            return_value=empty_lib,
+        ) as mock_scan,
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch("lan_streamer.backend.scan_worker_all.db.save_library"),
+    ):
+        mock_config.libraries = {
+            "Lib1": {"paths": ["/tv"], "type": "tv"},
+        }
+
+        finished = []
+        worker = ScanAllLibrariesWorker(run_pass1=False, run_pass2=True)
+        worker.finished.connect(lambda: finished.append(True))
+        worker.run()
+
+        assert finished == [True]
+        assert mock_scan.call_count == 1  # only Pass 2
+
+
+def test_scan_all_libraries_pass1_only() -> None:
+    """ScanAllLibrariesWorker with run_pass2=False skips metadata pass."""
+    from lan_streamer.scanner import LibraryDict
+
+    empty_lib = LibraryDict({})
+    empty_lib.unavailable_directories = []
+
+    with (
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+        patch(
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
+            return_value=False,
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_all.scan_directories",
+            return_value=empty_lib,
+        ) as mock_scan,
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch("lan_streamer.backend.scan_worker_all.db.save_library"),
+    ):
+        mock_config.libraries = {
+            "Lib1": {"paths": ["/tv"], "type": "tv"},
+        }
+
+        finished = []
+        worker = ScanAllLibrariesWorker(run_pass1=True, run_pass2=False)
+        worker.finished.connect(lambda: finished.append(True))
+        worker.run()
+
+        assert finished == [True]
+        assert mock_scan.call_count == 1  # only Pass 1
+
+
+def test_scan_all_libraries_both_passes_disabled() -> None:
+    """ScanAllLibrariesWorker with both passes disabled still finishes."""
+    from lan_streamer.scanner import LibraryDict
+
+    empty_lib = LibraryDict({})
+    empty_lib.unavailable_directories = []
+
+    with (
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+        patch(
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
+            return_value=False,
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_all.scan_directories",
+            return_value=empty_lib,
+        ),
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch("lan_streamer.backend.scan_worker_all.db.save_library"),
+    ):
+        mock_config.libraries = {
+            "Lib1": {"paths": ["/tv"], "type": "tv"},
+        }
+
+        finished = []
+        worker = ScanAllLibrariesWorker(run_pass1=False, run_pass2=False)
+        worker.finished.connect(lambda: finished.append(True))
+        worker.run()
+
+        assert finished == [True]
+
+
+def test_scan_all_libraries_worker_zero_libraries() -> None:
+    """ScanAllLibrariesWorker handles empty library configuration gracefully."""
+    with (
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+        patch(
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
+            return_value=False,
+        ),
+        patch("lan_streamer.backend.scan_worker_all.db.load_library"),
+    ):
+        mock_config.libraries = {}
+
+        detail_events = []
+        worker = ScanAllLibrariesWorker()
+        worker.detail_progress.connect(lambda ev, pl: detail_events.append(ev))
+        worker.run()
+
+        assert "init_tree" in detail_events
+        # All stats should remain zeroed since there are no libraries to scan
+        assert all(v == 0 for v in worker.stats.values())
+
+
+def test_scan_all_libraries_unavailable_dir_dedup() -> None:
+    """Duplicate unavailable directories across libraries are not duplicated."""
+    from lan_streamer.scanner import LibraryDict
+
+    def _make_lib(unavailable_dirs):
+        ld = LibraryDict({})
+        ld.unavailable_directories = unavailable_dirs
+        return ld
+
+    with (
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+        patch(
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
+            return_value=False,
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_all.scan_directories",
+            side_effect=[
+                _make_lib(["/missing/path"]),
+                _make_lib(["/missing/path"]),
+            ],
+        ),
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch(
+            "lan_streamer.backend.scan_worker_all.db.load_movie_library",
+            return_value={},
+        ),
+        patch("lan_streamer.backend.scan_worker_all.db.save_library"),
+        patch("lan_streamer.backend.scan_worker_all.db.save_movie_library"),
+    ):
+        mock_config.libraries = {
+            "TVLib": {"paths": ["/tv"], "type": "tv"},
+            "MovieLib": {"paths": ["/movies"], "type": "movie"},
+        }
+
+        worker = ScanAllLibrariesWorker(run_pass2=False)
+        worker.run()
+
+        assert worker.unavailable_directories == ["/missing/path"]
