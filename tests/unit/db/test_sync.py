@@ -144,7 +144,7 @@ def test_sync_watched_ids_paths() -> None:
 
 
 def test_sync_watched_by_ids(mock_db_file) -> None:
-    from lan_streamer.db import _sync_watched_by_ids, get_session
+    from lan_streamer.db.sync import _sync_watched_by_ids, get_session
 
     with get_session() as session:
         series = Series(name="S", library_name="L")
@@ -195,14 +195,14 @@ def test_sync_watched_by_ids(mock_db_file) -> None:
 
 
 def test_sync_watched_by_ids_empty(mock_db_file) -> None:
-    from lan_streamer.db import _sync_watched_by_ids, get_session
+    from lan_streamer.db.sync import _sync_watched_by_ids, get_session
 
     with get_session() as session:
         assert _sync_watched_by_ids(session, set()) == 0
 
 
 def test_sync_watched_by_paths(mock_db_file) -> None:
-    from lan_streamer.db import _sync_watched_by_paths, get_session
+    from lan_streamer.db.sync import _sync_watched_by_paths, get_session
 
     with get_session() as session:
         series = Series(name="S", library_name="L")
@@ -220,14 +220,14 @@ def test_sync_watched_by_paths(mock_db_file) -> None:
 
 
 def test_sync_watched_by_paths_empty(mock_db_file) -> None:
-    from lan_streamer.db import _sync_watched_by_paths, get_session
+    from lan_streamer.db.sync import _sync_watched_by_paths, get_session
 
     with get_session() as session:
         assert _sync_watched_by_paths(session, set()) == 0
 
 
 def test_sync_watched_by_names(mock_db_file) -> None:
-    from lan_streamer.db import _sync_watched_by_names, get_session
+    from lan_streamer.db.sync import _sync_watched_by_names, get_session
 
     with get_session() as session:
         series = Series(name="Cool Show", library_name="L")
@@ -245,7 +245,7 @@ def test_sync_watched_by_names(mock_db_file) -> None:
 
 
 def test_sync_watched_by_names_empty(mock_db_file) -> None:
-    from lan_streamer.db import _sync_watched_by_names, get_session
+    from lan_streamer.db.sync import _sync_watched_by_names, get_session
 
     with get_session() as session:
         assert _sync_watched_by_names(session, set()) == 0

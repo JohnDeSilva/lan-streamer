@@ -366,7 +366,7 @@ def test_init_db_creates_backup_if_db_exists(tmp_path) -> None:
 def test_build_episode_dict_corrupt_json(mock_db_file) -> None:
     """Episode with corrupt JSON in audio_tracks falls back to empty list."""
     from lan_streamer.db import get_session
-    from lan_streamer.db.queries_file_discovery import _build_episode_dict
+    from lan_streamer.db.orm_serialization import _build_episode_dict
     from lan_streamer.db.models import Episode, Season, Series
 
     with get_session() as session:
@@ -394,7 +394,7 @@ def test_build_episode_dict_corrupt_json(mock_db_file) -> None:
 def test_build_movie_dict_corrupt_json(mock_db_file) -> None:
     """Movie with corrupt JSON in audio_tracks falls back to empty list."""
     from lan_streamer.db import get_session
-    from lan_streamer.db.queries_file_discovery import _build_movie_dict
+    from lan_streamer.db.orm_serialization import _build_movie_dict
     from lan_streamer.db.models import Movie
 
     with get_session() as session:

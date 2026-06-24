@@ -5,7 +5,7 @@ Extended tests for db/queries.py – covering lines that have no existing covera
  - update_season_watched_status (MAL branch)
  - update_series_watched_status (MAL branch, already-unwatched branch)
  - get_items_missing_runtime (exception branch)
- - update_item_runtime (episode and movie branches with technical info)
+ - update_items_runtime_batch (episode and movie branches with technical info)
  - get_combined_smart_row (Watched/Unwatched filter_mode for both series and movies)
  - get_combined_next_up (empty library_names path, exception path)
  - natural_sort_key (numeric vs string parts)
@@ -306,11 +306,11 @@ def test_get_items_missing_runtime_exception() -> None:
 
 
 # ---------------------------------------------------------------------------
-# update_item_runtime – with technical fields
+# update_items_runtime_batch – with technical fields
 # ---------------------------------------------------------------------------
 
 
-def test_update_item_runtime_episode_with_tech_info(mock_db_file) -> None:
+def test_update_items_runtime_batch_episode_with_tech_info(mock_db_file) -> None:
     from lan_streamer.db import get_session
     import json
 
@@ -331,15 +331,19 @@ def test_update_item_runtime_episode_with_tech_info(mock_db_file) -> None:
         session.commit()
         ep_id = ep.id
 
-    db.update_item_runtime(
-        ep_id,
-        "episode",
-        45,
-        video_codec="h264",
-        resolution="1920x1080",
-        audio_tracks=[{"language": "eng"}],
-        subtitle_tracks=[{"language": "spa"}],
-        size_bytes=987654,
+    db.update_items_runtime_batch(
+        [
+            {
+                "item_identifier": ep_id,
+                "item_type": "episode",
+                "runtime_minutes": 45,
+                "video_codec": "h264",
+                "resolution": "1920x1080",
+                "audio_tracks": [{"language": "eng"}],
+                "subtitle_tracks": [{"language": "spa"}],
+                "size_bytes": 987654,
+            }
+        ]
     )
 
     with get_session() as session:
@@ -355,7 +359,7 @@ def test_update_item_runtime_episode_with_tech_info(mock_db_file) -> None:
         assert updated.media_files[0].size_bytes == 987654
 
 
-def test_update_item_runtime_movie_with_tech_info(mock_db_file) -> None:
+def test_update_items_runtime_batch_movie_with_tech_info(mock_db_file) -> None:
     from lan_streamer.db import get_session
     import json
 
@@ -370,15 +374,19 @@ def test_update_item_runtime_movie_with_tech_info(mock_db_file) -> None:
         session.commit()
         movie_id = movie.id
 
-    db.update_item_runtime(
-        movie_id,
-        "movie",
-        120,
-        video_codec="hevc",
-        resolution="3840x2160",
-        audio_tracks=[{"language": "eng"}, {"language": "fre"}],
-        subtitle_tracks=[],
-        size_bytes=123456,
+    db.update_items_runtime_batch(
+        [
+            {
+                "item_identifier": movie_id,
+                "item_type": "movie",
+                "runtime_minutes": 120,
+                "video_codec": "hevc",
+                "resolution": "3840x2160",
+                "audio_tracks": [{"language": "eng"}, {"language": "fre"}],
+                "subtitle_tracks": [],
+                "size_bytes": 123456,
+            }
+        ]
     )
 
     with get_session() as session:
@@ -397,27 +405,51 @@ def test_update_item_runtime_movie_with_tech_info(mock_db_file) -> None:
         assert updated.media_files[0].size_bytes == 123456
 
 
-def test_update_item_runtime_episode_not_found(mock_db_file) -> None:
+def test_update_items_runtime_batch_episode_not_found(mock_db_file) -> None:
     """Should not crash when ID doesn't exist."""
     import uuid
 
-    db.update_item_runtime(uuid.uuid4().bytes, "episode", 30)
+    db.update_items_runtime_batch(
+        [
+            {
+                "item_identifier": uuid.uuid4().bytes,
+                "item_type": "episode",
+                "runtime_minutes": 30,
+            }
+        ]
+    )
 
 
-def test_update_item_runtime_movie_not_found(mock_db_file) -> None:
+def test_update_items_runtime_batch_movie_not_found(mock_db_file) -> None:
     """Should not crash when movie ID doesn't exist."""
     import uuid
 
-    db.update_item_runtime(uuid.uuid4().bytes, "movie", 30)
+    db.update_items_runtime_batch(
+        [
+            {
+                "item_identifier": uuid.uuid4().bytes,
+                "item_type": "movie",
+                "runtime_minutes": 30,
+            }
+        ]
+    )
 
 
-def test_update_item_runtime_exception() -> None:
+def test_update_items_runtime_batch_exception() -> None:
     with patch("lan_streamer.db.connection.get_session") as mock_session:
         mock_session.side_effect = Exception("DB error")
         # Should not raise
         import uuid
 
-        db.update_item_runtime(uuid.uuid4().bytes, "episode", 30)
+        db.update_items_runtime_batch(
+            [
+                {
+                    "item_identifier": uuid.uuid4().bytes,
+                    "item_type": "episode",
+                    "runtime_minutes": 30,
+                }
+            ]
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -679,171 +711,7 @@ def test_delete_episode_record_exception() -> None:
 def test_update_episode_path_exception() -> None:
     with patch("lan_streamer.db.connection.get_session") as mock_session:
         mock_session.side_effect = Exception("DB error")
-        db.update_episode_path("/old.mkv", "/new.mkv")  # should not raise
-
-
-# ---------------------------------------------------------------------------
-# get_app_config – logging and default-seeding behaviour
-# ---------------------------------------------------------------------------
-
-
-def test_get_app_config_missing_key_returns_default() -> None:
-    """A key absent from the DB returns the supplied default."""
-    from lan_streamer.db.queries_config import get_app_config
-
-    result = get_app_config("__nonexistent_key__", "my_default")
-    assert result == "my_default"
-
-
-def test_get_app_config_missing_key_seeds_default_into_db() -> None:
-    """When a key is absent and a non-None default is given it is written to the DB."""
-    from lan_streamer.db.queries_config import get_app_config
-
-    key = "__seed_test_key__"
-    # First read — key is missing, default should be seeded
-    result = get_app_config(key, "seeded_value")
-    assert result == "seeded_value"
-
-    # Second read — key now exists in DB, value comes from row
-    result2 = get_app_config(key, "other_default")
-    assert result2 == "seeded_value"
-
-
-def test_get_app_config_missing_key_none_default_not_seeded() -> None:
-    """When default is None the key must NOT be written to the DB."""
-    from lan_streamer.db.queries_config import get_app_config
-    from lan_streamer.db.connection import get_session
-    from lan_streamer.db.models import AppConfig
-    from sqlalchemy import select
-
-    key = "__none_default_key__"
-    result = get_app_config(key, None)
-    assert result is None
-
-    # Row must not have been created
-    with get_session() as session:
-        row = session.scalars(select(AppConfig).where(AppConfig.key == key)).first()
-    assert row is None
-
-
-def test_get_app_config_missing_key_logs_debug(caplog) -> None:
-    """A debug message is emitted when the key is absent from the DB."""
-    import logging
-    from lan_streamer.db.queries_config import get_app_config
-
-    with caplog.at_level(logging.DEBUG, logger="lan_streamer.db.queries"):
-        get_app_config("__debug_log_key__", "val")
-
-    assert any(
-        "__debug_log_key__" in record.message and record.levelno == logging.DEBUG
-        for record in caplog.records
-    )
-
-
-def test_get_app_config_db_error_returns_default_and_logs_warning(caplog) -> None:
-    """A DB error is swallowed, the default is returned, and a WARNING is logged (no traceback)."""
-    import logging
-    from lan_streamer.db.queries_config import get_app_config
-
-    with (
-        patch("lan_streamer.db.connection.get_session") as mock_session,
-        caplog.at_level(logging.WARNING, logger="lan_streamer.db.queries"),
-    ):
-        mock_session.side_effect = Exception("disk I/O error")
-        result = get_app_config("some_key", "fallback")
-
-    assert result == "fallback"
-    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("some_key" in r.message for r in warning_records)
-    # Must NOT have emitted an ERROR or CRITICAL entry
-    assert not any(r.levelno >= logging.ERROR for r in caplog.records)
-
-
-def test_get_app_config_existing_key_not_reseeded() -> None:
-    """An existing key is read from the DB without triggering set_app_config."""
-    from lan_streamer.db.queries_config import get_app_config, set_app_config
-
-    key = "__existing_key__"
-    set_app_config(key, "stored_value")
-
-    with patch("lan_streamer.db.queries_config.set_app_config") as mock_set:
-        result = get_app_config(key, "other_default")
-
-    assert result == "stored_value"
-    mock_set.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# get_secret – logging behaviour on empty DB / missing rows
-# ---------------------------------------------------------------------------
-
-
-def test_get_secret_missing_row_returns_empty_dict() -> None:
-    """A secret type with no DB row returns an empty dict."""
-    from lan_streamer.db.queries_config import get_secret
-    from lan_streamer.db.models import SecretType, AppSecret
-    from lan_streamer.db.connection import get_session
-    from sqlalchemy import select
-
-    # Ensure no MYANIMELIST row exists in the test DB
-    with get_session() as session:
-        row = session.scalars(
-            select(AppSecret).where(
-                AppSecret.secret_type == SecretType.MYANIMELIST.value
-            )
-        ).first()
-        if row is not None:
-            session.delete(row)
-
-    result = get_secret(SecretType.MYANIMELIST)
-    assert result == {}
-
-
-def test_get_secret_missing_row_logs_debug(caplog) -> None:
-    """A debug message is emitted when no secret row exists for a type."""
-    import logging
-    from lan_streamer.db.queries_config import get_secret
-    from lan_streamer.db.models import SecretType, AppSecret
-    from lan_streamer.db.connection import get_session
-    from sqlalchemy import select
-
-    # Ensure no OPENSUBTITLES row exists in the test DB
-    with get_session() as session:
-        row = session.scalars(
-            select(AppSecret).where(
-                AppSecret.secret_type == SecretType.OPENSUBTITLES.value
-            )
-        ).first()
-        if row is not None:
-            session.delete(row)
-
-    with caplog.at_level(logging.DEBUG, logger="lan_streamer.db.queries"):
-        get_secret(SecretType.OPENSUBTITLES)
-
-    assert any(
-        "OPENSUBTITLES" in record.message and record.levelno == logging.DEBUG
-        for record in caplog.records
-    )
-
-
-def test_get_secret_db_error_returns_empty_dict_and_logs_warning(caplog) -> None:
-    """A DB error is swallowed, an empty dict is returned, and a WARNING is logged (no traceback)."""
-    import logging
-    from lan_streamer.db.queries_config import get_secret
-    from lan_streamer.db.models import SecretType
-
-    with (
-        patch("lan_streamer.db.connection.get_session") as mock_session,
-        caplog.at_level(logging.WARNING, logger="lan_streamer.db.queries"),
-    ):
-        mock_session.side_effect = Exception("disk I/O error")
-        result = get_secret(SecretType.JELLYFIN)
-
-    assert result == {}
-    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("JELLYFIN" in r.message for r in warning_records)
-    # Must NOT have emitted an ERROR or CRITICAL entry
-    assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+        db.update_episode_path("/old.mkv", "/new.mkv")  # should not raise)
 
 
 # ---------------------------------------------------------------------------
@@ -1035,9 +903,7 @@ def test_load_from_db_calls_get_all_secrets(mock_db_file) -> None:
     get_secrets_spy = patch.object(
         db_queries, "get_all_secrets", wraps=db_queries.get_all_secrets
     )
-    get_secret_spy = patch.object(db_queries, "get_secret", wraps=db_queries.get_secret)
 
-    with get_secrets_spy as mock_get_all, get_secret_spy as mock_get_single:
+    with get_secrets_spy as mock_get_all:
         config.load_from_db()
         mock_get_all.assert_called_once()
-        mock_get_single.assert_not_called()

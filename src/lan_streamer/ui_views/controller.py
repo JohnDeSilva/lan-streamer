@@ -11,7 +11,7 @@ from typing import (
     TYPE_CHECKING,
 )
 
-from PySide6.QtCore import QObject, Signal, QFileSystemWatcher, QTimer
+from PySide6.QtCore import QObject, Signal, QFileSystemWatcher
 
 from lan_streamer.system.config import config as _config_default
 from lan_streamer import db as _db_default
@@ -94,7 +94,6 @@ class Controller(QObject):
     scan_completed = Signal()
 
     file_system_watcher: QFileSystemWatcher
-    debounce_timer: QTimer
 
     def __init__(
         self,
@@ -131,13 +130,10 @@ class Controller(QObject):
         self._running_pass3_after_scan: bool = False
         self._running_cleanup_after_scan: bool = False
         self._doing_scan_and_update: bool = False
-
-        self.debounce_timer = QTimer(self)
-        self.debounce_timer.setSingleShot(True)
-        self.debounce_timer.setInterval(2000)
-        self.debounce_timer.timeout.connect(self._on_debounce_timeout)
+        self._cleanup_queue: List[str] = []
 
         self.file_system_watcher = QFileSystemWatcher(self)
+
         self.file_system_watcher.directoryChanged.connect(self._on_directory_changed)
 
     def select_library(self, library_name: str, reset_selection: bool = True) -> None:
@@ -173,9 +169,6 @@ class Controller(QObject):
         logger.info(
             f"Directory modification detected on '{path_string}'. Automated background scanning disabled."
         )
-
-    def _on_debounce_timeout(self) -> None:
-        pass
 
     def _cache_series_metrics(self) -> None:
         for series_name, series_data in self.cached_library_data.items():

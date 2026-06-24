@@ -17,10 +17,11 @@ from lan_streamer.scanner.file_property_scanner import (
 )
 from lan_streamer.scanner.parser import VIDEO_EXTENSIONS, _parse_episode_number
 from lan_streamer.services.file_discovery import detect_tv_file_changes
-from lan_streamer.services.metadata_common import _merge_season_episodes  # noqa: F401
-from lan_streamer.services.metadata_tv import (
+from lan_streamer.services.metadata_episode import (
     _process_episode_file,
     _process_season_metadata,
+)
+from lan_streamer.services.metadata_series import (
     _process_series_metadata,
 )
 

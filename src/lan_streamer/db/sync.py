@@ -1,10 +1,11 @@
 import logging
 import time
-from typing import Set, Tuple, Any
+from typing import Set, Tuple
 
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
+from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import (
     Series,
     Season,
@@ -14,13 +15,6 @@ from lan_streamer.db.models import (
     PlaybackState,
     MetadataFileMapping,
 )
-
-
-def get_session() -> Any:
-    import lan_streamer.db.connection
-
-    return lan_streamer.db.connection.get_session()
-
 
 logger = logging.getLogger(__name__)
 
@@ -189,15 +183,21 @@ def get_all_episodes_with_jellyfin_id() -> list:
                     )
                 ).all()
                 for row in rows:
-                    path = row.default_path or (
-                        row.media_files[0].path if row.media_files else None
+                    episode_or_movie: Episode | Movie = row  # type: ignore[assignment]
+                    path = episode_or_movie.default_path or (
+                        episode_or_movie.media_files[0].path
+                        if episode_or_movie.media_files
+                        else None
                     )
-                    watched = bool(row.playback_state and row.playback_state.watched)
+                    watched = bool(
+                        episode_or_movie.playback_state
+                        and episode_or_movie.playback_state.watched
+                    )
                     items.append(
                         {
-                            "name": row.name,
+                            "name": episode_or_movie.name,
                             "path": path,
-                            "jellyfin_id": row.jellyfin_id,
+                            "jellyfin_id": episode_or_movie.jellyfin_id,
                             "watched": watched,
                         }
                     )

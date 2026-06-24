@@ -4,7 +4,6 @@ from lan_streamer.db.queries_ui import (
     get_combined_smart_row,
     get_combined_next_up,
     get_next_episode,
-    get_parent_media_name_by_path,
 )
 from lan_streamer.db.models import (
     Series,
@@ -205,55 +204,3 @@ def test_get_next_episode_finding(mock_db_file) -> None:
     assert next_episode_info is not None
     assert next_episode_info["title"] == "Episode 3"
     assert next_episode_info["path"] == "/path/e3.mkv"
-
-
-def test_get_parent_media_name_by_path_episode(mock_db_file) -> None:
-    """Test get_parent_media_name_by_path on series episode."""
-    with get_session() as session:
-        series = Series(name="Series Parent", library_name="TV Shows")
-        session.add(series)
-        session.flush()
-
-        season = Season(series_id=series.id, name="Season 1")
-        session.add(season)
-        session.flush()
-
-        episode = Episode(
-            season_id=season.id, name="Episode 1", default_path="/path/ep1.mkv"
-        )
-        session.add(episode)
-        session.flush()
-
-        media_file = MediaFile(path="/path/ep1.mkv")
-        session.add(media_file)
-        session.flush()
-
-        mapping = MetadataFileMapping(
-            media_file_id=media_file.id, episode_id=episode.id
-        )
-        session.add(mapping)
-        session.commit()
-
-    result = get_parent_media_name_by_path("/path/ep1.mkv")
-    assert result == ("Series Parent", "tv")
-
-
-def test_get_parent_media_name_by_path_movie(mock_db_file) -> None:
-    """Test get_parent_media_name_by_path on movie."""
-    with get_session() as session:
-        movie = Movie(
-            name="Movie Parent", library_name="Movies", default_path="/path/mov1.mkv"
-        )
-        session.add(movie)
-        session.flush()
-
-        media_file = MediaFile(path="/path/mov1.mkv")
-        session.add(media_file)
-        session.flush()
-
-        mapping = MetadataFileMapping(media_file_id=media_file.id, movie_id=movie.id)
-        session.add(mapping)
-        session.commit()
-
-    result = get_parent_media_name_by_path("/path/mov1.mkv")
-    assert result == ("Movie Parent", "movie")

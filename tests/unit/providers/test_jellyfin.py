@@ -117,77 +117,6 @@ def test_jellyfin_error_handling(jf_client) -> None:
     jf_client.set_watched_status("1", True)
 
 
-def test_jellyfin_validate_credentials(jf_client) -> None:
-
-    with patch("socket.create_connection", MagicMock()):
-        jf_client.session = MagicMock()
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status.return_value = None
-        jf_client.session.get.return_value = mock_resp
-        success, msg = jf_client.validate_credentials("http://test", "key")
-        assert success is True
-        assert "successful" in msg
-
-        # Empty inputs
-        assert jf_client.validate_credentials("", "key")[0] is False
-        assert jf_client.validate_credentials("http://test", "")[0] is False
-
-        # Connection Error
-        jf_client.session.get.side_effect = requests.exceptions.ConnectionError(
-            "Failed"
-        )
-        success, msg = jf_client.validate_credentials("http://test", "key")
-        assert success is False
-        assert "HTTP connection failed" in msg
-
-        # HTTP Error 401
-        mock_err_resp = MagicMock()
-        mock_err_resp.status_code = 401
-        jf_client.session.get.side_effect = requests.exceptions.HTTPError(
-            response=mock_err_resp
-        )
-        success, msg = jf_client.validate_credentials("http://test", "key")
-        assert success is False
-        assert "Unauthorized" in msg
-
-        # Unexpected Error
-        jf_client.session.get.side_effect = Exception("Boom")
-        success, msg = jf_client.validate_credentials("http://test", "key")
-        assert success is False
-        assert "Unexpected error" in msg
-
-
-def test_validate_credentials_socket_failure(jf_client) -> None:
-    with patch("socket.create_connection", side_effect=Exception("Connection error")):
-        success, msg = jf_client.validate_credentials("http://bad", "key")
-        assert success is False
-        assert "System-level connection failed" in msg
-
-
-def test_validate_credentials_401(jf_client) -> None:
-    with patch("socket.create_connection"):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 401
-        from requests.exceptions import HTTPError
-
-        mock_resp.raise_for_status.side_effect = HTTPError(response=mock_resp)
-        jf_client.session.get = MagicMock(return_value=mock_resp)
-        success, msg = jf_client.validate_credentials("http://bad", "key")
-        assert success is False
-        assert "401" in msg or "Unauthorized" in msg
-
-
-def test_validate_credentials_ip(jf_client) -> None:
-    with patch("socket.create_connection"):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        jf_client.session.get = MagicMock(return_value=mock_resp)
-
-        success, _ = jf_client.validate_credentials("192.168.1.10:8096", "key")
-        assert success is True
-        assert jf_client.session.get.call_args[0][0] == "http://192.168.1.10:8096/Users"
-
-
 def test_get_base_url_logic(jf_client) -> None:
     original_url = jf_client._jellyfin_url
     jf_client._jellyfin_url = "jellyfin.local"
@@ -266,36 +195,6 @@ def test_get_jellyfin_correlation_data(jf_client) -> None:
     assert "series_id_map" in data
 
 
-def test_mark_as_played(jf_client) -> None:
-    jf_client._cached_user_id = "user123"
-    jf_client.session.post = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status.return_value = None
-    jf_client.session.post.return_value = mock_resp
-
-    success = jf_client.mark_as_played("item123")
-    assert success is True
-    jf_client.session.post.assert_called_once()
-
-
-def test_unmark_as_played(jf_client) -> None:
-    jf_client._cached_user_id = "user123"
-    jf_client.session.delete = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status.return_value = None
-    jf_client.session.delete.return_value = mock_resp
-
-    success = jf_client.unmark_as_played("item123")
-    assert success is True
-    jf_client.session.delete.assert_called_once()
-
-
-def test_unmark_as_played_error(jf_client) -> None:
-    jf_client._cached_user_id = "user123"
-    jf_client.session.delete = MagicMock(side_effect=Exception("API Error"))
-    assert jf_client.unmark_as_played("item123") is False
-
-
 def test_search_series(jf_client) -> None:
     jf_client._cached_user_id = "user123"
     mock_resp = MagicMock()
@@ -320,23 +219,6 @@ def test_search_series_error(jf_client) -> None:
     jf_client._cached_user_id = "user123"
     jf_client.session.get = MagicMock(side_effect=Exception("API Error"))
     assert jf_client.search_series("Test") == []
-
-
-def test_get_series_episodes(jf_client) -> None:
-    jf_client._cached_user_id = "user123"
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"Items": [{"Id": "e1", "Path": "/p1"}]}
-    jf_client.session.get = MagicMock(return_value=mock_resp)
-
-    results = jf_client.get_series_episodes("s1")
-    assert len(results) == 1
-    assert results[0]["Id"] == "e1"
-
-
-def test_get_series_episodes_error(jf_client) -> None:
-    jf_client._cached_user_id = "user123"
-    jf_client.session.get = MagicMock(side_effect=Exception("API Error"))
-    assert jf_client.get_series_episodes("s1") == []
 
 
 def test_get_jellyfin_correlation_data_series_id_map(jf_client) -> None:
@@ -387,32 +269,6 @@ def test_search_movie_error(jf_client) -> None:
     jf_client._cached_user_id = "user123"
     jf_client.session.get = MagicMock(side_effect=Exception("API Error"))
     assert jf_client.search_movie("Test") == []
-
-
-def test_jellyfin_validate_credentials_extra_paths(jf_client) -> None:
-    # dot in URL, not localhost, not IP -> https redirect check
-    with patch("socket.create_connection"):
-        jf_client.session.get = MagicMock(side_effect=Exception("Connection issue"))
-        success, msg = jf_client.validate_credentials("my-jellyfin.domain.com", "key")
-        assert success is False
-
-        # When url starts with http but connection error occurs
-        from requests.exceptions import ConnectionError
-
-        jf_client.session.get.side_effect = ConnectionError("Conn error")
-        success, msg = jf_client.validate_credentials("http://test.com", "key")
-        assert success is False
-        assert "HTTP connection failed" in msg
-
-        # HTTP error other than 401
-        from requests.exceptions import HTTPError
-
-        mock_err_resp = MagicMock()
-        mock_err_resp.status_code = 500
-        jf_client.session.get.side_effect = HTTPError(response=mock_err_resp)
-        success, msg = jf_client.validate_credentials("http://test.com", "key")
-        assert success is False
-        assert "HTTP Error" in msg
 
 
 def test_jellyfin_get_current_user_id_unconfigured(mock_session) -> None:
@@ -523,25 +379,13 @@ def test_jellyfin_played_status_edge_cases(jf_client, mock_session) -> None:
         jellyfin_url="",
         jellyfin_api_key="",
     )
-    assert unconfigured.mark_as_played("item1") is False
-    assert unconfigured.unmark_as_played("item1") is False
-    assert unconfigured.get_series_episodes("s1") == []
     unconfigured.set_watched_status("item1", True)  # Should return immediately
 
     # 2. No user_id
     jf_client.get_current_user_id = MagicMock(return_value=None)
-    assert jf_client.mark_as_played("item1") is False
-    assert jf_client.unmark_as_played("item1") is False
-    assert jf_client.get_series_episodes("s1") == []
     assert jf_client.search_series("Test") == []
     assert jf_client.search_movie("Test") == []
     jf_client.set_watched_status("item1", True)
-
-
-def test_jellyfin_played_status_exceptions(jf_client) -> None:
-    jf_client._cached_user_id = "user123"
-    jf_client.session.post = MagicMock(side_effect=Exception("Post error"))
-    assert jf_client.mark_as_played("item1") is False
 
 
 def test_jellyfin_fetch_watched_episodes_edge_cases(jf_client) -> None:

@@ -19,11 +19,6 @@ from sqlalchemy.orm import (
 )
 
 
-def _new_uuid_bytes() -> bytes:
-    """Generate a new UUID4 as raw bytes for use as a BLOB primary key."""
-    return uuid.uuid4().bytes
-
-
 def _new_uuid_str() -> str:
     """Generate a new UUID4 as a standard string."""
     return str(uuid.uuid4())

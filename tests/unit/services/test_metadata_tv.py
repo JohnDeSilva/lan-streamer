@@ -28,19 +28,19 @@ class TestBuildExistingEpisodesIndex:
 
     def test_empty_series_data(self) -> None:
         """An empty dict returns an empty index."""
-        from lan_streamer.services.metadata_tv import _build_existing_episodes_index
+        from lan_streamer.services.metadata_series import _build_existing_episodes_index
 
         assert _build_existing_episodes_index({}) == {}
 
     def test_no_seasons_key(self) -> None:
         """Missing 'seasons' key safely returns empty dict."""
-        from lan_streamer.services.metadata_tv import _build_existing_episodes_index
+        from lan_streamer.services.metadata_series import _build_existing_episodes_index
 
         assert _build_existing_episodes_index({"metadata": {}}) == {}
 
     def test_single_episode(self) -> None:
         """A single episode is indexed by its path."""
-        from lan_streamer.services.metadata_tv import _build_existing_episodes_index
+        from lan_streamer.services.metadata_series import _build_existing_episodes_index
 
         eps = [{"path": "/s1/ep1.mkv", "name": "ep1.mkv"}]
         data = {"seasons": {"Season 1": {"episodes": eps}}}
@@ -49,7 +49,7 @@ class TestBuildExistingEpisodesIndex:
 
     def test_multiple_episodes_across_seasons(self) -> None:
         """Episodes from multiple seasons are all indexed."""
-        from lan_streamer.services.metadata_tv import _build_existing_episodes_index
+        from lan_streamer.services.metadata_series import _build_existing_episodes_index
 
         ep1 = {"path": "/s1/ep1.mkv"}
         ep2 = {"path": "/s1/ep2.mkv"}
@@ -67,7 +67,7 @@ class TestBuildExistingEpisodesIndex:
 
     def test_duplicate_paths_last_wins(self) -> None:
         """When two episodes share a path, the later entry overwrites."""
-        from lan_streamer.services.metadata_tv import _build_existing_episodes_index
+        from lan_streamer.services.metadata_series import _build_existing_episodes_index
 
         ep1 = {"path": "/dup.mkv", "name": "old"}
         ep2 = {"path": "/dup.mkv", "name": "new"}
@@ -82,7 +82,7 @@ class TestBuildExistingEpisodesIndex:
 
     def test_season_value_is_not_dict(self) -> None:
         """Gracefully handles non-dict season values (e.g. ``None``)."""
-        from lan_streamer.services.metadata_tv import _build_existing_episodes_index
+        from lan_streamer.services.metadata_series import _build_existing_episodes_index
 
         data = {"seasons": {"Season 1": None}}
         # .get("episodes", []) on None would raise; but .values() gives None
@@ -102,7 +102,7 @@ class TestDetectNewSeriesFiles:
 
     def test_empty_directory(self, tmp_path: Path) -> None:
         """An empty directory yields ``False``."""
-        from lan_streamer.services.metadata_tv import _detect_new_series_files
+        from lan_streamer.services.metadata_series import _detect_new_series_files
 
         series_dir = tmp_path / "Show"
         series_dir.mkdir()
@@ -110,7 +110,7 @@ class TestDetectNewSeriesFiles:
 
     def test_all_files_indexed(self, tmp_path: Path) -> None:
         """When every file is in the index, returns ``False``."""
-        from lan_streamer.services.metadata_tv import _detect_new_series_files
+        from lan_streamer.services.metadata_series import _detect_new_series_files
 
         series_dir = tmp_path / "Show"
         (series_dir / "Season 1").mkdir(parents=True)
@@ -121,7 +121,7 @@ class TestDetectNewSeriesFiles:
 
     def test_new_file_detected(self, tmp_path: Path) -> None:
         """A file not in the index returns ``True``."""
-        from lan_streamer.services.metadata_tv import _detect_new_series_files
+        from lan_streamer.services.metadata_series import _detect_new_series_files
 
         series_dir = tmp_path / "Show"
         (series_dir / "Season 1").mkdir(parents=True)
@@ -130,7 +130,7 @@ class TestDetectNewSeriesFiles:
 
     def test_nested_too_deep_skipped(self, tmp_path: Path) -> None:
         """Files nested >2 levels deep under a valid season dir are skipped."""
-        from lan_streamer.services.metadata_tv import _detect_new_series_files
+        from lan_streamer.services.metadata_series import _detect_new_series_files
 
         series_dir = tmp_path / "Show"
         (series_dir / "Season 1").mkdir(parents=True)
@@ -144,7 +144,7 @@ class TestDetectNewSeriesFiles:
 
     def test_non_video_files_excluded(self, tmp_path: Path) -> None:
         """Non-video files are not detected as new."""
-        from lan_streamer.services.metadata_tv import _detect_new_series_files
+        from lan_streamer.services.metadata_series import _detect_new_series_files
 
         series_dir = tmp_path / "Show"
         (series_dir / "Season 1").mkdir(parents=True)
@@ -153,7 +153,7 @@ class TestDetectNewSeriesFiles:
 
     def test_files_in_season_subdir_root_skipped(self, tmp_path: Path) -> None:
         """Files directly inside subdirs named 'season', 'special', etc. are skipped."""
-        from lan_streamer.services.metadata_tv import _detect_new_series_files
+        from lan_streamer.services.metadata_series import _detect_new_series_files
 
         series_dir = tmp_path / "Show"
         (series_dir / "Season 1").mkdir(parents=True)
@@ -166,7 +166,7 @@ class TestDetectNewSeriesFiles:
 
     def test_files_in_special_subdir_skipped(self, tmp_path: Path) -> None:
         """Files inside 'Specials' directory are skipped by the depth check."""
-        from lan_streamer.services.metadata_tv import _detect_new_series_files
+        from lan_streamer.services.metadata_series import _detect_new_series_files
 
         series_dir = tmp_path / "Show"
         (series_dir / "Specials").mkdir(parents=True)
@@ -179,7 +179,7 @@ class TestDetectNewSeriesFiles:
     def test_files_deep_in_unknown_dir_checked(self, tmp_path: Path) -> None:
         """Files inside a non-season subdir (depth >2) are checked if the parent dir
         name doesn't match season/special/extra patterns."""
-        from lan_streamer.services.metadata_tv import _detect_new_series_files
+        from lan_streamer.services.metadata_series import _detect_new_series_files
 
         series_dir = tmp_path / "Show"
         # "Extras" matches "extra*" → depth check triggers skip
@@ -191,7 +191,7 @@ class TestDetectNewSeriesFiles:
 
     def test_unknown_directory_name_not_skipped(self, tmp_path: Path) -> None:
         """A subdirectory whose name doesn't match season/special/extra is checked."""
-        from lan_streamer.services.metadata_tv import _detect_new_series_files
+        from lan_streamer.services.metadata_series import _detect_new_series_files
 
         series_dir = tmp_path / "Show"
         (series_dir / "Random").mkdir(parents=True)
@@ -202,7 +202,7 @@ class TestDetectNewSeriesFiles:
 
     def test_exception_during_relative_path_swallowed(self, tmp_path: Path) -> None:
         """If ``relative_to`` raises, the exception is caught and processing continues."""
-        from lan_streamer.services.metadata_tv import _detect_new_series_files
+        from lan_streamer.services.metadata_series import _detect_new_series_files
 
         series_dir = tmp_path / "Show"
         (series_dir / "Season 1").mkdir(parents=True)
@@ -226,7 +226,9 @@ class TestBuildSeriesMetadataDefaults:
 
     def test_all_expected_keys(self) -> None:
         """Returns a dict with all expected keys and default empty values."""
-        from lan_streamer.services.metadata_tv import _build_series_metadata_defaults
+        from lan_streamer.services.metadata_series import (
+            _build_series_metadata_defaults,
+        )
 
         result = _build_series_metadata_defaults(None)
         expected_keys = {
@@ -242,14 +244,18 @@ class TestBuildSeriesMetadataDefaults:
 
     def test_with_manual_jellyfin_id(self) -> None:
         """``manual_jellyfin_id`` is pre-populated."""
-        from lan_streamer.services.metadata_tv import _build_series_metadata_defaults
+        from lan_streamer.services.metadata_series import (
+            _build_series_metadata_defaults,
+        )
 
         result = _build_series_metadata_defaults("jf_manual_42")
         assert result["jellyfin_id"] == "jf_manual_42"
 
     def test_with_empty_string_id(self) -> None:
         """An empty string for ``manual_jellyfin_id`` is treated as falsy."""
-        from lan_streamer.services.metadata_tv import _build_series_metadata_defaults
+        from lan_streamer.services.metadata_series import (
+            _build_series_metadata_defaults,
+        )
 
         result = _build_series_metadata_defaults("")
         assert result["jellyfin_id"] == ""
@@ -265,7 +271,7 @@ class TestResolveSeriesPoster:
 
     def test_cached_image_returned_first(self) -> None:
         """Step 1: if TMDB client has a cached image, it wins."""
-        from lan_streamer.services.metadata_tv import _resolve_series_poster
+        from lan_streamer.services.metadata_series import _resolve_series_poster
 
         mock_tmdb = MagicMock()
         mock_tmdb.get_cached_image.return_value = "/cache/poster.jpg"
@@ -278,7 +284,7 @@ class TestResolveSeriesPoster:
 
     def test_cached_image_non_string_ignored(self) -> None:
         """If cached image is not a string (e.g. ``None``), fall through."""
-        from lan_streamer.services.metadata_tv import _resolve_series_poster
+        from lan_streamer.services.metadata_series import _resolve_series_poster
 
         mock_tmdb = MagicMock()
         mock_tmdb.get_cached_image.return_value = None  # not isinstance(str)
@@ -290,7 +296,7 @@ class TestResolveSeriesPoster:
 
     def test_existing_local_file_used(self, tmp_path: Path) -> None:
         """Step 2: existing valid local poster is returned."""
-        from lan_streamer.services.metadata_tv import _resolve_series_poster
+        from lan_streamer.services.metadata_series import _resolve_series_poster
 
         local = tmp_path / "poster.jpg"
         local.touch()
@@ -304,7 +310,7 @@ class TestResolveSeriesPoster:
 
     def test_existing_poster_path_missing_file_skipped(self) -> None:
         """If existing poster path doesn't point to a real file, skip step 2."""
-        from lan_streamer.services.metadata_tv import _resolve_series_poster
+        from lan_streamer.services.metadata_series import _resolve_series_poster
 
         mock_tmdb = MagicMock()
         mock_tmdb.get_cached_image.return_value = ""
@@ -316,7 +322,7 @@ class TestResolveSeriesPoster:
 
     def test_download_from_remote(self) -> None:
         """Step 3: download from TMDB CDN when no cache or local file exists."""
-        from lan_streamer.services.metadata_tv import _resolve_series_poster
+        from lan_streamer.services.metadata_series import _resolve_series_poster
 
         mock_tmdb = MagicMock()
         mock_tmdb.get_cached_image.return_value = ""
@@ -332,7 +338,7 @@ class TestResolveSeriesPoster:
 
     def test_no_poster_available(self) -> None:
         """When no poster is available at any step, returns empty string."""
-        from lan_streamer.services.metadata_tv import _resolve_series_poster
+        from lan_streamer.services.metadata_series import _resolve_series_poster
 
         mock_tmdb = MagicMock()
         mock_tmdb.get_cached_image.return_value = ""
@@ -342,7 +348,7 @@ class TestResolveSeriesPoster:
 
     def test_offline_mode_skips_download(self) -> None:
         """In offline mode, step 3 (download) is skipped."""
-        from lan_streamer.services.metadata_tv import _resolve_series_poster
+        from lan_streamer.services.metadata_series import _resolve_series_poster
 
         mock_tmdb = MagicMock()
         mock_tmdb.get_cached_image.return_value = ""
@@ -355,7 +361,7 @@ class TestResolveSeriesPoster:
 
     def test_prefetched_local_path_used(self) -> None:
         """A prefetched poster path (not starting with '/') is used directly."""
-        from lan_streamer.services.metadata_tv import _resolve_series_poster
+        from lan_streamer.services.metadata_series import _resolve_series_poster
 
         mock_tmdb = MagicMock()
         mock_tmdb.get_cached_image.return_value = ""
@@ -367,7 +373,7 @@ class TestResolveSeriesPoster:
 
     def test_prefetched_remote_path_still_downloads(self) -> None:
         """A prefetched poster that starts with '/' still goes through download."""
-        from lan_streamer.services.metadata_tv import _resolve_series_poster
+        from lan_streamer.services.metadata_series import _resolve_series_poster
 
         mock_tmdb = MagicMock()
         mock_tmdb.get_cached_image.return_value = ""
@@ -380,7 +386,7 @@ class TestResolveSeriesPoster:
 
     def test_existing_data_is_none(self) -> None:
         """``existing_series_data`` being ``None`` is handled gracefully."""
-        from lan_streamer.services.metadata_tv import _resolve_series_poster
+        from lan_streamer.services.metadata_series import _resolve_series_poster
 
         mock_tmdb = MagicMock()
         mock_tmdb.get_cached_image.return_value = ""
@@ -414,7 +420,7 @@ class TestResolveEpisodeJellyfinId:
         tmdb_series: dict | None = None,
         jellyfin_data: dict | None = None,
     ) -> tuple[str, str, str]:
-        from lan_streamer.services.metadata_tv import _resolve_episode_jellyfin_id
+        from lan_streamer.services.metadata_series import _resolve_episode_jellyfin_id
 
         return _resolve_episode_jellyfin_id(
             episode_path=episode_path,
@@ -638,7 +644,7 @@ class TestProcessSeriesMetadata:
         offline: bool = False,
         metadata_only: bool = False,
     ) -> tuple[Any, bool, Any, Any, bool]:
-        from lan_streamer.services.metadata_tv import _process_series_metadata
+        from lan_streamer.services.metadata_series import _process_series_metadata
 
         return _process_series_metadata(
             series_directory=series_directory or Path("/nonexistent/show"),
@@ -655,7 +661,7 @@ class TestProcessSeriesMetadata:
 
     def test_new_series_no_existing_data(self) -> None:
         """A new series (no existing data) results in a fresh metadata dict and no early return."""
-        from lan_streamer.services.metadata_tv import _process_series_metadata
+        from lan_streamer.services.metadata_series import _process_series_metadata
 
         series_dir = Path("/new/Series X")
         mock_tmdb = MagicMock()
@@ -691,7 +697,7 @@ class TestProcessSeriesMetadata:
 
     def test_new_series_no_tmdb_match(self) -> None:
         """When TMDB search returns nothing, metadata stays as defaults."""
-        from lan_streamer.services.metadata_tv import _process_series_metadata
+        from lan_streamer.services.metadata_series import _process_series_metadata
 
         series_dir = Path("/new/Unknown Show")
         mock_tmdb = MagicMock()
@@ -714,7 +720,7 @@ class TestProcessSeriesMetadata:
 
     def test_existing_series_early_return_no_change(self, tmp_path: Path) -> None:
         """When nothing forces a refresh and existing data exists, early-returns with ``is_early_return=True``."""
-        from lan_streamer.services.metadata_tv import _process_series_metadata
+        from lan_streamer.services.metadata_series import _process_series_metadata
 
         series_dir = tmp_path / "Series A"
         # Create a file so _detect_new_series_files runs but finds nothing new
@@ -761,7 +767,7 @@ class TestProcessSeriesMetadata:
 
     def test_existing_series_locked_metadata_preserved(self, tmp_path: Path) -> None:
         """Locked metadata is preserved even with ``force_refresh=True``."""
-        from lan_streamer.services.metadata_tv import _process_series_metadata
+        from lan_streamer.services.metadata_series import _process_series_metadata
 
         series_dir = tmp_path / "Locked Show"
         (series_dir / "Season 1").mkdir(parents=True)
@@ -810,7 +816,7 @@ class TestProcessSeriesMetadata:
 
     def test_new_files_triggers_auto_refresh(self, tmp_path: Path) -> None:
         """When new files are detected and series is unlocked, automatically refresh metadata."""
-        from lan_streamer.services.metadata_tv import _process_series_metadata
+        from lan_streamer.services.metadata_series import _process_series_metadata
 
         series_dir = tmp_path / "Auto Refresh Show"
         (series_dir / "Season 1").mkdir(parents=True)
@@ -866,7 +872,7 @@ class TestProcessSeriesMetadata:
 
     def test_metadata_only_skips_filesystem_walk(self) -> None:
         """With ``metadata_only=True``, the filesystem walk is skipped."""
-        from lan_streamer.services.metadata_tv import _process_series_metadata
+        from lan_streamer.services.metadata_series import _process_series_metadata
 
         existing = {
             "metadata": {
@@ -907,7 +913,7 @@ class TestProcessSeriesMetadata:
 
     def test_jellyfin_id_mapped_via_tmdb_series_map(self) -> None:
         """Series-level Jellyfin ID is resolved from TMDB series map."""
-        from lan_streamer.services.metadata_tv import _process_series_metadata
+        from lan_streamer.services.metadata_series import _process_series_metadata
 
         series_dir = Path("/jelly/Series B")
         mock_tmdb = MagicMock()
@@ -940,7 +946,7 @@ class TestProcessSeriesMetadata:
 
     def test_offline_skips_tmdb_lookup(self, tmp_path: Path) -> None:
         """In offline mode, TMDB lookups and poster download are skipped."""
-        from lan_streamer.services.metadata_tv import _process_series_metadata
+        from lan_streamer.services.metadata_series import _process_series_metadata
 
         series_dir = tmp_path / "Offline Show"
         (series_dir / "Season 1").mkdir(parents=True)
@@ -967,7 +973,7 @@ class TestProcessSeriesMetadata:
 
     def test_manual_jellyfin_id_pre_populated(self) -> None:
         """A ``manual_jellyfin_id`` is set in the metadata."""
-        from lan_streamer.services.metadata_tv import _process_series_metadata
+        from lan_streamer.services.metadata_series import _process_series_metadata
 
         series_dir = Path("/manual/Manual Show")
         mock_tmdb = MagicMock()
@@ -1002,7 +1008,7 @@ class TestProcessSeasonMetadata:
 
     def test_specials_season_index_zero(self) -> None:
         """'Specials' directory maps to season index 0."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/Specials")
         series_data: dict[str, Any] = {
@@ -1024,7 +1030,7 @@ class TestProcessSeasonMetadata:
 
     def test_valid_season_index(self) -> None:
         """'Season 3' maps to index 3."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/Season 3")
         series_data: dict[str, Any] = {
@@ -1045,7 +1051,7 @@ class TestProcessSeasonMetadata:
 
     def test_unknown_season_number(self) -> None:
         """A directory without a parsable season number gets index -1."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/MiniSeries")
         series_data: dict[str, Any] = {
@@ -1066,7 +1072,7 @@ class TestProcessSeasonMetadata:
 
     def test_existing_season_metadata_preserved(self) -> None:
         """Existing season metadata (poster, MAL ID) is reused."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/Season 2")
         series_data: dict[str, Any] = {
@@ -1105,7 +1111,7 @@ class TestProcessSeasonMetadata:
 
     def test_season_poster_cached(self) -> None:
         """Cached season poster takes priority."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/Season 1")
         series_data: dict[str, Any] = {
@@ -1126,7 +1132,7 @@ class TestProcessSeasonMetadata:
 
     def test_season_poster_downloaded(self) -> None:
         """When no cache and no existing poster, download from TMDB."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/Season 1")
         series_data: dict[str, Any] = {
@@ -1148,7 +1154,7 @@ class TestProcessSeasonMetadata:
 
     def test_no_matching_tmdb_season(self) -> None:
         """When no TMDB season matches, existing identifiers are reused."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/Season 99")
         series_data: dict[str, Any] = {
@@ -1178,7 +1184,7 @@ class TestProcessSeasonMetadata:
 
     def test_locked_series_skips_episode_fetch(self) -> None:
         """When series is locked, episode fetch is skipped."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/Season 1")
         series_data: dict[str, Any] = {
@@ -1197,7 +1203,7 @@ class TestProcessSeasonMetadata:
 
     def test_offline_skips_episode_fetch(self) -> None:
         """When offline, episode fetch is skipped."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/Season 1")
         series_data: dict[str, Any] = {
@@ -1216,7 +1222,7 @@ class TestProcessSeasonMetadata:
 
     def test_existing_season_has_episodes_skip_fetch(self) -> None:
         """When existing season already has episodes and no force/single refresh, skip fetch."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/Season 1")
         series_data: dict[str, Any] = {
@@ -1243,7 +1249,7 @@ class TestProcessSeasonMetadata:
 
     def test_episode_group_details_used(self) -> None:
         """When episode group details exist, episodes are extracted from groups."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/Season 1")
         series_data: dict[str, Any] = {
@@ -1282,7 +1288,7 @@ class TestProcessSeasonMetadata:
 
     def test_season_poster_offline_no_download(self) -> None:
         """In offline mode, season poster is not downloaded."""
-        from lan_streamer.services.metadata_tv import _process_season_metadata
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/show/Season 1")
         series_data: dict[str, Any] = {
@@ -1324,7 +1330,7 @@ class TestProcessEpisodeFile:
 
     def test_single_episode_no_existing(self, tmp_path: Path) -> None:
         """A single new episode is matched by SxxExx pattern."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
         series_dir = ep.parent.parent
@@ -1362,7 +1368,7 @@ class TestProcessEpisodeFile:
 
     def test_existing_episode_reuses_metadata(self, tmp_path: Path) -> None:
         """An existing episode reuses cached metadata."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
         series_dir = ep.parent.parent
@@ -1407,7 +1413,7 @@ class TestProcessEpisodeFile:
         self, tmp_path: Path
     ) -> None:
         """When existing episode has no tmdb_number, fill from TMDB."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E03.mkv")
         series_dir = ep.parent.parent
@@ -1458,7 +1464,7 @@ class TestProcessEpisodeFile:
         self, tmp_path: Path
     ) -> None:
         """When existing episode has no tmdb_number and no TMDB match, parse from filename."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S02E04.mkv")
         series_dir = ep.parent.parent
@@ -1507,7 +1513,7 @@ class TestProcessEpisodeFile:
 
     def test_placeholder_episode_matched(self, tmp_path: Path) -> None:
         """A new file matches an existing placeholder episode."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E02.mkv")
         series_dir = ep.parent.parent
@@ -1556,7 +1562,7 @@ class TestProcessEpisodeFile:
 
     def test_name_substring_match(self, tmp_path: Path) -> None:
         """When SxxExx parsing fails, match by episode name substring."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="The Pilot Episode.mkv")
         series_dir = ep.parent.parent
@@ -1593,7 +1599,7 @@ class TestProcessEpisodeFile:
 
     def test_no_match_returns_defaults(self, tmp_path: Path) -> None:
         """When no matching strategy works, return sensible defaults."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="unrecognized.mkv")
         series_dir = ep.parent.parent
@@ -1623,7 +1629,7 @@ class TestProcessEpisodeFile:
 
     def test_metadata_only_uses_existing_date_added(self, tmp_path: Path) -> None:
         """With ``metadata_only=True``, ``date_added`` is read from existing data."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
         series_dir = ep.parent.parent
@@ -1654,7 +1660,7 @@ class TestProcessEpisodeFile:
 
     def test_ctime_fallback_on_oserror(self, tmp_path: Path) -> None:
         """When ``os.path.getctime`` raises OSError, ``date_added`` defaults to 0."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
         series_dir = ep.parent.parent
@@ -1681,7 +1687,7 @@ class TestProcessEpisodeFile:
 
     def test_preserves_existing_technical_metadata(self, tmp_path: Path) -> None:
         """Existing technical metadata (codec, resolution, tracks) is preserved."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
         series_dir = ep.parent.parent
@@ -1720,7 +1726,7 @@ class TestProcessEpisodeFile:
 
     def test_myanimelist_auto_mapping_from_season(self, tmp_path: Path) -> None:
         """When season has MAL ID, new episodes auto-map."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E02.mkv")
         series_dir = ep.parent.parent
@@ -1747,7 +1753,7 @@ class TestProcessEpisodeFile:
 
     def test_myanimelist_preserved_from_existing(self, tmp_path: Path) -> None:
         """Existing MAL mapping is preserved from existing episode."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
         series_dir = ep.parent.parent
@@ -1783,7 +1789,7 @@ class TestProcessEpisodeFile:
 
     def test_jellyfin_resolution_offline_skipped(self, tmp_path: Path) -> None:
         """When offline, Jellyfin ID resolution is skipped."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
         series_dir = ep.parent.parent
@@ -1812,7 +1818,7 @@ class TestProcessEpisodeFile:
 
     def test_jellyfin_resolution_sets_series_season_ids(self, tmp_path: Path) -> None:
         """Jellyfin resolution sets series and season IDs from the result."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
         series_dir = ep.parent.parent
@@ -1851,7 +1857,7 @@ class TestProcessEpisodeFile:
 
     def test_two_digit_season_in_filename(self, tmp_path: Path) -> None:
         """Handles two-digit season numbers in filenames."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S12E05.mkv")
         series_dir = ep.parent.parent
@@ -1889,7 +1895,7 @@ class TestProcessEpisodeFile:
         self, tmp_path: Path
     ) -> None:
         """Episode filename without SxxExx matched by TMDB episode name substring."""
-        from lan_streamer.services.metadata_tv import _process_episode_file
+        from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(
             tmp_path, episode_name="Chapter One - The Beginning.mkv"

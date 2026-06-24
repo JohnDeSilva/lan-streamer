@@ -9,7 +9,6 @@ Jellyfin is used only to:
 
 import logging
 import requests
-import socket
 from lan_streamer.system.config import config
 
 logger = logging.getLogger(__name__)
@@ -124,71 +123,6 @@ class JellyfinClient:
 
     # ------------------------------------------------------------------
     # Credential validation
-    # ------------------------------------------------------------------
-
-    def validate_credentials(self, url: str, api_key: str) -> tuple[bool, str]:
-        """Tests connection with specific credentials without saving them."""
-        url = url.strip().rstrip("/")
-        if not url:
-            return False, "URL is required."
-        if not api_key:
-            return False, "API Key is required."
-
-        self.session.proxies = {"http": None, "https": None}  # type: ignore[dict-item]
-
-        if not url.startswith("http"):
-            import re
-
-            is_ip = re.match(r"^\d{1,3}(\.\d{1,3}){3}(:\d+)?$", url)
-            if "." in url and not url.startswith("localhost") and not is_ip:
-                url = f"https://{url}"
-            else:
-                url = f"http://{url}"
-
-        from urllib.parse import urlparse
-
-        parsed = urlparse(url)
-        host = parsed.hostname
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
-
-        # 1. Raw Socket Test
-        try:
-            logger.info(f"Step 1: Testing raw socket to {host}:{port}")
-            s = socket.create_connection((host, port), timeout=5)
-            s.close()
-            logger.info("Raw socket connection successful!")
-        except Exception as e:
-            logger.exception("Raw socket failed")
-            return (
-                False,
-                f"System-level connection failed (Socket Error): {e}\nThis usually means a firewall or VPN is blocking the application.",
-            )
-
-        # 2. Requests Test
-        test_url = f"{url}/Users"
-        token = api_key.strip()
-        auth = f'MediaBrowser Client="LanStreamer", Device="Desktop", DeviceId="lan-streamer-1", Version="1.0.0", Token="{token}"'
-        headers = {
-            "Authorization": auth,
-            "Accept": "application/json",
-        }
-
-        try:
-            logger.info(f"Step 2: Testing HTTP request to {test_url}")
-            response = self.session.get(test_url, headers=headers, timeout=10)
-            response.raise_for_status()
-            return True, "Connection successful!"
-        except requests.exceptions.ConnectionError as e:
-            logger.exception("HTTP connection failed")
-            return False, f"HTTP connection failed: {e}"
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 401:
-                return False, "Invalid API Key (Unauthorized)."
-            return False, f"HTTP Error: {e}"
-        except Exception as e:
-            logger.exception(f"Unexpected error testing {test_url}")
-            return False, f"Unexpected error: {e}"
-
     # ------------------------------------------------------------------
     # Watch history — inbound (pull from Jellyfin → local DB)
     # ------------------------------------------------------------------
@@ -390,46 +324,6 @@ class JellyfinClient:
             "series_id_map": series_id_map,
         }
 
-    def mark_as_played(self, item_id: str) -> bool:
-        """Marks an item as played in Jellyfin."""
-        if not self.is_configured() or not item_id:
-            return False
-
-        user_id = self.get_current_user_id()
-        if not user_id:
-            return False
-
-        logger.info(f"Marking item '{item_id}' as played in Jellyfin...")
-        url = f"{self._get_base_url()}/Users/{user_id}/PlayedItems/{item_id}"
-        try:
-            response = self.session.post(url, headers=self._get_headers(), timeout=10)
-            response.raise_for_status()
-            logger.info(f"Successfully marked item '{item_id}' as played.")
-            return True
-        except Exception:
-            logger.exception(f"Failed to mark item {item_id} as played")
-            return False
-
-    def unmark_as_played(self, item_id: str) -> bool:
-        """Marks an item as unplayed in Jellyfin."""
-        if not self.is_configured() or not item_id:
-            return False
-
-        user_id = self.get_current_user_id()
-        if not user_id:
-            return False
-
-        logger.info(f"Unmarking item '{item_id}' as played in Jellyfin...")
-        url = f"{self._get_base_url()}/Users/{user_id}/PlayedItems/{item_id}"
-        try:
-            response = self.session.delete(url, headers=self._get_headers(), timeout=10)
-            response.raise_for_status()
-            logger.info(f"Successfully unmarked item '{item_id}' as played.")
-            return True
-        except Exception:
-            logger.exception(f"Failed to unmark item {item_id} as played")
-            return False
-
     # ------------------------------------------------------------------
     # Series Matching — manual link support
     # ------------------------------------------------------------------
@@ -496,38 +390,6 @@ class JellyfinClient:
             return data.get("Items", [])
         except Exception:
             logger.exception(f"Failed to search Jellyfin for movie '{name}'")
-            return []
-
-    def get_series_episodes(self, series_id: str) -> list:
-        """
-        Fetches all episodes belonging to a specific Jellyfin series ID.
-        Returns a list of episode items with Path and ProviderIds.
-        """
-        if not self.is_configured() or not series_id:
-            return []
-
-        user_id = self.get_current_user_id()
-        if not user_id:
-            return []
-
-        url = f"{self._get_base_url()}/Users/{user_id}/Items"
-        parameters = {
-            "ParentId": series_id,
-            "IncludeItemTypes": "Episode",
-            "Recursive": "true",
-            "Fields": "Path,ProviderIds,SeasonId,SeriesId,SeriesName,UserData",
-        }
-        try:
-            response = self.session.get(
-                url, headers=self._get_headers(), params=parameters, timeout=20
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data.get("Items", [])
-        except Exception:
-            logger.exception(
-                f"Failed to fetch episodes for Jellyfin series {series_id}"
-            )
             return []
 
     # ------------------------------------------------------------------

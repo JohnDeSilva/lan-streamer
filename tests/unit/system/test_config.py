@@ -88,22 +88,6 @@ def test_config_load_existing(mock_config_file) -> None:
     assert config2.vlc_buffer_ms == 7500
 
 
-def test_config_add_remove_library(mock_config_file) -> None:
-    config = Config()
-    config.libraries = {}
-    config.add_library("NewLib")
-    assert "NewLib" in config.libraries
-
-    config.add_root_dir("NewLib", "/some/path")
-    assert "/some/path" in config.libraries["NewLib"]["paths"]
-
-    config.remove_root_dir("NewLib", "/some/path")
-    assert "/some/path" not in config.libraries["NewLib"]["paths"]
-
-    config.remove_library("NewLib")
-    assert "NewLib" not in config.libraries
-
-
 def test_config_save_error(mock_config_file) -> None:
     config = Config()
 

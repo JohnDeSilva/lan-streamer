@@ -2,16 +2,13 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from unittest.mock import patch
+import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 # Force offscreen rendering so individual tests run seamlessly in GUI-less IDE test explorers
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
-
-# Mock VLC globally for tests to prevent spawning real VLC processes and consuming high CPU/memory
-import sys
-from unittest.mock import MagicMock
 
 
 class MockVLC:
