@@ -83,6 +83,7 @@ def _process_season_metadata(
     existing_season_id = ""
     existing_season_poster = ""
     existing_mal_id = None
+    existing_last_scanned_mtime = None
     if existing_series_data and season_name in existing_series_data.get("seasons", {}):
         old_season_metadata = existing_series_data["seasons"][season_name].get(
             "metadata", {}
@@ -90,6 +91,7 @@ def _process_season_metadata(
         existing_season_id = old_season_metadata.get("tmdb_identifier", "")
         existing_season_poster = old_season_metadata.get("poster_path", "")
         existing_mal_id = old_season_metadata.get("myanimelist_id")
+        existing_last_scanned_mtime = old_season_metadata.get("last_scanned_mtime")
 
     if matched_tmdb_season and series_data["_tmdb_series_id"]:
         season_tmdb_identifier = matched_tmdb_season.get("id")
@@ -183,6 +185,16 @@ def _process_season_metadata(
                 tmdb_episodes = tmdb_client.get_episodes(
                     series_data["_tmdb_series_id"], season_index
                 )
+
+    current_mtime = None
+    if not metadata_only and season_directory.exists():
+        try:
+            current_mtime = season_directory.stat().st_mtime
+        except Exception:
+            pass
+    season_metadata["last_scanned_mtime"] = (
+        current_mtime if current_mtime is not None else existing_last_scanned_mtime
+    )
 
     return season_name, season_index, season_metadata, tmdb_episodes
 
