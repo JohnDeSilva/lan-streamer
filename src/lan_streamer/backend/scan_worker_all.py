@@ -24,7 +24,7 @@ from lan_streamer.backend.scan_worker_base import (
     log_issues_report,
     log_stats_breakdown,
     merge_stats_dicts,
-    _series_belongs_to_root,
+    series_belongs_to_root,
     wait_for_database_write_task,
 )
 from lan_streamer.backend.database_writer import DatabaseWriteTask, DatabaseWriterThread
@@ -707,7 +707,7 @@ class ScanAllLibrariesWorker(QThread):
                 # Build from existing data
                 detailed_roots[root_dir] = {}
                 for series_name, series_data in existing_library_data.items():
-                    if _series_belongs_to_root(series_data, root_dir, library_type):
+                    if series_belongs_to_root(series_data, root_dir, library_type):
                         if library_type in ("tv", "anime"):
                             seasons: Dict[str, List[str]] = {}
                             for season_name, season_data in series_data.get(

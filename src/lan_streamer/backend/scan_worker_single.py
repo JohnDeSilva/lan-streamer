@@ -74,6 +74,8 @@ class ScanWorker(QThread):
         # double-counting in self.stats (which is the union of both passes).
         self._scanned_series_ids: Set[str] = set()
         self._scanned_movie_ids: Set[str] = set()
+        self._skipped_series_ids: Set[str] = set()
+        self._skipped_movie_ids: Set[str] = set()
 
         self.pass1_stats: Dict[str, int] = create_empty_stats()
         self.pass2_stats: Dict[str, int] = create_empty_stats()
@@ -123,6 +125,8 @@ class ScanWorker(QThread):
         self.current_pass = 1
         self._scanned_series_ids.clear()
         self._scanned_movie_ids.clear()
+        self._skipped_series_ids.clear()
+        self._skipped_movie_ids.clear()
 
         # Create and start the database writer thread
         self.database_queue = queue.Queue()
@@ -211,11 +215,9 @@ class ScanWorker(QThread):
                                 )
                                 if not any_changed:
                                     target_stats["series_skipped"] += 1
-                                    # Track skipped in global set
-                                    if series_id not in self._scanned_series_ids:
-                                        # This is a skipped series, track separately if needed
-                                        pass
-                                    self.stats["series_skipped"] += 1
+                                    if series_id not in self._skipped_series_ids:
+                                        self._skipped_series_ids.add(series_id)
+                                        self.stats["series_skipped"] += 1
 
                             target_stats["seasons_scanned"] += 1
                             self.stats["seasons_scanned"] += 1
@@ -288,7 +290,10 @@ class ScanWorker(QThread):
                                 self.stats["movies_scanned"] += 1
                             if not movie_data.get("_changed", True):
                                 target_stats["movies_skipped"] += 1
-                                self.stats["movies_skipped"] += 1
+                                movie_id = stats.get("movie_id") or movie_name
+                                if movie_id not in self._skipped_movie_ids:
+                                    self._skipped_movie_ids.add(movie_id)
+                                    self.stats["movies_skipped"] += 1
 
                             for key in self.stats:
                                 if key in stats and not (
@@ -311,7 +316,8 @@ class ScanWorker(QThread):
             show_future = library_config.get("show_future_episodes", True)
 
             # Pass 1: Offline local file scanner
-            self.current_pass = 1
+            with self.scan_lock:
+                self.current_pass = 1
             logger.info(
                 f"Starting Pass 1 (Offline Scan) for library '{self.library_name}' on directories: {self.root_directories}"
             )
@@ -341,7 +347,8 @@ class ScanWorker(QThread):
             self.flush_detail_progress()
 
             # Pass 2: Online metadata matching & resolver
-            self.current_pass = 2
+            with self.scan_lock:
+                self.current_pass = 2
             logger.info(
                 f"Starting Pass 2 (Online Metadata Resolution Scan) for library '{self.library_name}'"
             )
