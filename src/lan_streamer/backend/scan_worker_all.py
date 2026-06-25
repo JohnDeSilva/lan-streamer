@@ -19,7 +19,6 @@ from lan_streamer.scanner import (
 from lan_streamer.system.config import config
 from lan_streamer.backend.scan_worker_base import (
     create_empty_stats,
-    discover_single_library_tree_impl,
     log_db_write_error,
     log_issues_report,
     log_stats_breakdown,
@@ -696,9 +695,6 @@ class ScanAllLibrariesWorker(QThread):
         """
         root_directories: List[str] = list(library_configuration.get("paths", []))
         library_type: str = library_configuration.get("type", "tv")
-        discover_single_library_tree_impl(
-            root_directories, library_type, existing_library_data
-        )
         # Build the detailed tree structure (with seasons/episodes) from the
         # existing library data if available; otherwise fall back to filesystem.
         detailed_roots: Dict[str, Any] = {}
