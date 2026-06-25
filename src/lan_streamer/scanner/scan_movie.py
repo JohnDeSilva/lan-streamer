@@ -23,7 +23,6 @@ from lan_streamer.services.metadata_movie import (
     _apply_tmdb_movie_data,
     _resolve_movie_jellyfin_id,
 )
-from lan_streamer.services.file_discovery import detect_movie_file_changes
 
 logger = logging.getLogger("lan_streamer.scanner")
 
@@ -59,6 +58,8 @@ def _detect_movie_changes(
         if cached_mtime is not None and current_mtime == cached_mtime:
             is_movie_changed = False
         else:
+            from lan_streamer.services.file_discovery import detect_movie_file_changes
+
             is_movie_changed = detect_movie_file_changes(
                 movie_directory, existing_movie_data
             )

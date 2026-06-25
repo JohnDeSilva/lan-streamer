@@ -658,11 +658,21 @@ class LibraryScanProgressBar(QWidget):
         self.update()
 
     def init_from_roots(
-        self, roots: Dict[str, List[str]], roots_order: List[str]
+        self,
+        roots: Dict[str, List[str]],
+        roots_order: List[str],
+        library_roots: Optional[Dict[str, str]] = None,
     ) -> None:
-        """Called with the initial discovery {root_dir: [folder1, folder2, ...]}."""
+        """Called with the initial discovery {root_dir: [folder1, folder2, ...]}.
+
+        Args:
+            roots: Dictionary mapping root directories to their folders.
+            roots_order: Ordered list of root directories.
+            library_roots: Optional mapping of root_dir -> library_name.
+        """
         self._roots_order = [r for r in roots_order if r in roots]
         self._roots = {}
+        self._root_library = {}  # Track which library each root belongs to
         for root_dir in self._roots_order:
             folders = roots[root_dir]
             self._roots[root_dir] = {
@@ -670,6 +680,9 @@ class LibraryScanProgressBar(QWidget):
                 "folder_states": {f: self.STATE_PENDING for f in folders},
                 "state": self.STATE_PENDING,
             }
+            # Track library name for this root if provided
+            if library_roots:
+                self._root_library[root_dir] = library_roots.get(root_dir, "")
         self.update()
 
     def mark_folder_active(self, root_dir: str, folder_name: str) -> None:
@@ -693,17 +706,21 @@ class LibraryScanProgressBar(QWidget):
     def mark_library_done(self, library_name: str) -> None:
         """Mark all roots and folders as done for this library."""
         for root_dir, root_data in self._roots.items():
-            root_data["state"] = self.STATE_DONE
-            for f in root_data["folder_states"]:
-                root_data["folder_states"][f] = self.STATE_DONE
+            # Only mark roots belonging to this library
+            if self._root_library.get(root_dir) == library_name:
+                root_data["state"] = self.STATE_DONE
+                for f in root_data["folder_states"]:
+                    root_data["folder_states"][f] = self.STATE_DONE
         self.update()
 
     def mark_library_failed(self, library_name: str) -> None:
-        """Mark all roots and folders as failed."""
+        """Mark all roots and folders as failed for this library."""
         for root_dir, root_data in self._roots.items():
-            root_data["state"] = self.STATE_FAILED
-            for f in root_data["folder_states"]:
-                root_data["folder_states"][f] = self.STATE_FAILED
+            # Only mark roots belonging to this library
+            if self._root_library.get(root_dir) == library_name:
+                root_data["state"] = self.STATE_FAILED
+                for f in root_data["folder_states"]:
+                    root_data["folder_states"][f] = self.STATE_FAILED
         self.update()
 
     def paintEvent(self, event: Any) -> None:

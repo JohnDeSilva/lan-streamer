@@ -185,11 +185,13 @@ def test_scan_all_libraries_worker_passes_sequencing(mock_db, mock_scan_dirs) ->
 
     passes_called = []
 
-    def detail_emit(event, payload=None):
-        if event in ("start_offline_scan", "start_metadata_resolution"):
-            passes_called.append(event)
+    def detail_batch_emit(batch):
+        for event_dict in batch:
+            event = event_dict.get("event")
+            if event in ("start_offline_scan", "start_metadata_resolution"):
+                passes_called.append(event)
 
-    worker.detail_progress.connect(detail_emit)
+    worker.detail_progress_batch.connect(detail_batch_emit)
     worker.run()
 
     assert passes_called == ["start_offline_scan", "start_metadata_resolution"]

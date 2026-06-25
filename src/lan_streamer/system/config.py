@@ -70,6 +70,7 @@ class Config:
         ],
         "preferred_audio_device": "",
         "check_for_updates_on_startup": True,
+        "database_write_timeout": 60.0,
     }
 
     def __init__(self) -> None:
@@ -87,6 +88,7 @@ class Config:
 
         # --- DB-backed (seeded from _DB_DEFAULTS so the object is usable
         # before load_from_db() is called after DB initialisation) ---
+        self.database_write_timeout: float = 60.0
         for key, val in copy.deepcopy(self._DB_DEFAULTS).items():
             setattr(self, key, val)
 
@@ -267,6 +269,7 @@ class Config:
             self.check_for_updates_on_startup = config_dict[
                 "check_for_updates_on_startup"
             ]
+            self.database_write_timeout = float(config_dict["database_write_timeout"])
 
             # 3. After going through all the settings take the fully populated dictionary and write the contents back to the database
             bulk_set_app_configs(config_dict)
@@ -342,6 +345,7 @@ class Config:
             set_app_config(
                 "check_for_updates_on_startup", self.check_for_updates_on_startup
             )
+            set_app_config("database_write_timeout", self.database_write_timeout)
 
             # Secrets
             set_secret(

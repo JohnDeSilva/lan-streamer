@@ -15,6 +15,7 @@ from lan_streamer.backend.scan_worker_base import (
     log_db_write_error,
     log_issues_report,
     log_stats_breakdown,
+    wait_for_database_write_task,
 )
 from lan_streamer.backend.database_writer import DatabaseWriteTask, DatabaseWriterThread
 
@@ -110,10 +111,6 @@ class ScanWorker(QThread):
             batch = list(self._detail_progress_buffer)
             self._detail_progress_buffer.clear()
         self.detail_progress_batch.emit(batch)
-        for event_dict in batch:
-            self.detail_progress.emit(
-                event_dict.get("event", ""), event_dict.get("payload", {})
-            )
 
     def _start_flush_timer(self) -> None:
         """Starts a recurring timer to flush progress events from the QThread."""
@@ -194,11 +191,11 @@ class ScanWorker(QThread):
                         },
                     )
                     self.database_queue.put(task)
-                    if not task.event.wait(timeout=60):
-                        raise TimeoutError(
-                            f"Database write timed out for season "
-                            f"'{season_name}' of series '{series_name}'"
-                        )
+                    wait_for_database_write_task(
+                        task,
+                        f"season '{season_name}' of series '{series_name}'",
+                        timeout=config.database_write_timeout,
+                    )
                     if task.error:
                         raise task.error
                     stats = task.result
@@ -282,10 +279,11 @@ class ScanWorker(QThread):
                         },
                     )
                     self.database_queue.put(task)
-                    if not task.event.wait(timeout=60):
-                        raise TimeoutError(
-                            f"Database write timed out for movie '{movie_name}'"
-                        )
+                    wait_for_database_write_task(
+                        task,
+                        f"movie '{movie_name}'",
+                        timeout=config.database_write_timeout,
+                    )
                     if task.error:
                         raise task.error
                     stats = task.result
@@ -350,6 +348,7 @@ class ScanWorker(QThread):
                 offline=True,
                 season_callback=_season_callback,
                 movie_callback=_movie_callback,
+                database_queue=self.database_queue,
             )
             logger.info(
                 f"Finished Pass 1 (Offline Scan) for library '{self.library_name}'. Found {len(library)} stubs/entries."
@@ -379,6 +378,7 @@ class ScanWorker(QThread):
                 season_callback=_season_callback,
                 movie_callback=_movie_callback,
                 metadata_only=True,
+                database_queue=self.database_queue,
             )
             self.unavailable_directories = library.unavailable_directories
             if self.unavailable_directories:

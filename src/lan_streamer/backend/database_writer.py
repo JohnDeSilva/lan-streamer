@@ -106,6 +106,9 @@ class DatabaseWriterThread(threading.Thread):
                 payload["library_name"], payload["library_data"]
             )
             return stats
+        elif action == "save_directory_mtime":
+            database_module.save_directory_mtime(payload["path"], payload["mtime"])
+            return {}
         elif action == "update_items_runtime_batch":
             database_module.update_items_runtime_batch(payload["updates"])
             return {}

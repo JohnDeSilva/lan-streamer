@@ -23,8 +23,10 @@ def test_scan_all_libraries_pass1_exception_emits_fail_library() -> None:
 
         detail_events = []
         worker = ScanAllLibrariesWorker(run_pass2=False)
-        worker.detail_progress.connect(
-            lambda event, payload: detail_events.append((event, payload))
+        worker.detail_progress_batch.connect(
+            lambda batch: [
+                detail_events.append((e["event"], e["payload"])) for e in batch
+            ]
         )
         worker.run()
 
@@ -64,8 +66,10 @@ def test_scan_all_libraries_pass2_exception_emits_fail_library() -> None:
 
         detail_events = []
         worker = ScanAllLibrariesWorker(run_pass1=True, run_pass2=True)
-        worker.detail_progress.connect(
-            lambda event, payload: detail_events.append((event, payload))
+        worker.detail_progress_batch.connect(
+            lambda batch: [
+                detail_events.append((e["event"], e["payload"])) for e in batch
+            ]
         )
         worker.run()
 

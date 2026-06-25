@@ -24,8 +24,8 @@ from lan_streamer.backend.scan_worker_base import (
     log_issues_report,
     log_stats_breakdown,
     merge_stats_dicts,
-    merge_stats_dicts_for_report,
     _series_belongs_to_root,
+    wait_for_database_write_task,
 )
 from lan_streamer.backend.database_writer import DatabaseWriteTask, DatabaseWriterThread
 
@@ -139,10 +139,6 @@ class ScanAllLibrariesWorker(QThread):
             batch = list(self._detail_progress_buffer)
             self._detail_progress_buffer.clear()
         self.detail_progress_batch.emit(batch)
-        for event_dict in batch:
-            self.detail_progress.emit(
-                event_dict.get("event", ""), event_dict.get("payload", {})
-            )
 
     # ------------------------------------------------------------------
     # Helper methods
@@ -217,7 +213,21 @@ class ScanAllLibrariesWorker(QThread):
             paths_str = ", ".join(library_configuration.get("paths", []))
             pass1_stats = self.pass1_stats_per_library.get(library_name, {})
             pass2_stats = self.pass2_stats_per_library.get(library_name, {})
-            accumulated_stats = merge_stats_dicts_for_report(pass1_stats, pass2_stats)
+            # Compute accumulated stats correctly: sum non-scanned/skipped keys,
+            # use max for scanned/skipped keys (since they track unique entities)
+            accumulated_stats = {}
+            all_keys = set(pass1_stats.keys()) | set(pass2_stats.keys())
+            for key in all_keys:
+                if key.endswith("_scanned") or key.endswith("_skipped"):
+                    # Use max to avoid double-counting unique entities across passes
+                    accumulated_stats[key] = max(
+                        pass1_stats.get(key, 0), pass2_stats.get(key, 0)
+                    )
+                else:
+                    # Sum other keys (added, updated, removed)
+                    accumulated_stats[key] = pass1_stats.get(key, 0) + pass2_stats.get(
+                        key, 0
+                    )
             status_notes: List[str] = []
             if pass1_stats.get("_skipped"):
                 status_notes.append("Pass 1 FAILED — no offline data")
@@ -361,15 +371,19 @@ class ScanAllLibrariesWorker(QThread):
                     },
                 )
                 database_queue.put(task)
-                if not task.event.wait(timeout=60):
-                    raise TimeoutError(
-                        f"Database write timed out for season "
-                        f"'{season_name}' of series '{series_name}'"
-                    )
+                wait_for_database_write_task(
+                    task,
+                    f"season '{season_name}' of series '{series_name}'",
+                    timeout=config.database_write_timeout,
+                )
                 if task.error:
                     raise task.error
                 stats = task.result
                 if stats:
+                    series_id = stats.get("series_id") or series_name
+                    is_new_series_scan = False
+                    is_new_series_skip = False
+
                     with local_lock:
                         if "issues" in stats:
                             for issue in stats["issues"]:
@@ -379,14 +393,7 @@ class ScanAllLibrariesWorker(QThread):
                         if series_name not in local_series_scanned:
                             local_series_scanned.add(series_name)
                             local_stats["series_scanned"] += 1
-
-                            # Also track in global set to avoid double-counting in
-                            # self.stats across passes. Use a stable ID if available.
-                            series_id = stats.get("series_id") or series_name
-                            with self._lock:
-                                if series_id not in self._scanned_series_ids:
-                                    self._scanned_series_ids.add(series_id)
-                                    self.stats["series_scanned"] += 1
+                            is_new_series_scan = True
 
                             any_changed = any(
                                 season_data_item.get("_changed", True)
@@ -396,16 +403,9 @@ class ScanAllLibrariesWorker(QThread):
                             )
                             if not any_changed:
                                 local_stats["series_skipped"] += 1
-                                # Track skipped in global set to ensure skipped counts
-                                # are not lost when merging across passes.
-                                series_id = stats.get("series_id") or series_name
-                                with self._lock:
-                                    if series_id not in self._skipped_series_ids:
-                                        self._skipped_series_ids.add(series_id)
-                                        self.stats["series_skipped"] += 1
+                                is_new_series_skip = True
 
-                            local_stats["seasons_scanned"] += 1
-
+                        local_stats["seasons_scanned"] += 1
                         episode_count: int = len(season_data.get("episodes", []))
                         local_stats["episodes_scanned"] += episode_count
 
@@ -422,6 +422,19 @@ class ScanAllLibrariesWorker(QThread):
 
                         if season_data.get("_changed", True) and "season_id" in stats:
                             local_changed_season_ids.add(stats["season_id"])
+
+                    # Update global stats outside local_lock to avoid nested locking
+                    if is_new_series_scan:
+                        with self._lock:
+                            if series_id not in self._scanned_series_ids:
+                                self._scanned_series_ids.add(series_id)
+                                self.stats["series_scanned"] += 1
+
+                    if is_new_series_skip:
+                        with self._lock:
+                            if series_id not in self._skipped_series_ids:
+                                self._skipped_series_ids.add(series_id)
+                                self.stats["series_skipped"] += 1
             except Exception as error:
                 with local_lock:
                     log_db_write_error(
@@ -448,38 +461,30 @@ class ScanAllLibrariesWorker(QThread):
                     },
                 )
                 database_queue.put(task)
-                if not task.event.wait(timeout=60):
-                    raise TimeoutError(
-                        f"Database write timed out for movie '{movie_name}'"
-                    )
+                wait_for_database_write_task(
+                    task,
+                    f"movie '{movie_name}'",
+                    timeout=config.database_write_timeout,
+                )
                 if task.error:
                     raise task.error
                 stats = task.result
                 if stats:
+                    movie_id = stats.get("movie_id") or movie_name
+                    is_new_movie_scan = False
+                    is_new_movie_skip = False
+
                     with local_lock:
                         if "issues" in stats:
                             for issue in stats["issues"]:
                                 local_problems.append(issue)
 
                         local_stats["movies_scanned"] += 1
-
-                        # Track in global set to avoid double-counting in
-                        # self.stats across passes.
-                        movie_id = stats.get("movie_id") or movie_name
-                        with self._lock:
-                            if movie_id not in self._scanned_movie_ids:
-                                self._scanned_movie_ids.add(movie_id)
-                                self.stats["movies_scanned"] += 1
+                        is_new_movie_scan = True
 
                         if not movie_data.get("_changed", True):
                             local_stats["movies_skipped"] += 1
-                            # Track skipped in global set to ensure skipped counts
-                            # are not lost when merging across passes.
-                            movie_id = stats.get("movie_id") or movie_name
-                            with self._lock:
-                                if movie_id not in self._skipped_movie_ids:
-                                    self._skipped_movie_ids.add(movie_id)
-                                    self.stats["movies_skipped"] += 1
+                            is_new_movie_skip = True
 
                         for key in local_stats:
                             if key in stats and not (
@@ -489,6 +494,19 @@ class ScanAllLibrariesWorker(QThread):
 
                         if movie_data.get("_changed", True) and "movie_id" in stats:
                             local_changed_movie_ids.add(stats["movie_id"])
+
+                    # Update global stats outside local_lock to avoid nested locking
+                    if is_new_movie_scan:
+                        with self._lock:
+                            if movie_id not in self._scanned_movie_ids:
+                                self._scanned_movie_ids.add(movie_id)
+                                self.stats["movies_scanned"] += 1
+
+                    if is_new_movie_skip:
+                        with self._lock:
+                            if movie_id not in self._skipped_movie_ids:
+                                self._skipped_movie_ids.add(movie_id)
+                                self.stats["movies_skipped"] += 1
             except Exception as error:
                 with local_lock:
                     log_db_write_error(
@@ -517,10 +535,11 @@ class ScanAllLibrariesWorker(QThread):
                     },
                 )
                 database_queue.put(task)
-                if not task.event.wait(timeout=60):
-                    raise TimeoutError(
-                        f"Database write timed out for library '{library_name}'"
-                    )
+                wait_for_database_write_task(
+                    task,
+                    f"library '{library_name}'",
+                    timeout=config.database_write_timeout,
+                )
                 if task.error:
                     raise task.error
                 stats = task.result
@@ -564,6 +583,7 @@ class ScanAllLibrariesWorker(QThread):
                 season_callback=_season_callback,
                 movie_callback=_movie_callback,
                 metadata_only=not is_pass1,
+                database_queue=database_queue,
             )
             # Collect unavailable directories from this scan.
             if updated_library_data.unavailable_directories:
@@ -610,6 +630,7 @@ class ScanAllLibrariesWorker(QThread):
                     season_callback=_season_callback,
                     movie_callback=_movie_callback,
                     metadata_only=not is_pass1,
+                    database_queue=database_queue,
                 )
                 # Collect unavailable directories from this root scan.
                 if updated_library_data.unavailable_directories:

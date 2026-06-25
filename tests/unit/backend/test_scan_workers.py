@@ -110,7 +110,7 @@ def test_scan_all_libraries_worker_execution() -> None:
             "Movie_Lib": {"paths": ["/movie_path"], "type": "movie"},
         }
         progress_emitted: List[tuple] = []
-        detail_emitted: List[tuple] = []
+        batch_emitted: List[List[Dict[str, Any]]] = []
         finished_emitted: List[bool] = []
 
         worker = ScanAllLibrariesWorker(force_refresh=True)
@@ -118,8 +118,8 @@ def test_scan_all_libraries_worker_execution() -> None:
             lambda name, comp, tot: progress_emitted.append((name, comp, tot)),
             Qt.DirectConnection,
         )
-        worker.detail_progress.connect(
-            lambda ev, payload: detail_emitted.append((ev, payload)),
+        worker.detail_progress_batch.connect(
+            lambda batch: batch_emitted.append(batch),
             Qt.DirectConnection,
         )
         worker.finished.connect(
@@ -141,22 +141,26 @@ def test_scan_all_libraries_worker_execution() -> None:
             "/unavailable_movie",
             "/unavailable_tv",
         ]
+        # Check batch emissions contain expected events
+        flat_events = [event for batch in batch_emitted for event in batch]
+        # Each event is a dict with 'event' and 'payload' keys
+        event_pairs = [(e["event"], e["payload"]) for e in flat_events]
         assert (
             "start_root",
             {"library": "TV_Lib", "root": "/tv_path"},
-        ) in detail_emitted
+        ) in event_pairs
         assert (
             "finish_root",
             {"library": "TV_Lib", "root": "/tv_path"},
-        ) in detail_emitted
+        ) in event_pairs
         assert (
             "start_root",
             {"library": "Movie_Lib", "root": "/movie_path"},
-        ) in detail_emitted
+        ) in event_pairs
         assert (
             "finish_root",
             {"library": "Movie_Lib", "root": "/movie_path"},
-        ) in detail_emitted
+        ) in event_pairs
 
     # Per-library exception run — task-level failures emit library_error
     with patch("lan_streamer.backend.scan_worker_all.config") as mock_config:
@@ -195,10 +199,10 @@ def test_scan_worker_detail_progress() -> None:
             "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
         ) as mock_scan,
     ):
-        emitted_details = []
+        emitted_batches = []
         worker = ScanWorker(["/path"], "tv", {})
-        worker.detail_progress.connect(
-            lambda ev, payload: emitted_details.append((ev, payload))
+        worker.detail_progress_batch.connect(
+            lambda batch: emitted_batches.append(batch)
         )
 
         # We also want to simulate scan_directories calling the detail_callback
@@ -219,27 +223,30 @@ def test_scan_worker_detail_progress() -> None:
         mock_discover.assert_called_once_with(["/path"], "tv", {})
         assert mock_scan.call_count == 2
 
-        # Verify the progress signals emitted
-        assert len(emitted_details) == 7
-        assert emitted_details[0] == (
+        # Verify the progress signals emitted via batch
+        flat_events = [event for batch in emitted_batches for event in batch]
+        # Each event is a dict with 'event' and 'payload' keys
+        event_pairs = [(e["event"], e["payload"]) for e in flat_events]
+        assert len(event_pairs) == 7
+        assert event_pairs[0] == (
             "init_library_scan",
             {"roots": mock_tree, "roots_order": ["/path"]},
         )
-        assert emitted_details[1] == ("start_offline_scan", {"library": ""})
-        assert emitted_details[2] == (
+        assert event_pairs[1] == ("start_offline_scan", {"library": ""})
+        assert event_pairs[2] == (
             "start_folder",
             {"root": "/path", "folder": "Series A"},
         )
-        assert emitted_details[3] == (
+        assert event_pairs[3] == (
             "finish_folder",
             {"root": "/path", "folder": "Series A", "skipped": False},
         )
-        assert emitted_details[4] == ("start_metadata_resolution", {"library": ""})
-        assert emitted_details[5] == (
+        assert event_pairs[4] == ("start_metadata_resolution", {"library": ""})
+        assert event_pairs[5] == (
             "start_folder",
             {"root": "/path", "folder": "Series A"},
         )
-        assert emitted_details[6] == (
+        assert event_pairs[6] == (
             "finish_folder",
             {"root": "/path", "folder": "Series A", "skipped": False},
         )
@@ -553,12 +560,14 @@ def test_scan_all_libraries_worker_stats_reporting() -> None:
         log_infos = [call.args[0] for call in mock_log.info.call_args_list]
         report_logs = [log for log in log_infos if "[SCAN_REPORT]" in log]
         assert len(report_logs) > 0
+        # With unique tracking, series scanned across both passes = 1 (unique),
+        # not 2 (sum of passes). The test was written for old double-counting behavior.
         assert any(
-            "Series: Scanned=2 | Added=4 | Updated=0 | Removed=2" in log
+            "Series: Scanned=1 | Added=4 | Updated=0 | Removed=2" in log
             for log in report_logs
         )
         assert any(
-            "Seasons: Scanned=2 | Added=6 | Updated=0 | Removed=2" in log
+            "Seasons: Scanned=1 | Added=6 | Updated=0 | Removed=2" in log
             for log in report_logs
         )
         assert any(
@@ -1008,7 +1017,9 @@ def test_scan_all_libraries_worker_zero_libraries() -> None:
 
         detail_events = []
         worker = ScanAllLibrariesWorker()
-        worker.detail_progress.connect(lambda ev, pl: detail_events.append(ev))
+        worker.detail_progress_batch.connect(
+            lambda batch: [detail_events.append(e["event"]) for e in batch]
+        )
         worker.run()
 
         assert "init_tree" in detail_events

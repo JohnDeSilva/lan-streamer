@@ -44,3 +44,34 @@ def test_get_directory_mtime_returns_none_for_unknown_path() -> None:
     """get_directory_mtime returns None for a path that has never been saved."""
     result = get_directory_mtime("/tmp/__nonexistent_path_12345__")
     assert result is None
+
+
+def test_database_writer_saves_directory_mtime() -> None:
+    """DatabaseWriterThread must support and correctly execute save_directory_mtime task."""
+    import queue
+    from lan_streamer.backend.database_writer import (
+        DatabaseWriteTask,
+        DatabaseWriterThread,
+    )
+    from lan_streamer.db.library_shared import get_directory_mtime
+
+    path = "/tmp/test_db_writer_mtime"
+    mtime = 987654321.0
+
+    task_queue = queue.Queue()
+    writer = DatabaseWriterThread(task_queue)
+    writer.start()
+
+    try:
+        task = DatabaseWriteTask(
+            action="save_directory_mtime",
+            payload={"path": path, "mtime": mtime},
+        )
+        task_queue.put(task)
+        assert task.event.wait(timeout=5.0), "Task event was not set within timeout"
+        assert task.error is None, f"Database write failed with: {task.error}"
+
+        assert get_directory_mtime(path) == mtime
+    finally:
+        task_queue.put(None)
+        writer.join(timeout=5.0)

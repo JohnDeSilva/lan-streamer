@@ -1,5 +1,6 @@
 import atexit
 import logging
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -7,9 +8,6 @@ from typing import Dict, List, Any, Optional
 
 from lan_streamer.db.utils import natural_sort_key
 from lan_streamer.scanner.parser import has_video_files
-from lan_streamer.services.file_discovery import (
-    has_season_subdirectories as _has_season_subdirs,
-)
 from lan_streamer.services.metadata_common import (
     _resolve_existing_jellyfin_id,
     _build_locked_movie_tmdb_stub,
@@ -39,7 +37,9 @@ def get_scan_executor() -> ThreadPoolExecutor:
     if _global_scan_executor is None:
         with _global_scan_executor_lock:
             if _global_scan_executor is None:
+                max_workers = min(12, (os.cpu_count() or 4) * 2)
                 _global_scan_executor = ThreadPoolExecutor(
+                    max_workers=max_workers,
                     thread_name_prefix="scan_worker",
                 )
     return _global_scan_executor
@@ -94,6 +94,7 @@ def scan_directories(
     season_callback: Any = None,
     movie_callback: Any = None,
     metadata_only: bool = False,
+    database_queue: Optional[Any] = None,
 ) -> LibraryDict:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -242,6 +243,7 @@ def scan_directories(
                         offline=offline,
                         season_callback=season_callback,
                         metadata_only=True,
+                        database_queue=database_queue,
                     )
                 future_to_item[future] = (series_name, is_locked)
 
@@ -341,6 +343,10 @@ def scan_directories(
         # Sort series directories by mtime (newest first).
         # Include a directory if it contains video files OR season-style subdirs,
         # so series with only TMDB placeholder episodes are still indexed.
+        from lan_streamer.services.file_discovery import (
+            has_season_subdirectories as _has_season_subdirs,
+        )
+
         series_dirs = sorted(
             [
                 directory
@@ -418,13 +424,18 @@ def scan_directories(
             # --- Series-level mtime early-exit (TV only) ---
             # If the series directory mtime matches what we recorded after the last
             # successful scan, *and* we have valid existing data with metadata, *and*
-            # no forced refresh is requested, we can skip the entire scan_series call
-            # and reuse existing data.  This avoids iterating any season sub-directories
-            # on a network share when nothing has changed.
+            # no forced refresh is requested, we can skip the entire scan_series /
+            # scan_directories call and reuse the existing data.  This avoids all
+            # season subdirectory I/O on a network share when nothing has changed.
+            #
+            # The `offline` flag is NOT a guard here: mtime equality is a filesystem
+            # fact that holds regardless of whether we are in the offline discovery
+            # pass or the online metadata pass.  The previous `not offline` guard
+            # caused this optimisation to be dead code for Pass 1 (the only path
+            # that reaches this code block in the standard ScanWorker flow).
             if (
                 library_type != "movie"
                 and not series_force_refresh
-                and not offline
                 and existing_series
                 and has_meta
             ):
@@ -435,7 +446,7 @@ def scan_directories(
                     current_series_mtime = None
 
                 if current_series_mtime is not None:
-                    from lan_streamer import db as _db
+                    from lan_streamer import db as _db  # Deferred: circular import
 
                     cached_series_mtime = _db.get_directory_mtime(series_directory_path)
                     if (
@@ -488,6 +499,7 @@ def scan_directories(
                     show_future_episodes=show_future_episodes,
                     offline=offline,
                     season_callback=season_callback,
+                    database_queue=database_queue,
                 )
             future_to_series_directory[future] = (series_name, is_locked)
 

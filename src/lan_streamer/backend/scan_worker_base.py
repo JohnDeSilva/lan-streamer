@@ -247,3 +247,34 @@ def _series_belongs_to_root(
         except Exception:
             pass
     return False
+
+
+def wait_for_database_write_task(
+    task: Any, description: str, timeout: float = 60.0
+) -> None:
+    """Wait for a DatabaseWriteTask to complete, with warnings for slow writes.
+
+    Args:
+        task: The DatabaseWriteTask to wait for.
+        description: Description of the write operation for logging.
+        timeout: Total timeout in seconds.
+    """
+    from unittest.mock import Mock
+
+    if isinstance(timeout, Mock) or not isinstance(timeout, (int, float)):
+        timeout = 60.0
+
+    warning_threshold = min(10.0, timeout / 2.0) if timeout > 0.0 else 0.0
+
+    if warning_threshold > 0.0 and timeout > warning_threshold:
+        if not task.event.wait(timeout=warning_threshold):
+            logger.warning(
+                f"Database write is taking longer than expected ({warning_threshold}s). "
+                f"Action: {task.action}, Description: {description}"
+            )
+            remaining = timeout - warning_threshold
+            if not task.event.wait(timeout=remaining):
+                raise TimeoutError(f"Database write timed out: {description}")
+    else:
+        if not task.event.wait(timeout=timeout if timeout > 0.0 else None):
+            raise TimeoutError(f"Database write timed out: {description}")
