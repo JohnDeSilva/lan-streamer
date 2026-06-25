@@ -263,5 +263,7 @@ def has_tech_and_metadata(item_identifier: bytes | str, item_type: str) -> bool:
                     )
                     return result
     except Exception:
-        pass
+        logger.exception(
+            f"Error in has_tech_and_metadata for {item_type} ID {item_identifier!r}"
+        )
     return False
