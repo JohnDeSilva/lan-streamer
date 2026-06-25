@@ -3,7 +3,7 @@ import queue
 import time
 import threading
 from typing import List, Dict, Any, Optional, Set
-from PySide6.QtCore import QObject, Signal, QThread, QTimer
+from PySide6.QtCore import QObject, Signal, QThread
 
 from lan_streamer.scanner import LibraryDict
 from lan_streamer.system.config import config
@@ -87,9 +87,6 @@ class ScanWorker(QThread):
         self._detail_progress_buffer: List[Dict[str, Any]] = []
         self._detail_progress_lock: threading.Lock = threading.Lock()
 
-        # Timer for periodic buffer flush from the QThread.
-        self._flush_timer: Optional[QTimer] = None
-
     def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
         """Buffers a progress event for batched emission from the QThread.
 
@@ -112,22 +109,7 @@ class ScanWorker(QThread):
             self._detail_progress_buffer.clear()
         self.detail_progress_batch.emit(batch)
 
-    def _start_flush_timer(self) -> None:
-        """Starts a recurring timer to flush progress events from the QThread."""
-        self._flush_timer = QTimer(self)
-        self._flush_timer.setInterval(50)  # 50ms = 20Hz
-        self._flush_timer.timeout.connect(self.flush_detail_progress)
-        self._flush_timer.start()
-
-    def _stop_flush_timer(self) -> None:
-        """Stops the flush timer."""
-        if self._flush_timer is not None:
-            self._flush_timer.stop()
-            self._flush_timer.deleteLater()
-            self._flush_timer = None
-
     def run(self) -> None:
-        self._start_flush_timer()
         start_time = time.time()
         self.problems = []
         self.stats = create_empty_stats()
@@ -161,6 +143,7 @@ class ScanWorker(QThread):
                 "init_library_scan",
                 {"roots": tree_structure, "roots_order": self.root_directories},
             )
+            self.flush_detail_progress()
 
             # Fetch Jellyfin correlation data if configured
             jellyfin_data: Optional[Dict[str, Any]] = None
@@ -355,6 +338,7 @@ class ScanWorker(QThread):
             )
             # Emit the offline scan stubs so that UI shows files instantly
             self.partial_result.emit(library)
+            self.flush_detail_progress()
 
             # Pass 2: Online metadata matching & resolver
             self.current_pass = 2
@@ -398,6 +382,7 @@ class ScanWorker(QThread):
             logger.info(
                 f"Finished Pass 2 (Online Metadata Resolution Scan) for library '{self.library_name}'"
             )
+            self.flush_detail_progress()
 
             duration = time.time() - start_time
             logger.info(
@@ -447,7 +432,6 @@ class ScanWorker(QThread):
             self.library_error.emit(self.library_name, exception_message)
             self.emit_detail_progress("fail_library", {"library": self.library_name})
         finally:
-            self._stop_flush_timer()
             self.flush_detail_progress()
             if self.database_writer is not None:
                 self.database_queue.put(None)
