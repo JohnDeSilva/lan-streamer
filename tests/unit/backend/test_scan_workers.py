@@ -216,7 +216,7 @@ def test_scan_worker_detail_progress() -> None:
 
         worker.run()
 
-        mock_discover.assert_called_once_with(["/path"], "tv")
+        mock_discover.assert_called_once_with(["/path"], "tv", {})
         assert mock_scan.call_count == 2
 
         # Verify the progress signals emitted
@@ -262,10 +262,10 @@ def test_scan_workers_reporting() -> None:
             "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
         ) as mock_scan,
         patch(
-            "lan_streamer.backend.scan_worker_single.db.save_season_data"
+            "lan_streamer.backend.database_writer.database_module.save_season_data"
         ) as mock_save_season,
         patch(
-            "lan_streamer.backend.scan_worker_single.db.save_movie_data",
+            "lan_streamer.backend.database_writer.database_module.save_movie_data",
             side_effect=Exception("DB Fail Movie"),
         ),
         patch("lan_streamer.backend.scan_worker_single.logger") as mock_log,
@@ -435,11 +435,11 @@ def test_scan_worker_stats_reporting() -> None:
             "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
         ) as mock_scan,
         patch(
-            "lan_streamer.backend.scan_worker_single.db.save_season_data",
+            "lan_streamer.backend.database_writer.database_module.save_season_data",
             return_value={"series_added": 1, "seasons_added": 1, "episodes_added": 5},
         ),
         patch(
-            "lan_streamer.backend.scan_worker_single.db.save_movie_data",
+            "lan_streamer.backend.database_writer.database_module.save_movie_data",
             return_value={"movies_added": 2},
         ),
         patch("lan_streamer.backend.scan_worker_single.logger") as mock_log,
@@ -516,11 +516,11 @@ def test_scan_all_libraries_worker_stats_reporting() -> None:
         ),
         patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
         patch(
-            "lan_streamer.backend.scan_worker_all.db.save_season_data",
+            "lan_streamer.backend.database_writer.database_module.save_season_data",
             return_value={"series_added": 2, "seasons_added": 3, "episodes_added": 12},
         ),
         patch(
-            "lan_streamer.backend.scan_worker_all.db.save_library",
+            "lan_streamer.backend.database_writer.database_module.save_library",
             return_value={"series_removed": 1, "seasons_removed": 1},
         ),
         patch(
@@ -588,7 +588,7 @@ def test_scan_worker_formats_multiline_database_error_cleanly() -> None:
             "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
         ) as mock_scan,
         patch(
-            "lan_streamer.backend.scan_worker_single.db.save_season_data",
+            "lan_streamer.backend.database_writer.database_module.save_season_data",
             side_effect=Exception(multiline_err),
         ),
         patch("lan_streamer.backend.scan_worker_single.logger") as mock_log,
@@ -642,10 +642,10 @@ def test_detailed_scan_report_counts_validation() -> None:
             "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
         ) as mock_scan,
         patch(
-            "lan_streamer.backend.scan_worker_single.db.save_season_data"
+            "lan_streamer.backend.database_writer.database_module.save_season_data"
         ) as mock_save_season,
         patch(
-            "lan_streamer.backend.scan_worker_single.db.save_movie_data"
+            "lan_streamer.backend.database_writer.database_module.save_movie_data"
         ) as mock_save_movie,
         patch("lan_streamer.backend.scan_worker_single.logger") as mock_log,
     ):
@@ -789,10 +789,10 @@ def test_scan_worker_db_stats_no_double_counting() -> None:
             "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
         ) as mock_scan,
         patch(
-            "lan_streamer.backend.scan_worker_single.db.save_season_data"
+            "lan_streamer.backend.database_writer.database_module.save_season_data"
         ) as mock_save_season,
         patch(
-            "lan_streamer.backend.scan_worker_single.db.save_movie_data"
+            "lan_streamer.backend.database_writer.database_module.save_movie_data"
         ) as mock_save_movie,
         patch("lan_streamer.backend.scan_worker_single.logger"),
     ):
@@ -857,7 +857,7 @@ def test_scan_worker_changed_ids_in_callbacks() -> None:
             "lan_streamer.backend.scan_worker_single.scan_directories", return_value=lib
         ) as mock_scan,
         patch(
-            "lan_streamer.backend.scan_worker_single.db.save_season_data",
+            "lan_streamer.backend.database_writer.database_module.save_season_data",
             return_value={
                 "season_id": "sid_1",
                 "series_added": 1,
@@ -866,7 +866,7 @@ def test_scan_worker_changed_ids_in_callbacks() -> None:
             },
         ),
         patch(
-            "lan_streamer.backend.scan_worker_single.db.save_movie_data",
+            "lan_streamer.backend.database_writer.database_module.save_movie_data",
             return_value={"movie_id": "mid_1", "movies_added": 1},
         ),
         patch("lan_streamer.backend.scan_worker_single.logger"),

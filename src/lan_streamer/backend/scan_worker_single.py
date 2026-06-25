@@ -1,11 +1,11 @@
 import logging
+import queue
 import time
 import threading
 from typing import List, Dict, Any, Optional, Set
-from PySide6.QtCore import QObject, Signal, QThread
+from PySide6.QtCore import QObject, Signal, QThread, QTimer
 
 from lan_streamer.scanner import LibraryDict
-from lan_streamer import db
 from lan_streamer.system.config import config
 from lan_streamer.providers.jellyfin import jellyfin_client
 from lan_streamer.scanner import scan_directories
@@ -16,6 +16,7 @@ from lan_streamer.backend.scan_worker_base import (
     log_issues_report,
     log_stats_breakdown,
 )
+from lan_streamer.backend.database_writer import DatabaseWriteTask, DatabaseWriterThread
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -73,41 +74,59 @@ class ScanWorker(QThread):
         self.pass2_stats: Dict[str, int] = create_empty_stats()
         self.scan_lock: threading.Lock = threading.Lock()
 
-        # Signal batching buffer.
+        # Database write queue variables.
+        self.database_queue: queue.Queue = queue.Queue()
+        self.database_writer: Optional[DatabaseWriterThread] = None
+
+        # Signal batching buffer — thread-safe via _detail_progress_lock.
         self._detail_progress_buffer: List[Dict[str, Any]] = []
         self._detail_progress_lock: threading.Lock = threading.Lock()
-        self._last_flush_time: float = 0.0
+
+        # Timer for periodic buffer flush from the QThread.
+        self._flush_timer: Optional[QTimer] = None
 
     def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
-        """Buffers progress events and flushes them to avoid UI congestion."""
-        should_flush_immediately = event in LIFECYCLE_EVENTS
+        """Buffers a progress event for batched emission from the QThread.
 
+        Events are accumulated in a thread-safe buffer and flushed by
+        :meth:`flush_detail_progress`, which must only be called from the
+        QThread's own thread (typically via the internal flush timer).
+        """
         with self._detail_progress_lock:
             self._detail_progress_buffer.append({"event": event, "payload": payload})
-            current_time = time.time()
-            if should_flush_immediately or (
-                current_time - self._last_flush_time >= 0.05
-            ):
-                self._flush_detail_progress_nolock()
 
-    def _flush_detail_progress_nolock(self) -> None:
-        if not self._detail_progress_buffer:
-            return
-        batch = list(self._detail_progress_buffer)
-        self._detail_progress_buffer.clear()
-        self._last_flush_time = time.time()
+    def flush_detail_progress(self) -> None:
+        """Drains buffered progress events and emits them via Qt signals.
+
+        Must only be called from the QThread's own thread.
+        """
+        with self._detail_progress_lock:
+            if not self._detail_progress_buffer:
+                return
+            batch = list(self._detail_progress_buffer)
+            self._detail_progress_buffer.clear()
         self.detail_progress_batch.emit(batch)
         for event_dict in batch:
             self.detail_progress.emit(
                 event_dict.get("event", ""), event_dict.get("payload", {})
             )
 
-    def flush_detail_progress(self) -> None:
-        """Flushes any remaining buffered progress events to the UI."""
-        with self._detail_progress_lock:
-            self._flush_detail_progress_nolock()
+    def _start_flush_timer(self) -> None:
+        """Starts a recurring timer to flush progress events from the QThread."""
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setInterval(50)  # 50ms = 20Hz
+        self._flush_timer.timeout.connect(self.flush_detail_progress)
+        self._flush_timer.start()
+
+    def _stop_flush_timer(self) -> None:
+        """Stops the flush timer."""
+        if self._flush_timer is not None:
+            self._flush_timer.stop()
+            self._flush_timer.deleteLater()
+            self._flush_timer = None
 
     def run(self) -> None:
+        self._start_flush_timer()
         start_time = time.time()
         self.problems = []
         self.stats = create_empty_stats()
@@ -119,6 +138,12 @@ class ScanWorker(QThread):
         self.changed_season_ids = set()
         self.changed_movie_ids = set()
         self.current_pass = 1
+
+        # Create and start the database writer thread
+        self.database_queue = queue.Queue()
+        self.database_writer = DatabaseWriterThread(self.database_queue)
+        self.database_writer.start()
+
         try:
             logger.info(
                 f"ScanWorker starting run for directories: {self.root_directories}"
@@ -127,7 +152,7 @@ class ScanWorker(QThread):
 
             # Pre-discover the library tree structure and emit init_library_scan
             tree_structure = discover_single_library_tree_impl(
-                self.root_directories, self.library_type
+                self.root_directories, self.library_type, self.existing_library
             )
             self.emit_detail_progress(
                 "init_library_scan",
@@ -152,15 +177,27 @@ class ScanWorker(QThread):
                     f"ScanWorker writing season '{season_name}' of series '{series_name}' to database..."
                 )
                 try:
-                    with self.scan_lock:
-                        stats = db.save_season_data(
-                            self.library_name,
-                            series_name,
-                            series_data,
-                            season_name,
-                            season_data,
+                    task = DatabaseWriteTask(
+                        action="save_season",
+                        payload={
+                            "library_name": self.library_name,
+                            "series_name": series_name,
+                            "series_data": series_data,
+                            "season_name": season_name,
+                            "season_data": season_data,
+                        },
+                    )
+                    self.database_queue.put(task)
+                    if not task.event.wait(timeout=60):
+                        raise TimeoutError(
+                            f"Database write timed out for season "
+                            f"'{season_name}' of series '{series_name}'"
                         )
-                        if stats:
+                    if task.error:
+                        raise task.error
+                    stats = task.result
+                    if stats:
+                        with self.scan_lock:
                             if "issues" in stats:
                                 for issue in stats["issues"]:
                                     self.problems.append(issue)
@@ -222,11 +259,24 @@ class ScanWorker(QThread):
             def _movie_callback(movie_name: str, movie_data: Dict[str, Any]) -> None:
                 logger.info(f"ScanWorker writing movie '{movie_name}' to database...")
                 try:
-                    with self.scan_lock:
-                        stats = db.save_movie_data(
-                            self.library_name, movie_name, movie_data
+                    task = DatabaseWriteTask(
+                        action="save_movie",
+                        payload={
+                            "library_name": self.library_name,
+                            "movie_name": movie_name,
+                            "movie_data": movie_data,
+                        },
+                    )
+                    self.database_queue.put(task)
+                    if not task.event.wait(timeout=60):
+                        raise TimeoutError(
+                            f"Database write timed out for movie '{movie_name}'"
                         )
-                        if stats:
+                    if task.error:
+                        raise task.error
+                    stats = task.result
+                    if stats:
+                        with self.scan_lock:
                             if "issues" in stats:
                                 for issue in stats["issues"]:
                                     self.problems.append(issue)
@@ -379,4 +429,9 @@ class ScanWorker(QThread):
             self.library_error.emit(self.library_name, exception_message)
             self.emit_detail_progress("fail_library", {"library": self.library_name})
         finally:
+            self._stop_flush_timer()
             self.flush_detail_progress()
+            if self.database_writer is not None:
+                self.database_queue.put(None)
+                self.database_writer.stop()
+                self.database_writer.join()

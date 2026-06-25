@@ -19,11 +19,13 @@ from lan_streamer.scanner import (
 from lan_streamer.system.config import config
 from lan_streamer.backend.scan_worker_base import (
     create_empty_stats,
+    discover_single_library_tree_impl,
     log_db_write_error,
     log_issues_report,
     log_stats_breakdown,
     merge_stats_dicts,
     merge_stats_dicts_for_report,
+    _series_belongs_to_root,
 )
 from lan_streamer.backend.database_writer import DatabaseWriteTask, DatabaseWriterThread
 
@@ -91,6 +93,10 @@ class ScanAllLibrariesWorker(QThread):
         self.current_pass: int = 1
         self.pass1_series_scanned: Set[str] = set()
         self.pass2_series_scanned: Set[str] = set()
+        # Track unique series/movie IDs scanned across BOTH passes to avoid
+        # double-counting in self.stats (which is the union of both passes).
+        self._scanned_series_ids: Set[str] = set()
+        self._scanned_movie_ids: Set[str] = set()
 
         self.pass1_stats: Dict[str, int] = create_empty_stats()
         self.pass2_stats: Dict[str, int] = create_empty_stats()
@@ -99,8 +105,8 @@ class ScanAllLibrariesWorker(QThread):
         self.pass1_stats_per_library: Dict[str, Dict[str, int]] = {}
         self.pass2_stats_per_library: Dict[str, Dict[str, int]] = {}
 
-        # Database write queue — replaced in run() with a fresh queue for each scan.
-        self.database_queue: queue.Queue = queue.Queue()
+        # Database write queue — created in run() for each scan.
+        self.database_queue: Optional[queue.Queue] = None
         self.database_writer: Optional[DatabaseWriterThread] = None
 
         # Signal batching buffer — thread-safe via _detail_progress_lock.
@@ -294,6 +300,10 @@ class ScanAllLibrariesWorker(QThread):
             "show_future_episodes", True
         )
 
+        # database_queue is guaranteed to be set by run() before this method is called
+        assert self.database_queue is not None
+        database_queue: queue.Queue = self.database_queue
+
         # Local accumulators (thread-local, protected by local_lock)
         local_stats: Dict[str, int] = create_empty_stats()
         local_problems: List[Dict[str, Any]] = []
@@ -346,7 +356,7 @@ class ScanAllLibrariesWorker(QThread):
                         "season_data": season_data,
                     },
                 )
-                self.database_queue.put(task)
+                database_queue.put(task)
                 if not task.event.wait(timeout=60):
                     raise TimeoutError(
                         f"Database write timed out for season "
@@ -365,6 +375,15 @@ class ScanAllLibrariesWorker(QThread):
                         if series_name not in local_series_scanned:
                             local_series_scanned.add(series_name)
                             local_stats["series_scanned"] += 1
+
+                            # Also track in global set to avoid double-counting in
+                            # self.stats across passes. Use a stable ID if available.
+                            series_id = stats.get("series_id") or series_name
+                            with self._lock:
+                                if series_id not in self._scanned_series_ids:
+                                    self._scanned_series_ids.add(series_id)
+                                    self.stats["series_scanned"] += 1
+
                             any_changed = any(
                                 season_data_item.get("_changed", True)
                                 for season_data_item in series_data.get(
@@ -417,7 +436,7 @@ class ScanAllLibrariesWorker(QThread):
                         "movie_data": movie_data,
                     },
                 )
-                self.database_queue.put(task)
+                database_queue.put(task)
                 if not task.event.wait(timeout=60):
                     raise TimeoutError(
                         f"Database write timed out for movie '{movie_name}'"
@@ -432,6 +451,15 @@ class ScanAllLibrariesWorker(QThread):
                                 local_problems.append(issue)
 
                         local_stats["movies_scanned"] += 1
+
+                        # Track in global set to avoid double-counting in
+                        # self.stats across passes.
+                        movie_id = stats.get("movie_id") or movie_name
+                        with self._lock:
+                            if movie_id not in self._scanned_movie_ids:
+                                self._scanned_movie_ids.add(movie_id)
+                                self.stats["movies_scanned"] += 1
+
                         if not movie_data.get("_changed", True):
                             local_stats["movies_skipped"] += 1
 
@@ -470,7 +498,7 @@ class ScanAllLibrariesWorker(QThread):
                         "library_data": library_data,
                     },
                 )
-                self.database_queue.put(task)
+                database_queue.put(task)
                 if not task.event.wait(timeout=60):
                     raise TimeoutError(
                         f"Database write timed out for library '{library_name}'"
@@ -612,61 +640,98 @@ class ScanAllLibrariesWorker(QThread):
     # ------------------------------------------------------------------
 
     def _discover_single_library_tree(
-        self, library_name: str, library_configuration: Dict[str, Any]
+        self,
+        library_name: str,
+        library_configuration: Dict[str, Any],
+        existing_library_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Pre-walk directories of a single library to build its tree structure.
 
         Args:
             library_name: The name of the library.
             library_configuration: Configuration dictionary for the library.
+            existing_library_data: Previously loaded library data to avoid I/O.
 
         Returns:
             A dictionary containing library type and its roots.
         """
         root_directories: List[str] = list(library_configuration.get("paths", []))
         library_type: str = library_configuration.get("type", "tv")
-        roots: Dict[str, Any] = {}
-        for root_directory_str in root_directories:
-            root_path = Path(root_directory_str)
-            if not root_path.exists() or not root_path.is_dir():
-                roots[root_directory_str] = {}
-                continue
-            folders: Dict[str, Any] = {}
-            for series_path in sorted(
-                [
-                    x
-                    for x in root_path.iterdir()
-                    if x.is_dir() and not x.name.startswith(".") and has_video_files(x)
-                ],
-                key=lambda x: x.stat().st_mtime,
-                reverse=True,
-            ):
-                series_name = series_path.name
-                if library_type in ("tv", "anime"):
-                    seasons: Dict[str, List[str]] = {}
-                    for season_path in series_path.iterdir():
-                        if season_path.is_dir() and not season_path.name.startswith(
-                            "."
-                        ):
-                            episodes: List[str] = []
-                            for episode_path in season_path.iterdir():
-                                if (
-                                    episode_path.is_file()
-                                    and episode_path.suffix.lower() in VIDEO_EXTENSIONS
-                                ):
-                                    episodes.append(episode_path.name)
-                            seasons[season_path.name] = sorted(episodes)
-                    folders[series_name] = {"seasons": seasons}
-                else:
-                    folders[series_name] = {}
-            roots[root_directory_str] = folders
-        return {"type": library_type, "roots": roots}
+        discover_single_library_tree_impl(
+            root_directories, library_type, existing_library_data
+        )
+        # Build the detailed tree structure (with seasons/episodes) from the
+        # existing library data if available; otherwise fall back to filesystem.
+        detailed_roots: Dict[str, Any] = {}
+        for root_dir in root_directories:
+            if existing_library_data:
+                # Build from existing data
+                detailed_roots[root_dir] = {}
+                for series_name, series_data in existing_library_data.items():
+                    if _series_belongs_to_root(series_data, root_dir, library_type):
+                        if library_type in ("tv", "anime"):
+                            seasons: Dict[str, List[str]] = {}
+                            for season_name, season_data in series_data.get(
+                                "seasons", {}
+                            ).items():
+                                episodes = [
+                                    ep.get("name", "")
+                                    for ep in season_data.get("episodes", [])
+                                    if ep.get("name")
+                                ]
+                                seasons[season_name] = sorted(episodes)
+                            detailed_roots[root_dir][series_name] = {"seasons": seasons}
+                        else:
+                            detailed_roots[root_dir][series_name] = {}
+            else:
+                # Fallback to filesystem
+                root_path = Path(root_dir)
+                if not root_path.exists() or not root_path.is_dir():
+                    detailed_roots[root_dir] = {}
+                    continue
+                detailed_roots[root_dir] = {}
+                for series_path in sorted(
+                    [
+                        x
+                        for x in root_path.iterdir()
+                        if x.is_dir()
+                        and not x.name.startswith(".")
+                        and has_video_files(x)
+                    ],
+                    key=lambda x: x.stat().st_mtime,
+                    reverse=True,
+                ):
+                    series_name = series_path.name
+                    if library_type in ("tv", "anime"):
+                        seasons: Dict[str, List[str]] = {}
+                        for season_path in series_path.iterdir():
+                            if season_path.is_dir() and not season_path.name.startswith(
+                                "."
+                            ):
+                                episodes: List[str] = []
+                                for episode_path in season_path.iterdir():
+                                    if (
+                                        episode_path.is_file()
+                                        and episode_path.suffix.lower()
+                                        in VIDEO_EXTENSIONS
+                                    ):
+                                        episodes.append(episode_path.name)
+                                seasons[season_path.name] = sorted(episodes)
+                        detailed_roots[root_dir][series_name] = {"seasons": seasons}
+                    else:
+                        detailed_roots[root_dir][series_name] = {}
+        return {"type": library_type, "roots": detailed_roots}
 
-    def _discover_tree(self) -> Dict[str, Any]:
+    def _discover_tree(
+        self, library_data_by_name: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """Pre-walk all library directories to count total folders and files in parallel.
 
         This allows the UI to initialise the tree and segmented progress bar
         before scanning begins.
+
+        Args:
+            library_data_by_name: Existing library data loaded from database.
 
         Returns:
             A nested dictionary keyed by library name.
@@ -683,10 +748,12 @@ class ScanAllLibrariesWorker(QThread):
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_library: Dict[Any, str] = {}
             for library_name, library_configuration in libraries_dictionary.items():
+                existing_data = library_data_by_name.get(library_name, {})
                 future = executor.submit(
                     self._discover_single_library_tree,
                     library_name,
                     library_configuration,
+                    existing_data,
                 )
                 future_to_library[future] = library_name
             for future in as_completed(future_to_library):
@@ -722,6 +789,8 @@ class ScanAllLibrariesWorker(QThread):
         self.current_pass = 1
         self.pass1_series_scanned.clear()
         self.pass2_series_scanned.clear()
+        self._scanned_series_ids.clear()
+        self._scanned_movie_ids.clear()
 
         # Create the database writer thread
         self.database_queue = queue.Queue()
@@ -734,22 +803,8 @@ class ScanAllLibrariesWorker(QThread):
             total_count: int = len(libraries_dictionary)
             self.unavailable_directories = []
 
-            # Pre-discover tree structure and tell the UI to initialise it.
-            tree_structure = self._discover_tree()
-            self.emit_detail_progress(
-                "init_tree",
-                {
-                    "tree": tree_structure,
-                    "library_order": list(config.libraries.keys()),
-                },
-            )
-            self.flush_detail_progress()
-
-            jellyfin_data: Optional[Dict[str, Any]] = None
-            if jellyfin_client.is_configured():
-                jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
-
-            # Load existing library data from the database.
+            # Load existing library data from the database FIRST, so tree discovery
+            # can use it to avoid redundant filesystem I/O.
             library_data_by_name: Dict[str, Dict[str, Any]] = {}
             for (
                 library_name,
@@ -762,6 +817,21 @@ class ScanAllLibrariesWorker(QThread):
                     )
                 else:
                     library_data_by_name[library_name] = db.load_library(library_name)
+
+            # Pre-discover tree structure and tell the UI to initialise it.
+            tree_structure = self._discover_tree(library_data_by_name)
+            self.emit_detail_progress(
+                "init_tree",
+                {
+                    "tree": tree_structure,
+                    "library_order": list(config.libraries.keys()),
+                },
+            )
+            self.flush_detail_progress()
+
+            jellyfin_data: Optional[Dict[str, Any]] = None
+            if jellyfin_client.is_configured():
+                jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
             max_workers: int = max(
                 1,
@@ -819,7 +889,14 @@ class ScanAllLibrariesWorker(QThread):
                         # Merge per-library stats into combined totals
                         # (single-threaded section — no lock needed).
                         merge_stats_dicts(self.pass1_stats, result["pass_stats"])
-                        merge_stats_dicts(self.stats, result["pass_stats"])
+                        # Merge into self.stats but skip _scanned/_skipped keys — these
+                        # are tracked per-entity in callbacks to avoid double-counting
+                        # across passes.
+                        for key, value in result["pass_stats"].items():
+                            if not (
+                                key.endswith("_scanned") or key.endswith("_skipped")
+                            ):
+                                self.stats[key] = self.stats.get(key, 0) + value
                         self.pass1_stats_per_library[library_name] = result[
                             "pass_stats"
                         ]
@@ -897,7 +974,14 @@ class ScanAllLibrariesWorker(QThread):
 
                         # Merge per-library stats into combined totals.
                         merge_stats_dicts(self.pass2_stats, result["pass_stats"])
-                        merge_stats_dicts(self.stats, result["pass_stats"])
+                        # Merge into self.stats but skip _scanned/_skipped keys — these
+                        # are tracked per-entity in callbacks to avoid double-counting
+                        # across passes.
+                        for key, value in result["pass_stats"].items():
+                            if not (
+                                key.endswith("_scanned") or key.endswith("_skipped")
+                            ):
+                                self.stats[key] = self.stats.get(key, 0) + value
                         self.pass2_stats_per_library[library_name] = result[
                             "pass_stats"
                         ]
