@@ -156,6 +156,7 @@ def _save_season_record(
     for attr, key in [
         ("jellyfin_id", "jellyfin_id"),
         ("poster_path", "poster_path"),
+        ("last_scanned_mtime", "last_scanned_mtime"),
     ]:
         val = season_metadata.get(key)
         if val is not None and getattr(season, attr) != val:

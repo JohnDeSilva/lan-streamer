@@ -10,6 +10,7 @@ from sqlalchemy import (
     Index,
     LargeBinary,
     TypeDecorator,
+    Float,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -151,6 +152,7 @@ class Season(Base):
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
     poster_path: Mapped[Optional[str]] = mapped_column(String)
     myanimelist_id: Mapped[Optional[int]] = mapped_column(Integer)
+    last_scanned_mtime: Mapped[Optional[float]] = mapped_column(Float)
 
     series: Mapped[Optional["Series"]] = relationship(
         "Series", back_populates="seasons"
@@ -416,6 +418,7 @@ class Movie(CompatibilityMixin, Base):
     genre: Mapped[Optional[str]] = mapped_column(String)
     year: Mapped[Optional[int]] = mapped_column(Integer)
     default_path: Mapped[Optional[str]] = mapped_column(String)
+    last_scanned_mtime: Mapped[Optional[float]] = mapped_column(Float)
 
     media_files: Mapped[List["MediaFile"]] = relationship(
         "MediaFile",
