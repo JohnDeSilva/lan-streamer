@@ -927,17 +927,16 @@ class ScanAllLibrariesWorker(QThread):
                             }
                             continue
 
-                        # Merge per-library stats into combined totals
-                        # (single-threaded section — no lock needed).
+                        # Merge per-library stats into combined totals.
                         merge_stats_dicts(self.pass1_stats, result["pass_stats"])
-                        # Merge into self.stats but skip _scanned/_skipped keys — these
-                        # are tracked per-entity in callbacks to avoid double-counting
-                        # across passes.
+                        # Merge into self.stats under self._lock for future-proofing
+                        # against concurrent access from callbacks.
                         for key, value in result["pass_stats"].items():
                             if not (
                                 key.endswith("_scanned") or key.endswith("_skipped")
                             ):
-                                self.stats[key] = self.stats.get(key, 0) + value
+                                with self._lock:
+                                    self.stats[key] = self.stats.get(key, 0) + value
                         self.pass1_stats_per_library[library_name] = result[
                             "pass_stats"
                         ]
@@ -1015,14 +1014,14 @@ class ScanAllLibrariesWorker(QThread):
 
                         # Merge per-library stats into combined totals.
                         merge_stats_dicts(self.pass2_stats, result["pass_stats"])
-                        # Merge into self.stats but skip _scanned/_skipped keys — these
-                        # are tracked per-entity in callbacks to avoid double-counting
-                        # across passes.
+                        # Merge into self.stats under self._lock for future-proofing
+                        # against concurrent access from callbacks.
                         for key, value in result["pass_stats"].items():
                             if not (
                                 key.endswith("_scanned") or key.endswith("_skipped")
                             ):
-                                self.stats[key] = self.stats.get(key, 0) + value
+                                with self._lock:
+                                    self.stats[key] = self.stats.get(key, 0) + value
                         self.pass2_stats_per_library[library_name] = result[
                             "pass_stats"
                         ]
