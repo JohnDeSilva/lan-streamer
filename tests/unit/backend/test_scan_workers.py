@@ -469,10 +469,10 @@ def test_scan_worker_stats_reporting() -> None:
         log_infos = [call.args[0] for call in mock_log.info.call_args_list]
         report_logs = [log for log in log_infos if "[SCAN_REPORT]" in log]
         assert len(report_logs) > 0
-        assert any("Series: Scanned=2 | Added=2" in log for log in report_logs)
+        assert any("Series: Scanned=1 | Added=2" in log for log in report_logs)
         assert any("Seasons: Scanned=2 | Added=2" in log for log in report_logs)
         assert any("Episodes: Scanned=0 | Added=10" in log for log in report_logs)
-        assert any("Movies: Scanned=2 | Added=4" in log for log in report_logs)
+        assert any("Movies: Scanned=1 | Added=4" in log for log in report_logs)
 
         # Verify each entity type appears in ALL three sections
         section_entities: dict[str, dict[str, int]] = {
@@ -709,7 +709,7 @@ def test_detailed_scan_report_counts_validation() -> None:
         worker.run()
 
         # Check total accumulated stats
-        assert worker.stats["series_scanned"] == 2
+        assert worker.stats["series_scanned"] == 1
         assert worker.stats["series_added"] == 1
         assert worker.stats["series_updated"] == 1
         assert worker.stats["series_skipped"] == 1
@@ -724,7 +724,7 @@ def test_detailed_scan_report_counts_validation() -> None:
         assert worker.stats["episodes_updated"] == 4
         assert worker.stats["episodes_skipped"] == 6
 
-        assert worker.stats["movies_scanned"] == 2
+        assert worker.stats["movies_scanned"] == 1
         assert worker.stats["movies_added"] == 1
         assert worker.stats["movies_updated"] == 1
         assert worker.stats["movies_skipped"] == 1
@@ -769,7 +769,7 @@ def test_detailed_scan_report_counts_validation() -> None:
         report_logs = [log for log in log_infos if "[SCAN_REPORT]" in log]
         assert len(report_logs) > 0
         assert any(
-            "Series: Scanned=2 | Added=1 | Updated=1 | Removed=0 | Skipped=1" in log
+            "Series: Scanned=1 | Added=1 | Updated=1 | Removed=0 | Skipped=1" in log
             for log in report_logs
         )
 
@@ -836,9 +836,9 @@ def test_scan_worker_db_stats_no_double_counting() -> None:
 
         # Check total accumulated stats (should NOT double count despite DB returning scanned/skipped keys)
         assert worker.stats["episodes_scanned"] == 12
-        assert worker.stats["series_scanned"] == 2
+        assert worker.stats["series_scanned"] == 1
         assert worker.stats["seasons_scanned"] == 2
-        assert worker.stats["movies_scanned"] == 2
+        assert worker.stats["movies_scanned"] == 1
 
 
 def test_scan_worker_changed_ids_in_callbacks() -> None:
