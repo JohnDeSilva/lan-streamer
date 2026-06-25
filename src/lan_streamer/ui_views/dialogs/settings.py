@@ -2019,24 +2019,42 @@ class SettingsDialog(QDialog):
     def _scroll_to_bottom(self) -> None:
         self.log_display.moveCursor(QTextCursor.MoveOperation.End)
 
-    def _disconnect_logging(self) -> None:
+    def _disconnect_signals(self) -> None:
+        """Disconnect all controller and log signals to prevent use-after-free."""
+        if self.controller is not None:
+            try:
+                self.controller.global_progress_updated.disconnect(
+                    self._on_global_progress
+                )
+            except Exception:
+                pass
+            try:
+                self.controller.detail_progress_updated.disconnect(
+                    self._on_detail_progress
+                )
+            except Exception:
+                pass
+            try:
+                self.controller.scan_completed.disconnect(self._on_scan_completed)
+            except Exception:
+                pass
         if getattr(self, "_logging_connected", False):
             try:
                 from lan_streamer.system.logging_handler import qt_log_handler
 
                 qt_log_handler.emitter.log_emitted.disconnect(self._on_log_emitted)
-            except RuntimeError, TypeError:
+            except Exception:
                 pass
             self._logging_connected = False
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        self._disconnect_logging()
+        self._disconnect_signals()
         super().closeEvent(event)
 
     def accept(self) -> None:
-        self._disconnect_logging()
+        self._disconnect_signals()
         super().accept()
 
     def reject(self) -> None:
-        self._disconnect_logging()
+        self._disconnect_signals()
         super().reject()
