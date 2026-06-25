@@ -1,4 +1,6 @@
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -54,6 +56,8 @@ def scan_directories(
     """
     library = LibraryDict()
     existing_library = existing_library or {}
+
+    max_workers: int = max(1, min(10, (os.cpu_count() or 4) * 2))
 
     if metadata_only:
         items_by_root: Dict[str, List[tuple[str, Any]]] = {}
@@ -119,62 +123,107 @@ def scan_directories(
                     "root_total",
                     {"root": m_root, "total": len(items)},
                 )
-            for series_name, existing_series in items:
-                if detail_callback:
-                    detail_callback(
-                        "start_folder",
-                        {"root": m_root, "folder": series_name},
-                    )
 
-                tmdb_series = None
-                is_locked = False
-                existing_jellyfin_id = None
-                has_meta = False
-
-                existing_jellyfin_id = _resolve_existing_jellyfin_id(
-                    existing_series, library_type
-                )
-                if library_type == "movie":
-                    is_locked = bool(existing_series.get("locked_metadata", False))
-                    has_meta = bool(existing_series.get("tmdb_identifier"))
-                    if is_locked:
-                        tmdb_series = _build_locked_movie_tmdb_stub(
-                            existing_series, series_name
+            scan_results = []
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_item = {}
+                for series_name, existing_series in items:
+                    if detail_callback:
+                        detail_callback(
+                            "start_folder",
+                            {"root": m_root, "folder": series_name},
                         )
-                else:
-                    is_locked = bool(
-                        existing_series.get("metadata", {}).get(
-                            "locked_metadata", False
-                        )
-                    )
-                    has_meta = bool(
-                        existing_series.get("metadata", {}).get("tmdb_identifier")
-                    )
-                    if is_locked:
-                        tmdb_series = _build_locked_tv_tmdb_stub(existing_series)
 
-                series_force_refresh = (
-                    (force_refresh or single_item_refresh or not has_meta)
-                    if not is_locked
-                    else False
-                )
+                    tmdb_series = None
+                    is_locked = False
+                    existing_jellyfin_id = None
+                    has_meta = False
+
+                    existing_jellyfin_id = _resolve_existing_jellyfin_id(
+                        existing_series, library_type
+                    )
+                    if library_type == "movie":
+                        is_locked = bool(existing_series.get("locked_metadata", False))
+                        has_meta = bool(existing_series.get("tmdb_identifier"))
+                        if is_locked:
+                            tmdb_series = _build_locked_movie_tmdb_stub(
+                                existing_series, series_name
+                            )
+                    else:
+                        is_locked = bool(
+                            existing_series.get("metadata", {}).get(
+                                "locked_metadata", False
+                            )
+                        )
+                        has_meta = bool(
+                            existing_series.get("metadata", {}).get("tmdb_identifier")
+                        )
+                        if is_locked:
+                            tmdb_series = _build_locked_tv_tmdb_stub(existing_series)
+
+                    series_force_refresh = (
+                        (force_refresh or single_item_refresh or not has_meta)
+                        if not is_locked
+                        else False
+                    )
+                    dummy_path = Path(series_name)
+
+                    if library_type == "movie":
+                        future = executor.submit(
+                            scan_movie,
+                            dummy_path,
+                            tmdb_movie=tmdb_series,
+                            jellyfin_data=jellyfin_data,
+                            manual_jellyfin_id=existing_jellyfin_id,
+                            existing_movie_data=existing_series,
+                            force_refresh=series_force_refresh,
+                            cleanup=cleanup,
+                            single_item_refresh=single_item_refresh,
+                            detail_callback=detail_callback,
+                            offline=offline,
+                            metadata_only=True,
+                        )
+                    else:
+                        future = executor.submit(
+                            scan_series,
+                            dummy_path,
+                            tmdb_series=tmdb_series,
+                            jellyfin_data=jellyfin_data,
+                            manual_jellyfin_id=existing_jellyfin_id,
+                            existing_series_data=existing_series,
+                            force_refresh=series_force_refresh,
+                            cleanup=cleanup,
+                            single_item_refresh=single_item_refresh,
+                            detail_callback=detail_callback,
+                            show_future_episodes=show_future_episodes,
+                            offline=offline,
+                            season_callback=season_callback,
+                            metadata_only=True,
+                        )
+                    future_to_item[future] = (series_name, is_locked)
+
+                for future in as_completed(future_to_item):
+                    series_name, is_locked = future_to_item[future]
+                    try:
+                        series_data = future.result()
+                        scan_results.append((series_name, is_locked, series_data))
+                    except Exception as error:
+                        logger.exception(
+                            f"Error during parallel metadata scan of '{series_name}': {error}"
+                        )
+                        if detail_callback:
+                            detail_callback(
+                                "finish_folder",
+                                {
+                                    "root": m_root,
+                                    "folder": series_name,
+                                    "skipped": True,
+                                },
+                            )
+
+            for series_name, is_locked, series_data in scan_results:
                 cleaned = None
-                dummy_path = Path(series_name)
-
                 if library_type == "movie":
-                    series_data = scan_movie(
-                        dummy_path,
-                        tmdb_movie=tmdb_series,
-                        jellyfin_data=jellyfin_data,
-                        manual_jellyfin_id=existing_jellyfin_id,
-                        existing_movie_data=existing_series,
-                        force_refresh=series_force_refresh,
-                        cleanup=cleanup,
-                        single_item_refresh=single_item_refresh,
-                        detail_callback=detail_callback,
-                        offline=offline,
-                        metadata_only=True,
-                    )
                     if not series_data:
                         if detail_callback:
                             detail_callback(
@@ -190,21 +239,17 @@ def scan_directories(
                     if movie_callback and cleaned:
                         movie_callback(series_name, cleaned)
                 else:
-                    series_data = scan_series(
-                        dummy_path,
-                        tmdb_series=tmdb_series,
-                        jellyfin_data=jellyfin_data,
-                        manual_jellyfin_id=existing_jellyfin_id,
-                        existing_series_data=existing_series,
-                        force_refresh=series_force_refresh,
-                        cleanup=cleanup,
-                        single_item_refresh=single_item_refresh,
-                        detail_callback=detail_callback,
-                        show_future_episodes=show_future_episodes,
-                        offline=offline,
-                        season_callback=season_callback,
-                        metadata_only=True,
-                    )
+                    if not series_data:
+                        if detail_callback:
+                            detail_callback(
+                                "finish_folder",
+                                {
+                                    "root": m_root,
+                                    "folder": series_name,
+                                    "skipped": True,
+                                },
+                            )
+                        continue
                     if is_locked:
                         series_data["metadata"]["locked_metadata"] = True
 
@@ -271,72 +316,118 @@ def scan_directories(
                 {"root": root_directory, "total": len(series_dirs)},
             )
 
-        for series_directory in series_dirs:
-            series_name = series_directory.name
-            logger.debug(f"Scanning folder '{series_name}' in root '{root_directory}'")
-            if detail_callback:
-                detail_callback(
-                    "start_folder",
-                    {"root": root_directory, "folder": series_name},
+        scan_results = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_series_directory = {}
+            for series_directory in series_dirs:
+                series_name = series_directory.name
+                logger.debug(
+                    f"Scanning folder '{series_name}' in root '{root_directory}'"
+                )
+                if detail_callback:
+                    detail_callback(
+                        "start_folder",
+                        {"root": root_directory, "folder": series_name},
+                    )
+
+                # Check if we have an existing manual match for THIS SPECIFIC folder name
+                existing_series = existing_library.get(series_name)
+                tmdb_series = None
+                is_locked = False
+                existing_jellyfin_id = None
+                has_meta = False
+
+                if existing_series:
+                    existing_jellyfin_id = _resolve_existing_jellyfin_id(
+                        existing_series, library_type
+                    )
+                    if library_type == "movie":
+                        is_locked = bool(existing_series.get("locked_metadata", False))
+                        has_meta = bool(existing_series.get("tmdb_identifier"))
+                        if is_locked:
+                            logger.info(
+                                f"Using locked TMDB metadata for movie '{series_name}' "
+                                f"(ID: {existing_series['tmdb_identifier']})"
+                            )
+                            tmdb_series = _build_locked_movie_tmdb_stub(
+                                existing_series, series_name
+                            )
+                    else:
+                        is_locked = bool(
+                            existing_series.get("metadata", {}).get(
+                                "locked_metadata", False
+                            )
+                        )
+                        has_meta = bool(
+                            existing_series.get("metadata", {}).get("tmdb_identifier")
+                        )
+                        if is_locked:
+                            logger.info(
+                                f"Using locked TMDB metadata for '{series_name}' "
+                                f"(ID: {existing_series['metadata']['tmdb_identifier']})"
+                            )
+                            tmdb_series = _build_locked_tv_tmdb_stub(existing_series)
+
+                series_force_refresh = (
+                    (force_refresh or single_item_refresh or not has_meta)
+                    if not is_locked
+                    else False
                 )
 
-            # Check if we have an existing manual match for THIS SPECIFIC folder name
-            existing_series = existing_library.get(series_name)
-            tmdb_series = None
-            is_locked = False
-            existing_jellyfin_id = None
-            has_meta = False
-
-            if existing_series:
-                existing_jellyfin_id = _resolve_existing_jellyfin_id(
-                    existing_series, library_type
-                )
                 if library_type == "movie":
-                    is_locked = bool(existing_series.get("locked_metadata", False))
-                    has_meta = bool(existing_series.get("tmdb_identifier"))
-                    if is_locked:
-                        logger.info(
-                            f"Using locked TMDB metadata for movie '{series_name}' "
-                            f"(ID: {existing_series['tmdb_identifier']})"
-                        )
-                        tmdb_series = _build_locked_movie_tmdb_stub(
-                            existing_series, series_name
-                        )
+                    future = executor.submit(
+                        scan_movie,
+                        series_directory,
+                        tmdb_movie=tmdb_series,
+                        jellyfin_data=jellyfin_data,
+                        manual_jellyfin_id=existing_jellyfin_id,
+                        existing_movie_data=existing_series,
+                        force_refresh=series_force_refresh,
+                        cleanup=cleanup,
+                        single_item_refresh=single_item_refresh,
+                        detail_callback=detail_callback,
+                        offline=offline,
+                    )
                 else:
-                    is_locked = bool(
-                        existing_series.get("metadata", {}).get(
-                            "locked_metadata", False
-                        )
+                    future = executor.submit(
+                        scan_series,
+                        series_directory,
+                        tmdb_series=tmdb_series,
+                        jellyfin_data=jellyfin_data,
+                        manual_jellyfin_id=existing_jellyfin_id,
+                        existing_series_data=existing_series,
+                        force_refresh=series_force_refresh,
+                        cleanup=cleanup,
+                        single_item_refresh=single_item_refresh,
+                        detail_callback=detail_callback,
+                        show_future_episodes=show_future_episodes,
+                        offline=offline,
+                        season_callback=season_callback,
                     )
-                    has_meta = bool(
-                        existing_series.get("metadata", {}).get("tmdb_identifier")
-                    )
-                    if is_locked:
-                        logger.info(
-                            f"Using locked TMDB metadata for '{series_name}' "
-                            f"(ID: {existing_series['metadata']['tmdb_identifier']})"
-                        )
-                        tmdb_series = _build_locked_tv_tmdb_stub(existing_series)
+                future_to_series_directory[future] = (series_name, is_locked)
 
-            series_force_refresh = (
-                (force_refresh or single_item_refresh or not has_meta)
-                if not is_locked
-                else False
-            )
+            for future in as_completed(future_to_series_directory):
+                series_name, is_locked = future_to_series_directory[future]
+                try:
+                    series_data = future.result()
+                    scan_results.append((series_name, is_locked, series_data))
+                except Exception as error:
+                    logger.exception(
+                        f"Error during parallel directory scan of '{series_name}': {error}"
+                    )
+                    if detail_callback:
+                        detail_callback(
+                            "finish_folder",
+                            {
+                                "root": root_directory,
+                                "folder": series_name,
+                                "skipped": True,
+                            },
+                        )
+
+        for series_name, is_locked, series_data in scan_results:
             cleaned: Optional[Dict[str, Any]] = None
             if library_type == "movie":
-                series_data = scan_movie(
-                    series_directory,
-                    tmdb_movie=tmdb_series,
-                    jellyfin_data=jellyfin_data,
-                    manual_jellyfin_id=existing_jellyfin_id,
-                    existing_movie_data=existing_series,
-                    force_refresh=series_force_refresh,
-                    cleanup=cleanup,
-                    single_item_refresh=single_item_refresh,
-                    detail_callback=detail_callback,
-                    offline=offline,
-                )
                 if not series_data:
                     if detail_callback:
                         detail_callback(
@@ -352,20 +443,17 @@ def scan_directories(
                 if movie_callback and cleaned:
                     movie_callback(series_name, cleaned)
             else:
-                series_data = scan_series(
-                    series_directory,
-                    tmdb_series=tmdb_series,
-                    jellyfin_data=jellyfin_data,
-                    manual_jellyfin_id=existing_jellyfin_id,
-                    existing_series_data=existing_series,
-                    force_refresh=series_force_refresh,
-                    cleanup=cleanup,
-                    single_item_refresh=single_item_refresh,
-                    detail_callback=detail_callback,
-                    show_future_episodes=show_future_episodes,
-                    offline=offline,
-                    season_callback=season_callback,
-                )
+                if not series_data:
+                    if detail_callback:
+                        detail_callback(
+                            "finish_folder",
+                            {
+                                "root": root_directory,
+                                "folder": series_name,
+                                "skipped": True,
+                            },
+                        )
+                    continue
                 if is_locked:
                     series_data["metadata"]["locked_metadata"] = True
 

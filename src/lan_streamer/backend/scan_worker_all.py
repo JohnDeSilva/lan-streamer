@@ -244,13 +244,14 @@ class ScanAllLibrariesWorker(QThread):
             "show_future_episodes", True
         )
 
-        # Local accumulators (thread-local, not shared)
+        # Local accumulators (thread-local, protected by local_lock)
         local_stats: Dict[str, int] = create_empty_stats()
         local_problems: List[Dict[str, Any]] = []
         local_changed_season_ids: Set[str] = set()
         local_changed_movie_ids: Set[str] = set()
         local_series_scanned: Set[str] = set()
         library_unavailable_directories: List[str] = []
+        local_lock = threading.Lock()
 
         self.detail_progress.emit("start_library", {"library": library_name})
 
@@ -297,49 +298,51 @@ class ScanAllLibrariesWorker(QThread):
                     raise task.error
                 stats = task.result
                 if stats:
-                    if "issues" in stats:
-                        for issue in stats["issues"]:
-                            local_problems.append(issue)
+                    with local_lock:
+                        if "issues" in stats:
+                            for issue in stats["issues"]:
+                                local_problems.append(issue)
 
-                    # Track series-level scan (first season encountered)
-                    if series_name not in local_series_scanned:
-                        local_series_scanned.add(series_name)
-                        local_stats["series_scanned"] += 1
-                        any_changed = any(
-                            season_data_item.get("_changed", True)
-                            for season_data_item in series_data.get(
-                                "seasons", {}
-                            ).values()
-                        )
-                        if not any_changed:
-                            local_stats["series_skipped"] += 1
+                        # Track series-level scan (first season encountered)
+                        if series_name not in local_series_scanned:
+                            local_series_scanned.add(series_name)
+                            local_stats["series_scanned"] += 1
+                            any_changed = any(
+                                season_data_item.get("_changed", True)
+                                for season_data_item in series_data.get(
+                                    "seasons", {}
+                                ).values()
+                            )
+                            if not any_changed:
+                                local_stats["series_skipped"] += 1
 
-                    local_stats["seasons_scanned"] += 1
+                        local_stats["seasons_scanned"] += 1
 
-                    episode_count: int = len(season_data.get("episodes", []))
-                    local_stats["episodes_scanned"] += episode_count
+                        episode_count: int = len(season_data.get("episodes", []))
+                        local_stats["episodes_scanned"] += episode_count
 
-                    if not season_data.get("_changed", True):
-                        local_stats["seasons_skipped"] += 1
-                        local_stats["episodes_skipped"] += episode_count
+                        if not season_data.get("_changed", True):
+                            local_stats["seasons_skipped"] += 1
+                            local_stats["episodes_skipped"] += episode_count
 
-                    # Add/update/remove counts from db return value
-                    for key in local_stats:
-                        if key in stats and not (
-                            key.endswith("_scanned") or key.endswith("_skipped")
-                        ):
-                            local_stats[key] += stats[key]
+                        # Add/update/remove counts from db return value
+                        for key in local_stats:
+                            if key in stats and not (
+                                key.endswith("_scanned") or key.endswith("_skipped")
+                            ):
+                                local_stats[key] += stats[key]
 
-                    if season_data.get("_changed", True) and "season_id" in stats:
-                        local_changed_season_ids.add(stats["season_id"])
+                        if season_data.get("_changed", True) and "season_id" in stats:
+                            local_changed_season_ids.add(stats["season_id"])
             except Exception as error:
-                log_db_write_error(
-                    local_problems,
-                    f"Season '{season_name}' of series "
-                    f"'{series_name}' (Library: '{library_name}')",
-                    error,
-                    logger,
-                )
+                with local_lock:
+                    log_db_write_error(
+                        local_problems,
+                        f"Season '{season_name}' of series "
+                        f"'{series_name}' (Library: '{library_name}')",
+                        error,
+                        logger,
+                    )
 
         def _movie_callback(movie_name: str, movie_data: Dict[str, Any]) -> None:
             """Process a single movie during scanning, persisting it to the
@@ -362,29 +365,31 @@ class ScanAllLibrariesWorker(QThread):
                     raise task.error
                 stats = task.result
                 if stats:
-                    if "issues" in stats:
-                        for issue in stats["issues"]:
-                            local_problems.append(issue)
+                    with local_lock:
+                        if "issues" in stats:
+                            for issue in stats["issues"]:
+                                local_problems.append(issue)
 
-                    local_stats["movies_scanned"] += 1
-                    if not movie_data.get("_changed", True):
-                        local_stats["movies_skipped"] += 1
+                        local_stats["movies_scanned"] += 1
+                        if not movie_data.get("_changed", True):
+                            local_stats["movies_skipped"] += 1
 
-                    for key in local_stats:
-                        if key in stats and not (
-                            key.endswith("_scanned") or key.endswith("_skipped")
-                        ):
-                            local_stats[key] += stats[key]
+                        for key in local_stats:
+                            if key in stats and not (
+                                key.endswith("_scanned") or key.endswith("_skipped")
+                            ):
+                                local_stats[key] += stats[key]
 
-                    if movie_data.get("_changed", True) and "movie_id" in stats:
-                        local_changed_movie_ids.add(stats["movie_id"])
+                        if movie_data.get("_changed", True) and "movie_id" in stats:
+                            local_changed_movie_ids.add(stats["movie_id"])
             except Exception as error:
-                log_db_write_error(
-                    local_problems,
-                    f"Movie '{movie_name}' (Library: '{library_name}')",
-                    error,
-                    logger,
-                )
+                with local_lock:
+                    log_db_write_error(
+                        local_problems,
+                        f"Movie '{movie_name}' (Library: '{library_name}')",
+                        error,
+                        logger,
+                    )
 
         def _save_library_data(library_data: Dict[str, Any]) -> None:
             """Persist the full library data to the database.
@@ -410,21 +415,23 @@ class ScanAllLibrariesWorker(QThread):
                     raise task.error
                 stats = task.result
                 if stats:
-                    if "issues" in stats:
-                        for issue in stats["issues"]:
-                            local_problems.append(issue)
-                    for key in local_stats:
-                        if key in stats and (
-                            key.endswith("_removed") or key == "deleted"
-                        ):
-                            local_stats[key] += stats[key]
+                    with local_lock:
+                        if "issues" in stats:
+                            for issue in stats["issues"]:
+                                local_problems.append(issue)
+                        for key in local_stats:
+                            if key in stats and (
+                                key.endswith("_removed") or key == "deleted"
+                            ):
+                                local_stats[key] += stats[key]
             except Exception as error:
-                log_db_write_error(
-                    local_problems,
-                    f"Library '{library_name}'",
-                    error,
-                    logger,
-                )
+                with local_lock:
+                    log_db_write_error(
+                        local_problems,
+                        f"Library '{library_name}'",
+                        error,
+                        logger,
+                    )
 
         # ------------------------------------------------------------------
         # Execute the scan
@@ -540,8 +547,59 @@ class ScanAllLibrariesWorker(QThread):
     # Tree discovery
     # ------------------------------------------------------------------
 
+    def _discover_single_library_tree(
+        self, library_name: str, library_configuration: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Pre-walk directories of a single library to build its tree structure.
+
+        Args:
+            library_name: The name of the library.
+            library_configuration: Configuration dictionary for the library.
+
+        Returns:
+            A dictionary containing library type and its roots.
+        """
+        root_directories: List[str] = list(library_configuration.get("paths", []))
+        library_type: str = library_configuration.get("type", "tv")
+        roots: Dict[str, Any] = {}
+        for root_directory_str in root_directories:
+            root_path = Path(root_directory_str)
+            if not root_path.exists() or not root_path.is_dir():
+                roots[root_directory_str] = {}
+                continue
+            folders: Dict[str, Any] = {}
+            for series_path in sorted(
+                [
+                    x
+                    for x in root_path.iterdir()
+                    if x.is_dir() and not x.name.startswith(".") and has_video_files(x)
+                ],
+                key=lambda x: x.stat().st_mtime,
+                reverse=True,
+            ):
+                series_name = series_path.name
+                if library_type in ("tv", "anime"):
+                    seasons: Dict[str, List[str]] = {}
+                    for season_path in series_path.iterdir():
+                        if season_path.is_dir() and not season_path.name.startswith(
+                            "."
+                        ):
+                            episodes: List[str] = []
+                            for episode_path in season_path.iterdir():
+                                if (
+                                    episode_path.is_file()
+                                    and episode_path.suffix.lower() in VIDEO_EXTENSIONS
+                                ):
+                                    episodes.append(episode_path.name)
+                            seasons[season_path.name] = sorted(episodes)
+                    folders[series_name] = {"seasons": seasons}
+                else:
+                    folders[series_name] = {}
+            roots[root_directory_str] = folders
+        return {"type": library_type, "roots": roots}
+
     def _discover_tree(self) -> Dict[str, Any]:
-        """Pre-walk all library directories to count total folders and files.
+        """Pre-walk all library directories to count total folders and files in parallel.
 
         This allows the UI to initialise the tree and segmented progress bar
         before scanning begins.
@@ -549,49 +607,36 @@ class ScanAllLibrariesWorker(QThread):
         Returns:
             A nested dictionary keyed by library name.
         """
+        libraries_dictionary: Dict[str, Dict[str, Any]] = config.libraries
+        max_workers: int = max(
+            1,
+            min(
+                len(libraries_dictionary),
+                (os.cpu_count() or 4),
+            ),
+        )
         tree: Dict[str, Any] = {}
-        for library_name, library_configuration in config.libraries.items():
-            root_directories: List[str] = list(library_configuration.get("paths", []))
-            library_type: str = library_configuration.get("type", "tv")
-            roots: Dict[str, Any] = {}
-            for root_dir in root_directories:
-                root_path = Path(root_dir)
-                if not root_path.exists() or not root_path.is_dir():
-                    roots[root_dir] = {}
-                    continue
-                folders: Dict[str, Any] = {}
-                for series_path in sorted(
-                    [
-                        x
-                        for x in root_path.iterdir()
-                        if x.is_dir()
-                        and not x.name.startswith(".")
-                        and has_video_files(x)
-                    ],
-                    key=lambda x: x.stat().st_mtime,
-                    reverse=True,
-                ):
-                    series_name = series_path.name
-                    if library_type in ("tv", "anime"):
-                        seasons: Dict[str, List[str]] = {}
-                        for season_path in series_path.iterdir():
-                            if season_path.is_dir() and not season_path.name.startswith(
-                                "."
-                            ):
-                                episodes: List[str] = []
-                                for episode_path in season_path.iterdir():
-                                    if (
-                                        episode_path.is_file()
-                                        and episode_path.suffix.lower()
-                                        in VIDEO_EXTENSIONS
-                                    ):
-                                        episodes.append(episode_path.name)
-                                seasons[season_path.name] = sorted(episodes)
-                        folders[series_name] = {"seasons": seasons}
-                    else:
-                        folders[series_name] = {}
-                roots[root_dir] = folders
-            tree[library_name] = {"type": library_type, "roots": roots}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_library: Dict[Any, str] = {}
+            for library_name, library_configuration in libraries_dictionary.items():
+                future = executor.submit(
+                    self._discover_single_library_tree,
+                    library_name,
+                    library_configuration,
+                )
+                future_to_library[future] = library_name
+            for future in as_completed(future_to_library):
+                library_name = future_to_library[future]
+                try:
+                    tree[library_name] = future.result()
+                except Exception:
+                    logger.exception(
+                        f"Tree discovery failed for library: {library_name}"
+                    )
+                    tree[library_name] = {
+                        "type": config.libraries[library_name].get("type", "tv"),
+                        "roots": {},
+                    }
         return tree
 
     # ------------------------------------------------------------------
