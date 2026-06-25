@@ -500,14 +500,20 @@ class TestSeriesDetailsDialog:
             # by verifying delete_episode is not called without an episode selection
             assert mock_del.call_count == 0
 
-    def test_on_hide_missing_changed(self, ctrl_tv, qtbot) -> None:
-        """hide_missing_checkbox stateChanged should call config.set_series_preference."""
+    def test_hide_missing_saved_on_save(self, ctrl_tv, qtbot) -> None:
+        """hide_missing_checkbox state is persisted when _on_save_clicked runs."""
         d = self._make_dialog(ctrl_tv, qtbot)
         from lan_streamer.system.config import config
 
+        d.hide_missing_checkbox.setChecked(True)
         with patch.object(config, "set_series_preference") as mock_pref:
-            d._on_hide_missing_changed(True)
-            mock_pref.assert_called_once()
+            d._on_save_clicked()
+            mock_pref.assert_called_once_with(
+                ctrl_tv.current_library_name,
+                "ShowA",
+                "hide_missing_future",
+                True,
+            )
 
     def test_on_scan_series_clicked(self, ctrl_tv, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox

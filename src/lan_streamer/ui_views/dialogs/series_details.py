@@ -138,7 +138,8 @@ class SeriesDetailsDialog(QDialog):
             False,
         )
         self.hide_missing_checkbox.setChecked(hide_missing_val)
-        self.hide_missing_checkbox.stateChanged.connect(self._on_hide_missing_changed)
+        # hide_missing preference is saved in _on_save_clicked, so no per-toggle
+        # config write needed here to avoid blocking the UI thread.
         info_form.addRow("Episode View:", self.hide_missing_checkbox)
 
         info_layout.addLayout(info_form)
@@ -657,16 +658,6 @@ class SeriesDetailsDialog(QDialog):
         )
         self.accept()
 
-    @Slot(int)
-    def _on_hide_missing_changed(self, state: int) -> None:
-        checked = bool(state)
-        config.set_series_preference(
-            self.controller.current_library_name,
-            self.series_name,
-            "hide_missing_future",
-            checked,
-        )
-
     def _setup_mal_mapper_ui(self) -> None:
         layout = QVBoxLayout(self.mal_mapper_widget)
         layout.setSpacing(10)
@@ -790,7 +781,16 @@ class SeriesDetailsDialog(QDialog):
         if not query:
             return
 
-        results = myanimelist_client.search_anime(query)
+        try:
+            results = myanimelist_client.search_anime(query)
+        except Exception as e:
+            logger.exception(f"Failed to search MyAnimeList: {e}")
+            QMessageBox.warning(
+                self,
+                "Search Failed",
+                f"Could not search MyAnimeList: {e}",
+            )
+            results = []
 
         self.mal_search_results_combo.blockSignals(True)
         self.mal_search_results_combo.clear()
@@ -810,7 +810,16 @@ class SeriesDetailsDialog(QDialog):
         if not anime_id:
             return
 
-        details = myanimelist_client.get_anime_details(anime_id)
+        try:
+            details = myanimelist_client.get_anime_details(anime_id)
+        except Exception as e:
+            logger.exception(f"Failed to fetch MyAnimeList details: {e}")
+            QMessageBox.warning(
+                self,
+                "Fetch Failed",
+                f"Could not fetch MyAnimeList details: {e}",
+            )
+            details = None
         if details:
             self._populate_mal_episodes(details)
 
