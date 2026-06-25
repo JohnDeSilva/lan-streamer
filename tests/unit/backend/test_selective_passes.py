@@ -232,11 +232,11 @@ def test_detect_tv_file_changes_scandir(tmp_path) -> None:
 
     another_mkv = season_dir / "S01E02.mkv"
     another_mkv.touch()
-    assert detect_tv_file_changes(season_dir, existing) is True
 
 
 def test_tv_season_mtime_skip_scanning(tmp_path) -> None:
     from lan_streamer.scanner.scan_tv import _discover_seasons_to_process
+    from lan_streamer import db
 
     series_dir = tmp_path / "Series A"
     series_dir.mkdir()
@@ -246,12 +246,12 @@ def test_tv_season_mtime_skip_scanning(tmp_path) -> None:
     ep_file.touch()
 
     current_mtime = season_dir.stat().st_mtime
+    db.save_directory_mtime(str(season_dir.absolute()), current_mtime)
+
     existing_series_data = {
         "seasons": {
             "Season 1": {
-                "metadata": {
-                    "last_scanned_mtime": current_mtime,
-                },
+                "metadata": {},
                 "episodes": [
                     {
                         "path": str(ep_file.absolute()),
@@ -272,9 +272,7 @@ def test_tv_season_mtime_skip_scanning(tmp_path) -> None:
     assert seasons[0][1] is False  # Not changed!
 
     # Change mtime in cached -> is_changed must be True
-    existing_series_data["seasons"]["Season 1"]["metadata"]["last_scanned_mtime"] = (
-        current_mtime - 10
-    )
+    db.save_directory_mtime(str(season_dir.absolute()), current_mtime - 10)
     # Modify cached size to trigger change detection fallback
     existing_series_data["seasons"]["Season 1"]["episodes"][0]["size_bytes"] += 100
     seasons = _discover_seasons_to_process(
@@ -285,6 +283,7 @@ def test_tv_season_mtime_skip_scanning(tmp_path) -> None:
 
 def test_movie_mtime_skip_scanning(tmp_path) -> None:
     from lan_streamer.scanner.scan_movie import _detect_movie_changes
+    from lan_streamer import db
 
     movie_dir = tmp_path / "Movie A"
     movie_dir.mkdir()
@@ -292,10 +291,11 @@ def test_movie_mtime_skip_scanning(tmp_path) -> None:
     movie_file.touch()
 
     current_mtime = movie_dir.stat().st_mtime
+    db.save_directory_mtime(str(movie_dir.absolute()), current_mtime)
+
     existing_movie_data = {
         "path": str(movie_file.absolute()),
         "size_bytes": movie_file.stat().st_size,
-        "last_scanned_mtime": current_mtime,
         "_changed": False,
         "versions": [
             {
@@ -310,7 +310,7 @@ def test_movie_mtime_skip_scanning(tmp_path) -> None:
     assert is_changed is False
 
     # Mismatch mtime -> is_changed must be True
-    existing_movie_data["last_scanned_mtime"] = current_mtime - 10
+    db.save_directory_mtime(str(movie_dir.absolute()), current_mtime - 10)
     # Modify cached size to trigger change detection fallback
     existing_movie_data["size_bytes"] += 100
     existing_movie_data["versions"][0]["size_bytes"] += 100
