@@ -1,4 +1,5 @@
 import logging
+import threading
 from typing import List, Dict, Any, Optional, Set
 from PySide6.QtCore import QObject, Signal, QThread
 
@@ -52,6 +53,7 @@ class ScanWorker(QThread):
 
         self.pass1_stats: Dict[str, int] = create_empty_stats()
         self.pass2_stats: Dict[str, int] = create_empty_stats()
+        self.scan_lock: threading.Lock = threading.Lock()
 
     def run(self) -> None:
         import time
@@ -100,104 +102,111 @@ class ScanWorker(QThread):
                     f"ScanWorker writing season '{season_name}' of series '{series_name}' to database..."
                 )
                 try:
-                    stats = db.save_season_data(
-                        self.library_name,
-                        series_name,
-                        series_data,
-                        season_name,
-                        season_data,
-                    )
-                    if stats:
-                        if "issues" in stats:
-                            for issue in stats["issues"]:
-                                self.problems.append(issue)
-                        target_stats = (
-                            self.pass1_stats
-                            if self.current_pass == 1
-                            else self.pass2_stats
+                    with self.scan_lock:
+                        stats = db.save_season_data(
+                            self.library_name,
+                            series_name,
+                            series_data,
+                            season_name,
+                            season_data,
                         )
-                        series_scanned_set = (
-                            self.pass1_series_scanned
-                            if self.current_pass == 1
-                            else self.pass2_series_scanned
-                        )
-                        if series_name not in series_scanned_set:
-                            series_scanned_set.add(series_name)
-                            target_stats["series_scanned"] += 1
-                            self.stats["series_scanned"] += 1
-                            any_changed = any(
-                                s.get("_changed", True)
-                                for s in series_data.get("seasons", {}).values()
+                        if stats:
+                            if "issues" in stats:
+                                for issue in stats["issues"]:
+                                    self.problems.append(issue)
+                            target_stats = (
+                                self.pass1_stats
+                                if self.current_pass == 1
+                                else self.pass2_stats
                             )
-                            if not any_changed:
-                                target_stats["series_skipped"] += 1
-                                self.stats["series_skipped"] += 1
+                            series_scanned_set = (
+                                self.pass1_series_scanned
+                                if self.current_pass == 1
+                                else self.pass2_series_scanned
+                            )
+                            if series_name not in series_scanned_set:
+                                series_scanned_set.add(series_name)
+                                target_stats["series_scanned"] += 1
+                                self.stats["series_scanned"] += 1
+                                any_changed = any(
+                                    s.get("_changed", True)
+                                    for s in series_data.get("seasons", {}).values()
+                                )
+                                if not any_changed:
+                                    target_stats["series_skipped"] += 1
+                                    self.stats["series_skipped"] += 1
 
-                        target_stats["seasons_scanned"] += 1
-                        self.stats["seasons_scanned"] += 1
+                            target_stats["seasons_scanned"] += 1
+                            self.stats["seasons_scanned"] += 1
 
-                        episode_count = len(season_data.get("episodes", []))
-                        target_stats["episodes_scanned"] += episode_count
-                        self.stats["episodes_scanned"] += episode_count
+                            episode_count = len(season_data.get("episodes", []))
+                            target_stats["episodes_scanned"] += episode_count
+                            self.stats["episodes_scanned"] += episode_count
 
-                        if not season_data.get("_changed", True):
-                            target_stats["seasons_skipped"] += 1
-                            self.stats["seasons_skipped"] += 1
-                            target_stats["episodes_skipped"] += episode_count
-                            self.stats["episodes_skipped"] += episode_count
+                            if not season_data.get("_changed", True):
+                                target_stats["seasons_skipped"] += 1
+                                self.stats["seasons_skipped"] += 1
+                                target_stats["episodes_skipped"] += episode_count
+                                self.stats["episodes_skipped"] += episode_count
 
-                        for key in self.stats:
-                            if key in stats and not (
-                                key.endswith("_scanned") or key.endswith("_skipped")
+                            for key in self.stats:
+                                if key in stats and not (
+                                    key.endswith("_scanned") or key.endswith("_skipped")
+                                ):
+                                    self.stats[key] += stats[key]
+                                    target_stats[key] += stats[key]
+                            if (
+                                season_data.get("_changed", True)
+                                and "season_id" in stats
                             ):
-                                self.stats[key] += stats[key]
-                                target_stats[key] += stats[key]
-                        if season_data.get("_changed", True) and "season_id" in stats:
-                            self.changed_season_ids.add(stats["season_id"])
+                                self.changed_season_ids.add(stats["season_id"])
                 except Exception as error:
-                    log_db_write_error(
-                        self.problems,
-                        f"Season '{season_name}' of series '{series_name}'",
-                        error,
-                        logger,
-                    )
+                    with self.scan_lock:
+                        log_db_write_error(
+                            self.problems,
+                            f"Season '{season_name}' of series '{series_name}'",
+                            error,
+                            logger,
+                        )
 
             def _movie_callback(movie_name: str, movie_data: Dict[str, Any]) -> None:
                 logger.info(f"ScanWorker writing movie '{movie_name}' to database...")
                 try:
-                    stats = db.save_movie_data(
-                        self.library_name, movie_name, movie_data
-                    )
-                    if stats:
-                        if "issues" in stats:
-                            for issue in stats["issues"]:
-                                self.problems.append(issue)
-                        target_stats = (
-                            self.pass1_stats
-                            if self.current_pass == 1
-                            else self.pass2_stats
+                    with self.scan_lock:
+                        stats = db.save_movie_data(
+                            self.library_name, movie_name, movie_data
                         )
-                        target_stats["movies_scanned"] += 1
-                        self.stats["movies_scanned"] += 1
-                        if not movie_data.get("_changed", True):
-                            target_stats["movies_skipped"] += 1
-                            self.stats["movies_skipped"] += 1
+                        if stats:
+                            if "issues" in stats:
+                                for issue in stats["issues"]:
+                                    self.problems.append(issue)
+                            target_stats = (
+                                self.pass1_stats
+                                if self.current_pass == 1
+                                else self.pass2_stats
+                            )
+                            target_stats["movies_scanned"] += 1
+                            self.stats["movies_scanned"] += 1
+                            if not movie_data.get("_changed", True):
+                                target_stats["movies_skipped"] += 1
+                                self.stats["movies_skipped"] += 1
 
-                        for key in self.stats:
-                            if key in stats and not (
-                                key.endswith("_scanned") or key.endswith("_skipped")
-                            ):
-                                self.stats[key] += stats[key]
-                                target_stats[key] += stats[key]
-                        if movie_data.get("_changed", True) and "movie_id" in stats:
-                            self.changed_movie_ids.add(stats["movie_id"])
+                            for key in self.stats:
+                                if key in stats and not (
+                                    key.endswith("_scanned") or key.endswith("_skipped")
+                                ):
+                                    self.stats[key] += stats[key]
+                                    target_stats[key] += stats[key]
+                            if movie_data.get("_changed", True) and "movie_id" in stats:
+                                self.changed_movie_ids.add(stats["movie_id"])
                 except Exception as error:
-                    log_db_write_error(
-                        self.problems,
-                        f"Movie '{movie_name}'",
-                        error,
-                        logger,
-                    )
+                    with self.scan_lock:
+                        log_db_write_error(
+                            self.problems,
+                            f"Movie '{movie_name}'",
+                            error,
+                            logger,
+                        )
 
             library_config = config.libraries.get(self.library_name, {})
             show_future = library_config.get("show_future_episodes", True)
