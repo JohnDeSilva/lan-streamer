@@ -140,7 +140,12 @@ def get_directory_mtime(path: str) -> float | None:
 
 
 def save_directory_mtime(path: str, mtime: float) -> None:
-    """Insert or update the last_scanned_mtime for a directory path."""
+    """Insert or update the last_scanned_mtime for a directory path.
+
+    Always calls ``session.commit()`` so the write is durable before
+    returning.  Without an explicit commit the SQLAlchemy context manager
+    only calls ``session.close()``, silently rolling back the change.
+    """
     from lan_streamer.db.models import ScannedDirectory
 
     with get_session() as session:
@@ -152,3 +157,4 @@ def save_directory_mtime(path: str, mtime: float) -> None:
         else:
             record = ScannedDirectory(path=path, last_scanned_mtime=mtime)
             session.add(record)
+        session.commit()
