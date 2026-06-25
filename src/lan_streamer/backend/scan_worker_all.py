@@ -338,7 +338,10 @@ class ScanAllLibrariesWorker(QThread):
 
         def _make_detail_callback(library_name_cb: str) -> Any:
             """Create a detail-progress callback that enriches events with the
-            library name."""
+            library name.
+
+            NOTE: This callback is invoked from thread-pool workers and MUST
+            remain thread-safe. It uses lock-buffered emit_detail_progress."""
 
             def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
                 enriched: Dict[str, Any] = {"library": library_name_cb, **payload}
@@ -444,6 +447,8 @@ class ScanAllLibrariesWorker(QThread):
                         logger,
                     )
 
+        # Callback invoked from thread-pool workers — must be thread-safe.
+        # It acquires self._lock for shared-state access.
         def _movie_callback(movie_name: str, movie_data: Dict[str, Any]) -> None:
             """Process a single movie during scanning, persisting it to the
             database and accumulating local statistics."""

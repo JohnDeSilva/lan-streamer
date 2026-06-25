@@ -154,6 +154,10 @@ class ScanWorker(QThread):
             if jellyfin_client.is_configured():
                 jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
+            # Callbacks invoked from thread-pool workers MUST be thread-safe.
+            # _detail_callback uses the lock-buffered emit_detail_progress.
+            # _season_callback/_movie_callback acquire self.scan_lock for
+            # shared-state access and use thread-safe Queue for DB writes.
             def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
                 self.emit_detail_progress(event, payload)
 
