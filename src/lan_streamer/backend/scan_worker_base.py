@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from lan_streamer.scanner import has_video_files
 
@@ -169,14 +169,32 @@ def log_db_write_error(
 
 
 def discover_single_library_tree_impl(
-    root_directories: List[str], library_type: str
+    root_directories: List[str],
+    library_type: str,
+    existing_library: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, List[str]]:
     """
     Pre-walks all library directories to count total folders and files
     for a single library so the UI can initialize the segmented progress bar
     before scanning begins. Returns a structure mapping root_dir -> list of folder names.
+
+    If ``existing_library`` is provided, the folder structure is extracted from it
+    to avoid redundant filesystem I/O (especially important for network shares).
     """
     roots: Dict[str, List[str]] = {}
+
+    if existing_library:
+        # Build roots from existing library data — no filesystem I/O needed.
+        for root_dir in root_directories:
+            folders = [
+                series_name
+                for series_name, series_data in existing_library.items()
+                if _series_belongs_to_root(series_data, root_dir, library_type)
+            ]
+            roots[root_dir] = sorted(folders)
+        return roots
+
+    # Fallback: no existing data (first scan) — walk the filesystem.
     for root_dir in root_directories:
         root_path = Path(root_dir)
         if not root_path.exists() or not root_path.is_dir():
@@ -195,3 +213,37 @@ def discover_single_library_tree_impl(
             folders.append(series_path.name)
         roots[root_dir] = folders
     return roots
+
+
+def _series_belongs_to_root(
+    series_data: Dict[str, Any], root_dir: str, library_type: str
+) -> bool:
+    """Check if a series belongs to a specific root directory."""
+    try:
+        resolved_root = str(Path(root_dir).resolve())
+    except Exception:
+        resolved_root = root_dir
+
+    paths: List[str] = []
+    if library_type == "movie":
+        if series_data.get("path"):
+            paths.append(series_data["path"])
+        if series_data.get("default_path"):
+            paths.append(series_data["default_path"])
+        for version in series_data.get("versions", []):
+            if version.get("path"):
+                paths.append(version["path"])
+    else:
+        for season in series_data.get("seasons", {}).values():
+            for episode in season.get("episodes", []):
+                if episode.get("path"):
+                    paths.append(episode["path"])
+
+    for p in paths:
+        try:
+            p_path = Path(p).resolve()
+            if p_path.is_relative_to(resolved_root):
+                return True
+        except Exception:
+            pass
+    return False

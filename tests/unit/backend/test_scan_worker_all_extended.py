@@ -16,7 +16,7 @@ def test_scan_all_libraries_discover_tree_movie(tmp_path) -> None:
             "MovieLib": {"paths": [str(movie_root)], "type": "movie"},
         }
         worker = ScanAllLibrariesWorker()
-        tree = worker._discover_tree()
+        tree = worker._discover_tree({})
         assert "MovieLib" in tree
         assert "My Movie" in tree["MovieLib"]["roots"][str(movie_root)]
 
