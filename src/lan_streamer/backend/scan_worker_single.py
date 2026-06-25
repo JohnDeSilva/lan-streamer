@@ -1,4 +1,5 @@
 import logging
+import time
 import threading
 from typing import List, Dict, Any, Optional, Set
 from PySide6.QtCore import QObject, Signal, QThread
@@ -18,6 +19,21 @@ from lan_streamer.backend.scan_worker_base import (
 
 logger = logging.getLogger("lan_streamer.backend")
 
+LIFECYCLE_EVENTS = frozenset(
+    {
+        "init_tree",
+        "init_library_scan",
+        "start_offline_scan",
+        "start_metadata_resolution",
+        "start_library",
+        "fail_library",
+        "finish_library",
+        "start_root",
+        "finish_root",
+        "unavailable_root",
+    }
+)
+
 
 class ScanWorker(QThread):
     """Scans a single library directory using TMDB for metadata."""
@@ -25,6 +41,7 @@ class ScanWorker(QThread):
     finished = Signal(dict)
     partial_result = Signal(dict)
     error = Signal(str)
+    library_error = Signal(str, str)
     detail_progress = Signal(str, dict)
     detail_progress_batch = Signal(list)
 
@@ -63,22 +80,7 @@ class ScanWorker(QThread):
 
     def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
         """Buffers progress events and flushes them to avoid UI congestion."""
-        import time
-
-        lifecycle_events = {
-            "init_tree",
-            "init_library_scan",
-            "start_offline_scan",
-            "start_metadata_resolution",
-            "start_library",
-            "fail_library",
-            "finish_library",
-            "start_root",
-            "finish_root",
-            "unavailable_root",
-        }
-
-        should_flush_immediately = event in lifecycle_events
+        should_flush_immediately = event in LIFECYCLE_EVENTS
 
         with self._detail_progress_lock:
             self._detail_progress_buffer.append({"event": event, "payload": payload})
@@ -89,8 +91,6 @@ class ScanWorker(QThread):
                 self._flush_detail_progress_nolock()
 
     def _flush_detail_progress_nolock(self) -> None:
-        import time
-
         if not self._detail_progress_buffer:
             return
         batch = list(self._detail_progress_buffer)
@@ -108,8 +108,6 @@ class ScanWorker(QThread):
             self._flush_detail_progress_nolock()
 
     def run(self) -> None:
-        import time
-
         start_time = time.time()
         self.problems = []
         self.stats = create_empty_stats()
@@ -376,6 +374,9 @@ class ScanWorker(QThread):
             self.finished.emit(library)
         except Exception as exception:
             logger.exception("ScanWorker failed")
-            self.error.emit(str(exception))
+            exception_message = str(exception)
+            self.error.emit(exception_message)
+            self.library_error.emit(self.library_name, exception_message)
+            self.emit_detail_progress("fail_library", {"library": self.library_name})
         finally:
             self.flush_detail_progress()

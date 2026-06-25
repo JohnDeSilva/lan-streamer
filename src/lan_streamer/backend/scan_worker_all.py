@@ -2,6 +2,7 @@ import logging
 import os
 import queue
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -27,6 +28,21 @@ from lan_streamer.backend.scan_worker_base import (
 from lan_streamer.backend.database_writer import DatabaseWriteTask, DatabaseWriterThread
 
 logger = logging.getLogger("lan_streamer.backend")
+
+LIFECYCLE_EVENTS = frozenset(
+    {
+        "init_tree",
+        "init_library_scan",
+        "start_offline_scan",
+        "start_metadata_resolution",
+        "start_library",
+        "fail_library",
+        "finish_library",
+        "start_root",
+        "finish_root",
+        "unavailable_root",
+    }
+)
 
 
 class ScanAllLibrariesWorker(QThread):
@@ -69,10 +85,12 @@ class ScanAllLibrariesWorker(QThread):
         self._lock: threading.Lock = threading.Lock()
         self.unavailable_directories: List[str] = []
         self.problems: List[Dict[str, Any]] = []
-        self.stats: Dict[str, int] = {}
+        self.stats: Dict[str, int] = create_empty_stats()
         self.changed_season_ids: Set[str] = set()
         self.changed_movie_ids: Set[str] = set()
         self.current_pass: int = 1
+        self.pass1_series_scanned: Set[str] = set()
+        self.pass2_series_scanned: Set[str] = set()
 
         self.pass1_stats: Dict[str, int] = create_empty_stats()
         self.pass2_stats: Dict[str, int] = create_empty_stats()
@@ -81,60 +99,40 @@ class ScanAllLibrariesWorker(QThread):
         self.pass1_stats_per_library: Dict[str, Dict[str, int]] = {}
         self.pass2_stats_per_library: Dict[str, Dict[str, int]] = {}
 
-        # Database write queue variables.
+        # Database write queue — replaced in run() with a fresh queue for each scan.
         self.database_queue: queue.Queue = queue.Queue()
         self.database_writer: Optional[DatabaseWriterThread] = None
 
-        # Signal batching buffer.
+        # Signal batching buffer — thread-safe via _detail_progress_lock.
         self._detail_progress_buffer: List[Dict[str, Any]] = []
         self._detail_progress_lock: threading.Lock = threading.Lock()
-        self._last_flush_time: float = 0.0
 
     def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
-        """Buffers progress events and flushes them to avoid UI congestion."""
-        import time
+        """Buffers a progress event for batched emission from the QThread.
 
-        lifecycle_events = {
-            "init_tree",
-            "init_library_scan",
-            "start_offline_scan",
-            "start_metadata_resolution",
-            "start_library",
-            "fail_library",
-            "finish_library",
-            "start_root",
-            "finish_root",
-            "unavailable_root",
-        }
-
-        should_flush_immediately = event in lifecycle_events
-
+        Events are accumulated in a thread-safe buffer and flushed by
+        :meth:`flush_detail_progress`, which must only be called from the
+        QThread's own thread (typically inside :meth:`run`).
+        """
         with self._detail_progress_lock:
             self._detail_progress_buffer.append({"event": event, "payload": payload})
-            current_time = time.time()
-            if should_flush_immediately or (
-                current_time - self._last_flush_time >= 0.05
-            ):
-                self._flush_detail_progress_nolock()
 
-    def _flush_detail_progress_nolock(self) -> None:
-        import time
+    def flush_detail_progress(self) -> None:
+        """Drains buffered progress events and emits them via Qt signals.
 
-        if not self._detail_progress_buffer:
-            return
-        batch = list(self._detail_progress_buffer)
-        self._detail_progress_buffer.clear()
-        self._last_flush_time = time.time()
+        Must only be called from the QThread's own thread (i.e. inside
+        :meth:`run`) because it emits Qt signals.
+        """
+        with self._detail_progress_lock:
+            if not self._detail_progress_buffer:
+                return
+            batch = list(self._detail_progress_buffer)
+            self._detail_progress_buffer.clear()
         self.detail_progress_batch.emit(batch)
         for event_dict in batch:
             self.detail_progress.emit(
                 event_dict.get("event", ""), event_dict.get("payload", {})
             )
-
-    def flush_detail_progress(self) -> None:
-        """Flushes any remaining buffered progress events to the UI."""
-        with self._detail_progress_lock:
-            self._flush_detail_progress_nolock()
 
     # ------------------------------------------------------------------
     # Helper methods
@@ -303,6 +301,10 @@ class ScanAllLibrariesWorker(QThread):
         local_changed_movie_ids: Set[str] = set()
         local_series_scanned: Set[str] = set()
         library_unavailable_directories: List[str] = []
+        # Local lock protects local_stats/local_problems because folder-level
+        # parallel scan (scan_directories) submits scan_series/scan_movie as
+        # futures to the global executor, and those futures invoke
+        # _season_callback/_movie_callback from folder-pool threads.
         local_lock = threading.Lock()
 
         self.emit_detail_progress("start_library", {"library": library_name})
@@ -345,7 +347,11 @@ class ScanAllLibrariesWorker(QThread):
                     },
                 )
                 self.database_queue.put(task)
-                task.event.wait()
+                if not task.event.wait(timeout=60):
+                    raise TimeoutError(
+                        f"Database write timed out for season "
+                        f"'{season_name}' of series '{series_name}'"
+                    )
                 if task.error:
                     raise task.error
                 stats = task.result
@@ -412,7 +418,10 @@ class ScanAllLibrariesWorker(QThread):
                     },
                 )
                 self.database_queue.put(task)
-                task.event.wait()
+                if not task.event.wait(timeout=60):
+                    raise TimeoutError(
+                        f"Database write timed out for movie '{movie_name}'"
+                    )
                 if task.error:
                     raise task.error
                 stats = task.result
@@ -462,7 +471,10 @@ class ScanAllLibrariesWorker(QThread):
                     },
                 )
                 self.database_queue.put(task)
-                task.event.wait()
+                if not task.event.wait(timeout=60):
+                    raise TimeoutError(
+                        f"Database write timed out for library '{library_name}'"
+                    )
                 if task.error:
                     raise task.error
                 stats = task.result
@@ -697,13 +709,9 @@ class ScanAllLibrariesWorker(QThread):
 
     def run(self) -> None:
         """Execute the full scan run with parallel library scanning."""
-        import time
-
         start_time = time.time()
         self.problems = []
         self.stats = create_empty_stats()
-        self.pass1_series_scanned: Set[str] = set()
-        self.pass2_series_scanned: Set[str] = set()
         for key in self.pass1_stats:
             self.pass1_stats[key] = 0
             self.pass2_stats[key] = 0
@@ -712,13 +720,15 @@ class ScanAllLibrariesWorker(QThread):
         self.changed_season_ids = set()
         self.changed_movie_ids = set()
         self.current_pass = 1
+        self.pass1_series_scanned.clear()
+        self.pass2_series_scanned.clear()
 
-        # Start the database writer thread
+        # Create the database writer thread
         self.database_queue = queue.Queue()
         self.database_writer = DatabaseWriterThread(self.database_queue)
-        self.database_writer.start()
 
         try:
+            self.database_writer.start()
             logger.info("ScanAllLibrariesWorker starting global scan run")
             libraries_dictionary: Dict[str, Dict[str, Any]] = config.libraries
             total_count: int = len(libraries_dictionary)
@@ -733,6 +743,7 @@ class ScanAllLibrariesWorker(QThread):
                     "library_order": list(config.libraries.keys()),
                 },
             )
+            self.flush_detail_progress()
 
             jellyfin_data: Optional[Dict[str, Any]] = None
             if jellyfin_client.is_configured():
@@ -829,6 +840,9 @@ class ScanAllLibrariesWorker(QThread):
                             "finish_library",
                             {"library": library_name},
                         )
+                        self.flush_detail_progress()
+
+            self.flush_detail_progress()
 
             # ------------------------------------------------------------------
             # PASS 2 — Online metadata resolution
@@ -902,11 +916,14 @@ class ScanAllLibrariesWorker(QThread):
                             "finish_library",
                             {"library": library_name},
                         )
+                        self.flush_detail_progress()
                         self.library_progress.emit(
                             library_name,
                             completed_count,
                             total_count,
                         )
+
+            self.flush_detail_progress()
 
             # ------------------------------------------------------------------
             # Final summary logging
@@ -926,4 +943,5 @@ class ScanAllLibrariesWorker(QThread):
             self.flush_detail_progress()
             if self.database_writer is not None:
                 self.database_queue.put(None)
+                self.database_writer.stop()
                 self.database_writer.join()

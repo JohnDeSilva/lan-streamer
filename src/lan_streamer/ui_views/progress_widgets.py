@@ -691,7 +691,7 @@ class LibraryScanProgressBar(QWidget):
             self.update()
 
     def mark_library_done(self, library_name: str) -> None:
-        """Mark all roots and folders as done."""
+        """Mark all roots and folders as done for this library."""
         for root_dir, root_data in self._roots.items():
             root_data["state"] = self.STATE_DONE
             for f in root_data["folder_states"]:
