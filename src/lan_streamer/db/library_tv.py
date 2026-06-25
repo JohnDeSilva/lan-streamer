@@ -685,7 +685,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                                 )
                             )
 
-            session.commit()
+            session.flush()
 
     except Exception as e:
         logger.exception(f"Error saving library '{library_name}' to database")
@@ -889,7 +889,7 @@ def save_season_data(
                     record = ScannedDirectory(path=dir_path, last_scanned_mtime=mtime)
                     session.add(record)
 
-            session.commit()
+            session.flush()
             stats["season_id"] = season.id
             logger.info(
                 f"Successfully saved season '{season_name}' of series '{series_name}' to database. "

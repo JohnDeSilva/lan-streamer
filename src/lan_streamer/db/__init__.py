@@ -69,6 +69,7 @@ from lan_streamer.db.models import (
     AppConfig,
     AppSecret,
     SecretType,
+    ScannedDirectory,
 )
 
 DB_FILE = Path(os.getenv("LAN_STREAMER_DB", config.database_path))
