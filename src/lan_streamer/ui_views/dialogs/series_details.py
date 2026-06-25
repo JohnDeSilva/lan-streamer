@@ -18,10 +18,11 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHeaderView,
 )
-from PySide6.QtCore import Slot, Qt
+from PySide6.QtCore import QTimer, Slot, Qt
 from PySide6.QtGui import QFont
 
 from lan_streamer import db
+from lan_streamer.backend import GenericSearchWorker
 from lan_streamer.system.config import config
 from lan_streamer.ui_views.proxy import (
     QMessageBox,
@@ -283,45 +284,79 @@ class SeriesDetailsDialog(QDialog):
         self.apply_mapping_btn.clicked.connect(self._on_apply_mappings_clicked)
         layout.addWidget(self.apply_mapping_btn)
 
-        # Load data
-        self._load_mapper_data()
+        # Defer TMDB data loading to after the dialog is visible
+        QTimer.singleShot(0, self._deferred_load_mapper_data)
 
-    def _load_mapper_data(self) -> None:
-        # Collect local files
+    def _deferred_load_mapper_data(self) -> None:
+        # Collect local files (fast, no I/O)
         self.local_episodes = []
         for season in self.series_record.get("seasons", {}).values():
             for ep in season.get("episodes", []):
                 if ep.get("path"):
                     self.local_episodes.append(ep)
-        # Sort naturally
         self.local_episodes.sort(
             key=lambda x: db.natural_sort_key(x.get("name") or Path(x["path"]).name)
         )
 
-        # Pull groups from TMDB
-        tmdb_id = self.series_record.get("metadata", {}).get("tmdb_identifier")
-        self.groups_list = []
-        if tmdb_id:
-            try:
-                self.groups_list = tmdb_client.get_episode_groups(tmdb_id) or []
-            except Exception as e:
-                logger.exception(f"Failed to fetch episode groups: {e}")
+        # Populate group combo with static items immediately,
+        # then fetch TMDB groups in background.
+        self.group_combo.blockSignals(True)
+        self.group_combo.clear()
+        self.group_combo.addItem("Loading...", userData=None)
+        self.group_combo.blockSignals(False)
 
-        # Check if there is a saved default group
+        tmdb_id = self.series_record.get("metadata", {}).get("tmdb_identifier")
         saved_group_id = self.series_record.get("metadata", {}).get(
             "tmdb_episode_group_id"
         )
         self.set_default_group_checkbox.setChecked(bool(saved_group_id))
 
-        # Populate group combo
+        if tmdb_id:
+            self._fetch_episode_groups(tmdb_id, saved_group_id)
+        else:
+            self._populate_group_combo([], saved_group_id)
+
+    def _fetch_episode_groups(
+        self, tmdb_id: str, saved_group_id: Optional[str]
+    ) -> None:
+        """Fetch episode groups from TMDB in a background worker."""
+        self._episode_groups_worker: Optional[GenericSearchWorker] = None
+
+        worker = GenericSearchWorker(
+            target=tmdb_client.get_episode_groups,
+            args=(tmdb_id,),
+            description="fetch episode groups",
+            parent=self,
+        )
+        worker.finished.connect(
+            lambda groups: self._populate_group_combo(groups or [], saved_group_id)
+        )
+        worker.error.connect(
+            lambda msg: self._populate_group_combo([], saved_group_id, msg)
+        )
+        self._episode_groups_worker = worker
+        worker.start()
+
+    def _populate_group_combo(
+        self,
+        groups_list: list,
+        saved_group_id: Optional[str],
+        error_msg: Optional[str] = None,
+    ) -> None:
+        """Populate the group combo from fetched TMDB data."""
+        self.groups_list = groups_list
+
         self.group_combo.blockSignals(True)
         self.group_combo.clear()
         self.group_combo.addItem("Select Group...", userData=None)
         self.group_combo.addItem("Default TV Order", userData="default")
         selected_idx = 0
-        if saved_group_id == "default" or (not saved_group_id and tmdb_id):
+        if saved_group_id == "default" or (
+            not saved_group_id
+            and self.series_record.get("metadata", {}).get("tmdb_identifier")
+        ):
             selected_idx = 1
-        for idx, g in enumerate(self.groups_list):
+        for idx, g in enumerate(groups_list):
             g_id = g.get("id")
             self.group_combo.addItem(
                 str(g.get("name") or "Unknown Group"), userData=g_id
@@ -341,7 +376,8 @@ class SeriesDetailsDialog(QDialog):
     def _on_group_changed(self) -> None:
         self.subgroup_combo.blockSignals(True)
         self.subgroup_combo.clear()
-        self.subgroup_combo.addItem("Select Subgroup...", userData=None)
+        self.subgroup_combo.addItem("Loading...", userData=None)
+        self.subgroup_combo.blockSignals(False)
 
         group_id = self.group_combo.currentData()
         group_name = self.group_combo.currentText()
@@ -352,41 +388,76 @@ class SeriesDetailsDialog(QDialog):
         if not group_id:
             self.set_default_group_checkbox.setChecked(False)
             self.set_default_group_checkbox.setEnabled(False)
+            self.subgroup_combo.blockSignals(True)
+            self.subgroup_combo.clear()
+            self.subgroup_combo.addItem("Select Subgroup...", userData=None)
+            self.subgroup_combo.blockSignals(False)
+            return
+
+        self.set_default_group_checkbox.setEnabled(True)
+
+        if group_id == "default":
+            tmdb_id = self.series_record.get("metadata", {}).get("tmdb_identifier")
+            if tmdb_id:
+                self._fetch_seasons(tmdb_id)
         else:
-            self.set_default_group_checkbox.setEnabled(True)
+            self._fetch_group_details(group_id)
 
-        if group_id:
-            if group_id == "default":
-                tmdb_id = self.series_record.get("metadata", {}).get("tmdb_identifier")
-                if tmdb_id:
-                    try:
-                        seasons = tmdb_client.get_seasons(tmdb_id)
-                        for season in seasons:
-                            season_number = season.get("season_number")
-                            if season_number is not None:
-                                self.subgroup_combo.addItem(
-                                    str(
-                                        season.get("name") or f"Season {season_number}"
-                                    ),
-                                    userData={
-                                        "is_season": True,
-                                        "season_number": season_number,
-                                    },
-                                )
-                    except Exception as e:
-                        logger.exception(f"Failed to fetch seasons: {e}")
-            else:
-                try:
-                    group_details = tmdb_client.get_episode_group_details(group_id)
-                    if group_details and "groups" in group_details:
-                        for subgroup in group_details.get("groups", []):
-                            self.subgroup_combo.addItem(
-                                str(subgroup.get("name") or "Unknown Subgroup"),
-                                userData=subgroup,
-                            )
-                except Exception as e:
-                    logger.exception(f"Failed to fetch group details: {e}")
+    def _fetch_seasons(self, tmdb_id: str) -> None:
+        """Fetch seasons from TMDB in a background worker."""
+        self._seasons_worker: Optional[GenericSearchWorker] = None
+        worker = GenericSearchWorker(
+            target=tmdb_client.get_seasons,
+            args=(tmdb_id,),
+            description="fetch seasons",
+            parent=self,
+        )
+        worker.finished.connect(self._populate_seasons)
+        worker.error.connect(lambda msg: self._populate_seasons([]))
+        self._seasons_worker = worker
+        worker.start()
 
+    def _populate_seasons(self, seasons: list) -> None:
+        self.subgroup_combo.blockSignals(True)
+        self.subgroup_combo.clear()
+        self.subgroup_combo.addItem("Select Subgroup...", userData=None)
+        for season in seasons:
+            season_number = season.get("season_number")
+            if season_number is not None:
+                self.subgroup_combo.addItem(
+                    str(season.get("name") or f"Season {season_number}"),
+                    userData={
+                        "is_season": True,
+                        "season_number": season_number,
+                    },
+                )
+        self.subgroup_combo.blockSignals(False)
+        self._on_subgroup_changed()
+
+    def _fetch_group_details(self, group_id: str) -> None:
+        """Fetch episode group details from TMDB in a background worker."""
+        self._group_details_worker: Optional[GenericSearchWorker] = None
+        worker = GenericSearchWorker(
+            target=tmdb_client.get_episode_group_details,
+            args=(group_id,),
+            description="fetch group details",
+            parent=self,
+        )
+        worker.finished.connect(self._populate_group_details)
+        worker.error.connect(lambda msg: self._populate_group_details(None))
+        self._group_details_worker = worker
+        worker.start()
+
+    def _populate_group_details(self, group_details: Optional[dict]) -> None:
+        self.subgroup_combo.blockSignals(True)
+        self.subgroup_combo.clear()
+        self.subgroup_combo.addItem("Select Subgroup...", userData=None)
+        if group_details and "groups" in group_details:
+            for subgroup in group_details.get("groups", []):
+                self.subgroup_combo.addItem(
+                    str(subgroup.get("name") or "Unknown Subgroup"),
+                    userData=subgroup,
+                )
         self.subgroup_combo.blockSignals(False)
         self._on_subgroup_changed()
 
@@ -402,27 +473,44 @@ class SeriesDetailsDialog(QDialog):
             season_number = subgroup_data.get("season_number")
             tmdb_id = self.series_record.get("metadata", {}).get("tmdb_identifier")
             if tmdb_id and season_number is not None:
-                try:
-                    episodes_data = tmdb_client.get_episodes(tmdb_id, season_number)
-                    episodes = []
-                    for ep in episodes_data:
-                        episodes.append(
-                            {
-                                "id": ep.get("id"),
-                                "name": ep.get("name"),
-                                "episode_number": ep.get("episode_number"),
-                                "order": ep.get("episode_number", 1) - 1,
-                                "air_date": ep.get("air_date"),
-                                "runtime": ep.get("runtime"),
-                            }
-                        )
-                except Exception as e:
-                    logger.exception(f"Failed to fetch season episodes: {e}")
-                    episodes = []
-            else:
-                episodes = []
-        else:
-            episodes = subgroup_data.get("episodes", [])
+                self._fetch_episodes(tmdb_id, season_number)
+            return
+
+        # Non-season subgroup data (from episode group) — populate directly
+        episodes = (
+            subgroup_data.get("episodes", []) if isinstance(subgroup_data, dict) else []
+        )
+        self._populate_mapper_episodes(episodes)
+
+    def _fetch_episodes(self, tmdb_id: str, season_number: int) -> None:
+        """Fetch episodes from TMDB in a background worker."""
+        self._episodes_worker: Optional[GenericSearchWorker] = None
+        worker = GenericSearchWorker(
+            target=tmdb_client.get_episodes,
+            args=(tmdb_id, season_number),
+            description="fetch episodes",
+            parent=self,
+        )
+        worker.finished.connect(self._populate_episodes)
+        worker.error.connect(lambda msg: self._populate_episodes([]))
+        self._episodes_worker = worker
+        worker.start()
+
+    def _populate_episodes(self, episodes_data: list) -> None:
+        episodes = [
+            {
+                "id": ep.get("id"),
+                "name": ep.get("name"),
+                "episode_number": ep.get("episode_number"),
+                "order": ep.get("episode_number", 1) - 1,
+                "air_date": ep.get("air_date"),
+                "runtime": ep.get("runtime"),
+            }
+            for ep in episodes_data
+        ]
+        self._populate_mapper_episodes(episodes)
+
+    def _populate_mapper_episodes(self, episodes: list) -> None:
         self.mapper_table.setRowCount(len(episodes))
         self.row_group_episodes = episodes
 
