@@ -129,6 +129,7 @@ def _check_single_season_changed(
     season_directory: Path,
     existing_season: Dict[str, Any],
     offline: bool,
+    disregard_mtimes: bool = False,
 ) -> bool:
     """Return True if a season directory has changed since the last scan.
 
@@ -145,10 +146,11 @@ def _check_single_season_changed(
     except OSError:
         current_mtime = None
 
-    cached_mtime = db.get_directory_mtime(str(season_directory.absolute()))
-    if cached_mtime is not None and current_mtime == cached_mtime:
-        # Mtime match: season directory contents are definitively unchanged.
-        return False
+    if not disregard_mtimes:
+        cached_mtime = db.get_directory_mtime(str(season_directory.absolute()))
+        if cached_mtime is not None and current_mtime == cached_mtime:
+            # Mtime match: season directory contents are definitively unchanged.
+            return False
 
     # Mtime changed or unknown: check file sizes and respect the _changed flag.
     from lan_streamer.services.file_discovery import detect_tv_file_changes
@@ -164,6 +166,7 @@ def _discover_seasons_to_process(
     existing_series_data: Dict[str, Any] | None,
     metadata_only: bool,
     offline: bool,
+    disregard_mtimes: bool = False,
 ) -> list[tuple[str, bool, Dict[str, Any] | None]]:
     """Build list of (season_name, is_changed, existing_season) tuples.
 
@@ -187,8 +190,12 @@ def _discover_seasons_to_process(
     # Check whether the series directory itself has changed.  A matching mtime
     # means no season folders were added or removed, so we can skip iterdir()
     # and read season names directly from the existing database record.
-    series_directory_unchanged = _check_series_directory_mtime_unchanged(
-        series_directory, existing_series_data
+    series_directory_unchanged = (
+        False
+        if disregard_mtimes
+        else _check_series_directory_mtime_unchanged(
+            series_directory, existing_series_data
+        )
     )
 
     if series_directory_unchanged and existing_series_data:
@@ -199,7 +206,10 @@ def _discover_seasons_to_process(
         for season_name, existing_season in existing_series_data["seasons"].items():
             season_directory = series_directory / season_name
             is_season_changed = _check_single_season_changed(
-                season_directory, existing_season, offline
+                season_directory,
+                existing_season,
+                offline,
+                disregard_mtimes=disregard_mtimes,
             )
             seasons_to_process.append((season_name, is_season_changed, existing_season))
         return seasons_to_process
@@ -216,7 +226,10 @@ def _discover_seasons_to_process(
         ):
             existing_season = existing_series_data["seasons"][season_name]
             is_season_changed = _check_single_season_changed(
-                season_directory, existing_season, offline
+                season_directory,
+                existing_season,
+                offline,
+                disregard_mtimes=disregard_mtimes,
             )
         else:
             is_season_changed = True
@@ -559,6 +572,7 @@ def scan_series(
     season_callback: Any = None,
     metadata_only: bool = False,
     database_queue: Any | None = None,
+    disregard_mtimes: bool = False,
 ) -> Dict[str, Any]:
     """Scans a single series directory and fetches metadata from TMDB."""
 
@@ -595,6 +609,7 @@ def scan_series(
         existing_series_data,
         metadata_only,
         offline,
+        disregard_mtimes=disregard_mtimes,
     )
 
     # Phase 4: Per-season loop

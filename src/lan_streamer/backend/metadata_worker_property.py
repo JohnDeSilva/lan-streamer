@@ -58,6 +58,8 @@ class FilePropertyExtractionWorker(QThread):
     finished = Signal(int)
     error = Signal(str)
 
+    _BATCH_INTERVAL: int = 100
+
     def __init__(
         self,
         changed_season_ids: Optional[Set[str]] = None,
@@ -70,10 +72,20 @@ class FilePropertyExtractionWorker(QThread):
         self._lock: threading.Lock = threading.Lock()
         self._total_count: int = 0
         self._completed_count: int = 0
+        self._last_batch_emitted: int = 0
 
-        # Database write queue variables.
         self.database_queue: queue.Queue = queue.Queue()
         self.database_writer: Optional[DatabaseWriterThread] = None
+
+    def _emit_progress_batch(self) -> None:
+        """Emit progress_updated signal if batch interval has been reached."""
+        with self._lock:
+            completed = self._completed_count
+            total = self._total_count
+            if completed - self._last_batch_emitted < self._BATCH_INTERVAL:
+                return
+            self._last_batch_emitted = completed
+        self.progress_updated.emit(completed, total)
 
     def run(self) -> None:
         # Start database writer thread
@@ -113,6 +125,7 @@ class FilePropertyExtractionWorker(QThread):
                 "for background technical extraction"
             )
             self._completed_count = 0
+            self._last_batch_emitted = 0
             updated_count: int = 0
 
             # Group candidates by library so each library is processed in its
@@ -157,9 +170,8 @@ class FilePropertyExtractionWorker(QThread):
 
                         with self._lock:
                             self._completed_count += 1
-                            self.progress_updated.emit(
-                                self._completed_count, self._total_count
-                            )
+
+                    self._emit_progress_batch()
 
                     if season_updates:
                         logger.info(
@@ -192,9 +204,8 @@ class FilePropertyExtractionWorker(QThread):
 
                     with self._lock:
                         self._completed_count += 1
-                        self.progress_updated.emit(
-                            self._completed_count, self._total_count
-                        )
+
+                    self._emit_progress_batch()
 
                 return local_updated
 
@@ -214,6 +225,8 @@ class FilePropertyExtractionWorker(QThread):
                             f"'{library_name}' failed"
                         )
 
+            # Emit final progress before finishing.
+            self.progress_updated.emit(self._completed_count, self._total_count)
             logger.info(
                 f"FilePropertyExtractionWorker finished, updated "
                 f"{updated_count} of {self._total_count} items"
@@ -226,4 +239,5 @@ class FilePropertyExtractionWorker(QThread):
         finally:
             if self.database_writer is not None:
                 self.database_queue.put(None)
+                self.database_writer.stop()
                 self.database_writer.join()

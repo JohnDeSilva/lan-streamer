@@ -144,6 +144,10 @@ class SeriesDetailsDialog(QDialog):
         info_layout.addLayout(info_form)
 
         # Buttons on Info Tab
+        scan_series_btn = QPushButton("Scan Series")
+        scan_series_btn.clicked.connect(self._on_scan_series_clicked)
+        info_layout.addWidget(scan_series_btn)
+
         mark_watched_btn = QPushButton("Mark Series as Watched")
         mark_watched_btn.clicked.connect(self._on_mark_watched_clicked)
         info_layout.addWidget(mark_watched_btn)
@@ -595,6 +599,17 @@ class SeriesDetailsDialog(QDialog):
         )
         if confirm == QMessageBox.StandardButton.Yes:
             self.controller.embed_metadata_series(self.series_name)
+            self.accept()
+
+    def _on_scan_series_clicked(self) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Scan",
+            f"Are you sure you want to scan all folders for '{self.series_name}'? This will check for new/modified files, disregarding cached modification times.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.controller.trigger_series_scan(self.series_name)
             self.accept()
 
     def _on_mark_watched_clicked(self) -> None:

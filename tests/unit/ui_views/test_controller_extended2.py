@@ -480,3 +480,64 @@ def test_delete_series_no_library() -> None:
     with patch("lan_streamer.db.delete_series_record") as mock_delete:
         c.delete_series("ShowA")
         mock_delete.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# trigger_series_scan
+# ---------------------------------------------------------------------------
+
+
+def test_trigger_series_scan_no_library() -> None:
+    c = Controller()
+    c.current_library_name = ""
+    statuses: List[str] = []
+    c.status_changed.connect(statuses.append)
+
+    with patch("lan_streamer.backend.ScanSingleSeriesWorker") as mock_cls:
+        c.trigger_series_scan("ShowA")
+        mock_cls.assert_not_called()
+    assert any("Select a library" in s for s in statuses)
+
+
+def test_trigger_series_scan_worker_already_running() -> None:
+    c = Controller()
+    c.current_library_name = "TVLib"
+    config.libraries["TVLib"] = {"type": "tv", "paths": []}
+
+    mock_worker = MagicMock()
+    mock_worker.isRunning.return_value = True
+    c.scan_worker_instance = mock_worker
+
+    statuses: List[str] = []
+    c.status_changed.connect(statuses.append)
+
+    with patch("lan_streamer.backend.ScanSingleSeriesWorker") as mock_cls:
+        c.trigger_series_scan("ShowA")
+        mock_cls.assert_not_called()
+
+
+def test_on_series_scan_finished_same_library(ctrl_tv, mock_db_save) -> None:
+    updated_library = {"ShowA": {"metadata": {}, "seasons": {}}}
+    mock_scan = MagicMock()
+    mock_scan.library_name = "TVLib"
+    ctrl_tv.scan_series_worker_instance = mock_scan
+
+    signals: List[bool] = []
+    ctrl_tv.library_loaded.connect(lambda: signals.append(True))
+    ctrl_tv._on_series_scan_finished(updated_library)
+    assert ctrl_tv.cached_library_data == updated_library
+    assert len(signals) == 1
+
+
+def test_on_series_scan_finished_different_library(ctrl_tv, mock_db_save) -> None:
+    updated_library = {"ShowA": {"metadata": {}, "seasons": {}}}
+    mock_scan = MagicMock()
+    mock_scan.library_name = "OtherLib"
+    mock_scan.series_name = "ShowA"
+    ctrl_tv.scan_series_worker_instance = mock_scan
+
+    signals: List[bool] = []
+    ctrl_tv.library_loaded.connect(lambda: signals.append(True))
+    ctrl_tv._on_series_scan_finished(updated_library)
+    assert ctrl_tv.cached_library_data != updated_library
+    assert len(signals) == 0

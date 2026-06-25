@@ -126,6 +126,8 @@ class Controller(QObject):
         )
         self.merge_subtitle_worker_instance: Optional[Any] = None
         self.embed_metadata_worker_instance: Optional[Any] = None
+        self.scan_series_worker_instance: Optional[Any] = None
+
         self.is_video_playing: bool = False
         self._running_pass3_after_scan: bool = False
         self._running_cleanup_after_scan: bool = False
@@ -1220,6 +1222,65 @@ class Controller(QObject):
                 )
                 self.status_changed.emit(
                     f"Background refresh for '{item_name}' completed successfully."
+                )
+
+    def trigger_series_scan(self, series_name: str) -> None:
+        """Triggers a background ScanSingleSeriesWorker for the specified series or movie."""
+        if not self.current_library_name:
+            self.status_changed.emit("Select a library first.")
+            return
+
+        if self.scan_worker_instance and self.scan_worker_instance.isRunning():
+            self.status_changed.emit("A scan is already in progress.")
+            return
+
+        if (
+            self.scan_series_worker_instance
+            and self.scan_series_worker_instance.isRunning()
+        ):
+            self.status_changed.emit("A series scan is already in progress.")
+            return
+
+        library_config = self._config.libraries.get(self.current_library_name, {})
+        library_type = library_config.get("type", "tv")
+        root_directories = library_config.get("paths", [])
+
+        self.status_changed.emit(f"Scanning folders for '{series_name}'...")
+
+        from lan_streamer.backend import ScanSingleSeriesWorker
+
+        self.scan_series_worker_instance = ScanSingleSeriesWorker(
+            library_name=self.current_library_name,
+            series_name=series_name,
+            library_type=library_type,
+            root_directories=root_directories,
+            existing_library=self.cached_library_data,
+        )
+        self.scan_series_worker_instance.finished.connect(self._on_series_scan_finished)
+        self.scan_series_worker_instance.error.connect(self._on_worker_error)
+        self.scan_series_worker_instance.start()
+
+    def _on_series_scan_finished(self, updated_library: Dict[str, Any]) -> None:
+        scanned_library_name = (
+            self.scan_series_worker_instance.library_name
+            if self.scan_series_worker_instance
+            else self.current_library_name
+        )
+        if scanned_library_name:
+            if self.current_library_name == scanned_library_name:
+                self.cached_library_data = updated_library
+                self._cache_series_metrics()
+                self.status_changed.emit("Series scan completed successfully.")
+                if not self.is_video_playing:
+                    self.library_loaded.emit()
+            else:
+                series_name = (
+                    self.scan_series_worker_instance.series_name
+                    if self.scan_series_worker_instance
+                    else "series"
+                )
+                self.status_changed.emit(
+                    f"Background scan for '{series_name}' completed successfully."
                 )
 
     def refresh_episode_metadata(self, series_name: str, episode_path: str) -> None:
