@@ -132,9 +132,9 @@ def _discover_seasons_to_process(
                 except Exception:
                     current_mtime = None
 
-                cached_mtime = existing_season.get("metadata", {}).get(
-                    "last_scanned_mtime"
-                )
+                from lan_streamer import db
+
+                cached_mtime = db.get_directory_mtime(str(season_directory.absolute()))
                 if cached_mtime is not None and current_mtime == cached_mtime:
                     is_season_changed = False
                 else:
@@ -543,6 +543,13 @@ def scan_series(
                 "start_season",
                 {"folder": series_directory.name, "season": season_name},
             )
+
+        try:
+            current_mtime = season_directory.stat().st_mtime
+        except Exception:
+            current_mtime = None
+        season_metadata["season_directory_path"] = str(season_directory.absolute())
+        season_metadata["last_scanned_mtime"] = current_mtime
 
         series_data["seasons"][season_name] = {
             "metadata": season_metadata,

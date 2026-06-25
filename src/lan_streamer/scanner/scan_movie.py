@@ -53,7 +53,9 @@ def _detect_movie_changes(
         except Exception:
             current_mtime = None
 
-        cached_mtime = existing_movie_data.get("last_scanned_mtime")
+        from lan_streamer import db
+
+        cached_mtime = db.get_directory_mtime(str(movie_directory.absolute()))
         if cached_mtime is not None and current_mtime == cached_mtime:
             is_movie_changed = False
         else:
@@ -281,6 +283,7 @@ def _build_movie_data(
     return {
         "name": folder_name,
         "path": video_path,
+        "movie_directory_path": str(Path(video_path).parent.absolute()),
         "jellyfin_id": movie_metadata["jellyfin_id"],
         "tmdb_identifier": movie_metadata["tmdb_identifier"],
         "poster_path": movie_metadata["poster_path"],
