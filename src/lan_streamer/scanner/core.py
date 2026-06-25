@@ -1,3 +1,4 @@
+import atexit
 import logging
 import os
 import threading
@@ -27,7 +28,14 @@ _global_scan_executor_lock = threading.Lock()
 
 
 def get_scan_executor() -> ThreadPoolExecutor:
-    """Returns the global, shared ThreadPoolExecutor instance for directory scanning."""
+    """Returns the global, shared ThreadPoolExecutor instance for directory scanning.
+
+    The returned executor is a process-lifetime singleton — it is created on
+    first call and automatically shut down (with in-flight futures cancelled)
+    when the interpreter exits via the ``atexit`` handler registered below.
+    Call :func:`shutdown_scan_executor` explicitly to shut it down earlier,
+    e.g. when a scan is cancelled by the user.
+    """
     global _global_scan_executor
     if _global_scan_executor is None:
         with _global_scan_executor_lock:
@@ -38,6 +46,28 @@ def get_scan_executor() -> ThreadPoolExecutor:
                     thread_name_prefix="scan_worker",
                 )
     return _global_scan_executor
+
+
+def shutdown_scan_executor() -> None:
+    """Shut down the global scan executor, cancelling any queued futures.
+
+    Safe to call multiple times.  After this call a new executor will be
+    created on the next :func:`get_scan_executor` call, so active scans
+    should be stopped before invoking this.
+    """
+    global _global_scan_executor
+    with _global_scan_executor_lock:
+        executor = _global_scan_executor
+        if executor is not None:
+            logger.info(
+                "Shutting down global scan executor (cancelling queued futures)..."
+            )
+            executor.shutdown(wait=False, cancel_futures=True)
+            _global_scan_executor = None
+            logger.info("Global scan executor shut down.")
+
+
+atexit.register(shutdown_scan_executor)
 
 
 class LibraryDict(dict[str, Any]):
