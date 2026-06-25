@@ -437,3 +437,65 @@ def test_settings_to_db_migration(tmp_path) -> None:
         assert series_pref[1] == "group1"
 
     engine.dispose()
+
+
+def test_scanned_directories_migration(tmp_path) -> None:
+    """Robustly test Alembic migration 36e082ff742e -> 0def24d4a3b4 and downgrade
+
+    verifying table creation, data persistence, and downgrade safety.
+    """
+    db_path = tmp_path / "test_migration_scanned_directories.db"
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    # 1. Upgrade to previous revision 36e082ff742e
+    command.upgrade(alembic_cfg, "36e082ff742e")
+
+    # 2. Insert fake data
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO series (id, library_name, name) VALUES ('1', 'Lib', 'Fake Series')"
+            )
+        )
+
+    # 3. Upgrade to target revision 0def24d4a3b4
+    command.upgrade(alembic_cfg, "0def24d4a3b4")
+
+    # 4. Verify table exists and existing series data is preserved
+    with engine.connect() as conn:
+        series_name = conn.execute(
+            sa.text("SELECT name FROM series WHERE id='1'")
+        ).scalar()
+        assert series_name == "Fake Series"
+
+        # Check table and column existence by inserting and reading
+        conn.execute(
+            sa.text(
+                "INSERT INTO scanned_directories (path, last_scanned_mtime) VALUES ('/fake/dir', 12345.6)"
+            )
+        )
+        conn.commit()
+
+        record = conn.execute(
+            sa.text(
+                "SELECT path, last_scanned_mtime FROM scanned_directories WHERE path='/fake/dir'"
+            )
+        ).fetchone()
+        assert record[0] == "/fake/dir"
+        assert abs(record[1] - 12345.6) < 0.001
+
+    # 5. Verify downgrade functionality drops the table
+    command.downgrade(alembic_cfg, "36e082ff742e")
+    with engine.connect() as conn:
+        with pytest.raises(sa.exc.OperationalError):
+            conn.execute(sa.text("SELECT * FROM scanned_directories")).fetchall()
+
+        # Existing series still preserved
+        series_name = conn.execute(
+            sa.text("SELECT name FROM series WHERE id='1'")
+        ).scalar()
+        assert series_name == "Fake Series"
+
+    engine.dispose()

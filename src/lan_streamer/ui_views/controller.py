@@ -631,32 +631,6 @@ class Controller(QObject):
         self.scan_all_worker_instance.error.connect(self._on_worker_error)
         self.scan_all_worker_instance.start()
 
-    def _on_scan_all_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
-        self.detail_progress_updated.emit(event, payload)
-
-        if event == "finish_root":
-            scanned_library = payload.get("library")
-            if scanned_library and (
-                self.current_library_name == scanned_library
-                or self.current_library_name == "Combined View"
-            ):
-                if self.current_library_name == "Combined View":
-                    self.library_loaded.emit()
-                else:
-                    library_config = self._config.libraries.get(
-                        self.current_library_name, {}
-                    )
-                    if library_config.get("type", "tv") == "movie":
-                        self.cached_library_data = self._db.load_movie_library(
-                            self.current_library_name
-                        )
-                    else:
-                        self.cached_library_data = self._db.load_library(
-                            self.current_library_name
-                        )
-                    self._cache_series_metrics()
-                    self.library_loaded.emit()
-
     def _on_detail_progress_batch(self, events: List[Dict[str, Any]]) -> None:
         for event_dict in events:
             self.detail_progress_updated.emit(

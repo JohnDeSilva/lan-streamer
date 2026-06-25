@@ -16,7 +16,6 @@ from lan_streamer.scanner.file_property_scanner import (
     get_stub_file_info,
 )
 from lan_streamer.scanner.parser import VIDEO_EXTENSIONS, _parse_episode_number
-from lan_streamer.services.file_discovery import detect_tv_file_changes
 from lan_streamer.services.metadata_episode import (
     _process_episode_file,
     _process_season_metadata,
@@ -152,6 +151,8 @@ def _check_single_season_changed(
         return False
 
     # Mtime changed or unknown: check file sizes and respect the _changed flag.
+    from lan_streamer.services.file_discovery import detect_tv_file_changes
+
     is_changed = detect_tv_file_changes(season_directory, existing_season)
     if not offline:
         is_changed = is_changed or existing_season.get("_changed", True)
@@ -557,6 +558,7 @@ def scan_series(
     offline: bool = False,
     season_callback: Any = None,
     metadata_only: bool = False,
+    database_queue: Any | None = None,
 ) -> Dict[str, Any]:
     """Scans a single series directory and fetches metadata from TMDB."""
 
@@ -717,9 +719,21 @@ def scan_series(
             series_directory_mtime = series_directory.stat().st_mtime
             from lan_streamer import db as _db
 
-            _db.save_directory_mtime(
-                str(series_directory.absolute()), series_directory_mtime
-            )
+            if database_queue is not None:
+                from lan_streamer.backend.database_writer import DatabaseWriteTask
+
+                task = DatabaseWriteTask(
+                    action="save_directory_mtime",
+                    payload={
+                        "path": str(series_directory.absolute()),
+                        "mtime": series_directory_mtime,
+                    },
+                )
+                database_queue.put(task)
+            else:
+                _db.save_directory_mtime(
+                    str(series_directory.absolute()), series_directory_mtime
+                )
             logger.debug(
                 f"Saved series directory mtime for '{series_directory.name}': "
                 f"{series_directory_mtime}"

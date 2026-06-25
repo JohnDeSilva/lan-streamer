@@ -60,8 +60,8 @@ def test_scan_all_libraries_worker_with_root_dirs(tmp_path) -> None:
         finished = []
 
         worker = ScanAllLibrariesWorker()
-        worker.detail_progress.connect(
-            lambda ev, pl: detail_events.append(ev),
+        worker.detail_progress_batch.connect(
+            lambda batch: [detail_events.append(e["event"]) for e in batch],
             Qt.DirectConnection,
         )
         worker.library_progress.connect(

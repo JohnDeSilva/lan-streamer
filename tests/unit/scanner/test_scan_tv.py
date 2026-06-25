@@ -205,7 +205,7 @@ def test_discover_seasons_change_detection(tmp_path: Path) -> None:
     # detect_tv_file_changes will compare files — since file exists and is in
     # existing data, it returns False for unchanged. We mock to isolate.
     with patch(
-        "lan_streamer.scanner.scan_tv.detect_tv_file_changes",
+        "lan_streamer.services.file_discovery.detect_tv_file_changes",
         return_value=False,
     ):
         result = _discover_seasons_to_process(

@@ -653,37 +653,49 @@ class TestResolveEpisodeJellyfinId:
 
 class TestHasSeasonSubdirs:
     def test_returns_true_for_season_folder(self, tmp_path) -> None:
-        from lan_streamer.scanner.core import _has_season_subdirs
+        from lan_streamer.services.file_discovery import (
+            has_season_subdirectories as _has_season_subdirs,
+        )
 
         (tmp_path / "Season 1").mkdir()
         assert _has_season_subdirs(tmp_path) is True
 
     def test_returns_true_for_digit_folder(self, tmp_path) -> None:
-        from lan_streamer.scanner.core import _has_season_subdirs
+        from lan_streamer.services.file_discovery import (
+            has_season_subdirectories as _has_season_subdirs,
+        )
 
         (tmp_path / "2020").mkdir()
         assert _has_season_subdirs(tmp_path) is True
 
     def test_returns_true_for_specials(self, tmp_path) -> None:
-        from lan_streamer.scanner.core import _has_season_subdirs
+        from lan_streamer.services.file_discovery import (
+            has_season_subdirectories as _has_season_subdirs,
+        )
 
         (tmp_path / "Specials").mkdir()
         assert _has_season_subdirs(tmp_path) is True
 
     def test_returns_false_when_no_matching_subdirs(self, tmp_path) -> None:
-        from lan_streamer.scanner.core import _has_season_subdirs
+        from lan_streamer.services.file_discovery import (
+            has_season_subdirectories as _has_season_subdirs,
+        )
 
         (tmp_path / "RandomFolder").mkdir()
         assert _has_season_subdirs(tmp_path) is False
 
     def test_handles_permission_error(self, tmp_path) -> None:
-        from lan_streamer.scanner.core import _has_season_subdirs
+        from lan_streamer.services.file_discovery import (
+            has_season_subdirectories as _has_season_subdirs,
+        )
 
         with patch.object(Path, "iterdir", side_effect=PermissionError("nope")):
             assert _has_season_subdirs(tmp_path) is False
 
     def test_returns_false_for_empty_dir(self, tmp_path) -> None:
-        from lan_streamer.scanner.core import _has_season_subdirs
+        from lan_streamer.services.file_discovery import (
+            has_season_subdirectories as _has_season_subdirs,
+        )
 
         assert _has_season_subdirs(tmp_path) is False
 

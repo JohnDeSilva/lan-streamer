@@ -145,6 +145,9 @@ make run
 
 Configuration is managed via **Settings > General Settings** and stored in `~/.config/lan-streamer/config.json`.
 
+### Database Settings
+- `database_write_timeout`: Maximum time in seconds to wait for a database write operation in background tasks before timing out. A warning is logged if the write takes longer than a partial threshold (e.g. 10s). Default: `60.0`.
+
 ### Logging System
 Logs are stored in the configured `log_directory` (default: `~/.config/lan-streamer/logs`). The application features a comprehensive, standardized logging system using `DEBUG`, `INFO`, `WARNING`, and `ERROR` levels across all modules (including background workers, database queries, player widget controls, platform-specific sleep inhibition, and external API integrations) to maximize system observability.
 

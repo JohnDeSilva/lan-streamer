@@ -409,7 +409,9 @@ def test_on_scan_all_detail_progress_finish_root_tv(ctrl) -> None:
     ctrl.library_loaded.connect(lambda: signals.append(True))
 
     with patch("lan_streamer.db.load_library", return_value={}) as mock_load:
-        ctrl._on_scan_all_detail_progress("finish_root", {"library": "TestLib"})
+        ctrl._on_scan_all_detail_progress_batch(
+            [{"event": "finish_root", "payload": {"library": "TestLib"}}]
+        )
         mock_load.assert_called_once()
     assert len(signals) == 1
 
@@ -420,7 +422,9 @@ def test_on_scan_all_detail_progress_finish_root_movie(ctrl) -> None:
     ctrl.library_loaded.connect(lambda: signals.append(True))
 
     with patch("lan_streamer.db.load_movie_library", return_value={}) as mock_load:
-        ctrl._on_scan_all_detail_progress("finish_root", {"library": "MovieLib"})
+        ctrl._on_scan_all_detail_progress_batch(
+            [{"event": "finish_root", "payload": {"library": "MovieLib"}}]
+        )
         mock_load.assert_called_once()
     assert len(signals) == 1
 
@@ -430,7 +434,9 @@ def test_on_scan_all_detail_progress_finish_root_combined_view(ctrl) -> None:
     signals: List[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
 
-    ctrl._on_scan_all_detail_progress("finish_root", {"library": "TestLib"})
+    ctrl._on_scan_all_detail_progress_batch(
+        [{"event": "finish_root", "payload": {"library": "TestLib"}}]
+    )
     assert len(signals) == 1
 
 
@@ -439,8 +445,8 @@ def test_on_scan_all_detail_progress_non_finish_root(ctrl) -> None:
     signals: List[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
 
-    ctrl._on_scan_all_detail_progress(
-        "start_folder", {"root": "/tv", "folder": "ShowA"}
+    ctrl._on_scan_all_detail_progress_batch(
+        [{"event": "start_folder", "payload": {"root": "/tv", "folder": "ShowA"}}]
     )
     assert len(signals) == 0
 

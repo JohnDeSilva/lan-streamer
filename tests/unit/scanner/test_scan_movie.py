@@ -36,7 +36,7 @@ def test_detect_movie_changes_online_with_changed_flag() -> None:
     """Online mode with _changed=True makes movie_offline=False."""
     existing = {"_changed": True}
     with patch(
-        "lan_streamer.scanner.scan_movie.detect_movie_file_changes",
+        "lan_streamer.services.file_discovery.detect_movie_file_changes",
         return_value=False,
     ):
         result = _detect_movie_changes(Path("/dummy"), existing, offline=False)
@@ -47,7 +47,7 @@ def test_detect_movie_changes_file_detected() -> None:
     """File changes detected even without _changed flag."""
     existing = {}
     with patch(
-        "lan_streamer.scanner.scan_movie.detect_movie_file_changes",
+        "lan_streamer.services.file_discovery.detect_movie_file_changes",
         return_value=True,
     ):
         result = _detect_movie_changes(Path("/dummy"), existing, offline=False)
