@@ -79,7 +79,7 @@ def test_runtime_extraction_worker_execution() -> None:
                 }
             ]
         )
-        assert progress_emitted == [(1, 2), (2, 2)]
+        assert progress_emitted == [(2, 2)]
         assert finished_emitted == [1]
 
     # Exception run

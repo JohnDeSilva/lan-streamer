@@ -42,6 +42,7 @@ def _detect_movie_changes(
     movie_directory: Path,
     existing_movie_data: Dict[str, Any] | None,
     offline: bool,
+    disregard_mtimes: bool = False,
 ) -> tuple[bool, bool]:
     """Detect if movie files have changed and determine offline mode."""
     is_movie_changed = True
@@ -55,7 +56,11 @@ def _detect_movie_changes(
         from lan_streamer import db
 
         cached_mtime = db.get_directory_mtime(str(movie_directory.absolute()))
-        if cached_mtime is not None and current_mtime == cached_mtime:
+        if (
+            not disregard_mtimes
+            and cached_mtime is not None
+            and current_mtime == cached_mtime
+        ):
             is_movie_changed = False
         else:
             from lan_streamer.services.file_discovery import detect_movie_file_changes
@@ -334,6 +339,7 @@ def scan_movie(
     detail_callback: Callable | None = None,
     offline: bool = False,
     metadata_only: bool = False,
+    disregard_mtimes: bool = False,
 ) -> Dict[str, Any] | None:
     """Scans a single movie directory and fetches metadata from TMDB."""
 
@@ -343,7 +349,7 @@ def scan_movie(
 
     # Phase 2: Detect changes
     is_movie_changed, movie_offline = _detect_movie_changes(
-        movie_directory, existing_movie_data, offline
+        movie_directory, existing_movie_data, offline, disregard_mtimes=disregard_mtimes
     )
 
     # Phase 3: Scan video files

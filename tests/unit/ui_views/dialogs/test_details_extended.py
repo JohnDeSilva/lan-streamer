@@ -508,3 +508,14 @@ class TestSeriesDetailsDialog:
         with patch.object(config, "set_series_preference") as mock_pref:
             d._on_hide_missing_changed(True)
             mock_pref.assert_called_once()
+
+    def test_on_scan_series_clicked(self, ctrl_tv, qtbot) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        d = self._make_dialog(ctrl_tv, qtbot)
+        with patch.object(ctrl_tv, "trigger_series_scan") as mock_scan:
+            with patch.object(
+                QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
+            ):
+                d._on_scan_series_clicked()
+                mock_scan.assert_called_once_with("ShowA")
