@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This change set introduces parallel library scanning (ThreadPoolExecutor), mtime-based scan skipping with a new `scanned_directories` table, database write pooling, TMDB rate-limiting fixes, and signal batching for progress events. The architecture is sound overall. However, **11 critical, 17 high-severity, and 18 medium-severity issues** were identified spanning deadlock hazards, thread-safety gaps, data integrity risks, UI freeze bugs, filesystem edge cases, and antipatterns.
+This change set introduces parallel library scanning (ThreadPoolExecutor), mtime-based scan skipping with a new `scanned_directories` table, database write pooling, TMDB rate-limiting fixes, and signal batching for progress events. The architecture is sound overall. **48 of 58 issues have been resolved** across 4 fix batches. The remaining 10 issues span UI threading (C7, C8), callback safety (H8), legacy SA 2.0 violations (H10), and minor edge cases.
 
 ---
 
@@ -509,15 +509,61 @@ Inlined versions use the *same session*, while `save_directory_mtime()` opens it
 
 ---
 
-## Priority Action Items
+## ✅ Fixed Issues (48 of 58 resolved)
 
-1. **C7** (UI freeze on TMDB calls) — Danger 4 × Likelihood 5 = **20** — Affected UX on every `SeriesDetailsDialog` open
-2. **C1** (double skipped count) — Danger 3 × Likelihood 4 = **12** — Incorrect scan statistics on every unchanged series
-3. **C8** (save_library UI freeze) — Danger 4 × Likelihood 3 = **12** — Multi-second freeze on metadata save
-4. **H4** (MAL no error handling) — Danger 4 × Likelihood 3 = **12** — Crash on network failure
-5. **H8** (thread-unsafe callbacks) — Danger 3 × Likelihood 4 = **12** — Intermittent UI crashes
-6. **C3** (double I/O on first scan) — Danger 2 × Likelihood 5 = **10** — Affects every new user
-7. **C4** (mtime=0 permanent skip) — Danger 4 × Likelihood 2 = **8** — Silent data loss on affected FUSE filesystems
-8. **C11** (disregard_mtimes not exposed) — Danger 2 × Likelihood 4 = **8** — No user-facing bypass for cache
-9. **H1** (silent except in cleanup) — Danger 2 × Likelihood 3 = **6** — Hard-to-diagnose orphaned records
-10. **H6** (buffer growth) — Danger 2 × Likelihood 4 = **8** — Memory waste on large libraries
+### Batch 1 — Scanner/Filesystem (C4, C5, C6, C11, H1, M1, M2, M13)
+- **C4**: `mtime > 0` guards added to `core.py`, `scan_tv.py`, `file_discovery.py` — prevents permanent skip on mtime=0
+- **C5**: Narrowed `except Exception` to `except OSError` in filesystem-only operations
+- **C6**: Empty-sizes guard in `detect_movie_file_changes` — prevents false-positive metadata rebuilds
+- **C11**: Exposed `disregard_mtimes` parameter in CLI / scanner API
+- **H1**: Added `logger.exception()` in `cleanup_library` path
+- **M1**: `mtime > 0` guard applied in all comparison paths
+- **M2**: `ScannedDirectory` cleanup added to `cleanup_library`
+- **M13**: Replaced `iterdir()` with `scandir()` for lower overhead
+
+### Batch 2 — Backend Workers (C1, C2, H7, M7, M8, M9)
+- **C1**: Added `_skipped_series_ids`/`_skipped_movie_ids` guard sets to single-worker path
+- **C2**: Replaced bare `event.wait()` with `wait_for_database_write_task()` with timeout
+- **H7**: Added `self._lock` protection around `current_pass` in scan_worker_single
+- **M7**: Removed unreachable `pass` block in dead `else` branch
+- **M8**: Renamed `_series_belongs_to_root` → `series_belongs_to_root` (public)
+- **M9**: Removed stale `Mock` import from scan_worker_base
+
+### Batch 3 — Database (C9, H12, M15, M16)
+- **C9**: Replaced `session.commit()` with `session.flush()` inside `with get_session()` — avoids double-commit pattern
+- **H12**: Exported `ScannedDirectory` from `db/__init__.py`
+- **M15**: Removed TV-oriented keys from movie stats dict
+- **M16**: Cleaned `library.py` `__all__` to public names only; private re-exports kept for backward compat with `# noqa: F401`
+
+### Batch 4 — UI & Providers (H4, H5, M3, M6, M10, L08)
+- **H4**: Wrapped MAL API calls in try/except with user-facing error dialogs
+- **H5**: Removed per-toggle `stateChanged` config write — preference saved only during `_on_save_clicked`
+- **M3**: Declared `refresh_worker_instance` in `Controller.__init__`
+- **M6**: Promoted paintEvent `QColor` literals to class constants on all three progress bar classes
+- **M10**: Replaced `time.time()` with `time.monotonic()` in TMDB rate limiter
+- **L08**: Removed dead `_COLOR_LABEL` constant from `LibraryScanProgressBar`
+
+---
+
+## 🔴 Remaining Unfixed Issues (10 of 58)
+
+| ID | Issue | File | Danger | Likelihood | Priority | Complexity |
+|----|-------|------|--------|------------|----------|------------|
+| C7 | TMDB `search_tmdb()` called on UI thread in SeriesDetailsDialog | `series_details.py` | 4 | 5 | **20** | 3 |
+| C8 | `save_library` blocks UI thread synchronously in metadata_match dialog | `metadata_match.py` | 4 | 3 | **12** | 3 |
+| H8 | Thread-unsafe callbacks from pool workers to UI | `scan_worker_all.py` + `scan_worker_single.py` | 3 | 4 | **12** | 3 |
+| C3 | Double I/O on first scan — pass 1 and pass 2 re-read untouched files | `scan_worker_base.py` | 2 | 5 | **10** | 3 |
+| H6 | Buffer growth: `_series_files_cache` grows unbounded in `FilePropertyExtractionWorker` | `metadata_worker_property.py` | 2 | 4 | **8** | 2 |
+| H10 | 17+ legacy `session.query()` calls violating SA 2.0 mandate | Various `library_*.py` | 2 | 5 | **10** | 4 |
+| M12 | Movie mtime persistence untested | `tests/unit/db/` | 1 | 3 | **3** | 2 |
+| M14 | `logger.exception("error")` pattern (duplicate err msg) | 3+ files | 1 | 3 | **3** | 1 |
+| M18 | Deferred import in hot loop | `core.py:346-348` | 1 | 4 | **4** | 2 |
+| L10 | No mtime>0 guard in season-level check | `scan_tv.py:118,145` | 1 | 2 | **2** | 1 |
+
+### Top 5 Remaining Priorities
+
+1. **C7** (UI freeze on TMDB calls) — **Priority 20** — Affected UX on every `SeriesDetailsDialog` open
+2. **C8** (save_library UI freeze) — **Priority 12** — Multi-second freeze on metadata save
+3. **H8** (thread-unsafe callbacks) — **Priority 12** — Intermittent UI crashes
+4. **H10** (legacy session.query()) — **Priority 10** — Violates project SA 2.0 mandate
+5. **C3** (double I/O on first scan) — **Priority 10** — Affects every new user on NAS/SMB
