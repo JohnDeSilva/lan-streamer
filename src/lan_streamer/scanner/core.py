@@ -415,6 +415,50 @@ def scan_directories(
                 else False
             )
 
+            # --- Series-level mtime early-exit (TV only) ---
+            # If the series directory mtime matches what we recorded after the last
+            # successful scan, *and* we have valid existing data with metadata, *and*
+            # no forced refresh is requested, we can skip the entire scan_series call
+            # and reuse existing data.  This avoids iterating any season sub-directories
+            # on a network share when nothing has changed.
+            if (
+                library_type != "movie"
+                and not series_force_refresh
+                and not offline
+                and existing_series
+                and has_meta
+            ):
+                series_directory_path = str(series_directory.absolute())
+                try:
+                    current_series_mtime = series_directory.stat().st_mtime
+                except OSError:
+                    current_series_mtime = None
+
+                if current_series_mtime is not None:
+                    from lan_streamer import db as _db
+
+                    cached_series_mtime = _db.get_directory_mtime(series_directory_path)
+                    if (
+                        cached_series_mtime is not None
+                        and current_series_mtime == cached_series_mtime
+                    ):
+                        logger.info(
+                            f"Series '{series_name}' directory mtime unchanged "
+                            f"(mtime={current_series_mtime}); skipping full scan."
+                        )
+                        scan_results.append((series_name, is_locked, existing_series))
+                        if detail_callback:
+                            detail_callback(
+                                "finish_folder",
+                                {
+                                    "root": root_directory,
+                                    "folder": series_name,
+                                    "skipped": True,
+                                },
+                            )
+                        continue
+            # --- End series-level mtime early-exit ---
+
             if library_type == "movie":
                 future = executor.submit(
                     scan_movie,

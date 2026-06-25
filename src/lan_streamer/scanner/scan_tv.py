@@ -98,13 +98,81 @@ def _validate_series_file_layout(
         )
 
 
+def _check_series_directory_mtime_unchanged(
+    series_directory: Path,
+    existing_series_data: Dict[str, Any] | None,
+) -> bool:
+    """Return True if the series directory mtime matches the cached DB value.
+
+    A matching mtime means no season sub-directories were added or removed since
+    the last scan, so ``iterdir()`` on the series directory can be skipped.
+    Files *within* existing seasons may still have changed — the caller must
+    check each season's individual mtime separately.
+    """
+    if not existing_series_data or not existing_series_data.get("seasons"):
+        return False
+
+    from lan_streamer import db
+
+    series_directory_path = str(series_directory.absolute())
+    try:
+        current_series_mtime = series_directory.stat().st_mtime
+    except OSError:
+        return False
+
+    cached_series_mtime = db.get_directory_mtime(series_directory_path)
+    return (
+        cached_series_mtime is not None and current_series_mtime == cached_series_mtime
+    )
+
+
+def _check_single_season_changed(
+    season_directory: Path,
+    existing_season: Dict[str, Any],
+    offline: bool,
+) -> bool:
+    """Return True if a season directory has changed since the last scan.
+
+    Checks the cached directory mtime first.  If the mtime matches the cached
+    value the season is definitively unchanged regardless of any ``_changed``
+    flag left by a previous pass.  When the mtime has changed or is unknown,
+    falls back to file-size comparison and then respects the online ``_changed``
+    flag (which signals pending metadata refresh).
+    """
+    from lan_streamer import db
+
+    try:
+        current_mtime = season_directory.stat().st_mtime
+    except OSError:
+        current_mtime = None
+
+    cached_mtime = db.get_directory_mtime(str(season_directory.absolute()))
+    if cached_mtime is not None and current_mtime == cached_mtime:
+        # Mtime match: season directory contents are definitively unchanged.
+        return False
+
+    # Mtime changed or unknown: check file sizes and respect the _changed flag.
+    is_changed = detect_tv_file_changes(season_directory, existing_season)
+    if not offline:
+        is_changed = is_changed or existing_season.get("_changed", True)
+    return is_changed
+
+
 def _discover_seasons_to_process(
     series_directory: Path,
     existing_series_data: Dict[str, Any] | None,
     metadata_only: bool,
     offline: bool,
 ) -> list[tuple[str, bool, Dict[str, Any] | None]]:
-    """Build list of (season_name, is_changed, existing_season) tuples."""
+    """Build list of (season_name, is_changed, existing_season) tuples.
+
+    When the series directory mtime matches the cached DB value, ``iterdir()``
+    on the series directory is skipped entirely (one fewer network round-trip
+    per series on SMB/NFS) and the season list is derived from existing data.
+    Each season's individual mtime is still checked so that file-level changes
+    inside an existing season (which only update the *season* directory mtime,
+    not the parent series directory mtime) are still detected.
+    """
     seasons_to_process: list[tuple[str, bool, Dict[str, Any] | None]] = []
     if metadata_only:
         if existing_series_data and existing_series_data.get("seasons"):
@@ -113,40 +181,47 @@ def _discover_seasons_to_process(
                 seasons_to_process.append(
                     (season_name, is_season_changed, existing_season)
                 )
-    else:
-        for season_directory in series_directory.iterdir():
-            if not season_directory.is_dir() or season_directory.name.startswith("."):
-                continue
+        return seasons_to_process
 
-            season_name = season_directory.name
-            is_season_changed = True
-            existing_season = None
-            if existing_series_data and season_name in existing_series_data.get(
-                "seasons", {}
-            ):
-                existing_season = existing_series_data["seasons"][season_name]
+    # Check whether the series directory itself has changed.  A matching mtime
+    # means no season folders were added or removed, so we can skip iterdir()
+    # and read season names directly from the existing database record.
+    series_directory_unchanged = _check_series_directory_mtime_unchanged(
+        series_directory, existing_series_data
+    )
 
-                # Check directory mtime to skip walking files
-                try:
-                    current_mtime = season_directory.stat().st_mtime
-                except Exception:
-                    current_mtime = None
-
-                from lan_streamer import db
-
-                cached_mtime = db.get_directory_mtime(str(season_directory.absolute()))
-                if cached_mtime is not None and current_mtime == cached_mtime:
-                    is_season_changed = False
-                else:
-                    is_season_changed = detect_tv_file_changes(
-                        season_directory, existing_season
-                    )
-
-                if not offline:
-                    is_season_changed = is_season_changed or existing_season.get(
-                        "_changed", True
-                    )
+    if series_directory_unchanged and existing_series_data:
+        logger.debug(
+            f"Series '{series_directory.name}' directory mtime unchanged; "
+            "skipping iterdir(), reading season list from existing data."
+        )
+        for season_name, existing_season in existing_series_data["seasons"].items():
+            season_directory = series_directory / season_name
+            is_season_changed = _check_single_season_changed(
+                season_directory, existing_season, offline
+            )
             seasons_to_process.append((season_name, is_season_changed, existing_season))
+        return seasons_to_process
+
+    # Series directory changed (or no cached mtime): walk the filesystem.
+    for season_directory in series_directory.iterdir():
+        if not season_directory.is_dir() or season_directory.name.startswith("."):
+            continue
+
+        season_name = season_directory.name
+        existing_season: Dict[str, Any] | None = None
+        if existing_series_data and season_name in existing_series_data.get(
+            "seasons", {}
+        ):
+            existing_season = existing_series_data["seasons"][season_name]
+            is_season_changed = _check_single_season_changed(
+                season_directory, existing_season, offline
+            )
+        else:
+            is_season_changed = True
+
+        seasons_to_process.append((season_name, is_season_changed, existing_season))
+
     return seasons_to_process
 
 
@@ -634,6 +709,26 @@ def scan_series(
         metadata_only,
         show_future_episodes=show_future_episodes,
     )
+
+    # Phase 6: Persist series directory mtime so subsequent scans can skip
+    # this series entirely when its directory has not changed.
+    if not metadata_only:
+        try:
+            series_directory_mtime = series_directory.stat().st_mtime
+            from lan_streamer import db as _db
+
+            _db.save_directory_mtime(
+                str(series_directory.absolute()), series_directory_mtime
+            )
+            logger.debug(
+                f"Saved series directory mtime for '{series_directory.name}': "
+                f"{series_directory_mtime}"
+            )
+        except OSError as mtime_error:
+            logger.warning(
+                f"Could not read series directory mtime for "
+                f"'{series_directory.name}': {mtime_error}"
+            )
 
     logger.info(
         f"Completed scan for series '{series_directory.name}', found {len(series_data['seasons'])} seasons."
