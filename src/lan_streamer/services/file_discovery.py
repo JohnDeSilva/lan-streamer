@@ -121,6 +121,8 @@ def detect_tv_file_changes(
                 if version.get("path") == path_str:
                     sizes.append(version.get("size_bytes"))
         sizes = [size for size in sizes if size is not None]
+        if not sizes:
+            continue
 
         try:
             disk_size = entry.stat(follow_symlinks=True).st_size
