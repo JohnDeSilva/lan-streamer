@@ -156,7 +156,6 @@ def _save_season_record(
     for attr, key in [
         ("jellyfin_id", "jellyfin_id"),
         ("poster_path", "poster_path"),
-        ("last_scanned_mtime", "last_scanned_mtime"),
     ]:
         val = season_metadata.get(key)
         if val is not None and getattr(season, attr) != val:
@@ -829,6 +828,22 @@ def save_season_data(
                     stats,
                     processed_episodes,
                 )
+
+            # Save season directory mtime to scanned_directories table
+            season_metadata = season_data.get("metadata", {})
+            dir_path = season_metadata.get("season_directory_path")
+            mtime = season_metadata.get("last_scanned_mtime")
+            if dir_path and mtime is not None:
+                from lan_streamer.db.models import ScannedDirectory
+
+                record = session.scalars(
+                    select(ScannedDirectory).where(ScannedDirectory.path == dir_path)
+                ).first()
+                if record:
+                    record.last_scanned_mtime = mtime
+                else:
+                    record = ScannedDirectory(path=dir_path, last_scanned_mtime=mtime)
+                    session.add(record)
 
             session.commit()
             stats["season_id"] = season.id

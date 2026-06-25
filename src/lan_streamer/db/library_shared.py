@@ -126,3 +126,29 @@ def _sync_media_files(
         incoming_subs = v.get("subtitle_tracks")
         if incoming_subs is not None and len(incoming_subs) > 0:
             mf.subtitle_tracks = json.dumps(incoming_subs)
+
+
+def get_directory_mtime(path: str) -> float | None:
+    """Retrieve the cached last_scanned_mtime for a directory path."""
+    from lan_streamer.db.models import ScannedDirectory
+
+    with get_session() as session:
+        record = session.scalars(
+            select(ScannedDirectory).where(ScannedDirectory.path == path)
+        ).first()
+        return record.last_scanned_mtime if record else None
+
+
+def save_directory_mtime(path: str, mtime: float) -> None:
+    """Insert or update the last_scanned_mtime for a directory path."""
+    from lan_streamer.db.models import ScannedDirectory
+
+    with get_session() as session:
+        record = session.scalars(
+            select(ScannedDirectory).where(ScannedDirectory.path == path)
+        ).first()
+        if record:
+            record.last_scanned_mtime = mtime
+        else:
+            record = ScannedDirectory(path=path, last_scanned_mtime=mtime)
+            session.add(record)

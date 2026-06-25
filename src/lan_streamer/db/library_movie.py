@@ -53,14 +53,11 @@ def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> bool:
         ("date_added", "date_added", 0),
         ("runtime", "runtime", 0),
         ("year", "year", 0),
-        ("last_scanned_mtime", "last_scanned_mtime", 0.0),
     ]:
         val = movie_data.get(key)
         if val:
             if key == "date_added":
                 val = int(val)
-            if key == "last_scanned_mtime":
-                val = float(val)
             if getattr(movie, attr) != val:
                 setattr(movie, attr, val)
                 changed = True
@@ -418,6 +415,21 @@ def save_movie_data(
                 ]
             _sync_media_files(session, movie, versions)
             changed = _apply_movie_fields(movie, movie_data)
+
+            # Save movie directory mtime to scanned_directories table
+            dir_path = movie_data.get("movie_directory_path")
+            mtime = movie_data.get("last_scanned_mtime")
+            if dir_path and mtime is not None:
+                from lan_streamer.db.models import ScannedDirectory
+
+                record = session.scalars(
+                    select(ScannedDirectory).where(ScannedDirectory.path == dir_path)
+                ).first()
+                if record:
+                    record.last_scanned_mtime = mtime
+                else:
+                    record = ScannedDirectory(path=dir_path, last_scanned_mtime=mtime)
+                    session.add(record)
 
             session.commit()
             stats["movie_id"] = movie.id
