@@ -318,7 +318,7 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
                             )
                         )
 
-            session.commit()
+            session.flush()
 
     except Exception as e:
         logger.exception(f"Error saving movie library '{library_name}' to database")
@@ -346,18 +346,9 @@ def save_movie_data(
     Saves or updates a single movie in the database.
     """
     stats: Dict[str, Any] = {
-        "series": 0,
-        "seasons": 0,
-        "episodes": 0,
         "movies": 0,
         "deleted": 0,
         "issues": [],
-        "series_added": 0,
-        "series_removed": 0,
-        "seasons_added": 0,
-        "seasons_removed": 0,
-        "episodes_added": 0,
-        "episodes_removed": 0,
         "movies_added": 0,
         "movies_removed": 0,
         "movies_scanned": 0,
@@ -455,7 +446,7 @@ def save_movie_data(
                     record = ScannedDirectory(path=dir_path, last_scanned_mtime=mtime)
                     session.add(record)
 
-            session.commit()
+            session.flush()
             stats["movie_id"] = movie.id
             if not is_new and changed:
                 stats["movies_updated"] = stats.get("movies_updated", 0) + 1

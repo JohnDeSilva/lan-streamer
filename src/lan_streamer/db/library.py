@@ -18,14 +18,14 @@ from typing import Dict, List, Any
 from sqlalchemy import select
 
 from lan_streamer.system.config import config
-from lan_streamer.db.library_shared import (
+from lan_streamer.db.library_shared import (  # noqa: F401
     get_session,
     _update_field_safely,
     _sync_media_files,
     get_directory_mtime,
     save_directory_mtime,
 )
-from lan_streamer.db.library_tv import (
+from lan_streamer.db.library_tv import (  # noqa: F401
     load_library,
     save_library,
     save_season_data,
@@ -34,7 +34,7 @@ from lan_streamer.db.library_tv import (
     _save_episode_record,
     _cleanup_tv_library,
 )
-from lan_streamer.db.library_movie import (
+from lan_streamer.db.library_movie import (  # noqa: F401
     load_movie_library,
     save_movie_library,
     save_movie_data,
@@ -169,21 +169,12 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
 
 __all__ = [
     "get_session",
-    "_update_field_safely",
-    "_sync_media_files",
     "load_library",
     "save_library",
     "save_season_data",
-    "_save_series_record",
-    "_save_season_record",
-    "_save_episode_record",
-    "_cleanup_tv_library",
     "load_movie_library",
     "save_movie_library",
     "save_movie_data",
-    "_apply_movie_fields",
-    "_cleanup_movie_library",
-    "_cleanup_orphaned_media_files",
     "cleanup_library",
     "get_directory_mtime",
     "save_directory_mtime",
