@@ -1,7 +1,6 @@
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from unittest.mock import Mock
 
 from lan_streamer.scanner import has_video_files
 
@@ -190,7 +189,7 @@ def discover_single_library_tree_impl(
             folders = [
                 series_name
                 for series_name, series_data in existing_library.items()
-                if _series_belongs_to_root(series_data, root_dir, library_type)
+                if series_belongs_to_root(series_data, root_dir, library_type)
             ]
             roots[root_dir] = sorted(folders)
         return roots
@@ -216,7 +215,7 @@ def discover_single_library_tree_impl(
     return roots
 
 
-def _series_belongs_to_root(
+def series_belongs_to_root(
     series_data: Dict[str, Any], root_dir: str, library_type: str
 ) -> bool:
     """Check if a series belongs to a specific root directory."""
@@ -260,7 +259,7 @@ def wait_for_database_write_task(
         description: Description of the write operation for logging.
         timeout: Total timeout in seconds.
     """
-    if isinstance(timeout, Mock) or not isinstance(timeout, (int, float)):
+    if timeout is None or not isinstance(timeout, (int, float)):
         timeout = 60.0
 
     warning_threshold = min(10.0, timeout / 2.0) if timeout > 0.0 else 0.0

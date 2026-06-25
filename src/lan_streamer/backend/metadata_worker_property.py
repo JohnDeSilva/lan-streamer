@@ -9,6 +9,8 @@ from PySide6.QtCore import Signal, QThread
 from lan_streamer import db
 from lan_streamer.scanner.file_property_scanner import get_detailed_file_info
 from lan_streamer.backend.database_writer import DatabaseWriteTask, DatabaseWriterThread
+from lan_streamer.backend.scan_worker_base import wait_for_database_write_task
+from lan_streamer.system.config import config
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -183,7 +185,11 @@ class FilePropertyExtractionWorker(QThread):
                             payload={"updates": season_updates},
                         )
                         self.database_queue.put(task)
-                        task.event.wait()
+                        wait_for_database_write_task(
+                            task,
+                            f"season {season_id} ({len(season_updates)} episodes)",
+                            timeout=config.database_write_timeout,
+                        )
                         if task.error:
                             raise task.error
 
@@ -197,7 +203,11 @@ class FilePropertyExtractionWorker(QThread):
                             payload={"updates": [update]},
                         )
                         self.database_queue.put(task)
-                        task.event.wait()
+                        wait_for_database_write_task(
+                            task,
+                            f"movie {movie['path']}",
+                            timeout=config.database_write_timeout,
+                        )
                         if task.error:
                             raise task.error
                         local_updated += 1
