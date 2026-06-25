@@ -99,25 +99,12 @@ class TMDBClient:
 
             try:
                 method_name = method.upper()
-                if method_name == "GET":
-                    response = self.session.get(
-                        url,
-                        params=params,
-                        timeout=timeout,
-                    )
-                elif method_name == "POST":
-                    response = self.session.post(
-                        url,
-                        data=params,
-                        timeout=timeout,
-                    )
-                else:
-                    response = self.session.request(
-                        method=method_name,
-                        url=url,
-                        params=params,
-                        timeout=timeout,
-                    )
+                response = self.session.request(
+                    method=method_name,
+                    url=url,
+                    params=params,
+                    timeout=timeout,
+                )
                 if response.status_code == 429:
                     retry_after_str = response.headers.get("Retry-After")
                     if retry_after_str and retry_after_str.isdigit():

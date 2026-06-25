@@ -1,6 +1,5 @@
 import atexit
 import logging
-import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -40,9 +39,7 @@ def get_scan_executor() -> ThreadPoolExecutor:
     if _global_scan_executor is None:
         with _global_scan_executor_lock:
             if _global_scan_executor is None:
-                max_workers: int = max(1, min(10, (os.cpu_count() or 4) * 2))
                 _global_scan_executor = ThreadPoolExecutor(
-                    max_workers=max_workers,
                     thread_name_prefix="scan_worker",
                 )
     return _global_scan_executor

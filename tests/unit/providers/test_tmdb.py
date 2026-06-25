@@ -62,7 +62,7 @@ def test_params_without_key() -> None:
 def test_do_search_success(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"results": [{"id": 1, "name": "The Office"}]}
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
 
     results = tmdb._do_search("The Office")
     assert len(results) == 1
@@ -70,7 +70,7 @@ def test_do_search_success(tmdb) -> None:
 
 
 def test_do_search_error(tmdb) -> None:
-    tmdb.session.get = MagicMock(side_effect=Exception("network error"))
+    tmdb.session.request = MagicMock(side_effect=Exception("network error"))
     results = tmdb._do_search("broken query")
     assert results == []
 
@@ -97,7 +97,7 @@ def test_search_series_full(tmdb) -> None:
     mock_resp.json.return_value = {
         "results": [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}]
     }
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
     results = tmdb.search_series_full("Show")
     assert len(results) == 2
 
@@ -141,14 +141,14 @@ def test_is_similar_word_overlap(tmdb) -> None:
 def test_get_series_by_id(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"id": 1234, "name": "The Office", "seasons": []}
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
 
     result = tmdb.get_series_by_id(1234)
     assert result["id"] == 1234
 
 
 def test_get_series_by_id_error(tmdb) -> None:
-    tmdb.session.get = MagicMock(side_effect=Exception("network error"))
+    tmdb.session.request = MagicMock(side_effect=Exception("network error"))
     assert tmdb.get_series_by_id(1) is None
 
 
@@ -167,7 +167,7 @@ def test_get_seasons(tmdb) -> None:
             {"id": 0, "season_number": 0, "name": "Specials"},
         ],
     }
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
     seasons = tmdb.get_seasons(1234)
     assert len(seasons) == 3
 
@@ -178,13 +178,13 @@ def test_get_seasons_only_specials(tmdb) -> None:
     mock_resp.json.return_value = {
         "seasons": [{"id": 0, "season_number": 0, "name": "Specials"}]
     }
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
     seasons = tmdb.get_seasons(1234)
     assert len(seasons) == 1
 
 
 def test_get_seasons_error(tmdb) -> None:
-    tmdb.session.get = MagicMock(side_effect=Exception("error"))
+    tmdb.session.request = MagicMock(side_effect=Exception("error"))
     assert tmdb.get_seasons(1) == []
 
 
@@ -201,21 +201,21 @@ def test_get_episodes(tmdb) -> None:
             {"id": 2, "episode_number": 2, "name": "Episode 2"},
         ]
     }
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
     episodes = tmdb.get_episodes(1234, 1)
     assert len(episodes) == 2
     assert episodes[0]["episode_number"] == 1
 
 
 def test_get_episodes_error(tmdb) -> None:
-    tmdb.session.get = MagicMock(side_effect=Exception("error"))
+    tmdb.session.request = MagicMock(side_effect=Exception("error"))
     assert tmdb.get_episodes(1, 1) == []
 
 
 def test_get_episodes_http_error_404(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.status_code = 404
-    tmdb.session.get = MagicMock(
+    tmdb.session.request = MagicMock(
         side_effect=requests.exceptions.HTTPError(response=mock_resp)
     )
     assert tmdb.get_episodes(1, 1) == []
@@ -224,7 +224,7 @@ def test_get_episodes_http_error_404(tmdb) -> None:
 def test_get_episodes_http_error_500(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.status_code = 500
-    tmdb.session.get = MagicMock(
+    tmdb.session.request = MagicMock(
         side_effect=requests.exceptions.HTTPError(response=mock_resp)
     )
     assert tmdb.get_episodes(1, 1) == []
@@ -239,7 +239,7 @@ def test_download_image_full_url(tmdb, tmp_path) -> None:
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.content = b"fake-image-data"
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
 
     path = tmdb.download_image(
         "https://image.tmdb.org/t/p/w500/abc.jpg", "tmdb_series_123"
@@ -248,12 +248,12 @@ def test_download_image_full_url(tmdb, tmp_path) -> None:
     assert (tmp_path / "tmdb_series_123.jpg").read_bytes() == b"fake-image-data"
 
     # Second call should return cached path without re-downloading
-    tmdb.session.get.reset_mock()
+    tmdb.session.request.reset_mock()
     path2 = tmdb.download_image(
         "https://image.tmdb.org/t/p/w500/abc.jpg", "tmdb_series_123"
     )
     assert path2 == str(tmp_path / "tmdb_series_123.jpg")
-    tmdb.session.get.assert_not_called()
+    tmdb.session.request.assert_not_called()
 
 
 def test_download_image_bare_path(tmdb, tmp_path) -> None:
@@ -261,12 +261,12 @@ def test_download_image_bare_path(tmdb, tmp_path) -> None:
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.content = b"poster-bytes"
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
 
     path = tmdb.download_image("/abc.jpg", "poster_key")
     assert path == str(tmp_path / "poster_key.jpg")
     # Verify it used the CDN base URL
-    called_url = tmdb.session.get.call_args[0][0]
+    called_url = tmdb.session.request.call_args[1]["url"]
     assert called_url.startswith("https://image.tmdb.org")
 
 
@@ -276,7 +276,7 @@ def test_download_image_empty(tmdb) -> None:
 
 
 def test_download_image_error(tmdb) -> None:
-    tmdb.session.get = MagicMock(side_effect=Exception("Download failed"))
+    tmdb.session.request = MagicMock(side_effect=Exception("Download failed"))
     path = tmdb.download_image("/abc.jpg", "error_key")
     assert path == ""
 
@@ -429,7 +429,7 @@ def test_search_movie_full(tmdb) -> None:
     mock_resp.json.return_value = {
         "results": [{"id": 1, "title": "M1"}, {"id": 2, "title": "M2"}]
     }
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
     results = tmdb.search_movie_full("Movie")
     assert len(results) == 2
 
@@ -442,7 +442,7 @@ def test_search_movie_full_not_configured() -> None:
 def test_get_movie_by_id(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"id": 19995, "title": "Avatar"}
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
 
     result = tmdb.get_movie_by_id(19995)
     assert result is not None
@@ -450,12 +450,12 @@ def test_get_movie_by_id(tmdb) -> None:
 
 
 def test_get_movie_by_id_error(tmdb) -> None:
-    tmdb.session.get = MagicMock(side_effect=Exception("network error"))
+    tmdb.session.request = MagicMock(side_effect=Exception("network error"))
     assert tmdb.get_movie_by_id(1) is None
 
 
 def test_do_movie_search_error(tmdb) -> None:
-    tmdb.session.get = MagicMock(side_effect=Exception("network error"))
+    tmdb.session.request = MagicMock(side_effect=Exception("network error"))
     assert tmdb._do_movie_search("query") == []
 
 
@@ -467,7 +467,7 @@ def test_do_movie_search_error(tmdb) -> None:
 def test_get_episode_groups_success(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"results": [{"id": "g1", "name": "DVD Order"}]}
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
 
     res = tmdb.get_episode_groups(1234)
     assert len(res) == 1
@@ -475,14 +475,14 @@ def test_get_episode_groups_success(tmdb) -> None:
 
 
 def test_get_episode_groups_error(tmdb) -> None:
-    tmdb.session.get = MagicMock(side_effect=Exception("network error"))
+    tmdb.session.request = MagicMock(side_effect=Exception("network error"))
     assert tmdb.get_episode_groups(1234) == []
 
 
 def test_get_episode_group_details_success(tmdb) -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"id": "g1", "name": "DVD Order", "groups": []}
-    tmdb.session.get = MagicMock(return_value=mock_resp)
+    tmdb.session.request = MagicMock(return_value=mock_resp)
 
     res = tmdb.get_episode_group_details("g1")
     assert res is not None
@@ -490,7 +490,7 @@ def test_get_episode_group_details_success(tmdb) -> None:
 
 
 def test_get_episode_group_details_error(tmdb) -> None:
-    tmdb.session.get = MagicMock(side_effect=Exception("network error"))
+    tmdb.session.request = MagicMock(side_effect=Exception("network error"))
     assert tmdb.get_episode_group_details("g1") is None
 
 
@@ -594,7 +594,9 @@ def test_make_request_429_respects_retry_after_header(
     success_response.status_code = 200
 
     # _make_request dispatches GET to session.get(), not session.request().
-    mock_session.get = MagicMock(side_effect=[rate_limited_response, success_response])
+    mock_session.request = MagicMock(
+        side_effect=[rate_limited_response, success_response]
+    )
     tmdb.session = mock_session
 
     with patch("lan_streamer.providers.tmdb.time.sleep") as mock_sleep:
@@ -620,7 +622,9 @@ def test_make_request_429_uses_exponential_backoff_without_retry_after(
     success_response.status_code = 200
 
     # _make_request dispatches GET to session.get(), not session.request().
-    mock_session.get = MagicMock(side_effect=[rate_limited_response, success_response])
+    mock_session.request = MagicMock(
+        side_effect=[rate_limited_response, success_response]
+    )
     tmdb.session = mock_session
 
     with (
@@ -651,7 +655,7 @@ def test_make_request_raises_runtime_error_after_all_429_retries_exhausted(
 
     # All 3 attempts return 429 — the loop should exhaust and raise.
     # _make_request dispatches GET to session.get(), not session.request().
-    mock_session.get = MagicMock(return_value=rate_limited_response)
+    mock_session.request = MagicMock(return_value=rate_limited_response)
     tmdb.session = mock_session
 
     with (
@@ -661,7 +665,7 @@ def test_make_request_raises_runtime_error_after_all_429_retries_exhausted(
         tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
 
     # Must have been called exactly max_retries (3) times — no hidden 4th call.
-    assert mock_session.get.call_count == 3
+    assert mock_session.request.call_count == 3
 
 
 def test_make_request_retries_on_network_error_and_succeeds(
@@ -672,7 +676,7 @@ def test_make_request_retries_on_network_error_and_succeeds(
     success_response.status_code = 200
 
     # _make_request dispatches GET to session.get(), not session.request().
-    mock_session.get = MagicMock(
+    mock_session.request = MagicMock(
         side_effect=[requests.exceptions.ConnectionError("timeout"), success_response]
     )
     tmdb.session = mock_session
@@ -681,7 +685,7 @@ def test_make_request_retries_on_network_error_and_succeeds(
         response = tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
 
     assert response.status_code == 200
-    assert mock_session.get.call_count == 2
+    assert mock_session.request.call_count == 2
 
 
 def test_make_request_reraises_on_final_network_error(
@@ -689,7 +693,7 @@ def test_make_request_reraises_on_final_network_error(
 ) -> None:
     """After max_retries network errors, the original exception is re-raised."""
     # _make_request dispatches GET to session.get(), not session.request().
-    mock_session.get = MagicMock(
+    mock_session.request = MagicMock(
         side_effect=requests.exceptions.ConnectionError("persistent failure")
     )
     tmdb.session = mock_session
