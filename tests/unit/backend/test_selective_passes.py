@@ -205,3 +205,114 @@ def test_file_property_worker_empty_changed_set(mock_db) -> None:
         mock_probe.return_value = {"runtime": 0}
         worker.run()
         assert mock_probe.call_count == 0
+
+
+def test_detect_tv_file_changes_scandir(tmp_path) -> None:
+    season_dir = tmp_path / "Season 1"
+    season_dir.mkdir()
+    ep_file = season_dir / "S01E01.mkv"
+    ep_file.touch()
+
+    # Match case
+    disk_size = ep_file.stat().st_size
+    existing = {
+        "episodes": [
+            {
+                "path": str(ep_file.absolute()),
+                "size_bytes": disk_size,
+            }
+        ]
+    }
+    assert detect_tv_file_changes(season_dir, existing) is False
+
+    # Extra folder/file check
+    extra_file = season_dir / "ignored.txt"
+    extra_file.touch()
+    assert detect_tv_file_changes(season_dir, existing) is False  # TXT is ignored
+
+    another_mkv = season_dir / "S01E02.mkv"
+    another_mkv.touch()
+    assert detect_tv_file_changes(season_dir, existing) is True
+
+
+def test_tv_season_mtime_skip_scanning(tmp_path) -> None:
+    from lan_streamer.scanner.scan_tv import _discover_seasons_to_process
+
+    series_dir = tmp_path / "Series A"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    ep_file = season_dir / "S01E01.mkv"
+    ep_file.touch()
+
+    current_mtime = season_dir.stat().st_mtime
+    existing_series_data = {
+        "seasons": {
+            "Season 1": {
+                "metadata": {
+                    "last_scanned_mtime": current_mtime,
+                },
+                "episodes": [
+                    {
+                        "path": str(ep_file.absolute()),
+                        "size_bytes": ep_file.stat().st_size,
+                    }
+                ],
+                "_changed": False,
+            }
+        }
+    }
+
+    # Discover seasons with matching mtime -> is_changed must be False
+    seasons = _discover_seasons_to_process(
+        series_dir, existing_series_data, False, False
+    )
+    assert len(seasons) == 1
+    assert seasons[0][0] == "Season 1"
+    assert seasons[0][1] is False  # Not changed!
+
+    # Change mtime in cached -> is_changed must be True
+    existing_series_data["seasons"]["Season 1"]["metadata"]["last_scanned_mtime"] = (
+        current_mtime - 10
+    )
+    # Modify cached size to trigger change detection fallback
+    existing_series_data["seasons"]["Season 1"]["episodes"][0]["size_bytes"] += 100
+    seasons = _discover_seasons_to_process(
+        series_dir, existing_series_data, False, False
+    )
+    assert seasons[0][1] is True  # Changed!
+
+
+def test_movie_mtime_skip_scanning(tmp_path) -> None:
+    from lan_streamer.scanner.scan_movie import _detect_movie_changes
+
+    movie_dir = tmp_path / "Movie A"
+    movie_dir.mkdir()
+    movie_file = movie_dir / "Movie A.mkv"
+    movie_file.touch()
+
+    current_mtime = movie_dir.stat().st_mtime
+    existing_movie_data = {
+        "path": str(movie_file.absolute()),
+        "size_bytes": movie_file.stat().st_size,
+        "last_scanned_mtime": current_mtime,
+        "_changed": False,
+        "versions": [
+            {
+                "path": str(movie_file.absolute()),
+                "size_bytes": movie_file.stat().st_size,
+            }
+        ],
+    }
+
+    # Match mtime -> is_changed must be False
+    is_changed, offline = _detect_movie_changes(movie_dir, existing_movie_data, False)
+    assert is_changed is False
+
+    # Mismatch mtime -> is_changed must be True
+    existing_movie_data["last_scanned_mtime"] = current_mtime - 10
+    # Modify cached size to trigger change detection fallback
+    existing_movie_data["size_bytes"] += 100
+    existing_movie_data["versions"][0]["size_bytes"] += 100
+    is_changed, offline = _detect_movie_changes(movie_dir, existing_movie_data, False)
+    assert is_changed is True
