@@ -75,12 +75,14 @@ class TMDBClient:
     ) -> requests.Response:
         """Make a thread-safe HTTP request to TMDB with rate limiting and retry backoff for 429s.
 
-        The per-class rate-limit lock serialises requests across all instances so
-        that parallel directory scans share a single ≤10 req/s throttle.
+        Uses a token-bucket throttle (≤10 req/s) shared across all instances via
+        the class-level lock.  Crucially the lock is only held long enough to read
+        and advance the shared timestamp — the actual ``time.sleep`` happens
+        *outside* the lock so that other threads are not blocked during the delay
+        and can reserve their own future slots immediately.
 
         Raises:
-            requests.exceptions.RuntimeError: If all retries are exhausted due to
-                repeated 429 responses.
+            RuntimeError: If all retries are exhausted due to repeated 429 responses.
             requests.exceptions.RequestException: Re-raised on the final network
                 failure attempt.
         """
@@ -88,14 +90,19 @@ class TMDBClient:
         backoff_factor = 1.0
 
         for attempt in range(max_retries):
-            # Throttle to ~10 requests per second using the shared class-level lock.
+            # Token-bucket throttle: acquire the lock only to read/advance the
+            # shared timestamp, then release it before sleeping so that other
+            # threads can reserve their own slots concurrently.
             with TMDBClient._class_rate_limit_lock:
-                current_time = time.time()
-                elapsed = current_time - TMDBClient._class_last_request_time
-                delay = 0.1 - elapsed
-                if delay > 0:
-                    time.sleep(delay)
-                TMDBClient._class_last_request_time = time.time()
+                now = time.time()
+                elapsed = now - TMDBClient._class_last_request_time
+                delay = max(0.0, 0.1 - elapsed)
+                # Reserve the next slot by advancing the timestamp by the delay.
+                # This prevents two threads from computing the same delay.
+                TMDBClient._class_last_request_time = now + delay
+            # Lock released — sleep outside so other threads are not serialised.
+            if delay > 0:
+                time.sleep(delay)
 
             try:
                 method_name = method.upper()
