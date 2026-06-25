@@ -207,6 +207,45 @@ def test_file_property_worker_empty_changed_set(mock_db) -> None:
         assert mock_probe.call_count == 0
 
 
+def test_detect_tv_file_changes_none_size_bytes(tmp_path) -> None:
+    """When all existing size_bytes are None, should return False (not changed)."""
+    season_dir = tmp_path / "Season 1"
+    season_dir.mkdir()
+    ep_file = season_dir / "S01E01.mkv"
+    ep_file.touch()
+
+    existing = {
+        "episodes": [
+            {
+                "path": str(ep_file.absolute()),
+                "size_bytes": None,
+            }
+        ]
+    }
+    assert detect_tv_file_changes(season_dir, existing) is False
+
+
+def test_detect_tv_file_changes_none_size_bytes_in_versions(tmp_path) -> None:
+    """When size_bytes is None in versions list, should return False (not changed)."""
+    season_dir = tmp_path / "Season 1"
+    season_dir.mkdir()
+    ep_file = season_dir / "S01E01.mkv"
+    ep_file.touch()
+
+    existing = {
+        "episodes": [
+            {
+                "path": str(ep_file.absolute()),
+                "size_bytes": None,
+                "versions": [
+                    {"path": str(ep_file.absolute()), "size_bytes": None},
+                ],
+            }
+        ]
+    }
+    assert detect_tv_file_changes(season_dir, existing) is False
+
+
 def test_detect_tv_file_changes_scandir(tmp_path) -> None:
     season_dir = tmp_path / "Season 1"
     season_dir.mkdir()
