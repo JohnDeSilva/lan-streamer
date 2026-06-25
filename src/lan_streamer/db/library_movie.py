@@ -53,11 +53,14 @@ def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> bool:
         ("date_added", "date_added", 0),
         ("runtime", "runtime", 0),
         ("year", "year", 0),
+        ("last_scanned_mtime", "last_scanned_mtime", 0.0),
     ]:
         val = movie_data.get(key)
         if val:
             if key == "date_added":
                 val = int(val)
+            if key == "last_scanned_mtime":
+                val = float(val)
             if getattr(movie, attr) != val:
                 setattr(movie, attr, val)
                 changed = True

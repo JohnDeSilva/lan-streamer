@@ -118,6 +118,7 @@ def _build_season_dict(season: Season) -> Dict[str, Any]:
             "jellyfin_id": season.jellyfin_id,
             "poster_path": season.poster_path,
             "myanimelist_id": season.myanimelist_id,
+            "last_scanned_mtime": season.last_scanned_mtime,
         },
         "episodes": episodes,
     }
@@ -246,6 +247,7 @@ def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
         "bit_rate": bit_rate,
         "versions": versions,
         "default_path": movie.default_path or "",
+        "last_scanned_mtime": movie.last_scanned_mtime,
     }
 
 
