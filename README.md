@@ -271,7 +271,6 @@ erDiagram
         string jellyfin_id
         string poster_path
         int myanimelist_id
-        float last_scanned_mtime
     }
     EPISODES {
         bytes id PK
@@ -303,6 +302,9 @@ erDiagram
         int year
         string video_codec
         string default_path
+    }
+    SCANNED_DIRECTORIES {
+        string path PK
         float last_scanned_mtime
     }
     MEDIA_FILES {
