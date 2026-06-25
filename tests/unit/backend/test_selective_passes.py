@@ -281,6 +281,99 @@ def test_tv_season_mtime_skip_scanning(tmp_path) -> None:
     assert seasons[0][1] is True  # Changed!
 
 
+def test_tv_series_mtime_unchanged_skips_iterdir(tmp_path) -> None:
+    """When the series directory mtime matches the cache, _discover_seasons_to_process
+    must use existing season names without calling iterdir() on the series directory."""
+    import pathlib
+    from unittest.mock import patch
+    from lan_streamer.scanner.scan_tv import _discover_seasons_to_process
+    from lan_streamer import db
+
+    series_dir = tmp_path / "Series B"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    ep_file = season_dir / "S01E01.mkv"
+    ep_file.touch()
+
+    # Record both series and season mtimes as current
+    db.save_directory_mtime(str(series_dir.absolute()), series_dir.stat().st_mtime)
+    db.save_directory_mtime(str(season_dir.absolute()), season_dir.stat().st_mtime)
+
+    existing_series_data = {
+        "seasons": {
+            "Season 1": {
+                "metadata": {},
+                "episodes": [
+                    {
+                        "path": str(ep_file.absolute()),
+                        "size_bytes": ep_file.stat().st_size,
+                    }
+                ],
+            }
+        }
+    }
+
+    series_dir_str = str(series_dir.absolute())
+    iterdir_called_on_series: list[bool] = []
+    original_iterdir = pathlib.Path.iterdir
+
+    def tracking_iterdir(self: pathlib.Path):  # type: ignore[override]
+        if str(self.absolute()) == series_dir_str:
+            iterdir_called_on_series.append(True)
+        return original_iterdir(self)
+
+    with patch.object(pathlib.Path, "iterdir", tracking_iterdir):
+        seasons = _discover_seasons_to_process(
+            series_dir, existing_series_data, False, False
+        )
+
+    # iterdir() must NOT have been called on the series directory
+    assert not iterdir_called_on_series, (
+        "iterdir() was called on the series directory despite matching mtime"
+    )
+
+    assert len(seasons) == 1
+    assert seasons[0][0] == "Season 1"
+    assert seasons[0][1] is False  # Season also unchanged
+
+
+def test_check_series_directory_mtime_unchanged(tmp_path) -> None:
+    from lan_streamer.scanner.scan_tv import _check_series_directory_mtime_unchanged
+    from lan_streamer import db
+
+    series_dir = tmp_path / "My Series"
+    series_dir.mkdir()
+
+    existing_with_seasons = {"seasons": {"Season 1": {}}}
+
+    # No cached mtime -> not unchanged
+    assert (
+        _check_series_directory_mtime_unchanged(series_dir, existing_with_seasons)
+        is False
+    )
+
+    # Cached mtime matches -> unchanged
+    current = series_dir.stat().st_mtime
+    db.save_directory_mtime(str(series_dir.absolute()), current)
+    assert (
+        _check_series_directory_mtime_unchanged(series_dir, existing_with_seasons)
+        is True
+    )
+
+    # Cached mtime stale -> not unchanged
+    db.save_directory_mtime(str(series_dir.absolute()), current - 5.0)
+    assert (
+        _check_series_directory_mtime_unchanged(series_dir, existing_with_seasons)
+        is False
+    )
+
+    # No existing seasons -> not unchanged (must walk filesystem)
+    db.save_directory_mtime(str(series_dir.absolute()), current)
+    assert _check_series_directory_mtime_unchanged(series_dir, {"seasons": {}}) is False
+    assert _check_series_directory_mtime_unchanged(series_dir, None) is False
+
+
 def test_movie_mtime_skip_scanning(tmp_path) -> None:
     from lan_streamer.scanner.scan_movie import _detect_movie_changes
     from lan_streamer import db
@@ -316,3 +409,109 @@ def test_movie_mtime_skip_scanning(tmp_path) -> None:
     existing_movie_data["versions"][0]["size_bytes"] += 100
     is_changed, offline = _detect_movie_changes(movie_dir, existing_movie_data, False)
     assert is_changed is True
+
+
+def test_series_mtime_skip_scanning(tmp_path) -> None:
+    """When the series directory mtime matches the cached DB value, scan_directories
+    must skip calling scan_series entirely and reuse the existing series data."""
+    from unittest.mock import patch
+    from lan_streamer.scanner.core import scan_directories
+    from lan_streamer import db
+
+    # Build a minimal on-disk series layout
+    series_dir = tmp_path / "My Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    episode_file = season_dir / "S01E01.mkv"
+    episode_file.touch()
+
+    current_series_mtime = series_dir.stat().st_mtime
+    db.save_directory_mtime(str(series_dir.absolute()), current_series_mtime)
+
+    existing_library = {
+        "My Show": {
+            "metadata": {
+                "name": "My Show",
+                "tmdb_identifier": "12345",
+            },
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "S01E01",
+                            "path": str(episode_file.absolute()),
+                            "size_bytes": episode_file.stat().st_size,
+                        }
+                    ],
+                }
+            },
+        }
+    }
+
+    # scan_series should never be called when the series mtime matches
+    with patch("lan_streamer.scanner.core.scan_series") as mock_scan_series:
+        result = scan_directories(
+            [str(tmp_path)],
+            library_type="tv",
+            existing_library=existing_library,
+            force_refresh=False,
+            offline=False,
+        )
+        mock_scan_series.assert_not_called()
+
+    # The existing series data should be preserved in the result
+    assert "My Show" in result
+    assert result["My Show"] is existing_library["My Show"]
+
+
+def test_series_mtime_changed_triggers_scan(tmp_path) -> None:
+    """When the cached series directory mtime differs from the current mtime,
+    scan_directories must NOT skip and must call scan_series."""
+    from unittest.mock import patch
+    from lan_streamer.scanner.core import scan_directories
+    from lan_streamer import db
+
+    series_dir = tmp_path / "New Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    episode_file = season_dir / "S01E01.mkv"
+    episode_file.touch()
+
+    # Store a stale (older) mtime so the check fails
+    stale_mtime = series_dir.stat().st_mtime - 100.0
+    db.save_directory_mtime(str(series_dir.absolute()), stale_mtime)
+
+    existing_library = {
+        "New Show": {
+            "metadata": {
+                "name": "New Show",
+                "tmdb_identifier": "99999",
+            },
+            "seasons": {},
+        }
+    }
+
+    sentinel_result: dict = {
+        "metadata": {"name": "New Show", "tmdb_identifier": "99999"},
+        "seasons": {"Season 1": {"metadata": {}, "episodes": []}},
+    }
+
+    with patch(
+        "lan_streamer.scanner.core.scan_series", return_value=sentinel_result
+    ) as mock_scan_series:
+        with patch(
+            "lan_streamer.services.metadata_updates.clean_series_data",
+            return_value=sentinel_result,
+        ):
+            scan_directories(
+                [str(tmp_path)],
+                library_type="tv",
+                existing_library=existing_library,
+                force_refresh=False,
+                offline=False,
+            )
+        # scan_series must have been called because the mtime changed
+        mock_scan_series.assert_called_once()
