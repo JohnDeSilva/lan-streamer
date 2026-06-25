@@ -24,6 +24,7 @@ Below is the structured textual representation of all major class inheritance pa
   - `JellyfinPushWorker` (syncs watched episodes/movies to Jellyfin server)
   - `MetadataEmbedWorker` (embeds movie/episode metadata tags using ffmpeg copy pipelines)
   - `RefreshSeriesWorker` (re-scans folder metadata for a specific series/movie)
+  - `ScanSingleSeriesWorker` (scans all directories corresponding to a specific series/movie, ignoring mtime caching)
   - `RuntimeExtractionWorker` (extracts runtimes, codec, audio/subtitle tracks via ffprobe)
   - `ScanAllLibrariesWorker` (runs sequential scans on all libraries)
   - `ScanWorker` (scans a specific TV or movie library directory using TMDB clients)
@@ -202,6 +203,19 @@ Below is the structured textual representation of all major class inheritance pa
 
 **Methods**:
 - `def __init__(self, library_name: str, item_name: str, library_type: str, root_directories: List[str], existing_library: Dict[str, Any], parent: Optional[QObject]=None) -> None`
+
+- `def run(self) -> None`
+
+---
+
+### `ScanSingleSeriesWorker`
+- **Defined in**: [scan_series_worker.py](../src/lan_streamer/backend/scan_series_worker.py#L15) (line 15)
+- **Inherits from**: `QThread`
+
+> Scans all directories corresponding to a specific series or movie in the library, bypassing mtime caching to re-scan files.
+
+**Methods**:
+- `def __init__(self, library_name: str, series_name: str, library_type: str, root_directories: List[str], existing_library: Dict[str, Any], parent: Optional[QObject]=None) -> None`
 
 - `def run(self) -> None`
 
@@ -1338,6 +1352,9 @@ Below is the structured textual representation of all major class inheritance pa
 
 - `def trigger_series_refresh(self, series_name: str) -> None`
   > Triggers a background RefreshSeriesWorker for the specified series or movie.
+
+- `def trigger_series_scan(self, series_name: str) -> None`
+  > Triggers a background ScanSingleSeriesWorker for the specified series or movie.
 
 - `def update_episode_metadata(self, series_name: str, episode_path: str, metadata_dictionary: Dict[str, Any]) -> None`
   > Persists manual metadata overrides for a specific episode.

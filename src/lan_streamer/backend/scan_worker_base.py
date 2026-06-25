@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from unittest.mock import Mock
 
 from lan_streamer.scanner import has_video_files
 
@@ -259,8 +260,6 @@ def wait_for_database_write_task(
         description: Description of the write operation for logging.
         timeout: Total timeout in seconds.
     """
-    from unittest.mock import Mock
-
     if isinstance(timeout, Mock) or not isinstance(timeout, (int, float)):
         timeout = 60.0
 
