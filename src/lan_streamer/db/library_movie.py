@@ -186,6 +186,8 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
     }
 
     try:
+        from lan_streamer.db.models import ScannedDirectory
+
         with get_session() as session:
             existing_movies_by_name = {
                 m.name: m
@@ -297,6 +299,27 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
                     stats["movies_updated"] = stats.get("movies_updated", 0) + 1
                 stats["movies_scanned"] = stats.get("movies_scanned", 0) + 1
 
+            # Persist movie directory mtimes
+            for movie_name, movie_data in library.items():
+                movie_dir = movie_data.get("movie_directory_path")
+                movie_mtime = movie_data.get("last_scanned_mtime")
+                if movie_dir and movie_mtime is not None:
+                    record = session.scalars(
+                        select(ScannedDirectory).where(
+                            ScannedDirectory.path == movie_dir
+                        )
+                    ).first()
+                    if record:
+                        record.last_scanned_mtime = movie_mtime
+                    else:
+                        session.add(
+                            ScannedDirectory(
+                                path=movie_dir, last_scanned_mtime=movie_mtime
+                            )
+                        )
+
+            session.commit()
+
     except Exception as e:
         logger.exception(f"Error saving movie library '{library_name}' to database")
         stats["issues"].append(
@@ -306,6 +329,7 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
                 "error": str(e),
             }
         )
+        raise
 
     duration = time.time() - start_time
     logger.info(

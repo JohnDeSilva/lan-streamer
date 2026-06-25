@@ -589,7 +589,8 @@ def test_db_movie_exceptions() -> None:
         "lan_streamer.db.connection.get_session", side_effect=Exception("DB Fault")
     ):
         assert db.load_movie_library("Cinematic Movies") == {}
-        db.save_movie_library("Cinematic Movies", {"m": {}})
+        with pytest.raises(Exception, match="DB Fault"):
+            db.save_movie_library("Cinematic Movies", {"m": {}})
 
 
 def test_db_movie_save_path_upsert() -> None:
