@@ -97,6 +97,10 @@ class ScanAllLibrariesWorker(QThread):
         # double-counting in self.stats (which is the union of both passes).
         self._scanned_series_ids: Set[str] = set()
         self._scanned_movie_ids: Set[str] = set()
+        # Track unique series/movie IDs skipped across BOTH passes to ensure
+        # skipped counts are not lost.
+        self._skipped_series_ids: Set[str] = set()
+        self._skipped_movie_ids: Set[str] = set()
 
         self.pass1_stats: Dict[str, int] = create_empty_stats()
         self.pass2_stats: Dict[str, int] = create_empty_stats()
@@ -392,8 +396,15 @@ class ScanAllLibrariesWorker(QThread):
                             )
                             if not any_changed:
                                 local_stats["series_skipped"] += 1
+                                # Track skipped in global set to ensure skipped counts
+                                # are not lost when merging across passes.
+                                series_id = stats.get("series_id") or series_name
+                                with self._lock:
+                                    if series_id not in self._skipped_series_ids:
+                                        self._skipped_series_ids.add(series_id)
+                                        self.stats["series_skipped"] += 1
 
-                        local_stats["seasons_scanned"] += 1
+                            local_stats["seasons_scanned"] += 1
 
                         episode_count: int = len(season_data.get("episodes", []))
                         local_stats["episodes_scanned"] += episode_count
@@ -462,6 +473,13 @@ class ScanAllLibrariesWorker(QThread):
 
                         if not movie_data.get("_changed", True):
                             local_stats["movies_skipped"] += 1
+                            # Track skipped in global set to ensure skipped counts
+                            # are not lost when merging across passes.
+                            movie_id = stats.get("movie_id") or movie_name
+                            with self._lock:
+                                if movie_id not in self._skipped_movie_ids:
+                                    self._skipped_movie_ids.add(movie_id)
+                                    self.stats["movies_skipped"] += 1
 
                         for key in local_stats:
                             if key in stats and not (
@@ -791,6 +809,8 @@ class ScanAllLibrariesWorker(QThread):
         self.pass2_series_scanned.clear()
         self._scanned_series_ids.clear()
         self._scanned_movie_ids.clear()
+        self._skipped_series_ids.clear()
+        self._skipped_movie_ids.clear()
 
         # Create the database writer thread
         self.database_queue = queue.Queue()

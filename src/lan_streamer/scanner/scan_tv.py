@@ -125,9 +125,23 @@ def _discover_seasons_to_process(
                 "seasons", {}
             ):
                 existing_season = existing_series_data["seasons"][season_name]
-                is_season_changed = detect_tv_file_changes(
-                    season_directory, existing_season
+
+                # Check directory mtime to skip walking files
+                try:
+                    current_mtime = season_directory.stat().st_mtime
+                except Exception:
+                    current_mtime = None
+
+                cached_mtime = existing_season.get("metadata", {}).get(
+                    "last_scanned_mtime"
                 )
+                if cached_mtime is not None and current_mtime == cached_mtime:
+                    is_season_changed = False
+                else:
+                    is_season_changed = detect_tv_file_changes(
+                        season_directory, existing_season
+                    )
+
                 if not offline:
                     is_season_changed = is_season_changed or existing_season.get(
                         "_changed", True

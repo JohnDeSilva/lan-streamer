@@ -47,9 +47,20 @@ def _detect_movie_changes(
     """Detect if movie files have changed and determine offline mode."""
     is_movie_changed = True
     if existing_movie_data:
-        is_movie_changed = detect_movie_file_changes(
-            movie_directory, existing_movie_data
-        )
+        # Check directory mtime to skip walking files
+        try:
+            current_mtime = movie_directory.stat().st_mtime
+        except Exception:
+            current_mtime = None
+
+        cached_mtime = existing_movie_data.get("last_scanned_mtime")
+        if cached_mtime is not None and current_mtime == cached_mtime:
+            is_movie_changed = False
+        else:
+            is_movie_changed = detect_movie_file_changes(
+                movie_directory, existing_movie_data
+            )
+
         if not offline:
             is_movie_changed = is_movie_changed or existing_movie_data.get(
                 "_changed", True
@@ -264,6 +275,7 @@ def _build_movie_data(
     versions: list[Dict[str, Any]],
     default_path: str | None,
     is_movie_changed: bool,
+    last_scanned_mtime: float | None = None,
 ) -> Dict[str, Any]:
     """Build the final movie_data dict from all gathered information."""
     return {
@@ -296,6 +308,13 @@ def _build_movie_data(
         "versions": versions,
         "default_path": default_path,
         "_changed": is_movie_changed,
+        "last_scanned_mtime": last_scanned_mtime
+        if last_scanned_mtime is not None
+        else (
+            existing_movie_data.get("last_scanned_mtime")
+            if existing_movie_data
+            else None
+        ),
     }
 
 
@@ -410,6 +429,13 @@ def scan_movie(
         metadata_only,
     )
 
+    current_mtime = None
+    if not metadata_only:
+        try:
+            current_mtime = movie_directory.stat().st_mtime
+        except Exception:
+            pass
+
     # Phase 9: Build final movie data
     movie_data = _build_movie_data(
         folder_name,
@@ -421,6 +447,7 @@ def scan_movie(
         versions,
         default_path,
         is_movie_changed,
+        last_scanned_mtime=current_mtime,
     )
 
     if detail_callback and not metadata_only:

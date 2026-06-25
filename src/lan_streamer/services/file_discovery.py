@@ -1,11 +1,12 @@
 """File discovery service — filesystem scanning, file detection, and change detection."""
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Any
 
-from lan_streamer.scanner.parser import VIDEO_EXTENSIONS, find_video_files
+from lan_streamer.scanner.parser import VIDEO_EXTENSIONS
 
 logger = logging.getLogger("lan_streamer.services.file_discovery")
 
@@ -88,23 +89,27 @@ def detect_tv_file_changes(
     }
 
     try:
-        disk_files = [
-            file_path
-            for file_path in season_dir.iterdir()
-            if file_path.is_file() and file_path.suffix.lower() in VIDEO_EXTENSIONS
-        ]
-    except PermissionError, FileNotFoundError:
+        disk_entries = []
+        with os.scandir(season_dir) as iterator:
+            for entry in iterator:
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_file(follow_symlinks=True):
+                    _, ext = os.path.splitext(entry.name)
+                    if ext.lower() in VIDEO_EXTENSIONS:
+                        disk_entries.append(entry)
+    except OSError:
         return True
 
     # Filter out episodes without paths (e.g., placeholder episodes).
     existing_physical_episodes = [
         episode for episode in existing_episodes if episode.get("path")
     ]
-    if len(disk_files) != len(existing_physical_episodes):
+    if len(disk_entries) != len(existing_physical_episodes):
         return True
 
-    for disk_file in disk_files:
-        path_str = str(disk_file.absolute())
+    for entry in disk_entries:
+        path_str = str(Path(entry.path).absolute())
         if path_str not in existing_by_path:
             return True
 
@@ -118,8 +123,8 @@ def detect_tv_file_changes(
         sizes = [size for size in sizes if size is not None]
 
         try:
-            disk_size = disk_file.stat().st_size
-        except Exception:
+            disk_size = entry.stat(follow_symlinks=True).st_size
+        except OSError:
             return True
 
         if not any(size == disk_size for size in sizes):
@@ -146,8 +151,26 @@ def detect_movie_file_changes(
         ``True`` if changes are detected, ``False`` if the movie appears
         unchanged.
     """
+    disk_files_info = []
+    stack = [str(movie_dir)]
     try:
-        disk_files = find_video_files(movie_dir)
+        while stack:
+            curr_dir = stack.pop()
+            with os.scandir(curr_dir) as it:
+                for entry in it:
+                    if entry.name.startswith("."):
+                        continue
+                    try:
+                        if entry.is_file(follow_symlinks=True):
+                            _, ext = os.path.splitext(entry.name)
+                            if ext.lower() in VIDEO_EXTENSIONS:
+                                path_str = str(Path(entry.path).absolute())
+                                size_bytes = entry.stat(follow_symlinks=True).st_size
+                                disk_files_info.append((path_str, size_bytes))
+                        elif entry.is_dir(follow_symlinks=True):
+                            stack.append(entry.path)
+                    except OSError:
+                        pass
     except Exception:
         return True
 
@@ -158,22 +181,16 @@ def detect_movie_file_changes(
     if not existing_by_path and existing_movie_data.get("path"):
         existing_by_path[existing_movie_data["path"]] = existing_movie_data
 
-    if len(disk_files) != len(existing_by_path):
+    if len(disk_files_info) != len(existing_by_path):
         return True
 
-    for disk_file in disk_files:
-        path_str = str(disk_file.absolute())
+    for path_str, disk_size in disk_files_info:
         if path_str not in existing_by_path:
             return True
 
         existing_entry = existing_by_path[path_str]
         sizes = [existing_entry.get("size_bytes")]
         sizes = [size for size in sizes if size is not None]
-
-        try:
-            disk_size = disk_file.stat().st_size
-        except Exception:
-            return True
 
         if not any(size == disk_size for size in sizes):
             return True
