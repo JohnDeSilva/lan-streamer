@@ -7,8 +7,11 @@ return None/empty if no key is set.
 """
 
 import logging
-import requests
+import random
+import threading
+import time
 from pathlib import Path
+import requests
 from lan_streamer.system.config import config
 
 logger = logging.getLogger(__name__)
@@ -32,6 +35,8 @@ class TMDBClient:
         self._cache_dir = Path(cache_dir) if cache_dir else None
         self.session.headers.setdefault("User-Agent", "LanStreamer/1.0")
         self.session.headers.setdefault("Accept", "application/json")
+        self._rate_limit_lock = threading.Lock()
+        self._last_request_time = 0.0
 
     # ------------------------------------------------------------------
     # Configuration
@@ -57,6 +62,94 @@ class TMDBClient:
         if extra:
             parameters.update(extra)
         return parameters
+
+    def _make_request(
+        self,
+        method: str,
+        url: str,
+        params: dict | None = None,
+        timeout: int = 10,
+    ) -> requests.Response:
+        """Make a thread-safe HTTP request to TMDB with rate limiting and retry backoff for 429s."""
+        max_retries = 3
+        backoff_factor = 1.0
+
+        for attempt in range(max_retries):
+            # Throttle requests to ~10 requests per second to avoid API spikes
+            with self._rate_limit_lock:
+                current_time = time.time()
+                elapsed = current_time - self._last_request_time
+                delay = 0.1 - elapsed
+                if delay > 0:
+                    time.sleep(delay)
+                self._last_request_time = time.time()
+
+            try:
+                method_name = method.upper()
+                if method_name == "GET":
+                    response = self.session.get(
+                        url,
+                        params=params,
+                        timeout=timeout,
+                    )
+                elif method_name == "POST":
+                    response = self.session.post(
+                        url,
+                        data=params,
+                        timeout=timeout,
+                    )
+                else:
+                    response = self.session.request(
+                        method=method_name,
+                        url=url,
+                        params=params,
+                        timeout=timeout,
+                    )
+                if response.status_code == 429:
+                    retry_after_str = response.headers.get("Retry-After")
+                    if retry_after_str and retry_after_str.isdigit():
+                        sleep_time = float(retry_after_str)
+                    else:
+                        sleep_time = backoff_factor * (2**attempt) + random.uniform(
+                            0, 1
+                        )
+                    logger.warning(
+                        f"TMDB rate limit hit (429). Retrying in {sleep_time:.2f} seconds..."
+                    )
+                    time.sleep(sleep_time)
+                    continue
+
+                return response
+            except requests.exceptions.RequestException as error:
+                if attempt == max_retries - 1:
+                    raise
+                sleep_time = backoff_factor * (2**attempt) + random.uniform(0, 1)
+                logger.warning(
+                    f"TMDB request failed ({error}). Retrying in {sleep_time:.2f} seconds..."
+                )
+                time.sleep(sleep_time)
+
+        # Fallback to a final request if retries are exhausted
+        method_name = method.upper()
+        if method_name == "GET":
+            return self.session.get(
+                url,
+                params=params,
+                timeout=timeout,
+            )
+        elif method_name == "POST":
+            return self.session.post(
+                url,
+                data=params,
+                timeout=timeout,
+            )
+        else:
+            return self.session.request(
+                method=method_name,
+                url=url,
+                params=params,
+                timeout=timeout,
+            )
 
     # ------------------------------------------------------------------
     # Search helpers
@@ -106,7 +199,8 @@ class TMDBClient:
         """Raw TMDB TV search. Returns list of result dicts."""
         logger.debug(f"Executing raw TMDB TV search for query: '{query}'")
         try:
-            resp = self.session.get(
+            resp = self._make_request(
+                "GET",
                 f"{TMDB_BASE_URL}/search/tv",
                 params=self._params({"query": query, "page": 1}),
                 timeout=10,
@@ -126,7 +220,8 @@ class TMDBClient:
             params = self._params({"query": query, "page": 1})
             if year:
                 params["year"] = year
-            resp = self.session.get(
+            resp = self._make_request(
+                "GET",
                 f"{TMDB_BASE_URL}/search/movie",
                 params=params,
                 timeout=10,
@@ -283,7 +378,8 @@ class TMDBClient:
         """Fetches full series details from TMDB."""
         logger.info(f"Requesting TMDB series details for ID '{tmdb_identifier}'")
         try:
-            resp = self.session.get(
+            resp = self._make_request(
+                "GET",
                 f"{TMDB_BASE_URL}/tv/{tmdb_identifier}",
                 params=self._params(),
                 timeout=10,
@@ -298,7 +394,8 @@ class TMDBClient:
         """Fetches full movie details from TMDB."""
         logger.info(f"Requesting TMDB movie details for ID '{tmdb_identifier}'")
         try:
-            resp = self.session.get(
+            resp = self._make_request(
+                "GET",
                 f"{TMDB_BASE_URL}/movie/{tmdb_identifier}",
                 params=self._params(),
                 timeout=10,
@@ -322,7 +419,8 @@ class TMDBClient:
             f"Requesting TMDB episodes list for series ID '{tmdb_identifier}', Season {season_num}"
         )
         try:
-            resp = self.session.get(
+            resp = self._make_request(
+                "GET",
                 f"{TMDB_BASE_URL}/tv/{tmdb_identifier}/season/{season_num}",
                 params=self._params(),
                 timeout=10,
@@ -353,7 +451,8 @@ class TMDBClient:
         """Fetches TV episode groups for a series."""
         logger.info(f"Requesting TMDB episode groups for series ID '{tmdb_identifier}'")
         try:
-            resp = self.session.get(
+            resp = self._make_request(
+                "GET",
                 f"{TMDB_BASE_URL}/tv/{tmdb_identifier}/episode_groups",
                 params=self._params(),
                 timeout=10,
@@ -368,7 +467,8 @@ class TMDBClient:
         """Fetches details for a specific episode group."""
         logger.info(f"Requesting TMDB episode group details for group ID '{group_id}'")
         try:
-            resp = self.session.get(
+            resp = self._make_request(
+                "GET",
                 f"{TMDB_BASE_URL}/tv/episode_group/{group_id}",
                 params=self._params(),
                 timeout=10,
@@ -464,7 +564,7 @@ class TMDBClient:
 
         logger.info(f"Downloading poster image from: '{image_url}'")
         try:
-            resp = self.session.get(image_url, timeout=15)
+            resp = self._make_request("GET", image_url, timeout=15)
             if resp.status_code == 200:
                 with open(image_path, "wb") as f:
                     f.write(resp.content)

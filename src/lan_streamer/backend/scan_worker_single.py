@@ -26,6 +26,7 @@ class ScanWorker(QThread):
     partial_result = Signal(dict)
     error = Signal(str)
     detail_progress = Signal(str, dict)
+    detail_progress_batch = Signal(list)
 
     def __init__(
         self,
@@ -55,6 +56,57 @@ class ScanWorker(QThread):
         self.pass2_stats: Dict[str, int] = create_empty_stats()
         self.scan_lock: threading.Lock = threading.Lock()
 
+        # Signal batching buffer.
+        self._detail_progress_buffer: List[Dict[str, Any]] = []
+        self._detail_progress_lock: threading.Lock = threading.Lock()
+        self._last_flush_time: float = 0.0
+
+    def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
+        """Buffers progress events and flushes them to avoid UI congestion."""
+        import time
+
+        lifecycle_events = {
+            "init_tree",
+            "init_library_scan",
+            "start_offline_scan",
+            "start_metadata_resolution",
+            "start_library",
+            "fail_library",
+            "finish_library",
+            "start_root",
+            "finish_root",
+            "unavailable_root",
+        }
+
+        should_flush_immediately = event in lifecycle_events
+
+        with self._detail_progress_lock:
+            self._detail_progress_buffer.append({"event": event, "payload": payload})
+            current_time = time.time()
+            if should_flush_immediately or (
+                current_time - self._last_flush_time >= 0.05
+            ):
+                self._flush_detail_progress_nolock()
+
+    def _flush_detail_progress_nolock(self) -> None:
+        import time
+
+        if not self._detail_progress_buffer:
+            return
+        batch = list(self._detail_progress_buffer)
+        self._detail_progress_buffer.clear()
+        self._last_flush_time = time.time()
+        self.detail_progress_batch.emit(batch)
+        for event_dict in batch:
+            self.detail_progress.emit(
+                event_dict.get("event", ""), event_dict.get("payload", {})
+            )
+
+    def flush_detail_progress(self) -> None:
+        """Flushes any remaining buffered progress events to the UI."""
+        with self._detail_progress_lock:
+            self._flush_detail_progress_nolock()
+
     def run(self) -> None:
         import time
 
@@ -79,7 +131,7 @@ class ScanWorker(QThread):
             tree_structure = discover_single_library_tree_impl(
                 self.root_directories, self.library_type
             )
-            self.detail_progress.emit(
+            self.emit_detail_progress(
                 "init_library_scan",
                 {"roots": tree_structure, "roots_order": self.root_directories},
             )
@@ -90,7 +142,7 @@ class ScanWorker(QThread):
                 jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
             def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
-                self.detail_progress.emit(event, payload)
+                self.emit_detail_progress(event, payload)
 
             def _season_callback(
                 series_name: str,
@@ -216,7 +268,7 @@ class ScanWorker(QThread):
             logger.info(
                 f"Starting Pass 1 (Offline Scan) for library '{self.library_name}' on directories: {self.root_directories}"
             )
-            self.detail_progress.emit(
+            self.emit_detail_progress(
                 "start_offline_scan", {"library": self.library_name}
             )
             library: LibraryDict = scan_directories(
@@ -244,7 +296,7 @@ class ScanWorker(QThread):
             logger.info(
                 f"Starting Pass 2 (Online Metadata Resolution Scan) for library '{self.library_name}'"
             )
-            self.detail_progress.emit(
+            self.emit_detail_progress(
                 "start_metadata_resolution", {"library": self.library_name}
             )
             library = scan_directories(
@@ -325,3 +377,5 @@ class ScanWorker(QThread):
         except Exception as exception:
             logger.exception("ScanWorker failed")
             self.error.emit(str(exception))
+        finally:
+            self.flush_detail_progress()
