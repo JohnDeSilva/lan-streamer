@@ -3558,3 +3558,111 @@ def test_scan_series_cross_root_dedup(tmp_path) -> None:
         assert len(added_episodes) == 1, (
             f"Expected 1 episode added, got {len(added_episodes)}"
         )
+
+
+# ------------------------------------------------------------------
+# Global scan executor lifecycle
+# ------------------------------------------------------------------
+
+
+def test_get_scan_executor_returns_same_instance() -> None:
+    """get_scan_executor() must always return the same singleton object."""
+    import lan_streamer.scanner.core as core_module
+
+    # Guarantee a clean slate — reset any instance created by other tests.
+    core_module.shutdown_scan_executor()
+
+    executor_a = core_module.get_scan_executor()
+    executor_b = core_module.get_scan_executor()
+
+    assert executor_a is executor_b, (
+        "get_scan_executor() returned two different executor instances — "
+        "singleton contract violated."
+    )
+
+
+def test_get_scan_executor_concurrent_creation_creates_only_one_instance() -> None:
+    """Calling get_scan_executor() simultaneously from many threads must not
+    create multiple executors (double-checked locking must hold under contention).
+    """
+    import concurrent.futures
+    import lan_streamer.scanner.core as core_module
+
+    core_module.shutdown_scan_executor()
+
+    results: list[object] = []
+
+    def fetch() -> None:
+        results.append(core_module.get_scan_executor())
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        thread_futures = [pool.submit(fetch) for _ in range(32)]
+        for thread_future in concurrent.futures.as_completed(thread_futures):
+            thread_future.result()
+
+    unique_executors = {id(executor) for executor in results}
+    assert len(unique_executors) == 1, (
+        f"Expected 1 unique executor, got {len(unique_executors)} — "
+        "double-checked locking is broken."
+    )
+
+
+def test_shutdown_scan_executor_resets_global_state() -> None:
+    """After shutdown_scan_executor(), get_scan_executor() creates a fresh executor."""
+    import lan_streamer.scanner.core as core_module
+
+    executor_before = core_module.get_scan_executor()
+    core_module.shutdown_scan_executor()
+
+    # Global must be cleared.
+    assert core_module._global_scan_executor is None
+
+    executor_after = core_module.get_scan_executor()
+
+    # A new executor must be created — different object from the shut-down one.
+    assert executor_after is not executor_before, (
+        "get_scan_executor() returned the same (shut-down) executor after "
+        "shutdown_scan_executor() was called."
+    )
+
+    # Clean up.
+    core_module.shutdown_scan_executor()
+
+
+def test_shutdown_scan_executor_is_idempotent() -> None:
+    """Calling shutdown_scan_executor() multiple times must not raise."""
+    import lan_streamer.scanner.core as core_module
+
+    core_module.get_scan_executor()  # ensure an executor exists
+    core_module.shutdown_scan_executor()
+    core_module.shutdown_scan_executor()  # second call must be a no-op
+
+
+def test_shutdown_scan_executor_is_registered_with_atexit() -> None:
+    """shutdown_scan_executor must be registered as an atexit handler so worker
+    threads are guaranteed to be cleaned up on interpreter exit.
+
+    We verify this by reloading the module under a patched atexit.register and
+    confirming our function is among the arguments passed to register().
+    """
+    import importlib
+    import atexit
+    import lan_streamer.scanner.core as core_module
+
+    registered_funcs: list[object] = []
+    original_register = atexit.register
+
+    def capturing_register(func: object, *args: object, **kwargs: object) -> object:
+        registered_funcs.append(func)
+        return original_register(func, *args, **kwargs)  # type: ignore[arg-type]
+
+    with patch("atexit.register", side_effect=capturing_register):
+        importlib.reload(core_module)
+
+    assert core_module.shutdown_scan_executor in registered_funcs, (
+        "shutdown_scan_executor is not registered with atexit — "
+        "executor worker threads will leak on interpreter exit."
+    )
+
+    # Restore a clean state for subsequent tests.
+    core_module.shutdown_scan_executor()

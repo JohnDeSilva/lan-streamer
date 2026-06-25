@@ -24,6 +24,11 @@ CACHE_DIR = Path.home() / ".config" / "lan-streamer" / "cache" / "images"
 class TMDBClient:
     """Client for interacting with The Movie Database (TMDB) API to fetch movie and TV metadata."""
 
+    # Class-level rate-limit state shared across all instances so that parallel
+    # scans using multiple TMDBClient objects all respect the same throttle.
+    _class_rate_limit_lock: threading.Lock = threading.Lock()
+    _class_last_request_time: float = 0.0
+
     def __init__(
         self,
         session: requests.Session | None = None,
@@ -35,8 +40,6 @@ class TMDBClient:
         self._cache_dir = Path(cache_dir) if cache_dir else None
         self.session.headers.setdefault("User-Agent", "LanStreamer/1.0")
         self.session.headers.setdefault("Accept", "application/json")
-        self._rate_limit_lock = threading.Lock()
-        self._last_request_time = 0.0
 
     # ------------------------------------------------------------------
     # Configuration
@@ -70,19 +73,29 @@ class TMDBClient:
         params: dict | None = None,
         timeout: int = 10,
     ) -> requests.Response:
-        """Make a thread-safe HTTP request to TMDB with rate limiting and retry backoff for 429s."""
+        """Make a thread-safe HTTP request to TMDB with rate limiting and retry backoff for 429s.
+
+        The per-class rate-limit lock serialises requests across all instances so
+        that parallel directory scans share a single ≤10 req/s throttle.
+
+        Raises:
+            requests.exceptions.RuntimeError: If all retries are exhausted due to
+                repeated 429 responses.
+            requests.exceptions.RequestException: Re-raised on the final network
+                failure attempt.
+        """
         max_retries = 3
         backoff_factor = 1.0
 
         for attempt in range(max_retries):
-            # Throttle requests to ~10 requests per second to avoid API spikes
-            with self._rate_limit_lock:
+            # Throttle to ~10 requests per second using the shared class-level lock.
+            with TMDBClient._class_rate_limit_lock:
                 current_time = time.time()
-                elapsed = current_time - self._last_request_time
+                elapsed = current_time - TMDBClient._class_last_request_time
                 delay = 0.1 - elapsed
                 if delay > 0:
                     time.sleep(delay)
-                self._last_request_time = time.time()
+                TMDBClient._class_last_request_time = time.time()
 
             try:
                 method_name = method.upper()
@@ -129,27 +142,10 @@ class TMDBClient:
                 )
                 time.sleep(sleep_time)
 
-        # Fallback to a final request if retries are exhausted
-        method_name = method.upper()
-        if method_name == "GET":
-            return self.session.get(
-                url,
-                params=params,
-                timeout=timeout,
-            )
-        elif method_name == "POST":
-            return self.session.post(
-                url,
-                data=params,
-                timeout=timeout,
-            )
-        else:
-            return self.session.request(
-                method=method_name,
-                url=url,
-                params=params,
-                timeout=timeout,
-            )
+        raise RuntimeError(
+            f"TMDB request to '{url}' failed after {max_retries} retries "
+            "(all attempts returned HTTP 429 rate-limit responses)."
+        )
 
     # ------------------------------------------------------------------
     # Search helpers

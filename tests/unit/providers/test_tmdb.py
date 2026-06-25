@@ -1,5 +1,6 @@
 import pytest
 import requests
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from lan_streamer.providers.tmdb import TMDBClient
 
@@ -574,3 +575,196 @@ def test_tmdb_fallback_to_default_cache_dir() -> None:
     from lan_streamer.providers.tmdb import CACHE_DIR
 
     assert client._effective_cache_dir == CACHE_DIR
+
+
+# ------------------------------------------------------------------
+# _make_request — rate limiting, 429 retry, and exhaustion
+# ------------------------------------------------------------------
+
+
+def test_make_request_429_respects_retry_after_header(
+    tmdb: TMDBClient, mock_session: "MagicMock"
+) -> None:
+    """A 429 with a numeric Retry-After header sleeps for that exact duration."""
+    rate_limited_response = MagicMock()
+    rate_limited_response.status_code = 429
+    rate_limited_response.headers = {"Retry-After": "2"}
+
+    success_response = MagicMock()
+    success_response.status_code = 200
+
+    # _make_request dispatches GET to session.get(), not session.request().
+    mock_session.get = MagicMock(side_effect=[rate_limited_response, success_response])
+    tmdb.session = mock_session
+
+    with patch("lan_streamer.providers.tmdb.time.sleep") as mock_sleep:
+        response = tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
+
+    assert response.status_code == 200
+    # sleep must have been called with the Retry-After value
+    sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
+    assert any(call == 2.0 for call in sleep_calls), (
+        f"Expected a sleep(2.0) for Retry-After header, got: {sleep_calls}"
+    )
+
+
+def test_make_request_429_uses_exponential_backoff_without_retry_after(
+    tmdb: TMDBClient, mock_session: "MagicMock"
+) -> None:
+    """A 429 without a Retry-After header falls back to exponential backoff with jitter."""
+    rate_limited_response = MagicMock()
+    rate_limited_response.status_code = 429
+    rate_limited_response.headers = {}  # no Retry-After
+
+    success_response = MagicMock()
+    success_response.status_code = 200
+
+    # _make_request dispatches GET to session.get(), not session.request().
+    mock_session.get = MagicMock(side_effect=[rate_limited_response, success_response])
+    tmdb.session = mock_session
+
+    with (
+        patch("lan_streamer.providers.tmdb.time.sleep") as mock_sleep,
+        patch("lan_streamer.providers.tmdb.random.uniform", return_value=0.5),
+    ):
+        response = tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
+
+    assert response.status_code == 200
+    # backoff_factor=1.0, attempt=0 → 1.0 * 2**0 + 0.5 = 1.5
+    sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
+    assert any(abs(call - 1.5) < 0.01 for call in sleep_calls), (
+        f"Expected a backoff sleep near 1.5s, got: {sleep_calls}"
+    )
+
+
+def test_make_request_raises_runtime_error_after_all_429_retries_exhausted(
+    tmdb: TMDBClient, mock_session: "MagicMock"
+) -> None:
+    """When every attempt returns 429, _make_request must raise RuntimeError.
+
+    This tests that the old silent-fallback 4th request is gone: callers must
+    receive an explicit error instead of an unexpected 429 response object.
+    """
+    rate_limited_response = MagicMock()
+    rate_limited_response.status_code = 429
+    rate_limited_response.headers = {}
+
+    # All 3 attempts return 429 — the loop should exhaust and raise.
+    # _make_request dispatches GET to session.get(), not session.request().
+    mock_session.get = MagicMock(return_value=rate_limited_response)
+    tmdb.session = mock_session
+
+    with (
+        patch("lan_streamer.providers.tmdb.time.sleep"),
+        pytest.raises(RuntimeError, match="429 rate-limit"),
+    ):
+        tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
+
+    # Must have been called exactly max_retries (3) times — no hidden 4th call.
+    assert mock_session.get.call_count == 3
+
+
+def test_make_request_retries_on_network_error_and_succeeds(
+    tmdb: TMDBClient, mock_session: "MagicMock"
+) -> None:
+    """A transient network error on the first attempt should be retried."""
+    success_response = MagicMock()
+    success_response.status_code = 200
+
+    # _make_request dispatches GET to session.get(), not session.request().
+    mock_session.get = MagicMock(
+        side_effect=[requests.exceptions.ConnectionError("timeout"), success_response]
+    )
+    tmdb.session = mock_session
+
+    with patch("lan_streamer.providers.tmdb.time.sleep"):
+        response = tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
+
+    assert response.status_code == 200
+    assert mock_session.get.call_count == 2
+
+
+def test_make_request_reraises_on_final_network_error(
+    tmdb: TMDBClient, mock_session: "MagicMock"
+) -> None:
+    """After max_retries network errors, the original exception is re-raised."""
+    # _make_request dispatches GET to session.get(), not session.request().
+    mock_session.get = MagicMock(
+        side_effect=requests.exceptions.ConnectionError("persistent failure")
+    )
+    tmdb.session = mock_session
+
+    with (
+        patch("lan_streamer.providers.tmdb.time.sleep"),
+        pytest.raises(requests.exceptions.ConnectionError, match="persistent failure"),
+    ):
+        tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
+
+
+def test_rate_limit_lock_is_class_level_shared_across_instances(
+    tmp_path: "Path",
+) -> None:
+    """The throttle state must be shared by all TMDBClient instances.
+
+    Two separate client objects constructed with different sessions must both
+    reference the same class-level lock object (not independent per-instance
+    copies).  This confirms the fix for the per-instance rate-limiter bug.
+    """
+    client_a = TMDBClient(api_key="key-a", cache_dir=tmp_path)
+    client_b = TMDBClient(api_key="key-b", cache_dir=tmp_path)
+
+    # Both instances must reference the exact same lock object.
+    assert client_a._class_rate_limit_lock is client_b._class_rate_limit_lock
+    # And the same last-request-time attribute slot.
+    TMDBClient._class_last_request_time = 99.0
+    assert client_a._class_last_request_time == 99.0
+    assert client_b._class_last_request_time == 99.0
+    # Restore to zero so subsequent tests aren't affected.
+    TMDBClient._class_last_request_time = 0.0
+
+
+def test_concurrent_requests_are_serialised_by_throttle(
+    tmp_path: "Path", mock_session: "MagicMock"
+) -> None:
+    """Concurrent _make_request calls from multiple threads must be serialised
+    by the class-level throttle so no two requests fire within 100ms of each other.
+    """
+    import concurrent.futures
+
+    # Reset the throttle state so this test starts from a clean baseline.
+    TMDBClient._class_last_request_time = 0.0
+
+    request_timestamps: list[float] = []
+    real_time = __import__("time")
+
+    success_response = MagicMock()
+    success_response.status_code = 200
+    mock_session.request = MagicMock(return_value=success_response)
+
+    def make_one_request() -> None:
+        client = TMDBClient(
+            session=mock_session, api_key="test-key", cache_dir=tmp_path
+        )
+        # Record the wall-clock time just after the throttle gate exits.
+        client._make_request("GET", "https://api.themoviedb.org/3/test")
+        request_timestamps.append(real_time.time())
+
+    # Launch 4 threads simultaneously — without the throttle they would all
+    # fire at once; with it each must wait ≥ 100ms after the previous one.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(make_one_request) for _ in range(4)]
+        for future in concurrent.futures.as_completed(futures):
+            future.result()
+
+    request_timestamps.sort()
+    gaps = [
+        request_timestamps[index + 1] - request_timestamps[index]
+        for index in range(len(request_timestamps) - 1)
+    ]
+    # Every consecutive pair must be at least 90ms apart (10ms tolerance for
+    # scheduling jitter in CI environments).
+    for gap in gaps:
+        assert gap >= 0.09, (
+            f"Two TMDB requests fired only {gap * 1000:.1f}ms apart — "
+            "throttle is not working correctly."
+        )
