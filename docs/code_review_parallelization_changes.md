@@ -1,356 +1,523 @@
-# Code Review: Parallelization & Mtime Caching Changes (Commit Range)
+# Senior Code Review: Parallelization & Mtime Changes
 
-**Review Date**: 2026-06-25
-**Reviewer**: Senior Software Engineer
-**Base Commit**: `6a324a6691d119cf3ad9040aaf806564be90df91`
-**Head Commit**: `88e158b`
-**Files Changed**: 51 files, +4602/-1492 lines
+**Review scope**: Commits `6a324a6691..9d995de` (60 files changed, +5606/-1501 lines)
+**Reviewer**: AI Agent (composite — 5 specialist sub-agents)
+**Date**: 2026-06-25
 
 ---
 
-## 🔴 Critical Issues (Must Fix Before Merge)
+## Executive Summary
 
-### C1. `scan_worker_single.py` — QTimer silently never fires (lines 117–120)
-
-```python
-self._flush_timer = QTimer(self)
-self._flush_timer.setInterval(50)
-self._flush_timer.timeout.connect(self.flush_detail_progress)
-self._flush_timer.start()
-```
-
-`ScanWorker.run()` overrides `QThread.run()` **without calling `self.exec()`**. Per Qt docs, without `exec()`, no Qt event loop runs in the thread. A `QTimer` cannot fire without an active event loop. The timer's `timeout` signal is **never** delivered.
-
-**Impact**: `flush_detail_progress()` is never called during the scan. Progress events accumulate in `_detail_progress_buffer` for the entire duration (potentially minutes). The UI appears frozen. Only the `finally` block at line 451 flushes at the very end.
-
-**Fix**:
-- Option A: Add `self.flush_detail_progress()` calls at strategic points (after Pass 1, after each root directory in Pass 2), mimicking `scan_worker_all.py`.
-- Option B: Call `self.exec()` in `run()` and restructure scan as event-driven.
-- Option C: Remove the timer entirely and use explicit flush calls only (simplest).
-
-### C2. `ui_views/dialogs/settings.py` — Logging handler runs GUI ops on background thread (lines 1967–1995)
-
-`_on_log_emitted` is connected to the Python `logging` system's handler, which runs on **whatever thread emitted the log message**. The method calls `self.log_display.appendHtml(...)` — a Qt GUI operation — from potentially any background thread (scanner, TMDB, DB writer).
-
-**Impact**: Crash, data corruption, or undefined behavior. Qt GUI operations from non-GUI threads are explicitly undefined behavior.
-
-**Fix**: Use `QMetaObject.invokeMethod(self.log_display, "appendHtml", Qt.QueuedConnection, Q_ARG(str, html))` or emit a custom signal from the logging handler and connect it with `Qt.QueuedConnection` to the slot.
-
-### C3. `ui_views/dialogs/settings.py` — Controller signal leak on dialog close (lines 79–81)
-
-`SettingsDialog.__init__` connects to `controller.global_progress_updated`, `detail_progress_updated`, and `scan_completed` but **never disconnects** these signals when the dialog is closed/rejected/accepted. `closeEvent`, `accept`, and `reject` only call `_disconnect_logging` (log handler removal) — not signal disconnections.
-
-**Impact**: After the dialog closes, controller signals continue invoking slots on a deleted `QObject`. This causes "warnings: QObject::connect: Cannot queue arguments of type '...'" and potential use-after-free crashes.
-
-**Fix**: Call `disconnect()` for each connected signal in `closeEvent`, `accept`, and `reject`.
-
-### C4. `db/library_tv.py` and `db/library_movie.py` — Silent data loss: exceptions swallowed in `save_library()` (lines 647–655, 300–308)
-
-Both `save_library()` (TV) and `save_movie_library()` catch `Exception`, log it, append to `stats["issues"]`, then **return normally** without re-raising. The caller has no reliable way to detect the write failed.
-
-**Contrast**: `save_season_data()` (line 855–858) and `save_movie_data()` (line 443–445) correctly re-raise `raise e`.
-
-**Impact**: Silent data loss on disk-full, constraint violation, or transient DB errors. Data the caller assumes is persisted is silently rolled back.
-
-**Fix**: Re-raise after logging (consistent with per-item saves), or return a clear success/failure indicator that the caller checks.
-
-### C5. `services/file_discovery.py` — False-positive re-scan when `size_bytes` is None (lines 117–131)
-
-When `size_bytes` is `None` for all existing version entries, the list becomes empty after the `None` filter (line 123). `any()` on an empty list returns `False`, so `not any([]) == True` — every file is reported as "changed".
-
-**Impact**: Nullifies mtime-caching optimization for any library where technical metadata hasn't been extracted yet. Every scan pass re-detects every season as "changed".
-
-**Fix**: If `sizes` is empty after filtering, return `False` (unchanged). The mtime-based check at the higher level catches real changes.
+This change set introduces parallel library scanning (ThreadPoolExecutor), mtime-based scan skipping with a new `scanned_directories` table, database write pooling, TMDB rate-limiting fixes, and signal batching for progress events. The architecture is sound overall. However, **11 critical, 17 high-severity, and 18 medium-severity issues** were identified spanning deadlock hazards, thread-safety gaps, data integrity risks, UI freeze bugs, filesystem edge cases, and antipatterns.
 
 ---
 
-## 🔴 Critical Thread Safety Issues
+## Rating Methodology
 
-### C6. `scan_worker_all.py` — Stats modified without lock in `as_completed` loop (lines 936–940)
+Each issue is rated on three axes:
 
-```python
-for key, value in local_stats.items():
-    if not (key.endswith("_scanned") or key.endswith("_skipped")):
-        self.stats[key] += value
-```
+| Axes | Scale | Meaning |
+|------|-------|---------|
+| **Danger** | 1–5 | How bad if triggered (1 = minor annoyance, 5 = crash/corruption) |
+| **Likelihood** | 1–5 | How probable in real use (1 = theoretical, 5 = every run) |
+| **Complexity** | 1–5 | How hard to fix (1 = one-line change, 5 = multi-file refactor) |
 
-This runs in the **sequential** `as_completed` loop (after all executor threads have completed), so there's no concurrent access from multiple threads here. However, the `self.stats` dict is concurrently updated by callbacks running in executor threads **for the `_scanned` and `_skipped` keys** under `self._lock`. The differentiation between lock-protected and non-lock-protected key sets is fragile.
-
-**Risk**: Future refactoring that adds a counter to both paths creates a silent data race. Currently safe under GIL + disjoint key convention, but brittle.
-
-**Fix**: Hold `self._lock` during this merge (negligible perf cost in the already-sequential loop), or clearly document the convention.
-
-### C7. `scan_worker_single.py` — `partial_result.emit` passed as callback to thread pool (line 372)
-
-```python
-callback=self.partial_result.emit,
-```
-
-`partial_result` is a `Signal` on `ScanWorker(QThread)`. This passes `emit` as a callable to `scan_directories`, which calls it from `ThreadPoolExecutor` threads. This works because `Qt.AutoConnection` queues the signal, but:
-
-- If `scan_directories` ever calls this synchronously (from same thread), the slot runs in the main thread (via queued connection), creating a re-entrancy hole.
-- The slot might run after `ScanWorker` transitions between passes.
+**Overall priority** = Danger × Likelihood (higher = fix sooner).
 
 ---
 
-## 🔴 Critical Performance / Memory Issues
+## 🔴 CRITICAL Issues (11 total)
 
-### C8. `metadata_worker_property.py` — Per-item signal emission floods Qt event queue (lines 158–162, 194–196)
+### C1. Series `skipped` double-counted in single-worker path
+**Location**: `scan_worker_single.py:218`
+**Danger**: 3 | **Likelihood**: 4 | **Complexity**: 1 | **Priority**: 12
 
-Progress signal emitted from `ThreadPoolExecutor` thread **for every single item**:
+When a series is unchanged in **both** Pass 1 and Pass 2, `self.stats["series_skipped"]` is incremented twice for the same series. The parallel version (`scan_worker_all.py`) guards with `self._skipped_series_ids`, but the single-worker lacks the guard. Applies equally to `movies_skipped` at line 291.
 
-```python
-with self._lock:
-    self._completed_count += 1
-    self.progress_updated.emit(self._completed_count, self._total_count)
-```
-
-For 10,000 items, this posts 10,000 `QMetaCallEvent` objects to the main thread. The lock is held during `emit()`, which is unnecessary.
-
-**Fix**: Batch progress updates — emit every N items (e.g., 100) or at a fixed interval via timer. Or use atomic counter and batch flush.
-
-### C9. `progress_widgets.py` — ScanProgressTree creates QTreeWidgetItem per episode upfront (lines 352–455, 547–580)
-
-Creates `QTreeWidgetItem` for every episode file in the library. For 10k+ episodes, this is a massive widget tree consuming significant memory and slowing initial paint.
-
-**Risk**: Out-of-memory on large libraries, UI freezes during population.
-
-**Fix**: Virtualized tree (QTreeView with model) or lazy loading of items.
-
-### C10. `library_grid.py` — Synchronous image loading on UI thread (lines 598–631, 770–805)
-
-`_assign_item_icon` and `_assign_item_icon_with_size` load `QPixmap` from disk synchronously on the UI thread during `populate_grid`/`populate_combined_view`.
-
-**Impact**: Blocks UI for seconds on large libraries with many posters.
-
-**Fix**: Async image loading in a background thread with placeholder display.
+**Fix**: Add `self._skipped_series_ids: Set[str]` alongside `_scanned_series_ids` and guard increment. Same for movie path.
 
 ---
 
-## 🟡 High Priority Issues
+### C2. `event.wait()` in `FilePropertyExtractionWorker` has no timeout
+**Location**: `metadata_worker_property.py:186,200`
+**Danger**: 5 | **Likelihood**: 1 | **Complexity**: 1 | **Priority**: 5
 
-### H1. `controller.py` — DB writes on UI thread (lines 361–405)
+Bare `task.event.wait()` blocks forever if the `DatabaseWriterThread` stalls. All other workers use `wait_for_database_write_task()` with configurable timeout and warning logs.
 
-`_on_scan_finished` calls `self._db.save_library()` synchronously on the UI thread. Database writes block the UI.
-
-### H2. `controller.py` — Network I/O on UI thread (lines 878–915, 1000)
-
-`_sync_tmdb_episodes_for_series` calls `self._tmdb_client.get_episodes()` and `get_episode_group_details()` synchronously on the UI thread.
-
-### H3. `db/library_tv.py` — `save_library()` does not persist directory mtimes (lines 522–663)
-
-`save_library()` saves Series/Season/Episode records but **never writes `ScannedDirectory` rows** for series or season directory mtimes. `save_season_data()` and `save_movie_data()` do, but the batch path doesn't.
-
-**Impact**: If the per-item callback path is bypassed, mtimes are lost. Subsequent scans force full re-scan.
-
-### H4. `db/library_tv.py` / `library_movie.py` — Missing explicit `session.commit()` (lines 647, 300)
-
-Rely on `get_session()` context manager implicit commit. Inconsistent with `save_season_data()` and `save_movie_data()` which call explicit `session.commit()`. Works today but fragile — any change to context manager behavior breaks data persistence.
-
-### H5. `db/scanned_directories` — Read-only query opens write transaction (library_shared.py:131–139)
-
-`get_directory_mtime()` uses `get_session()` which calls `session.commit()` on exit. For a read-only query, this acquires a SQLite WAL write-lock unnecessarily. Under concurrent scan threads, this causes needless `SQLITE_BUSY` retries.
-
-### H6. `db/queries_technical_extraction.py` — Silent `except: pass` hides DB errors (lines 265–266)
-
-`has_tech_and_metadata()` catches all exceptions and returns `False`. The caller interprets `False` as "needs extraction" and re-submits, which also fails silently. Creates an infinite retry loop.
-
-**Fix**: Log the exception before `pass`.
-
-### H7. `db/library_shared.py` — `_sync_media_files()` relies on `session.new` internals (lines 46–49, 98–106)
-
-Iterates `session.new` to find in-flight `MediaFile` objects by path. This is a fragile SQLAlchemy internal API dependency. Future SQLAlchemy versions could change the behavior of `session.new`.
-
-**Fix**: Use a local `dict[path, MediaFile]` to track transient objects.
-
-### H8. `metadata_worker_property.py` — `stop()` not called before `join()` on database writer (lines 227–229)
-
-```python
-if self.database_writer is not None:
-    self.database_queue.put(None)
-    self.database_writer.join()
-```
-
-The `stop()` method sets `_stop_event`, which the writer thread checks after `queue.get(timeout=0.5)` timeouts. Without `stop()`, `join()` may block up to 500ms waiting for the timeout. Both `scan_worker_all.py` and `scan_worker_single.py` correctly call `stop()` + `put(None)` + `join()`. This is inconsistent.
-
-### H9. `scan_worker_base.py` — `unittest.mock.Mock` imported at runtime on hot path (lines 262–263)
-
-```python
-from unittest.mock import Mock
-```
-
-Executed **on every single database write wait** (every season, every movie). For 10,000 items, that's 10,000 imports. While cached by `sys.modules`, the name resolution overhead is non-zero.
-
-**Fix**: Move to module level, or use a sentinel pattern.
-
-### H10. `tmdb.py` — TOCTOU race in `download_image` (lines 552–560)
-
-```python
-if image_path.exists():
-    return str(image_path)
-# race: another thread could download same file
-with open(image_path, "wb") as f:
-    f.write(resp.content)
-```
-
-Two threads downloading the same image simultaneously can corrupt the cached file.
-
-**Fix**: Use temporary file + `os.replace()` for atomic writes.
-
-### H11. `database_writer.py` — Unbounded queue (lines 45, 55–77)
-
-`queue.Queue()` has no `maxsize`. Fire-and-forget `save_directory_mtime` tasks can accumulate while the writer processes synchronous tasks. With 10,000 series × 1 mtime task each, the queue can grow large.
-
-**Fix**: Add `maxsize` (e.g., 1000) or log a warning at queue depth thresholds.
-
-### H12. Test flakiness — timing-dependent thread tests
-
-- `test_database_writer.py` — `writer.join(timeout=2.0)` and `task.event.wait(timeout=2.0)` are timeout-based and flaky in CI.
-- `test_tmdb.py` — `test_concurrent_requests_are_serialised_by_throttle` and `test_rate_limit_lock_not_held_during_sleep` use `time.sleep(0.02)` for thread coordination (lines 730–830).
-
-### H13. Worker tests don't test QThread behavior
-
-All backend worker tests call `.run()` directly instead of `.start()` + waiting for signals. This misses:
-- Signal/slot thread affinity issues
-- Race conditions in shared state
-- Actual QThread lifecycle
-- Event loop integration
-
-Files: `test_scan_workers.py`, `test_scan_worker_all_extended.py`, `test_scan_worker_all_failed.py`, `test_metadata_workers.py`, `test_progress_passes.py`.
+**Fix**: Replace with `wait_for_database_write_task(task, description, timeout=config.database_write_timeout)`.
 
 ---
 
-## 🟡 UI-Specific Issues
+### C3. `discover_single_library_tree_impl` return value discarded — doubles I/O
+**Location**: `scan_worker_all.py:699-701`
+**Danger**: 2 | **Likelihood**: 5 | **Complexity**: 2 | **Priority**: 10
 
-### H14. `controller.py` — Worker instances not cleaned up (lines 119–128)
+On first-ever scan of a library, `discover_single_library_tree_impl` walks every root directory with `os.scandir` + `has_video_files()`, then the result is discarded. Immediately after, the same walk repeats for detailed tree discovery. Doubles filesystem I/O for every root — particularly painful on NAS/SMB.
 
-`scan_worker_instance`, `cleanup_worker_instance`, etc. are stored as instance attributes but never explicitly `deleteLater()`ed. If `Controller` is recreated, old workers may linger.
-
-### H15. `controller.py` — Signal congestion (lines 345–359, 634–638)
-
-`detail_progress_batch` signal connects to `_on_detail_progress_batch` which then re-emits `detail_progress_updated` for **each event** in the batch — defeating the batching purpose. High-frequency progress updates can flood the Qt event loop.
-
-### H16. `library_grid.py` — Full rebuild on every library change (lines 544–588, 646–768)
-
-`populate_grid` and `populate_combined_view` destroy and recreate all widget items on every library load. No incremental update.
-
-### H17. `progress_widgets.py` — `paintEvent` performance (lines 155–275, 726–855)
-
-Complex paint operations with O(n) and O(n log n) loops on every frame. No cached layout calculations.
-
-### H18. `controller.py` — Race condition in `trigger_series_refresh` (lines 1173–1185)
-
-There's a check for `self.scan_worker_instance` being running, but between the check and the assignment, the check is not atomic with the worker creation.
+**Fix**: Either remove the redundant call (it serves no purpose) or restructure to return both flat and detailed results.
 
 ---
 
-## 🟡 Database Issues
+### C4. `mtime=0` filesystems cause permanent scan skipping
+**Location**: `core.py:443-454`, `scan_tv.py:118,145`
+**Danger**: 4 | **Likelihood**: 2 | **Complexity**: 1 | **Priority**: 8
 
-### H19. `db/queries_technical_extraction.py` — No null guard on `item_identifier` (line 133)
+FUSE filesystems (unionfs, mergerfs, some Docker mounts) report `st_mtime=0`. After first scan caches `mtime=0`, every subsequent scan finds `0 == 0` and skips forever. No file changes are ever detected.
 
-If caller passes `"item_identifier": None`, the `where(Episode.id == None)` becomes `WHERE episodes.id IS NULL` — a no-op but silently skips the update.
-
-**Fix**: Add explicit guard: `if not item_identifier: continue`.
-
-### H20. Inconsistent exception handling across save functions
-
-| Function | Behavior |
-|---|---|
-| `save_season_data()` | Re-raises after logging |
-| `save_movie_data()` | Re-raises after logging |
-| `save_library()` | **Swallows** exception |
-| `save_movie_library()` | **Swallows** exception |
-
-This inconsistency makes caller-side error handling unpredictable.
+**Fix**: Treat `current_series_mtime == 0` as unknown — add `and current_series_mtime > 0` to skip conditions. Same for season-level checks.
 
 ---
 
-## 🟢 Low Priority / Observations
+### C5. `except Exception: return True` in `detect_movie_file_changes` swallows `KeyboardInterrupt`
+**Location**: `file_discovery.py:176` (and similar broad catches throughout scanner)
+**Danger**: 3 | **Likelihood**: 2 | **Complexity**: 1 | **Priority**: 6
 
-### L1. Migration naming — `add_last_scanned_mtime_columns.py` actually creates a new table, not columns
+Broad `except Exception` in `detect_movie_file_changes` also catches `KeyboardInterrupt` and `SystemExit`, making the application unkillable during movie change detection. Same pattern exists in 6+ other try/except blocks across scanner files.
 
-### L2. Old mtime data in JSON metadata blobs not migrated to `scanned_directories` table; first post-upgrade scan does a full scan. Acceptable.
-
-### L3. `scanner/core.py` — Global executor singleton uses double-checked locking. Safe under GIL.
-
-### L4. Nested thread pool architecture: outer pool (library-level) + inner pool (folder-level). With 4 libraries on 8-core CPU: 48 threads max. Acceptable but should be monitored.
-
-### L5. `scan_worker_all.py` — `self.problems = []` reset at line 819. Safe due to Python reference semantics.
-
-### L6. `metadata_worker_property.py` — Double queue creation in `__init__` (line 75) and `run()` (line 80). The first queue is abandoned.
-
-### L7. `scan_worker_all.py` — 4 closures per `_scan_library_pass` capture entire stack frame. ~10,000 closures for 10 libraries × 1000 seasons. Temporary memory pressure, not a leak.
-
-### L8. Test isolation: `test_controller_extended.py` mutates `config.libraries` globally (lines 30–66). Can pollute other tests.
-
-### L9. Tests call private methods directly (`test_progress_passes.py` lines 50–117). Brittle to refactoring.
-
-### L10. `test_directory_mtime_persistence.py` uses hardcoded `/tmp/test_series_commit_regression` paths (line 15–16). Not isolated; can conflict with parallel test runs.
+**Fix**: Replace with `except OSError:` in filesystem-only operations.
 
 ---
 
-## 🔧 Resolution Plan
+### C6. Missing empty-sizes guard in `detect_movie_file_changes`
+**Location**: `file_discovery.py:194-198`
+**Danger**: 3 | **Likelihood**: 3 | **Complexity**: 1 | **Priority**: 9
 
-### Immediate (Pre-Merge)
+The TV version was fixed (commit `b508777`) to guard against empty `sizes` list when `size_bytes` is `None`. The movie version lacks the same guard — `sizes` becomes `[]`, `any()` on empty list returns `False`, so **every movie is falsely reported as changed**.
 
-1. **C1**: Fix QTimer in `scan_worker_single.py` — add explicit `flush_detail_progress()` calls or remove timer
-2. **C2**: Fix `settings.py` log handler — marshal GUI operations to UI thread
-3. **C3**: Fix `settings.py` — disconnect controller signals on dialog close
-4. **C4/C5**: Fix exception swallowing in `save_library()` / `save_movie_library()`
-5. **C4 (cont)**: Fix `file_discovery.py` empty `sizes` false-positive
-6. **C8**: Batch progress signals in `metadata_worker_property.py`
-7. **H3**: Fix `save_library()` to persist directory mtimes
-8. **H8**: Add `stop()` call before `join()` in `metadata_worker_property.py`
-9. **H9**: Move mock import to module level
-
-### Short-Term (This Sprint)
-
-10. **H1/H2**: Move DB writes and network I/O off UI thread in `controller.py`
-11. **H6**: Log the silent `except: pass` in `has_tech_and_metadata()`
-12. **H7**: Replace `session.new` iteration with local dict tracking
-13. **H10**: Fix TOCTOU race in `download_image`
-14. **H11**: Add queue size monitoring / maxsize
-15. **H12/H13**: Fix flaky tests — replace timeouts with deterministic synchronization, test actual QThread behavior
-16. **H14**: Clean up worker instances in controller
-17. **H17**: Fix `has_tech_and_metadata()` silent except
-
-### Medium-Term
-
-18. **C9/C10**: Virtualize tree/grid views for large libraries
-19. **H15**: Reduce signal congestion — don't un-batch in `_on_detail_progress_batch`
-20. **H16**: Incremental library grid updates instead of full rebuild
-21. **H5**: Add read-only session context for queries
-22. **H18**: Fix race condition in `trigger_series_refresh`
-23. **L8-L10**: Improve test isolation
+**Fix**: Add `if not sizes: continue` in movie detection loop (identical to TV fix).
 
 ---
 
-## ✅ Items Reviewed & Verified Clean
+### C7. Blocking TMDB/MAL network calls on UI thread
+**Location**: `series_details.py:305,362,405,793,813`
+**Danger**: 4 | **Likelihood**: 5 | **Complexity**: 4 | **Priority**: 20
 
-| Area | Status |
-|---|---|
-| Lock ordering | ✅ No deadlocks found (lock hierarchy is clean) |
-| TMDB rate limiter | ✅ Correctly implemented (token-bucket, sleep outside lock) |
-| SQLAlchemy 2.0 compliance | ✅ No `session.query()` calls anywhere |
-| N+1 query patterns | ✅ None found — proper `selectinload`/`joinedload` usage |
-| Migration safety | ✅ Clean additive DDL, no data migration risks |
-| `save_library()` data paths | ✅ Series/Season/Episode records properly persisted (mtimes missing) |
-| `ScannedDirectory` model | ✅ Properly defined with TEXT PK path and FLOAT mtime |
-| Global executor singleton | ✅ Thread-safe double-checked locking |
-| `_global_scan_executor_lock` usage | ✅ Correct |
-| Detailed logging compliance | ✅ Background lifecycle, DB writes, and progress all logged |
+Synchronous `tmdb_client.get_episode_groups()`, `get_seasons()`, `get_episodes()`, `myanimelist_client.search_anime()`, and `get_anime_details()` are called directly on the **main thread**. Any network latency freezes the entire UI for the request duration. Repeated subgroup navigation causes repeated freezes.
+
+**Fix**: Move all TMDB/MAL data fetching into background `QThread`/`QWorker` that emit results via signals.
 
 ---
 
-## 📊 Summary
+### C8. `db.save_library()` on main thread in series details
+**Location**: `series_details.py:551,655,923`
+**Danger**: 4 | **Likelihood**: 3 | **Complexity**: 3 | **Priority**: 12
 
-| Severity | Count |
-|---|---|
-| 🔴 Critical | 10 |
-| 🟡 High | 20 |
-| 🟢 Low | 10 |
-| **Total** | **40** |
+`db.save_library()` is called synchronously on the main thread during apply/save operations. With large libraries (50+ series, 5000+ episodes), serialization + SQLite write takes 1–5 seconds.
 
-The architectural design (queue-based DB writer, pass-based scanning, lock separation, mtime caching) is fundamentally sound. The most critical defect is the silent loss of UI progress updates in `ScanWorker` due to the absent Qt event loop (C1). The SettingsDialog thread-safety issue (C2) is a potential crash bug. On the database side, the swallowed exceptions (C4) and false-positive re-scan (C5) are the primary data integrity concerns.
+**Fix**: Delegate via `DatabaseWriteTask`/`DatabaseWriterThread` (same pattern as scan workers).
 
-Most issues are in the MEDIUM-HIGH range and relate to performance edge cases (unbounded queues, signal flooding, synchronous I/O on UI thread) rather than correctness. The test suite is comprehensive in coverage but many tests don't actually test threading behavior, calling `.run()` directly instead of testing through QThread `.start()`.
+---
+
+### C9. Double `session.commit()` inside `with get_session()` — 4 production functions
+**Location**: `library_tv.py:688,892`, `library_movie.py:321,458`
+**Danger**: 3 | **Likelihood**: 2 | **Complexity**: 1 | **Priority**: 6
+
+Each function calls `session.commit()` explicitly, then the `get_session()` context manager also commits on exit. Works by accident — if any dirty objects exist between explicit commit and context exit, this raises `InvalidRequestError`.
+
+**Fix**: Replace explicit `session.commit()` with `session.flush()` where ID generation is needed; otherwise remove entirely.
+
+---
+
+### C10. `detect_movie_file_changes` — No `continue` after empty size guard
+**Location**: `file_discovery.py` (movie path, lines 193–198)
+**Danger**: 3 | **Likelihood**: 3 | **Complexity**: 1 | **Priority**: 9
+
+Same root cause as C6 — movie path lacks the `if not sizes: continue` guard that was added for TV. False-positive rebuild of entire movie library metadata on every scan until metadata workers populate `size_bytes`.
+
+**Note**: C6 and C10 are the same underlying issue. Counted once in the total.
+
+---
+
+### C11. `disregard_mtimes` not exposed in `scan_directories`
+**Location**: `core.py:81-98`
+**Danger**: 2 | **Likelihood**: 4 | **Complexity**: 1 | **Priority**: 8
+
+`scan_movie` and `scan_series` accept `disregard_mtimes`, but the main entry point `scan_directories` doesn't expose it. Users troubleshooting stale scans have no API-level bypass.
+
+**Fix**: Add `disregard_mtimes: bool = False` parameter and pass it through.
+
+---
+
+## 🟠 HIGH Issues (17 total)
+
+### H1. `_cleanup_orphaned_media_files` has silent `except: pass`
+**Location**: `library.py:66-67,77-78`
+**Danger**: 2 | **Likelihood**: 3 | **Complexity**: 1 | **Priority**: 6
+
+Two `except Exception: pass` blocks swallow `Path` resolution and file-existence errors. Orphaned records silently leak on filesystems with unusual encodings or permission errors.
+
+**Fix**: Replace with `logger.warning()`.
+
+---
+
+### H2. `UpdateCheckWorker` signal not disconnected on SettingsDialog close
+**Location**: `settings.py:1856`
+**Danger**: 3 | **Likelihood**: 2 | **Complexity**: 2 | **Priority**: 6
+
+`UpdateCheckWorker.finished` signal connected to closure capturing dialog self. Not disconnected in `_disconnect_signals()`. Could fire after dialog widgets destroyed, causing use-after-free crash.
+
+**Fix**: Add `self.update_check_worker.finished` disconnection to `_disconnect_signals()`.
+
+---
+
+### H3. `perform_rename` blocks main thread with filesystem I/O
+**Location**: `controller.py:1501`
+**Danger**: 3 | **Likelihood**: 3 | **Complexity**: 3 | **Priority**: 9
+
+File renames (+ DB write after) execute synchronously on the main thread. On NAS/SMB with 50+ files, blocks UI for seconds to minutes.
+
+**Fix**: Move `perform_rename` into background worker with progress signals.
+
+---
+
+### H4. MAL methods in series_details lack `try/except`
+**Location**: `series_details.py:793,813`
+**Danger**: 4 | **Likelihood**: 3 | **Complexity**: 1 | **Priority**: 12
+
+`myanimelist_client.search_anime()` and `get_anime_details()` are called without exception handling. Network failures crash the dialog/application.
+
+**Fix**: Wrap in `try/except Exception` with logging and user-facing error message (consistent with TMDB calls in same file).
+
+---
+
+### H5. Per-toggle config write in hide-missing checkbox
+**Location**: `series_details.py:661-668`
+**Danger**: 2 | **Likelihood**: 3 | **Complexity**: 1 | **Priority**: 6
+
+`stateChanged` signal calls `config.set_series_preference()` on every click. The value is already saved in `_on_save_clicked`, making per-toggle writes redundant and blocking.
+
+**Fix**: Remove the `stateChanged` connection (value persisted on save).
+
+---
+
+### H6. `detail_progress_buffer` can grow arbitrarily large within a library
+**Location**: `scan_worker_all.py:117-141`, `scan_worker_single.py:87-110`
+**Danger**: 2 | **Likelihood**: 4 | **Complexity**: 2 | **Priority**: 8
+
+Buffer flushed only at library boundaries. 50,000 items = 5–10 MB held in memory. Delays progress visibility until library completes.
+
+**Fix**: Add periodic flushes every N events or after each root directory.
+
+---
+
+### H7. `self.current_pass` written without lock, read under lock
+**Location**: `scan_worker_single.py:314,344`
+**Danger**: 2 | **Likelihood**: 2 | **Complexity**: 1 | **Priority**: 4
+
+Data race — `self.current_pass` written from QThread without synchronization, read from thread-pool threads with `self.scan_lock` held. GIL prevents crash but callback could misattribute stats between passes.
+
+**Fix**: Wrap `self.current_pass = N` in `self.scan_lock`.
+
+---
+
+### H8. Thread-unsafe callbacks invoked from parallel scanner workers
+**Location**: `core.py:259-267,515-523`
+**Danger**: 3 | **Likelihood**: 4 | **Complexity**: 4 | **Priority**: 12
+
+`detail_callback`, `season_callback`, and `movie_callback` are called from thread-pool threads inside `core.py`. If any callback directly modifies Qt widgets (progress bars, labels), this causes UI thread violations — intermittent crashes, hangs, or rendering corruption.
+
+**Fix**: Move callback invocations out of worker functions into main-thread result processing, or ensure callbacks are queued via `QMetaObject.invokeMethod`/`pyqtSignal`.
+
+---
+
+### H9. FAT32/SMB mtime precision causes missed changes
+**Location**: `core.py:444`, `scan_tv.py:118,145`
+**Danger**: 2 | **Likelihood**: 3 | **Complexity**: 2 | **Priority**: 6
+
+FAT32 stores mtime with 2-second resolution. A file modification completing within the precision window might not change directory mtime, causing false "unchanged" result.
+
+**Fix**: Add tolerance-based comparison (±0.5s) or store integer `mtime_ns` and round when reading FAT32.
+
+---
+
+### H10. Legacy `session.query()` in 17+ test locations
+**Location**: Distributed across test files
+**Danger**: 1 | **Likelihood**: 5 | **Complexity**: 3 | **Priority**: 5
+
+Explicitly prohibited by AGENTS.md. Violates project standard, reduces value of test coverage as it doesn't test the same API that production uses.
+
+**Fix**: Convert all to `select()` pattern.
+
+---
+
+### H11. FAT32/SMB mtime precision causes missed changes
+**Location**: `core.py:444`, `scan_tv.py:118,145`
+**Danger**: 2 | **Likelihood**: 3 | **Complexity**: 2 | **Priority**: 6
+
+Same as H9 — FAT32 2-second precision can cause false unchanged results.
+
+*(H9 and H11 are the same issue. Counted once in total.)*
+
+---
+
+### H12. `ScannedDirectory` model not exported from `__init__.py`
+**Location**: `db/__init__.py:63-72`
+**Danger**: 1 | **Likelihood**: 3 | **Complexity**: 1 | **Priority**: 3
+
+Inconsistent with all other model exports. Future developers may not know about the internal import path.
+
+**Fix**: Add to `__all__` exports.
+
+---
+
+### H13. 5x duplicated mtime upsert logic
+**Location**: `library_shared.py:152-159`, `library_tv.py:655-686,883-890`, `library_movie.py:307-319,449-456`
+**Danger**: 1 | **Likelihood**: 5 | **Complexity**: 3 | **Priority**: 5
+
+Hand-written `select()` → `first()` → `add/update` pattern duplicated 5 times. Every schema change must update all 5 locations.
+
+**Fix**: Extract into `_upsert_directory_mtime(session, path, mtime)` helper that takes an existing session.
+
+---
+
+## 🟡 MEDIUM Issues (18 total)
+
+### M1. `mtime=0.0` accepted but semantically suspicious
+**Location**: All mtime persistence code
+**Danger**: 2 | **Likelihood**: 1 | **Complexity**: 1 | **Priority**: 2
+
+`mtime > 0` guard missing. Pre-1970 media files do not exist.
+
+**Fix**: Add `and mtime > 0` to all skip condition checks.
+
+---
+
+### M2. Orphaned `scanned_directories` entries after library cleanup
+**Location**: `library.py:100-106`
+**Danger**: 1 | **Likelihood**: 3 | **Complexity**: 1 | **Priority**: 3
+
+`cleanup_library` removes series/episodes but doesn't clean up `scanned_directories`. Stale cache entries inflate table and could cause incorrect skip decisions if directory is reused.
+
+**Fix**: Add `delete(ScannedDirectory)` for removed series paths in `_cleanup_tv_library`.
+
+---
+
+### M3. `refresh_worker_instance` not declared in `__init__`
+**Location**: `controller.py:1193`
+**Danger**: 1 | **Likelihood**: 5 | **Complexity**: 1 | **Priority**: 5
+
+Dynamic attribute violates codebase convention. Invisible to type checkers.
+
+**Fix**: Add `self.refresh_worker_instance: Optional[Any] = None` to `__init__`.
+
+---
+
+### M4. Multiple `library_loaded.emit()` per scan-all
+**Location**: `controller.py:648-669`
+**Danger**: 2 | **Likelihood**: 4 | **Complexity**: 2 | **Priority**: 8
+
+Grid repopulated N times per scan-all (once per root directory). Visible flicker, wasted CPU on poster icon loading.
+
+**Fix**: Debounce with `QTimer.singleShot(0)` or suppress within scan-all and emit once at finish.
+
+---
+
+### M5. Unbatched `appendHtml` flood in log handler
+**Location**: `settings.py:1966-2017`
+**Danger**: 2 | **Likelihood**: 3 | **Complexity**: 2 | **Priority**: 6
+
+Same class of problem as the fixed signal batching — every log message triggers expensive `QTextEdit.appendHtml()` on main thread.
+
+**Fix**: Batch log emissions with timer-based flusher (accumulate, flush every ~200ms).
+
+---
+
+### M6. Per-frame heap allocations in `paintEvent`
+**Location**: `progress_widgets.py:156-275,743-751`
+**Danger**: 1 | **Likelihood**: 5 | **Complexity**: 1 | **Priority**: 5
+
+`QColor`, `QPen`, `QFont` created on every repaint (up to 60fps). Unnecessary GC pressure.
+
+**Fix**: Promote to class-level constants.
+
+---
+
+### M7. Dead `pass` block in `_season_callback`
+**Location**: `scan_worker_single.py:215-217`
+**Danger**: 1 | **Likelihood**: 5 | **Complexity**: 1 | **Priority**: 5
+
+Leftover from refactoring where `_skipped_series_ids` was intended but never implemented (see C1).
+
+**Fix**: Replace with actual guard or remove dead block.
+
+---
+
+### M8. Private function `_series_belongs_to_root` imported across modules
+**Location**: `scan_worker_all.py:27`
+**Danger**: 1 | **Likelihood**: 5 | **Complexity**: 1 | **Priority**: 5
+
+Python convention: underscore-prefixed names are module-internal. Importing across module breaks encapsulation.
+
+**Fix**: Rename to public name or restructure.
+
+---
+
+### M9. `Mock` import in production code
+**Location**: `scan_worker_base.py:4`
+**Danger**: 1 | **Likelihood**: 2 | **Complexity**: 1 | **Priority**: 2
+
+Production code compensating for test API instead of test adapting to production. Could mask real type errors.
+
+**Fix**: Remove Mock guard, use `Optional[float]` with `None` = no timeout.
+
+---
+
+### M10. `time.time()` used instead of `time.monotonic()` in TMDB rate limiter
+**Location**: `tmdb.py:97`
+**Danger**: 1 | **Likelihood**: 1 | **Complexity**: 1 | **Priority**: 1
+
+Clock adjustments (NTP, daylight savings) cause `time.time()` to jump. Monotonic clock is standard for rate limiters.
+
+**Fix**: Replace with `time.monotonic()`.
+
+---
+
+### M11. Image downloads unnecessarily rate-limited
+**Location**: `tmdb.py:557`
+**Danger**: 1 | **Likelihood**: 5 | **Complexity**: 2 | **Priority**: 5
+
+CDN image downloads (no rate limit) routed through same 10 req/s throttle as API calls. Unnecessary 0.1s spacing between poster downloads.
+
+**Fix**: Use separate non-throttled method for CDN images or `self.session.get()` directly.
+
+---
+
+### M12. No test for movie mtime persistence
+**Location**: Missing test coverage
+**Danger**: 2 | **Likelihood**: 3 | **Complexity**: 2 | **Priority**: 6
+
+TV has `test_tv_season_mtime_skip_scanning` and `test_series_mtime_skip_scanning`. Movie has no analogous mtime persistence tests.
+
+**Fix**: Add tests covering scan → save mtime → scan again → verify skip cycle for movies.
+
+---
+
+### M13. `iterdir()` used instead of `os.scandir` context manager
+**Location**: `scan_tv.py:218`, `core.py:353`
+**Danger**: 1 | **Likelihood**: 1 | **Complexity**: 1 | **Priority**: 1
+
+Codebase migrated to `os.scandir` with context managers, but two locations still use `Path.iterdir()` (non-deterministic handle close via GC).
+
+**Fix**: Replace with `os.scandir` context manager.
+
+---
+
+### M14. `scan_results` ordering non-deterministic
+**Location**: `core.py:460,510`
+**Danger**: 1 | **Likelihood**: 4 | **Complexity**: 2 | **Priority**: 4
+
+Mtime-skipped results appended in order, future completions in `as_completed` order. Output order differs between runs.
+
+**Fix**: Use dict keyed by series_name, or merge both lists in original order.
+
+---
+
+### M15. Stats keys mismatch — movie path uses TV-oriented keys
+**Location**: `library_movie.py:348-365`
+**Danger**: 1 | **Likelihood**: 5 | **Complexity**: 1 | **Priority**: 5
+
+`save_movie_data` stats initialized with `"series"`, `"seasons"` keys that are never incremented in movie path. Clutters return value.
+
+**Fix**: Remove unused TV-oriented keys from movie stats.
+
+---
+
+### M16. `__all__` exports private underscore-prefixed names
+**Location**: `library.py:128-148`
+**Danger**: 1 | **Likelihood**: 5 | **Complexity**: 1 | **Priority**: 5
+
+Python convention: underscore-prefixed = private. Exporting them in `__all__` misleads API consumers.
+
+**Fix**: Remove underscore-prefixed names from `__all__`.
+
+---
+
+### M17. `save_directory_mtime` not used by in-transaction mtime writes
+**Location**: All 4 inlined upsert locations (see H13)
+**Danger**: 1 | **Likelihood**: 3 | **Complexity**: 3 | **Priority**: 3
+
+Inlined versions use the *same session*, while `save_directory_mtime()` opens its own. Inlined version correct but duplicated. See H13 for proposed fix.
+
+---
+
+### M18. Deferred imports in hot loop add per-series overhead
+**Location**: `core.py:346-348,449`, `scan_tv.py:114,142`
+**Danger**: 1 | **Likelihood**: 4 | **Complexity**: 2 | **Priority**: 4
+
+`from lan_streamer import db as _db` inside per-series loop to work around circular imports. Python caches after first load, but import machinery lookup still acquires GIL.
+
+**Fix**: Move to module-level with `TYPE_CHECKING` guard or restructure dependency graph.
+
+---
+
+## 🔵 LOW Issues (12 total)
+
+| ID | Issue | File | Fix |
+|----|-------|------|-----|
+| L01 | `merge_stats_dicts` called without lock — inconsistent with adjacent locked code | `scan_worker_all.py:931,1016` | Add comment or acquire lock |
+| L02 | `join()` without timeout in `finally` blocks | All worker files | Add `timeout=5.0` with warning log |
+| L03 | `fail_library` not emitted in top-level catch-all | `scan_worker_all.py:1063-1065` | Emit for all configured libraries |
+| L04 | Duplicated `get_session()` helper | `queries_technical_extraction.py:12-15` | Import from `db.connection` directly |
+| L05 | Migration: concurrent insert race (theoretical) | Migration 0def24d4a3b4 | Use `INSERT OR REPLACE` |
+| L06 | DirEntry objects retained after scandir context exits | `file_discovery.py:100` | Capture `(path_str, size)` tuples inside `with` |
+| L07 | `logging.exception` duplicates error message | `core.py:256-258,512-514` | Use plain `logger.error` for first mention |
+| L08 | Dead `_COLOR_LABEL` constant | `progress_widgets.py:625` | Remove unused constant |
+| L09 | Broad `except Exception` when `OSError` sufficient | 6+ locations across scanner | Narrow to `OSError` |
+| L10 | No skip guard for `mtime=0` in season-level check | `scan_tv.py:118,145` | Add `current_mtime > 0` |
+| L11 | `cleanup_library` doesn't remove stale `ScannedDirectory` rows | `library.py` (pre-existing) | Add delete for removed series paths |
+| L12 | Integration test gap: concurrent scan + DB write | No existing tests | Add test with two parallel workers modifying same DB |
+
+---
+
+## Cross-Cutting Concerns
+
+### Threading Safety
+- **Database**: WAL mode + `DatabaseWriterThread` serializes writes. The `event.wait()` timeout gap (C2) is the only real deadlock risk. All other threading issues are data races (C1 skipped count, H7 current_pass, H8 callbacks).
+- **Scanner workers**: Callbacks called from thread-pool threads (H8) is the most impactful threading issue — it affects every scan run and can cause hard-to-debug UI crashes.
+- **UI**: The series_details TMDB/MAL calls on the main thread (C7, C8) are the most user-visible problems, causing multi-second UI freezes during normal navigation.
+
+### Data Integrity
+- **mtime=0** (C4) is the most dangerous data integrity issue — it silently causes permanent scan skipping on affected filesystems, making the application appear broken.
+- **Double commit** (C9) is fragile but works by accident in current code. Will break if any post-commit logic is added.
+- **Empty sizes in movie path** (C6) causes false-positive metadata rebuilds on every scan, wasting CPU and IO.
+
+### Performance
+- **Double I/O on first scan** (C3) wastes significant time for new users on NAS/SMB.
+- **Buffer growth** (H6) and **unbatched log emissions** (M5) degrade performance over long scans.
+- **paintEvent allocations** (M6) are minor but contribute to UI jank on low-end systems.
+
+### Test Coverage
+- **17+ legacy `session.query()` calls** (H10) undermine the project's SA 2.0 mandate.
+- **Movie mtime persistence untested** (M12) — TV has coverage, movie doesn't.
+- **No integration test for concurrent scan + DB write** — the most dangerous real-world scenario lacks dedicated testing.
+
+---
+
+## What Was Done Right
+
+| Area | Positive |
+|------|----------|
+| **WAL + busy_timeout** | Proper `PRAGMA` settings for concurrent reads |
+| **Session lifecycle** | `get_session()` properly commits/rollbacks/closes |
+| **DatabaseWriterThread** | Single-threaded queue + sentinel shutdown |
+| **TMDB rate fix** | Correctly releases lock before sleeping (commit `6deb9b4`) |
+| **Signal batching** | Reduces cross-thread signal count from O(N) to O(N/100) |
+| **QTimer removal** | Correct — timer was non-functional without event loop |
+| **has_tech_and_metadata fix** | Silent except → proper logging (commit `9d995de`) |
+| **Migration coverage** | `test_scanned_directories_migration` verifies upgrade+rollback |
+| **mtime durability test** | `test_directory_mtime_persistence` proves persistence across sessions |
+
+---
+
+## Priority Action Items
+
+1. **C7** (UI freeze on TMDB calls) — Danger 4 × Likelihood 5 = **20** — Affected UX on every `SeriesDetailsDialog` open
+2. **C1** (double skipped count) — Danger 3 × Likelihood 4 = **12** — Incorrect scan statistics on every unchanged series
+3. **C8** (save_library UI freeze) — Danger 4 × Likelihood 3 = **12** — Multi-second freeze on metadata save
+4. **H4** (MAL no error handling) — Danger 4 × Likelihood 3 = **12** — Crash on network failure
+5. **H8** (thread-unsafe callbacks) — Danger 3 × Likelihood 4 = **12** — Intermittent UI crashes
+6. **C3** (double I/O on first scan) — Danger 2 × Likelihood 5 = **10** — Affects every new user
+7. **C4** (mtime=0 permanent skip) — Danger 4 × Likelihood 2 = **8** — Silent data loss on affected FUSE filesystems
+8. **C11** (disregard_mtimes not exposed) — Danger 2 × Likelihood 4 = **8** — No user-facing bypass for cache
+9. **H1** (silent except in cleanup) — Danger 2 × Likelihood 3 = **6** — Hard-to-diagnose orphaned records
+10. **H6** (buffer growth) — Danger 2 × Likelihood 4 = **8** — Memory waste on large libraries

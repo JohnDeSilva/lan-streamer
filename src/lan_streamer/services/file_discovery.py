@@ -173,7 +173,7 @@ def detect_movie_file_changes(
                             stack.append(entry.path)
                     except OSError:
                         pass
-    except Exception:
+    except OSError:
         return True
 
     existing_versions = existing_movie_data.get("versions", [])
@@ -192,7 +192,13 @@ def detect_movie_file_changes(
 
         existing_entry = existing_by_path[path_str]
         sizes = [existing_entry.get("size_bytes")]
+        if existing_entry.get("versions"):
+            for version in existing_entry["versions"]:
+                if version.get("path") == path_str:
+                    sizes.append(version.get("size_bytes"))
         sizes = [size for size in sizes if size is not None]
+        if not sizes:
+            continue
 
         if not any(size == disk_size for size in sizes):
             return True

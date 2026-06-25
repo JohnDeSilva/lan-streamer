@@ -95,6 +95,7 @@ def scan_directories(
     movie_callback: Any = None,
     metadata_only: bool = False,
     database_queue: Optional[Any] = None,
+    disregard_mtimes: bool = False,
 ) -> LibraryDict:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -347,13 +348,18 @@ def scan_directories(
             has_season_subdirectories as _has_season_subdirs,
         )
 
+        with os.scandir(root_path) as scan_entries:
+            scanned_directories = [
+                (entry.name, entry)
+                for entry in scan_entries
+                if entry.is_dir() and not entry.name.startswith(".")
+            ]
         series_dirs = sorted(
             [
-                directory
-                for directory in root_path.iterdir()
-                if directory.is_dir()
-                and not directory.name.startswith(".")
-                and (has_video_files(directory) or _has_season_subdirs(directory))
+                Path(root_path / name)
+                for name, entry in scanned_directories
+                if has_video_files(Path(root_path / name))
+                or _has_season_subdirs(Path(root_path / name))
             ],
             key=lambda directory: directory.stat().st_mtime,
             reverse=True,
@@ -378,7 +384,14 @@ def scan_directories(
                 )
 
             # Check if we have an existing manual match for THIS SPECIFIC folder name
-            existing_series = existing_library.get(series_name)
+            if disregard_mtimes:
+                existing_series = existing_library.get(series_name)
+                # When disregard_mtimes is True, skip the series-level mtime
+                # early-exit block below by clearing has_meta temporarily.
+                # We still need existing_series for data, so set it first.
+                has_meta = False  # force full re-scan
+            else:
+                existing_series = existing_library.get(series_name)
             tmdb_series = None
             is_locked = False
             existing_jellyfin_id = None
@@ -445,7 +458,7 @@ def scan_directories(
                 except OSError:
                     current_series_mtime = None
 
-                if current_series_mtime is not None:
+                if current_series_mtime is not None and current_series_mtime > 0:
                     from lan_streamer import db as _db  # Deferred: circular import
 
                     cached_series_mtime = _db.get_directory_mtime(series_directory_path)

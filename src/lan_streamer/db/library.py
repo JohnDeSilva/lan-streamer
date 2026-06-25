@@ -12,7 +12,10 @@ cleanup_library is defined here as it bridges both TV and Movie cleanup.
 
 import logging
 import time
+from pathlib import Path
 from typing import Dict, List, Any
+
+from sqlalchemy import select
 
 from lan_streamer.system.config import config
 from lan_streamer.db.library_shared import (
@@ -63,8 +66,10 @@ def _cleanup_orphaned_media_files(
                     break
                 except ValueError:
                     continue
-        except Exception:
-            pass
+        except Exception as exception_instance:
+            logger.warning(
+                f"Cleanup: Unable to resolve path '{mf.path}': {exception_instance}"
+            )
 
         if in_library:
             try:
@@ -74,8 +79,10 @@ def _cleanup_orphaned_media_files(
                     )
                     session.delete(mf)
                     removed_count += 1
-            except Exception:
-                pass
+            except Exception as exception_instance:
+                logger.warning(
+                    f"Cleanup: Unable to check existence of '{mf.path}': {exception_instance}"
+                )
     stats["media_files_removed"] = stats.get("media_files_removed", 0) + removed_count
 
 
@@ -103,6 +110,41 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
                 _cleanup_movie_library(session, library_name, stats)
             else:
                 _cleanup_tv_library(session, library_name, root_directories, stats)
+            # Clean up stale ScannedDirectory entries for removed series
+            from sqlalchemy import delete as sa_delete
+            from lan_streamer.db.models import (
+                ScannedDirectory,
+                Series as SeriesModel,
+                Movie as MovieModel,
+            )
+
+            for root in root_directories:
+                root_path = Path(root)
+                if root_path.is_dir():
+                    for series_path in root_path.iterdir():
+                        if series_path.is_dir():
+                            series_name = series_path.name
+                            if library_type == "movie":
+                                db_entry = session.scalars(
+                                    select(MovieModel)
+                                    .where(MovieModel.library_name == library_name)
+                                    .where(MovieModel.name == series_name)
+                                ).first()
+                                series_exists = db_entry is not None
+                            else:
+                                db_entry = session.scalars(
+                                    select(SeriesModel)
+                                    .where(SeriesModel.library_name == library_name)
+                                    .where(SeriesModel.name == series_name)
+                                ).first()
+                                series_exists = db_entry is not None
+                            if not series_exists:
+                                session.execute(
+                                    sa_delete(ScannedDirectory).where(
+                                        ScannedDirectory.path
+                                        == str(series_path.absolute())
+                                    )
+                                )
             _cleanup_orphaned_media_files(session, root_directories, stats)
 
         duration = time.time() - start_time

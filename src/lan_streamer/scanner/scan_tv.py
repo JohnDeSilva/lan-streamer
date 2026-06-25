@@ -4,6 +4,7 @@ TV/series scanning functions — scan a single series directory and detect file 
 
 import datetime
 import logging
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -121,7 +122,9 @@ def _check_series_directory_mtime_unchanged(
 
     cached_series_mtime = db.get_directory_mtime(series_directory_path)
     return (
-        cached_series_mtime is not None and current_series_mtime == cached_series_mtime
+        cached_series_mtime is not None
+        and current_series_mtime == cached_series_mtime
+        and current_series_mtime > 0
     )
 
 
@@ -146,7 +149,7 @@ def _check_single_season_changed(
     except OSError:
         current_mtime = None
 
-    if not disregard_mtimes:
+    if not disregard_mtimes and current_mtime is not None and current_mtime > 0:
         cached_mtime = db.get_directory_mtime(str(season_directory.absolute()))
         if cached_mtime is not None and current_mtime == cached_mtime:
             # Mtime match: season directory contents are definitively unchanged.
@@ -215,26 +218,27 @@ def _discover_seasons_to_process(
         return seasons_to_process
 
     # Series directory changed (or no cached mtime): walk the filesystem.
-    for season_directory in series_directory.iterdir():
-        if not season_directory.is_dir() or season_directory.name.startswith("."):
-            continue
+    with os.scandir(series_directory) as scan_iterator_series:
+        for entry in scan_iterator_series:
+            if not entry.is_dir() or entry.name.startswith("."):
+                continue
+            season_directory = Path(entry.path)
+            season_name = entry.name
+            existing_season: Dict[str, Any] | None = None
+            if existing_series_data and season_name in existing_series_data.get(
+                "seasons", {}
+            ):
+                existing_season = existing_series_data["seasons"][season_name]
+                is_season_changed = _check_single_season_changed(
+                    season_directory,
+                    existing_season,
+                    offline,
+                    disregard_mtimes=disregard_mtimes,
+                )
+            else:
+                is_season_changed = True
 
-        season_name = season_directory.name
-        existing_season: Dict[str, Any] | None = None
-        if existing_series_data and season_name in existing_series_data.get(
-            "seasons", {}
-        ):
-            existing_season = existing_series_data["seasons"][season_name]
-            is_season_changed = _check_single_season_changed(
-                season_directory,
-                existing_season,
-                offline,
-                disregard_mtimes=disregard_mtimes,
-            )
-        else:
-            is_season_changed = True
-
-        seasons_to_process.append((season_name, is_season_changed, existing_season))
+            seasons_to_process.append((season_name, is_season_changed, existing_season))
 
     return seasons_to_process
 
