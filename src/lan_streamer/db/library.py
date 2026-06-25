@@ -19,6 +19,8 @@ from lan_streamer.db.library_shared import (
     get_session,
     _update_field_safely,
     _sync_media_files,
+    get_directory_mtime,
+    save_directory_mtime,
 )
 from lan_streamer.db.library_tv import (
     load_library,
@@ -141,4 +143,6 @@ __all__ = [
     "_cleanup_movie_library",
     "_cleanup_orphaned_media_files",
     "cleanup_library",
+    "get_directory_mtime",
+    "save_directory_mtime",
 ]

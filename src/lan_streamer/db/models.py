@@ -152,7 +152,6 @@ class Season(Base):
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
     poster_path: Mapped[Optional[str]] = mapped_column(String)
     myanimelist_id: Mapped[Optional[int]] = mapped_column(Integer)
-    last_scanned_mtime: Mapped[Optional[float]] = mapped_column(Float)
 
     series: Mapped[Optional["Series"]] = relationship(
         "Series", back_populates="seasons"
@@ -418,7 +417,6 @@ class Movie(CompatibilityMixin, Base):
     genre: Mapped[Optional[str]] = mapped_column(String)
     year: Mapped[Optional[int]] = mapped_column(Integer)
     default_path: Mapped[Optional[str]] = mapped_column(String)
-    last_scanned_mtime: Mapped[Optional[float]] = mapped_column(Float)
 
     media_files: Mapped[List["MediaFile"]] = relationship(
         "MediaFile",
@@ -526,3 +524,12 @@ class PlaybackState(Base):
     movie: Mapped[Optional["Movie"]] = relationship(
         "Movie", back_populates="playback_state"
     )
+
+
+class ScannedDirectory(Base):
+    """Stores the last scanned directory mtimes to minimize unnecessary scans."""
+
+    __tablename__ = "scanned_directories"
+
+    path: Mapped[str] = mapped_column(String, primary_key=True)
+    last_scanned_mtime: Mapped[float] = mapped_column(Float, nullable=False)
