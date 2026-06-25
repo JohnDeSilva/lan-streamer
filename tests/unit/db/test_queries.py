@@ -44,7 +44,8 @@ def test_db_error_handling(mock_db_file) -> None:
 
         # These should catch the error and log it, not crash
         assert db.load_library("Lib") == {}
-        db.save_library("Lib", {})
+        with pytest.raises(Exception):
+            db.save_library("Lib", {})
         db.update_episode_watched_status("path", True)
 
 

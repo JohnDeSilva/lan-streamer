@@ -546,6 +546,8 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     try:
+        from lan_streamer.db.models import ScannedDirectory
+
         with get_session() as session:
             existing_series = {
                 series_obj.name: series_obj
@@ -644,6 +646,47 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                         stats["deleted"] += 1
                         stats["episodes_removed"] += 1
 
+            # Persist directory mtimes for series and seasons
+            for series_name, series_data in library.items():
+                series_metadata = series_data.get("metadata", {})
+                series_dir = series_metadata.get("series_directory_path")
+                series_mtime = series_metadata.get("last_scanned_mtime")
+                if series_dir and series_mtime is not None:
+                    record = session.scalars(
+                        select(ScannedDirectory).where(
+                            ScannedDirectory.path == series_dir
+                        )
+                    ).first()
+                    if record:
+                        record.last_scanned_mtime = series_mtime
+                    else:
+                        session.add(
+                            ScannedDirectory(
+                                path=series_dir, last_scanned_mtime=series_mtime
+                            )
+                        )
+                for season_name, season_data in series_data.get("seasons", {}).items():
+                    season_metadata = season_data.get("metadata", {})
+                    season_dir = season_metadata.get("season_directory_path")
+                    season_mtime = season_metadata.get("last_scanned_mtime")
+                    if season_dir and season_mtime is not None:
+                        record = session.scalars(
+                            select(ScannedDirectory).where(
+                                ScannedDirectory.path == season_dir
+                            )
+                        ).first()
+                        if record:
+                            record.last_scanned_mtime = season_mtime
+                        else:
+                            session.add(
+                                ScannedDirectory(
+                                    path=season_dir,
+                                    last_scanned_mtime=season_mtime,
+                                )
+                            )
+
+            session.commit()
+
     except Exception as e:
         logger.exception(f"Error saving library '{library_name}' to database")
         stats["issues"].append(
@@ -653,6 +696,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                 "error": str(e),
             }
         )
+        raise
 
     duration = time.time() - start_time
     logger.info(
