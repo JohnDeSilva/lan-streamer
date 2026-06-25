@@ -91,7 +91,12 @@ def _process_season_metadata(
         existing_season_id = old_season_metadata.get("tmdb_identifier", "")
         existing_season_poster = old_season_metadata.get("poster_path", "")
         existing_mal_id = old_season_metadata.get("myanimelist_id")
-        existing_last_scanned_mtime = old_season_metadata.get("last_scanned_mtime")
+
+    from lan_streamer import db
+
+    existing_last_scanned_mtime = db.get_directory_mtime(
+        str(season_directory.absolute())
+    )
 
     if matched_tmdb_season and series_data["_tmdb_series_id"]:
         season_tmdb_identifier = matched_tmdb_season.get("id")
