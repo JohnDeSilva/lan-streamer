@@ -772,3 +772,59 @@ def test_concurrent_requests_are_serialised_by_throttle(
             f"Two TMDB requests fired only {gap * 1000:.1f}ms apart — "
             "throttle is not working correctly."
         )
+
+
+def test_rate_limit_lock_not_held_during_sleep(tmp_path: "Path") -> None:
+    """Regression test for sleep-inside-lock bug.
+
+    Previously ``_make_request`` held ``_class_rate_limit_lock`` for the full
+    throttle sleep duration, serializing ALL parallel TMDB calls.  After the fix
+    the lock is only held for the timestamp read/write; other threads must be
+    able to acquire it immediately while the first thread is sleeping.
+
+    Strategy: force a 100ms throttle delay on thread-1 by resetting
+    ``_class_last_request_time`` to ``now``.  While thread-1 is sleeping,
+    thread-2 must be able to acquire the lock within 10ms (not after 100ms).
+    """
+    import concurrent.futures
+    import time as time_module
+
+    TMDBClient._class_last_request_time = 0.0
+
+    success_response = MagicMock()
+    success_response.status_code = 200
+
+    # Use a fresh real session per client so requests don't conflict.
+    lock_acquisition_time: list[float] = []
+
+    def thread_1_make_request() -> None:
+        """Makes a real throttled request (will sleep ~100ms)."""
+        session = MagicMock()
+        session.request = MagicMock(return_value=success_response)
+        client = TMDBClient(session=session, api_key="key", cache_dir=tmp_path)
+        # Force a throttle delay by making _class_last_request_time = now
+        TMDBClient._class_last_request_time = time_module.time()
+        client._make_request("GET", "https://api.themoviedb.org/3/test1")
+
+    def thread_2_try_lock() -> None:
+        """Tries to acquire the class-level lock and records how long it took."""
+        start = time_module.time()
+        with TMDBClient._class_rate_limit_lock:
+            lock_acquisition_time.append(time_module.time() - start)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        future_1 = pool.submit(thread_1_make_request)
+        # Give thread 1 just enough time to enter _make_request and start sleeping
+        time_module.sleep(0.02)
+        future_2 = pool.submit(thread_2_try_lock)
+        future_1.result()
+        future_2.result()
+
+    assert lock_acquisition_time, "thread_2 did not run"
+    acquisition_duration = lock_acquisition_time[0]
+    # If the lock were held during sleep, thread_2 would wait ~80ms more.
+    # After the fix it should acquire within 10ms.
+    assert acquisition_duration < 0.05, (
+        f"Lock acquisition took {acquisition_duration * 1000:.1f}ms — "
+        "the lock is likely still being held during the throttle sleep."
+    )
