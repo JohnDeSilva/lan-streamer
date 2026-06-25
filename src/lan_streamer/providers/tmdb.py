@@ -94,7 +94,7 @@ class TMDBClient:
             # shared timestamp, then release it before sleeping so that other
             # threads can reserve their own slots concurrently.
             with TMDBClient._class_rate_limit_lock:
-                now = time.time()
+                now = time.monotonic()
                 elapsed = now - TMDBClient._class_last_request_time
                 delay = max(0.0, 0.1 - elapsed)
                 # Reserve the next slot by advancing the timestamp by the delay.

@@ -42,6 +42,13 @@ class SegmentedProgressBar(QWidget):
     _COLOR_ROOT_DIVIDER = QColor("#555555")
     _COLOR_ACTIVE_ROOT = QColor("#1976d2")
     _COLOR_DONE_ROOT = QColor("#2e7d32")
+    _COLOR_PASS1_ACTIVE = QColor("#d1d5db")
+    _COLOR_PASS1_DONE = QColor("#ffffff")
+    _COLOR_PASS2_ACTIVE = QColor("#fef08a")
+    _COLOR_PASS2_DONE = QColor("#eab308")
+    _COLOR_PASS3_ACTIVE = QColor("#bbf7d0")
+    _COLOR_PASS3_DONE = QColor("#22c55e")
+    _COLOR_FAILED = QColor("#ef4444")
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -205,7 +212,7 @@ class SegmentedProgressBar(QWidget):
                 elif state == self.STATE_ACTIVE:
                     bg = color_active
                 elif state == self.STATE_FAILED:
-                    bg = QColor("#ef4444")
+                    bg = self._COLOR_FAILED
                 else:
                     bg = self._COLOR_PENDING_FILL
                 painter.fillRect(lx, bar_top, lw, bar_height, bg)
@@ -226,7 +233,7 @@ class SegmentedProgressBar(QWidget):
 
                         if state == self.STATE_FAILED:
                             painter.fillRect(
-                                rx, bar_top, rw, bar_height, QColor("#ef4444")
+                                rx, bar_top, rw, bar_height, self._COLOR_FAILED
                             )
                         elif root_state == self.STATE_DONE or state == self.STATE_DONE:
                             painter.fillRect(rx, bar_top, rw, bar_height, color_done)
@@ -287,6 +294,7 @@ class ScanProgressTree(QWidget):
     Each node carries a status icon: ⏳ pending · ⚙ processing · ✓ done · ⊘ skipped.
     """
 
+    _COLOR_FAILED = QColor("#ef4444")
     _ICON_PENDING = "⏳"
     _ICON_PROCESSING = "⚙"
     _ICON_DONE = "✓"
@@ -473,7 +481,7 @@ class ScanProgressTree(QWidget):
         node = self._lib_nodes.get(library_name)
         if node:
             node.setText(0, f"{self._ICON_FAILED}  {library_name}")
-            node.setForeground(0, QColor("#ef4444"))
+            node.setForeground(0, self._COLOR_FAILED)
 
     # ------------------------------------------------------------------
     # Folder-level state (series / movie folder)
@@ -622,10 +630,10 @@ class LibraryScanProgressBar(QWidget):
     # Colours (harmonious dark theme colors)
     _COLOR_BG = QColor("#1f2937")
     _COLOR_BORDER = QColor("#374151")
-    _COLOR_LABEL = QColor("#f3f4f6")
     _COLOR_PENDING_FILL = QColor("#111827")
     _COLOR_ACTIVE_ROOT = QColor("#1e3a8a")
     _COLOR_DONE_ROOT = QColor("#064e3b")
+    _COLOR_FAILED = QColor("#ef4444")
     _COLOR_ROOT_DIVIDER = QColor("#374151")
     _COLOR_ACTIVE_FOLDER = QColor("#3b82f6")
     _COLOR_DONE_FOLDER = QColor("#10b981")
@@ -774,7 +782,7 @@ class LibraryScanProgressBar(QWidget):
                 elif state == self.STATE_ACTIVE:
                     bg = color_active
                 elif state == self.STATE_FAILED:
-                    bg = QColor("#ef4444")
+                    bg = self._COLOR_FAILED
                 else:
                     bg = self._COLOR_PENDING_FILL
                 painter.fillRect(rx, bar_top, rw, bar_height, bg)
@@ -815,7 +823,7 @@ class LibraryScanProgressBar(QWidget):
                             or state == self.STATE_FAILED
                         ):
                             painter.fillRect(
-                                fx, bar_top, fw, bar_height, QColor("#ef4444")
+                                fx, bar_top, fw, bar_height, self._COLOR_FAILED
                             )
                         elif (
                             folder_state == self.STATE_DONE or state == self.STATE_DONE

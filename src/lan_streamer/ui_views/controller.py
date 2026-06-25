@@ -127,6 +127,7 @@ class Controller(QObject):
         self.merge_subtitle_worker_instance: Optional[Any] = None
         self.embed_metadata_worker_instance: Optional[Any] = None
         self.scan_series_worker_instance: Optional[Any] = None
+        self.refresh_worker_instance: Optional[Any] = None
 
         self.is_video_playing: bool = False
         self._running_pass3_after_scan: bool = False
