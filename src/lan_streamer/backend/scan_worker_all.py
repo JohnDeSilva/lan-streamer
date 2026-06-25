@@ -40,6 +40,7 @@ class ScanAllLibrariesWorker(QThread):
 
     library_progress = Signal(str, int, int)
     detail_progress = Signal(str, dict)  # (event_type, payload)
+    detail_progress_batch = Signal(list)  # (events_list)
     finished = Signal()
     error = Signal(str)
     library_error = Signal(str, str)  # (library_name, error_message)
@@ -83,6 +84,57 @@ class ScanAllLibrariesWorker(QThread):
         # Database write queue variables.
         self.database_queue: queue.Queue = queue.Queue()
         self.database_writer: Optional[DatabaseWriterThread] = None
+
+        # Signal batching buffer.
+        self._detail_progress_buffer: List[Dict[str, Any]] = []
+        self._detail_progress_lock: threading.Lock = threading.Lock()
+        self._last_flush_time: float = 0.0
+
+    def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
+        """Buffers progress events and flushes them to avoid UI congestion."""
+        import time
+
+        lifecycle_events = {
+            "init_tree",
+            "init_library_scan",
+            "start_offline_scan",
+            "start_metadata_resolution",
+            "start_library",
+            "fail_library",
+            "finish_library",
+            "start_root",
+            "finish_root",
+            "unavailable_root",
+        }
+
+        should_flush_immediately = event in lifecycle_events
+
+        with self._detail_progress_lock:
+            self._detail_progress_buffer.append({"event": event, "payload": payload})
+            current_time = time.time()
+            if should_flush_immediately or (
+                current_time - self._last_flush_time >= 0.05
+            ):
+                self._flush_detail_progress_nolock()
+
+    def _flush_detail_progress_nolock(self) -> None:
+        import time
+
+        if not self._detail_progress_buffer:
+            return
+        batch = list(self._detail_progress_buffer)
+        self._detail_progress_buffer.clear()
+        self._last_flush_time = time.time()
+        self.detail_progress_batch.emit(batch)
+        for event_dict in batch:
+            self.detail_progress.emit(
+                event_dict.get("event", ""), event_dict.get("payload", {})
+            )
+
+    def flush_detail_progress(self) -> None:
+        """Flushes any remaining buffered progress events to the UI."""
+        with self._detail_progress_lock:
+            self._flush_detail_progress_nolock()
 
     # ------------------------------------------------------------------
     # Helper methods
@@ -253,7 +305,7 @@ class ScanAllLibrariesWorker(QThread):
         library_unavailable_directories: List[str] = []
         local_lock = threading.Lock()
 
-        self.detail_progress.emit("start_library", {"library": library_name})
+        self.emit_detail_progress("start_library", {"library": library_name})
 
         # ------------------------------------------------------------------
         # Callback closures — write to local accumulators
@@ -265,7 +317,7 @@ class ScanAllLibrariesWorker(QThread):
 
             def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
                 enriched: Dict[str, Any] = {"library": library_name_cb, **payload}
-                self.detail_progress.emit(event, enriched)
+                self.emit_detail_progress(event, enriched)
 
             return _detail_callback
 
@@ -482,7 +534,7 @@ class ScanAllLibrariesWorker(QThread):
         else:
             current_library_data = existing_library_data
             for root_dir in root_directories:
-                self.detail_progress.emit(
+                self.emit_detail_progress(
                     "start_root",
                     {"library": library_name, "root": root_dir},
                 )
@@ -528,7 +580,7 @@ class ScanAllLibrariesWorker(QThread):
 
                 # Finish-root is only emitted in Pass 2 (metadata resolution).
                 if not is_pass1:
-                    self.detail_progress.emit(
+                    self.emit_detail_progress(
                         "finish_root",
                         {"library": library_name, "root": root_dir},
                     )
@@ -674,7 +726,7 @@ class ScanAllLibrariesWorker(QThread):
 
             # Pre-discover tree structure and tell the UI to initialise it.
             tree_structure = self._discover_tree()
-            self.detail_progress.emit(
+            self.emit_detail_progress(
                 "init_tree",
                 {
                     "tree": tree_structure,
@@ -716,7 +768,7 @@ class ScanAllLibrariesWorker(QThread):
             if self.run_pass1:
                 self.current_pass = 1
                 logger.info("ScanAllLibrariesWorker starting Pass 1 (Offline Scan)")
-                self.detail_progress.emit("start_offline_scan", {})
+                self.emit_detail_progress("start_offline_scan", {})
 
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     future_to_library: Dict[Any, str] = {}
@@ -743,7 +795,7 @@ class ScanAllLibrariesWorker(QThread):
                                 f"for library: {library_name}"
                             )
                             self.library_error.emit(library_name, str(error))
-                            self.detail_progress.emit(
+                            self.emit_detail_progress(
                                 "fail_library",
                                 {"library": library_name},
                             )
@@ -773,7 +825,7 @@ class ScanAllLibrariesWorker(QThread):
                         library_data_by_name[library_name] = result["library_data"]
 
                         # notify UI that this library finished this pass
-                        self.detail_progress.emit(
+                        self.emit_detail_progress(
                             "finish_library",
                             {"library": library_name},
                         )
@@ -787,7 +839,7 @@ class ScanAllLibrariesWorker(QThread):
                     "ScanAllLibrariesWorker starting Pass 2 "
                     "(Online Metadata Resolution)"
                 )
-                self.detail_progress.emit("start_metadata_resolution", {})
+                self.emit_detail_progress("start_metadata_resolution", {})
 
                 completed_count: int = 0
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -818,7 +870,7 @@ class ScanAllLibrariesWorker(QThread):
                                 f"for library: {library_name}"
                             )
                             self.library_error.emit(library_name, str(error))
-                            self.detail_progress.emit(
+                            self.emit_detail_progress(
                                 "fail_library",
                                 {"library": library_name},
                             )
@@ -846,7 +898,7 @@ class ScanAllLibrariesWorker(QThread):
 
                         library_data_by_name[library_name] = result["library_data"]
 
-                        self.detail_progress.emit(
+                        self.emit_detail_progress(
                             "finish_library",
                             {"library": library_name},
                         )
@@ -871,6 +923,7 @@ class ScanAllLibrariesWorker(QThread):
             logger.exception("ScanAllLibrariesWorker failed")
             self.error.emit(str(exception_instance))
         finally:
+            self.flush_detail_progress()
             if self.database_writer is not None:
                 self.database_queue.put(None)
                 self.database_writer.join()
