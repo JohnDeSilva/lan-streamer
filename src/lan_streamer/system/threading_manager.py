@@ -85,6 +85,12 @@ class WorkerSlot(QObject):
                 signal = getattr(worker, signal_name, None)
                 if signal is not None:
                     signal.connect(slot)
+                else:
+                    logger.warning(
+                        "WorkerSlot.start(): worker %s has no signal '%s' — slot not connected",
+                        worker.__class__.__name__,
+                        signal_name,
+                    )
 
         worker.start()
         logger.debug(
@@ -183,6 +189,8 @@ class WorkerManager(QObject):
         self.scan: WorkerSlot = WorkerSlot(self)
         self.scan_all: WorkerSlot = WorkerSlot(self)
         self.cleanup: WorkerSlot = WorkerSlot(self)
+        self.cleanup_global: WorkerSlot = WorkerSlot(self)
+        self.cleanup_scan_update: WorkerSlot = WorkerSlot(self)
         self.jellyfin_pull: WorkerSlot = WorkerSlot(self)
         self.jellyfin_push: WorkerSlot = WorkerSlot(self)
         self.file_property: WorkerSlot = WorkerSlot(self)
@@ -192,16 +200,27 @@ class WorkerManager(QObject):
         self.refresh: WorkerSlot = WorkerSlot(self)
         self.scan_series: WorkerSlot = WorkerSlot(self)
 
+        self._all_slots: List[WorkerSlot] = [
+            self.scan,
+            self.scan_all,
+            self.cleanup,
+            self.cleanup_global,
+            self.cleanup_scan_update,
+            self.jellyfin_pull,
+            self.jellyfin_push,
+            self.file_property,
+            self.subtitle_merge,
+            self.metadata_embed,
+            self.metadata_apply,
+            self.refresh,
+            self.scan_series,
+        ]
+
     def stop_all(self) -> None:
         """Stop every managed worker. Useful during application shutdown."""
         logger.info("WorkerManager: stopping all workers.")
-        for slot in self._slots():
+        for slot in self._all_slots:
             slot.stop()
 
     def _slots(self) -> List[WorkerSlot]:
-        result: List[WorkerSlot] = []
-        for attr_name in dir(self):
-            attr = getattr(self, attr_name, None)
-            if isinstance(attr, WorkerSlot):
-                result.append(attr)
-        return result
+        return self._all_slots

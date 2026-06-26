@@ -198,6 +198,7 @@ def main() -> None:
 
     logger.debug("Instantiating Controller and UI views...")
     controller = Controller()
+    application_instance.aboutToQuit.connect(controller.worker_manager.stop_all)
     library_grid_view = LibraryGridView(controller)
     series_detail_view = SeriesDetailView(controller)
     movie_detail_view = MovieDetailView(controller)
