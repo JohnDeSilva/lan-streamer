@@ -10,6 +10,7 @@ dependencies = [
     "sqlalchemy>=2.0.51",
     "alembic>=1.13.0",
     "python-vlc>=3.0.0",
+    "pytest-timeout>=2.4.0",
 ]
 
 [dependency-groups]
@@ -34,6 +35,8 @@ filterwarnings = ["error", "ignore::ResourceWarning"]
 markers = [
     "load: marks tests as load/performance tests (skipped by default)"
 ]
+timeout = 30
+timeout_method = "thread"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
