@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Bump Version and Tag
+    runs-on: ubuntu-latest
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run tests before release
+        run: make test
+
+      - name: Bump version with Commitizen
+        env:
+          UV_CACHE_DIR: /tmp/uv-cache
+        run: |
+          uv run cz bump --yes --changelog --files-only
+          uv lock
+
+      - name: Commit and tag release
+        env:
+          UV_CACHE_DIR: /tmp/uv-cache
+        run: |
+          RELEASE_VERSION="$(uv run cz version --project)"
+          git add pyproject.toml src/lan_streamer/__init__.py CHANGELOG.md uv.lock
+          git commit -m "chore(release): v${RELEASE_VERSION} [skip ci]" --no-verify
+          git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
+          git push origin HEAD:main
+          git push origin "v${RELEASE_VERSION}"
