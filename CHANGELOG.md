@@ -1,3 +1,54 @@
+## v0.35.0 (2026-06-25)
+
+### Feat
+
+- **system**: add WorkerManager for centralized worker lifecycle management
+- **scanner**: update fast mtime skipping checks to query scanned_directories
+- **db**: decouple last scanned mtime caching into scanned_directories table
+- **scanner**: implement fast mtime skip checks and os.scandir optimizations
+- **db**: add last scanned mtime caching and migration
+
+### Fix
+
+- **threading**: harden worker shutdown and scan handoff
+- **system**: address threading review findings P0/P1
+- **system**: prevent deadlock in WorkerSlot by using deferred cleanup
+- **tests**: add processEvents to SeriesDetailsDialog tests for QTimer timing
+- **lint**: remove duplicate error message from logger.exception calls
+- **tests**: patch MetadataApplyWorker.start in controller and e2e tests for synchronous execution
+- **backend**: add show_future_episodes and tmdb_client DI to MetadataApplyWorker
+- **ui**: safely stop old worker threads before replacement in Controller
+- **ui**: move TMDB searches off UI thread in SeriesDetailsDialog (C7)
+- **backend**: document and audit thread-safe callback pattern (H8)
+- **scanner**: remove redundant filesystem walk on first scan (C3)
+- **ui**: MAL try/except, remove per-toggle config write, promote paintEvent colors to class constants
+- **lint**: add noqa for backward-compat re-exports in library.py
+- **worker**: add _skipped_series_ids guard, event.wait timeout, rename private function, remove Mock import
+- **scanner**: add mtime>0 guards, narrow OSError catches, expose disregard_mtimes, convert iterdir to scandir
+- **db**: log exception in has_tech_and_metadata instead of silent pass; move Mock import to module level
+- **worker**: batch progress signals and fix shutdown in FilePropertyExtractionWorker
+- **worker**: hold stat lock during self.stats merge in ScanAllLibrariesWorker
+- **scanner**: handle None size_bytes in detect_tv_file_changes
+- **db**: re-raise exceptions in save_library/save_movie_library, persist directory mtimes
+- **ui**: disconnect controller signals on SettingsDialog close
+- **worker**: replace non-functional QTimer with explicit flush calls in ScanWorker
+- **db**: route series mtimes to queue, make DB write timeout configurable, and decouple locks
+- **providers**: release rate-limit lock before sleeping in TMDBClient
+- **db**: add missing session.commit() to save_directory_mtime
+- address issues 5, 7, 9 from parallelization_2 code review
+- bug fixes and optimizations
+- **scan**: resolve 3 critical code review findings
+
+### Refactor
+
+- **ui**: integrate WorkerManager into Controller, fix disconnect() bug
+
+### Perf
+
+- **scanner**: add series-level directory mtime skip
+- **scan**: resolve nested thread pool overhead, TMDB rate-limiting, and UI signal congestion
+- **scanner**: parallelize folder scanning and pre-scan tree discovery
+
 ## v0.34.0 (2026-06-24)
 
 ### Feat
