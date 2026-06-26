@@ -114,21 +114,9 @@ revision:
 
 
 
-release: check-lint typecheck test
-	uv lock
-	@if ! uv run cz bump --no-verify; then \
-		echo "Release failed during cz bump. Backing out changes..."; \
-		git checkout -- pyproject.toml src/lan_streamer/__init__.py CHANGELOG.md uv.lock 2>/dev/null || true; \
-		exit 1; \
-	fi
-	uv lock
-	git add uv.lock
-	@if ! git commit --amend --no-edit --no-verify; then \
-		echo "Release failed during commit --amend. Backing out changes..."; \
-		git tag -d "v$$(uv run cz version --project)" 2>/dev/null || true; \
-		git reset --hard HEAD~1; \
-		exit 1; \
-	fi
-	git tag -f -a "v$$(uv run cz version --project)" -m "Release v$$(uv run cz version --project)"
-	git push origin main
-	git push origin --tags
+release:
+	@echo "Release automation now runs in GitHub Actions."
+	@echo "Merge feature branches into rc for manual-test artifacts."
+	@echo "Merge rc into main to trigger the Commitizen release and tag publish workflow."
+	@false
+	@exit 1
