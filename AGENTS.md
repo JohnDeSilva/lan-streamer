@@ -33,7 +33,7 @@ This document establishes the repository-wide standards, architectural constrain
   - [services/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/services): Business-logic services (discovery, TMDB/Jellyfin metadata merging).
   - [playback/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/playback): Video player widget wrapper around `libvlc` and OS wake-lock controller.
   - [providers/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/providers): External client wrappers (TMDB, Jellyfin, OpenSubtitles, MyAnimeList).
-  - [system/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/system): Config manager, logging handler, backups, and updater.
+  - [system/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/system): Config manager, logging handler, backups, updater, and [threading_manager.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/system/threading_manager.py) — centralized `WorkerManager`/`WorkerSlot` lifecycle manager.
   - [ui_views/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/ui_views): Desktop PySide6 QtWidgets view screens, stylesheet themes, and controllers.
 - [tests/](file:///home/sadmin/antigravity/lan-streamer/tests): Structured unit, integration, and end-to-end tests (minimum 90% code coverage target).
 
