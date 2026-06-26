@@ -13,3 +13,4 @@ from lan_streamer.system.logging_handler import (
     qt_log_handler,
     SERVICE_LOGGERS,
 )
+from lan_streamer.system.encryption import encrypt_secret, decrypt_secret

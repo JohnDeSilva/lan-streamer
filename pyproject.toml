@@ -1,6 +1,6 @@
 [project]
 name = "lan-streamer"
-version = "0.35.1"
+version = "0.36.0"
 description = "Lightweight media library manager for local playback with Jellyfin synchronization"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -11,6 +11,7 @@ dependencies = [
     "alembic>=1.13.0",
     "python-vlc>=3.0.0",
     "pytest-timeout>=2.4.0",
+    "cryptography>=49.0.0",
 ]
 
 [dependency-groups]
@@ -40,7 +41,7 @@ timeout_method = "thread"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.35.1"
+version = "0.36.0"
 tag_format = "v$version"
 update_changelog_on_bump = true
 version_files = [
