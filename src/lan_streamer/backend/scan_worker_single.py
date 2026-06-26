@@ -316,6 +316,12 @@ class ScanWorker(BaseScanWorker):
                 database_queue=self.database_queue,
                 is_interrupted=self.isInterruptionRequested,
             )
+            if self.isInterruptionRequested():
+                logger.info(
+                    f"ScanWorker: library scan for '{self.library_name}' interrupted during Pass 1. Aborting."
+                )
+                return
+
             logger.info(
                 f"Finished Pass 1 (Offline Scan) for library '{self.library_name}'. Found {len(library)} stubs/entries."
             )
@@ -349,6 +355,12 @@ class ScanWorker(BaseScanWorker):
                 database_queue=self.database_queue,
                 is_interrupted=self.isInterruptionRequested,
             )
+            if self.isInterruptionRequested():
+                logger.info(
+                    f"ScanWorker: library scan for '{self.library_name}' interrupted during Pass 2. Aborting."
+                )
+                return
+
             self.unavailable_directories = library.unavailable_directories
             if self.unavailable_directories:
                 for root in self.unavailable_directories:

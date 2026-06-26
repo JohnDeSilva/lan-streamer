@@ -1066,3 +1066,65 @@ def test_scan_all_libraries_unavailable_dir_dedup() -> None:
         worker.run()
 
         assert worker.unavailable_directories == ["/missing/path"]
+
+
+def test_scan_worker_cancellation() -> None:
+    """Verify that ScanWorker exits early on interruption request and does not emit finished."""
+    from unittest.mock import patch, MagicMock
+    from lan_streamer.backend.scan_worker_single import ScanWorker
+
+    with (
+        patch("lan_streamer.backend.scan_worker_single.config"),
+        patch("lan_streamer.backend.scan_worker_single.jellyfin_client"),
+        patch("lan_streamer.backend.scan_worker_single.scan_directories") as mock_scan,
+        patch("lan_streamer.backend.scan_worker_single.DatabaseWriterThread"),
+    ):
+        mock_scan.return_value = {}
+        worker = ScanWorker(["/path"], "tv", {}, library_name="TV_Lib")
+
+        # Simulate interruption requested
+        worker.isInterruptionRequested = MagicMock(return_value=True)
+
+        finished_mock = MagicMock()
+        worker.finished.connect(finished_mock)
+
+        worker.run()
+
+        # Finished signal should NOT be emitted
+        finished_mock.assert_not_called()
+
+
+def test_scan_all_libraries_worker_cancellation() -> None:
+    """Verify that ScanAllLibrariesWorker aborts early on interruption request and does not save."""
+    from unittest.mock import patch, MagicMock
+    from lan_streamer.backend.scan_worker_all import ScanAllLibrariesWorker
+
+    with (
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+        patch("lan_streamer.backend.scan_worker_all.jellyfin_client"),
+        patch("lan_streamer.backend.scan_worker_all.scan_directories") as mock_scan,
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch(
+            "lan_streamer.backend.scan_worker_all.db.load_movie_library",
+            return_value={},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_all.DatabaseWriteTask"
+        ) as mock_write_task,
+        patch("lan_streamer.backend.scan_worker_all.DatabaseWriterThread"),
+    ):
+        mock_config.libraries = {"TVLib": {"paths": ["/tv"], "type": "tv"}}
+        mock_scan.return_value = {}
+
+        worker = ScanAllLibrariesWorker()
+
+        # Simulate interruption requested
+        worker.isInterruptionRequested = MagicMock(return_value=True)
+
+        finished_mock = MagicMock()
+        worker.finished.connect(finished_mock)
+
+        worker.run()
+
+        # Write task should not be posted to queue (so save was skipped)
+        mock_write_task.assert_not_called()

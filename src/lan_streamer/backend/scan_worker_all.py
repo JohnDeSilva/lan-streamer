@@ -584,6 +584,8 @@ class ScanAllLibrariesWorker(BaseScanWorker):
                                 "error": error_message,
                             }
                         )
+            if self.isInterruptionRequested():
+                raise InterruptedError("Scan interrupted.")
             _save_library_data(updated_library_data)
             current_library_data: Dict[str, Any] = updated_library_data
         else:
@@ -615,6 +617,8 @@ class ScanAllLibrariesWorker(BaseScanWorker):
                     database_queue=database_queue,
                     is_interrupted=self.isInterruptionRequested,
                 )
+                if self.isInterruptionRequested():
+                    raise InterruptedError("Scan interrupted.")
                 # Collect unavailable directories from this root scan.
                 if updated_library_data.unavailable_directories:
                     for root in updated_library_data.unavailable_directories:
@@ -899,16 +903,21 @@ class ScanAllLibrariesWorker(BaseScanWorker):
                         try:
                             result: Dict[str, Any] = future.result()
                         except Exception as error:
-                            logger.exception(
-                                f"ScanAllLibrariesWorker Pass 1 failed "
-                                f"for library: {library_name}"
-                            )
-                            self.library_error.emit(library_name, str(error))
-                            self.emit_detail_progress(
-                                "fail_library",
-                                {"library": library_name},
-                            )
-                            failed_libraries.add(library_name)
+                            if isinstance(error, InterruptedError):
+                                logger.info(
+                                    f"ScanAllLibrariesWorker: scan for library '{library_name}' aborted due to interruption."
+                                )
+                            else:
+                                logger.exception(
+                                    f"ScanAllLibrariesWorker Pass 1 failed "
+                                    f"for library: {library_name}"
+                                )
+                                self.library_error.emit(library_name, str(error))
+                                self.emit_detail_progress(
+                                    "fail_library",
+                                    {"library": library_name},
+                                )
+                                failed_libraries.add(library_name)
                             self.pass1_stats_per_library[library_name] = {
                                 "_skipped": True
                             }
@@ -990,15 +999,20 @@ class ScanAllLibrariesWorker(BaseScanWorker):
                         try:
                             result = future.result()
                         except Exception as error:
-                            logger.exception(
-                                f"ScanAllLibrariesWorker Pass 2 failed "
-                                f"for library: {library_name}"
-                            )
-                            self.library_error.emit(library_name, str(error))
-                            self.emit_detail_progress(
-                                "fail_library",
-                                {"library": library_name},
-                            )
+                            if isinstance(error, InterruptedError):
+                                logger.info(
+                                    f"ScanAllLibrariesWorker: scan for library '{library_name}' aborted due to interruption."
+                                )
+                            else:
+                                logger.exception(
+                                    f"ScanAllLibrariesWorker Pass 2 failed "
+                                    f"for library: {library_name}"
+                                )
+                                self.library_error.emit(library_name, str(error))
+                                self.emit_detail_progress(
+                                    "fail_library",
+                                    {"library": library_name},
+                                )
                             self.pass2_stats_per_library[library_name] = {
                                 "_skipped": True
                             }

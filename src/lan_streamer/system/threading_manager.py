@@ -1,5 +1,6 @@
 import logging
 import traceback
+import weakref
 from typing import Any, Callable, List, Optional, TypeVar
 
 from PySide6.QtCore import QObject, QThread
@@ -153,11 +154,17 @@ class WorkerSlot(QObject):
                 self._stopping_workers.append(worker)
 
                 def make_cleanup(w: QThread) -> Callable[[], None]:
+                    self_ref = weakref.ref(self)
+                    w_ref = weakref.ref(w)
+
                     def cleanup() -> None:
                         try:
-                            if w in self._stopping_workers:
-                                self._stopping_workers.remove(w)
-                            w.deleteLater()
+                            slot = self_ref()
+                            worker_inst = w_ref()
+                            if slot is not None and worker_inst is not None:
+                                if worker_inst in slot._stopping_workers:
+                                    slot._stopping_workers.remove(worker_inst)
+                                worker_inst.deleteLater()
                         except Exception as error:
                             logger.debug(
                                 "WorkerSlot: deferred cleanup failed: %s", error
