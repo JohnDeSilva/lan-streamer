@@ -362,3 +362,37 @@ class TestDiscoverSingleLibraryTreeImpl:
         assert "Series X" in result[str(existing_root)]
         assert "/nonexistent/xyz" in result
         assert result["/nonexistent/xyz"] == []
+
+
+class TestBaseScanWorker:
+    def test_emit_detail_progress_buffers_and_flushes_without_deadlock(self) -> None:
+        from lan_streamer.backend.scan_worker_base import BaseScanWorker
+
+        worker = BaseScanWorker()
+        emitted_batches = []
+        worker.detail_progress_batch.connect(emitted_batches.append)
+
+        # Emit 19 events - should not trigger a flush
+        for i in range(19):
+            worker.emit_detail_progress("test_event", {"index": i})
+
+        assert len(emitted_batches) == 0
+        assert len(worker._detail_progress_buffer) == 19
+
+        # Emit the 20th event - should trigger a flush batch and not deadlock
+        worker.emit_detail_progress("test_event", {"index": 19})
+
+        assert len(emitted_batches) == 1
+        assert len(emitted_batches[0]) == 20
+        assert len(worker._detail_progress_buffer) == 0
+        assert emitted_batches[0][0]["payload"]["index"] == 0
+        assert emitted_batches[0][19]["payload"]["index"] == 19
+
+        # Verify that flushing works manually
+        worker.emit_detail_progress("another_event", {"key": "val"})
+        assert len(worker._detail_progress_buffer) == 1
+        worker.flush_detail_progress()
+        assert len(worker._detail_progress_buffer) == 0
+        assert len(emitted_batches) == 2
+        assert len(emitted_batches[1]) == 1
+        assert emitted_batches[1][0]["event"] == "another_event"
