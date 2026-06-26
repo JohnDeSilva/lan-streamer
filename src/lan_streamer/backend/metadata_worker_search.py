@@ -9,11 +9,11 @@ class GenericSearchWorker(QThread):
     """Runs an arbitrary callable in a background thread and emits its result.
 
     Signals:
-        finished: Emitted with the callable's return value on success.
+        search_finished: Emitted with the callable's return value on success.
         error: Emitted with an error message string on failure.
     """
 
-    finished = Signal(object)
+    search_finished = Signal(object)
     error = Signal(str)
 
     def __init__(
@@ -39,7 +39,7 @@ class GenericSearchWorker(QThread):
             logger.info(
                 f"GenericSearchWorker {self._description} completed successfully"
             )
-            self.finished.emit(result)
+            self.search_finished.emit(result)
         except Exception as exc:
             logger.exception(f"GenericSearchWorker {self._description} failed: {exc}")
             self.error.emit(str(exc))

@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import patch
+from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QMessageBox, QLabel
 from lan_streamer.ui_views import (
     Controller,
@@ -635,6 +636,7 @@ def test_series_details_dialog_manual_mapper_default_tv_order(
     ):
         dialog = SeriesDetailsDialog("Cosmos", mock_series_controller)
         qtbot.addWidget(dialog)
+        QCoreApplication.processEvents()
 
         # Check group combo contains "Default TV Order" and is selected by default
         assert dialog.group_combo.count() == 2  # Select Group..., Default TV Order
@@ -718,6 +720,7 @@ def test_series_details_dialog_manual_mapper_custom_group_order(
     ):
         dialog = SeriesDetailsDialog("Cosmos", mock_series_controller)
         qtbot.addWidget(dialog)
+        QCoreApplication.processEvents()
 
         # Combo should contain Select, Default TV Order, and DVD Order
         assert dialog.group_combo.count() == 3
@@ -798,6 +801,7 @@ def test_series_details_dialog_manual_mapper_unmapped_clearing(
     ):
         dialog = SeriesDetailsDialog("Cosmos", mock_series_controller)
         qtbot.addWidget(dialog)
+        QCoreApplication.processEvents()
 
         # Select Season 1
         dialog.subgroup_combo.setCurrentIndex(1)
@@ -849,6 +853,7 @@ def test_series_details_dialog_manual_mapper_missing_data_handling(
         # Initializing dialog should catch the get_episode_groups exception gracefully
         dialog = SeriesDetailsDialog("Cosmos", mock_series_controller)
         qtbot.addWidget(dialog)
+        QCoreApplication.processEvents()
 
         # Default TV Order is selected
         assert dialog.group_combo.currentText() == "Default TV Order"
