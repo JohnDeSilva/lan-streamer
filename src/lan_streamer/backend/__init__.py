@@ -15,5 +15,6 @@ from lan_streamer.backend.metadata_worker_embed import (
     SeriesMetadataEmbedWorker,
 )
 from lan_streamer.backend.metadata_worker_refresh import RefreshSeriesWorker
+from lan_streamer.backend.metadata_worker_apply import MetadataApplyWorker
 from lan_streamer.backend.metadata_worker_search import GenericSearchWorker
 from lan_streamer.backend.scan_series_worker import ScanSingleSeriesWorker

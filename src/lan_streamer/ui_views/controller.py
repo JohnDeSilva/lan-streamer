@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     )
     from lan_streamer.providers.tmdb import tmdb_client as _tmdb_default
     from lan_streamer.backend import (
+        MetadataApplyWorker,
         ScanWorker,
         CleanupWorker,
         JellyfinPullWorker,
@@ -34,6 +35,7 @@ else:
     from lan_streamer.ui_views.proxy import (
         jellyfin_client as _jellyfin_default,
         tmdb_client as _tmdb_default,
+        MetadataApplyWorker,
         ScanWorker,
         CleanupWorker,
         JellyfinPullWorker,
@@ -128,6 +130,7 @@ class Controller(QObject):
         self.embed_metadata_worker_instance: Optional[Any] = None
         self.scan_series_worker_instance: Optional[Any] = None
         self.refresh_worker_instance: Optional[Any] = None
+        self._metadata_apply_worker: Optional[Any] = None
 
         self.is_video_playing: bool = False
         self._running_pass3_after_scan: bool = False
@@ -138,6 +141,23 @@ class Controller(QObject):
         self.file_system_watcher = QFileSystemWatcher(self)
 
         self.file_system_watcher.directoryChanged.connect(self._on_directory_changed)
+
+    def _stop_worker(self, worker_attr: str, timeout_ms: int = 5000) -> None:
+        worker = getattr(self, worker_attr, None)
+        if worker is None:
+            return
+        try:
+            worker.requestInterruption()
+            worker.quit()
+            worker.disconnect()
+            if not worker.wait(timeout_ms):
+                logger.warning(
+                    f"Worker '{worker_attr}' did not finish within {timeout_ms}ms"
+                )
+            worker.deleteLater()
+        except RuntimeError:
+            pass
+        setattr(self, worker_attr, None)
 
     def select_library(self, library_name: str, reset_selection: bool = True) -> None:
         logger.info(f"Controller loading library: {library_name}")
@@ -337,6 +357,7 @@ class Controller(QObject):
         self._running_pass3_after_scan = True
         self._doing_scan_and_update = False
 
+        self._stop_worker("scan_worker_instance")
         self.scan_worker_instance = ScanWorker(
             root_directories=root_directories,
             library_type=library_type,
@@ -418,6 +439,7 @@ class Controller(QObject):
             f"Cleaning up missing files in '{self.current_library_name}'..."
         )
 
+        self._stop_worker("cleanup_worker_instance")
         self.cleanup_worker_instance = CleanupWorker(
             library_name=self.current_library_name, root_directories=root_directories
         )
@@ -451,6 +473,7 @@ class Controller(QObject):
         root_directories: List[str] = library_config.get("paths", [])
         self.status_changed.emit(f"Cleaning up missing files in '{lib_name}'...")
 
+        self._stop_worker("cleanup_worker_instance")
         self.cleanup_worker_instance = CleanupWorker(
             library_name=lib_name, root_directories=root_directories
         )
@@ -505,6 +528,7 @@ class Controller(QObject):
         self._running_pass3_after_scan = True
         self._doing_scan_and_update = True
 
+        self._stop_worker("scan_worker_instance")
         self.scan_worker_instance = ScanWorker(
             root_directories=root_directories,
             library_type=library_type,
@@ -537,6 +561,7 @@ class Controller(QObject):
         self.status_changed.emit(
             f"Scan complete. Updating paths in '{self.current_library_name}'..."
         )
+        self._stop_worker("cleanup_worker_instance")
         self.cleanup_worker_instance = CleanupWorker(
             library_name=self.current_library_name, root_directories=root_directories
         )
@@ -572,6 +597,7 @@ class Controller(QObject):
             return
 
         self.status_changed.emit("Pulling watch history from Jellyfin...")
+        self._stop_worker("pull_worker_instance")
         self.pull_worker_instance = JellyfinPullWorker()
         self.pull_worker_instance.finished.connect(self._on_pull_finished)
         self.pull_worker_instance.error.connect(self._on_worker_error)
@@ -590,6 +616,7 @@ class Controller(QObject):
             return
 
         self.status_changed.emit("Pushing local watch history to Jellyfin...")
+        self._stop_worker("push_worker_instance")
         self.push_worker_instance = JellyfinPushWorker()
         self.push_worker_instance.finished.connect(self._on_push_finished)
         self.push_worker_instance.error.connect(self._on_worker_error)
@@ -619,6 +646,7 @@ class Controller(QObject):
         self.status_changed.emit("Scanning all libraries...")
         self._running_pass3_after_scan = chain_pass3
         self._running_cleanup_after_scan = chain_cleanup
+        self._stop_worker("scan_all_worker_instance")
         self.scan_all_worker_instance = ScanAllLibrariesWorker(
             force_refresh=force_refresh,
             run_pass1=run_pass1,
@@ -713,6 +741,7 @@ class Controller(QObject):
             return
 
         self.status_changed.emit("Extracting missing video runtimes in background...")
+        self._stop_worker("file_property_worker_instance")
         self.file_property_worker_instance = FilePropertyExtractionWorker(
             changed_season_ids=changed_season_ids,
             changed_movie_ids=changed_movie_ids,
@@ -950,8 +979,6 @@ class Controller(QObject):
         if match_dictionary.get("overview"):
             target_dict["overview"] = match_dictionary.get("overview", "")
 
-        self._download_provider_artwork(target_dict, match_dictionary, is_movie)
-
         if not is_movie and match_dictionary.get("first_air_date"):
             target_dict["first_air_date"] = match_dictionary.get("first_air_date", "")
         elif is_movie and match_dictionary.get("first_air_date"):
@@ -963,44 +990,83 @@ class Controller(QObject):
                     pass
 
         target_dict["locked_metadata"] = True
-        if not is_movie:
-            series_record["metadata"] = target_dict
 
-            new_tmdb_identifier: str = target_dict.get("tmdb_identifier", "")
-            if new_tmdb_identifier:
-                # Remove any previous metadata records (placeholders with path=None)
-                # and clear old TMDB fields from remaining episodes before redownloading
-                total_placeholders_removed = 0
-                total_episodes_cleared = 0
-                for season_name, season_data in list(
-                    series_record.get("seasons", {}).items()
-                ):
-                    filtered_episodes = []
-                    for ep in season_data.get("episodes", []):
-                        if ep.get("path"):
-                            # Clear old metadata fields
-                            for key in [
-                                "tmdb_name",
-                                "tmdb_identifier",
-                                "tmdb_episode_identifier",
-                                "tmdb_number",
-                                "air_date",
-                                "runtime",
-                            ]:
-                                ep.pop(key, None)
-                            filtered_episodes.append(ep)
-                            total_episodes_cleared += 1
-                        else:
-                            total_placeholders_removed += 1
-                    season_data["episodes"] = filtered_episodes
+        # For movies, save immediately (no episode sync needed).
+        if is_movie:
+            self._finish_metadata_match(series_name)
+            return
 
-                logger.info(
-                    f"Cleared manual match metadata for '{series_name}': "
-                    f"removed {total_placeholders_removed} placeholder episode(s), "
-                    f"cleared old TMDB metadata from {total_episodes_cleared} local episode(s)."
-                )
+        # TV series: clear old metadata and sync TMDB episodes in background.
+        series_record["metadata"] = target_dict
+        new_tmdb_identifier: str = target_dict.get("tmdb_identifier", "")
+        if not new_tmdb_identifier:
+            self._finish_metadata_match(series_name)
+            return
 
-                self._sync_tmdb_episodes_for_series(series_record, new_tmdb_identifier)
+        # Clear old TMDB fields from remaining episodes
+        for season_name, season_data in list(series_record.get("seasons", {}).items()):
+            filtered_episodes = []
+            for ep in season_data.get("episodes", []):
+                if ep.get("path"):
+                    for key in [
+                        "tmdb_name",
+                        "tmdb_identifier",
+                        "tmdb_episode_identifier",
+                        "tmdb_number",
+                        "air_date",
+                        "runtime",
+                    ]:
+                        ep.pop(key, None)
+                    filtered_episodes.append(ep)
+            season_data["episodes"] = filtered_episodes
+
+        saved_group_id = series_record.get("metadata", {}).get("tmdb_episode_group_id")
+        poster_path = match_dictionary.get("poster_path")
+
+        self._metadata_apply_worker: Optional[Any] = None
+        worker = MetadataApplyWorker(
+            series_record=series_record,
+            tmdb_identifier=new_tmdb_identifier,
+            saved_group_id=saved_group_id,
+            poster_path=poster_path,
+            is_movie=False,
+            parent=self,
+        )
+        worker.finished.connect(
+            lambda synced_data, cached_poster: self._on_metadata_apply_finished(
+                series_name, synced_data, cached_poster
+            )
+        )
+        worker.error.connect(
+            lambda msg: self._on_metadata_apply_error(series_name, msg)
+        )
+        self._stop_worker("_metadata_apply_worker")
+        self._metadata_apply_worker = worker
+        worker.start()
+
+    def _on_metadata_apply_finished(
+        self, series_name: str, synced_data: Dict[str, Any], poster_path: str
+    ) -> None:
+        """Handle successful metadata apply — apply synced data and save."""
+        logger.info(
+            f"Metadata apply finished for '{series_name}', saving to database..."
+        )
+        self.cached_library_data[series_name] = synced_data
+        if poster_path:
+            target_dict = synced_data.get("metadata", synced_data)
+            target_dict["poster_path"] = poster_path
+
+        self._finish_metadata_match(series_name)
+
+    def _on_metadata_apply_error(self, series_name: str, error_message: str) -> None:
+        """Handle metadata apply failure — save what we have and warn."""
+        logger.error(f"Metadata apply failed for '{series_name}': {error_message}")
+        self._finish_metadata_match(series_name)
+
+    def _finish_metadata_match(self, series_name: str) -> None:
+        """Finalize metadata match: save to DB and emit signals."""
+        library_config = self._config.libraries.get(self.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
 
         if self.current_library_name:
             if is_movie:
@@ -1017,10 +1083,7 @@ class Controller(QObject):
         )
         self.library_loaded.emit()
         if self.selected_series_name == series_name:
-            if is_movie:
-                self.movie_selected.emit(series_name)
-            else:
-                self.series_selected.emit(series_name)
+            self.series_selected.emit(series_name)
 
     def apply_jellyfin_watch_match(
         self, series_name: str, match_dictionary: Dict[str, Any]
@@ -1191,6 +1254,7 @@ class Controller(QObject):
 
         from lan_streamer.backend import RefreshSeriesWorker
 
+        self._stop_worker("refresh_worker_instance")
         self.refresh_worker_instance = RefreshSeriesWorker(
             library_name=self.current_library_name,
             item_name=series_name,
@@ -1250,6 +1314,7 @@ class Controller(QObject):
 
         from lan_streamer.backend import ScanSingleSeriesWorker
 
+        self._stop_worker("scan_series_worker_instance")
         self.scan_series_worker_instance = ScanSingleSeriesWorker(
             library_name=self.current_library_name,
             series_name=series_name,
@@ -1390,6 +1455,7 @@ class Controller(QObject):
         from lan_streamer.backend import SubtitleMergeWorker
 
         self.status_changed.emit("Merging external subtitles into video file...")
+        self._stop_worker("merge_subtitle_worker_instance")
         self.merge_subtitle_worker_instance = SubtitleMergeWorker(
             video_path, subtitle_paths
         )
@@ -1416,6 +1482,7 @@ class Controller(QObject):
         from lan_streamer.backend import MetadataEmbedWorker
 
         self.status_changed.emit("Embedding metadata into video file...")
+        self._stop_worker("embed_metadata_worker_instance")
         self.embed_metadata_worker_instance = MetadataEmbedWorker(video_path, metadata)
         self.embed_metadata_worker_instance.finished.connect(
             self._on_metadata_embed_finished
@@ -1452,6 +1519,7 @@ class Controller(QObject):
         from lan_streamer.backend import SeriesMetadataEmbedWorker
 
         self.status_changed.emit(f"Embedding metadata for series '{series_name}'...")
+        self._stop_worker("embed_metadata_worker_instance")
         self.embed_metadata_worker_instance = SeriesMetadataEmbedWorker(
             series_name, all_episodes
         )
