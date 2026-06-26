@@ -10,6 +10,7 @@ from unittest.mock import patch, MagicMock
 from typing import List
 
 from lan_streamer.ui_views import Controller
+from lan_streamer.backend import MetadataApplyWorker as MetadataApplyWorker_real
 from lan_streamer.system.config import config
 
 
@@ -566,7 +567,8 @@ def test_apply_metadata_match_jellyfin_provider(ctrl, mock_db_save) -> None:
         "tmdb_id": "tmdb-789",
         "name": "ShowA",
     }
-    ctrl.apply_metadata_match("ShowA", match)
+    with patch.object(MetadataApplyWorker_real, "start", lambda self: self.run()):
+        ctrl.apply_metadata_match("ShowA", match)
 
     meta = ctrl.cached_library_data["ShowA"]["metadata"]
     assert meta["jellyfin_id"] == "jelly-abc"
@@ -634,7 +636,8 @@ def test_apply_metadata_match_emits_series_selected(ctrl, mock_db_save) -> None:
     ctrl.series_selected.connect(received.append)
 
     match = {"id": "111", "name": "ShowA"}
-    ctrl.apply_metadata_match("ShowA", match)
+    with patch.object(MetadataApplyWorker_real, "start", lambda self: self.run()):
+        ctrl.apply_metadata_match("ShowA", match)
 
     assert "ShowA" in received
 

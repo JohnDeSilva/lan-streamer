@@ -20,6 +20,7 @@ from lan_streamer.ui_views import (
     SettingsDialog,
 )
 from lan_streamer.system.config import config
+from lan_streamer.backend import MetadataApplyWorker as MetadataApplyWorker_real
 
 
 @pytest.fixture
@@ -624,7 +625,10 @@ def test_metadata_match_dialog_workflow(
         # Select row and apply
         dialog_instance.results_table.selectRow(0)
 
-        with patch("lan_streamer.db.save_library") as mock_save:
+        with (
+            patch("lan_streamer.db.save_library") as mock_save,
+            patch.object(MetadataApplyWorker_real, "start", lambda self: self.run()),
+        ):
             dialog_instance.apply_selected()
             mock_save.assert_called_once()
 
@@ -1155,6 +1159,7 @@ def test_apply_metadata_match_refreshes_episodes() -> None:
             return_value=mock_episodes_list,
         ),
         patch("lan_streamer.db.save_library") as mock_save,
+        patch.object(MetadataApplyWorker_real, "start", lambda self: self.run()),
     ):
         controller_instance.apply_metadata_match(
             "RefreshShow", {"id": "new_tmdb_id", "name": "Refreshed Show Title"}
