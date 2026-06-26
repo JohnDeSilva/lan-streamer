@@ -1,5 +1,6 @@
 from unittest.mock import patch
 from typing import Any
+from PySide6.QtCore import QCoreApplication
 from lan_streamer.ui_views import SeriesDetailView, Controller
 from lan_streamer.ui_views.dialogs.series_details import SeriesDetailsDialog
 from lan_streamer.system.config import config
@@ -363,6 +364,7 @@ def test_series_details_dialog_manual_mapper(qtbot: Any) -> None:
 
         dialog = SeriesDetailsDialog("Breaking Bad", controller)
         qtbot.addWidget(dialog)
+        QCoreApplication.processEvents()
 
         # Tab widget should have 3 tabs: "Series Info", "Series Metadata", "Manual Metadata Mapper"
         assert dialog.tab_widget.count() == 3
@@ -488,6 +490,10 @@ def test_series_details_dialog_anime_mal_status(qtbot: Any) -> None:
 
     with (
         patch(
+            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_episode_groups",
+            return_value=[],
+        ),
+        patch(
             "lan_streamer.ui_views.dialogs.series_details.myanimelist_client"
         ) as mock_mal_client,
         patch(
@@ -510,6 +516,7 @@ def test_series_details_dialog_anime_mal_status(qtbot: Any) -> None:
 
         dialog = SeriesDetailsDialog("Frieren", controller)
         qtbot.addWidget(dialog)
+        QCoreApplication.processEvents()
 
         # 1. Verify that the MAL status labels are created in the Series Info tab
         assert hasattr(dialog, "mal_status_labels")
