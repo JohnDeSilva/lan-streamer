@@ -993,6 +993,7 @@ class Controller(QObject):
 
         # For movies, save immediately (no episode sync needed).
         if is_movie:
+            self._download_provider_artwork(target_dict, match_dictionary, is_movie)
             self._finish_metadata_match(series_name)
             return
 
@@ -1000,6 +1001,7 @@ class Controller(QObject):
         series_record["metadata"] = target_dict
         new_tmdb_identifier: str = target_dict.get("tmdb_identifier", "")
         if not new_tmdb_identifier:
+            self._download_provider_artwork(target_dict, match_dictionary, is_movie)
             self._finish_metadata_match(series_name)
             return
 
@@ -1030,6 +1032,8 @@ class Controller(QObject):
             saved_group_id=saved_group_id,
             poster_path=poster_path,
             is_movie=False,
+            show_future_episodes=library_config.get("show_future_episodes", True),
+            tmdb_client=self._tmdb_client,
             parent=self,
         )
         worker.finished.connect(
@@ -1083,7 +1087,10 @@ class Controller(QObject):
         )
         self.library_loaded.emit()
         if self.selected_series_name == series_name:
-            self.series_selected.emit(series_name)
+            if is_movie:
+                self.movie_selected.emit(series_name)
+            else:
+                self.series_selected.emit(series_name)
 
     def apply_jellyfin_watch_match(
         self, series_name: str, match_dictionary: Dict[str, Any]
