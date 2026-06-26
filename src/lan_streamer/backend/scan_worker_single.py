@@ -1,15 +1,15 @@
 import logging
 import queue
 import time
-import threading
 from typing import List, Dict, Any, Optional, Set
-from PySide6.QtCore import QObject, Signal, QThread
+from PySide6.QtCore import QObject, Signal
 
 from lan_streamer.scanner import LibraryDict
 from lan_streamer.system.config import config
 from lan_streamer.providers.jellyfin import jellyfin_client
 from lan_streamer.scanner import scan_directories
 from lan_streamer.backend.scan_worker_base import (
+    BaseScanWorker,
     create_empty_stats,
     discover_single_library_tree_impl,
     log_db_write_error,
@@ -37,7 +37,7 @@ LIFECYCLE_EVENTS = frozenset(
 )
 
 
-class ScanWorker(QThread):
+class ScanWorker(BaseScanWorker):
     """Scans a single library directory using TMDB for metadata."""
 
     finished = Signal(dict)
@@ -45,7 +45,6 @@ class ScanWorker(QThread):
     error = Signal(str)
     library_error = Signal(str, str)
     detail_progress = Signal(str, dict)
-    detail_progress_batch = Signal(list)
 
     def __init__(
         self,
@@ -79,37 +78,10 @@ class ScanWorker(QThread):
 
         self.pass1_stats: Dict[str, int] = create_empty_stats()
         self.pass2_stats: Dict[str, int] = create_empty_stats()
-        self.scan_lock: threading.Lock = threading.Lock()
 
         # Database write queue variables.
         self.database_queue: queue.Queue = queue.Queue()
         self.database_writer: Optional[DatabaseWriterThread] = None
-
-        # Signal batching buffer — thread-safe via _detail_progress_lock.
-        self._detail_progress_buffer: List[Dict[str, Any]] = []
-        self._detail_progress_lock: threading.Lock = threading.Lock()
-
-    def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
-        """Buffers a progress event for batched emission from the QThread.
-
-        Events are accumulated in a thread-safe buffer and flushed by
-        :meth:`flush_detail_progress`, which must only be called from the
-        QThread's own thread (typically via the internal flush timer).
-        """
-        with self._detail_progress_lock:
-            self._detail_progress_buffer.append({"event": event, "payload": payload})
-
-    def flush_detail_progress(self) -> None:
-        """Drains buffered progress events and emits them via Qt signals.
-
-        Must only be called from the QThread's own thread.
-        """
-        with self._detail_progress_lock:
-            if not self._detail_progress_buffer:
-                return
-            batch = list(self._detail_progress_buffer)
-            self._detail_progress_buffer.clear()
-        self.detail_progress_batch.emit(batch)
 
     def run(self) -> None:
         start_time = time.time()
@@ -191,7 +163,7 @@ class ScanWorker(QThread):
                         raise task.error
                     stats = task.result
                     if stats:
-                        with self.scan_lock:
+                        with self._lock:
                             if "issues" in stats:
                                 for issue in stats["issues"]:
                                     self.problems.append(issue)
@@ -248,7 +220,7 @@ class ScanWorker(QThread):
                             ):
                                 self.changed_season_ids.add(stats["season_id"])
                 except Exception as error:
-                    with self.scan_lock:
+                    with self._lock:
                         log_db_write_error(
                             self.problems,
                             f"Season '{season_name}' of series '{series_name}'",
@@ -277,7 +249,7 @@ class ScanWorker(QThread):
                         raise task.error
                     stats = task.result
                     if stats:
-                        with self.scan_lock:
+                        with self._lock:
                             if "issues" in stats:
                                 for issue in stats["issues"]:
                                     self.problems.append(issue)
@@ -308,7 +280,7 @@ class ScanWorker(QThread):
                             if movie_data.get("_changed", True) and "movie_id" in stats:
                                 self.changed_movie_ids.add(stats["movie_id"])
                 except Exception as error:
-                    with self.scan_lock:
+                    with self._lock:
                         log_db_write_error(
                             self.problems,
                             f"Movie '{movie_name}'",
@@ -320,7 +292,7 @@ class ScanWorker(QThread):
             show_future = library_config.get("show_future_episodes", True)
 
             # Pass 1: Offline local file scanner
-            with self.scan_lock:
+            with self._lock:
                 self.current_pass = 1
             logger.info(
                 f"Starting Pass 1 (Offline Scan) for library '{self.library_name}' on directories: {self.root_directories}"
@@ -352,7 +324,7 @@ class ScanWorker(QThread):
             self.flush_detail_progress()
 
             # Pass 2: Online metadata matching & resolver
-            with self.scan_lock:
+            with self._lock:
                 self.current_pass = 2
             logger.info(
                 f"Starting Pass 2 (Online Metadata Resolution Scan) for library '{self.library_name}'"

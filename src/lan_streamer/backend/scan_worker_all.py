@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QObject, Signal
 
 from lan_streamer import db
 from lan_streamer.providers.jellyfin import jellyfin_client
@@ -18,6 +18,7 @@ from lan_streamer.scanner import (
 )
 from lan_streamer.system.config import config
 from lan_streamer.backend.scan_worker_base import (
+    BaseScanWorker,
     create_empty_stats,
     log_db_write_error,
     log_issues_report,
@@ -46,7 +47,7 @@ LIFECYCLE_EVENTS = frozenset(
 )
 
 
-class ScanAllLibrariesWorker(QThread):
+class ScanAllLibrariesWorker(BaseScanWorker):
     """Scans all configured libraries in parallel using TMDB for metadata.
 
     Libraries are scanned concurrently within each pass using a
@@ -57,7 +58,6 @@ class ScanAllLibrariesWorker(QThread):
 
     library_progress = Signal(str, int, int)
     detail_progress = Signal(str, dict)  # (event_type, payload)
-    detail_progress_batch = Signal(list)  # (events_list)
     finished = Signal()
     error = Signal(str)
     library_error = Signal(str, str)  # (library_name, error_message)
@@ -83,7 +83,6 @@ class ScanAllLibrariesWorker(QThread):
         self.run_pass2: bool = run_pass2
 
         # Shared mutable state — protected by _lock when accessed from threads.
-        self._lock: threading.Lock = threading.Lock()
         self.unavailable_directories: List[str] = []
         self.problems: List[Dict[str, Any]] = []
         self.stats: Dict[str, int] = create_empty_stats()
@@ -111,33 +110,6 @@ class ScanAllLibrariesWorker(QThread):
         # Database write queue — created in run() for each scan.
         self.database_queue: Optional[queue.Queue] = None
         self.database_writer: Optional[DatabaseWriterThread] = None
-
-        # Signal batching buffer — thread-safe via _detail_progress_lock.
-        self._detail_progress_buffer: List[Dict[str, Any]] = []
-        self._detail_progress_lock: threading.Lock = threading.Lock()
-
-    def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
-        """Buffers a progress event for batched emission from the QThread.
-
-        Events are accumulated in a thread-safe buffer and flushed by
-        :meth:`flush_detail_progress`, which must only be called from the
-        QThread's own thread (typically inside :meth:`run`).
-        """
-        with self._detail_progress_lock:
-            self._detail_progress_buffer.append({"event": event, "payload": payload})
-
-    def flush_detail_progress(self) -> None:
-        """Drains buffered progress events and emits them via Qt signals.
-
-        Must only be called from the QThread's own thread (i.e. inside
-        :meth:`run`) because it emits Qt signals.
-        """
-        with self._detail_progress_lock:
-            if not self._detail_progress_buffer:
-                return
-            batch = list(self._detail_progress_buffer)
-            self._detail_progress_buffer.clear()
-        self.detail_progress_batch.emit(batch)
 
     # ------------------------------------------------------------------
     # Helper methods
