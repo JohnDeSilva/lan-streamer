@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PySide6.QtCore import QObject
@@ -223,6 +223,48 @@ def test_worker_slot_stop_handles_runtime_error(slot: WorkerSlot, caplog) -> Non
         slot.stop()
 
     assert "RuntimeError" in caplog.text
+    assert slot.instance is None
+
+
+def test_worker_slot_stop_raises_unexpected_runtime_error(slot: WorkerSlot) -> None:
+    fake_worker = MagicMock()
+    fake_worker.requestInterruption.side_effect = RuntimeError("unexpected failure")
+    slot._instance = fake_worker
+
+    with pytest.raises(RuntimeError, match="unexpected failure"):
+        slot.stop()
+
+    assert slot.instance is None
+
+
+def test_worker_slot_stop_disconnects_external_signals(slot: WorkerSlot) -> None:
+    fake_signal = MagicMock()
+    fake_worker = MagicMock()
+    fake_worker.finished = fake_signal
+    fake_worker.wait.return_value = True
+    slot_handler = MagicMock()
+
+    slot.start(lambda: fake_worker, finished=slot_handler)
+    slot.stop()
+
+    fake_signal.disconnect.assert_called_once_with(slot_handler)
+
+
+def test_worker_slot_deferred_cleanup_waits_for_finished_signal(
+    slot: WorkerSlot,
+) -> None:
+    fake_worker = MagicMock()
+    fake_worker.wait.return_value = False
+    fake_worker.finished = MagicMock()
+    slot._instance = fake_worker
+
+    with patch(
+        "lan_streamer.system.threading_manager.QTimer", create=True
+    ) as mock_timer:
+        slot.stop()
+
+    mock_timer.singleShot.assert_not_called()
+    fake_worker.finished.connect.assert_called_once_with(fake_worker.deleteLater)
     assert slot.instance is None
 
 

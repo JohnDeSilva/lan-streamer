@@ -1,8 +1,8 @@
 import logging
 import traceback
-from typing import Callable, List, Optional, TypeVar
+from typing import Any, Callable, List, Optional, TypeVar
 
-from PySide6.QtCore import QObject, QThread, QTimer
+from PySide6.QtCore import QObject, QThread
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class WorkerSlot(QObject):
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._instance: Optional[QThread] = None
-        self._pending_cleanup: Optional[QThread] = None
+        self._connected_signal_slots: List[tuple[Any, Callable]] = []
         self._timeout_ms: int = 250
 
     @property
@@ -85,6 +85,7 @@ class WorkerSlot(QObject):
                 signal = getattr(worker, signal_name, None)
                 if signal is not None:
                     signal.connect(slot)
+                    self._connected_signal_slots.append((signal, slot))
                 else:
                     logger.warning(
                         "WorkerSlot.start(): worker %s has no signal '%s' — slot not connected",
@@ -120,17 +121,17 @@ class WorkerSlot(QObject):
         """
         Stop the current worker if one exists.
 
-        Tries a short cooperative wait (250 ms).  If the thread does not
-        finish within that time, cleanup is deferred: ``deleteLater()`` is
-        scheduled via ``QTimer.singleShot``.  This avoids blocking the Qt
-        main thread for an extended period.
+        Tries a short cooperative wait (250 ms). If the thread does not
+        finish within that time, cleanup is deferred until the worker's own
+        ``finished`` signal fires. This avoids deleting a still-running
+        ``QThread`` from the Qt event loop.
         """
         worker = self._instance
         if worker is None:
             return
-        self._instance = None
 
         try:
+            self._disconnect_signal_slots()
             worker.requestInterruption()
             worker.quit()
 
@@ -144,24 +145,51 @@ class WorkerSlot(QObject):
             else:
                 logger.warning(
                     "WorkerSlot: %s still running after %d ms, "
-                    "scheduling deferred cleanup.",
+                    "deferring cleanup until it finishes.",
                     worker.__class__.__name__,
                     self._timeout_ms,
                 )
-                # Schedule deleteLater after a grace period.
-                # The QTimer keeps itself alive for the single shot.
-                QTimer.singleShot(self._timeout_ms, worker.deleteLater)
+                worker.finished.connect(worker.deleteLater)
 
         except RuntimeError as error:
-            logger.debug(
-                "WorkerSlot: RuntimeError while stopping %s: %s",
-                worker.__class__.__name__,
-                error,
-            )
+            if self._is_deleted_qobject_error(error):
+                logger.debug(
+                    "WorkerSlot: RuntimeError while stopping %s: %s",
+                    worker.__class__.__name__,
+                    error,
+                )
+            else:
+                raise
+        finally:
+            self._instance = None
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _disconnect_signal_slots(self) -> None:
+        """Disconnect controller callbacks from the current worker."""
+        for signal, connected_slot in self._connected_signal_slots:
+            try:
+                signal.disconnect(connected_slot)
+            except (RuntimeError, TypeError) as error:
+                if not self._is_deleted_qobject_error(error):
+                    logger.debug(
+                        "WorkerSlot: signal disconnect failed for %s: %s",
+                        connected_slot,
+                        error,
+                    )
+        self._connected_signal_slots.clear()
+
+    def _is_deleted_qobject_error(self, error: Exception) -> bool:
+        message = str(error).lower()
+        return (
+            "c++ object" in message
+            or "already deleted" in message
+            or "internal c++ object" in message
+            or "wrapped c/c++ object" in message
+            or "destroyed" in message
+        )
 
     def __repr__(self) -> str:
         cls = self._instance.__class__.__name__ if self._instance else "empty"

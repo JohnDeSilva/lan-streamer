@@ -445,6 +445,5 @@ class ScanWorker(QThread):
         finally:
             self.flush_detail_progress()
             if self.database_writer is not None:
-                self.database_queue.put(None)
                 self.database_writer.stop()
                 self.database_writer.join()
