@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from PySide6.QtCore import QObject
@@ -258,13 +258,17 @@ def test_worker_slot_deferred_cleanup_waits_for_finished_signal(
     fake_worker.finished = MagicMock()
     slot._instance = fake_worker
 
-    with patch(
-        "lan_streamer.system.threading_manager.QTimer", create=True
-    ) as mock_timer:
-        slot.stop()
+    slot.stop()
 
-    mock_timer.singleShot.assert_not_called()
-    fake_worker.finished.connect.assert_called_once_with(fake_worker.deleteLater)
+    assert fake_worker in slot._stopping_workers
+    fake_worker.finished.connect.assert_called_once()
+    cleanup_func = fake_worker.finished.connect.call_args[0][0]
+    assert callable(cleanup_func)
+
+    # Run cleanup
+    cleanup_func()
+    assert fake_worker not in slot._stopping_workers
+    fake_worker.deleteLater.assert_called_once()
     assert slot.instance is None
 
 

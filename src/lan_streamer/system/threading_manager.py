@@ -35,6 +35,7 @@ class WorkerSlot(QObject):
         self._instance: Optional[QThread] = None
         self._connected_signal_slots: List[tuple[Any, Callable]] = []
         self._timeout_ms: int = 250
+        self._stopping_workers: List[QThread] = []
 
     @property
     def is_running(self) -> bool:
@@ -149,7 +150,22 @@ class WorkerSlot(QObject):
                     worker.__class__.__name__,
                     self._timeout_ms,
                 )
-                worker.finished.connect(worker.deleteLater)
+                self._stopping_workers.append(worker)
+
+                def make_cleanup(w: QThread) -> Callable[[], None]:
+                    def cleanup() -> None:
+                        try:
+                            if w in self._stopping_workers:
+                                self._stopping_workers.remove(w)
+                            w.deleteLater()
+                        except Exception as error:
+                            logger.debug(
+                                "WorkerSlot: deferred cleanup failed: %s", error
+                            )
+
+                    return cleanup
+
+                worker.finished.connect(make_cleanup(worker))
 
         except RuntimeError as error:
             if self._is_deleted_qobject_error(error):
