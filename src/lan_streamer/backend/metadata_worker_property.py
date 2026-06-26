@@ -248,6 +248,5 @@ class FilePropertyExtractionWorker(QThread):
             self.error.emit(str(exception_instance))
         finally:
             if self.database_writer is not None:
-                self.database_queue.put(None)
                 self.database_writer.stop()
                 self.database_writer.join()

@@ -351,8 +351,13 @@ class Controller(QObject):
             if not self.is_video_playing:
                 self.library_loaded.emit()
 
-    def _on_scan_finished(self, updated_library: Dict[str, Any]) -> None:
+    def _on_scan_finished(
+        self, updated_library: Dict[str, Any]
+    ) -> tuple[Optional[Set[str]], Optional[Set[str]]]:
         scan_worker = self.worker_manager.scan.instance
+        changed_season_ids = getattr(scan_worker, "changed_season_ids", None)
+        changed_movie_ids = getattr(scan_worker, "changed_movie_ids", None)
+        unavailable_directories = getattr(scan_worker, "unavailable_directories", [])
         scanned_library_name = self.current_library_name
         if scanned_library_name:
             library_config = self._config.libraries.get(scanned_library_name, {})
@@ -365,9 +370,6 @@ class Controller(QObject):
                 self.cached_library_data = updated_library
                 self._cache_series_metrics()
 
-            unavailable_directories = getattr(
-                scan_worker, "unavailable_directories", []
-            )
             if unavailable_directories:
                 for directory_name in unavailable_directories:
                     self.status_changed.emit(
@@ -383,14 +385,13 @@ class Controller(QObject):
                 and not self.is_video_playing
             ):
                 self.library_loaded.emit()
-        self._scan_changed_season_ids = getattr(scan_worker, "changed_season_ids", None)
-        self._scan_changed_movie_ids = getattr(scan_worker, "changed_movie_ids", None)
+        self._scan_changed_season_ids = changed_season_ids
+        self._scan_changed_movie_ids = changed_movie_ids
         if self._running_pass3_after_scan and not self._doing_scan_and_update:
-            self.trigger_runtime_extraction(
-                self._scan_changed_season_ids, self._scan_changed_movie_ids
-            )
+            self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
         elif not self._doing_scan_and_update:
             self.scan_completed.emit()
+        return changed_season_ids, changed_movie_ids
 
     def trigger_cleanup(self) -> None:
         if not self.current_library_name:
@@ -511,7 +512,7 @@ class Controller(QObject):
         self, updated_library: Dict[str, Any]
     ) -> None:
         """Called when the scan phase of scan_and_update completes. Saves results then runs cleanup."""
-        self._on_scan_finished(updated_library)
+        changed_season_ids, changed_movie_ids = self._on_scan_finished(updated_library)
 
         # Now chain into cleanup
         if not self.current_library_name:
@@ -526,11 +527,18 @@ class Controller(QObject):
                 library_name=self.current_library_name,
                 root_directories=root_directories,
             ),
-            finished=self._on_scan_and_update_cleanup_finished,
+            finished=lambda statistics: self._on_scan_and_update_cleanup_finished(
+                statistics, changed_season_ids, changed_movie_ids
+            ),
             error=self._on_worker_error,
         )
 
-    def _on_scan_and_update_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
+    def _on_scan_and_update_cleanup_finished(
+        self,
+        statistics: Dict[str, Any],
+        changed_season_ids: Optional[Set[str]] = None,
+        changed_movie_ids: Optional[Set[str]] = None,
+    ) -> None:
         """Called when the cleanup phase of scan_and_update completes."""
         self.select_library(self.current_library_name, reset_selection=False)
         series_removed: int = statistics.get("series", 0)
@@ -539,9 +547,18 @@ class Controller(QObject):
             f"Scan Library complete. "
             f"{series_removed} series removed, {episodes_nulled} episode paths updated."
         )
+        self._doing_scan_and_update = False
         if self._running_pass3_after_scan:
-            changed_seasons = self._scan_changed_season_ids
-            changed_movies = self._scan_changed_movie_ids
+            changed_seasons = (
+                changed_season_ids
+                if changed_season_ids is not None
+                else self._scan_changed_season_ids
+            )
+            changed_movies = (
+                changed_movie_ids
+                if changed_movie_ids is not None
+                else self._scan_changed_movie_ids
+            )
             self.trigger_runtime_extraction(changed_seasons, changed_movies)
         else:
             self.scan_completed.emit()
@@ -717,6 +734,7 @@ class Controller(QObject):
         if self.current_library_name:
             self.select_library(self.current_library_name, reset_selection=False)
         self._running_pass3_after_scan = False
+        self._doing_scan_and_update = False
 
         # Show green (Pass 3 = 100%) before hiding, even if no items were processed.
         self.detail_progress_updated.emit(

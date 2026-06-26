@@ -345,6 +345,37 @@ def test_on_scan_and_update_cleanup_finished_selects_library(
         mock_select.assert_called_once_with("TestLib", reset_selection=False)
 
 
+def test_scan_and_update_cleanup_uses_captured_changed_ids(ctrl, mock_db_save) -> None:
+    captured_season_ids = {"season-from-first-scan"}
+    captured_movie_ids = {"movie-from-first-scan"}
+    ctrl._scan_changed_season_ids = {"season-from-later-scan"}
+    ctrl._scan_changed_movie_ids = {"movie-from-later-scan"}
+    ctrl._running_pass3_after_scan = True
+
+    with (
+        patch.object(ctrl, "select_library"),
+        patch.object(ctrl, "trigger_runtime_extraction") as mock_extraction,
+    ):
+        ctrl._on_scan_and_update_cleanup_finished(
+            {},
+            captured_season_ids,
+            captured_movie_ids,
+        )
+
+    mock_extraction.assert_called_once_with(captured_season_ids, captured_movie_ids)
+    assert ctrl._doing_scan_and_update is False
+
+
+def test_runtime_finished_resets_scan_and_update_flag(ctrl, mock_db_save) -> None:
+    ctrl._doing_scan_and_update = True
+    ctrl._running_pass3_after_scan = True
+
+    with patch.object(ctrl, "select_library"):
+        ctrl._on_runtime_finished(0)
+
+    assert ctrl._doing_scan_and_update is False
+
+
 # ---------------------------------------------------------------------------
 # trigger_cleanup — no library name
 # ---------------------------------------------------------------------------

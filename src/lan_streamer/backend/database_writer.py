@@ -41,21 +41,25 @@ class DatabaseWriterThread(threading.Thread):
         Args:
             task_queue: A thread-safe queue containing DatabaseWriteTask items.
         """
-        super().__init__(name="DatabaseWriterThread", daemon=True)
+        super().__init__(name="DatabaseWriterThread", daemon=False)
         self.task_queue: queue.Queue = task_queue
         self._stop_event: threading.Event = threading.Event()
 
     def stop(self) -> None:
-        """Signal the writer thread to stop."""
+        """Signal the writer thread to stop after queued writes are drained."""
         self._stop_event.set()
+        self.task_queue.put(None)
 
     def run(self) -> None:
         """Loop continuously, processing tasks from the queue sequentially."""
         logger.info("DatabaseWriterThread started execution loop.")
-        while not self._stop_event.is_set():
+        while True:
             try:
                 task: Optional[DatabaseWriteTask] = self.task_queue.get(timeout=0.5)
             except queue.Empty:
+                if self._stop_event.is_set():
+                    logger.info("DatabaseWriterThread stopped with an empty queue.")
+                    break
                 continue
             if task is None:
                 # Sentinel to stop processing

@@ -9,12 +9,37 @@ def test_database_writer_lifecycle() -> None:
     """Verify that DatabaseWriterThread starts and shuts down cleanly via sentinel."""
     task_queue: queue.Queue = queue.Queue()
     writer = DatabaseWriterThread(task_queue)
+    assert writer.daemon is False
     writer.start()
 
     # Push None sentinel to request stop
     task_queue.put(None)
     writer.join(timeout=2.0)
     assert not writer.is_alive()
+
+
+def test_database_writer_stop_drains_queued_tasks_before_exit() -> None:
+    task_queue: queue.Queue = queue.Queue()
+    writer = DatabaseWriterThread(task_queue)
+
+    first_task = DatabaseWriteTask(
+        "save_directory_mtime", {"path": "/tmp/a", "mtime": 1}
+    )
+    second_task = DatabaseWriteTask(
+        "save_directory_mtime", {"path": "/tmp/b", "mtime": 2}
+    )
+
+    with patch("lan_streamer.db.save_directory_mtime") as mock_save:
+        task_queue.put(first_task)
+        task_queue.put(second_task)
+        writer.start()
+        writer.stop()
+        writer.join(timeout=2.0)
+
+    assert not writer.is_alive()
+    assert first_task.event.is_set()
+    assert second_task.event.is_set()
+    assert mock_save.call_count == 2
 
 
 def test_database_writer_executes_task() -> None:
