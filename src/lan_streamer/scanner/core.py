@@ -96,6 +96,7 @@ def scan_directories(
     metadata_only: bool = False,
     database_queue: Optional[Any] = None,
     disregard_mtimes: bool = False,
+    is_interrupted: Optional[Any] = None,
 ) -> LibraryDict:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -163,6 +164,9 @@ def scan_directories(
                 items_by_root[m_root].append((series_name, existing_series))
 
         for m_root, items in items_by_root.items():
+            if is_interrupted and is_interrupted():
+                logger.info("scan_directories: interruption detected in metadata path.")
+                break
             if detail_callback:
                 detail_callback(
                     "root_total",
@@ -173,6 +177,11 @@ def scan_directories(
             executor = get_scan_executor()
             future_to_item = {}
             for series_name, existing_series in items:
+                if is_interrupted and is_interrupted():
+                    logger.info(
+                        "scan_directories: interruption detected, skipping further items."
+                    )
+                    break
                 if detail_callback:
                     detail_callback(
                         "start_folder",
@@ -249,6 +258,13 @@ def scan_directories(
                 future_to_item[future] = (series_name, is_locked)
 
             for future in as_completed(future_to_item):
+                if is_interrupted and is_interrupted():
+                    logger.info(
+                        "scan_directories: interruption detected. Cancelling remaining metadata tasks."
+                    )
+                    for f in future_to_item:
+                        f.cancel()
+                    break
                 series_name, is_locked = future_to_item[future]
                 try:
                     series_data = future.result()
@@ -332,6 +348,11 @@ def scan_directories(
     logger.info(f"Starting directory scan. Root directories: {root_directories}")
 
     for root_directory in root_directories:
+        if is_interrupted and is_interrupted():
+            logger.info(
+                "scan_directories: interruption detected. Stopping directory scan."
+            )
+            break
         logger.info(f"Scanning root directory: {root_directory}")
         root_path = Path(root_directory)
         if not root_path.exists() or not root_path.is_dir():
@@ -375,6 +396,11 @@ def scan_directories(
         executor = get_scan_executor()
         future_to_series_directory = {}
         for series_directory in series_dirs:
+            if is_interrupted and is_interrupted():
+                logger.info(
+                    "scan_directories: interruption detected, skipping further series directories."
+                )
+                break
             series_name = series_directory.name
             logger.debug(f"Scanning folder '{series_name}' in root '{root_directory}'")
             if detail_callback:
@@ -517,6 +543,13 @@ def scan_directories(
             future_to_series_directory[future] = (series_name, is_locked)
 
         for future in as_completed(future_to_series_directory):
+            if is_interrupted and is_interrupted():
+                logger.info(
+                    "scan_directories: interruption detected. Cancelling remaining directory scan tasks."
+                )
+                for f in future_to_series_directory:
+                    f.cancel()
+                break
             series_name, is_locked = future_to_series_directory[future]
             try:
                 series_data = future.result()

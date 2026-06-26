@@ -3666,3 +3666,18 @@ def test_shutdown_scan_executor_is_registered_with_atexit() -> None:
 
     # Restore a clean state for subsequent tests.
     core_module.shutdown_scan_executor()
+
+
+def test_scan_directories_cooperative_cancellation() -> None:
+    """Test that scan_directories exits early when is_interrupted returns True."""
+    from lan_streamer.scanner.core import scan_directories
+
+    is_interrupted_mock = MagicMock(return_value=True)
+    res = scan_directories(
+        ["/some/path"],
+        library_type="tv",
+        is_interrupted=is_interrupted_mock,
+    )
+    # Since it returned early due to interruption, result should be empty.
+    assert len(res) == 0
+    is_interrupted_mock.assert_called()

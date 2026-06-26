@@ -342,6 +342,7 @@ class ScanWorker(QThread):
                 season_callback=_season_callback,
                 movie_callback=_movie_callback,
                 database_queue=self.database_queue,
+                is_interrupted=self.isInterruptionRequested,
             )
             logger.info(
                 f"Finished Pass 1 (Offline Scan) for library '{self.library_name}'. Found {len(library)} stubs/entries."
@@ -374,6 +375,7 @@ class ScanWorker(QThread):
                 movie_callback=_movie_callback,
                 metadata_only=True,
                 database_queue=self.database_queue,
+                is_interrupted=self.isInterruptionRequested,
             )
             self.unavailable_directories = library.unavailable_directories
             if self.unavailable_directories:

@@ -450,8 +450,47 @@ def test_file_property_extraction_worker_skips_and_batches() -> None:
         mock_info.assert_any_call("/season1_ep2.mkv")
 
         # Check: 201 and 202 are both in season_1, so their database writes are batched in a single call
-        mock_update_batch.assert_called_once()
+        assert mock_update_batch.call_count == 1
         batch_arg = mock_update_batch.call_args[0][0]
         assert len(batch_arg) == 2
         assert batch_arg[0]["item_identifier"] == 201
         assert batch_arg[1]["item_identifier"] == 202
+
+
+def test_file_property_extraction_worker_cooperative_cancellation() -> None:
+    """Verify that FilePropertyExtractionWorker exits early on interruption."""
+    from lan_streamer.backend.metadata_worker_property import (
+        FilePropertyExtractionWorker,
+    )
+
+    with (
+        patch("lan_streamer.backend.metadata_worker_property.db") as mock_db,
+        patch("lan_streamer.backend.metadata_worker_property.DatabaseWriterThread"),
+        patch(
+            "lan_streamer.backend.metadata_worker_property._produce_item_update"
+        ) as mock_produce,
+    ):
+        mock_db.get_items_missing_runtime.return_value = [
+            {
+                "id": 1,
+                "type": "movie",
+                "path": "/path/to/movie.mkv",
+                "library_name": "Movies",
+            },
+            {
+                "id": 2,
+                "type": "movie",
+                "path": "/path/to/movie2.mkv",
+                "library_name": "Movies",
+            },
+        ]
+
+        worker = FilePropertyExtractionWorker()
+
+        # Simulate that interruption was requested
+        worker.isInterruptionRequested = MagicMock(return_value=True)
+
+        worker.run()
+
+        # _produce_item_update should not be called at all
+        mock_produce.assert_not_called()
