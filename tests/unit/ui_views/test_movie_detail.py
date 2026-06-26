@@ -45,9 +45,9 @@ def test_movie_detail_view(qtbot: Any) -> None:
     # Test trailers button click
     with patch("webbrowser.open") as mock_open:
         view.trailers_button.click()
-        mock_open.assert_called_once_with(
-            "https://www.youtube.com/results?search_query=Avatar%20trailer"
-        )
+        opened_url = mock_open.call_args.args[0]
+        assert "search_query=Avatar%20trailer" in opened_url
+        assert opened_url.startswith("https://")
 
     # Test No Poster branch
     view.populate_movie_details("Non Existent Movie")

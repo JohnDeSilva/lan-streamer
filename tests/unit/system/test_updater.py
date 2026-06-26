@@ -104,7 +104,7 @@ def test_update_check_worker_has_update(qtbot) -> None:
         "assets": [
             {
                 "name": "lan-streamer-windows.exe",
-                "browser_download_url": "http://download.url/win.exe",
+                "browser_download_url": "https://example.invalid/download/win.exe",
             }
         ],
     }
@@ -123,7 +123,9 @@ def test_update_check_worker_has_update(qtbot) -> None:
         assert success is True
         assert release_info["version"] == "v0.27.0"
         assert release_info["release_notes"] == "Cool release notes"
-        assert release_info["download_url"] == "http://download.url/win.exe"
+        assert (
+            release_info["download_url"] == "https://example.invalid/download/win.exe"
+        )
         assert error_msg == ""
 
 
@@ -162,7 +164,7 @@ def test_download_worker_success(qtbot, tmp_path) -> None:
     mock_response.iter_content.return_value = [b"chunk1__", b"chunk2__"]
 
     with patch("requests.get", return_value=mock_response):
-        worker = DownloadWorker("http://dummy.url", str(save_path))
+        worker = DownloadWorker("https://example.invalid/update.exe", str(save_path))
 
         progress_signals = []
         worker.progress.connect(
@@ -196,7 +198,7 @@ def test_download_worker_cancelled(qtbot, tmp_path) -> None:
     mock_response.iter_content = chunk_generator
 
     with patch("requests.get", return_value=mock_response):
-        worker = DownloadWorker("http://dummy.url", str(save_path))
+        worker = DownloadWorker("https://example.invalid/update.exe", str(save_path))
 
         with qtbot.waitSignal(worker.finished) as blocker:
             worker.start()

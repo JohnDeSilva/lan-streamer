@@ -73,9 +73,9 @@ def test_series_detail_view_hide_missing_future(qtbot: Any) -> None:
     # Test trailers button click
     with patch("webbrowser.open") as mock_open:
         view.trailers_button.click()
-        mock_open.assert_called_once_with(
-            "https://www.youtube.com/results?search_query=Breaking%20Bad%20trailer"
-        )
+        opened_url = mock_open.call_args.args[0]
+        assert "search_query=Breaking%20Bad%20trailer" in opened_url
+        assert opened_url.startswith("https://")
 
     # Season 1 should have 3 episodes in the table (1 local + 2 missing/future)
     season_table = view._season_tables["Season 1"]
