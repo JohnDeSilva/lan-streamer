@@ -1,3 +1,17 @@
+## v0.35.1 (2026-06-26)
+
+### Fix
+
+- **dev-dependency**: bump commitizen from 4.16.3 to 4.16.4
+- **threading**: resolve deadlock, memory leak, and cancellation data loss issues
+- **ui**: isolate scan change flow to callbacks instead of shared controller state
+- **backend**: add cooperative cancellation checks to long-running workers
+- **system**: track stopping workers to prevent early gc and ensure clean deletion
+
+### Refactor
+
+- **backend**: introduce BaseScanWorker to consolidate duplicate progress and lock behaviors
+
 ## v0.35.0 (2026-06-25)
 
 ### Feat
