@@ -16,6 +16,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from lan_streamer.ui_views import Controller
+from lan_streamer.backend import MetadataApplyWorker as MetadataApplyWorker_real
 from lan_streamer.system.config import config
 
 
@@ -285,7 +286,8 @@ def test_apply_metadata_match_tv_overview_and_air_date(ctrl_tv, mock_db_save) ->
     }
     ctrl_tv._tmdb_client.get_season_based_episode_group.return_value = None
     ctrl_tv._tmdb_client.get_episodes.return_value = []
-    ctrl_tv.apply_metadata_match("ShowA", match)
+    with patch.object(MetadataApplyWorker_real, "start", lambda self: self.run()):
+        ctrl_tv.apply_metadata_match("ShowA", match)
 
     meta = ctrl_tv.cached_library_data["ShowA"]["metadata"]
     assert meta["overview"] == "A great show"
@@ -359,7 +361,8 @@ def test_apply_metadata_match_clears_old_placeholders_and_metadata(
         "TVLib": {"type": "tv", "paths": ["/tv"], "show_future_episodes": True}
     }
 
-    ctrl_tv.apply_metadata_match("ShowA", match)
+    with patch.object(MetadataApplyWorker_real, "start", lambda self: self.run()):
+        ctrl_tv.apply_metadata_match("ShowA", match)
 
     episodes = ctrl_tv.cached_library_data["ShowA"]["seasons"]["Season 1"]["episodes"]
 

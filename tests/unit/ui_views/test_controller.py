@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from typing import Any, Dict, List
 
 from lan_streamer.ui_views import Controller
+from lan_streamer.backend import MetadataApplyWorker as MetadataApplyWorker_real
 
 
 @pytest.fixture
@@ -486,10 +487,11 @@ def test_controller_update_metadata_match_syncs_with_episode_groups(
     mock_tmdb = mock_controller._tmdb_client
     mock_tmdb.get_season_based_episode_group.return_value = mock_group_details
 
-    mock_controller.apply_metadata_match(
-        "Test Show",
-        {"id": "999", "name": "Matched Show Title", "first_air_date": "2020-01-01"},
-    )
+    with patch.object(MetadataApplyWorker_real, "start", lambda self: self.run()):
+        mock_controller.apply_metadata_match(
+            "Test Show",
+            {"id": "999", "name": "Matched Show Title", "first_air_date": "2020-01-01"},
+        )
 
     mock_tmdb.get_season_based_episode_group.assert_called_once_with("999")
     mock_tmdb.get_episodes.assert_not_called()
