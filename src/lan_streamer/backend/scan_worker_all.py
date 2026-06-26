@@ -588,6 +588,7 @@ class ScanAllLibrariesWorker(QThread):
                 movie_callback=_movie_callback,
                 metadata_only=not is_pass1,
                 database_queue=database_queue,
+                is_interrupted=self.isInterruptionRequested,
             )
             # Collect unavailable directories from this scan.
             if updated_library_data.unavailable_directories:
@@ -616,6 +617,11 @@ class ScanAllLibrariesWorker(QThread):
         else:
             current_library_data = existing_library_data
             for root_dir in root_directories:
+                if self.isInterruptionRequested():
+                    logger.info(
+                        "ScanAllLibrariesWorker: interruption requested. Stopping root directories loop."
+                    )
+                    break
                 self.emit_detail_progress(
                     "start_root",
                     {"library": library_name, "root": root_dir},
@@ -635,6 +641,7 @@ class ScanAllLibrariesWorker(QThread):
                     movie_callback=_movie_callback,
                     metadata_only=not is_pass1,
                     database_queue=database_queue,
+                    is_interrupted=self.isInterruptionRequested,
                 )
                 # Collect unavailable directories from this root scan.
                 if updated_library_data.unavailable_directories:
@@ -909,6 +916,13 @@ class ScanAllLibrariesWorker(QThread):
                         )
                         future_to_library[future] = library_name
                     for future in as_completed(future_to_library):
+                        if self.isInterruptionRequested():
+                            logger.info(
+                                "ScanAllLibrariesWorker: interruption requested during Pass 1. Cancelling remaining tasks."
+                            )
+                            for f in future_to_library:
+                                f.cancel()
+                            break
                         library_name = future_to_library[future]
                         try:
                             result: Dict[str, Any] = future.result()
@@ -993,6 +1007,13 @@ class ScanAllLibrariesWorker(QThread):
                         future_to_library[future] = library_name
 
                     for future in as_completed(future_to_library):
+                        if self.isInterruptionRequested():
+                            logger.info(
+                                "ScanAllLibrariesWorker: interruption requested during Pass 2. Cancelling remaining tasks."
+                            )
+                            for f in future_to_library:
+                                f.cancel()
+                            break
                         library_name = future_to_library[future]
                         try:
                             result = future.result()

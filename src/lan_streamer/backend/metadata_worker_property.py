@@ -163,8 +163,15 @@ class FilePropertyExtractionWorker(QThread):
 
                 # Process episodes by season (sequential within library).
                 for season_id, season_episodes in episodes_by_season.items():
+                    if self.isInterruptionRequested():
+                        logger.info(
+                            "FilePropertyExtractionWorker: interruption requested. Stopping season processing."
+                        )
+                        break
                     season_updates: List[Dict[str, Any]] = []
                     for ep in season_episodes:
+                        if self.isInterruptionRequested():
+                            break
                         update = _produce_item_update(ep)
                         if update:
                             season_updates.append(update)
@@ -195,6 +202,11 @@ class FilePropertyExtractionWorker(QThread):
 
                 # Process movies individually.
                 for movie in movies:
+                    if self.isInterruptionRequested():
+                        logger.info(
+                            "FilePropertyExtractionWorker: interruption requested. Stopping movie processing."
+                        )
+                        break
                     update = _produce_item_update(movie)
                     if update:
                         logger.info(f"Committing write for movie {movie['path']}")
@@ -226,6 +238,13 @@ class FilePropertyExtractionWorker(QThread):
                     future_to_library[future] = library_name
 
                 for future in as_completed(future_to_library):
+                    if self.isInterruptionRequested():
+                        logger.info(
+                            "FilePropertyExtractionWorker: interruption requested. Cancelling remaining libraries."
+                        )
+                        for f in future_to_library:
+                            f.cancel()
+                        break
                     library_name = future_to_library[future]
                     try:
                         updated_count += future.result()
