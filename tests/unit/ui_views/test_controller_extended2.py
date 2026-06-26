@@ -203,7 +203,7 @@ def test_trigger_series_refresh_worker_already_running() -> None:
 
     mock_worker = MagicMock()
     mock_worker.isRunning.return_value = True
-    c.scan_worker_instance = mock_worker
+    c.worker_manager.scan._instance = mock_worker
 
     statuses: List[str] = []
     c.status_changed.connect(statuses.append)
@@ -222,7 +222,7 @@ def test_on_refresh_finished_same_library(ctrl_tv, mock_db_save) -> None:
     updated_lib = {"ShowA": {"metadata": {}, "seasons": {}}}
     mock_refresh = MagicMock()
     mock_refresh.library_name = "TVLib"
-    ctrl_tv.refresh_worker_instance = mock_refresh
+    ctrl_tv.worker_manager.refresh._instance = mock_refresh
 
     signals: List[bool] = []
     ctrl_tv.library_loaded.connect(lambda: signals.append(True))
@@ -236,7 +236,7 @@ def test_on_refresh_finished_different_library(ctrl_tv, mock_db_save) -> None:
     mock_refresh = MagicMock()
     mock_refresh.library_name = "OtherLib"
     mock_refresh.item_name = "ShowA"
-    ctrl_tv.refresh_worker_instance = mock_refresh
+    ctrl_tv.worker_manager.refresh._instance = mock_refresh
 
     statuses: List[str] = []
     ctrl_tv.status_changed.connect(statuses.append)
@@ -264,7 +264,7 @@ def test_merge_subtitles_starts_worker(ctrl_tv) -> None:
 def test_merge_subtitles_skips_if_running(ctrl_tv) -> None:
     mock_worker = MagicMock()
     mock_worker.isRunning.return_value = True
-    ctrl_tv.merge_subtitle_worker_instance = mock_worker
+    ctrl_tv.worker_manager.subtitle_merge._instance = mock_worker
 
     statuses: List[str] = []
     ctrl_tv.status_changed.connect(statuses.append)
@@ -290,7 +290,7 @@ def test_embed_metadata_starts_worker(ctrl_tv) -> None:
 def test_embed_metadata_skips_if_running(ctrl_tv) -> None:
     mock_worker = MagicMock()
     mock_worker.isRunning.return_value = True
-    ctrl_tv.embed_metadata_worker_instance = mock_worker
+    ctrl_tv.worker_manager.metadata_embed._instance = mock_worker
 
     statuses: List[str] = []
     ctrl_tv.status_changed.connect(statuses.append)
@@ -335,7 +335,7 @@ def test_embed_metadata_series_unknown_series(ctrl_tv) -> None:
 def test_embed_metadata_series_skips_if_running(ctrl_tv) -> None:
     mock_worker = MagicMock()
     mock_worker.isRunning.return_value = True
-    ctrl_tv.embed_metadata_worker_instance = mock_worker
+    ctrl_tv.worker_manager.metadata_embed._instance = mock_worker
 
     statuses: List[str] = []
     ctrl_tv.status_changed.connect(statuses.append)
@@ -506,7 +506,7 @@ def test_trigger_series_scan_worker_already_running() -> None:
 
     mock_worker = MagicMock()
     mock_worker.isRunning.return_value = True
-    c.scan_worker_instance = mock_worker
+    c.worker_manager.scan._instance = mock_worker
 
     statuses: List[str] = []
     c.status_changed.connect(statuses.append)
@@ -520,7 +520,7 @@ def test_on_series_scan_finished_same_library(ctrl_tv, mock_db_save) -> None:
     updated_library = {"ShowA": {"metadata": {}, "seasons": {}}}
     mock_scan = MagicMock()
     mock_scan.library_name = "TVLib"
-    ctrl_tv.scan_series_worker_instance = mock_scan
+    ctrl_tv.worker_manager.scan_series._instance = mock_scan
 
     signals: List[bool] = []
     ctrl_tv.library_loaded.connect(lambda: signals.append(True))
@@ -534,7 +534,7 @@ def test_on_series_scan_finished_different_library(ctrl_tv, mock_db_save) -> Non
     mock_scan = MagicMock()
     mock_scan.library_name = "OtherLib"
     mock_scan.series_name = "ShowA"
-    ctrl_tv.scan_series_worker_instance = mock_scan
+    ctrl_tv.worker_manager.scan_series._instance = mock_scan
 
     signals: List[bool] = []
     ctrl_tv.library_loaded.connect(lambda: signals.append(True))

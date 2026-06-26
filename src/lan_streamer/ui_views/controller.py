@@ -14,6 +14,7 @@ from typing import (
 from PySide6.QtCore import QObject, Signal, QFileSystemWatcher
 
 from lan_streamer.system.config import config as _config_default
+from lan_streamer.system.threading_manager import WorkerManager
 from lan_streamer import db as _db_default
 
 
@@ -118,20 +119,6 @@ class Controller(QObject):
         self.sort_mode: str = self._config.sort_mode
         self.sort_descending: bool = self._config.sort_descending
         self.filter_out_watched: bool = self._config.filter_out_watched
-        self.scan_worker_instance: Optional[ScanWorker] = None
-        self.cleanup_worker_instance: Optional[CleanupWorker] = None
-        self.pull_worker_instance: Optional[JellyfinPullWorker] = None
-        self.push_worker_instance: Optional[JellyfinPushWorker] = None
-        self.scan_all_worker_instance: Optional[ScanAllLibrariesWorker] = None
-        self.file_property_worker_instance: Optional[FilePropertyExtractionWorker] = (
-            None
-        )
-        self.merge_subtitle_worker_instance: Optional[Any] = None
-        self.embed_metadata_worker_instance: Optional[Any] = None
-        self.scan_series_worker_instance: Optional[Any] = None
-        self.refresh_worker_instance: Optional[Any] = None
-        self._metadata_apply_worker: Optional[Any] = None
-
         self.is_video_playing: bool = False
         self._running_pass3_after_scan: bool = False
         self._running_cleanup_after_scan: bool = False
@@ -140,24 +127,9 @@ class Controller(QObject):
 
         self.file_system_watcher = QFileSystemWatcher(self)
 
-        self.file_system_watcher.directoryChanged.connect(self._on_directory_changed)
+        self.worker_manager = WorkerManager(parent=self)
 
-    def _stop_worker(self, worker_attr: str, timeout_ms: int = 5000) -> None:
-        worker = getattr(self, worker_attr, None)
-        if worker is None:
-            return
-        try:
-            worker.requestInterruption()
-            worker.quit()
-            worker.disconnect()
-            if not worker.wait(timeout_ms):
-                logger.warning(
-                    f"Worker '{worker_attr}' did not finish within {timeout_ms}ms"
-                )
-            worker.deleteLater()
-        except RuntimeError:
-            pass
-        setattr(self, worker_attr, None)
+        self.file_system_watcher.directoryChanged.connect(self._on_directory_changed)
 
     def select_library(self, library_name: str, reset_selection: bool = True) -> None:
         logger.info(f"Controller loading library: {library_name}")
@@ -337,10 +309,7 @@ class Controller(QObject):
             self.status_changed.emit("Select a library first.")
             return
 
-        if (
-            self.scan_worker_instance is not None
-            and self.scan_worker_instance.isRunning()
-        ):
+        if self.worker_manager.scan.is_running:
             logger.info(
                 "ScanWorker is already actively running. Skipping redundant automatic scan trigger."
             )
@@ -357,22 +326,20 @@ class Controller(QObject):
         self._running_pass3_after_scan = True
         self._doing_scan_and_update = False
 
-        self._stop_worker("scan_worker_instance")
-        self.scan_worker_instance = ScanWorker(
-            root_directories=root_directories,
-            library_type=library_type,
-            existing_library=self.cached_library_data,
-            force_refresh=force_refresh,
-            cleanup=False,
-            library_name=self.current_library_name,
+        self.worker_manager.scan.start(
+            lambda: ScanWorker(
+                root_directories=root_directories,
+                library_type=library_type,
+                existing_library=self.cached_library_data,
+                force_refresh=force_refresh,
+                cleanup=False,
+                library_name=self.current_library_name,
+            ),
+            finished=self._on_scan_finished,
+            partial_result=self._on_scan_partial,
+            error=self._on_worker_error,
+            detail_progress_batch=self._on_detail_progress_batch,
         )
-        self.scan_worker_instance.finished.connect(self._on_scan_finished)
-        self.scan_worker_instance.partial_result.connect(self._on_scan_partial)
-        self.scan_worker_instance.error.connect(self._on_worker_error)
-        self.scan_worker_instance.detail_progress_batch.connect(
-            self._on_detail_progress_batch
-        )
-        self.scan_worker_instance.start()
 
     def _on_scan_partial(self, partial_library: Dict[str, Any]) -> None:
         if self.current_library_name:
@@ -383,10 +350,9 @@ class Controller(QObject):
                 self.library_loaded.emit()
 
     def _on_scan_finished(self, updated_library: Dict[str, Any]) -> None:
+        scan_worker = self.worker_manager.scan.instance
         scanned_library_name = (
-            self.scan_worker_instance.library_name
-            if self.scan_worker_instance
-            else self.current_library_name
+            getattr(scan_worker, "library_name", None) or self.current_library_name
         )
         if scanned_library_name:
             library_config = self._config.libraries.get(scanned_library_name, {})
@@ -399,11 +365,11 @@ class Controller(QObject):
                 self.cached_library_data = updated_library
                 self._cache_series_metrics()
 
-            if (
-                self.scan_worker_instance
-                and self.scan_worker_instance.unavailable_directories
-            ):
-                for directory_name in self.scan_worker_instance.unavailable_directories:
+            unavailable_directories = getattr(
+                scan_worker, "unavailable_directories", []
+            )
+            if unavailable_directories:
+                for directory_name in unavailable_directories:
                     self.status_changed.emit(
                         f"root directory {directory_name} is unavailable check connection to {directory_name}"
                     )
@@ -418,12 +384,8 @@ class Controller(QObject):
             ):
                 self.library_loaded.emit()
         if self._running_pass3_after_scan and not self._doing_scan_and_update:
-            changed_seasons = getattr(
-                self.scan_worker_instance, "changed_season_ids", None
-            )
-            changed_movies = getattr(
-                self.scan_worker_instance, "changed_movie_ids", None
-            )
+            changed_seasons = getattr(scan_worker, "changed_season_ids", None)
+            changed_movies = getattr(scan_worker, "changed_movie_ids", None)
             self.trigger_runtime_extraction(changed_seasons, changed_movies)
         elif not self._doing_scan_and_update:
             self.scan_completed.emit()
@@ -439,13 +401,14 @@ class Controller(QObject):
             f"Cleaning up missing files in '{self.current_library_name}'..."
         )
 
-        self._stop_worker("cleanup_worker_instance")
-        self.cleanup_worker_instance = CleanupWorker(
-            library_name=self.current_library_name, root_directories=root_directories
+        self.worker_manager.cleanup.start(
+            lambda: CleanupWorker(
+                library_name=self.current_library_name,
+                root_directories=root_directories,
+            ),
+            finished=self._on_cleanup_finished,
+            error=self._on_worker_error,
         )
-        self.cleanup_worker_instance.finished.connect(self._on_cleanup_finished)
-        self.cleanup_worker_instance.error.connect(self._on_worker_error)
-        self.cleanup_worker_instance.start()
 
     def _on_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
         self.select_library(self.current_library_name, reset_selection=False)
@@ -473,15 +436,13 @@ class Controller(QObject):
         root_directories: List[str] = library_config.get("paths", [])
         self.status_changed.emit(f"Cleaning up missing files in '{lib_name}'...")
 
-        self._stop_worker("cleanup_worker_instance")
-        self.cleanup_worker_instance = CleanupWorker(
-            library_name=lib_name, root_directories=root_directories
+        self.worker_manager.cleanup.start(
+            lambda: CleanupWorker(
+                library_name=lib_name, root_directories=root_directories
+            ),
+            finished=self._on_global_cleanup_step_finished,
+            error=self._on_global_cleanup_step_error,
         )
-        self.cleanup_worker_instance.finished.connect(
-            self._on_global_cleanup_step_finished
-        )
-        self.cleanup_worker_instance.error.connect(self._on_global_cleanup_step_error)
-        self.cleanup_worker_instance.start()
 
     def _on_global_cleanup_step_finished(self, statistics: Dict[str, Any]) -> None:
         if self.current_library_name:
@@ -508,10 +469,7 @@ class Controller(QObject):
             self.status_changed.emit("Select a library first.")
             return
 
-        if (
-            self.scan_worker_instance is not None
-            and self.scan_worker_instance.isRunning()
-        ):
+        if self.worker_manager.scan.is_running:
             logger.info(
                 "ScanWorker is already actively running. Skipping redundant scan trigger."
             )
@@ -528,24 +486,20 @@ class Controller(QObject):
         self._running_pass3_after_scan = True
         self._doing_scan_and_update = True
 
-        self._stop_worker("scan_worker_instance")
-        self.scan_worker_instance = ScanWorker(
-            root_directories=root_directories,
-            library_type=library_type,
-            existing_library=self.cached_library_data,
-            force_refresh=force_refresh,
-            cleanup=False,
-            library_name=self.current_library_name,
+        self.worker_manager.scan.start(
+            lambda: ScanWorker(
+                root_directories=root_directories,
+                library_type=library_type,
+                existing_library=self.cached_library_data,
+                force_refresh=force_refresh,
+                cleanup=False,
+                library_name=self.current_library_name,
+            ),
+            finished=self._on_scan_and_update_scan_finished,
+            partial_result=self._on_scan_partial,
+            error=self._on_worker_error,
+            detail_progress_batch=self._on_detail_progress_batch,
         )
-        self.scan_worker_instance.finished.connect(
-            self._on_scan_and_update_scan_finished
-        )
-        self.scan_worker_instance.partial_result.connect(self._on_scan_partial)
-        self.scan_worker_instance.error.connect(self._on_worker_error)
-        self.scan_worker_instance.detail_progress_batch.connect(
-            self._on_detail_progress_batch
-        )
-        self.scan_worker_instance.start()
 
     def _on_scan_and_update_scan_finished(
         self, updated_library: Dict[str, Any]
@@ -561,15 +515,14 @@ class Controller(QObject):
         self.status_changed.emit(
             f"Scan complete. Updating paths in '{self.current_library_name}'..."
         )
-        self._stop_worker("cleanup_worker_instance")
-        self.cleanup_worker_instance = CleanupWorker(
-            library_name=self.current_library_name, root_directories=root_directories
+        self.worker_manager.cleanup.start(
+            lambda: CleanupWorker(
+                library_name=self.current_library_name,
+                root_directories=root_directories,
+            ),
+            finished=self._on_scan_and_update_cleanup_finished,
+            error=self._on_worker_error,
         )
-        self.cleanup_worker_instance.finished.connect(
-            self._on_scan_and_update_cleanup_finished
-        )
-        self.cleanup_worker_instance.error.connect(self._on_worker_error)
-        self.cleanup_worker_instance.start()
 
     def _on_scan_and_update_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
         """Called when the cleanup phase of scan_and_update completes."""
@@ -581,12 +534,9 @@ class Controller(QObject):
             f"{series_removed} series removed, {episodes_nulled} episode paths updated."
         )
         if self._running_pass3_after_scan:
-            changed_seasons = getattr(
-                self.scan_worker_instance, "changed_season_ids", None
-            )
-            changed_movies = getattr(
-                self.scan_worker_instance, "changed_movie_ids", None
-            )
+            scan_worker = self.worker_manager.scan.instance
+            changed_seasons = getattr(scan_worker, "changed_season_ids", None)
+            changed_movies = getattr(scan_worker, "changed_movie_ids", None)
             self.trigger_runtime_extraction(changed_seasons, changed_movies)
         else:
             self.scan_completed.emit()
@@ -597,11 +547,11 @@ class Controller(QObject):
             return
 
         self.status_changed.emit("Pulling watch history from Jellyfin...")
-        self._stop_worker("pull_worker_instance")
-        self.pull_worker_instance = JellyfinPullWorker()
-        self.pull_worker_instance.finished.connect(self._on_pull_finished)
-        self.pull_worker_instance.error.connect(self._on_worker_error)
-        self.pull_worker_instance.start()
+        self.worker_manager.jellyfin_pull.start(
+            lambda: JellyfinPullWorker(),
+            finished=self._on_pull_finished,
+            error=self._on_worker_error,
+        )
 
     def _on_pull_finished(self, updated_count: int) -> None:
         if self.current_library_name:
@@ -616,11 +566,11 @@ class Controller(QObject):
             return
 
         self.status_changed.emit("Pushing local watch history to Jellyfin...")
-        self._stop_worker("push_worker_instance")
-        self.push_worker_instance = JellyfinPushWorker()
-        self.push_worker_instance.finished.connect(self._on_push_finished)
-        self.push_worker_instance.error.connect(self._on_worker_error)
-        self.push_worker_instance.start()
+        self.worker_manager.jellyfin_push.start(
+            lambda: JellyfinPushWorker(),
+            finished=self._on_push_finished,
+            error=self._on_worker_error,
+        )
 
     def _on_push_finished(self, pushed_count: int) -> None:
         self.status_changed.emit(
@@ -635,10 +585,7 @@ class Controller(QObject):
         chain_pass3: bool = True,
         chain_cleanup: bool = False,
     ) -> None:
-        if (
-            self.scan_all_worker_instance is not None
-            and self.scan_all_worker_instance.isRunning()
-        ):
+        if self.worker_manager.scan_all.is_running:
             logger.info("ScanAllLibrariesWorker is already running.")
             return
 
@@ -646,21 +593,17 @@ class Controller(QObject):
         self.status_changed.emit("Scanning all libraries...")
         self._running_pass3_after_scan = chain_pass3
         self._running_cleanup_after_scan = chain_cleanup
-        self._stop_worker("scan_all_worker_instance")
-        self.scan_all_worker_instance = ScanAllLibrariesWorker(
-            force_refresh=force_refresh,
-            run_pass1=run_pass1,
-            run_pass2=run_pass2,
+        self.worker_manager.scan_all.start(
+            lambda: ScanAllLibrariesWorker(
+                force_refresh=force_refresh,
+                run_pass1=run_pass1,
+                run_pass2=run_pass2,
+            ),
+            library_progress=self.global_progress_updated.emit,
+            detail_progress_batch=self._on_scan_all_detail_progress_batch,
+            finished=self._on_scan_all_finished,
+            error=self._on_worker_error,
         )
-        self.scan_all_worker_instance.library_progress.connect(
-            self.global_progress_updated.emit
-        )
-        self.scan_all_worker_instance.detail_progress_batch.connect(
-            self._on_scan_all_detail_progress_batch
-        )
-        self.scan_all_worker_instance.finished.connect(self._on_scan_all_finished)
-        self.scan_all_worker_instance.error.connect(self._on_worker_error)
-        self.scan_all_worker_instance.start()
 
     def _on_detail_progress_batch(self, events: List[Dict[str, Any]]) -> None:
         for event_dict in events:
@@ -698,11 +641,12 @@ class Controller(QObject):
                         self.library_loaded.emit()
 
     def _on_scan_all_finished(self) -> None:
-        if (
-            self.scan_all_worker_instance
-            and self.scan_all_worker_instance.unavailable_directories
-        ):
-            for directory_name in self.scan_all_worker_instance.unavailable_directories:
+        scan_all_worker = self.worker_manager.scan_all.instance
+        unavailable_directories = getattr(
+            scan_all_worker, "unavailable_directories", []
+        )
+        if unavailable_directories:
+            for directory_name in unavailable_directories:
                 self.status_changed.emit(
                     f"root directory {directory_name} is unavailable check connection to {directory_name}"
                 )
@@ -716,12 +660,8 @@ class Controller(QObject):
             else:
                 self.select_library(self.current_library_name, reset_selection=False)
         if self._running_pass3_after_scan:
-            changed_seasons = getattr(
-                self.scan_all_worker_instance, "changed_season_ids", None
-            )
-            changed_movies = getattr(
-                self.scan_all_worker_instance, "changed_movie_ids", None
-            )
+            changed_seasons = getattr(scan_all_worker, "changed_season_ids", None)
+            changed_movies = getattr(scan_all_worker, "changed_movie_ids", None)
             self.trigger_runtime_extraction(changed_seasons, changed_movies)
         elif self._running_cleanup_after_scan:
             self.trigger_global_cleanup()
@@ -733,25 +673,20 @@ class Controller(QObject):
         changed_season_ids: Optional[Set[str]] = None,
         changed_movie_ids: Optional[Set[str]] = None,
     ) -> None:
-        if (
-            self.file_property_worker_instance is not None
-            and self.file_property_worker_instance.isRunning()
-        ):
+        if self.worker_manager.file_property.is_running:
             logger.info("FilePropertyExtractionWorker is already running.")
             return
 
         self.status_changed.emit("Extracting missing video runtimes in background...")
-        self._stop_worker("file_property_worker_instance")
-        self.file_property_worker_instance = FilePropertyExtractionWorker(
-            changed_season_ids=changed_season_ids,
-            changed_movie_ids=changed_movie_ids,
+        self.worker_manager.file_property.start(
+            lambda: FilePropertyExtractionWorker(
+                changed_season_ids=changed_season_ids,
+                changed_movie_ids=changed_movie_ids,
+            ),
+            progress_updated=self._on_runtime_progress,
+            finished=self._on_runtime_finished,
+            error=self._on_worker_error,
         )
-        self.file_property_worker_instance.progress_updated.connect(
-            self._on_runtime_progress
-        )
-        self.file_property_worker_instance.finished.connect(self._on_runtime_finished)
-        self.file_property_worker_instance.error.connect(self._on_worker_error)
-        self.file_property_worker_instance.start()
 
     def _on_runtime_progress(self, completed_count: int, total_count: int) -> None:
         self.global_progress_updated.emit(
@@ -1025,28 +960,24 @@ class Controller(QObject):
         saved_group_id = series_record.get("metadata", {}).get("tmdb_episode_group_id")
         poster_path = match_dictionary.get("poster_path")
 
-        self._metadata_apply_worker: Optional[Any] = None
-        worker = MetadataApplyWorker(
-            series_record=series_record,
-            tmdb_identifier=new_tmdb_identifier,
-            saved_group_id=saved_group_id,
-            poster_path=poster_path,
-            is_movie=False,
-            show_future_episodes=library_config.get("show_future_episodes", True),
-            tmdb_client=self._tmdb_client,
-            parent=self,
+        self.worker_manager.metadata_apply.start(
+            lambda: MetadataApplyWorker(
+                series_record=series_record,
+                tmdb_identifier=new_tmdb_identifier,
+                saved_group_id=saved_group_id,
+                poster_path=poster_path,
+                is_movie=False,
+                show_future_episodes=library_config.get("show_future_episodes", True),
+                tmdb_client=self._tmdb_client,
+                parent=self,
+            ),
+            finished=lambda synced_data, cached_poster: (
+                self._on_metadata_apply_finished(
+                    series_name, synced_data, cached_poster
+                )
+            ),
+            error=lambda msg: self._on_metadata_apply_error(series_name, msg),
         )
-        worker.finished.connect(
-            lambda synced_data, cached_poster: self._on_metadata_apply_finished(
-                series_name, synced_data, cached_poster
-            )
-        )
-        worker.error.connect(
-            lambda msg: self._on_metadata_apply_error(series_name, msg)
-        )
-        self._stop_worker("_metadata_apply_worker")
-        self._metadata_apply_worker = worker
-        worker.start()
 
     def _on_metadata_apply_finished(
         self, series_name: str, synced_data: Dict[str, Any], poster_path: str
@@ -1249,7 +1180,7 @@ class Controller(QObject):
             self.status_changed.emit("Select a library first.")
             return
 
-        if self.scan_worker_instance and self.scan_worker_instance.isRunning():
+        if self.worker_manager.scan.is_running:
             self.status_changed.emit("A scan is already in progress.")
             return
 
@@ -1261,23 +1192,22 @@ class Controller(QObject):
 
         from lan_streamer.backend import RefreshSeriesWorker
 
-        self._stop_worker("refresh_worker_instance")
-        self.refresh_worker_instance = RefreshSeriesWorker(
-            library_name=self.current_library_name,
-            item_name=series_name,
-            library_type=library_type,
-            root_directories=root_directories,
-            existing_library=self.cached_library_data,
+        self.worker_manager.refresh.start(
+            lambda: RefreshSeriesWorker(
+                library_name=self.current_library_name,
+                item_name=series_name,
+                library_type=library_type,
+                root_directories=root_directories,
+                existing_library=self.cached_library_data,
+            ),
+            finished=self._on_refresh_finished,
+            error=self._on_worker_error,
         )
-        self.refresh_worker_instance.finished.connect(self._on_refresh_finished)
-        self.refresh_worker_instance.error.connect(self._on_worker_error)
-        self.refresh_worker_instance.start()
 
     def _on_refresh_finished(self, updated_library: Dict[str, Any]) -> None:
+        refresh_worker = self.worker_manager.refresh.instance
         scanned_library_name = (
-            self.refresh_worker_instance.library_name
-            if self.refresh_worker_instance
-            else self.current_library_name
+            getattr(refresh_worker, "library_name", None) or self.current_library_name
         )
         if scanned_library_name:
             if self.current_library_name == scanned_library_name:
@@ -1287,11 +1217,7 @@ class Controller(QObject):
                 if not self.is_video_playing:
                     self.library_loaded.emit()
             else:
-                item_name = (
-                    self.refresh_worker_instance.item_name
-                    if self.refresh_worker_instance
-                    else "item"
-                )
+                item_name = getattr(refresh_worker, "item_name", None) or "item"
                 self.status_changed.emit(
                     f"Background refresh for '{item_name}' completed successfully."
                 )
@@ -1302,14 +1228,11 @@ class Controller(QObject):
             self.status_changed.emit("Select a library first.")
             return
 
-        if self.scan_worker_instance and self.scan_worker_instance.isRunning():
+        if self.worker_manager.scan.is_running:
             self.status_changed.emit("A scan is already in progress.")
             return
 
-        if (
-            self.scan_series_worker_instance
-            and self.scan_series_worker_instance.isRunning()
-        ):
+        if self.worker_manager.scan_series.is_running:
             self.status_changed.emit("A series scan is already in progress.")
             return
 
@@ -1321,23 +1244,23 @@ class Controller(QObject):
 
         from lan_streamer.backend import ScanSingleSeriesWorker
 
-        self._stop_worker("scan_series_worker_instance")
-        self.scan_series_worker_instance = ScanSingleSeriesWorker(
-            library_name=self.current_library_name,
-            series_name=series_name,
-            library_type=library_type,
-            root_directories=root_directories,
-            existing_library=self.cached_library_data,
+        self.worker_manager.scan_series.start(
+            lambda: ScanSingleSeriesWorker(
+                library_name=self.current_library_name,
+                series_name=series_name,
+                library_type=library_type,
+                root_directories=root_directories,
+                existing_library=self.cached_library_data,
+            ),
+            finished=self._on_series_scan_finished,
+            error=self._on_worker_error,
         )
-        self.scan_series_worker_instance.finished.connect(self._on_series_scan_finished)
-        self.scan_series_worker_instance.error.connect(self._on_worker_error)
-        self.scan_series_worker_instance.start()
 
     def _on_series_scan_finished(self, updated_library: Dict[str, Any]) -> None:
+        scan_series_worker = self.worker_manager.scan_series.instance
         scanned_library_name = (
-            self.scan_series_worker_instance.library_name
-            if self.scan_series_worker_instance
-            else self.current_library_name
+            getattr(scan_series_worker, "library_name", None)
+            or self.current_library_name
         )
         if scanned_library_name:
             if self.current_library_name == scanned_library_name:
@@ -1348,9 +1271,7 @@ class Controller(QObject):
                     self.library_loaded.emit()
             else:
                 series_name = (
-                    self.scan_series_worker_instance.series_name
-                    if self.scan_series_worker_instance
-                    else "series"
+                    getattr(scan_series_worker, "series_name", None) or "series"
                 )
                 self.status_changed.emit(
                     f"Background scan for '{series_name}' completed successfully."
@@ -1452,25 +1373,18 @@ class Controller(QObject):
 
     def merge_subtitles(self, video_path: str, subtitle_paths: List[str]) -> None:
         """Triggers background ffmpeg worker to merge external subtitles into video file."""
-        if (
-            self.merge_subtitle_worker_instance
-            and self.merge_subtitle_worker_instance.isRunning()
-        ):
+        if self.worker_manager.subtitle_merge.is_running:
             self.status_changed.emit("Subtitle merge already in progress.")
             return
 
         from lan_streamer.backend import SubtitleMergeWorker
 
         self.status_changed.emit("Merging external subtitles into video file...")
-        self._stop_worker("merge_subtitle_worker_instance")
-        self.merge_subtitle_worker_instance = SubtitleMergeWorker(
-            video_path, subtitle_paths
+        self.worker_manager.subtitle_merge.start(
+            lambda: SubtitleMergeWorker(video_path, subtitle_paths),
+            finished=self._on_subtitle_merge_finished,
+            error=self._on_worker_error,
         )
-        self.merge_subtitle_worker_instance.finished.connect(
-            self._on_subtitle_merge_finished
-        )
-        self.merge_subtitle_worker_instance.error.connect(self._on_worker_error)
-        self.merge_subtitle_worker_instance.start()
 
     def _on_subtitle_merge_finished(self, final_path: str) -> None:
         self.status_changed.emit("Subtitles merged successfully.")
@@ -1479,23 +1393,18 @@ class Controller(QObject):
 
     def embed_metadata(self, video_path: str, metadata: Dict[str, str]) -> None:
         """Triggers background ffmpeg worker to embed metadata into video file."""
-        if (
-            self.embed_metadata_worker_instance
-            and self.embed_metadata_worker_instance.isRunning()
-        ):
+        if self.worker_manager.metadata_embed.is_running:
             self.status_changed.emit("Metadata embedding already in progress.")
             return
 
         from lan_streamer.backend import MetadataEmbedWorker
 
         self.status_changed.emit("Embedding metadata into video file...")
-        self._stop_worker("embed_metadata_worker_instance")
-        self.embed_metadata_worker_instance = MetadataEmbedWorker(video_path, metadata)
-        self.embed_metadata_worker_instance.finished.connect(
-            self._on_metadata_embed_finished
+        self.worker_manager.metadata_embed.start(
+            lambda: MetadataEmbedWorker(video_path, metadata),
+            finished=self._on_metadata_embed_finished,
+            error=self._on_worker_error,
         )
-        self.embed_metadata_worker_instance.error.connect(self._on_worker_error)
-        self.embed_metadata_worker_instance.start()
 
     def _on_metadata_embed_finished(self, final_path: str) -> None:
         self.status_changed.emit("Metadata embedded successfully.")
@@ -1503,10 +1412,7 @@ class Controller(QObject):
 
     def embed_metadata_series(self, series_name: str) -> None:
         """Triggers background worker to embed metadata for all episodes in a series."""
-        if (
-            self.embed_metadata_worker_instance
-            and self.embed_metadata_worker_instance.isRunning()
-        ):
+        if self.worker_manager.metadata_embed.is_running:
             self.status_changed.emit("Metadata embedding already in progress.")
             return
 
@@ -1526,18 +1432,14 @@ class Controller(QObject):
         from lan_streamer.backend import SeriesMetadataEmbedWorker
 
         self.status_changed.emit(f"Embedding metadata for series '{series_name}'...")
-        self._stop_worker("embed_metadata_worker_instance")
-        self.embed_metadata_worker_instance = SeriesMetadataEmbedWorker(
-            series_name, all_episodes
+        self.worker_manager.metadata_embed.start(
+            lambda: SeriesMetadataEmbedWorker(series_name, all_episodes),
+            progress_updated=self.global_progress_updated.emit,
+            finished=lambda: self.status_changed.emit(
+                "Series metadata embedding finished."
+            ),
+            error=self._on_worker_error,
         )
-        self.embed_metadata_worker_instance.progress_updated.connect(
-            self.global_progress_updated.emit
-        )
-        self.embed_metadata_worker_instance.finished.connect(
-            lambda: self.status_changed.emit("Series metadata embedding finished.")
-        )
-        self.embed_metadata_worker_instance.error.connect(self._on_worker_error)
-        self.embed_metadata_worker_instance.start()
 
     def update_series_name(self, old_name: str, new_name: str) -> None:
         """Renames a series in the database and updates cache."""

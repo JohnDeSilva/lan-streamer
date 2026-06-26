@@ -316,7 +316,7 @@ def test_trigger_scan_and_update_starts_worker(ctrl) -> None:
 def test_trigger_scan_and_update_skips_if_already_running(ctrl) -> None:
     mock_worker = MagicMock()
     mock_worker.isRunning.return_value = True
-    ctrl.scan_worker_instance = mock_worker
+    ctrl.worker_manager.scan._instance = mock_worker
 
     with patch("lan_streamer.ui_views.controller.ScanWorker") as mock_cls:
         ctrl.trigger_scan_and_update()
@@ -488,7 +488,7 @@ def test_trigger_runtime_extraction_skips_if_running() -> None:
     c = Controller()
     mock_worker = MagicMock()
     mock_worker.isRunning.return_value = True
-    c.file_property_worker_instance = mock_worker
+    c.worker_manager.file_property._instance = mock_worker
 
     with patch(
         "lan_streamer.ui_views.controller.FilePropertyExtractionWorker"
