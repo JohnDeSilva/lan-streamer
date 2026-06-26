@@ -22,10 +22,13 @@ class BaseScanWorker(QThread):
 
     def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
         """Add a progress event to the thread-safe buffer and emit if full."""
+        flush_needed = False
         with self._lock:
             self._detail_progress_buffer.append({"event": event, "payload": payload})
             if len(self._detail_progress_buffer) >= 20:
-                self.flush_detail_progress()
+                flush_needed = True
+        if flush_needed:
+            self.flush_detail_progress()
 
     def flush_detail_progress(self) -> None:
         """Force flush all buffered detail-progress events to the UI."""

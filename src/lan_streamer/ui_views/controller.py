@@ -120,10 +120,10 @@ class Controller(QObject):
         self.sort_descending: bool = self._config.sort_descending
         self.filter_out_watched: bool = self._config.filter_out_watched
         self.is_video_playing: bool = False
-        self._running_pass3_after_scan = False
-        self._running_cleanup_after_scan = False
-        self._doing_scan_and_update = False
-        self._cleanup_queue = []
+        self._running_pass3_after_scan: bool = False
+        self._running_cleanup_after_scan: bool = False
+        self._doing_scan_and_update: bool = False
+        self._cleanup_queue: List[str] = []
 
         self.file_system_watcher = QFileSystemWatcher(self)
 
