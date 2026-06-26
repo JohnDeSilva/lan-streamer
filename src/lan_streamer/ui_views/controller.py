@@ -124,6 +124,8 @@ class Controller(QObject):
         self._running_cleanup_after_scan: bool = False
         self._doing_scan_and_update: bool = False
         self._cleanup_queue: List[str] = []
+        self._scan_changed_season_ids: Optional[Set[str]] = None
+        self._scan_changed_movie_ids: Optional[Set[str]] = None
 
         self.file_system_watcher = QFileSystemWatcher(self)
 
@@ -351,9 +353,7 @@ class Controller(QObject):
 
     def _on_scan_finished(self, updated_library: Dict[str, Any]) -> None:
         scan_worker = self.worker_manager.scan.instance
-        scanned_library_name = (
-            getattr(scan_worker, "library_name", None) or self.current_library_name
-        )
+        scanned_library_name = self.current_library_name
         if scanned_library_name:
             library_config = self._config.libraries.get(scanned_library_name, {})
             if library_config.get("type", "tv") == "movie":
@@ -383,10 +383,12 @@ class Controller(QObject):
                 and not self.is_video_playing
             ):
                 self.library_loaded.emit()
+        self._scan_changed_season_ids = getattr(scan_worker, "changed_season_ids", None)
+        self._scan_changed_movie_ids = getattr(scan_worker, "changed_movie_ids", None)
         if self._running_pass3_after_scan and not self._doing_scan_and_update:
-            changed_seasons = getattr(scan_worker, "changed_season_ids", None)
-            changed_movies = getattr(scan_worker, "changed_movie_ids", None)
-            self.trigger_runtime_extraction(changed_seasons, changed_movies)
+            self.trigger_runtime_extraction(
+                self._scan_changed_season_ids, self._scan_changed_movie_ids
+            )
         elif not self._doing_scan_and_update:
             self.scan_completed.emit()
 
@@ -440,7 +442,7 @@ class Controller(QObject):
         root_directories: List[str] = library_config.get("paths", [])
         self.status_changed.emit(f"Cleaning up missing files in '{lib_name}'...")
 
-        self.worker_manager.cleanup.start(
+        self.worker_manager.cleanup_global.start(
             lambda: CleanupWorker(
                 library_name=lib_name, root_directories=root_directories
             ),
@@ -519,7 +521,7 @@ class Controller(QObject):
         self.status_changed.emit(
             f"Scan complete. Updating paths in '{self.current_library_name}'..."
         )
-        self.worker_manager.cleanup.start(
+        self.worker_manager.cleanup_scan_update.start(
             lambda: CleanupWorker(
                 library_name=self.current_library_name,
                 root_directories=root_directories,
@@ -538,9 +540,8 @@ class Controller(QObject):
             f"{series_removed} series removed, {episodes_nulled} episode paths updated."
         )
         if self._running_pass3_after_scan:
-            scan_worker = self.worker_manager.scan.instance
-            changed_seasons = getattr(scan_worker, "changed_season_ids", None)
-            changed_movies = getattr(scan_worker, "changed_movie_ids", None)
+            changed_seasons = self._scan_changed_season_ids
+            changed_movies = self._scan_changed_movie_ids
             self.trigger_runtime_extraction(changed_seasons, changed_movies)
         else:
             self.scan_completed.emit()
@@ -985,7 +986,6 @@ class Controller(QObject):
                 is_movie=False,
                 show_future_episodes=library_config.get("show_future_episodes", True),
                 tmdb_client=self._tmdb_client,
-                parent=self,
             ),
             finished=lambda synced_data, cached_poster: (
                 self._on_metadata_apply_finished(
