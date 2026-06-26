@@ -1,3 +1,9 @@
+## v0.36.0 (2026-06-26)
+
+### Feat
+
+- **db**: adds encryption for secrets in database
+
 ## v0.35.1 (2026-06-26)
 
 ### Fix
