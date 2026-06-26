@@ -1,7 +1,8 @@
 import logging
+import traceback
 from typing import Callable, List, Optional, TypeVar
 
-from PySide6.QtCore import QObject, QThread
+from PySide6.QtCore import QObject, QThread, QTimer
 
 logger = logging.getLogger(__name__)
 
@@ -13,14 +14,27 @@ class WorkerSlot(QObject):
     Manages lifecycle of a single worker slot (one worker at a time).
 
     Provides start/stop/is_running semantics with proper signal management.
-    Avoids bare QObject.disconnect() calls which are invalid in PySide6
+    Avoids bare ``QObject.disconnect()`` calls which are invalid in PySide6
     when no specific connection is given.
+
+    Key design decisions:
+
+    * **Non-blocking stop**. ``stop()`` waits at most 250 ms for cooperative
+      shutdown, then schedules deferred cleanup via ``QTimer.singleShot``.
+      This prevents UI freezes when a worker thread does not terminate
+      immediately.
+    * **Guard on start**. If a worker is already running when ``start()``
+      is called, a warning is logged (with stack trace) to help catch
+      re-entrant callers.  The old worker is still stopped.
+    * **``start_if_not_running``** for call sites that want to silently
+      skip when a worker is active.
     """
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._instance: Optional[QThread] = None
-        self._timeout_ms: int = 5000
+        self._pending_cleanup: Optional[QThread] = None
+        self._timeout_ms: int = 250
 
     @property
     def is_running(self) -> bool:
@@ -29,6 +43,10 @@ class WorkerSlot(QObject):
     @property
     def instance(self) -> Optional[QThread]:
         return self._instance
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def start(
         self,
@@ -49,6 +67,14 @@ class WorkerSlot(QObject):
 
         Only signals that are provided as keyword arguments are connected.
         """
+        if self.is_running:
+            caller = "".join(traceback.format_stack(limit=4)[:-1])
+            logger.warning(
+                "WorkerSlot: replacing running %s with new worker. Call stack:\n%s",
+                self._instance.__class__.__name__ if self._instance else "worker",
+                caller,
+            )
+
         self.stop()
 
         worker: W = factory()
@@ -62,38 +88,10 @@ class WorkerSlot(QObject):
 
         worker.start()
         logger.debug(
-            "WorkerSlot started %s (slot=%s)",
+            "WorkerSlot started %s",
             worker.__class__.__name__,
-            self._instance is not None,
         )
         return worker
-
-    def stop(self) -> None:
-        """Stop the current worker if one exists and it is still alive."""
-        worker = self._instance
-        if worker is None:
-            return
-
-        try:
-            worker.requestInterruption()
-            worker.quit()
-
-            if not worker.wait(self._timeout_ms):
-                logger.warning(
-                    "WorkerSlot: %s did not finish within %d ms",
-                    worker.__class__.__name__,
-                    self._timeout_ms,
-                )
-
-            worker.deleteLater()
-        except RuntimeError as error:
-            logger.debug(
-                "WorkerSlot: RuntimeError while stopping %s: %s",
-                worker.__class__.__name__,
-                error,
-            )
-
-        self._instance = None
 
     def start_if_not_running(
         self,
@@ -111,6 +109,57 @@ class WorkerSlot(QObject):
             )
             return None
         return self.start(factory, **signal_slots)
+
+    def stop(self) -> None:
+        """
+        Stop the current worker if one exists.
+
+        Tries a short cooperative wait (250 ms).  If the thread does not
+        finish within that time, cleanup is deferred: ``deleteLater()`` is
+        scheduled via ``QTimer.singleShot``.  This avoids blocking the Qt
+        main thread for an extended period.
+        """
+        worker = self._instance
+        if worker is None:
+            return
+        self._instance = None
+
+        try:
+            worker.requestInterruption()
+            worker.quit()
+
+            if worker.wait(self._timeout_ms):
+                worker.deleteLater()
+                logger.debug(
+                    "WorkerSlot: %s stopped cleanly in %d ms",
+                    worker.__class__.__name__,
+                    self._timeout_ms,
+                )
+            else:
+                logger.warning(
+                    "WorkerSlot: %s still running after %d ms, "
+                    "scheduling deferred cleanup.",
+                    worker.__class__.__name__,
+                    self._timeout_ms,
+                )
+                # Schedule deleteLater after a grace period.
+                # The QTimer keeps itself alive for the single shot.
+                QTimer.singleShot(self._timeout_ms, worker.deleteLater)
+
+        except RuntimeError as error:
+            logger.debug(
+                "WorkerSlot: RuntimeError while stopping %s: %s",
+                worker.__class__.__name__,
+                error,
+            )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def __repr__(self) -> str:
+        cls = self._instance.__class__.__name__ if self._instance else "empty"
+        return f"<WorkerSlot: {cls} running={self.is_running}>"
 
 
 class WorkerManager(QObject):

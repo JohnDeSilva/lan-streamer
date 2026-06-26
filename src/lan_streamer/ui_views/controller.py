@@ -395,6 +395,10 @@ class Controller(QObject):
             self.status_changed.emit("Select a library first.")
             return
 
+        if self.worker_manager.cleanup.is_running:
+            logger.info("CleanupWorker is already running. Skipping.")
+            return
+
         library_config = self._config.libraries.get(self.current_library_name, {})
         root_directories: List[str] = library_config.get("paths", [])
         self.status_changed.emit(
@@ -546,6 +550,10 @@ class Controller(QObject):
             self.status_changed.emit("Jellyfin is not configured.")
             return
 
+        if self.worker_manager.jellyfin_pull.is_running:
+            logger.info("JellyfinPullWorker is already running. Skipping.")
+            return
+
         self.status_changed.emit("Pulling watch history from Jellyfin...")
         self.worker_manager.jellyfin_pull.start(
             lambda: JellyfinPullWorker(),
@@ -563,6 +571,10 @@ class Controller(QObject):
     def trigger_jellyfin_push(self) -> None:
         if not self._jellyfin_client.is_configured():
             self.status_changed.emit("Jellyfin is not configured.")
+            return
+
+        if self.worker_manager.jellyfin_push.is_running:
+            logger.info("JellyfinPushWorker is already running. Skipping.")
             return
 
         self.status_changed.emit("Pushing local watch history to Jellyfin...")
@@ -959,6 +971,10 @@ class Controller(QObject):
 
         saved_group_id = series_record.get("metadata", {}).get("tmdb_episode_group_id")
         poster_path = match_dictionary.get("poster_path")
+
+        if self.worker_manager.metadata_apply.is_running:
+            logger.info("MetadataApplyWorker is already running. Skipping.")
+            return
 
         self.worker_manager.metadata_apply.start(
             lambda: MetadataApplyWorker(
