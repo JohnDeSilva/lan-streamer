@@ -70,6 +70,35 @@ class SecretType(str, enum.Enum):
     OPENSUBTITLES = "opensubtitles"
 
 
+class EncryptedString(TypeDecorator):
+    """SQLAlchemy TypeDecorator that encrypts text on write to the database
+    and decrypts it on read back from the database.
+    """
+
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value: Any, dialect: Any) -> Optional[str]:
+        if value is None:
+            return None
+        from lan_streamer.system.encryption import encrypt_secret
+
+        return encrypt_secret(value)
+
+    def process_result_value(self, value: Any, dialect: Any) -> Optional[str]:
+        if value is None:
+            return None
+        from lan_streamer.system.encryption import decrypt_secret
+
+        # Support unencrypted legacy / seeded data transparently
+        if value.strip().startswith("{"):
+            return value
+        try:
+            return decrypt_secret(value)
+        except Exception:
+            return value
+
+
 class AppSecret(Base):
     """Stores service credentials as opaque JSON blobs, one row per service.
 
@@ -85,7 +114,7 @@ class AppSecret(Base):
         UUIDBLOB, primary_key=True, default=_new_uuid_str
     )
     secret_type: Mapped[str] = mapped_column(String, nullable=False)
-    secret: Mapped[Optional[str]] = mapped_column(String, default="{}")
+    secret: Mapped[Optional[str]] = mapped_column(EncryptedString, default="{}")
 
     __table_args__ = (UniqueConstraint("secret_type", name="uq_app_secrets_type"),)
 
