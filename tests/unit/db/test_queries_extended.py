@@ -907,3 +907,84 @@ def test_load_from_db_calls_get_all_secrets(mock_db_file) -> None:
     with get_secrets_spy as mock_get_all:
         config.load_from_db()
         mock_get_all.assert_called_once()
+
+
+def test_secrets_are_actually_encrypted_in_db(mock_db_file) -> None:
+    """Verifies that set_secret encrypts data in database, and get_all_secrets returns it decrypted."""
+    from lan_streamer.db.queries_config import set_secret, get_all_secrets
+    from lan_streamer.db.models import SecretType, AppSecret
+    from lan_streamer.db.connection import get_session
+    from sqlalchemy import text
+    import json
+
+    with get_session() as database_session:
+        database_session.query(AppSecret).delete()
+        database_session.commit()
+
+    test_payload = {"api_key": "my-secret-key-12345"}
+    set_secret(SecretType.TMDB, test_payload)
+
+    # 1. Query raw database bypassing TypeDecorator (using raw text SELECT)
+    with get_session() as database_session:
+        raw_result = database_session.execute(
+            text("SELECT secret FROM app_secrets WHERE secret_type = 'tmdb'")
+        ).scalar()
+
+        # Verify the raw stored value is NOT plain text JSON
+        assert raw_result is not None
+        assert "my-secret-key-12345" not in raw_result
+        # It shouldn't be parseable as raw JSON (decryption is required)
+        try:
+            json.loads(raw_result)
+            assert False, "Database value should be encrypted and not raw JSON"
+        except json.JSONDecodeError:
+            pass
+
+    # 2. Querying through get_all_secrets decrypts it correctly
+    secrets = get_all_secrets()
+    assert secrets[SecretType.TMDB.value] == test_payload
+
+
+def test_legacy_unencrypted_secrets_migrated_transparently(mock_db_file) -> None:
+    """Verifies that legacy unencrypted secrets are read correctly and transparently encrypted."""
+    from lan_streamer.db.queries_config import get_all_secrets
+    from lan_streamer.db.models import SecretType, AppSecret
+    from lan_streamer.db.connection import get_session
+    from sqlalchemy import text
+    import json
+    import uuid
+
+    legacy_secret_uuid = uuid.uuid4()
+
+    # 1. Insert unencrypted raw JSON string directly into SQLite
+    with get_session() as database_session:
+        database_session.query(AppSecret).delete()
+        database_session.commit()
+
+        database_session.execute(
+            text(
+                "INSERT INTO app_secrets (secret_uuid, secret_type, secret) "
+                "VALUES (:uuid_value, 'tmdb', '{\"api_key\": \"legacy-unencrypted-key\"}')"
+            ),
+            {"uuid_value": legacy_secret_uuid.bytes},
+        )
+        database_session.commit()
+
+    # 2. Calling get_all_secrets should read it correctly, and trigger encryption
+    secrets = get_all_secrets()
+    assert secrets[SecretType.TMDB.value] == {"api_key": "legacy-unencrypted-key"}
+
+    # 3. Verify that the database value is now encrypted!
+    with get_session() as database_session:
+        raw_result = database_session.execute(
+            text("SELECT secret FROM app_secrets WHERE secret_type = 'tmdb'")
+        ).scalar()
+        assert raw_result is not None
+        assert "legacy-unencrypted-key" not in raw_result
+        try:
+            json.loads(raw_result)
+            assert False, (
+                "Legacy unencrypted secret should have been transparently encrypted in DB"
+            )
+        except json.JSONDecodeError:
+            pass

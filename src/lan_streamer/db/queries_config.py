@@ -128,22 +128,65 @@ def get_all_secrets() -> Dict[str, Dict[str, Any]]:
     """Returns all app_secrets rows as a dictionary of secret_type string -> payload dict."""
     try:
         logger.debug("Executing DB query get_all_secrets")
+        import uuid
+        from sqlalchemy import text
+
         with get_session() as session:
-            rows = session.scalars(select(AppSecret)).all()
-            secrets_dict = {}
-            for row in rows:
-                if row.secret:
+            secret_rows = session.scalars(select(AppSecret)).all()
+            secrets_dictionary = {}
+            for secret_row in secret_rows:
+                if secret_row.secret:
                     try:
-                        secrets_dict[row.secret_type] = json.loads(row.secret)
+                        secrets_dictionary[secret_row.secret_type] = json.loads(
+                            secret_row.secret
+                        )
                     except Exception:
                         logger.warning(
-                            f"Error parsing secret for type '{row.secret_type}'"
+                            f"Error parsing secret for type '{secret_row.secret_type}'"
                         )
-            masked_dict = {k: list(v.keys()) for k, v in secrets_dict.items()}
+
+            # Check if any database value is stored in unencrypted plain text JSON
+            # and transparently migrate it to encrypted representation.
+            raw_records = session.execute(
+                text("SELECT secret_uuid, secret FROM app_secrets")
+            ).fetchall()
+            for record_uuid, raw_secret in raw_records:
+                if raw_secret and raw_secret.strip().startswith("{"):
+
+                    def get_hex_representation(value: Any) -> str:
+                        if isinstance(value, bytes):
+                            return value.hex()
+                        if isinstance(value, str):
+                            try:
+                                return uuid.UUID(value).hex
+                            except Exception:
+                                return value.encode("utf-8").hex()
+                        return ""
+
+                    raw_hex_representation = get_hex_representation(record_uuid)
+                    for secret_row in secret_rows:
+                        if (
+                            get_hex_representation(secret_row.secret_uuid)
+                            == raw_hex_representation
+                        ):
+                            # Re-assigning and flagging modified triggers SQLAlchemy TypeDecorator process_bind_param
+                            secret_row.secret = raw_secret
+                            from sqlalchemy.orm.attributes import flag_modified
+
+                            flag_modified(secret_row, "secret")
+                            session.add(secret_row)
+                            logger.info(
+                                f"Transparently encrypted legacy plain-text secret for type '{secret_row.secret_type}'"
+                            )
+
+            masked_dictionary = {
+                secret_type_key: list(value_dictionary.keys())
+                for secret_type_key, value_dictionary in secrets_dictionary.items()
+            }
             logger.debug(
-                f"get_all_secrets query response: [MASKED secrets keys: {masked_dict}]"
+                f"get_all_secrets query response: [MASKED secrets keys: {masked_dictionary}]"
             )
-            return secrets_dict
+            return secrets_dictionary
     except Exception:
         logger.warning("Error reading all secrets from database")
         return {}
@@ -156,14 +199,17 @@ def set_secret(secret_type: SecretType, payload: Dict[str, Any]) -> None:
             f"Executing DB set_secret: secret_type={secret_type}, [MASKED keys={list(payload.keys())}]"
         )
         with get_session() as session:
-            row = session.scalars(
+            secret_row = session.scalars(
                 select(AppSecret).where(AppSecret.secret_type == secret_type.value)
             ).first()
-            if row is None:
-                row = AppSecret(secret_type=secret_type.value)
-                session.add(row)
-            row.secret = json.dumps(payload)
-        logger.debug(f"Successfully saved secret to DB: secret_type={secret_type}")
+            if secret_row is None:
+                secret_row = AppSecret(secret_type=secret_type.value)
+                session.add(secret_row)
+            # The EncryptedString TypeDecorator will automatically encrypt this JSON string on write
+            secret_row.secret = json.dumps(payload)
+        logger.debug(
+            f"Successfully saved encrypted secret to DB: secret_type={secret_type}"
+        )
     except Exception:
         logger.exception(f"Error writing secret for type '{secret_type}'")
 

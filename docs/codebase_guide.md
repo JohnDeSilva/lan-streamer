@@ -83,8 +83,14 @@ To prevent the main Qt UI thread from freezing:
 *   Never bump the app version solely to trigger a database migration.
 *   Always implement robust checks to ensure older databases migrate safely without data loss. Write unit tests verifying migrations handle existing records.
 
-### 5. Logging and Code Organization Standards
+### 5. Secrets Encryption
+*   **Symmetric Encryption**: Secrets stored in the `app_secrets` table (such as Jellyfin and TMDB credentials) are encrypted symmetrically using AES-128 in CBC mode with HMAC-SHA256 (via `cryptography.fernet.Fernet`).
+*   **Encryption Key**: The encryption key is retrieved from the `LAN_STREAMER_SECRET_KEY` environment variable. If not set, it is loaded from or generated in `~/.config/lan-streamer/secret.key` with strict `0o600` permissions.
+*   **Transparent Migration**: Existing plain-text JSON secrets in the database are transparently migrated (encrypted and saved back) at runtime the first time `get_all_secrets()` is invoked.
+
+### 6. Logging and Code Organization Standards
 To ensure the application remains easy for a human to debug, maintain, and follow, adhere to the following logging and clean code guidelines:
+
 
 *   **Detailed Application-Wide Logging**:
     *   Implement verbose, descriptive logging across the entire application using Python's standard `logging` library.
