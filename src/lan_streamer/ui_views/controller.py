@@ -120,12 +120,10 @@ class Controller(QObject):
         self.sort_descending: bool = self._config.sort_descending
         self.filter_out_watched: bool = self._config.filter_out_watched
         self.is_video_playing: bool = False
-        self._running_pass3_after_scan: bool = False
-        self._running_cleanup_after_scan: bool = False
-        self._doing_scan_and_update: bool = False
-        self._cleanup_queue: List[str] = []
-        self._scan_changed_season_ids: Optional[Set[str]] = None
-        self._scan_changed_movie_ids: Optional[Set[str]] = None
+        self._running_pass3_after_scan = False
+        self._running_cleanup_after_scan = False
+        self._doing_scan_and_update = False
+        self._cleanup_queue = []
 
         self.file_system_watcher = QFileSystemWatcher(self)
 
@@ -385,8 +383,6 @@ class Controller(QObject):
                 and not self.is_video_playing
             ):
                 self.library_loaded.emit()
-        self._scan_changed_season_ids = changed_season_ids
-        self._scan_changed_movie_ids = changed_movie_ids
         if self._running_pass3_after_scan and not self._doing_scan_and_update:
             self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
         elif not self._doing_scan_and_update:
@@ -549,17 +545,7 @@ class Controller(QObject):
         )
         self._doing_scan_and_update = False
         if self._running_pass3_after_scan:
-            changed_seasons = (
-                changed_season_ids
-                if changed_season_ids is not None
-                else self._scan_changed_season_ids
-            )
-            changed_movies = (
-                changed_movie_ids
-                if changed_movie_ids is not None
-                else self._scan_changed_movie_ids
-            )
-            self.trigger_runtime_extraction(changed_seasons, changed_movies)
+            self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
         else:
             self.scan_completed.emit()
 
