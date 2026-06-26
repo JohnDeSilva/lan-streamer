@@ -147,7 +147,7 @@ def test_subtitle_search_dialog_search_results_and_download(
         with (
             patch(
                 "lan_streamer.ui_views.dialogs.subtitle_search.opensubtitles_client.get_download_link",
-                return_value="http://example.com/sub.srt",
+                return_value="http://example.invalid/sub.srt",
             ) as mock_get_link,
             patch(
                 "lan_streamer.ui_views.dialogs.subtitle_search.opensubtitles_client.download_subtitle",
@@ -160,7 +160,7 @@ def test_subtitle_search_dialog_search_results_and_download(
             dialog._on_download_clicked()
 
             mock_get_link.assert_called_once_with(98765)
-            mock_download.assert_called_once_with("http://example.com/sub.srt")
+            mock_download.assert_called_once_with("http://example.invalid/sub.srt")
             mock_info.assert_called_once()
 
             # Subtitle file should be saved next to the video path
@@ -274,7 +274,7 @@ def test_subtitle_search_dialog_download_edge_cases(
         with (
             patch(
                 "lan_streamer.ui_views.dialogs.subtitle_search.opensubtitles_client.get_download_link",
-                return_value="http://example.com/sub.srt",
+                return_value="http://example.invalid/sub.srt",
             ),
             patch(
                 "lan_streamer.ui_views.dialogs.subtitle_search.opensubtitles_client.download_subtitle",
@@ -306,7 +306,7 @@ def test_subtitle_search_dialog_download_edge_cases(
         with (
             patch(
                 "lan_streamer.ui_views.dialogs.subtitle_search.opensubtitles_client.get_download_link",
-                return_value="http://example.com/sub.srt",
+                return_value="http://example.invalid/sub.srt",
             ),
             patch(
                 "lan_streamer.ui_views.dialogs.subtitle_search.opensubtitles_client.download_subtitle",
@@ -325,7 +325,7 @@ def test_subtitle_search_dialog_download_edge_cases(
         with (
             patch(
                 "lan_streamer.ui_views.dialogs.subtitle_search.opensubtitles_client.get_download_link",
-                return_value="http://example.com/sub.srt",
+                return_value="http://example.invalid/sub.srt",
             ),
             patch(
                 "lan_streamer.ui_views.dialogs.subtitle_search.opensubtitles_client.download_subtitle",

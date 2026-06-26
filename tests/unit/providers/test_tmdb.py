@@ -2,7 +2,7 @@ import pytest
 import requests
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from lan_streamer.providers.tmdb import TMDBClient
+from lan_streamer.providers.tmdb import TMDBClient, TMDB_IMAGE_BASE
 
 
 @pytest.fixture
@@ -242,7 +242,7 @@ def test_download_image_full_url(tmdb, tmp_path) -> None:
     tmdb.session.request = MagicMock(return_value=mock_resp)
 
     path = tmdb.download_image(
-        "https://image.tmdb.org/t/p/w500/abc.jpg", "tmdb_series_123"
+        "https://example.invalid/t/p/w500/abc.jpg", "tmdb_series_123"
     )
     assert path == str(tmp_path / "tmdb_series_123.jpg")
     assert (tmp_path / "tmdb_series_123.jpg").read_bytes() == b"fake-image-data"
@@ -250,7 +250,7 @@ def test_download_image_full_url(tmdb, tmp_path) -> None:
     # Second call should return cached path without re-downloading
     tmdb.session.request.reset_mock()
     path2 = tmdb.download_image(
-        "https://image.tmdb.org/t/p/w500/abc.jpg", "tmdb_series_123"
+        "https://example.invalid/t/p/w500/abc.jpg", "tmdb_series_123"
     )
     assert path2 == str(tmp_path / "tmdb_series_123.jpg")
     tmdb.session.request.assert_not_called()
@@ -267,7 +267,7 @@ def test_download_image_bare_path(tmdb, tmp_path) -> None:
     assert path == str(tmp_path / "poster_key.jpg")
     # Verify it used the CDN base URL
     called_url = tmdb.session.request.call_args[1]["url"]
-    assert called_url.startswith("https://image.tmdb.org")
+    assert called_url.startswith(TMDB_IMAGE_BASE)
 
 
 def test_download_image_empty(tmdb) -> None:
@@ -600,7 +600,7 @@ def test_make_request_429_respects_retry_after_header(
     tmdb.session = mock_session
 
     with patch("lan_streamer.providers.tmdb.time.sleep") as mock_sleep:
-        response = tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
+        response = tmdb._make_request("GET", "https://example.invalid/3/test")
 
     assert response.status_code == 200
     # sleep must have been called with the Retry-After value
@@ -631,7 +631,7 @@ def test_make_request_429_uses_exponential_backoff_without_retry_after(
         patch("lan_streamer.providers.tmdb.time.sleep") as mock_sleep,
         patch("lan_streamer.providers.tmdb.random.uniform", return_value=0.5),
     ):
-        response = tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
+        response = tmdb._make_request("GET", "https://example.invalid/3/test")
 
     assert response.status_code == 200
     # backoff_factor=1.0, attempt=0 → 1.0 * 2**0 + 0.5 = 1.5
@@ -662,7 +662,7 @@ def test_make_request_raises_runtime_error_after_all_429_retries_exhausted(
         patch("lan_streamer.providers.tmdb.time.sleep"),
         pytest.raises(RuntimeError, match="429 rate-limit"),
     ):
-        tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
+        tmdb._make_request("GET", "https://example.invalid/3/test")
 
     # Must have been called exactly max_retries (3) times — no hidden 4th call.
     assert mock_session.request.call_count == 3
@@ -682,7 +682,7 @@ def test_make_request_retries_on_network_error_and_succeeds(
     tmdb.session = mock_session
 
     with patch("lan_streamer.providers.tmdb.time.sleep"):
-        response = tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
+        response = tmdb._make_request("GET", "https://example.invalid/3/test")
 
     assert response.status_code == 200
     assert mock_session.request.call_count == 2
@@ -702,7 +702,7 @@ def test_make_request_reraises_on_final_network_error(
         patch("lan_streamer.providers.tmdb.time.sleep"),
         pytest.raises(requests.exceptions.ConnectionError, match="persistent failure"),
     ):
-        tmdb._make_request("GET", "https://api.themoviedb.org/3/test")
+        tmdb._make_request("GET", "https://example.invalid/3/test")
 
 
 def test_rate_limit_lock_is_class_level_shared_across_instances(
@@ -750,7 +750,7 @@ def test_concurrent_requests_are_serialised_by_throttle(
             session=mock_session, api_key="test-key", cache_dir=tmp_path
         )
         # Record the wall-clock time just after the throttle gate exits.
-        client._make_request("GET", "https://api.themoviedb.org/3/test")
+        client._make_request("GET", "https://example.invalid/3/test")
         request_timestamps.append(real_time.time())
 
     # Launch 4 threads simultaneously — without the throttle they would all
@@ -803,8 +803,8 @@ def test_rate_limit_lock_not_held_during_sleep(tmp_path: "Path") -> None:
         session.request = MagicMock(return_value=success_response)
         client = TMDBClient(session=session, api_key="key", cache_dir=tmp_path)
         # Force a throttle delay by making _class_last_request_time = now
-        TMDBClient._class_last_request_time = time_module.time()
-        client._make_request("GET", "https://api.themoviedb.org/3/test1")
+        TMDBClient._class_last_request_time = time_module.monotonic()
+        client._make_request("GET", "https://example.invalid/3/test1")
 
     def thread_2_try_lock() -> None:
         """Tries to acquire the class-level lock and records how long it took."""

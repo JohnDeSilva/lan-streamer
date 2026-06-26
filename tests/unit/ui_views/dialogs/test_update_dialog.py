@@ -14,7 +14,7 @@ def dialog(qtbot) -> UpdateDialog:
         current_version="0.26.0",
         new_version="0.27.0",
         release_notes="## Enhancements\n- Added cool update feature",
-        download_url="https://github.com/JohnDeSilva/lan-streamer/releases/download/v0.27.0/lan-streamer-ubuntu",
+        download_url="https://example.invalid/releases/download/v0.27.0/lan-streamer-ubuntu",
     )
     qtbot.addWidget(dlg)
     return dlg
@@ -39,7 +39,7 @@ def test_update_dialog_start_download(dialog, qtbot) -> None:
         dialog.start_download()
 
         mock_worker_class.assert_called_once_with(
-            "https://github.com/JohnDeSilva/lan-streamer/releases/download/v0.27.0/lan-streamer-ubuntu",
+            "https://example.invalid/releases/download/v0.27.0/lan-streamer-ubuntu",
             str(
                 os.path.expanduser("~/.config/lan-streamer/updates/lan-streamer-ubuntu")
             ),

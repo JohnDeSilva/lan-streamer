@@ -3,7 +3,10 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from lan_streamer.providers.opensubtitles import OpenSubtitlesClient
+from lan_streamer.providers.opensubtitles import (
+    OpenSubtitlesClient,
+    OPENSUBTITLES_API_BASE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +85,7 @@ def test_login_success(client, mock_session) -> None:
     assert client.token == "jwt_abc123"
     mock_session.post.assert_called_once()
     args, kwargs = mock_session.post.call_args
-    assert args[0] == "https://api.opensubtitles.com/api/v1/login"
+    assert args[0] == f"{OPENSUBTITLES_API_BASE}login"
     assert kwargs["json"] == {"username": "user", "password": "pass"}
 
 
@@ -198,15 +201,15 @@ def test_get_download_link_already_authenticated(client, mock_session) -> None:
     client.token = "existing_token"
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = {"link": "https://cdn.example.com/sub.srt"}
+    mock_response.json.return_value = {"link": "https://cdn.example.invalid/sub.srt"}
     mock_session.post.return_value = mock_response
 
     link = client.get_download_link(file_id=98765)
 
-    assert link == "https://cdn.example.com/sub.srt"
+    assert link == "https://cdn.example.invalid/sub.srt"
     mock_session.post.assert_called_once()
     args, kwargs = mock_session.post.call_args
-    assert args[0] == "https://api.opensubtitles.com/api/v1/download"
+    assert args[0] == f"{OPENSUBTITLES_API_BASE}download"
     assert kwargs["json"] == {"file_id": 98765}
 
 
@@ -219,13 +222,13 @@ def test_get_download_link_triggers_login_when_no_token(client, mock_session) ->
 
     download_response = MagicMock()
     download_response.status_code = 200
-    download_response.json.return_value = {"link": "https://example.com/file.srt"}
+    download_response.json.return_value = {"link": "https://example.invalid/file.srt"}
 
     mock_session.post.side_effect = [login_response, download_response]
 
     link = client.get_download_link(file_id=111)
 
-    assert link == "https://example.com/file.srt"
+    assert link == "https://example.invalid/file.srt"
     assert client.token == "new_token"
     assert mock_session.post.call_count == 2
 
@@ -278,10 +281,12 @@ def test_download_subtitle_success(client, mock_session) -> None:
     mock_response.content = b"1\n00:00:00,000 --> 00:00:01,000\nHello\n"
     mock_session.get.return_value = mock_response
 
-    content = client.download_subtitle("https://example.com/sub.srt")
+    content = client.download_subtitle("https://example.invalid/sub.srt")
 
     assert content == b"1\n00:00:00,000 --> 00:00:01,000\nHello\n"
-    mock_session.get.assert_called_once_with("https://example.com/sub.srt", timeout=30)
+    mock_session.get.assert_called_once_with(
+        "https://example.invalid/sub.srt", timeout=30
+    )
 
 
 @pytest.mark.parametrize(
@@ -303,5 +308,5 @@ def test_download_subtitle_failures(
         mock_response.text = text
         mock_session.get.return_value = mock_response
 
-    content = client.download_subtitle("https://example.com/sub.srt")
+    content = client.download_subtitle("https://example.invalid/sub.srt")
     assert content is None
