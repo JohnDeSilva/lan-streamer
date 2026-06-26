@@ -2,9 +2,10 @@ import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
 from PySide6.QtCore import QObject, Signal, QThread
 
-from lan_streamer.providers.tmdb import tmdb_client
+from lan_streamer.providers.tmdb import tmdb_client as _tmdb_default
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -31,6 +32,8 @@ class MetadataApplyWorker(QThread):
         saved_group_id: Optional[str],
         poster_path: Optional[str] = None,
         is_movie: bool = False,
+        show_future_episodes: bool = True,
+        tmdb_client: Any = None,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -39,6 +42,8 @@ class MetadataApplyWorker(QThread):
         self._saved_group_id: Optional[str] = saved_group_id
         self._poster_path: Optional[str] = poster_path
         self._is_movie: bool = is_movie
+        self._show_future_episodes: bool = show_future_episodes
+        self._tmdb: Any = tmdb_client or _tmdb_default
 
     def run(self) -> None:
         try:
@@ -55,7 +60,7 @@ class MetadataApplyWorker(QThread):
                 prefix = "tmdb_movie_" if self._is_movie else "tmdb_series_"
                 try:
                     cached_poster = (
-                        tmdb_client.download_image(
+                        self._tmdb.download_image(
                             self._poster_path,
                             f"{prefix}{self._tmdb_identifier}",
                         )
@@ -71,8 +76,8 @@ class MetadataApplyWorker(QThread):
             logger.exception(f"MetadataApplyWorker failed: {exc}")
             self.error.emit(str(exc))
 
-    @staticmethod
     def _sync_tmdb_episodes(
+        self,
         series_record: Dict[str, Any],
         tmdb_identifier: str,
         saved_group_id: Optional[str],
@@ -89,7 +94,7 @@ class MetadataApplyWorker(QThread):
         episode_group_details: Optional[Dict[str, Any]] = None
         if saved_group_id and saved_group_id != "default":
             try:
-                episode_group_details = tmdb_client.get_episode_group_details(
+                episode_group_details = self._tmdb.get_episode_group_details(
                     saved_group_id
                 )
             except Exception as e:
@@ -97,7 +102,7 @@ class MetadataApplyWorker(QThread):
                     f"Failed to fetch saved group details {saved_group_id}: {e}"
                 )
         if not episode_group_details:
-            episode_group_details = tmdb_client.get_season_based_episode_group(
+            episode_group_details = self._tmdb.get_season_based_episode_group(
                 tmdb_identifier
             )
 
@@ -149,7 +154,7 @@ class MetadataApplyWorker(QThread):
                             }
                         )
                 else:
-                    fetched_episodes_list = tmdb_client.get_episodes(
+                    fetched_episodes_list = self._tmdb.get_episodes(
                         tmdb_identifier, target_season_number
                     )
 
@@ -202,5 +207,20 @@ class MetadataApplyWorker(QThread):
                             episode_item_dict["runtime"] = matched_tmdb_episode.get(
                                 "runtime", 0
                             )
+
+                if self._show_future_episodes:
+                    from lan_streamer.scanner.scan_tv import (
+                        _create_tmdb_placeholder_episodes,
+                    )
+
+                    season_metadata = season_data_dict.get("metadata", {})
+                    placeholders = _create_tmdb_placeholder_episodes(
+                        fetched_episodes_list,
+                        season_data_dict.get("episodes", []),
+                        season_folder_name,
+                        season_metadata,
+                        show_future_episodes=self._show_future_episodes,
+                    )
+                    season_data_dict["episodes"].extend(placeholders)
 
         return result
