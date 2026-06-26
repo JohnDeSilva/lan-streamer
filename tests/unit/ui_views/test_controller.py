@@ -545,3 +545,15 @@ def test_controller_fallback_to_default_clients() -> None:
     assert c._db is not None
     assert callable(getattr(c._tmdb_client, "get_episodes", None))
     assert callable(getattr(c._jellyfin_client, "is_configured", None))
+
+
+def test_controller_scan_and_update_flow_isolation(mock_controller) -> None:
+    """Verify that scan_and_update chain passes flow-local data through callbacks."""
+    mock_controller.trigger_runtime_extraction = MagicMock()
+    mock_controller._running_pass3_after_scan = True
+
+    seasons = {"season1"}
+    movies = {"movie1"}
+    mock_controller._on_scan_and_update_cleanup_finished({}, seasons, movies)
+
+    mock_controller.trigger_runtime_extraction.assert_called_once_with(seasons, movies)
