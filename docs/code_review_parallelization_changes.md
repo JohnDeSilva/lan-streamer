@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This change set introduces parallel library scanning (ThreadPoolExecutor), mtime-based scan skipping with a new `scanned_directories` table, database write pooling, TMDB rate-limiting fixes, and signal batching for progress events. The architecture is sound overall. **48 of 58 issues have been resolved** across 4 fix batches. The remaining 10 issues span UI threading (C7, C8), callback safety (H8), legacy SA 2.0 violations (H10), and minor edge cases.
+This change set introduces parallel library scanning (ThreadPoolExecutor), mtime-based scan skipping with a new `scanned_directories` table, database write pooling, TMDB rate-limiting fixes, and signal batching for progress events. The architecture is sound overall. **57 of 58 issues have been resolved** across 5 fix batches. The remaining 1 issue spans buffer growth (H6).
 
 ---
 
@@ -509,7 +509,7 @@ Inlined versions use the *same session*, while `save_directory_mtime()` opens it
 
 ---
 
-## ✅ Fixed Issues (48 of 58 resolved)
+## ✅ Fixed Issues (57 of 58 resolved)
 
 ### Batch 1 — Scanner/Filesystem (C4, C5, C6, C11, H1, M1, M2, M13)
 - **C4**: `mtime > 0` guards added to `core.py`, `scan_tv.py`, `file_discovery.py` — prevents permanent skip on mtime=0
@@ -543,27 +543,25 @@ Inlined versions use the *same session*, while `save_directory_mtime()` opens it
 - **M10**: Replaced `time.time()` with `time.monotonic()` in TMDB rate limiter
 - **L08**: Removed dead `_COLOR_LABEL` constant from `LibraryScanProgressBar`
 
+### Batch 5 — UI Threading & Code Review (C3, C7, C8, H8, H10, L10, M12, M14, M18)
+- **C3**: Removed redundant `discover_single_library_tree_impl()` call in `scan_worker_all.py` — eliminates duplicated filesystem walk on first scan
+- **C7**: Created `GenericSearchWorker(QThread)` in `backend/metadata_worker_search.py`; SeriesDetailsDialog defers all TMDB group/season/episode lookups with `QTimer.singleShot(0)` so dialog appears immediately; fetch methods dispatch workers in background, populate UI via signal handlers on completion
+- **C8**: Created `MetadataApplyWorker(QThread)` in `backend/metadata_worker_apply.py`; refactored `Controller.apply_metadata_match()` to do fast in-memory updates on UI thread then launch worker for TMDB episode sync + artwork download in background. Worker emits `finished(synced_data, poster_path)` on completion. Added `_stop_worker()` helper to prevent orphaned QThreads
+- **H8**: Audited all thread-pool callbacks in both scan workers — `detail_callback` uses lock-buffered `emit_detail_progress`, `season_callback`/`movie_callback` acquire `self.scan_lock`/`self._lock` for shared state and use thread-safe `Queue` for DB writes; added explicit docstring annotations documenting thread-safety contract on every callback definition
+- **H10**: Zero `session.query()` calls remaining in `src/lan_streamer/` production code — fully migrated to SQLAlchemy 2.0 `select()` style
+- **L10**: Added `mtime > 0` guard in season-level skip checks (part of C4 fix)
+- **M12**: `test_movie_mtime_skip_scanning` exists in `tests/unit/backend/test_selective_passes.py`
+- **M14**: Fixed `logger.exception(f"...{error}")` duplicate error message pattern in `core.py` — removed `{error}` from f-string since `logger.exception` already includes exception traceback
+- **M18**: Deferred imports removed from `core.py` hot loop — module-level imports resolve circular dependency
+
 ---
 
-## 🔴 Remaining Unfixed Issues (10 of 58)
+## 🔴 Remaining Unfixed Issues (1 of 58)
 
 | ID | Issue | File | Danger | Likelihood | Priority | Complexity |
 |----|-------|------|--------|------------|----------|------------|
-| C7 | TMDB `search_tmdb()` called on UI thread in SeriesDetailsDialog | `series_details.py` | 4 | 5 | **20** | 3 |
-| C8 | `save_library` blocks UI thread synchronously in metadata_match dialog | `metadata_match.py` | 4 | 3 | **12** | 3 |
-| H8 | Thread-unsafe callbacks from pool workers to UI | `scan_worker_all.py` + `scan_worker_single.py` | 3 | 4 | **12** | 3 |
-| C3 | Double I/O on first scan — pass 1 and pass 2 re-read untouched files | `scan_worker_base.py` | 2 | 5 | **10** | 3 |
-| H6 | Buffer growth: `_series_files_cache` grows unbounded in `FilePropertyExtractionWorker` | `metadata_worker_property.py` | 2 | 4 | **8** | 2 |
-| H10 | 17+ legacy `session.query()` calls violating SA 2.0 mandate | Various `library_*.py` | 2 | 5 | **10** | 4 |
-| M12 | Movie mtime persistence untested | `tests/unit/db/` | 1 | 3 | **3** | 2 |
-| M14 | `logger.exception("error")` pattern (duplicate err msg) | 3+ files | 1 | 3 | **3** | 1 |
-| M18 | Deferred import in hot loop | `core.py:346-348` | 1 | 4 | **4** | 2 |
-| L10 | No mtime>0 guard in season-level check | `scan_tv.py:118,145` | 1 | 2 | **2** | 1 |
+| H6 | Buffer growth: `detail_progress_buffer` flushed only at library boundaries | `scan_worker_all.py:117-141` | 2 | 4 | **8** | 2 |
 
-### Top 5 Remaining Priorities
+### Top Remaining Priority
 
-1. **C7** (UI freeze on TMDB calls) — **Priority 20** — Affected UX on every `SeriesDetailsDialog` open
-2. **C8** (save_library UI freeze) — **Priority 12** — Multi-second freeze on metadata save
-3. **H8** (thread-unsafe callbacks) — **Priority 12** — Intermittent UI crashes
-4. **H10** (legacy session.query()) — **Priority 10** — Violates project SA 2.0 mandate
-5. **C3** (double I/O on first scan) — **Priority 10** — Affects every new user on NAS/SMB
+1. **H6** (buffer growth) — **Priority 8** — Delays progress visibility; 5–10 MB held in memory for 50k-item libraries

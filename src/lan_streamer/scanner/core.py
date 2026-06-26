@@ -253,9 +253,9 @@ def scan_directories(
                 try:
                     series_data = future.result()
                     scan_results.append((series_name, is_locked, series_data))
-                except Exception as error:
+                except Exception:
                     logger.exception(
-                        f"Error during parallel metadata scan of '{series_name}': {error}"
+                        f"Error during parallel metadata scan of '{series_name}'"
                     )
                     if detail_callback:
                         detail_callback(
@@ -521,9 +521,9 @@ def scan_directories(
             try:
                 series_data = future.result()
                 scan_results.append((series_name, is_locked, series_data))
-            except Exception as error:
+            except Exception:
                 logger.exception(
-                    f"Error during parallel directory scan of '{series_name}': {error}"
+                    f"Error during parallel directory scan of '{series_name}'"
                 )
                 if detail_callback:
                     detail_callback(
