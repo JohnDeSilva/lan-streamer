@@ -1,10 +1,40 @@
 import logging
+import threading
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+from PySide6.QtCore import QObject, QThread, Signal
 
 from lan_streamer.scanner import has_video_files
 
 logger = logging.getLogger("lan_streamer.backend")
+
+
+class BaseScanWorker(QThread):
+    """Base QThread worker that handles detail progress buffering and thread safety."""
+
+    detail_progress_batch = Signal(list)
+
+    def __init__(self, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self._lock = threading.Lock()
+        self._detail_progress_buffer: List[Dict[str, Any]] = []
+
+    def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
+        """Add a progress event to the thread-safe buffer and emit if full."""
+        with self._lock:
+            self._detail_progress_buffer.append({"event": event, "payload": payload})
+            if len(self._detail_progress_buffer) >= 20:
+                self.flush_detail_progress()
+
+    def flush_detail_progress(self) -> None:
+        """Force flush all buffered detail-progress events to the UI."""
+        with self._lock:
+            if not self._detail_progress_buffer:
+                return
+            batch = list(self._detail_progress_buffer)
+            self._detail_progress_buffer.clear()
+        self.detail_progress_batch.emit(batch)
 
 
 def create_empty_stats() -> Dict[str, int]:
