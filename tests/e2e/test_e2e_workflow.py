@@ -1242,7 +1242,9 @@ def test_controller_additional_coverage() -> None:
         mock_worker_instance.start.assert_called_once()
 
         # concurrency check
-        controller_instance.file_property_worker_instance = mock_worker_instance
+        controller_instance.worker_manager.file_property._instance = (
+            mock_worker_instance
+        )
         mock_worker_instance.isRunning.return_value = True
         controller_instance.trigger_runtime_extraction()
         assert mock_worker_class.call_count == 1
@@ -1282,7 +1284,9 @@ def test_controller_additional_coverage() -> None:
         mock_merge_instance.start.assert_called_once()
 
         # concurrency check
-        controller_instance.merge_subtitle_worker_instance = mock_merge_instance
+        controller_instance.worker_manager.subtitle_merge._instance = (
+            mock_merge_instance
+        )
         mock_merge_instance.isRunning.return_value = True
         controller_instance.merge_subtitles("/video.mkv", ["/sub.srt"])
         assert mock_merge_class.call_count == 1
@@ -1300,7 +1304,9 @@ def test_controller_additional_coverage() -> None:
         mock_embed_instance.start.assert_called_once()
 
         # concurrency check
-        controller_instance.embed_metadata_worker_instance = mock_embed_instance
+        controller_instance.worker_manager.metadata_embed._instance = (
+            mock_embed_instance
+        )
         mock_embed_instance.isRunning.return_value = True
         controller_instance.embed_metadata("/video.mkv", {"title": "Title"})
         assert mock_embed_class.call_count == 1
@@ -1319,17 +1325,19 @@ def test_controller_additional_coverage() -> None:
     ) as mock_series_embed_class:
         # concurrency check when running
         mock_embed_instance.isRunning.return_value = True
-        controller_instance.embed_metadata_worker_instance = mock_embed_instance
+        controller_instance.worker_manager.metadata_embed._instance = (
+            mock_embed_instance
+        )
         controller_instance.embed_metadata_series("Show1")
         mock_series_embed_class.assert_not_called()
 
         # normal case
-        controller_instance.embed_metadata_worker_instance = None
+        controller_instance.worker_manager.metadata_embed.stop()
         controller_instance.embed_metadata_series("Show1")
         mock_series_embed_class.assert_called_once_with("Show1", [{"path": "/ep1.mkv"}])
 
         # no episodes case
-        controller_instance.embed_metadata_worker_instance = None
+        controller_instance.worker_manager.metadata_embed.stop()
         controller_instance.cached_library_data["Show1"]["seasons"]["Season 1"][
             "episodes"
         ] = []

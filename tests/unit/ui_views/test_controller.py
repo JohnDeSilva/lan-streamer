@@ -246,7 +246,7 @@ def test_controller_scan_unavailable_directories(
         "/unavailable/path/1",
         "/unavailable/path/2",
     ]
-    controller_instance.scan_worker_instance = mock_scan_worker
+    controller_instance.worker_manager.scan._instance = mock_scan_worker
 
     status_emitted: List[str] = []
     controller_instance.status_changed.connect(status_emitted.append)
@@ -266,7 +266,7 @@ def test_controller_scan_all_unavailable_directories() -> None:
 
     mock_scan_all_worker = MagicMock()
     mock_scan_all_worker.unavailable_directories = ["/unavailable/all/1"]
-    controller_instance.scan_all_worker_instance = mock_scan_all_worker
+    controller_instance.worker_manager.scan_all._instance = mock_scan_all_worker
 
     status_emitted: List[str] = []
     controller_instance.status_changed.connect(status_emitted.append)
@@ -320,7 +320,7 @@ def test_controller_file_system_monitoring(
         # Test concurrency protection
         mock_worker = MagicMock()
         mock_worker.isRunning.return_value = True
-        controller_instance.scan_worker_instance = mock_worker
+        controller_instance.worker_manager.scan._instance = mock_worker
         controller_instance.current_library_name = "ActiveMonitoredLib"
 
         with patch(
@@ -346,7 +346,7 @@ def test_controller_global_triggers() -> None:
         # Test concurrency protection
         mock_worker = MagicMock()
         mock_worker.isRunning.return_value = True
-        controller_instance.scan_all_worker_instance = mock_worker
+        controller_instance.worker_manager.scan_all._instance = mock_worker
         controller_instance.trigger_scan_all(force_refresh=False)
         assert mock_scan_all.call_count == 1
 

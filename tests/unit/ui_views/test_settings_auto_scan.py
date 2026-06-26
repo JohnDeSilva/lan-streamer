@@ -27,7 +27,6 @@ def test_controller_reloads_config_on_actions(mock_db_save) -> None:
         mock_load.reset_mock()
 
         # 2. trigger_scan
-        controller.scan_worker_instance = None
         with patch("lan_streamer.ui_views.controller.ScanWorker") as mock_scan_worker:
             mock_worker_instance = MagicMock()
             mock_worker_instance.isRunning.return_value = False
@@ -38,7 +37,6 @@ def test_controller_reloads_config_on_actions(mock_db_save) -> None:
             mock_load.reset_mock()
 
         # 3. trigger_scan_and_update
-        controller.scan_worker_instance = None
         with patch("lan_streamer.ui_views.controller.ScanWorker") as mock_scan_worker:
             mock_worker_instance = MagicMock()
             mock_worker_instance.isRunning.return_value = False
@@ -49,7 +47,6 @@ def test_controller_reloads_config_on_actions(mock_db_save) -> None:
             mock_load.reset_mock()
 
         # 4. trigger_scan_all
-        controller.scan_all_worker_instance = None
         with patch(
             "lan_streamer.ui_views.controller.ScanAllLibrariesWorker"
         ) as mock_scan_all_worker:

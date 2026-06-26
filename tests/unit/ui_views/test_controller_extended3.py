@@ -263,7 +263,7 @@ def test_on_scan_finished_movie_library(mock_db_save) -> None:
     mock_worker = MagicMock()
     mock_worker.library_name = "MovieLib"
     mock_worker.unavailable_directories = []
-    c.scan_worker_instance = mock_worker
+    c.worker_manager.scan._instance = mock_worker
 
     updated = {"Film": {"path": "/m.mkv"}}
     c._on_scan_finished(updated)
