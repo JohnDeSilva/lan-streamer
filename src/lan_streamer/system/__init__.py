@@ -18,3 +18,4 @@ from lan_streamer.system.async_task_manager import (
     DEFAULT_CANCEL_TIMEOUT,
 )
 from lan_streamer.system.encryption import encrypt_secret, decrypt_secret
+from lan_streamer.system.scheduled_scan_service import ScheduledScanService
