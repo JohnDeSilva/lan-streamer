@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 import logging
@@ -185,4 +186,4 @@ setup_vlc_environment()
 from lan_streamer.main import main  # noqa: E402
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
