@@ -71,6 +71,8 @@ class Config:
         "preferred_audio_device": "",
         "check_for_updates_on_startup": True,
         "database_write_timeout": 60.0,
+        "scan_interval_hours": 1,
+        "auto_scan_enabled": True,
     }
 
     def __init__(self) -> None:
@@ -270,6 +272,8 @@ class Config:
                 "check_for_updates_on_startup"
             ]
             self.database_write_timeout = float(config_dict["database_write_timeout"])
+            self.scan_interval_hours = int(config_dict["scan_interval_hours"])
+            self.auto_scan_enabled = bool(config_dict["auto_scan_enabled"])
 
             # 3. After going through all the settings take the fully populated dictionary and write the contents back to the database
             bulk_set_app_configs(config_dict)
