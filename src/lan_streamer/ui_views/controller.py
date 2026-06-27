@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, Signal, QFileSystemWatcher
 
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.config import config as _config_default
+from lan_streamer.system.scheduled_scan_service import ScheduledScanService
 from lan_streamer.system.threading_manager import WorkerManager
 from lan_streamer import db as _db_default
 
@@ -132,12 +133,35 @@ class Controller(QObject):
         logger.info("Initializing AsyncTaskManager for background coroutine lifecycle.")
         self.async_task_manager = AsyncTaskManager(parent=self)
 
+        logger.info("Initializing ScheduledScanService for periodic background scans.")
+        self.scheduled_scan_service = ScheduledScanService(
+            controller=self,
+            interval_seconds=float(self._config.scan_interval_hours) * 3600.0,
+            parent=self,
+        )
+
         self.file_system_watcher.directoryChanged.connect(self._on_directory_changed)
 
     @property
     def task_manager(self) -> AsyncTaskManager:
         """Expose the async task manager for use by UI components and main.py."""
         return self.async_task_manager
+
+    def start_scheduled_scans(self) -> None:
+        """Start the periodic background scan service."""
+        if self._config.auto_scan_enabled:
+            self.scheduled_scan_service.start()
+
+    def stop_scheduled_scans(self) -> None:
+        """Stop the periodic background scan service."""
+        self.scheduled_scan_service.stop()
+
+    def trigger_scan_now(self) -> None:
+        """Manually trigger an immediate scan via the scheduled scan service."""
+        self.async_task_manager.create_task(
+            self.scheduled_scan_service.scan_now(force_refresh=False),
+            name="scan_now",
+        )
 
     def select_library(self, library_name: str, reset_selection: bool = True) -> None:
         logger.info(f"Controller loading library: {library_name}")
