@@ -11,6 +11,7 @@ import asyncio
 import atexit
 import functools
 import logging
+import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Awaitable, Callable, List, Optional, TypeVar
@@ -262,6 +263,117 @@ async def gather_with_concurrency(
     return await asyncio.gather(
         *(_semaphore_wrapper(coroutine) for coroutine in coroutines)
     )
+
+
+# ---------------------------------------------------------------------------
+# Global concurrency semaphores (Stage 6)
+# ---------------------------------------------------------------------------
+
+_NETWORK_SEMAPHORE: Optional[asyncio.Semaphore] = None
+_SUBPROCESS_SEMAPHORE: Optional[asyncio.Semaphore] = None
+_SEMAPHORE_LOCK: threading.Lock = threading.Lock()
+_NETWORK_SEMAPHORE_VALUE: int = 10
+_SUBPROCESS_SEMAPHORE_VALUE: int = 3
+
+
+def get_network_semaphore() -> asyncio.Semaphore:
+    """Return the process-lifetime network concurrency semaphore singleton.
+
+    Limits the number of **concurrent in-flight** API requests (TMDB,
+    Jellyfin, etc.) to ``max_concurrent=10``.  Complements the token-bucket
+    rate limiter in :class:`~lan_streamer.providers.http_client.AsyncHTTPClient`
+    by capping peak parallelism.
+
+    Returns:
+        An :class:`asyncio.Semaphore` with value 10.
+    """
+    global _NETWORK_SEMAPHORE
+    if _NETWORK_SEMAPHORE is None:
+        with _SEMAPHORE_LOCK:
+            if _NETWORK_SEMAPHORE is None:
+                _NETWORK_SEMAPHORE = asyncio.Semaphore(_NETWORK_SEMAPHORE_VALUE)
+    return _NETWORK_SEMAPHORE
+
+
+def get_subprocess_semaphore() -> asyncio.Semaphore:
+    """Return the process-lifetime subprocess concurrency semaphore singleton.
+
+    Limits the number of **concurrent** FFmpeg / FFprobe subprocesses to
+    ``max_concurrent=3``, preventing disk thrashing and CPU exhaustion
+    during large metadata scans on network storage.
+
+    Returns:
+        An :class:`asyncio.Semaphore` with value 3.
+    """
+    global _SUBPROCESS_SEMAPHORE
+    if _SUBPROCESS_SEMAPHORE is None:
+        with _SEMAPHORE_LOCK:
+            if _SUBPROCESS_SEMAPHORE is None:
+                _SUBPROCESS_SEMAPHORE = asyncio.Semaphore(_SUBPROCESS_SEMAPHORE_VALUE)
+    return _SUBPROCESS_SEMAPHORE
+
+
+async def async_run_subprocess(
+    command: List[str],
+    stdin: Optional[bytes] = None,
+    timeout: Optional[float] = None,
+) -> "subprocess.CompletedProcess[str]":
+    """Run a subprocess asynchronously via ``asyncio.create_subprocess_exec``.
+
+    Acquires :func:`get_subprocess_semaphore` before spawning the process,
+    reads stdout/stderr incrementally via ``communicate()``, and returns a
+    :class:`subprocess.CompletedProcess` with ``stdout`` / ``stderr`` as
+    decoded strings.
+
+    Args:
+        command: The executable and its arguments (e.g. ``["ffmpeg", "-y",
+            "-i", "input.mp4", ...]``).
+        stdin: Optional bytes to send to the process's stdin.
+        timeout: Optional timeout in seconds for ``communicate()``.
+
+    Returns:
+        A :class:`subprocess.CompletedProcess[str]` with ``stdout`` and
+        ``stderr`` as strings.
+
+    Raises:
+        asyncio.TimeoutError: If the subprocess does not complete within
+            *timeout* seconds.
+    """
+    semaphore = get_subprocess_semaphore()
+    async with semaphore:
+        logger.debug("Spawning subprocess: %s", " ".join(command))
+        process: asyncio.subprocess.Process = await asyncio.create_subprocess_exec(
+            *command,
+            stdin=asyncio.subprocess.PIPE if stdin is not None else None,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                process.communicate(input=stdin),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Subprocess timed out after %ss: %s", timeout, " ".join(command)
+            )
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            await process.wait()
+            raise
+
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=process.returncode if process.returncode is not None else -1,
+            stdout=stdout_bytes.decode("utf-8", errors="replace")
+            if stdout_bytes
+            else "",
+            stderr=stderr_bytes.decode("utf-8", errors="replace")
+            if stderr_bytes
+            else "",
+        )
 
 
 # ---------------------------------------------------------------------------

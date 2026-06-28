@@ -106,21 +106,32 @@ def test_runtime_extraction_worker_execution() -> None:
         assert errors_emitted == ["DB connection error"]
 
 
+def _mock_completed_process(
+    returncode: int = 0, stdout: str = "", stderr: str = ""
+) -> Any:
+    """Create a mock subprocess.CompletedProcess for async_run_subprocess tests."""
+    mock_result = MagicMock()
+    mock_result.returncode = returncode
+    mock_result.stdout = stdout
+    mock_result.stderr = stderr
+    return mock_result
+
+
 def test_subtitle_merge_worker_success(tmp_path: Path) -> None:
     video_file = tmp_path / "video.mp4"
     video_file.touch()
     subtitle_file = tmp_path / "sub.srt"
     subtitle_file.touch()
 
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-
     finished_emitted: List[str] = []
     worker = SubtitleMergeWorker(str(video_file), [str(subtitle_file)])
     worker.finished.connect(finished_emitted.append)
 
     with (
-        patch("subprocess.run", return_value=mock_result),
+        patch(
+            "lan_streamer.backend.metadata_worker_subtitle.async_run_subprocess",
+            return_value=_mock_completed_process(0),
+        ),
         patch("os.replace"),
         patch("os.remove"),
     ):
@@ -138,18 +149,19 @@ def test_subtitle_merge_worker_language_metadata(tmp_path: Path) -> None:
 
     captured_command: List[List[str]] = []
 
-    def fake_run(cmd: List[str], **kwargs: Any) -> MagicMock:
+    async def fake_async_run_subprocess(cmd: List[str], **kwargs: Any) -> Any:
         captured_command.append(cmd)
-        result = MagicMock()
-        result.returncode = 0
-        return result
+        return _mock_completed_process(0)
 
     finished_emitted: List[str] = []
     worker = SubtitleMergeWorker(str(video_file), [str(subtitle_file)])
     worker.finished.connect(finished_emitted.append)
 
     with (
-        patch("subprocess.run", side_effect=fake_run),
+        patch(
+            "lan_streamer.backend.metadata_worker_subtitle.async_run_subprocess",
+            side_effect=fake_async_run_subprocess,
+        ),
         patch("os.replace"),
         patch("os.remove"),
     ):
@@ -165,15 +177,14 @@ def test_subtitle_merge_worker_ffmpeg_failure(tmp_path: Path) -> None:
     video_file = tmp_path / "video.mp4"
     video_file.touch()
 
-    mock_result = MagicMock()
-    mock_result.returncode = 1
-    mock_result.stderr = "ffmpeg: codec not found"
-
     errors_emitted: List[str] = []
     worker = SubtitleMergeWorker(str(video_file), [str(tmp_path / "sub.srt")])
     worker.error.connect(errors_emitted.append)
 
-    with patch("subprocess.run", return_value=mock_result):
+    with patch(
+        "lan_streamer.backend.metadata_worker_subtitle.async_run_subprocess",
+        return_value=_mock_completed_process(1, stderr="ffmpeg: codec not found"),
+    ):
         worker.run()
 
     assert len(errors_emitted) == 1
@@ -189,7 +200,10 @@ def test_subtitle_merge_worker_exception(tmp_path: Path) -> None:
     worker = SubtitleMergeWorker(str(video_file), [])
     worker.error.connect(errors_emitted.append)
 
-    with patch("subprocess.run", side_effect=RuntimeError("unexpected")):
+    with patch(
+        "lan_streamer.backend.metadata_worker_subtitle.async_run_subprocess",
+        side_effect=RuntimeError("unexpected"),
+    ):
         worker.run()
 
     assert len(errors_emitted) == 1
@@ -199,15 +213,15 @@ def test_metadata_embed_worker_success(tmp_path: Path) -> None:
     video_file = tmp_path / "movie.mp4"
     video_file.touch()
 
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-
     finished_emitted: List[str] = []
     worker = MetadataEmbedWorker(str(video_file), {"title": "Test Movie", "year": ""})
     worker.finished.connect(finished_emitted.append)
 
     with (
-        patch("subprocess.run", return_value=mock_result),
+        patch(
+            "lan_streamer.backend.metadata_worker_embed.async_run_subprocess",
+            return_value=_mock_completed_process(0),
+        ),
         patch("os.replace"),
     ):
         worker.run()
@@ -220,15 +234,14 @@ def test_metadata_embed_worker_ffmpeg_failure(tmp_path: Path) -> None:
     video_file = tmp_path / "movie.mp4"
     video_file.touch()
 
-    mock_result = MagicMock()
-    mock_result.returncode = 1
-    mock_result.stderr = "codec error"
-
     errors_emitted: List[str] = []
     worker = MetadataEmbedWorker(str(video_file), {"title": "Test"})
     worker.error.connect(errors_emitted.append)
 
-    with patch("subprocess.run", return_value=mock_result):
+    with patch(
+        "lan_streamer.backend.metadata_worker_embed.async_run_subprocess",
+        return_value=_mock_completed_process(1, stderr="codec error"),
+    ):
         worker.run()
 
     assert len(errors_emitted) == 1
@@ -251,9 +264,6 @@ def test_series_metadata_embed_worker_success(tmp_path: Path) -> None:
         {"path": str(ep2), "tmdb_name": "Episode 2", "tmdb_number": 2, "air_date": ""},
     ]
 
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-
     progress_emitted: List[tuple] = []
     finished_emitted: List[bool] = []
 
@@ -264,7 +274,10 @@ def test_series_metadata_embed_worker_success(tmp_path: Path) -> None:
     worker.finished.connect(lambda: finished_emitted.append(True))
 
     with (
-        patch("subprocess.run", return_value=mock_result),
+        patch(
+            "lan_streamer.backend.metadata_worker_embed.async_run_subprocess",
+            return_value=_mock_completed_process(0),
+        ),
         patch("os.replace"),
     ):
         worker.run()
@@ -284,8 +297,10 @@ def test_series_metadata_embed_worker_skips_empty_path() -> None:
     worker = SeriesMetadataEmbedWorker("Test Series", episodes)
     worker.finished.connect(lambda: finished_emitted.append(True))
 
-    # subprocess.run must never be called for an empty or None path
-    with patch("subprocess.run") as mock_run:
+    # async_run_subprocess must never be called for an empty or None path
+    with patch(
+        "lan_streamer.backend.metadata_worker_embed.async_run_subprocess"
+    ) as mock_run:
         worker.run()
         mock_run.assert_not_called()
 
@@ -302,7 +317,10 @@ def test_series_metadata_embed_worker_exception() -> None:
     worker = SeriesMetadataEmbedWorker("Series X", episodes)
     worker.error.connect(errors_emitted.append)
 
-    with patch("subprocess.run", side_effect=OSError("Disk I/O error")):
+    with patch(
+        "lan_streamer.backend.metadata_worker_embed.async_run_subprocess",
+        side_effect=OSError("Disk I/O error"),
+    ):
         worker.run()
 
     assert len(errors_emitted) == 1
@@ -397,8 +415,10 @@ def test_subtitle_merge_worker_direct():
     worker = SubtitleMergeWorker(
         "/media/tv/Cosmos/S01E01.mkv", ["/media/tv/Cosmos/S01E01.en.srt"]
     )
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=0)
+    with patch(
+        "lan_streamer.backend.metadata_worker_subtitle.async_run_subprocess",
+        return_value=_mock_completed_process(0),
+    ) as mock_run:
         with patch("os.replace"):
             with patch("os.remove"):
                 worker.run()
