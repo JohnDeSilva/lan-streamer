@@ -353,10 +353,17 @@ async def async_run_subprocess(
                 process.communicate(input=stdin),
                 timeout=timeout,
             )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "Subprocess timed out after %ss: %s", timeout, " ".join(command)
-            )
+        except BaseException as exception_instance:
+            if isinstance(exception_instance, asyncio.TimeoutError):
+                logger.warning(
+                    "Subprocess timed out after %ss: %s", timeout, " ".join(command)
+                )
+            elif isinstance(exception_instance, asyncio.CancelledError):
+                logger.warning("Subprocess was cancelled: %s", " ".join(command))
+            else:
+                logger.warning(
+                    "Exception during subprocess execution: %s", exception_instance
+                )
             try:
                 process.kill()
             except ProcessLookupError:
