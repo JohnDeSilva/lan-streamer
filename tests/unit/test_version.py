@@ -1,4 +1,3 @@
-import asyncio
 import runpy
 import sys
 import pytest
@@ -25,7 +24,7 @@ def test_main_version_flags(capsys, flag):
 
     with patch.object(sys, "argv", ["lan_streamer/main.py", flag]):
         with pytest.raises(SystemExit) as exc_info:
-            asyncio.run(main())
+            main()
         assert exc_info.value.code == 0
 
     captured = capsys.readouterr()

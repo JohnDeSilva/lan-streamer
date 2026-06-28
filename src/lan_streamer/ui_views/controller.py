@@ -13,7 +13,6 @@ from typing import (
 
 from PySide6.QtCore import QObject, Signal, QFileSystemWatcher
 
-from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.config import config as _config_default
 from lan_streamer.system.threading_manager import WorkerManager
 from lan_streamer import db as _db_default
@@ -129,15 +128,8 @@ class Controller(QObject):
         self.file_system_watcher = QFileSystemWatcher(self)
 
         self.worker_manager = WorkerManager(parent=self)
-        logger.info("Initializing AsyncTaskManager for background coroutine lifecycle.")
-        self.async_task_manager = AsyncTaskManager(parent=self)
 
         self.file_system_watcher.directoryChanged.connect(self._on_directory_changed)
-
-    @property
-    def task_manager(self) -> AsyncTaskManager:
-        """Expose the async task manager for use by UI components and main.py."""
-        return self.async_task_manager
 
     def select_library(self, library_name: str, reset_selection: bool = True) -> None:
         logger.info(f"Controller loading library: {library_name}")

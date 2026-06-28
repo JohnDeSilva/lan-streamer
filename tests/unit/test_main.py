@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 from unittest.mock import MagicMock, patch
 from typing import Callable, Any
@@ -70,7 +69,7 @@ def test_main_execution() -> None:
         mock_grid_instance = mock_grid_class.return_value
         mock_controller_instance = mock_controller_class.return_value
 
-        asyncio.run(main.main())
+        main.main()
 
         mock_backup.assert_called_once()
         mock_grid_instance.populate_libraries.assert_called_once()
@@ -106,7 +105,7 @@ def test_main_logging_setup(tmp_path: Any) -> None:
             from lan_streamer.system.config import config
 
             config.divide_logs_by_service = False
-            asyncio.run(main.main())
+            main.main()
 
             log_file_path = os.path.join(config.log_directory, "lan-streamer.log")
             assert os.path.exists(log_file_path)
@@ -133,7 +132,7 @@ def test_main_logging_setup(tmp_path: Any) -> None:
                 handler_object.close()
                 db_logger.removeHandler(handler_object)
 
-            asyncio.run(main.main())
+            main.main()
             db_log_path = os.path.join(config.log_directory, "db.log")
             assert os.path.exists(db_log_path)
             assert os.path.exists(
@@ -169,7 +168,7 @@ def test_main_logging_failure() -> None:
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", lambda exit_code: None),
     ):
-        asyncio.run(main.main())
+        main.main()
         mock_error_target.assert_called()
 
 
@@ -205,7 +204,7 @@ def test_main_proactive_log_cleanup(tmp_path: Any) -> None:
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", MagicMock()),
     ):
-        asyncio.run(main.main())
+        main.main()
 
     assert not old_file_object.exists()
     assert new_file_object.exists()
@@ -235,7 +234,7 @@ def test_main_signal_routing() -> None:
             "lan_streamer.main.RenamePreviewDialog", MagicMock()
         ) as mock_rename_dialog,
     ):
-        asyncio.run(main.main())
+        main.main()
 
         mock_controller_instance = mock_controller_class.return_value
         mock_detail_instance = mock_detail_class.return_value
@@ -333,7 +332,7 @@ def test_main_playback_requested_external() -> None:
         patch("lan_streamer.main.play_video", MagicMock()) as mock_external_play,
         patch.object(config, "load_from_db", MagicMock()),
     ):
-        asyncio.run(main.main())
+        main.main()
         mock_controller_instance = mock_controller_class.return_value
         mock_player_instance = mock_player_class.return_value
 
@@ -370,7 +369,7 @@ def test_main_playback_requested_external_exception() -> None:
         patch("lan_streamer.main.logger") as mock_logger,
         patch.object(config, "load_from_db", MagicMock()),
     ):
-        asyncio.run(main.main())
+        main.main()
         mock_controller_instance = mock_controller_class.return_value
 
         playback_slot: Callable[[str], None] = (
@@ -396,7 +395,7 @@ def test_main_dry_run() -> None:
         patch("sys.exit", side_effect=exit_side_effect),
     ):
         with pytest.raises(SystemExit) as excinfo:
-            asyncio.run(main.main())
+            main.main()
         assert excinfo.value.code == 0
 
 
@@ -427,7 +426,7 @@ def test_main_log_cleanup_unlink_exception() -> None:
             patch("pathlib.Path.stat", return_value=mock_stat),
             patch("pathlib.Path.glob", return_value=[pathlib.Path("old_log.log")]),
         ):
-            asyncio.run(main.main())
+            main.main()
 
 
 def test_main_wayland_platform() -> None:
@@ -448,7 +447,7 @@ def test_main_wayland_platform() -> None:
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
     ):
-        asyncio.run(main.main())
+        main.main()
         assert os.environ.get("QT_QPA_PLATFORM") == "xcb"
 
 
@@ -468,7 +467,7 @@ def test_main_log_directory_creation_failure() -> None:
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", MagicMock()),
     ):
-        asyncio.run(main.main())
+        main.main()
 
 
 def test_main_log_cleanup_exception() -> None:
@@ -487,7 +486,7 @@ def test_main_log_cleanup_exception() -> None:
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", MagicMock()),
     ):
-        asyncio.run(main.main())
+        main.main()
 
 
 def test_main_more_signal_routings() -> None:
@@ -524,7 +523,7 @@ def test_main_more_signal_routings() -> None:
         ) as mock_series_detail_dialog,
         patch.object(config, "load_from_db", MagicMock()),
     ):
-        asyncio.run(main.main())
+        main.main()
         mock_controller_instance = mock_controller_class.return_value
         mock_player_instance = mock_player_class.return_value
         mock_layout_instance = mock_layout_class.return_value

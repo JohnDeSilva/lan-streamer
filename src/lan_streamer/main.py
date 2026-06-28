@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-import asyncio
 import sys
 import logging
 from pathlib import Path
@@ -53,7 +50,7 @@ def setup_dark_theme(application_instance: QApplication) -> None:
     application_instance.setStyleSheet(get_application_stylesheet())
 
 
-async def main() -> None:
+def main() -> None:
     import os
 
     if len(sys.argv) > 1 and sys.argv[1] in ("--version", "-v", "-V"):
@@ -202,7 +199,6 @@ async def main() -> None:
     logger.debug("Instantiating Controller and UI views...")
     controller = Controller()
     application_instance.aboutToQuit.connect(controller.worker_manager.stop_all)
-    application_instance.aboutToQuit.connect(controller.async_task_manager.stop_all)
     library_grid_view = LibraryGridView(controller)
     series_detail_view = SeriesDetailView(controller)
     movie_detail_view = MovieDetailView(controller)
@@ -386,31 +382,8 @@ async def main() -> None:
         worker.finished.connect(on_startup_check_finished)
         worker.start()
 
-    try:
-        import qasync  # noqa: F401
-
-        logger.info("Starting Qt event loop with asyncio integration via qasync.")
-    except ImportError:
-        logger.warning("qasync not available, falling back to synchronous event loop.")
-
     sys.exit(application_instance.exec())
 
 
-def run_main() -> None:
-    """Synchronous entry point for the async main function.
-
-    Attempts to use qasync for asyncio-Qt event loop integration.
-    Falls back to :func:`asyncio.run` if qasync is not available.
-    """
-    try:
-        import qasync
-
-        logger.info("Using qasync for asyncio-Qt event loop integration.")
-        qasync.run(main())
-    except ImportError:
-        logger.warning("qasync not available; falling back to :func:`asyncio.run`.")
-        asyncio.run(main())
-
-
 if __name__ == "__main__":
-    run_main()
+    main()
