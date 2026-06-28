@@ -7,7 +7,7 @@ the value through a *separate* ``get_directory_mtime`` call, which opens its
 own fresh session — ensuring data was actually committed to the database.
 """
 
-import asyncio
+import pytest
 from lan_streamer.db.library_shared import get_directory_mtime, save_directory_mtime
 
 
@@ -47,7 +47,8 @@ def test_get_directory_mtime_returns_none_for_unknown_path() -> None:
     assert result is None
 
 
-def test_database_writer_saves_directory_mtime() -> None:
+@pytest.mark.asyncio
+async def test_database_writer_saves_directory_mtime() -> None:
     """AsyncDatabaseWriter must support and correctly execute save_directory_mtime task."""
     from lan_streamer.backend.database_writer import AsyncDatabaseWriter
     from lan_streamer.db.library_shared import get_directory_mtime
@@ -56,19 +57,16 @@ def test_database_writer_saves_directory_mtime() -> None:
     mtime = 987654321.0
 
     writer = AsyncDatabaseWriter()
+    await writer.start()
 
-    async def run() -> None:
-        await writer.start()
-        try:
-            task = await writer.submit(
-                "save_directory_mtime",
-                {"path": path, "mtime": mtime},
-            )
-            await task.async_event.wait()
-            assert task.error is None, f"Database write failed with: {task.error}"
+    try:
+        task = await writer.submit(
+            "save_directory_mtime",
+            {"path": path, "mtime": mtime},
+        )
+        await task.async_event.wait()
+        assert task.error is None, f"Database write failed with: {task.error}"
 
-            assert get_directory_mtime(path) == mtime
-        finally:
-            await writer.stop()
-
-    asyncio.run(run())
+        assert get_directory_mtime(path) == mtime
+    finally:
+        await writer.stop()
