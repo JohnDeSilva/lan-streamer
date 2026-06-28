@@ -13,7 +13,7 @@ More extended Controller tests covering:
 """
 
 import pytest
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import patch, MagicMock
 from typing import List
 
 from lan_streamer.ui_views import Controller
@@ -257,9 +257,7 @@ def test_on_refresh_finished_different_library(ctrl_tv, mock_db_save) -> None:
 def test_merge_subtitles_starts_worker(ctrl_tv) -> None:
     with patch("lan_streamer.backend.SubtitleMergeWorker") as mock_cls:
         ctrl_tv.merge_subtitles("/video.mkv", ["/sub.srt"])
-        mock_cls.assert_called_once_with(
-            "/video.mkv", ["/sub.srt"], async_task_manager=ANY
-        )
+        mock_cls.assert_called_once_with("/video.mkv", ["/sub.srt"])
         mock_cls.return_value.start.assert_called_once()
 
 

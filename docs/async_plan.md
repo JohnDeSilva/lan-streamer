@@ -435,55 +435,51 @@ refactor(backend): migrate ScanAllLibrariesWorker to asyncio
 
 ---
 
-## Stage 5: Hybrid Thread Pool Setup and Filesystem Traversal
+## Stage 5: Full Migration — QThread Removal & Cleanup
 
-**Goal**: Implement the custom, size-constrained `ThreadPoolExecutor` and offload all directory walks, `mtime` delta checks, and blocking filesystem checks to this executor. This isolates network share latency (SMB/NFS/NAS) from the PySide6 event loop, preventing UI freezes when network storage becomes slow or unreachable.
+**Goal**: Remove all remaining QThread subclasses, the old `DatabaseWriterThread`, and legacy `ThreadPoolExecutor` usage. The application is fully async-native.
 
-### Specific Changes
-- **Thread Pool Setup**: Define a dedicated filesystem executor (`FileSystemExecutor`) with `max_workers = 3` (or configurable based on network/local drive types) in `src/lan_streamer/system/async_utils.py`.
-- **Crawler Offloading**: Rewrite all `os.scandir`, `os.stat`, and directory walks in `scanner/core.py` to execute in this pool via `asyncio.to_thread` or `loop.run_in_executor(fs_executor, ...)`.
-- **Concurrency Separation**: The event loop (on the Qt main thread) coordinates high-level scheduling, while worker threads perform the raw directory scans.
+### Changes
 
-### Tests
-- Verify simulated network drive connection hangs (inducing multi-second delays on mock scanning operations) do not degrade Qt user interface responsiveness or frame rates.
+#### 5.1 Remove QThread Subclasses
+- Delete all QThread-based worker classes (or replace with thin wrappers)
+- Remove `BaseScanWorker` base class
+- Update `WorkerSlot` to only support coroutine factories
+- Clean up `threading_manager.py` — remove weakref deferred cleanup, timeout logic
 
-### Commit
-`feat(scanner): offload filesystem traversal to custom ThreadPoolExecutor`
+#### 5.2 Remove DatabaseWriterThread
+- `DatabaseWriterThread` and `DatabaseWriteTask` are removed
+- All DB writes go through `AsyncDatabaseWriter`
+- `wait_for_database_write_task()` function is deleted
+- All callers use `await async_db_write()`
 
----
+#### 5.3 Remove Global ThreadPoolExecutors
+- Remove `get_scan_executor()` from `scanner/core.py`
+- Remove `atexit`-registered shutdown
+- Replace all `executor.submit()` calls with `asyncio.to_thread()` or native async I/O
 
-## Stage 6: Concurrency Control and Subprocess Throttling
+#### 5.4 Simplify WorkerManager
+- `WorkerSlot` becomes `TaskSlot` (manages asyncio tasks instead of QThreads)
+- Remove `requestInterruption()`, `quit()`, `wait()` patterns
+- Replace with `task.cancel()` + `asyncio.gather()` for cleanup
+- Remove weakref deferred cleanup (no longer needed)
 
-**Goal**: Implement semaphores and concurrency limits to safeguard CPU, memory, and network resources from starvation during large metadata scans on network drives.
+#### 5.5 Remove `scan_worker_base.py` Buffering
+- Detail progress buffering used a `threading.Lock` + batch threshold
+- Replace with `asyncio.Event` or direct `emit` (async emit is non-blocking by nature)
+- Remove `flush_detail_progress()`, `emit_detail_progress()` from base
 
-### Specific Changes
-- **API Call Limits**: Protect all TMDB and Jellyfin client operations using `network_semaphore = asyncio.Semaphore(10)` to prevent API rate-limiting blocks or connection timeouts.
-- **Subprocess Throttling**: Restrict concurrent `FFprobe` and `FFmpeg` subprocesses using `subprocess_semaphore = asyncio.Semaphore(3)` to prevent disk thrashing and CPU exhaustion on network storage.
-- **Incremental Output Reading**: Configure `asyncio.subprocess` to read stdout/stderr incrementally via `communicate()` or stream readers to avoid memory accumulation.
-
-### Tests
-- Validate that scanning 100+ files simultaneously results in at most 3 parallel `ffprobe` subprocesses and 10 parallel API requests.
-- Verify cancellation of long-running subprocesses (FFmpeg) halts execution cleanly without leaving zombie processes.
-
-### Commit
-`feat(scanner): apply concurrency semaphores to network and subprocesses`
-
----
-
-## Stage 7: QThread Consolidation & Legacy Cleanup
-
-**Goal**: Clean up obsolete `QThread` workers that have been fully replaced by async-managed tasks, while retaining select threads (such as VLC playback or the backup updater) for native platform isolation.
-
-### Specific Changes
-- **Clean up QThreads**: Remove legacy `QThread`-based worker classes (e.g., `MetadataEmbedWorker`, `SubtitleMergeWorker`, etc.) that are now managed as asyncio tasks.
-- **Serialized Database Writer**: Retain the serialized `AsyncDatabaseWriter` write queue draining tasks sequentially, configured with Write-Ahead Logging (WAL) mode for simultaneous non-blocking read access.
-- **Simplify WorkerManager**: Update `WorkerSlot` to support both native thread handles and asyncio task handles cleanly, unifying status monitoring.
+#### 5.6 Remove `proxy.py` Patches
+- `src/lan_streamer/ui_views/proxy.py` was created for test patching of QThread workers
+- With QThreads gone, simplify test infrastructure
 
 ### Tests
-- Execute full regression and integration test suites to verify that concurrent database reads during serialized writes run without lock collisions.
+- Full regression suite passes
+- All async providers produce identical results to former sync providers
+- No `threading` module usage remains in production code (except perhaps in test fixtures)
 
 ### Commit
-`refactor(core): consolidate QThread workers and finalize hybrid model`
+`refactor(core): remove legacy QThread workers and complete async migration`
 
 ---
 
@@ -491,13 +487,13 @@ refactor(backend): migrate ScanAllLibrariesWorker to asyncio
 
 | Metric | Before | After |
 |---|---|---|
-| Thread count (idle) | ~15 (QThreads + pools) | ~4 (event loop + size-limited pools) |
-| Thread count (scanning) | ~30+ (QThread + nested pools) | ~8 (asyncio tasks + managed pools) |
+| Thread count (idle) | ~15 (QThreads + pools) | ~3 (event loop + 2 executor workers) |
+| Thread count (scanning) | ~30+ (QThread + nested pools) | ~5 (asyncio tasks + executor) |
 | Memory per idle thread | ~8MB per QThread stack | ~1KB per coroutine |
 | Cancellation | Polling `isInterruptionRequested()` | `task.cancel()` with `CancelledError` |
 | Parallel network calls | `ThreadPoolExecutor` (synchronous) | `asyncio.gather()` (truly async) |
-| Subprocess (ffprobe) | `subprocess.run()` (blocking thread) | Managed `asyncio` subprocesses |
-| DB write bottleneck | `threading.Thread` + `queue.Queue` | Serialized async queue / WAL concurrency |
+| Subprocess (ffprobe) | `subprocess.run()` (blocking thread) | `asyncio.create_subprocess_exec()` |
+| DB write bottleneck | `threading.Thread` + `queue.Queue` | asyncio coroutine on event loop |
 | Periodic scheduling | None (manual only) | Configurable async timer |
 
 ---
@@ -511,11 +507,9 @@ Each stage is designed to be independently deployable and revertible:
 - **Stage 2**: Sync providers remain alongside async; switch back via config flag
 - **Stage 3**: Async engine optional; sync engine remains default
 - **Stage 4**: Each worker can be individually reverted to QThread form
-- **Stage 5**: The hybrid file system thread pool can be disabled, falling back to synchronous execution
-- **Stage 6**: Semaphores can be bypassed by increasing limits
-- **Stage 7**: Threading barriers for C-based engines (VLC) remain permanently isolated
+- **Stage 5**: The full migration is gated on all earlier stages being stable
 
-A **feature flag** (`config.enable_async_scan`) controls whether the async `ScheduledScanService` or legacy QThread workers are used. This flag defaults to `false` until Stage 7.
+A **feature flag** (`config.enable_async_scan`) controls whether the async `ScheduledScanService` or legacy QThread workers are used. This flag defaults to `false` until Stage 5.
 
 ---
 

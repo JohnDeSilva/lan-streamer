@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import patch, MagicMock
 from typing import Any, Dict, List, Optional
 from PySide6.QtWidgets import (
     QPushButton,
@@ -1279,9 +1279,7 @@ def test_controller_additional_coverage() -> None:
     # 8. merge_subtitles, _on_subtitle_merge_finished
     with patch("lan_streamer.backend.SubtitleMergeWorker") as mock_merge_class:
         controller_instance.merge_subtitles("/video.mkv", ["/sub.srt"])
-        mock_merge_class.assert_called_once_with(
-            "/video.mkv", ["/sub.srt"], async_task_manager=ANY
-        )
+        mock_merge_class.assert_called_once_with("/video.mkv", ["/sub.srt"])
         mock_merge_instance = mock_merge_class.return_value
         mock_merge_instance.start.assert_called_once()
 
@@ -1301,9 +1299,7 @@ def test_controller_additional_coverage() -> None:
     # 9. embed_metadata, _on_metadata_embed_finished
     with patch("lan_streamer.backend.MetadataEmbedWorker") as mock_embed_class:
         controller_instance.embed_metadata("/video.mkv", {"title": "Title"})
-        mock_embed_class.assert_called_once_with(
-            "/video.mkv", {"title": "Title"}, async_task_manager=ANY
-        )
+        mock_embed_class.assert_called_once_with("/video.mkv", {"title": "Title"})
         mock_embed_instance = mock_embed_class.return_value
         mock_embed_instance.start.assert_called_once()
 
@@ -1338,9 +1334,7 @@ def test_controller_additional_coverage() -> None:
         # normal case
         controller_instance.worker_manager.metadata_embed.stop()
         controller_instance.embed_metadata_series("Show1")
-        mock_series_embed_class.assert_called_once_with(
-            "Show1", [{"path": "/ep1.mkv"}], async_task_manager=ANY
-        )
+        mock_series_embed_class.assert_called_once_with("Show1", [{"path": "/ep1.mkv"}])
 
         # no episodes case
         controller_instance.worker_manager.metadata_embed.stop()

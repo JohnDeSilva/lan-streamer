@@ -41,7 +41,6 @@ from lan_streamer.services.metadata_updates import clean_series_data
 from .versioning import get_version_score_key, choose_active_version
 from .core import (
     LibraryDict,
-    async_run_scan_directories,
     scan_directories,
     scan_movie,
     scan_series,

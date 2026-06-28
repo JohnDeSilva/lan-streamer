@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 import queue
@@ -19,6 +18,7 @@ from lan_streamer.scanner import (
 )
 from lan_streamer.system.config import config
 from lan_streamer.backend.scan_worker_base import (
+    BaseScanWorker,
     create_empty_stats,
     log_db_write_error,
     log_issues_report,
@@ -27,13 +27,7 @@ from lan_streamer.backend.scan_worker_base import (
     series_belongs_to_root,
     wait_for_database_write_task,
 )
-from lan_streamer.backend.async_worker_base import AsyncWorkerBase
-from lan_streamer.system.async_task_manager import AsyncTaskManager
-from lan_streamer.backend.database_writer import (
-    DatabaseWriteTask,
-    AsyncDatabaseWriter,
-    DatabaseWriterThread,  # noqa: F401
-)
+from lan_streamer.backend.database_writer import DatabaseWriteTask, DatabaseWriterThread
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -53,58 +47,42 @@ LIFECYCLE_EVENTS = frozenset(
 )
 
 
-class AsyncDatabaseWriterQueueAdapter:
-    """Adapter to allow scanner threads to submit tasks to AsyncDatabaseWriter."""
-
-    def __init__(
-        self,
-        writer: AsyncDatabaseWriter,
-        loop: asyncio.AbstractEventLoop,
-    ) -> None:
-        self.writer = writer
-        self.loop = loop
-
-    def put(self, task: Optional[DatabaseWriteTask]) -> None:
-        if task is None:
-            return
-        task.async_event = asyncio.Event()
-        asyncio.run_coroutine_threadsafe(self.writer._queue.put(task), self.loop)
-
-
-class ScanAllLibrariesWorker(AsyncWorkerBase):
+class ScanAllLibrariesWorker(BaseScanWorker):
     """Scans all configured libraries in parallel using TMDB for metadata.
 
     Libraries are scanned concurrently within each pass using a
-    `ThreadPoolExecutor`.  Pass 1 performs offline file discovery; Pass 2
+    ``ThreadPoolExecutor``.  Pass 1 performs offline file discovery; Pass 2
     resolves online metadata.  Results from each thread-pool task are merged
     into shared state under a lock.
     """
 
     library_progress = Signal(str, int, int)
     detail_progress = Signal(str, dict)  # (event_type, payload)
-    detail_progress_batch = Signal(list)
     finished = Signal()
     error = Signal(str)
     library_error = Signal(str, str)  # (library_name, error_message)
 
     def __init__(
         self,
-        async_task_manager: Optional[AsyncTaskManager] = None,
         force_refresh: bool = False,
         run_pass1: bool = True,
         run_pass2: bool = True,
         parent: Optional[QObject] = None,
     ) -> None:
-        """Initialise the scan-all-libraries worker."""
-        super().__init__(async_task_manager=async_task_manager, parent=parent)
+        """Initialise the scan-all-libraries worker.
+
+        Args:
+            force_refresh: If True, re-resolve metadata even for unchanged items.
+            run_pass1: If True, execute offline file-discovery pass.
+            run_pass2: If True, execute online metadata-resolution pass.
+            parent: Optional QObject parent.
+        """
+        super().__init__(parent)
         self.force_refresh: bool = force_refresh
         self.run_pass1: bool = run_pass1
         self.run_pass2: bool = run_pass2
 
         # Shared mutable state — protected by _lock when accessed from threads.
-        self._lock = threading.Lock()
-        self._detail_progress_buffer: List[Dict[str, Any]] = []
-
         self.unavailable_directories: List[str] = []
         self.problems: List[Dict[str, Any]] = []
         self.stats: Dict[str, int] = create_empty_stats()
@@ -130,30 +108,8 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         self.pass2_stats_per_library: Dict[str, Dict[str, int]] = {}
 
         # Database write queue — created in run() for each scan.
-        self.database_queue: Optional[Any] = None
-        self._database_writer: Optional[AsyncDatabaseWriter] = None
-
-    def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
-        """Add a progress event to the thread-safe buffer and emit if full."""
-        flush_needed = False
-        with self._lock:
-            self._detail_progress_buffer.append({"event": event, "payload": payload})
-            if len(self._detail_progress_buffer) >= 20:
-                flush_needed = True
-        if flush_needed:
-            self.flush_detail_progress()
-
-    def flush_detail_progress(self) -> None:
-        """Force flush all buffered detail-progress events to the UI."""
-        with self._lock:
-            if not self._detail_progress_buffer:
-                return
-            batch = list(self._detail_progress_buffer)
-            self._detail_progress_buffer.clear()
-        self.detail_progress_batch.emit(batch)
-
-    def isInterruptionRequested(self) -> bool:
-        return self._cancelled
+        self.database_queue: Optional[queue.Queue] = None
+        self.database_writer: Optional[DatabaseWriterThread] = None
 
     # ------------------------------------------------------------------
     # Helper methods
@@ -841,7 +797,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
     # Main execution entrypoint (runs in the QThread)
     # ------------------------------------------------------------------
 
-    async def run_async(self) -> None:
+    def run(self) -> None:
         """Execute the full scan run with parallel library scanning."""
         start_time = time.time()
         self.problems = []
@@ -861,14 +817,12 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         self._skipped_series_ids.clear()
         self._skipped_movie_ids.clear()
 
-        # Create the database writer
-        self._database_writer = AsyncDatabaseWriter()
-        self.database_queue = AsyncDatabaseWriterQueueAdapter(
-            self._database_writer, asyncio.get_running_loop()
-        )
+        # Create the database writer thread
+        self.database_queue = queue.Queue()
+        self.database_writer = DatabaseWriterThread(self.database_queue)
 
         try:
-            await self._database_writer.start()
+            self.database_writer.start()
             logger.info("ScanAllLibrariesWorker starting global scan run")
             libraries_dictionary: Dict[str, Dict[str, Any]] = config.libraries
             total_count: int = len(libraries_dictionary)
@@ -924,7 +878,6 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
 
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     future_to_library: Dict[Any, str] = {}
-                    futures_list = []
                     for (
                         library_name,
                         library_configuration,
@@ -938,11 +891,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                             True,  # is_pass1
                         )
                         future_to_library[future] = library_name
-                        futures_list.append(
-                            (asyncio.wrap_future(future), future, library_name)
-                        )
-
-                    for asyncio_fut, fut, library_name in futures_list:
+                    for future in as_completed(future_to_library):
                         if self.isInterruptionRequested():
                             logger.info(
                                 "ScanAllLibrariesWorker: interruption requested during Pass 1. Cancelling remaining tasks."
@@ -950,8 +899,9 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                             for f in future_to_library:
                                 f.cancel()
                             break
+                        library_name = future_to_library[future]
                         try:
-                            result = await asyncio_fut
+                            result: Dict[str, Any] = future.result()
                         except Exception as error:
                             if isinstance(error, InterruptedError):
                                 logger.info(
@@ -1021,7 +971,6 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 completed_count: int = 0
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     future_to_library = {}
-                    futures_list = []
                     for (
                         library_name,
                         library_configuration,
@@ -1037,11 +986,8 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                             False,  # is_pass1
                         )
                         future_to_library[future] = library_name
-                        futures_list.append(
-                            (asyncio.wrap_future(future), future, library_name)
-                        )
 
-                    for asyncio_fut, fut, library_name in futures_list:
+                    for future in as_completed(future_to_library):
                         if self.isInterruptionRequested():
                             logger.info(
                                 "ScanAllLibrariesWorker: interruption requested during Pass 2. Cancelling remaining tasks."
@@ -1049,8 +995,9 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                             for f in future_to_library:
                                 f.cancel()
                             break
+                        library_name = future_to_library[future]
                         try:
-                            result = await asyncio_fut
+                            result = future.result()
                         except Exception as error:
                             if isinstance(error, InterruptedError):
                                 logger.info(
@@ -1126,13 +1073,6 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             self.error.emit(str(exception_instance))
         finally:
             self.flush_detail_progress()
-            if self._database_writer is not None:
-                await self._database_writer.stop()
-
-    def run(self) -> None:
-        """Synchronous compatibility fallback for tests."""
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(self._run_wrapper())
-        finally:
-            loop.close()
+            if self.database_writer is not None:
+                self.database_writer.stop()
+                self.database_writer.join()

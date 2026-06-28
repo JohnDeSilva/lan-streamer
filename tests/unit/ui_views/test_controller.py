@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import patch, MagicMock
 from typing import Any, Dict, List
 
 from lan_streamer.ui_views import Controller
@@ -181,7 +181,7 @@ def test_controller_triggers() -> None:
     )
     controller_instance.current_library_name = "Test Lib"
 
-    with patch("lan_streamer.ui_views.controller.AsyncScanWorker") as mock_scan:
+    with patch("lan_streamer.ui_views.controller.ScanWorker") as mock_scan:
         controller_instance.trigger_scan(force_refresh=True)
         mock_scan.assert_called_once()
         mock_scan.return_value.start.assert_called_once()
@@ -339,10 +339,7 @@ def test_controller_global_triggers() -> None:
     ) as mock_scan_all:
         controller_instance.trigger_scan_all(force_refresh=True)
         mock_scan_all.assert_called_once_with(
-            async_task_manager=ANY,
-            force_refresh=True,
-            run_pass1=True,
-            run_pass2=True,
+            force_refresh=True, run_pass1=True, run_pass2=True
         )
         mock_scan_all.return_value.start.assert_called_once()
 

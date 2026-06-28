@@ -56,19 +56,6 @@ from lan_streamer.db.library import (
     get_directory_mtime,
     save_directory_mtime,
 )
-from lan_streamer.db.library_async import (
-    async_load_library,
-    async_load_movie_library,
-)
-from lan_streamer.db.library_shared import (
-    async_get_directory_mtime,
-    async_save_directory_mtime,
-)
-from lan_streamer.db.async_session import (
-    get_async_engine,
-    get_async_session_factory,
-    get_async_session,
-)
 from lan_streamer.db.sync import (
     sync_watched_from_jellyfin_data,
     get_all_episodes_with_jellyfin_id,

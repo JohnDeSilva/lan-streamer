@@ -9,10 +9,7 @@ from lan_streamer.system.async_utils import (
     cancel_task_safely,
     gather_with_concurrency,
     get_event_loop_safe,
-    get_fs_executor,
     run_in_executor,
-    run_in_fs_executor,
-    shutdown_fs_executor,
     to_async,
 )
 
@@ -348,128 +345,5 @@ class TestGetEventLoopSafe:
             running_loop = asyncio.get_running_loop()
             safe_loop = get_event_loop_safe()
             assert safe_loop is running_loop
-
-        asyncio.run(_test())
-
-
-# ---------------------------------------------------------------------------
-# FileSystemExecutor (get_fs_executor / shutdown_fs_executor)
-# ---------------------------------------------------------------------------
-
-
-class TestFileSystemExecutor:
-    """Tests for :func:`get_fs_executor` and :func:`shutdown_fs_executor`."""
-
-    def teardown_method(self) -> None:
-        """Ensure the executor is cleaned up after each test."""
-        shutdown_fs_executor()
-
-    def test_returns_executor_instance(self) -> None:
-        """get_fs_executor should return a ThreadPoolExecutor."""
-        executor = get_fs_executor()
-        from concurrent.futures import ThreadPoolExecutor
-
-        assert isinstance(executor, ThreadPoolExecutor)
-
-    def test_singleton_same_instance(self) -> None:
-        """get_fs_executor should return the same instance on repeated calls."""
-        first = get_fs_executor()
-        second = get_fs_executor()
-        assert first is second
-        shutdown_fs_executor()
-
-    def test_max_workers_is_three(self) -> None:
-        """get_fs_executor should have max_workers == 3."""
-        executor = get_fs_executor()
-        assert executor._max_workers == 3
-
-    def test_shutdown_clears_singleton(self) -> None:
-        """shutdown_fs_executor should clear the global executor."""
-        first = get_fs_executor()
-        shutdown_fs_executor()
-        second = get_fs_executor()
-        assert first is not second
-
-    def test_shutdown_safe_to_call_multiple_times(self) -> None:
-        """shutdown_fs_executor should not raise when called multiple times."""
-        shutdown_fs_executor()
-        shutdown_fs_executor()
-        shutdown_fs_executor()
-
-    def test_new_executor_after_shutdown_is_functional(self) -> None:
-        """A new executor obtained after shutdown should be usable."""
-        shutdown_fs_executor()
-        executor = get_fs_executor()
-        future = executor.submit(lambda: 42)
-        assert future.result() == 42
-
-
-# ---------------------------------------------------------------------------
-# run_in_fs_executor
-# ---------------------------------------------------------------------------
-
-
-class TestRunInFsExecutor:
-    """Tests for :func:`run_in_fs_executor`."""
-
-    def teardown_method(self) -> None:
-        """Clean up the executor after each test."""
-        shutdown_fs_executor()
-
-    def test_returns_result(self) -> None:
-        """run_in_fs_executor should return the result of the callable."""
-
-        async def _test() -> None:
-            result = await run_in_fs_executor(lambda: "hello from fs")
-            assert result == "hello from fs"
-
-        asyncio.run(_test())
-
-    def test_passes_args(self) -> None:
-        """run_in_fs_executor should forward positional arguments."""
-
-        async def _test() -> None:
-            result = await run_in_fs_executor(lambda a, b: a + b, 10, 20)
-            assert result == 30
-
-        asyncio.run(_test())
-
-    def test_passes_kwargs(self) -> None:
-        """run_in_fs_executor should forward keyword arguments."""
-
-        async def _test() -> None:
-            result = await run_in_fs_executor(
-                lambda first, second: f"{first}-{second}",
-                "a",
-                second="b",
-            )
-            assert result == "a-b"
-
-        asyncio.run(_test())
-
-    def test_propagates_exception(self) -> None:
-        """run_in_fs_executor should propagate exceptions from the callable."""
-
-        async def _test() -> None:
-            def _failing() -> None:
-                msg = "fs executor failure"
-                raise RuntimeError(msg)
-
-            with pytest.raises(RuntimeError, match="fs executor failure"):
-                await run_in_fs_executor(_failing)
-
-        asyncio.run(_test())
-
-    def test_runs_in_fs_executor_pool(self) -> None:
-        """run_in_fs_executor should use the dedicated filesystem executor."""
-
-        async def _test() -> None:
-            def _identify_pool() -> str:
-                return threading.current_thread().name
-
-            result = await run_in_fs_executor(_identify_pool)
-            assert "fs_executor" in result
-
-        import threading
 
         asyncio.run(_test())
