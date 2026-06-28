@@ -1,6 +1,9 @@
 from pathlib import Path
 
 
+import re
+from urllib.parse import urlparse
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -20,13 +23,17 @@ def test_rc_workflow_builds_executables_for_rc_branch() -> None:
 def test_main_release_workflow_uses_commitizen_to_cut_release() -> None:
     workflow_text = read_text(".github/workflows/release.yml")
 
-    assert 'branches: [ "main" ]' in workflow_text
-    assert "cz bump --yes --changelog --files-only" in workflow_text
+    assert 'branches: [ "main", "rc" ]' in workflow_text
+    assert (
+        "cz bump --prerelease rc --yes --changelog --version-files-only"
+        in workflow_text
+    )
+    assert "cz bump --yes --changelog --version-files-only" in workflow_text
     assert (
         'git commit -m "chore(release): v${RELEASE_VERSION} [skip ci]"' in workflow_text
     )
     assert 'git tag -a "v${RELEASE_VERSION}"' in workflow_text
-    assert "git push origin HEAD:main" in workflow_text
+    assert "git push origin HEAD:${{ github.ref_name }}" in workflow_text
     assert 'git push origin "v${RELEASE_VERSION}"' in workflow_text
 
 
@@ -45,3 +52,39 @@ def test_ci_workflows_cover_rc_and_main_branches() -> None:
     assert 'branches: [ "main", "rc" ]' in lint_workflow_text
     assert "[skip ci]" in test_workflow_text
     assert "[skip ci]" in lint_workflow_text
+
+
+def test_no_actual_urls_in_tests() -> None:
+    """Scan all python files in tests/ and verify that no actual/live external URLs are used."""
+    tests_dir = PROJECT_ROOT / "tests"
+    allowed_hosts = {
+        "localhost",
+        "127.0.0.1",
+        "192.168.1.10",
+        "example.invalid",
+        "cdn.example.invalid",
+        "jellyfin.local",
+        "jellyfin",
+        "jelly",
+        "jf",
+        "test",
+        "test-jf",
+        "fallback",
+        "download.url",
+    }
+
+    url_pattern = re.compile(r"https?://[a-zA-Z0-9.-]+")
+
+    for path in tests_dir.rglob("*.py"):
+        content = path.read_text(encoding="utf-8")
+        matches = url_pattern.findall(content)
+        for url in matches:
+            parsed = urlparse(url)
+            host = parsed.netloc.split(":")[0]
+            if not host:
+                continue
+            assert host in allowed_hosts, (
+                f"Actual/unauthorized URL hostname found in "
+                f"{path.relative_to(PROJECT_ROOT)}: {host} (from '{url}'). "
+                f"Please use mock/test domains like 'example.invalid'."
+            )
