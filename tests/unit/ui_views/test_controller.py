@@ -318,13 +318,13 @@ def test_controller_file_system_monitoring(
         )
 
         # Test concurrency protection
-        mock_worker = MagicMock()
-        mock_worker.isRunning.return_value = True
-        controller_instance.worker_manager.scan._instance = mock_worker
+        mock_scan = MagicMock()
+        mock_scan._is_async_worker = True
+        controller_instance.worker_manager.scan._instance = mock_scan
         controller_instance.current_library_name = "ActiveMonitoredLib"
 
         with patch(
-            "lan_streamer.ui_views.controller.ScanWorker"
+            "lan_streamer.ui_views.controller.AsyncScanWorker"
         ) as mock_worker_constructor:
             controller_instance.trigger_scan(force_refresh=False)
             mock_worker_constructor.assert_not_called()
@@ -348,7 +348,7 @@ def test_controller_global_triggers() -> None:
 
         # Test concurrency protection
         mock_worker = MagicMock()
-        mock_worker.isRunning.return_value = True
+        mock_worker._is_async_worker = True
         controller_instance.worker_manager.scan_all._instance = mock_worker
         controller_instance.trigger_scan_all(force_refresh=False)
         assert mock_scan_all.call_count == 1

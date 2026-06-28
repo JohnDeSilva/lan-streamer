@@ -27,9 +27,10 @@ def test_controller_reloads_config_on_actions(mock_db_save) -> None:
         mock_load.reset_mock()
 
         # 2. trigger_scan
-        with patch("lan_streamer.ui_views.controller.ScanWorker") as mock_scan_worker:
+        with patch(
+            "lan_streamer.ui_views.controller.AsyncScanWorker"
+        ) as mock_scan_worker:
             mock_worker_instance = MagicMock()
-            mock_worker_instance.isRunning.return_value = False
             mock_scan_worker.return_value = mock_worker_instance
 
             controller.trigger_scan()
@@ -37,9 +38,10 @@ def test_controller_reloads_config_on_actions(mock_db_save) -> None:
             mock_load.reset_mock()
 
         # 3. trigger_scan_and_update
-        with patch("lan_streamer.ui_views.controller.ScanWorker") as mock_scan_worker:
+        with patch(
+            "lan_streamer.ui_views.controller.AsyncScanWorker"
+        ) as mock_scan_worker:
             mock_worker_instance = MagicMock()
-            mock_worker_instance.isRunning.return_value = False
             mock_scan_worker.return_value = mock_worker_instance
 
             controller.trigger_scan_and_update()
@@ -51,7 +53,8 @@ def test_controller_reloads_config_on_actions(mock_db_save) -> None:
             "lan_streamer.ui_views.controller.ScanAllLibrariesWorker"
         ) as mock_scan_all_worker:
             mock_worker_instance = MagicMock()
-            mock_worker_instance.isRunning.return_value = False
+            mock_worker_instance._is_async_worker = True
+            mock_worker_instance.is_running = False
             mock_scan_all_worker.return_value = mock_worker_instance
 
             controller.trigger_scan_all()
