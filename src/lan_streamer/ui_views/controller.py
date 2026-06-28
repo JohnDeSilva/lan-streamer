@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from lan_streamer.providers.tmdb import tmdb_client as _tmdb_default
     from lan_streamer.backend import (
         MetadataApplyWorker,
-        ScanWorker,
+        AsyncScanWorker,
         CleanupWorker,
         JellyfinPullWorker,
         JellyfinPushWorker,
@@ -39,13 +39,14 @@ else:
         jellyfin_client as _jellyfin_default,
         tmdb_client as _tmdb_default,
         MetadataApplyWorker,
-        ScanWorker,
         CleanupWorker,
         JellyfinPullWorker,
         JellyfinPushWorker,
         ScanAllLibrariesWorker,
         FilePropertyExtractionWorker,
     )
+    from lan_streamer.backend import AsyncScanWorker
+    from lan_streamer.backend import ScanWorker  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -359,10 +360,11 @@ class Controller(QObject):
         self._doing_scan_and_update = False
 
         self.worker_manager.scan.start(
-            lambda: ScanWorker(
+            lambda: AsyncScanWorker(
                 root_directories=root_directories,
                 library_type=library_type,
                 existing_library=self.cached_library_data,
+                async_task_manager=self.async_task_manager,
                 force_refresh=force_refresh,
                 cleanup=False,
                 library_name=self.current_library_name,
@@ -440,6 +442,7 @@ class Controller(QObject):
             lambda: CleanupWorker(
                 library_name=self.current_library_name,
                 root_directories=root_directories,
+                async_task_manager=self.async_task_manager,
             ),
             finished=self._on_cleanup_finished,
             error=self._on_worker_error,
@@ -473,7 +476,9 @@ class Controller(QObject):
 
         self.worker_manager.cleanup_global.start(
             lambda: CleanupWorker(
-                library_name=lib_name, root_directories=root_directories
+                library_name=lib_name,
+                root_directories=root_directories,
+                async_task_manager=self.async_task_manager,
             ),
             finished=self._on_global_cleanup_step_finished,
             error=self._on_global_cleanup_step_error,
@@ -522,10 +527,11 @@ class Controller(QObject):
         self._doing_scan_and_update = True
 
         self.worker_manager.scan.start(
-            lambda: ScanWorker(
+            lambda: AsyncScanWorker(
                 root_directories=root_directories,
                 library_type=library_type,
                 existing_library=self.cached_library_data,
+                async_task_manager=self.async_task_manager,
                 force_refresh=force_refresh,
                 cleanup=False,
                 library_name=self.current_library_name,
@@ -554,6 +560,7 @@ class Controller(QObject):
             lambda: CleanupWorker(
                 library_name=self.current_library_name,
                 root_directories=root_directories,
+                async_task_manager=self.async_task_manager,
             ),
             finished=lambda statistics: self._on_scan_and_update_cleanup_finished(
                 statistics, changed_season_ids, changed_movie_ids
@@ -592,7 +599,7 @@ class Controller(QObject):
 
         self.status_changed.emit("Pulling watch history from Jellyfin...")
         self.worker_manager.jellyfin_pull.start(
-            lambda: JellyfinPullWorker(),
+            lambda: JellyfinPullWorker(async_task_manager=self.async_task_manager),
             finished=self._on_pull_finished,
             error=self._on_worker_error,
         )
@@ -615,7 +622,7 @@ class Controller(QObject):
 
         self.status_changed.emit("Pushing local watch history to Jellyfin...")
         self.worker_manager.jellyfin_push.start(
-            lambda: JellyfinPushWorker(),
+            lambda: JellyfinPushWorker(async_task_manager=self.async_task_manager),
             finished=self._on_push_finished,
             error=self._on_worker_error,
         )
@@ -643,6 +650,7 @@ class Controller(QObject):
         self._running_cleanup_after_scan = chain_cleanup
         self.worker_manager.scan_all.start(
             lambda: ScanAllLibrariesWorker(
+                async_task_manager=self.async_task_manager,
                 force_refresh=force_refresh,
                 run_pass1=run_pass1,
                 run_pass2=run_pass2,
@@ -728,6 +736,7 @@ class Controller(QObject):
         self.status_changed.emit("Extracting missing video runtimes in background...")
         self.worker_manager.file_property.start(
             lambda: FilePropertyExtractionWorker(
+                async_task_manager=self.async_task_manager,
                 changed_season_ids=changed_season_ids,
                 changed_movie_ids=changed_movie_ids,
             ),
@@ -1018,6 +1027,7 @@ class Controller(QObject):
                 series_record=series_record,
                 tmdb_identifier=new_tmdb_identifier,
                 saved_group_id=saved_group_id,
+                async_task_manager=self.async_task_manager,
                 poster_path=poster_path,
                 is_movie=False,
                 show_future_episodes=library_config.get("show_future_episodes", True),
@@ -1251,6 +1261,7 @@ class Controller(QObject):
                 library_type=library_type,
                 root_directories=root_directories,
                 existing_library=self.cached_library_data,
+                async_task_manager=self.async_task_manager,
             ),
             finished=self._on_refresh_finished,
             error=self._on_worker_error,
@@ -1303,6 +1314,7 @@ class Controller(QObject):
                 library_type=library_type,
                 root_directories=root_directories,
                 existing_library=self.cached_library_data,
+                async_task_manager=self.async_task_manager,
             ),
             finished=self._on_series_scan_finished,
             error=self._on_worker_error,
@@ -1433,7 +1445,9 @@ class Controller(QObject):
 
         self.status_changed.emit("Merging external subtitles into video file...")
         self.worker_manager.subtitle_merge.start(
-            lambda: SubtitleMergeWorker(video_path, subtitle_paths),
+            lambda: SubtitleMergeWorker(
+                video_path, subtitle_paths, async_task_manager=self.async_task_manager
+            ),
             finished=self._on_subtitle_merge_finished,
             error=self._on_worker_error,
         )
@@ -1453,7 +1467,9 @@ class Controller(QObject):
 
         self.status_changed.emit("Embedding metadata into video file...")
         self.worker_manager.metadata_embed.start(
-            lambda: MetadataEmbedWorker(video_path, metadata),
+            lambda: MetadataEmbedWorker(
+                video_path, metadata, async_task_manager=self.async_task_manager
+            ),
             finished=self._on_metadata_embed_finished,
             error=self._on_worker_error,
         )
@@ -1485,7 +1501,9 @@ class Controller(QObject):
 
         self.status_changed.emit(f"Embedding metadata for series '{series_name}'...")
         self.worker_manager.metadata_embed.start(
-            lambda: SeriesMetadataEmbedWorker(series_name, all_episodes),
+            lambda: SeriesMetadataEmbedWorker(
+                series_name, all_episodes, async_task_manager=self.async_task_manager
+            ),
             progress_updated=self.global_progress_updated.emit,
             finished=lambda: self.status_changed.emit(
                 "Series metadata embedding finished."

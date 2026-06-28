@@ -1,11 +1,15 @@
+import asyncio
 import logging
 from typing import Any, Callable, Dict, Optional
-from PySide6.QtCore import QObject, Signal, QThread
+from PySide6.QtCore import QObject, Signal
+
+from lan_streamer.backend.async_worker_base import AsyncWorkerBase
+from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 logger = logging.getLogger("lan_streamer.backend")
 
 
-class GenericSearchWorker(QThread):
+class GenericSearchWorker(AsyncWorkerBase):
     """Runs an arbitrary callable in a background thread and emits its result.
 
     Signals:
@@ -19,27 +23,21 @@ class GenericSearchWorker(QThread):
     def __init__(
         self,
         target: Callable[..., Any],
+        async_task_manager: Optional[AsyncTaskManager] = None,
         args: Optional[tuple] = None,
         kwargs: Optional[Dict[str, Any]] = None,
         description: str = "search",
         parent: Optional[QObject] = None,
     ) -> None:
-        super().__init__(parent)
+        super().__init__(async_task_manager=async_task_manager, parent=parent)
         self._target: Callable[..., Any] = target
         self._args: tuple = args or ()
         self._kwargs: Dict[str, Any] = kwargs or {}
         self._description: str = description
 
-    def run(self) -> None:
-        try:
-            logger.info(
-                f"GenericSearchWorker running {self._description} in background..."
-            )
-            result = self._target(*self._args, **self._kwargs)
-            logger.info(
-                f"GenericSearchWorker {self._description} completed successfully"
-            )
-            self.search_finished.emit(result)
-        except Exception as exc:
-            logger.exception(f"GenericSearchWorker {self._description} failed: {exc}")
-            self.error.emit(str(exc))
+    async def run_async(self) -> Any:
+        logger.info(f"GenericSearchWorker running {self._description} in background...")
+        result = await asyncio.to_thread(self._target, *self._args, **self._kwargs)
+        logger.info(f"GenericSearchWorker {self._description} completed successfully")
+        self.search_finished.emit(result)
+        return result

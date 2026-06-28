@@ -222,36 +222,74 @@ def test_scan_worker_with_jellyfin() -> None:
 
 def test_cleanup_worker_success() -> None:
     """CleanupWorker emits finished with cleanup results."""
+    import asyncio
     from lan_streamer.backend.scan_worker_cleanup import CleanupWorker
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
+    from PySide6.QtCore import QObject
 
-    with patch(
-        "lan_streamer.backend.scan_worker_cleanup.db.cleanup_library",
-        return_value={"removed": 2},
-    ) as mock_cleanup:
-        finished = []
-        worker = CleanupWorker("TestLib", ["/root"])
-        worker.finished.connect(finished.append)
-        worker.run()
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        parent = QObject()
+        task_manager = AsyncTaskManager(parent=parent)
 
-        assert finished == [{"removed": 2}]
-        mock_cleanup.assert_called_once_with("TestLib", ["/root"])
+        with patch(
+            "lan_streamer.backend.scan_worker_cleanup.db.cleanup_library",
+            return_value={"removed": 2},
+        ) as mock_cleanup:
+            finished = []
+            worker = CleanupWorker(
+                "TestLib", ["/root"], async_task_manager=task_manager
+            )
+            worker.finished.connect(finished.append)
+
+            async def run_success():
+                worker.start()
+                await asyncio.sleep(0.05)
+                worker.stop()
+
+            loop.run_until_complete(run_success())
+
+            assert finished == [{"removed": 2}]
+            mock_cleanup.assert_called_once_with("TestLib", ["/root"])
+    finally:
+        loop.close()
 
 
 def test_cleanup_worker_error() -> None:
     """CleanupWorker emits error on exception."""
+    import asyncio
     from lan_streamer.backend.scan_worker_cleanup import CleanupWorker
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
+    from PySide6.QtCore import QObject
 
-    with patch(
-        "lan_streamer.backend.scan_worker_cleanup.db.cleanup_library",
-        side_effect=RuntimeError("cleanup failed"),
-    ):
-        errors = []
-        worker = CleanupWorker("TestLib", ["/root"])
-        worker.error.connect(errors.append)
-        worker.run()
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        parent = QObject()
+        task_manager = AsyncTaskManager(parent=parent)
 
-        assert len(errors) == 1
-        assert "cleanup failed" in errors[0]
+        with patch(
+            "lan_streamer.backend.scan_worker_cleanup.db.cleanup_library",
+            side_effect=RuntimeError("cleanup failed"),
+        ):
+            errors = []
+            worker = CleanupWorker(
+                "TestLib", ["/root"], async_task_manager=task_manager
+            )
+            worker.error.connect(errors.append)
+
+            async def run_fail():
+                worker.start()
+                await asyncio.sleep(0.05)
+                worker.stop()
+
+            loop.run_until_complete(run_fail())
+
+            assert len(errors) == 1
+            assert "cleanup failed" in errors[0]
+    finally:
+        loop.close()
 
 
 def test_scan_all_libraries_worker_discover_tree(tmp_path) -> None:
