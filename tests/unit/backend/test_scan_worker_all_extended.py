@@ -15,8 +15,10 @@ def test_scan_all_libraries_discover_tree_movie(tmp_path) -> None:
         mock_config.libraries = {
             "MovieLib": {"paths": [str(movie_root)], "type": "movie"},
         }
+        import asyncio
+
         worker = ScanAllLibrariesWorker()
-        tree = worker._discover_tree({})
+        tree = asyncio.run(worker._discover_tree({}))
         assert "MovieLib" in tree
         assert "My Movie" in tree["MovieLib"]["roots"][str(movie_root)]
 
