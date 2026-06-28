@@ -393,13 +393,10 @@ async def main() -> None:
         import qasync  # noqa: F401
 
         logger.info("Starting Qt event loop with asyncio integration via qasync.")
-        # Under qasync, the event loop is already running. We just wait until the app exits.
-        app_close_event = asyncio.Event()
-        application_instance.aboutToQuit.connect(app_close_event.set)
-        await app_close_event.wait()
     except ImportError:
         logger.warning("qasync not available, falling back to synchronous event loop.")
-        sys.exit(application_instance.exec())
+
+    sys.exit(application_instance.exec())
 
 
 def run_main() -> None:
