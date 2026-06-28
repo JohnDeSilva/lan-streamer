@@ -6,7 +6,7 @@ Targeting lines: 97, 105, 148, 160, 171-173, 176-178, 189-196, 218-222, 230-246,
 """
 
 import pytest
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import patch, MagicMock
 from typing import List
 
 from lan_streamer.ui_views import Controller
@@ -283,7 +283,7 @@ def test_trigger_scan_no_library_name() -> None:
     statuses: List[str] = []
     c.status_changed.connect(statuses.append)
 
-    with patch("lan_streamer.ui_views.controller.AsyncScanWorker") as mock_cls:
+    with patch("lan_streamer.ui_views.controller.ScanWorker") as mock_cls:
         c.trigger_scan()
         mock_cls.assert_not_called()
     assert any("Select a library" in s for s in statuses)
@@ -300,14 +300,14 @@ def test_trigger_scan_and_update_no_library() -> None:
     statuses: List[str] = []
     c.status_changed.connect(statuses.append)
 
-    with patch("lan_streamer.ui_views.controller.AsyncScanWorker") as mock_cls:
+    with patch("lan_streamer.ui_views.controller.ScanWorker") as mock_cls:
         c.trigger_scan_and_update()
         mock_cls.assert_not_called()
     assert any("Select a library" in s for s in statuses)
 
 
 def test_trigger_scan_and_update_starts_worker(ctrl) -> None:
-    with patch("lan_streamer.ui_views.controller.AsyncScanWorker") as mock_cls:
+    with patch("lan_streamer.ui_views.controller.ScanWorker") as mock_cls:
         ctrl.trigger_scan_and_update(False)
         mock_cls.assert_called_once()
         mock_cls.return_value.start.assert_called_once()
@@ -318,7 +318,7 @@ def test_trigger_scan_and_update_skips_if_already_running(ctrl) -> None:
     mock_worker.isRunning.return_value = True
     ctrl.worker_manager.scan._instance = mock_worker
 
-    with patch("lan_streamer.ui_views.controller.AsyncScanWorker") as mock_cls:
+    with patch("lan_streamer.ui_views.controller.ScanWorker") as mock_cls:
         ctrl.trigger_scan_and_update()
         mock_cls.assert_not_called()
 
@@ -691,9 +691,7 @@ def test_trigger_global_cleanup_queue(ctrl, mock_db_save) -> None:
     with patch("lan_streamer.ui_views.controller.CleanupWorker") as mock_cls:
         ctrl.trigger_global_cleanup()
         # Should have created a worker for the first library
-        mock_cls.assert_called_once_with(
-            library_name="LibA", root_directories=["/a"], async_task_manager=ANY
-        )
+        mock_cls.assert_called_once_with(library_name="LibA", root_directories=["/a"])
         mock_cls.return_value.start.assert_called_once()
 
 
@@ -718,9 +716,7 @@ def test_global_cleanup_step_finished_resumes(ctrl, mock_db_save) -> None:
         ctrl._on_global_cleanup_step_finished({"series": 0, "episodes": 0})
         # Should have created a worker for the second library
         assert mock_cls.call_count == 2
-        mock_cls.assert_called_with(
-            library_name="LibB", root_directories=["/b"], async_task_manager=ANY
-        )
+        mock_cls.assert_called_with(library_name="LibB", root_directories=["/b"])
 
 
 def test_global_cleanup_step_error_resumes(ctrl, mock_db_save) -> None:

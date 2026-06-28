@@ -3,17 +3,14 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import asyncio
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, QThread
 
-from lan_streamer.backend.async_worker_base import AsyncWorkerBase
-from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.providers.tmdb import tmdb_client as _tmdb_default
 
 logger = logging.getLogger("lan_streamer.backend")
 
 
-class MetadataApplyWorker(AsyncWorkerBase):
+class MetadataApplyWorker(QThread):
     """Downloads provider artwork and syncs TMDB episodes for a metadata match.
 
     Runs the blocking TMDB API calls in a background thread. The caller
@@ -33,14 +30,13 @@ class MetadataApplyWorker(AsyncWorkerBase):
         series_record: Dict[str, Any],
         tmdb_identifier: str,
         saved_group_id: Optional[str],
-        async_task_manager: Optional[AsyncTaskManager] = None,
         poster_path: Optional[str] = None,
         is_movie: bool = False,
         show_future_episodes: bool = True,
         tmdb_client: Any = None,
         parent: Optional[QObject] = None,
     ) -> None:
-        super().__init__(async_task_manager=async_task_manager, parent=parent)
+        super().__init__(parent)
         self._series_record: Dict[str, Any] = series_record
         self._tmdb_identifier: str = tmdb_identifier
         self._saved_group_id: Optional[str] = saved_group_id
@@ -49,57 +45,36 @@ class MetadataApplyWorker(AsyncWorkerBase):
         self._show_future_episodes: bool = show_future_episodes
         self._tmdb: Any = tmdb_client or _tmdb_default
 
-    async def run_async(self) -> tuple[Dict[str, Any], str]:
-        logger.info(
-            "MetadataApplyWorker starting TMDB sync for series "
-            f"(TMDB ID: {self._tmdb_identifier})"
-        )
-        synced_data = await asyncio.to_thread(
-            self._sync_tmdb_episodes,
-            self._series_record,
-            self._tmdb_identifier,
-            self._saved_group_id,
-        )
-
-        cached_poster: Optional[str] = self._poster_path
-        if self._poster_path and self._tmdb_identifier:
-            prefix = "tmdb_movie_" if self._is_movie else "tmdb_series_"
-            try:
-                downloaded = await asyncio.to_thread(
-                    self._tmdb.download_image,
-                    self._poster_path,
-                    f"{prefix}{self._tmdb_identifier}",
-                )
-                cached_poster = downloaded or self._poster_path
-            except Exception as e:
-                logger.exception(f"Failed to download poster: {e}")
-                cached_poster = self._poster_path
-
-        logger.info("MetadataApplyWorker completed successfully")
-        poster_result = cached_poster or ""
-        return synced_data, poster_result
-
-    async def _run_wrapper(self) -> None:
-        """Override to emit finished with two arguments."""
-        try:
-            self.started.emit()
-            synced_data, poster_result = await self.run_async()
-            if not self._cancelled:
-                self.finished.emit(synced_data, poster_result)
-        except asyncio.CancelledError:
-            logger.info("%s was cancelled.", self.__class__.__name__)
-        except Exception as exception:
-            logger.exception("%s failed with error.", self.__class__.__name__)
-            if not self._cancelled:
-                self.error.emit(str(exception))
-
     def run(self) -> None:
-        """Synchronous compatibility fallback for tests."""
-        loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(self._run_wrapper())
-        finally:
-            loop.close()
+            logger.info(
+                "MetadataApplyWorker starting TMDB sync for series "
+                f"(TMDB ID: {self._tmdb_identifier})"
+            )
+            synced_data = self._sync_tmdb_episodes(
+                self._series_record, self._tmdb_identifier, self._saved_group_id
+            )
+
+            cached_poster: Optional[str] = self._poster_path
+            if self._poster_path and self._tmdb_identifier:
+                prefix = "tmdb_movie_" if self._is_movie else "tmdb_series_"
+                try:
+                    cached_poster = (
+                        self._tmdb.download_image(
+                            self._poster_path,
+                            f"{prefix}{self._tmdb_identifier}",
+                        )
+                        or self._poster_path
+                    )
+                except Exception as e:
+                    logger.exception(f"Failed to download poster: {e}")
+                    cached_poster = self._poster_path
+
+            logger.info("MetadataApplyWorker completed successfully")
+            self.finished.emit(synced_data, cached_poster or "")
+        except Exception as exc:
+            logger.exception(f"MetadataApplyWorker failed: {exc}")
+            self.error.emit(str(exc))
 
     def _sync_tmdb_episodes(
         self,

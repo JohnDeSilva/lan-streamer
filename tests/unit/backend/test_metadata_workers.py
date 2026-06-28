@@ -55,13 +55,7 @@ def test_runtime_extraction_worker_execution() -> None:
         progress_emitted: List[tuple] = []
         finished_emitted: List[int] = []
 
-        from PySide6.QtCore import QObject
-        from lan_streamer.system.async_task_manager import AsyncTaskManager
-
-        dummy_parent = QObject()
-        async_task_manager = AsyncTaskManager(parent=dummy_parent)
-
-        worker = FilePropertyExtractionWorker(async_task_manager=async_task_manager)
+        worker = FilePropertyExtractionWorker()
         worker.progress_updated.connect(
             lambda completed, total: progress_emitted.append((completed, total)),
             Qt.DirectConnection,
@@ -94,13 +88,7 @@ def test_runtime_extraction_worker_execution() -> None:
         side_effect=Exception("DB connection error"),
     ):
         errors_emitted: List[str] = []
-        from PySide6.QtCore import QObject
-        from lan_streamer.system.async_task_manager import AsyncTaskManager
-
-        dummy_parent = QObject()
-        async_task_manager = AsyncTaskManager(parent=dummy_parent)
-
-        worker = FilePropertyExtractionWorker(async_task_manager=async_task_manager)
+        worker = FilePropertyExtractionWorker()
         worker.error.connect(errors_emitted.append)
         worker.run()
         assert errors_emitted == ["DB connection error"]
