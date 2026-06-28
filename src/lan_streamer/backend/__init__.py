@@ -2,7 +2,6 @@ from lan_streamer.backend.scan_worker_base import (
     discover_single_library_tree_impl as discover_single_library_tree,
 )
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
-from lan_streamer.backend.scan_worker_single import ScanWorker
 from lan_streamer.backend.scan_worker_async import AsyncScanWorker
 from lan_streamer.backend.scan_worker_all import ScanAllLibrariesWorker
 from lan_streamer.backend.scan_worker_cleanup import CleanupWorker
