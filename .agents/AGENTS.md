@@ -60,6 +60,10 @@ Do not abbreviate variable names. Use full, descriptive names:
 - Avoid generic filenames like `helper.py` or `utils.py` in favor of specific functional terms.
 - **Static Typing**: Enforce 100% strict `mypy` type checking for all production code in `src/lan_streamer/`.
 
+### 5. Testing URL Constraints (Strict Mock URL Rule)
+- Do not use actual, live external URLs in unit, integration, or e2e tests.
+- Always use mock/local domains (e.g. `example.invalid`, `localhost`, `127.0.0.1`, or `jellyfin.local`) to avoid external network dependencies and prevent accidental network request execution during test runs.
+
 ---
 
 ## 🔄 Mandatory Developer Workflow
