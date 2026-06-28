@@ -9,7 +9,6 @@ from lan_streamer.providers.tmdb import tmdb_client
 
 # Expose backend workers
 from lan_streamer.backend import (
-    ScanWorker,
     CleanupWorker,
     JellyfinPullWorker,
     JellyfinPushWorker,
