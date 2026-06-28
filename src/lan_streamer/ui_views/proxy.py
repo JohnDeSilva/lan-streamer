@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QPixmap as QPixmap_real
 from lan_streamer.backend import (
-    ScanWorker as ScanWorker_real,
     CleanupWorker as CleanupWorker_real,
     JellyfinPullWorker as JellyfinPullWorker_real,
     JellyfinPushWorker as JellyfinPushWorker_real,
@@ -67,7 +66,6 @@ QFileDialog = PatchedClass("QFileDialog", lambda: QFileDialog_real)
 QMenu = PatchedClass("QMenu", lambda: QMenu_real)
 QPixmap = PatchedClass("QPixmap", lambda: QPixmap_real)
 
-ScanWorker = PatchedClass("ScanWorker", lambda: ScanWorker_real)
 CleanupWorker = PatchedClass("CleanupWorker", lambda: CleanupWorker_real)
 JellyfinPullWorker = PatchedClass("JellyfinPullWorker", lambda: JellyfinPullWorker_real)
 JellyfinPushWorker = PatchedClass("JellyfinPushWorker", lambda: JellyfinPushWorker_real)

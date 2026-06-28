@@ -32,7 +32,6 @@ from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.backend.database_writer import (
     DatabaseWriteTask,
     AsyncDatabaseWriter,
-    DatabaseWriterThread,  # noqa: F401
 )
 
 logger = logging.getLogger("lan_streamer.backend")
@@ -1128,11 +1127,3 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             self.flush_detail_progress()
             if self._database_writer is not None:
                 await self._database_writer.stop()
-
-    def run(self) -> None:
-        """Synchronous compatibility fallback for tests."""
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(self._run_wrapper())
-        finally:
-            loop.close()
