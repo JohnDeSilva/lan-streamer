@@ -32,7 +32,7 @@ logger = logging.getLogger("lan_streamer.backend")
 
 
 class AsyncScanWorker(AsyncWorkerBase):
-    """Async-native scan worker for a single library.
+    """Async version of :class:`~lan_streamer.backend.scan_worker_single.ScanWorker`.
 
     Uses ``AsyncDatabaseWriter`` for DB writes and runs the synchronous
     scanner via ``run_in_fs_executor`` in the dedicated filesystem pool.

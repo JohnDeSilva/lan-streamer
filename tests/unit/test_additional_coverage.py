@@ -179,64 +179,45 @@ def test_scan_all_libraries_worker_error() -> None:
             assert "Scan failed" in library_errors[0][1]
 
 
-def test_async_scan_worker_with_jellyfin() -> None:
-    """AsyncScanWorker fetches Jellyfin data when configured."""
-    import asyncio
-    from lan_streamer.backend import AsyncScanWorker
-    from lan_streamer.system.async_task_manager import AsyncTaskManager
-    from PySide6.QtCore import QObject
+def test_scan_worker_with_jellyfin() -> None:
+    """ScanWorker fetches Jellyfin data when configured (line 97)."""
+    from lan_streamer.backend import ScanWorker
 
-    loop = asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        parent = QObject()
-        task_manager = AsyncTaskManager(parent=parent)
+    with (
+        patch(
+            "lan_streamer.backend.scan_worker_single.jellyfin_client.is_configured",
+            return_value=True,
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_single.jellyfin_client.get_jellyfin_correlation_data",
+            return_value={"path_map": {}},
+        ) as mock_jf,
+        patch(
+            "lan_streamer.backend.scan_worker_single.discover_single_library_tree_impl",
+            return_value={"/root": []},
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_single.scan_directories",
+            return_value=_empty_lib_dict(),
+        ),
+        patch("lan_streamer.backend.scan_worker_single.config") as mock_config,
+    ):
+        mock_config.libraries = {
+            "Lib": {"paths": ["/root"], "type": "tv", "show_future_episodes": True}
+        }
 
-        with (
-            patch(
-                "lan_streamer.providers.jellyfin.jellyfin_client.is_configured",
-                return_value=True,
-            ),
-            patch(
-                "lan_streamer.providers.jellyfin.jellyfin_client.get_jellyfin_correlation_data",
-                return_value={"path_map": {}},
-            ) as mock_jf,
-            patch(
-                "lan_streamer.backend.scan_worker_async.discover_single_library_tree_impl",
-                return_value={"/root": []},
-            ),
-            patch(
-                "lan_streamer.backend.scan_worker_async.scan_directories",
-                return_value=_empty_lib_dict(),
-            ),
-            patch("lan_streamer.backend.scan_worker_async.logger"),
-            patch("lan_streamer.backend.scan_worker_async.config") as mock_config,
-        ):
-            mock_config.libraries = {
-                "Lib": {"paths": ["/root"], "type": "tv", "show_future_episodes": True}
-            }
+        finished = []
+        worker = ScanWorker(
+            root_directories=["/root"],
+            library_type="tv",
+            existing_library={},
+            library_name="Lib",
+        )
+        worker.finished.connect(finished.append)
+        worker.run()
 
-            finished = []
-            worker = AsyncScanWorker(
-                root_directories=["/root"],
-                library_type="tv",
-                existing_library={},
-                library_name="Lib",
-                async_task_manager=task_manager,
-            )
-            worker.finished.connect(finished.append)
-
-            async def run():
-                worker.start()
-                await asyncio.sleep(0.05)
-                worker.stop()
-
-            loop.run_until_complete(run())
-
-            assert len(finished) == 1
-            mock_jf.assert_called_once()
-    finally:
-        loop.close()
+        assert len(finished) == 1
+        mock_jf.assert_called_once()
 
 
 def test_cleanup_worker_success() -> None:
