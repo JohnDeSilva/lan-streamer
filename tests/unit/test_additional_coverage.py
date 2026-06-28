@@ -327,10 +327,8 @@ def test_scan_all_libraries_worker_discover_tree(tmp_path) -> None:
         mock_config.libraries = {
             "TVLib": {"paths": [str(tv_root)], "type": "tv"},
         }
-        import asyncio
-
         worker = ScanAllLibrariesWorker()
-        tree = asyncio.run(worker._discover_tree({}))
+        tree = worker._discover_tree({})
 
     assert "TVLib" in tree
     assert str(tv_root) in tree["TVLib"]["roots"]
