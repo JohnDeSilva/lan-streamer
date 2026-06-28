@@ -569,3 +569,30 @@ class TestAsyncRunSubprocess:
             assert all(result.returncode == 0 for result in results)
 
         asyncio.run(_test())
+
+    def test_cancellation_kills_process(self) -> None:
+        """async_run_subprocess should terminate the process when cancelled."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        async def _test() -> None:
+            mock_process = MagicMock()
+            mock_process.communicate = AsyncMock(side_effect=asyncio.CancelledError())
+            mock_process.kill = MagicMock()
+            mock_process.wait = AsyncMock()
+
+            with patch(
+                "asyncio.create_subprocess_exec", return_value=mock_process
+            ) as mock_exec:
+                with pytest.raises(asyncio.CancelledError):
+                    await async_run_subprocess(["some_command"])
+
+                mock_exec.assert_called_once_with(
+                    "some_command",
+                    stdin=None,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                mock_process.kill.assert_called_once()
+                mock_process.wait.assert_called_once()
+
+        asyncio.run(_test())
