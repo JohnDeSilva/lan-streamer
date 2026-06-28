@@ -418,34 +418,27 @@ All code pushed or submitted via Pull Request is automatically validated through
 
 ### GitHub Workflows
 1.  **Lint & Typecheck (`lint.yml`)**:
-    -   Triggered on push and pull requests targeting `main` and `rc`.
+    -   Triggered on push and pull requests targeting `main`.
     -   Automatically checks formatting, executes Ruff linting, runs Mypy type-checking, and verifies commit message compliance for branch revisions.
     -   Executes all `pre-commit` hooks (`hadolint`, `yamllint`, `actionlint`, etc.) across the entire codebase.
 2.  **Cross-Platform Verification (`test.yml`)**:
-    -   Triggered on push and pull requests targeting `main` and `rc`.
     -   Runs a multi-operating system matrix validating all code paths:
         -   **Linux (Ubuntu/Fedora)**: Leverages Docker containers via `TEST_OS` in the `Makefile` to securely build, test, and validate binaries without requiring system-level dependencies on the GitHub runner.
         -   **macOS**: Configures macOS-latest with brew-installed VLC, runs tests, and compiles/validates the executable with target-specific VLC library pathing.
         -   **Windows**: Deploys Windows-latest, installs VLC/FFmpeg, applies schema migrations, runs tests, and compiles/verifies the executable.
-3.  **RC Executables (`executable.yml`)**:
-    -   Triggered on pushes and pull requests for the `rc` branch.
-    -   Compiles and packages standalone applications for **Ubuntu**, **Fedora**, **macOS** (as a `.app` bundle), and **Windows** so release candidates can be downloaded and tested manually.
-4.  **Release Bump and Tag (`release.yml`)**:
-    -   Triggered when code is pushed to `main`.
-    -   Runs tests, uses Commitizen to bump the version and changelog, commits the release change, and pushes the new annotated tag back to GitHub.
-5.  **Publish Release (`publish.yml`)**:
-    -   Triggered when a `v*` tag is pushed.
-    -   Rebuilds the standalone executables, uploads them as artifacts, and creates the GitHub Release with the packaged binaries attached.
+3.  **Build Executables & Release (`executable.yml`)**:
+    -   Triggered on pushes to `main` and on version tag creations (`v*`).
+    -   Compiles and packages standalone applications for **Ubuntu**, **Fedora**, **macOS** (as a `.app` bundle), and **Windows**.
+    -   Automatically generates GitHub Releases and attaches the executables as downloadable release assets whenever a new version tag is pushed.
 
 ### Repository Management
 -   **Dependabot**: Configured (`.github/dependabot.yml`) to perform daily updates on the `uv` package ecosystem to ensure dependencies remain secure and up-to-date.
 -   **Code Ownership**: Configured (`.github/CODEOWNERS`) to assign ownership of all project files to `@JohnDeSilva`.
 -   **Releases**: Automatic version bumps and changelog management are handled through:
-    -   GitHub Actions now owns the full release pipeline.
-    -   Merge feature branches into `rc` to produce downloadable RC executables.
-    -   Merge `rc` into `main` to run the Commitizen release bump and push the new version tag.
-    -   The tag push then builds the final release artifacts and publishes the GitHub Release automatically.
-    -   The old `make release` target is deprecated and exits with guidance instead of performing a manual push/tag release.
+    ```bash
+    make release
+    ```
+    This validates linting, runs the test suite, bumps the project version via `cz bump`, regenerates `uv.lock`, commits, and pushes the code and new version tags to GitHub.
 
 ---
 
@@ -456,13 +449,13 @@ These status badges show the build status of the pre-compiled, standalone execut
 > [!WARNING]
 > **Disclaimer**: While the automated build processes are fully monitored, not all compiled executables are manually tested across every potential operating system version or desktop environment. If you encounter bugs, crashes, or execution issues, please submit an issue or a Pull Request (PR) to help resolve them.
 
-[![RC Ubuntu](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=RC%20Executable%20Ubuntu)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
+[![Ubuntu](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20Ubuntu)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
 
-[![RC Fedora](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=RC%20Executable%20Fedora)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
+[![Fedora](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20Fedora)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
 
-[![RC macOS](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=RC%20Executable%20macOS)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
+[![macOS](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20macOS)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
 
-[![RC Windows](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=RC%20Executable%20Windows)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
+[![Windows](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=Build%20Executable%20Windows)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
 
 ## 📜 License
 MIT License. See [LICENSE](LICENSE) for details.

@@ -42,13 +42,7 @@ Automated tests are divided into structured subdirectories:
     *   [class_inheritance.md](file:///home/sadmin/antigravity/lan-streamer/docs/class_inheritance.md): Inheritance hierarchy.
     *   [logic_flows.md](file:///home/sadmin/antigravity/lan-streamer/docs/logic_flows.md): Key codepaths, decision gates, and workflows.
     *   [codebase_guide.md](file:///home/sadmin/antigravity/lan-streamer/docs/codebase_guide.md) (This document): Summary guide of directory structures and coding standards.
-*   [Makefile](file:///home/sadmin/antigravity/lan-streamer/Makefile): Targets for local execution (`run`), formatting (`format`), check-linting (`check-lint`), full typecheck (`typecheck`), linting and pre-commits (`lint`), testing (`test`), local test suite run (`test-local`), PyInstaller building (`build`), and release deprecation guidance (`release`).
-*   GitHub Actions workflows:
-    *   `.github/workflows/test.yml`: Tests on `main` and `rc` pushes and pull requests.
-    *   `.github/workflows/lint.yml`: Ruff, MyPy, pre-commit, and Commitizen validation on `main` and `rc` pushes and pull requests.
-    *   `.github/workflows/executable.yml`: RC-only executable artifacts for manual validation.
-    *   `.github/workflows/release.yml`: Commitizen version bump and tag creation after `main` merges.
-    *   `.github/workflows/publish.yml`: Tag-triggered production executable builds and GitHub Release publishing.
+*   [Makefile](file:///home/sadmin/antigravity/lan-streamer/Makefile): Targets for local execution (`run`), formatting (`format`), check-linting (`check-lint`), full typecheck (`typecheck`), linting and pre-commits (`lint`), testing (`test`), local test suite run (`test-local`), PyInstaller building (`build`), and release tagging (`release`).
 *   [pyproject.toml](file:///home/sadmin/antigravity/lan-streamer/pyproject.toml) / [uv.lock](file:///home/sadmin/antigravity/lan-streamer/uv.lock): Dependencies and environment specifications managed by `uv`.
 *   [alembic.ini](file:///home/sadmin/antigravity/lan-streamer/alembic.ini) / [alembic/](file:///home/sadmin/antigravity/lan-streamer/alembic): Database migration configurations and version scripts.
 

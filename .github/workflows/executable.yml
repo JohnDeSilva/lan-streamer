@@ -1,16 +1,17 @@
-name: Build RC Executables
+name: Build Executables
 
 on:
   push:
-    branches: [ "rc" ]
+    branches: [ "main" ]
+    tags:
+      - 'v*'
   pull_request:
-    branches: [ "rc" ]
+    branches: [ "main" ]
 
 jobs:
   build-ubuntu:
     name: Build Executable (Ubuntu)
     runs-on: ubuntu-latest
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
 
     steps:
       - name: Checkout code
@@ -32,7 +33,6 @@ jobs:
   build-fedora:
     name: Build Executable (Fedora)
     runs-on: ubuntu-latest
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -53,7 +53,6 @@ jobs:
   build-macos:
     name: Build Executable (macOS)
     runs-on: macos-latest
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
 
     steps:
       - name: Checkout code
@@ -99,7 +98,6 @@ jobs:
   build-windows:
     name: Build Executable (Windows)
     runs-on: windows-latest
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
 
     steps:
       - name: Checkout code
@@ -140,3 +138,44 @@ jobs:
         with:
           name: lan-streamer-windows
           path: dist/lan-streamer-windows.exe
+
+  release:
+    name: Create Release
+    needs: [build-ubuntu, build-fedora, build-macos, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract Changelog Section
+        run: |
+          python -c '
+          with open("CHANGELOG.md", "r", encoding="utf-8") as f:
+              lines = f.readlines()
+          notes = []
+          header_count = 0
+          for line in lines:
+              if line.startswith("## v"):
+                  header_count += 1
+                  if header_count > 1:
+                      break
+              if header_count == 1:
+                  notes.append(line)
+          with open("release_notes.md", "w", encoding="utf-8") as f:
+              f.writelines(notes)
+          '
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release-assets
+          merge-multiple: true
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./release-assets/*
+          body_path: release_notes.md
