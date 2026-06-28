@@ -128,7 +128,7 @@ class TestGet:
             with patch.object(
                 client, "_request", AsyncMock(return_value=mock_response)
             ):
-                result = await client.get("http://example.com")
+                result = await client.get("http://example.invalid")
                 assert result == {"key": "value"}
 
         _run(run(), event_loop)
@@ -144,10 +144,10 @@ class TestGet:
             with patch.object(
                 client, "_request", AsyncMock(return_value=mock_response)
             ) as mock_request:
-                await client.get("http://example.com", params={"q": "test"})
+                await client.get("http://example.invalid", params={"q": "test"})
                 mock_request.assert_called_once_with(
                     "GET",
-                    "http://example.com",
+                    "http://example.invalid",
                     params={"q": "test"},
                     headers=None,
                     timeout=None,
@@ -168,7 +168,7 @@ class TestGetBytes:
             with patch.object(
                 client, "_request", AsyncMock(return_value=mock_response)
             ):
-                result = await client.get_bytes("http://example.com")
+                result = await client.get_bytes("http://example.invalid")
                 assert result == b"raw data"
 
         _run(run(), event_loop)
@@ -186,10 +186,10 @@ class TestPost:
             with patch.object(
                 client, "_request", AsyncMock(return_value=mock_response)
             ) as mock_request:
-                await client.post("http://example.com", json_data={"a": 1})
+                await client.post("http://example.invalid", json_data={"a": 1})
                 mock_request.assert_called_once_with(
                     "POST",
-                    "http://example.com",
+                    "http://example.invalid",
                     json_data={"a": 1},
                     headers=None,
                     timeout=None,
@@ -215,7 +215,7 @@ class TestRequest:
             session.request = AsyncMock(side_effect=[mock_429, mock_200])
 
             with patch.object(client, "_get_session", AsyncMock(return_value=session)):
-                result = await client.get("http://example.com")
+                result = await client.get("http://example.invalid")
                 assert result == {"ok": True}
 
         _run(run(), event_loop)
@@ -234,6 +234,6 @@ class TestRequest:
 
             with patch.object(client, "_get_session", AsyncMock(return_value=session)):
                 with pytest.raises(RuntimeError, match="failed after 3 retries"):
-                    await client.get("http://example.com")
+                    await client.get("http://example.invalid")
 
         _run(run(), event_loop)
