@@ -61,16 +61,6 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Application Configuration")
         self.resize(800, 700)
 
-        self.auto_scan_checkbox: QCheckBox = QCheckBox(
-            "Enable automatic background scanning"
-        )
-        self.scan_interval_spinbox: QSpinBox = QSpinBox()
-        self.scan_interval_spinbox.setRange(1, 168)
-        self.scan_interval_spinbox.setSuffix(" hours")
-        self.scan_interval_spinbox.setToolTip(
-            "How often to automatically scan libraries for new or changed files"
-        )
-
         self.force_refresh_checkbox: QCheckBox = QCheckBox(
             "Force refresh metadata (update/search TMDB)"
         )
@@ -758,30 +748,6 @@ class SettingsDialog(QDialog):
 
         management_layout.addWidget(self.passes_frame)
 
-        # Scheduled scanning group
-        self.scheduled_scan_frame: QFrame = QFrame()
-        self.scheduled_scan_frame.setStyleSheet(
-            "QFrame { background-color: #222222; border: 1px solid #333333; border-radius: 6px; }"
-        )
-        scheduled_scan_layout: QVBoxLayout = QVBoxLayout(self.scheduled_scan_frame)
-        scheduled_scan_layout.setSpacing(10)
-
-        scheduled_scan_title = QLabel("Scheduled Background Scanning")
-        scheduled_scan_title.setStyleSheet(
-            "font-size: 14px; font-weight: bold; color: #e2e8f0; border: none;"
-        )
-        scheduled_scan_layout.addWidget(scheduled_scan_title)
-
-        scheduled_scan_layout.addWidget(self.auto_scan_checkbox)
-
-        interval_row: QHBoxLayout = QHBoxLayout()
-        interval_row.addWidget(QLabel("Scan interval:"))
-        interval_row.addWidget(self.scan_interval_spinbox)
-        interval_row.addStretch()
-        scheduled_scan_layout.addLayout(interval_row)
-
-        management_layout.addWidget(self.scheduled_scan_frame)
-
         # Watch history sync buttons
         self.pull_watch_history_button: QPushButton = QPushButton("Pull Watch History")
         self.pull_watch_history_button.clicked.connect(
@@ -939,9 +905,6 @@ class SettingsDialog(QDialog):
         self.database_backup_retention_input.setText(
             str(config.database_backup_retention)
         )
-
-        self.auto_scan_checkbox.setChecked(config.auto_scan_enabled)
-        self.scan_interval_spinbox.setValue(config.scan_interval_hours)
 
         self.staged_libraries = {
             library_name: {
@@ -1490,24 +1453,11 @@ class SettingsDialog(QDialog):
         except ValueError:
             pass
 
-        config.auto_scan_enabled = self.auto_scan_checkbox.isChecked()
-        config.scan_interval_hours = self.scan_interval_spinbox.value()
-
         config.libraries = self.staged_libraries
         config.enable_combined_view = self.enable_combined_view_checkbox.isChecked()
         config.combined_views = self.staged_combined_views
         config.save()  # Persist startup-critical keys to config file
         config.save_to_db()  # Persist all DB-backed keys to database
-
-        # Restart the scheduled scan service with the new settings
-        if self.controller is not None:
-            self.controller.scheduled_scan_service.stop()
-            self.controller.scheduled_scan_service.interval_seconds = (
-                float(config.scan_interval_hours) * 3600.0
-            )
-            if config.auto_scan_enabled:
-                self.controller.start_scheduled_scans()
-
         from lan_streamer.system.logging_handler import set_application_log_level
 
         set_application_log_level(config.log_level)
