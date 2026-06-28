@@ -46,9 +46,9 @@ Automated tests are divided into structured subdirectories:
 *   GitHub Actions workflows:
     *   `.github/workflows/test.yml`: Tests on `main` and `rc` pushes and pull requests.
     *   `.github/workflows/lint.yml`: Ruff, MyPy, pre-commit, and Commitizen validation on `main` and `rc` pushes and pull requests.
-    *   `.github/workflows/executable.yml`: RC-only executable artifacts for manual validation.
-    *   `.github/workflows/release.yml`: Commitizen version bump and tag creation after `main` merges.
-    *   `.github/workflows/publish.yml`: Tag-triggered production executable builds and GitHub Release publishing.
+    *   `.github/workflows/executable.yml`: PR-triggered verification of executable builds targeting the `rc` branch.
+    *   `.github/workflows/release.yml`: Commitizen version bump (pre-release on `rc` branch, stable release on `main` branch) and tag creation.
+    *   `.github/workflows/publish.yml`: Tag-triggered production or pre-release executable builds and GitHub Release/Pre-Release publishing.
 *   [pyproject.toml](file:///home/sadmin/antigravity/lan-streamer/pyproject.toml) / [uv.lock](file:///home/sadmin/antigravity/lan-streamer/uv.lock): Dependencies and environment specifications managed by `uv`.
 *   [alembic.ini](file:///home/sadmin/antigravity/lan-streamer/alembic.ini) / [alembic/](file:///home/sadmin/antigravity/lan-streamer/alembic): Database migration configurations and version scripts.
 
