@@ -400,9 +400,6 @@ async def main() -> None:
         import qasync  # noqa: F401
 
         logger.info("Starting Qt event loop with asyncio integration via qasync.")
-        # Prevent Qt from auto-quitting when the window is hidden, giving async teardown time to run.
-        application_instance.setQuitOnLastWindowClosed(False)
-
         # Under qasync, the event loop is already running. We just wait until the app exits.
         app_close_event = asyncio.Event()
         application_instance.aboutToQuit.connect(app_close_event.set)
