@@ -1,13 +1,13 @@
 import asyncio
 import logging
 import os
-import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from PySide6.QtCore import QObject, Signal
 
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.system.async_task_manager import AsyncTaskManager
+from lan_streamer.system.async_utils import async_run_subprocess
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -45,12 +45,7 @@ class MetadataEmbedWorker(AsyncWorkerBase):
         command.append(output_path)
 
         logger.debug(f"Running ffmpeg command: {' '.join(command)}")
-        result = await asyncio.to_thread(
-            subprocess.run,
-            command,
-            capture_output=True,
-            text=True,
-        )
+        result = await async_run_subprocess(command)
         stdout_str = result.stdout.strip()
         stderr_str = result.stderr.strip()
 
@@ -138,12 +133,7 @@ class SeriesMetadataEmbedWorker(AsyncWorkerBase):
                 f"Embedding metadata for series episode {index + 1}/{total_episodes}: '{video_path}'"
             )
             logger.debug(f"Running ffmpeg command: {' '.join(command)}")
-            result = await asyncio.to_thread(
-                subprocess.run,
-                command,
-                capture_output=True,
-                text=True,
-            )
+            result = await async_run_subprocess(command)
             stdout_str = result.stdout.strip()
             stderr_str = result.stderr.strip()
 
