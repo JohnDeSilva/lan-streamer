@@ -428,23 +428,22 @@ All code pushed or submitted via Pull Request is automatically validated through
         -   **macOS**: Configures macOS-latest with brew-installed VLC, runs tests, and compiles/validates the executable with target-specific VLC library pathing.
         -   **Windows**: Deploys Windows-latest, installs VLC/FFmpeg, applies schema migrations, runs tests, and compiles/verifies the executable.
 3.  **RC Executables (`executable.yml`)**:
-    -   Triggered on pushes and pull requests for the `rc` branch.
-    -   Compiles and packages standalone applications for **Ubuntu**, **Fedora**, **macOS** (as a `.app` bundle), and **Windows** so release candidates can be downloaded and tested manually.
+    -   Triggered on pull requests targeting the `rc` branch.
+    -   Compiles and packages standalone applications for **Ubuntu**, **Fedora**, **macOS** (as a `.app` bundle), and **Windows** to verify that release candidate binaries build and run correctly prior to merge.
 4.  **Release Bump and Tag (`release.yml`)**:
-    -   Triggered when code is pushed to `main`.
-    -   Runs tests, uses Commitizen to bump the version and changelog, commits the release change, and pushes the new annotated tag back to GitHub.
+    -   Triggered on pushes to `main` and `rc` branches.
+    -   Performs pre-release checks (lint, typecheck, and multi-OS/distro tests), then uses Commitizen to bump version and changelog (pre-release `rc` bumps on `rc` branch, stable bumps on `main` branch), commits the changes, and pushes the new annotated tag back to GitHub.
 5.  **Publish Release (`publish.yml`)**:
     -   Triggered when a `v*` tag is pushed.
-    -   Rebuilds the standalone executables, uploads them as artifacts, and creates the GitHub Release with the packaged binaries attached.
+    -   Rebuilds the standalone executables, uploads them as artifacts, and creates a GitHub Release (correctly marked as a pre-release for RC tags) with the packaged binaries attached.
 
 ### Repository Management
 -   **Dependabot**: Configured (`.github/dependabot.yml`) to perform daily updates on the `uv` package ecosystem to ensure dependencies remain secure and up-to-date.
 -   **Code Ownership**: Configured (`.github/CODEOWNERS`) to assign ownership of all project files to `@JohnDeSilva`.
 -   **Releases**: Automatic version bumps and changelog management are handled through:
     -   GitHub Actions now owns the full release pipeline.
-    -   Merge feature branches into `rc` to produce downloadable RC executables.
-    -   Merge `rc` into `main` to run the Commitizen release bump and push the new version tag.
-    -   The tag push then builds the final release artifacts and publishes the GitHub Release automatically.
+    -   Merge feature branches into `rc` to trigger automated Commitizen pre-release bumping (`vX.Y.Z-rc.N`), which pushes the tag and generates a GitHub Pre-Release with downloadable pre-release executables.
+    -   Merge `rc` into `main` to trigger the automated Commitizen stable release bump (`vX.Y.Z`) and publish a stable GitHub Release automatically.
     -   The old `make release` target is deprecated and exits with guidance instead of performing a manual push/tag release.
 
 ---
