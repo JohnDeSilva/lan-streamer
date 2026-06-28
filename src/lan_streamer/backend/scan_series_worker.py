@@ -115,3 +115,11 @@ class ScanSingleSeriesWorker(AsyncWorkerBase):
         # Persist back to database
         db.save_library(self.library_name, updated_library)
         return updated_library
+
+    def run(self) -> None:
+        """Synchronous compatibility fallback for tests."""
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(self._run_wrapper())
+        finally:
+            loop.close()

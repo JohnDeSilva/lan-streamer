@@ -34,3 +34,11 @@ class CleanupWorker(AsyncWorkerBase):
         )
         logger.info(f"CleanupWorker finished with results: {results}")
         return results
+
+    def run(self) -> None:
+        """Synchronous compatibility fallback for tests."""
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(self.run_async())
+        finally:
+            loop.close()

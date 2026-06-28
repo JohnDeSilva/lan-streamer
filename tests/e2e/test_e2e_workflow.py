@@ -1245,7 +1245,7 @@ def test_controller_additional_coverage() -> None:
         controller_instance.worker_manager.file_property._instance = (
             mock_worker_instance
         )
-        mock_worker_instance._is_async_worker = True
+        mock_worker_instance.isRunning.return_value = True
         controller_instance.trigger_runtime_extraction()
         assert mock_worker_class.call_count == 1
 
@@ -1289,7 +1289,7 @@ def test_controller_additional_coverage() -> None:
         controller_instance.worker_manager.subtitle_merge._instance = (
             mock_merge_instance
         )
-        mock_merge_instance._is_async_worker = True
+        mock_merge_instance.isRunning.return_value = True
         controller_instance.merge_subtitles("/video.mkv", ["/sub.srt"])
         assert mock_merge_class.call_count == 1
 
@@ -1311,7 +1311,7 @@ def test_controller_additional_coverage() -> None:
         controller_instance.worker_manager.metadata_embed._instance = (
             mock_embed_instance
         )
-        mock_embed_instance._is_async_worker = True
+        mock_embed_instance.isRunning.return_value = True
         controller_instance.embed_metadata("/video.mkv", {"title": "Title"})
         assert mock_embed_class.call_count == 1
 
@@ -1328,7 +1328,7 @@ def test_controller_additional_coverage() -> None:
         "lan_streamer.backend.SeriesMetadataEmbedWorker"
     ) as mock_series_embed_class:
         # concurrency check when running
-        mock_embed_instance._is_async_worker = True
+        mock_embed_instance.isRunning.return_value = True
         controller_instance.worker_manager.metadata_embed._instance = (
             mock_embed_instance
         )

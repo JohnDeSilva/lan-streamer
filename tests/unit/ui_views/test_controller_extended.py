@@ -315,7 +315,7 @@ def test_trigger_scan_and_update_starts_worker(ctrl) -> None:
 
 def test_trigger_scan_and_update_skips_if_already_running(ctrl) -> None:
     mock_worker = MagicMock()
-    mock_worker._is_async_worker = True
+    mock_worker.isRunning.return_value = True
     ctrl.worker_manager.scan._instance = mock_worker
 
     with patch("lan_streamer.ui_views.controller.AsyncScanWorker") as mock_cls:
@@ -518,7 +518,7 @@ def test_trigger_runtime_extraction_starts_worker() -> None:
 def test_trigger_runtime_extraction_skips_if_running() -> None:
     c = Controller()
     mock_worker = MagicMock()
-    mock_worker._is_async_worker = True
+    mock_worker.isRunning.return_value = True
     c.worker_manager.file_property._instance = mock_worker
 
     with patch(

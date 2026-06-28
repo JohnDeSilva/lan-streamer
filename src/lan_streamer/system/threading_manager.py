@@ -1,20 +1,25 @@
 import logging
 import traceback
-from typing import Any, Callable, List, Optional
+import weakref
+from typing import Any, Callable, List, Optional, TypeVar, Union
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QThread
 
 logger = logging.getLogger(__name__)
 
-AnyWorker = QObject
+W = TypeVar("W", bound=QThread)
+
+#: Type union for workers — either a traditional ``QThread`` or an async
+#: QObject-based worker (``_is_async_worker = True``).
+AnyWorker = Union[QThread, QObject]
 
 
 class WorkerSlot(QObject):
     """
-    Manages lifecycle of a single async worker slot (one worker at a time).
+    Manages lifecycle of a single worker slot (one worker at a time).
 
-    Supports async QObject workers (marked with ``_is_async_worker = True``,
-    e.g. :class:`AsyncWorkerBase`).
+    Supports both traditional ``QThread`` workers and async QObject workers
+    (marked with ``_is_async_worker = True``, e.g. :class:`AsyncWorkerBase`).
 
     Provides start/stop/is_running semantics with proper signal management.
     Avoids bare ``QObject.disconnect()`` calls which are invalid in PySide6
@@ -22,7 +27,10 @@ class WorkerSlot(QObject):
 
     Key design decisions:
 
-    * **Cooperative stop**. Cancellation is delegated to ``AsyncTaskManager``.
+    * **Non-blocking stop**. For QThread workers, ``stop()`` waits at most
+      250 ms for cooperative shutdown, then schedules deferred cleanup via
+      ``QTimer.singleShot``.  For async workers, cancellation is delegated
+      to ``AsyncTaskManager``.
     * **Guard on start**. If a worker is already running when ``start()``
       is called, a warning is logged (with stack trace) to help catch
       re-entrant callers.  The old worker is still stopped.
@@ -34,6 +42,8 @@ class WorkerSlot(QObject):
         super().__init__(parent)
         self._instance: Optional[QObject] = None
         self._connected_signal_slots: List[tuple[Any, Callable]] = []
+        self._timeout_ms: int = 250
+        self._stopping_workers: List[AnyWorker] = []
 
     @property
     def is_running(self) -> bool:
@@ -41,7 +51,10 @@ class WorkerSlot(QObject):
             return False
         if self._is_async(self._instance):
             return bool(getattr(self._instance, "is_running", False))
-        return False
+        if isinstance(self._instance, QThread):
+            return self._instance.isRunning()
+        # Fallback for mock/other objects
+        return bool(getattr(self._instance, "isRunning", lambda: False)())
 
     @property
     def instance(self) -> Optional[AnyWorker]:
@@ -129,10 +142,14 @@ class WorkerSlot(QObject):
 
     def stop(self) -> None:
         """
-        Stop the current async worker if one exists.
+        Stop the current worker if one exists.
 
-        Delegates to ``worker.stop()`` (cooperative cancellation via
-        ``AsyncTaskManager``).
+        For QThread workers: tries a short cooperative wait (250 ms). If the
+        thread does not finish within that time, cleanup is deferred until the
+        worker's own ``finished`` signal fires.
+
+        For async workers: delegates to ``worker.stop()`` (cooperative
+        cancellation via ``AsyncTaskManager``).
         """
         worker = self._instance
         if worker is None:
@@ -141,13 +158,56 @@ class WorkerSlot(QObject):
         try:
             self._disconnect_signal_slots()
 
-            stop_method = getattr(worker, "stop", None)
-            if stop_method is not None:
-                stop_method()
-            logger.debug(
-                "WorkerSlot: async worker %s stopped.",
-                worker.__class__.__name__,
-            )
+            if self._is_async(worker):
+                stop_method = getattr(worker, "stop", None)
+                if stop_method is not None:
+                    stop_method()
+                logger.debug(
+                    "WorkerSlot: async worker %s stopped.",
+                    worker.__class__.__name__,
+                )
+            elif isinstance(worker, QThread) or hasattr(worker, "requestInterruption"):
+                thread_worker: Any = worker
+                thread_worker.requestInterruption()
+                thread_worker.quit()
+
+                if thread_worker.wait(self._timeout_ms):
+                    thread_worker.deleteLater()
+                    logger.debug(
+                        "WorkerSlot: %s stopped cleanly in %d ms",
+                        worker.__class__.__name__,
+                        self._timeout_ms,
+                    )
+                else:
+                    logger.warning(
+                        "WorkerSlot: %s still running after %d ms, "
+                        "deferring cleanup until it finishes.",
+                        worker.__class__.__name__,
+                        self._timeout_ms,
+                    )
+                    self._stopping_workers.append(worker)
+
+                    def make_cleanup(w: Any) -> Callable[[], None]:
+                        self_ref = weakref.ref(self)
+                        w_ref = weakref.ref(w)
+
+                        def cleanup() -> None:
+                            try:
+                                slot = self_ref()
+                                worker_inst = w_ref()
+                                if slot is not None and worker_inst is not None:
+                                    if worker_inst in slot._stopping_workers:
+                                        slot._stopping_workers.remove(worker_inst)
+                                    worker_inst.deleteLater()
+                            except Exception as error:
+                                logger.debug(
+                                    "WorkerSlot: deferred cleanup failed: %s", error
+                                )
+
+                        return cleanup
+
+                    thread_worker.finished.connect(make_cleanup(thread_worker))
+
         except RuntimeError as error:
             if self._is_deleted_qobject_error(error):
                 logger.debug(
@@ -202,7 +262,7 @@ class WorkerManager(QObject):
 
         self.worker_manager = WorkerManager(parent=self)
         self.worker_manager.scan.start(
-            lambda: AsyncScanWorker(...),
+            lambda: ScanWorker(...),
             finished=self._on_scan_finished,
             error=self._on_worker_error,
         )
