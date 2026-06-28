@@ -1,8 +1,6 @@
 name: Build RC Executables
 
 on:
-  push:
-    branches: [ "rc" ]
   pull_request:
     branches: [ "rc" ]
 
