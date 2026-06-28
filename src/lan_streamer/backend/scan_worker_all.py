@@ -1,9 +1,7 @@
 import asyncio
 import logging
-import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -28,6 +26,7 @@ from lan_streamer.backend.scan_worker_base import (
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.backend.database_writer import AsyncDatabaseWriter
+from lan_streamer.system.async_utils import run_in_fs_executor, run_in_executor
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -741,7 +740,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         detailed_roots[root_dir][series_name] = {}
         return {"type": library_type, "roots": detailed_roots}
 
-    def _discover_tree(
+    async def _discover_tree(
         self, library_data_by_name: Dict[str, Dict[str, Any]]
     ) -> Dict[str, Any]:
         """Pre-walk all library directories to count total folders and files in parallel.
@@ -756,37 +755,27 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             A nested dictionary keyed by library name.
         """
         libraries_dictionary: Dict[str, Dict[str, Any]] = config.libraries
-        max_workers: int = max(
-            1,
-            min(
-                len(libraries_dictionary),
-                (os.cpu_count() or 4),
-            ),
-        )
+        tasks = []
+        for library_name, library_configuration in libraries_dictionary.items():
+            existing_data = library_data_by_name.get(library_name, {})
+            coro = run_in_fs_executor(
+                self._discover_single_library_tree,
+                library_name,
+                library_configuration,
+                existing_data,
+            )
+            tasks.append((asyncio.create_task(coro), library_name))
+
         tree: Dict[str, Any] = {}
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_library: Dict[Any, str] = {}
-            for library_name, library_configuration in libraries_dictionary.items():
-                existing_data = library_data_by_name.get(library_name, {})
-                future = executor.submit(
-                    self._discover_single_library_tree,
-                    library_name,
-                    library_configuration,
-                    existing_data,
-                )
-                future_to_library[future] = library_name
-            for future in as_completed(future_to_library):
-                library_name = future_to_library[future]
-                try:
-                    tree[library_name] = future.result()
-                except Exception:
-                    logger.exception(
-                        f"Tree discovery failed for library: {library_name}"
-                    )
-                    tree[library_name] = {
-                        "type": config.libraries[library_name].get("type", "tv"),
-                        "roots": {},
-                    }
+        for task, library_name in tasks:
+            try:
+                tree[library_name] = await task
+            except Exception:
+                logger.exception(f"Tree discovery failed for library: {library_name}")
+                tree[library_name] = {
+                    "type": config.libraries[library_name].get("type", "tv"),
+                    "roots": {},
+                }
         return tree
 
     # ------------------------------------------------------------------
@@ -840,7 +829,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                     library_data_by_name[library_name] = db.load_library(library_name)
 
             # Pre-discover tree structure and tell the UI to initialise it.
-            tree_structure = self._discover_tree(library_data_by_name)
+            tree_structure = await self._discover_tree(library_data_by_name)
             self.emit_detail_progress(
                 "init_tree",
                 {
@@ -854,14 +843,6 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             if jellyfin_client.is_configured():
                 jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
-            max_workers: int = max(
-                1,
-                min(
-                    len(libraries_dictionary),
-                    (os.cpu_count() or 4),
-                ),
-            )
-
             failed_libraries: set = set()
 
             # ------------------------------------------------------------------
@@ -872,88 +853,77 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 logger.info("ScanAllLibrariesWorker starting Pass 1 (Offline Scan)")
                 self.emit_detail_progress("start_offline_scan", {})
 
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    future_to_library: Dict[Any, str] = {}
-                    futures_list = []
-                    for (
+                tasks = []
+                for (
+                    library_name,
+                    library_configuration,
+                ) in libraries_dictionary.items():
+                    coro = run_in_executor(
+                        self._scan_library_pass,
                         library_name,
                         library_configuration,
-                    ) in libraries_dictionary.items():
-                        future = executor.submit(
-                            self._scan_library_pass,
-                            library_name,
-                            library_configuration,
-                            library_data_by_name[library_name],
-                            None,  # jellyfin_data is None for Pass 1
-                            True,  # is_pass1
-                        )
-                        future_to_library[future] = library_name
-                        futures_list.append(
-                            (asyncio.wrap_future(future), future, library_name)
-                        )
+                        library_data_by_name[library_name],
+                        None,  # jellyfin_data is None for Pass 1
+                        True,  # is_pass1
+                    )
+                    tasks.append((asyncio.create_task(coro), library_name))
 
-                    for asyncio_fut, fut, library_name in futures_list:
-                        if self.isInterruptionRequested():
+                for task, library_name in tasks:
+                    if self.isInterruptionRequested():
+                        logger.info(
+                            "ScanAllLibrariesWorker: interruption requested during Pass 1. Cancelling remaining tasks."
+                        )
+                        for t, _ in tasks:
+                            t.cancel()
+                        break
+                    try:
+                        result = await task
+                    except Exception as error:
+                        if isinstance(error, InterruptedError):
                             logger.info(
-                                "ScanAllLibrariesWorker: interruption requested during Pass 1. Cancelling remaining tasks."
+                                f"ScanAllLibrariesWorker: scan for library '{library_name}' aborted due to interruption."
                             )
-                            for f in future_to_library:
-                                f.cancel()
-                            break
-                        try:
-                            result = await asyncio_fut
-                        except Exception as error:
-                            if isinstance(error, InterruptedError):
-                                logger.info(
-                                    f"ScanAllLibrariesWorker: scan for library '{library_name}' aborted due to interruption."
-                                )
-                            else:
-                                logger.exception(
-                                    f"ScanAllLibrariesWorker Pass 1 failed "
-                                    f"for library: {library_name}"
-                                )
-                                self.library_error.emit(library_name, str(error))
-                                self.emit_detail_progress(
-                                    "fail_library",
-                                    {"library": library_name},
-                                )
-                                failed_libraries.add(library_name)
-                            self.pass1_stats_per_library[library_name] = {
-                                "_skipped": True
-                            }
-                            continue
+                        else:
+                            logger.exception(
+                                f"ScanAllLibrariesWorker Pass 1 failed "
+                                f"for library: {library_name}"
+                            )
+                            self.library_error.emit(library_name, str(error))
+                            self.emit_detail_progress(
+                                "fail_library",
+                                {"library": library_name},
+                            )
+                            failed_libraries.add(library_name)
+                        self.pass1_stats_per_library[library_name] = {"_skipped": True}
+                        continue
 
-                        # Merge per-library stats into combined totals.
-                        merge_stats_dicts(self.pass1_stats, result["pass_stats"])
-                        # Merge into self.stats under self._lock for future-proofing
-                        # against concurrent access from callbacks.
-                        for key, value in result["pass_stats"].items():
-                            if not (
-                                key.endswith("_scanned") or key.endswith("_skipped")
-                            ):
-                                with self._lock:
-                                    self.stats[key] = self.stats.get(key, 0) + value
-                        self.pass1_stats_per_library[library_name] = result[
-                            "pass_stats"
-                        ]
+                    # Merge per-library stats into combined totals.
+                    merge_stats_dicts(self.pass1_stats, result["pass_stats"])
+                    # Merge into self.stats under self._lock for future-proofing
+                    # against concurrent access from callbacks.
+                    for key, value in result["pass_stats"].items():
+                        if not (key.endswith("_scanned") or key.endswith("_skipped")):
+                            with self._lock:
+                                self.stats[key] = self.stats.get(key, 0) + value
+                    self.pass1_stats_per_library[library_name] = result["pass_stats"]
 
-                        # Merge shared state.
-                        self.problems.extend(result["problems"])
-                        for root in result["unavailable_directories"]:
-                            if root not in self.unavailable_directories:
-                                self.unavailable_directories.append(root)
-                        self.changed_season_ids.update(result["changed_season_ids"])
-                        self.changed_movie_ids.update(result["changed_movie_ids"])
+                    # Merge shared state.
+                    self.problems.extend(result["problems"])
+                    for root in result["unavailable_directories"]:
+                        if root not in self.unavailable_directories:
+                            self.unavailable_directories.append(root)
+                    self.changed_season_ids.update(result["changed_season_ids"])
+                    self.changed_movie_ids.update(result["changed_movie_ids"])
 
-                        # Persist the updated library data for Pass 2.
-                        library_data_by_name[library_name] = result["library_data"]
+                    # Persist the updated library data for Pass 2.
+                    library_data_by_name[library_name] = result["library_data"]
 
-                        # notify UI that this library finished this pass
-                        self.emit_detail_progress(
-                            "finish_library",
-                            {"library": library_name},
-                        )
-                        self.flush_detail_progress()
+                    # notify UI that this library finished this pass
+                    self.emit_detail_progress(
+                        "finish_library",
+                        {"library": library_name},
+                    )
+                    self.flush_detail_progress()
 
             self.flush_detail_progress()
 
@@ -969,94 +939,83 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 self.emit_detail_progress("start_metadata_resolution", {})
 
                 completed_count: int = 0
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    future_to_library = {}
-                    futures_list = []
-                    for (
+                tasks = []
+                for (
+                    library_name,
+                    library_configuration,
+                ) in libraries_dictionary.items():
+                    if library_name in failed_libraries:
+                        continue
+                    coro = run_in_executor(
+                        self._scan_library_pass,
                         library_name,
                         library_configuration,
-                    ) in libraries_dictionary.items():
-                        if library_name in failed_libraries:
-                            continue
-                        future = executor.submit(
-                            self._scan_library_pass,
-                            library_name,
-                            library_configuration,
-                            library_data_by_name[library_name],
-                            jellyfin_data,
-                            False,  # is_pass1
-                        )
-                        future_to_library[future] = library_name
-                        futures_list.append(
-                            (asyncio.wrap_future(future), future, library_name)
-                        )
+                        library_data_by_name[library_name],
+                        jellyfin_data,
+                        False,  # is_pass1
+                    )
+                    tasks.append((asyncio.create_task(coro), library_name))
 
-                    for asyncio_fut, fut, library_name in futures_list:
-                        if self.isInterruptionRequested():
+                for task, library_name in tasks:
+                    if self.isInterruptionRequested():
+                        logger.info(
+                            "ScanAllLibrariesWorker: interruption requested during Pass 2. Cancelling remaining tasks."
+                        )
+                        for t, _ in tasks:
+                            t.cancel()
+                        break
+                    try:
+                        result = await task
+                    except Exception as error:
+                        if isinstance(error, InterruptedError):
                             logger.info(
-                                "ScanAllLibrariesWorker: interruption requested during Pass 2. Cancelling remaining tasks."
+                                f"ScanAllLibrariesWorker: scan for library '{library_name}' aborted due to interruption."
                             )
-                            for f in future_to_library:
-                                f.cancel()
-                            break
-                        try:
-                            result = await asyncio_fut
-                        except Exception as error:
-                            if isinstance(error, InterruptedError):
-                                logger.info(
-                                    f"ScanAllLibrariesWorker: scan for library '{library_name}' aborted due to interruption."
-                                )
-                            else:
-                                logger.exception(
-                                    f"ScanAllLibrariesWorker Pass 2 failed "
-                                    f"for library: {library_name}"
-                                )
-                                self.library_error.emit(library_name, str(error))
-                                self.emit_detail_progress(
-                                    "fail_library",
-                                    {"library": library_name},
-                                )
-                            self.pass2_stats_per_library[library_name] = {
-                                "_skipped": True
-                            }
-                            continue
+                        else:
+                            logger.exception(
+                                f"ScanAllLibrariesWorker Pass 2 failed "
+                                f"for library: {library_name}"
+                            )
+                            self.library_error.emit(library_name, str(error))
+                            self.emit_detail_progress(
+                                "fail_library",
+                                {"library": library_name},
+                            )
+                        self.pass2_stats_per_library[library_name] = {"_skipped": True}
+                        continue
 
-                        completed_count += 1
+                    completed_count += 1
 
-                        # Merge per-library stats into combined totals.
-                        merge_stats_dicts(self.pass2_stats, result["pass_stats"])
-                        # Merge into self.stats under self._lock for future-proofing
-                        # against concurrent access from callbacks.
-                        for key, value in result["pass_stats"].items():
-                            if not (
-                                key.endswith("_scanned") or key.endswith("_skipped")
-                            ):
-                                with self._lock:
-                                    self.stats[key] = self.stats.get(key, 0) + value
-                        self.pass2_stats_per_library[library_name] = result[
-                            "pass_stats"
-                        ]
+                    # Merge per-library stats into combined totals.
+                    merge_stats_dicts(self.pass2_stats, result["pass_stats"])
+                    # Merge into self.stats under self._lock for future-proofing
+                    # against concurrent access from callbacks.
+                    for key, value in result["pass_stats"].items():
+                        if not (key.endswith("_scanned") or key.endswith("_skipped")):
+                            with self._lock:
+                                self.stats[key] = self.stats.get(key, 0) + value
+                    self.pass2_stats_per_library[library_name] = result["pass_stats"]
 
-                        # Merge shared state.
-                        self.problems.extend(result["problems"])
-                        for root in result["unavailable_directories"]:
-                            if root not in self.unavailable_directories:
-                                self.unavailable_directories.append(root)
-                        self.changed_season_ids.update(result["changed_season_ids"])
-                        self.changed_movie_ids.update(result["changed_movie_ids"])
+                    # Merge shared state.
+                    self.problems.extend(result["problems"])
+                    for root in result["unavailable_directories"]:
+                        if root not in self.unavailable_directories:
+                            self.unavailable_directories.append(root)
+                    self.changed_season_ids.update(result["changed_season_ids"])
+                    self.changed_movie_ids.update(result["changed_movie_ids"])
 
-                        library_data_by_name[library_name] = result["library_data"]
+                    library_data_by_name[library_name] = result["library_data"]
 
-                        self.emit_detail_progress(
-                            "finish_library",
-                            {"library": library_name},
-                        )
-                        self.flush_detail_progress()
-                        self.library_progress.emit(
-                            library_name,
-                            completed_count,
-                            total_count,
-                        )
+                    self.emit_detail_progress(
+                        "finish_library",
+                        {"library": library_name},
+                    )
+                    self.flush_detail_progress()
+                    self.library_progress.emit(
+                        library_name,
+                        completed_count,
+                        total_count,
+                    )
 
             self.flush_detail_progress()
 
