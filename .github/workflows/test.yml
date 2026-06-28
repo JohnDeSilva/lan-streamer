@@ -37,3 +37,75 @@ jobs:
 
       - name: Validate executable runs
         run: TEST_OS=fedora make validate-executable
+
+  test-macos:
+    name: Test (macOS)
+    runs-on: macos-latest
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Setup FFmpeg (Apple Silicon macOS)
+        run: brew install ffmpeg
+
+      - name: Install VLC
+        run: brew install --cask vlc
+
+      - name: Run unit tests
+        env:
+          PYTHON_VLC_LIB_PATH: /Applications/VLC.app/Contents/MacOS/lib/libvlc.dylib
+        run: make test
+
+      - name: Validate executable runs
+        env:
+          PYTHON_VLC_LIB_PATH: /Applications/VLC.app/Contents/MacOS/lib/libvlc.dylib
+        run: make validate-executable
+
+  test-windows:
+    name: Test (Windows)
+    runs-on: windows-latest
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Setup FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+
+      - name: Install VLC
+        run: choco install vlc -y
+
+      - name: Run unit tests
+        shell: bash
+        env:
+          PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
+        run: make test
+
+      - name: Validate executable runs
+        shell: bash
+        env:
+          PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
+          LAN_STREAMER_DRY_RUN: '1'
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          uv run pyinstaller --noconfirm lan-streamer.spec
+          for f in ./dist/lan-streamer-*.exe; do "$f"; break; done
