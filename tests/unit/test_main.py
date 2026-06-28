@@ -66,6 +66,7 @@ def test_main_execution() -> None:
             "lan_streamer.system.backup.perform_scheduled_backups", MagicMock()
         ) as mock_backup,
     ):
+        mock_application_class.instance.return_value = None
         mock_application_instance = mock_application_class.return_value
         mock_grid_instance = mock_grid_class.return_value
         mock_controller_instance = mock_controller_class.return_value
