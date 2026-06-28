@@ -8,8 +8,11 @@ Stage 0 of the migration toward qasync-based asyncio integration.
 """
 
 import asyncio
+import atexit
 import functools
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Awaitable, Callable, List, Optional, TypeVar
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -23,7 +26,7 @@ T = TypeVar("T")
 
 
 # ---------------------------------------------------------------------------
-# Executor helpers
+# Default thread-pool executor helpers
 # ---------------------------------------------------------------------------
 
 
@@ -54,6 +57,87 @@ async def run_in_executor(
     loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         None,
+        functools.partial(callable, *args, **kwargs),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dedicated filesystem executor (Stage 5)
+# ---------------------------------------------------------------------------
+# A size-constrained ThreadPoolExecutor (max_workers=3) dedicated to
+# filesystem I/O — directory walks, stat calls, mtime checks.  This
+# prevents runaway scan threads from saturating the CPU and avoids
+# overloading network filesystems with concurrent I/O requests.
+
+_FS_EXECUTOR_LOCK: threading.Lock = threading.Lock()
+_FS_EXECUTOR: Optional[ThreadPoolExecutor] = None
+
+
+def get_fs_executor() -> ThreadPoolExecutor:
+    """Return the process-lifetime filesystem executor singleton.
+
+    The executor is created with ``max_workers=3`` on first call and
+    automatically shut down at interpreter exit via ``atexit``.  Call
+    :func:`shutdown_fs_executor` to shut it down earlier.
+
+    Returns:
+        A :class:`concurrent.futures.ThreadPoolExecutor` with at most 3
+        worker threads.
+    """
+    global _FS_EXECUTOR
+    if _FS_EXECUTOR is None:
+        with _FS_EXECUTOR_LOCK:
+            if _FS_EXECUTOR is None:
+                _FS_EXECUTOR = ThreadPoolExecutor(
+                    max_workers=3,
+                    thread_name_prefix="fs_executor",
+                )
+    return _FS_EXECUTOR
+
+
+def shutdown_fs_executor() -> None:
+    """Shut down the filesystem executor, cancelling queued futures.
+
+    Safe to call multiple times.  After this call a new executor will be
+    created on the next :func:`get_fs_executor` call.
+    """
+    global _FS_EXECUTOR
+    with _FS_EXECUTOR_LOCK:
+        executor = _FS_EXECUTOR
+        if executor is not None:
+            logger.info("Shutting down filesystem executor...")
+            executor.shutdown(wait=False, cancel_futures=True)
+            _FS_EXECUTOR = None
+            logger.info("Filesystem executor shut down.")
+
+
+atexit.register(shutdown_fs_executor)
+
+
+async def run_in_fs_executor(
+    callable: Callable[..., T],
+    *args: Any,
+    **kwargs: Any,
+) -> T:
+    """Run a synchronous callable in the dedicated filesystem executor.
+
+    Uses :meth:`asyncio.AbstractEventLoop.run_in_executor` with the
+    size-constrained (``max_workers=3``) :func:`get_fs_executor` pool.
+    Prefer this over :func:`run_in_executor` for all filesystem I/O
+    (``os.scandir``, ``os.stat``, ``Path.iterdir``, ``Path.stat``,
+    directory walks).
+
+    Args:
+        callable: A synchronous callable to execute.
+        *args: Positional arguments forwarded to *callable*.
+        **kwargs: Keyword arguments forwarded to *callable*.
+
+    Returns:
+        The return value of *callable*.
+    """
+    loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        get_fs_executor(),
         functools.partial(callable, *args, **kwargs),
     )
 
