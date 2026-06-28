@@ -84,70 +84,63 @@ class AsyncHTTPClient:
         headers: Optional[dict[str, str]] = None,
         timeout: Optional[float] = None,
     ) -> aiohttp.ClientResponse:
-        """Make an HTTP request with rate limiting, concurrency limit, and retry."""
-        from lan_streamer.system.async_utils import get_network_semaphore
-
+        """Make an HTTP request with rate limiting and retry."""
         session = await self._get_session()
         effective_timeout = timeout if timeout is not None else self._timeout
 
-        last_exception: Optional[Exception] = None
-
         for attempt in range(self._max_retries):
-            async with get_network_semaphore():
-                await self._throttle()
+            await self._throttle()
 
-                try:
-                    response = await session.request(
-                        method=method.upper(),
-                        url=url,
-                        params=params,
-                        json=json_data,
-                        headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=effective_timeout),
-                    )
+            try:
+                response = await session.request(
+                    method=method.upper(),
+                    url=url,
+                    params=params,
+                    json=json_data,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=effective_timeout),
+                )
 
-                    if response.status == 429:
-                        retry_after_str = response.headers.get("Retry-After")
-                        if retry_after_str and retry_after_str.isdigit():
-                            sleep_time = float(retry_after_str)
-                        else:
-                            sleep_time = self._backoff_factor * (
-                                2**attempt
-                            ) + random.uniform(0, 1)
-                        logger.warning(
-                            "HTTP 429 rate limit at %s. Retrying in %.2f seconds...",
-                            url,
-                            sleep_time,
-                        )
-                        response.close()
-                        await asyncio.sleep(sleep_time)
-                        continue
-
-                    return response
-
-                except (aiohttp.ClientError, asyncio.TimeoutError) as error:
-                    last_exception = error
-                    if attempt == self._max_retries - 1:
-                        logger.error(
-                            "Request to %s failed after %d retries: %s",
-                            url,
-                            self._max_retries,
-                            error,
-                        )
-                        raise
-                    sleep_time = self._backoff_factor * (2**attempt) + random.uniform(
-                        0, 1
-                    )
+                if response.status == 429:
+                    retry_after_str = response.headers.get("Retry-After")
+                    if retry_after_str and retry_after_str.isdigit():
+                        sleep_time = float(retry_after_str)
+                    else:
+                        sleep_time = self._backoff_factor * (
+                            2**attempt
+                        ) + random.uniform(0, 1)
                     logger.warning(
-                        "Request to %s failed (%s). Retrying in %.2f seconds...",
+                        "HTTP 429 rate limit at %s. Retrying in %.2f seconds...",
                         url,
-                        error,
                         sleep_time,
                     )
+                    response.close()
                     await asyncio.sleep(sleep_time)
+                    continue
+
+                return response
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as error:
+                if attempt == self._max_retries - 1:
+                    logger.error(
+                        "Request to %s failed after %d retries: %s",
+                        url,
+                        self._max_retries,
+                        error,
+                    )
+                    raise
+                sleep_time = self._backoff_factor * (2**attempt) + random.uniform(0, 1)
+                logger.warning(
+                    "Request to %s failed (%s). Retrying in %.2f seconds...",
+                    url,
+                    error,
+                    sleep_time,
+                )
+                await asyncio.sleep(sleep_time)
 
         raise RuntimeError(
-            f"Request to '{url}' failed after {self._max_retries} retries: {last_exception}"
+            f"Request to '{url}' failed after {self._max_retries} retries "
+            f"(all attempts returned HTTP 429)."
         )
 
     async def get(

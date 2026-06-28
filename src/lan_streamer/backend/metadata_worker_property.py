@@ -11,7 +11,6 @@ from lan_streamer.backend.database_writer import (
 )
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.system.async_task_manager import AsyncTaskManager
-from lan_streamer.system.async_utils import get_subprocess_semaphore
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -161,8 +160,7 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
                     for ep in season_episodes:
                         if self.isInterruptionRequested():
                             break
-                        async with get_subprocess_semaphore():
-                            update = await asyncio.to_thread(_produce_item_update, ep)
+                        update = await asyncio.to_thread(_produce_item_update, ep)
                         if update:
                             season_updates.append(update)
                             local_updated += 1
@@ -195,8 +193,7 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
                         )
                         break
 
-                    async with get_subprocess_semaphore():
-                        update = await asyncio.to_thread(_produce_item_update, movie)
+                    update = await asyncio.to_thread(_produce_item_update, movie)
                     if update:
                         logger.info(f"Committing write for movie {movie['path']}")
                         assert self._database_writer is not None
