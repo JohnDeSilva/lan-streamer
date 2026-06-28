@@ -185,7 +185,12 @@ async def main() -> None:
     logger.info("Loading settings from database...")
     config.load_from_db()
     logger.info("Initializing Qt Application...")
-    application_instance = QApplication(sys.argv)
+    app_inst = QApplication.instance()
+    if app_inst is None:
+        app_inst = QApplication(sys.argv)
+    if not isinstance(app_inst, QApplication):
+        raise RuntimeError("Active Qt Application is not a QApplication instance")
+    application_instance = app_inst
     setup_dark_theme(application_instance)
 
     application_instance.setFont(QFont("Inter", 14))
