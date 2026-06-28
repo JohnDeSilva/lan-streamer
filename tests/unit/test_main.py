@@ -67,6 +67,7 @@ def test_main_execution() -> None:
         ) as mock_backup,
     ):
         mock_application_class.instance.return_value = None
+        mock_application_instance = mock_application_class.return_value
         mock_grid_instance = mock_grid_class.return_value
         mock_controller_instance = mock_controller_class.return_value
 
@@ -75,6 +76,7 @@ def test_main_execution() -> None:
         mock_backup.assert_called_once()
         mock_grid_instance.populate_libraries.assert_called_once()
         mock_controller_instance.trigger_jellyfin_pull.assert_not_called()
+        mock_application_instance.exec.assert_called_once()
 
 
 def test_main_logging_setup(tmp_path: Any) -> None:
