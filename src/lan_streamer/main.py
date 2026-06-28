@@ -404,6 +404,18 @@ async def main() -> None:
         app_close_event = asyncio.Event()
         application_instance.aboutToQuit.connect(app_close_event.set)
         await app_close_event.wait()
+
+        # Await any pending background tasks to ensure they shut down cleanly before loop closes
+        pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        if pending:
+            logger.info(f"Awaiting shutdown of {len(pending)} pending tasks...")
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*pending, return_exceptions=True), timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Timeout waiting for pending tasks to shut down.")
+            logger.info("All pending tasks shut down.")
     except ImportError:
         logger.warning("qasync not available, falling back to synchronous event loop.")
         sys.exit(application_instance.exec())
