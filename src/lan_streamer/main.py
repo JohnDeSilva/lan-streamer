@@ -416,8 +416,6 @@ async def main() -> None:
             except asyncio.TimeoutError:
                 logger.warning("Timeout waiting for pending tasks to shut down.")
             logger.info("All pending tasks shut down.")
-        logger.info("Application teardown complete. Exiting process.")
-        sys.exit(0)
     except ImportError:
         logger.warning("qasync not available, falling back to synchronous event loop.")
         sys.exit(application_instance.exec())
