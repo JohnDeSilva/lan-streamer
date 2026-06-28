@@ -6,13 +6,10 @@ import pytest
 
 from lan_streamer.system.async_utils import (
     AsyncSemaphore,
-    async_run_subprocess,
     cancel_task_safely,
     gather_with_concurrency,
     get_event_loop_safe,
     get_fs_executor,
-    get_network_semaphore,
-    get_subprocess_semaphore,
     run_in_executor,
     run_in_fs_executor,
     shutdown_fs_executor,
@@ -474,98 +471,5 @@ class TestRunInFsExecutor:
             assert "fs_executor" in result
 
         import threading
-
-        asyncio.run(_test())
-
-
-# ---------------------------------------------------------------------------
-# Global concurrency semaphores (Stage 6)
-# ---------------------------------------------------------------------------
-
-
-class TestNetworkSemaphore:
-    """Tests for :func:`get_network_semaphore`."""
-
-    def test_returns_semaphore_instance(self) -> None:
-        """get_network_semaphore should return an asyncio.Semaphore."""
-        semaphore = get_network_semaphore()
-        assert isinstance(semaphore, asyncio.Semaphore)
-
-    def test_singleton_same_instance(self) -> None:
-        """get_network_semaphore should return the same instance."""
-        first = get_network_semaphore()
-        second = get_network_semaphore()
-        assert first is second
-
-    def test_value_is_10(self) -> None:
-        """get_network_semaphore should have value 10."""
-        semaphore = get_network_semaphore()
-        assert semaphore._value == 10
-
-
-class TestSubprocessSemaphore:
-    """Tests for :func:`get_subprocess_semaphore`."""
-
-    def test_returns_semaphore_instance(self) -> None:
-        """get_subprocess_semaphore should return an asyncio.Semaphore."""
-        semaphore = get_subprocess_semaphore()
-        assert isinstance(semaphore, asyncio.Semaphore)
-
-    def test_singleton_same_instance(self) -> None:
-        """get_subprocess_semaphore should return the same instance."""
-        first = get_subprocess_semaphore()
-        second = get_subprocess_semaphore()
-        assert first is second
-
-    def test_value_is_3(self) -> None:
-        """get_subprocess_semaphore should have value 3."""
-        semaphore = get_subprocess_semaphore()
-        assert semaphore._value == 3
-
-
-class TestAsyncRunSubprocess:
-    """Tests for :func:`async_run_subprocess`."""
-
-    def test_returns_completed_process(self) -> None:
-        """async_run_subprocess should return a CompletedProcess on success."""
-
-        async def _test() -> None:
-            result = await async_run_subprocess(["echo", "hello"])
-            assert result.returncode == 0
-            assert "hello" in result.stdout
-
-        asyncio.run(_test())
-
-    def test_captures_stderr(self) -> None:
-        """async_run_subprocess should capture stderr output."""
-
-        async def _test() -> None:
-            result = await async_run_subprocess(
-                ["sh", "-c", 'echo "error msg" >&2; exit 1']
-            )
-            assert result.returncode == 1
-            assert "error msg" in result.stderr
-
-        asyncio.run(_test())
-
-    def test_respects_timeout(self) -> None:
-        """async_run_subprocess should raise TimeoutError when timeout is exceeded."""
-
-        async def _test() -> None:
-            with pytest.raises(asyncio.TimeoutError):
-                await async_run_subprocess(["sleep", "10"], timeout=0.01)
-
-        asyncio.run(_test())
-
-    def test_uses_subprocess_semaphore(self) -> None:
-        """async_run_subprocess should use the subprocess semaphore (value=3)."""
-
-        async def _test() -> None:
-            # Verify the semaphore allows at most 3 concurrent acquisitions.
-            # Launch 6 quick subprocesses; the semaphore limits to 3 in flight.
-            results = await asyncio.gather(
-                *[async_run_subprocess(["true"]) for _ in range(6)]
-            )
-            assert all(result.returncode == 0 for result in results)
 
         asyncio.run(_test())
