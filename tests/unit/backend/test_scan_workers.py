@@ -1139,7 +1139,6 @@ def test_scan_all_libraries_worker_cancellation() -> None:
         patch(
             "lan_streamer.backend.scan_worker_all.DatabaseWriteTask"
         ) as mock_write_task,
-        patch("lan_streamer.backend.scan_worker_all.DatabaseWriterThread"),
     ):
         mock_config.libraries = {"TVLib": {"paths": ["/tv"], "type": "tv"}}
         mock_scan.return_value = {}

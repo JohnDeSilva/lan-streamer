@@ -38,14 +38,6 @@ class JellyfinPullWorker(AsyncWorkerBase):
         logger.info(f"JellyfinPullWorker finished, updated {updated_count} episodes")
         return updated_count
 
-    def run(self) -> None:
-        """Synchronous compatibility fallback for tests."""
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(self._run_wrapper())
-        finally:
-            loop.close()
-
 
 class JellyfinPushWorker(AsyncWorkerBase):
     """Pushes all local watched state to Jellyfin."""
@@ -91,11 +83,3 @@ class JellyfinPushWorker(AsyncWorkerBase):
                     f"JellyfinPushWorker progress: {pushed_count}/{total_episodes} episodes pushed"
                 )
         return pushed_count
-
-    def run(self) -> None:
-        """Synchronous compatibility fallback for tests."""
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(self._run_wrapper())
-        finally:
-            loop.close()

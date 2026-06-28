@@ -89,11 +89,3 @@ class SubtitleMergeWorker(AsyncWorkerBase):
 
         logger.info(f"SubtitleMergeWorker finished successfully for {self.video_path}")
         return self.video_path
-
-    def run(self) -> None:
-        """Synchronous compatibility fallback for tests."""
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(self._run_wrapper())
-        finally:
-            loop.close()

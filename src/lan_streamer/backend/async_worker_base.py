@@ -58,6 +58,14 @@ class AsyncWorkerBase(QObject):
         """
         raise NotImplementedError
 
+    def run(self) -> None:
+        """Synchronous compatibility fallback for tests."""
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(self._run_wrapper())
+        finally:
+            loop.close()
+
     def start(self) -> None:
         """Schedule ``run_async`` via the async task manager.
 
