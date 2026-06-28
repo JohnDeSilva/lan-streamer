@@ -30,6 +30,7 @@ from lan_streamer.system.config import config
 from lan_streamer import db
 from lan_streamer.playback.wakelock import WakeLock
 from lan_streamer.playback.proxy import vlc, CacheWorker
+from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 logger = logging.getLogger("lan_streamer.player_widget")
 
@@ -240,6 +241,7 @@ class VideoPlayerWidget(QWidget):
         else:
             self.instance = None
             self.mediaplayer = None
+        self.async_task_manager = AsyncTaskManager(parent=self)
         self.current_media_path: str | None = None
         self.cached_file_path: str | None = None
         self.pending_resume_position: int = 0
@@ -1362,7 +1364,9 @@ class VideoPlayerWidget(QWidget):
 
         self._cleanup_cache()
 
-        self.cache_worker = CacheWorker(file_path, str(dest_path))
+        self.cache_worker = CacheWorker(
+            file_path, str(dest_path), async_task_manager=self.async_task_manager
+        )
         self.cache_worker.progress.connect(self.progress_bar.setValue)
         self.cache_worker.finished.connect(self._on_caching_finished)
         self.cache_worker.error.connect(self._on_caching_error)
