@@ -507,8 +507,8 @@ def test_scan_all_libraries_worker_cancellation() -> None:
             return_value={},
         ),
         patch(
-            "lan_streamer.backend.scan_worker_all.AsyncDatabaseWriter"
-        ) as mock_writer_class,
+            "lan_streamer.backend.scan_worker_all.DatabaseWriteTask"
+        ) as mock_write_task,
     ):
         mock_config.libraries = {"TVLib": {"paths": ["/tv"], "type": "tv"}}
         mock_scan.return_value = {}
@@ -523,7 +523,5 @@ def test_scan_all_libraries_worker_cancellation() -> None:
 
         worker.run()
 
-        # Write task should not be submitted to writer
-        mock_writer_instance = mock_writer_class.return_value
-        mock_writer_instance.submit.assert_not_called()
-        mock_writer_instance.sync_submit.assert_not_called()
+        # Write task should not be posted to queue (so save was skipped)
+        mock_write_task.assert_not_called()
