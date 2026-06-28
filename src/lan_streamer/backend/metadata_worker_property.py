@@ -1,23 +1,21 @@
+import asyncio
 import logging
-import os
-import queue
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, List, Optional, Set
-from PySide6.QtCore import Signal, QThread
+from PySide6.QtCore import QObject, Signal
 
 from lan_streamer import db
 from lan_streamer.scanner.file_property_scanner import get_detailed_file_info
-from lan_streamer.backend.database_writer import DatabaseWriteTask, DatabaseWriterThread
-from lan_streamer.backend.scan_worker_base import wait_for_database_write_task
-from lan_streamer.system.config import config
+from lan_streamer.backend.database_writer import (
+    AsyncDatabaseWriter,
+    DatabaseWriterThread,  # noqa: F401
+)
+from lan_streamer.backend.async_worker_base import AsyncWorkerBase
+from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 logger = logging.getLogger("lan_streamer.backend")
 
 
-def _produce_item_update(
-    item: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+def _produce_item_update(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Probe a single item and return its update dict, or ``None`` if no
     new data was extracted."""
     file_path = item["path"]
@@ -47,13 +45,9 @@ def _produce_item_update(
     }
 
 
-class FilePropertyExtractionWorker(QThread):
+class FilePropertyExtractionWorker(AsyncWorkerBase):
     """Processes videos in parallel (by library) to extract missing runtimes
     and technical metadata.
-
-    Libraries are processed concurrently with a ``ThreadPoolExecutor``.
-    Within each library, items are processed sequentially (season-by-season
-    for episodes, one-by-one for movies).
     """
 
     progress_updated = Signal(int, int)
@@ -64,24 +58,23 @@ class FilePropertyExtractionWorker(QThread):
 
     def __init__(
         self,
+        async_task_manager: Optional[AsyncTaskManager] = None,
         changed_season_ids: Optional[Set[str]] = None,
         changed_movie_ids: Optional[Set[str]] = None,
-        parent: Optional[QThread] = None,
+        parent: Optional[QObject] = None,
     ) -> None:
-        super().__init__(parent)
-        self.changed_season_ids = changed_season_ids
-        self.changed_movie_ids = changed_movie_ids
-        self._lock: threading.Lock = threading.Lock()
+        super().__init__(async_task_manager=async_task_manager, parent=parent)
+        self.changed_season_ids: Optional[Set[str]] = changed_season_ids
+        self.changed_movie_ids: Optional[Set[str]] = changed_movie_ids
+        self._lock: asyncio.Lock = asyncio.Lock()
         self._total_count: int = 0
         self._completed_count: int = 0
         self._last_batch_emitted: int = 0
+        self._database_writer: Optional[AsyncDatabaseWriter] = None
 
-        self.database_queue: queue.Queue = queue.Queue()
-        self.database_writer: Optional[DatabaseWriterThread] = None
-
-    def _emit_progress_batch(self) -> None:
+    async def _emit_progress_batch(self) -> None:
         """Emit progress_updated signal if batch interval has been reached."""
-        with self._lock:
+        async with self._lock:
             completed = self._completed_count
             total = self._total_count
             if completed - self._last_batch_emitted < self._BATCH_INTERVAL:
@@ -89,11 +82,9 @@ class FilePropertyExtractionWorker(QThread):
             self._last_batch_emitted = completed
         self.progress_updated.emit(completed, total)
 
-    def run(self) -> None:
-        # Start database writer thread
-        self.database_queue = queue.Queue()
-        self.database_writer = DatabaseWriterThread(self.database_queue)
-        self.database_writer.start()
+    async def run_async(self) -> int:
+        self._database_writer = AsyncDatabaseWriter()
+        await self._database_writer.start()
 
         try:
             logger.info("FilePropertyExtractionWorker starting run")
@@ -101,7 +92,9 @@ class FilePropertyExtractionWorker(QThread):
                 "Starting Pass 3 (Technical Metadata Extraction) for candidates..."
             )
 
-            items_list: List[Dict[str, Any]] = db.get_items_missing_runtime()
+            items_list: List[Dict[str, Any]] = await asyncio.to_thread(
+                db.get_items_missing_runtime
+            )
 
             # Filter out items that already have complete metadata
             candidates: List[Dict[str, Any]] = []
@@ -128,30 +121,24 @@ class FilePropertyExtractionWorker(QThread):
             )
             self._completed_count = 0
             self._last_batch_emitted = 0
-            updated_count: int = 0
+            updated_count = 0
 
-            # Group candidates by library so each library is processed in its
-            # own thread.
+            if self._total_count == 0:
+                self.progress_updated.emit(0, 0)
+                self.finished.emit(0)
+                return 0
+
+            # Group candidates by library
             items_by_library: Dict[str, List[Dict[str, Any]]] = {}
             for item in candidates:
                 library = item.get("library_name") or "_unknown"
                 items_by_library.setdefault(library, []).append(item)
 
-            max_workers: int = max(
-                1,
-                min(
-                    len(items_by_library),
-                    (os.cpu_count() or 4) * 2,
-                ),
-            )
+            # Process each library concurrently
+            async def process_library(library_items: List[Dict[str, Any]]) -> int:
+                local_updated = 0
 
-            def _process_library(
-                library_items: List[Dict[str, Any]],
-            ) -> int:
-                """Process one library's items. Returns count of updates."""
-                local_updated: int = 0
-
-                # Group episodes by season within this library.
+                # Group episodes by season
                 episodes_by_season: Dict[Optional[str], List[Dict[str, Any]]] = {}
                 movies: List[Dict[str, Any]] = []
                 for item in library_items:
@@ -161,111 +148,99 @@ class FilePropertyExtractionWorker(QThread):
                     else:
                         movies.append(item)
 
-                # Process episodes by season (sequential within library).
+                # Process episodes by season (sequential within library)
                 for season_id, season_episodes in episodes_by_season.items():
                     if self.isInterruptionRequested():
                         logger.info(
-                            "FilePropertyExtractionWorker: interruption requested. Stopping season processing."
+                            "FilePropertyExtractionWorker: cancelled. Stopping season processing."
                         )
                         break
+
                     season_updates: List[Dict[str, Any]] = []
                     for ep in season_episodes:
                         if self.isInterruptionRequested():
                             break
-                        update = _produce_item_update(ep)
+                        update = await asyncio.to_thread(_produce_item_update, ep)
                         if update:
                             season_updates.append(update)
                             local_updated += 1
 
-                        with self._lock:
+                        async with self._lock:
                             self._completed_count += 1
 
-                    self._emit_progress_batch()
+                    await self._emit_progress_batch()
 
-                    if season_updates:
+                    if season_updates and not self.isInterruptionRequested():
                         logger.info(
                             f"Committing batch write for season "
                             f"{season_id} ({len(season_updates)} episodes)"
                         )
-                        task = DatabaseWriteTask(
-                            action="update_items_runtime_batch",
-                            payload={"updates": season_updates},
+                        assert self._database_writer is not None
+                        task = await self._database_writer.submit(
+                            "update_items_runtime_batch",
+                            {"updates": season_updates},
                         )
-                        self.database_queue.put(task)
-                        wait_for_database_write_task(
-                            task,
-                            f"season {season_id} ({len(season_updates)} episodes)",
-                            timeout=config.database_write_timeout,
-                        )
+                        assert task.async_event is not None
+                        await task.async_event.wait()
                         if task.error:
                             raise task.error
 
-                # Process movies individually.
+                # Process movies individually
                 for movie in movies:
                     if self.isInterruptionRequested():
                         logger.info(
-                            "FilePropertyExtractionWorker: interruption requested. Stopping movie processing."
+                            "FilePropertyExtractionWorker: cancelled. Stopping movie processing."
                         )
                         break
-                    update = _produce_item_update(movie)
+
+                    update = await asyncio.to_thread(_produce_item_update, movie)
                     if update:
                         logger.info(f"Committing write for movie {movie['path']}")
-                        task = DatabaseWriteTask(
-                            action="update_items_runtime_batch",
-                            payload={"updates": [update]},
+                        assert self._database_writer is not None
+                        task = await self._database_writer.submit(
+                            "update_items_runtime_batch",
+                            {"updates": [update]},
                         )
-                        self.database_queue.put(task)
-                        wait_for_database_write_task(
-                            task,
-                            f"movie {movie['path']}",
-                            timeout=config.database_write_timeout,
-                        )
+                        assert task.async_event is not None
+                        await task.async_event.wait()
                         if task.error:
                             raise task.error
                         local_updated += 1
 
-                    with self._lock:
+                    async with self._lock:
                         self._completed_count += 1
 
-                    self._emit_progress_batch()
+                    await self._emit_progress_batch()
 
                 return local_updated
 
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_library: Dict[Any, str] = {}
-                for library_name, items in items_by_library.items():
-                    future = executor.submit(_process_library, items)
-                    future_to_library[future] = library_name
+            # Run tasks concurrently
+            tasks = [process_library(items) for items in items_by_library.values()]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for res in results:
+                if isinstance(res, BaseException):
+                    logger.exception("Error in process_library task", exc_info=res)
+                    raise res
+                else:
+                    updated_count += res
 
-                for future in as_completed(future_to_library):
-                    if self.isInterruptionRequested():
-                        logger.info(
-                            "FilePropertyExtractionWorker: interruption requested. Cancelling remaining libraries."
-                        )
-                        for f in future_to_library:
-                            f.cancel()
-                        break
-                    library_name = future_to_library[future]
-                    try:
-                        updated_count += future.result()
-                    except Exception:
-                        logger.exception(
-                            f"FilePropertyExtractionWorker library "
-                            f"'{library_name}' failed"
-                        )
-
-            # Emit final progress before finishing.
             self.progress_updated.emit(self._completed_count, self._total_count)
             logger.info(
                 f"FilePropertyExtractionWorker finished, updated "
                 f"{updated_count} of {self._total_count} items"
             )
-            logger.info("Finished Pass 3 (Technical Metadata Extraction)")
-            self.finished.emit(updated_count)
+            return updated_count
         except Exception as exception_instance:
             logger.exception("FilePropertyExtractionWorker failed")
-            self.error.emit(str(exception_instance))
+            raise exception_instance
         finally:
-            if self.database_writer is not None:
-                self.database_writer.stop()
-                self.database_writer.join()
+            if self._database_writer is not None:
+                await self._database_writer.stop()
+
+    def run(self) -> None:
+        """Synchronous compatibility fallback for tests."""
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(self._run_wrapper())
+        finally:
+            loop.close()

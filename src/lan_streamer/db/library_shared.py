@@ -158,3 +158,33 @@ def save_directory_mtime(path: str, mtime: float) -> None:
             record = ScannedDirectory(path=path, last_scanned_mtime=mtime)
             session.add(record)
         session.commit()
+
+
+async def async_get_directory_mtime(path: str) -> float | None:
+    """Async version of :func:`get_directory_mtime`."""
+    from lan_streamer.db.models import ScannedDirectory
+    from lan_streamer.db.async_session import get_async_session
+
+    async with get_async_session() as session:
+        result = await session.scalars(
+            select(ScannedDirectory).where(ScannedDirectory.path == path)
+        )
+        record = result.first()
+        return record.last_scanned_mtime if record else None
+
+
+async def async_save_directory_mtime(path: str, mtime: float) -> None:
+    """Async version of :func:`save_directory_mtime`."""
+    from lan_streamer.db.models import ScannedDirectory
+    from lan_streamer.db.async_session import get_async_session
+
+    async with get_async_session() as session:
+        record = await session.scalars(
+            select(ScannedDirectory).where(ScannedDirectory.path == path)
+        )
+        existing = record.first()
+        if existing:
+            existing.last_scanned_mtime = mtime
+        else:
+            session.add(ScannedDirectory(path=path, last_scanned_mtime=mtime))
+        await session.commit()
