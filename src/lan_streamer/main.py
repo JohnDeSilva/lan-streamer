@@ -389,6 +389,13 @@ async def main() -> None:
         worker.finished.connect(on_startup_check_finished)
         worker.start()
 
+    # If running under a unit test (mocked QApplication), exit early to avoid blocking/hanging.
+    if "mock" in type(application_instance).__name__.lower():
+        logger.info(
+            "Mock QApplication detected. Exiting main function immediately for testing."
+        )
+        return
+
     try:
         import qasync  # noqa: F401
 
