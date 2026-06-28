@@ -403,8 +403,7 @@ async def main() -> None:
         # Under qasync, the event loop is already running. We just wait until the app exits.
         app_close_event = asyncio.Event()
         application_instance.aboutToQuit.connect(app_close_event.set)
-        while main_window.isVisible() and not app_close_event.is_set():
-            await asyncio.sleep(0.1)
+        await app_close_event.wait()
 
         # Await any pending background tasks to ensure they shut down cleanly before loop closes
         pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
