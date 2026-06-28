@@ -4,7 +4,7 @@ import asyncio
 import sys
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, cast
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedLayout
 from PySide6.QtGui import QPalette, QColor, QFont
 from PySide6.QtCore import Qt
@@ -188,9 +188,7 @@ async def main() -> None:
     app_inst = QApplication.instance()
     if app_inst is None:
         app_inst = QApplication(sys.argv)
-    if not isinstance(app_inst, QApplication):
-        raise RuntimeError("Active Qt Application is not a QApplication instance")
-    application_instance = app_inst
+    application_instance = cast(QApplication, app_inst)
     setup_dark_theme(application_instance)
 
     application_instance.setFont(QFont("Inter", 14))
