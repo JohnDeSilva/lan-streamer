@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import queue
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -24,10 +25,14 @@ from lan_streamer.backend.scan_worker_base import (
     log_stats_breakdown,
     merge_stats_dicts,
     series_belongs_to_root,
+    wait_for_database_write_task,
 )
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.system.async_task_manager import AsyncTaskManager
-from lan_streamer.backend.database_writer import AsyncDatabaseWriter
+from lan_streamer.backend.database_writer import (
+    DatabaseWriteTask,
+    AsyncDatabaseWriter,
+)
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -45,6 +50,24 @@ LIFECYCLE_EVENTS = frozenset(
         "unavailable_root",
     }
 )
+
+
+class AsyncDatabaseWriterQueueAdapter:
+    """Adapter to allow scanner threads to submit tasks to AsyncDatabaseWriter."""
+
+    def __init__(
+        self,
+        writer: AsyncDatabaseWriter,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        self.writer = writer
+        self.loop = loop
+
+    def put(self, task: Optional[DatabaseWriteTask]) -> None:
+        if task is None:
+            return
+        task.async_event = asyncio.Event()
+        asyncio.run_coroutine_threadsafe(self.writer._queue.put(task), self.loop)
 
 
 class ScanAllLibrariesWorker(AsyncWorkerBase):
@@ -105,9 +128,9 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         self.pass1_stats_per_library: Dict[str, Dict[str, int]] = {}
         self.pass2_stats_per_library: Dict[str, Dict[str, int]] = {}
 
-        # Database writer and event loop — created in run_async() for each scan.
+        # Database write queue — created in run() for each scan.
+        self.database_queue: Optional[Any] = None
         self._database_writer: Optional[AsyncDatabaseWriter] = None
-        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
 
     def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
         """Add a progress event to the thread-safe buffer and emit if full."""
@@ -305,11 +328,9 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             "show_future_episodes", True
         )
 
-        # _database_writer and _event_loop are set by run_async() before this method is called
-        writer = self._database_writer
-        loop = self._event_loop
-        assert writer is not None
-        assert loop is not None
+        # database_queue is guaranteed to be set by run() before this method is called
+        assert self.database_queue is not None
+        database_queue: queue.Queue = self.database_queue
 
         # Local accumulators (thread-local, protected by local_lock)
         local_stats: Dict[str, int] = create_empty_stats()
@@ -356,14 +377,22 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 f"'{season_name}' of series '{series_name}' to database..."
             )
             try:
-                season_payload = {
-                    "library_name": library_name,
-                    "series_name": series_name,
-                    "series_data": series_data,
-                    "season_name": season_name,
-                    "season_data": season_data,
-                }
-                task = writer.sync_submit("save_season", season_payload, loop)
+                task = DatabaseWriteTask(
+                    action="save_season",
+                    payload={
+                        "library_name": library_name,
+                        "series_name": series_name,
+                        "series_data": series_data,
+                        "season_name": season_name,
+                        "season_data": season_data,
+                    },
+                )
+                database_queue.put(task)
+                wait_for_database_write_task(
+                    task,
+                    f"season '{season_name}' of series '{series_name}'",
+                    timeout=config.database_write_timeout,
+                )
                 if task.error:
                     raise task.error
                 stats = task.result
@@ -442,12 +471,20 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 f"ScanAllLibrariesWorker writing movie '{movie_name}' to database..."
             )
             try:
-                movie_payload = {
-                    "library_name": library_name,
-                    "movie_name": movie_name,
-                    "movie_data": movie_data,
-                }
-                task = writer.sync_submit("save_movie", movie_payload, loop)
+                task = DatabaseWriteTask(
+                    action="save_movie",
+                    payload={
+                        "library_name": library_name,
+                        "movie_name": movie_name,
+                        "movie_data": movie_data,
+                    },
+                )
+                database_queue.put(task)
+                wait_for_database_write_task(
+                    task,
+                    f"movie '{movie_name}'",
+                    timeout=config.database_write_timeout,
+                )
                 if task.error:
                     raise task.error
                 stats = task.result
@@ -509,11 +546,19 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 action = (
                     "save_movie_library" if library_type == "movie" else "save_library"
                 )
-                library_payload = {
-                    "library_name": library_name,
-                    "library_data": library_data,
-                }
-                task = writer.sync_submit(action, library_payload, loop)
+                task = DatabaseWriteTask(
+                    action=action,
+                    payload={
+                        "library_name": library_name,
+                        "library_data": library_data,
+                    },
+                )
+                database_queue.put(task)
+                wait_for_database_write_task(
+                    task,
+                    f"library '{library_name}'",
+                    timeout=config.database_write_timeout,
+                )
                 if task.error:
                     raise task.error
                 stats = task.result
@@ -557,6 +602,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 season_callback=_season_callback,
                 movie_callback=_movie_callback,
                 metadata_only=not is_pass1,
+                database_queue=database_queue,
                 is_interrupted=self.isInterruptionRequested,
             )
             # Collect unavailable directories from this scan.
@@ -611,6 +657,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                     season_callback=_season_callback,
                     movie_callback=_movie_callback,
                     metadata_only=not is_pass1,
+                    database_queue=database_queue,
                     is_interrupted=self.isInterruptionRequested,
                 )
                 if self.isInterruptionRequested():
@@ -790,7 +837,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         return tree
 
     # ------------------------------------------------------------------
-    # Main execution entrypoint (runs as an asyncio task)
+    # Main execution entrypoint (runs in the QThread)
     # ------------------------------------------------------------------
 
     async def run_async(self) -> None:
@@ -813,9 +860,11 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         self._skipped_series_ids.clear()
         self._skipped_movie_ids.clear()
 
-        # Create the database writer and capture event loop for sync_submit
+        # Create the database writer
         self._database_writer = AsyncDatabaseWriter()
-        self._event_loop = asyncio.get_running_loop()
+        self.database_queue = AsyncDatabaseWriterQueueAdapter(
+            self._database_writer, asyncio.get_running_loop()
+        )
 
         try:
             await self._database_writer.start()

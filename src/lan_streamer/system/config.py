@@ -73,7 +73,6 @@ class Config:
         "database_write_timeout": 60.0,
         "scan_interval_hours": 1,
         "auto_scan_enabled": True,
-        "enable_async_scan": True,
     }
 
     def __init__(self) -> None:
