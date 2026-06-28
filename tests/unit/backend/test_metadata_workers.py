@@ -497,6 +497,7 @@ def test_file_property_extraction_worker_cooperative_cancellation() -> None:
 
     with (
         patch("lan_streamer.backend.metadata_worker_property.db") as mock_db,
+        patch("lan_streamer.backend.metadata_worker_property.DatabaseWriterThread"),
         patch(
             "lan_streamer.backend.metadata_worker_property._produce_item_update"
         ) as mock_produce,

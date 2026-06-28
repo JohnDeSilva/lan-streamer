@@ -5,7 +5,10 @@ from PySide6.QtCore import QObject, Signal
 
 from lan_streamer import db
 from lan_streamer.scanner.file_property_scanner import get_detailed_file_info
-from lan_streamer.backend.database_writer import AsyncDatabaseWriter
+from lan_streamer.backend.database_writer import (
+    AsyncDatabaseWriter,
+    DatabaseWriterThread,  # noqa: F401
+)
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.async_utils import get_subprocess_semaphore
@@ -236,3 +239,11 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
         finally:
             if self._database_writer is not None:
                 await self._database_writer.stop()
+
+    def run(self) -> None:
+        """Synchronous compatibility fallback for tests."""
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(self._run_wrapper())
+        finally:
+            loop.close()

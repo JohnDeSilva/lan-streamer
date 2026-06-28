@@ -36,12 +36,12 @@ def test_worker_slot_initial_state(slot: WorkerSlot) -> None:
 
 
 def test_worker_slot_is_running_property(slot: WorkerSlot) -> None:
-    worker = _FakeAsyncWorker()
-    worker._running = True
-    slot._instance = worker
+    fake_worker = MagicMock()
+    fake_worker.isRunning.return_value = True
+    slot._instance = fake_worker
     assert slot.is_running is True
 
-    worker._running = False
+    fake_worker.isRunning.return_value = False
     assert slot.is_running is False
 
 
@@ -114,8 +114,8 @@ def test_worker_slot_start_sets_instance(slot: WorkerSlot) -> None:
 
 
 def test_worker_slot_start_warns_on_replacement(slot: WorkerSlot, caplog) -> None:
-    running_worker = _FakeAsyncWorker()
-    running_worker._running = True
+    running_worker = MagicMock()
+    running_worker.isRunning.return_value = True
     slot._instance = running_worker
 
     new_worker = MagicMock()
@@ -129,8 +129,8 @@ def test_worker_slot_start_warns_on_replacement(slot: WorkerSlot, caplog) -> Non
 
 
 def test_worker_slot_start_stops_previous_worker(slot: WorkerSlot) -> None:
-    running_worker = _FakeAsyncWorker()
-    running_worker._running = True
+    running_worker = MagicMock()
+    running_worker.isRunning.return_value = True
     slot._instance = running_worker
 
     new_worker = MagicMock()
@@ -138,7 +138,8 @@ def test_worker_slot_start_stops_previous_worker(slot: WorkerSlot) -> None:
 
     slot.start(factory)
 
-    assert running_worker._running is False
+    running_worker.requestInterruption.assert_called_once()
+    running_worker.quit.assert_called_once()
 
 
 def test_worker_slot_start_unknown_signal_warns(slot: WorkerSlot, caplog) -> None:
@@ -169,8 +170,8 @@ def test_worker_slot_start_if_not_running_when_idle(slot: WorkerSlot) -> None:
 
 
 def test_worker_slot_start_if_not_running_when_running(slot: WorkerSlot) -> None:
-    running_worker = _FakeAsyncWorker()
-    running_worker._running = True
+    running_worker = MagicMock()
+    running_worker.isRunning.return_value = True
     slot._instance = running_worker
 
     factory = MagicMock()
@@ -191,17 +192,21 @@ def test_worker_slot_stop_without_worker(slot: WorkerSlot) -> None:
 
 
 def test_worker_slot_stop_interrupts_and_quits(slot: WorkerSlot) -> None:
-    worker = _FakeAsyncWorker()
-    worker._running = True
-    slot._instance = worker
+    fake_worker = MagicMock()
+    fake_worker.isRunning.return_value = False  # Will finish immediately
+    fake_worker.wait.return_value = True
+    slot._instance = fake_worker
 
     slot.stop()
 
-    assert worker._running is False
+    fake_worker.requestInterruption.assert_called_once()
+    fake_worker.quit.assert_called_once()
 
 
 def test_worker_slot_stop_clears_instance(slot: WorkerSlot) -> None:
     fake_worker = MagicMock()
+    fake_worker.isRunning.return_value = False
+    fake_worker.wait.return_value = True
     slot._instance = fake_worker
 
     slot.stop()
@@ -211,8 +216,7 @@ def test_worker_slot_stop_clears_instance(slot: WorkerSlot) -> None:
 
 def test_worker_slot_stop_handles_runtime_error(slot: WorkerSlot, caplog) -> None:
     fake_worker = MagicMock()
-    fake_worker._is_async_worker = True
-    fake_worker.stop.side_effect = RuntimeError("C++ object destroyed")
+    fake_worker.requestInterruption.side_effect = RuntimeError("C++ object destroyed")
     slot._instance = fake_worker
 
     with caplog.at_level("DEBUG"):
@@ -224,8 +228,7 @@ def test_worker_slot_stop_handles_runtime_error(slot: WorkerSlot, caplog) -> Non
 
 def test_worker_slot_stop_raises_unexpected_runtime_error(slot: WorkerSlot) -> None:
     fake_worker = MagicMock()
-    fake_worker._is_async_worker = True
-    fake_worker.stop.side_effect = RuntimeError("unexpected failure")
+    fake_worker.requestInterruption.side_effect = RuntimeError("unexpected failure")
     slot._instance = fake_worker
 
     with pytest.raises(RuntimeError, match="unexpected failure"):
@@ -238,6 +241,7 @@ def test_worker_slot_stop_disconnects_external_signals(slot: WorkerSlot) -> None
     fake_signal = MagicMock()
     fake_worker = MagicMock()
     fake_worker.finished = fake_signal
+    fake_worker.wait.return_value = True
     slot_handler = MagicMock()
 
     slot.start(lambda: fake_worker, finished=slot_handler)
@@ -246,14 +250,25 @@ def test_worker_slot_stop_disconnects_external_signals(slot: WorkerSlot) -> None
     fake_signal.disconnect.assert_called_once_with(slot_handler)
 
 
-def test_worker_slot_stop_calls_worker_stop_method(slot: WorkerSlot) -> None:
-    worker = _FakeAsyncWorker()
-    worker._running = True
-    slot._instance = worker
+def test_worker_slot_deferred_cleanup_waits_for_finished_signal(
+    slot: WorkerSlot,
+) -> None:
+    fake_worker = MagicMock()
+    fake_worker.wait.return_value = False
+    fake_worker.finished = MagicMock()
+    slot._instance = fake_worker
 
     slot.stop()
 
-    assert worker._running is False
+    assert fake_worker in slot._stopping_workers
+    fake_worker.finished.connect.assert_called_once()
+    cleanup_func = fake_worker.finished.connect.call_args[0][0]
+    assert callable(cleanup_func)
+
+    # Run cleanup
+    cleanup_func()
+    assert fake_worker not in slot._stopping_workers
+    fake_worker.deleteLater.assert_called_once()
     assert slot.instance is None
 
 
@@ -288,9 +303,10 @@ def test_worker_manager_slots_returns_all_slots(manager: WorkerManager) -> None:
 
 def test_worker_manager_stop_all_stops_every_slot(manager: WorkerManager) -> None:
     for slot_instance in manager._slots():
-        worker = _FakeAsyncWorker()
-        worker._running = True
-        slot_instance._instance = worker
+        fake_worker = MagicMock()
+        fake_worker.isRunning.return_value = False
+        fake_worker.wait.return_value = True
+        slot_instance._instance = fake_worker
 
     manager.stop_all()
 
@@ -309,12 +325,13 @@ def test_worker_slot_repr_empty(slot: WorkerSlot) -> None:
 
 
 def test_worker_slot_repr_with_worker(slot: WorkerSlot) -> None:
-    worker = _FakeAsyncWorker()
-    worker._running = True
-    slot._instance = worker
+    fake_worker = MagicMock()
+    fake_worker.__class__.__name__ = "FakeWorker"
+    fake_worker.isRunning.return_value = True
+    slot._instance = fake_worker
 
     text = repr(slot)
-    assert "_FakeAsyncWorker" in text
+    assert "FakeWorker" in text
     assert "running=True" in text
 
 

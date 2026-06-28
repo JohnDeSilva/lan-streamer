@@ -62,6 +62,14 @@ class MetadataEmbedWorker(AsyncWorkerBase):
         logger.info(f"MetadataEmbedWorker finished successfully for {self.video_path}")
         return self.video_path
 
+    def run(self) -> None:
+        """Synchronous compatibility fallback for tests."""
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(self._run_wrapper())
+        finally:
+            loop.close()
+
 
 class SeriesMetadataEmbedWorker(AsyncWorkerBase):
     """
@@ -157,3 +165,11 @@ class SeriesMetadataEmbedWorker(AsyncWorkerBase):
             logger.exception("%s failed with error.", self.__class__.__name__)
             if not self._cancelled:
                 self.error.emit(str(exception))
+
+    def run(self) -> None:
+        """Synchronous compatibility fallback for tests."""
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(self._run_wrapper())
+        finally:
+            loop.close()

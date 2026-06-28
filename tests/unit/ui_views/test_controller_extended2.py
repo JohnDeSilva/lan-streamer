@@ -202,7 +202,7 @@ def test_trigger_series_refresh_worker_already_running() -> None:
     config.libraries["TVLib"] = {"type": "tv", "paths": []}
 
     mock_worker = MagicMock()
-    mock_worker._is_async_worker = True
+    mock_worker.isRunning.return_value = True
     c.worker_manager.scan._instance = mock_worker
 
     statuses: List[str] = []
@@ -265,7 +265,7 @@ def test_merge_subtitles_starts_worker(ctrl_tv) -> None:
 
 def test_merge_subtitles_skips_if_running(ctrl_tv) -> None:
     mock_worker = MagicMock()
-    mock_worker._is_async_worker = True
+    mock_worker.isRunning.return_value = True
     ctrl_tv.worker_manager.subtitle_merge._instance = mock_worker
 
     statuses: List[str] = []
@@ -291,7 +291,7 @@ def test_embed_metadata_starts_worker(ctrl_tv) -> None:
 
 def test_embed_metadata_skips_if_running(ctrl_tv) -> None:
     mock_worker = MagicMock()
-    mock_worker._is_async_worker = True
+    mock_worker.isRunning.return_value = True
     ctrl_tv.worker_manager.metadata_embed._instance = mock_worker
 
     statuses: List[str] = []
@@ -336,7 +336,7 @@ def test_embed_metadata_series_unknown_series(ctrl_tv) -> None:
 
 def test_embed_metadata_series_skips_if_running(ctrl_tv) -> None:
     mock_worker = MagicMock()
-    mock_worker._is_async_worker = True
+    mock_worker.isRunning.return_value = True
     ctrl_tv.worker_manager.metadata_embed._instance = mock_worker
 
     statuses: List[str] = []
@@ -507,7 +507,7 @@ def test_trigger_series_scan_worker_already_running() -> None:
     config.libraries["TVLib"] = {"type": "tv", "paths": []}
 
     mock_worker = MagicMock()
-    mock_worker._is_async_worker = True
+    mock_worker.isRunning.return_value = True
     c.worker_manager.scan._instance = mock_worker
 
     statuses: List[str] = []

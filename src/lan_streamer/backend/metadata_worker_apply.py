@@ -93,6 +93,14 @@ class MetadataApplyWorker(AsyncWorkerBase):
             if not self._cancelled:
                 self.error.emit(str(exception))
 
+    def run(self) -> None:
+        """Synchronous compatibility fallback for tests."""
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(self._run_wrapper())
+        finally:
+            loop.close()
+
     def _sync_tmdb_episodes(
         self,
         series_record: Dict[str, Any],

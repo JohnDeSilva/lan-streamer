@@ -3,14 +3,14 @@ import threading
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QThread, Signal
 
 from lan_streamer.scanner import has_video_files
 
 logger = logging.getLogger("lan_streamer.backend")
 
 
-class BaseScanWorker(QObject):
+class BaseScanWorker(QThread):
     """Base QThread worker that handles detail progress buffering and thread safety."""
 
     detail_progress_batch = Signal(list)
@@ -38,10 +38,6 @@ class BaseScanWorker(QObject):
             batch = list(self._detail_progress_buffer)
             self._detail_progress_buffer.clear()
         self.detail_progress_batch.emit(batch)
-
-    def isInterruptionRequested(self) -> bool:
-        """Check if cooperative cancellation has been requested."""
-        return bool(getattr(self, "_cancelled", False))
 
 
 def create_empty_stats() -> Dict[str, int]:

@@ -46,6 +46,7 @@ else:
         FilePropertyExtractionWorker,
     )
     from lan_streamer.backend import AsyncScanWorker
+    from lan_streamer.backend import ScanWorker  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -343,7 +344,7 @@ class Controller(QObject):
 
         if self.worker_manager.scan.is_running:
             logger.info(
-                "AsyncScanWorker is already actively running. Skipping redundant automatic scan trigger."
+                "ScanWorker is already actively running. Skipping redundant automatic scan trigger."
             )
             return
 
@@ -510,7 +511,7 @@ class Controller(QObject):
 
         if self.worker_manager.scan.is_running:
             logger.info(
-                "AsyncScanWorker is already actively running. Skipping redundant scan trigger."
+                "ScanWorker is already actively running. Skipping redundant scan trigger."
             )
             return
 
