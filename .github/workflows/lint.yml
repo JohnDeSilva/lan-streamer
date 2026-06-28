@@ -2,15 +2,14 @@ name: Lint
 
 on:
   push:
-    branches: [ "main", "rc" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "rc" ]
+    branches: [ "main" ]
 
 jobs:
   lint:
     name: Lint & Typecheck
     runs-on: ubuntu-latest
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
 
     steps:
       - name: Checkout code
