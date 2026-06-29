@@ -45,19 +45,20 @@ jobs:
           # Fetch all tags from remote to ensure we have the latest
           git fetch --tags
 
-          # Bump version in files and update changelog
-          uv run cz bump --yes --changelog --version-files-only --tag-format "rc-\$version"
-          uv lock
+          # Bump version in files and update changelog using cz bump's native git operations
+          uv run cz bump --yes --changelog --tag-format "rc-\$version" --bump-message "chore(release): rc-{version}"
 
-          # Read version
+          # Read bumped version
           RELEASE_VERSION="$(uv run cz version --project)"
           echo "Bumped to RC version: ${RELEASE_VERSION}"
 
-          # Commit files back to current branch
-          git add pyproject.toml src/lan_streamer/__init__.py CHANGELOG.md uv.lock
-          git commit -m "chore(release): rc-${RELEASE_VERSION}" --no-verify
+          # Update lock file with the new version and amend the commit
+          uv lock
+          git add uv.lock
+          git commit --amend --no-edit --no-verify
 
-          # Create tag matching the rc- prefix
+          # Re-create tag matching the rc- prefix pointing to the amended commit
+          git tag -d "rc-${RELEASE_VERSION}"
           git tag -a "rc-${RELEASE_VERSION}" -m "Release rc-${RELEASE_VERSION}"
 
           # Push commit and tag back to current branch
