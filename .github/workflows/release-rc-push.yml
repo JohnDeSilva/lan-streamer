@@ -93,8 +93,8 @@ jobs:
           fi
           echo "Creating tag: ${NEXT_TAG}"
 
-          # Update CHANGELOG.md for this pre-release tag
-          uv run cz changelog --incremental --unreleased-version "$NEXT_TAG" --tag-format "rc-\$version"
+          # Update CHANGELOG.md for this pre-release tag using our python helper script
+          python .github/scripts/update_pre_release_changelog.py "$LATEST_TAG" "$NEXT_TAG"
 
           # Commit changelog update back to current branch
           git add CHANGELOG.md
