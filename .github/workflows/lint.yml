@@ -2,9 +2,15 @@ name: Lint
 
 on:
   push:
-    branches: [ "main", "rc" ]
+    branches:
+      - 'main'
+      - 'rc*'
+      - 'rc/**'
   pull_request:
-    branches: [ "main", "rc" ]
+    branches:
+      - 'main'
+      - 'rc*'
+      - 'rc/**'
 
 jobs:
   lint:
