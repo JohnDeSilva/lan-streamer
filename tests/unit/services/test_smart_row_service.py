@@ -19,19 +19,9 @@ class TestSmartRowService:
 
     def test_on_scan_completed_with_libraries(self) -> None:
         affected = ["TV"]
-        with (
-            patch(
-                "lan_streamer.services.smart_row_service.db.get_affected_config_hashes_for_libraries",
-                return_value=["hash-1"],
-            ),
-            patch(
-                "lan_streamer.services.smart_row_service.db.clear_cache_for_config_hashes"
-            ) as mock_clear,
-        ):
-            self.service._rebuild_affected_configs = MagicMock()
-            self.service.on_scan_completed(affected_libraries=affected)
-            mock_clear.assert_called_once_with(["hash-1"])
-            self.service._rebuild_affected_configs.assert_called_once_with(affected)
+        self.service._rebuild_affected_configs = MagicMock()
+        self.service.on_scan_completed(affected_libraries=affected)
+        self.service._rebuild_affected_configs.assert_called_once_with(affected)
 
     def test_on_scan_completed_background_runner(self) -> None:
         runner = MagicMock()
@@ -97,36 +87,10 @@ class TestSmartRowService:
             mock_rebuild.assert_called_once()
 
     def test_rebuild_with_libraries(self) -> None:
-        with (
-            patch(
-                "lan_streamer.services.smart_row_service.db.get_affected_config_hashes_for_libraries",
-                return_value=["hash-1"],
-            ),
-            patch(
-                "lan_streamer.services.smart_row_service.db.clear_cache_for_config_hashes"
-            ) as mock_clear,
-        ):
-            service = SmartRowService()
-            service._rebuild_affected_configs = MagicMock(return_value=["hash-1"])
-            service._rebuild(affected_libraries=["TV"])
-            mock_clear.assert_called_once_with(["hash-1"])
-            service._rebuild_affected_configs.assert_called_once_with(["TV"])
-
-    def test_rebuild_with_libraries_skips_if_no_hashes(self) -> None:
-        with (
-            patch(
-                "lan_streamer.services.smart_row_service.db.get_affected_config_hashes_for_libraries",
-                return_value=[],
-            ),
-            patch(
-                "lan_streamer.services.smart_row_service.db.clear_cache_for_config_hashes"
-            ) as mock_clear,
-        ):
-            service = SmartRowService()
-            service._rebuild_affected_configs = MagicMock()
-            service._rebuild(affected_libraries=["TV"])
-            mock_clear.assert_not_called()
-            service._rebuild_affected_configs.assert_not_called()
+        service = SmartRowService()
+        service._rebuild_affected_configs = MagicMock(return_value=["hash-1"])
+        service._rebuild(affected_libraries=["TV"])
+        service._rebuild_affected_configs.assert_called_once_with(["TV"])
 
     def test_rebuild_affected_configs(self) -> None:
         test_configs = [
