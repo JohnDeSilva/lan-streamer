@@ -50,6 +50,72 @@
 - **backend**: remove legacy ScanWorker and BaseScanWorker
 - **backend**: consolidate QThread workers — remove sync run() duplicates, simplify WorkerSlot, clean up dead ScanWorker imports
 
+## rc-0.38.0 (2026-06-29)
+
+### Feat
+
+- **ui**: wire smart_rows_updated signal and targeted UI updates
+- **services**: add SmartRowService to orchestrate cache rebuilds
+- **db**: add SmartRowCache model, queries, and migration
+
+### Fix
+
+- **ui**: ensure smart rows update when returning from detail views
+- **dev-dependency**: bump ruff from 0.15.18 to 0.15.20
+- **dependency**: bump alembic from 1.18.4 to 1.18.5
+
+### Refactor
+
+- **db,services**: optimize cache rebuilds and fix None safety
+
+## v0.37.0 (2026-06-29)
+
+### Feat
+
+- **ui**: skip cleanup if root directories are unavailable during scanning
+- **async**: Stage 6 — concurrency semaphores and async subprocess management
+- **async**: Stage 3-5 — async database writer, async scan worker, and filesystem executor
+- **providers**: add async HTTP providers with aiohttp
+- **ui**: make scan schedule configurable in settings dialog
+- **scanner**: Stage 1 — ScheduledScanService with periodic background scanning
+- **async**: Stage 0 — async infrastructure, task manager, and qasync wiring
+- **async**: Stage 6 — concurrency semaphores and async subprocess management
+- **async**: Stage 3-5 — async database writer, async scan worker, and filesystem executor
+- **providers**: add async HTTP providers with aiohttp
+- **ui**: make scan schedule configurable in settings dialog
+- **scanner**: Stage 1 — ScheduledScanService with periodic background scanning
+- **async**: Stage 0 — async infrastructure, task manager, and qasync wiring
+
+### Fix
+
+- **main**: setQuitOnLastWindowClosed(False) under qasync to ensure teardown cleanup finishes before Qt terminates loop
+- **main**: trigger teardown cleanup loop on main window hide rather than waiting for aboutToQuit event loop stop
+- **main**: raise SystemExit to terminate the Python process cleanly on event loop exit
+- **main**: await shutdown of all pending asyncio tasks on application close to prevent event loop teardown warnings/crashes
+- **system**: address Issue B by implementing robust process termination on CancelledError
+- **backend**: address Issue A by migrating library sweep to run_in_executor and FileSystemExecutor
+- **test**: detect mocked QApplication to prevent unit tests hanging
+- **main**: avoid exec() under qasync and wait on asyncio.Event instead
+- **main**: use typing.cast for QApplication instance check to resolve isinstance mock failure
+- **main**: safely initialize QApplication instance and update tests
+- **main**: setQuitOnLastWindowClosed(False) under qasync to ensure teardown cleanup finishes before Qt terminates loop
+- **main**: trigger teardown cleanup loop on main window hide rather than waiting for aboutToQuit event loop stop
+- **main**: raise SystemExit to terminate the Python process cleanly on event loop exit
+- **main**: await shutdown of all pending asyncio tasks on application close to prevent event loop teardown warnings/crashes
+- **system**: address Issue B by implementing robust process termination on CancelledError
+- **backend**: address Issue A by migrating library sweep to run_in_executor and FileSystemExecutor
+- **test**: detect mocked QApplication to prevent unit tests hanging
+- **main**: avoid exec() under qasync and wait on asyncio.Event instead
+- **main**: use typing.cast for QApplication instance check to resolve isinstance mock failure
+- **main**: safely initialize QApplication instance and update tests
+
+### Refactor
+
+- **backend**: remove legacy ScanWorker and BaseScanWorker
+- **backend**: consolidate QThread workers — remove sync run() duplicates, simplify WorkerSlot, clean up dead ScanWorker imports
+- **backend**: remove legacy ScanWorker and BaseScanWorker
+- **backend**: consolidate QThread workers — remove sync run() duplicates, simplify WorkerSlot, clean up dead ScanWorker imports
+
 ## v0.36.0 (2026-06-26)
 
 ### Feat
