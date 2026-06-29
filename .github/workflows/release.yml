@@ -2,7 +2,10 @@ name: Release
 
 on:
   push:
-    branches: [ "main", "rc" ]
+    branches:
+      - 'main'
+      - 'rc*'
+      - 'rc/**'
 
 permissions:
   contents: write
@@ -46,8 +49,8 @@ jobs:
         env:
           UV_CACHE_DIR: /tmp/uv-cache
         run: |
-          if [ "${{ github.ref_name }}" = "rc" ]; then
-            echo "Processing rc branch..."
+          if [[ "${{ github.ref_name }}" == rc* ]]; then
+            echo "Processing rc branch: ${{ github.ref_name }}..."
 
             # Fetch all tags from remote to ensure we have the latest
             git fetch --tags
@@ -71,15 +74,15 @@ jobs:
               RELEASE_VERSION="$(uv run cz version --project)"
               echo "Bumped to RC version: ${RELEASE_VERSION}"
 
-              # Commit files back to rc branch
+              # Commit files back to current branch
               git add pyproject.toml src/lan_streamer/__init__.py CHANGELOG.md uv.lock
               git commit -m "chore(release): rc-${RELEASE_VERSION} [skip ci]" --no-verify
 
               # Create tag matching the rc- prefix
               git tag -a "rc-${RELEASE_VERSION}" -m "Release rc-${RELEASE_VERSION}"
 
-              # Push commit and tag back to rc
-              git push origin HEAD:rc
+              # Push commit and tag back to current branch
+              git push origin HEAD:${{ github.ref_name }}
               git push origin "rc-${RELEASE_VERSION}"
             else
               echo "Detected direct push/commit. Creating dash version tag..."
