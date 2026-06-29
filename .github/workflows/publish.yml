@@ -205,8 +205,8 @@ jobs:
           body_path: release_notes.md
           prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
 
-      - name: Recreate rc-dependabot Branch
+      - name: Recreate dependabot-base Branch
         if: startsWith(github.ref_name, 'v')
         run: |
-          git checkout -b rc-dependabot
-          git push origin rc-dependabot --force
+          git checkout -b dependabot-base
+          git push origin dependabot-base --force
