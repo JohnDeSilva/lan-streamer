@@ -2,7 +2,7 @@ name: Build RC Executables
 
 on:
   pull_request:
-    branches: [ "rc" ]
+    branches: [ "rc", "main" ]
 
 jobs:
   build-ubuntu:

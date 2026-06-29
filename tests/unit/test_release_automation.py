@@ -14,7 +14,7 @@ def read_text(relative_path: str) -> str:
 def test_rc_workflow_builds_executables_for_rc_branch() -> None:
     workflow_text = read_text(".github/workflows/executable.yml")
 
-    assert 'branches: [ "rc" ]' in workflow_text
+    assert 'branches: [ "rc", "main" ]' in workflow_text
     assert "pull_request:" in workflow_text
     assert "Upload artifact" in workflow_text
     assert "Create Release" not in workflow_text
@@ -25,15 +25,16 @@ def test_main_release_workflow_uses_commitizen_to_cut_release() -> None:
 
     assert 'branches: [ "main", "rc" ]' in workflow_text
     assert (
-        "cz bump --prerelease rc --yes --changelog --version-files-only"
+        r'cz bump --yes --changelog --version-files-only --tag-format "rc-\$version"'
         in workflow_text
     )
-    assert "cz bump --yes --changelog --version-files-only" in workflow_text
     assert (
-        'git commit -m "chore(release): v${RELEASE_VERSION} [skip ci]"' in workflow_text
+        'git commit -m "chore(release): rc-${RELEASE_VERSION} [skip ci]"'
+        in workflow_text
     )
+    assert 'git tag -a "rc-${RELEASE_VERSION}"' in workflow_text
+    assert 'git push origin "rc-${RELEASE_VERSION}"' in workflow_text
     assert 'git tag -a "v${RELEASE_VERSION}"' in workflow_text
-    assert "git push origin HEAD:${{ github.ref_name }}" in workflow_text
     assert 'git push origin "v${RELEASE_VERSION}"' in workflow_text
 
 
