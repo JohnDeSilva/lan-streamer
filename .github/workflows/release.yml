@@ -83,7 +83,7 @@ jobs:
               git tag -a "rc-${RELEASE_VERSION}" -m "Release rc-${RELEASE_VERSION}"
 
               # Push commit and tag back to current branch
-              git push origin HEAD:$BRANCH_NAME
+              git push origin "HEAD:$BRANCH_NAME"
               git push origin "rc-${RELEASE_VERSION}"
             else
               echo "Detected direct push/commit. Creating dash version tag..."
