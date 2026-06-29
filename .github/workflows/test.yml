@@ -2,9 +2,15 @@ name: Test
 
 on:
   push:
-    branches: [ "main", "rc" ]
+    branches:
+      - 'main'
+      - 'rc*'
+      - 'rc/**'
   pull_request:
-    branches: [ "main", "rc" ]
+    branches:
+      - 'main'
+      - 'rc*'
+      - 'rc/**'
 
 jobs:
   check-source-branch:
@@ -19,8 +25,8 @@ jobs:
         run: |
           echo "PR target branch: $PR_TARGET_BRANCH"
           echo "PR source branch: $PR_SOURCE_BRANCH"
-          if [ "$PR_SOURCE_BRANCH" != "rc" ]; then
-            echo "ERROR: Only pull requests from the 'rc' branch are allowed to target 'main'!"
+          if [[ "$PR_SOURCE_BRANCH" != rc* ]]; then
+            echo "ERROR: Only pull requests from a branch with the 'rc' prefix are allowed to target 'main'!"
             exit 1
           fi
 
