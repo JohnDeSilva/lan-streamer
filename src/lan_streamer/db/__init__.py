@@ -36,6 +36,15 @@ from lan_streamer.db.queries_ui import (
     get_combined_next_up,
     get_combined_smart_row,
 )
+from lan_streamer.db.smart_row_cache import (
+    get_cached_smart_rows,
+    rebuild_cache_for_config,
+    rebuild_all_cache,
+    clear_cache_for_config_hashes,
+    clear_all_cache,
+    get_affected_config_hashes_for_libraries,
+    compute_config_hash,
+)
 from lan_streamer.db.queries_config import (
     set_app_config,
     get_all_app_configs,
@@ -83,6 +92,7 @@ from lan_streamer.db.models import (
     AppSecret,
     SecretType,
     ScannedDirectory,
+    SmartRowCache,
 )
 
 DB_FILE = Path(os.getenv("LAN_STREAMER_DB", config.database_path))
