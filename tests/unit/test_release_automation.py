@@ -48,10 +48,10 @@ def test_main_release_workflow_uses_commitizen_to_cut_release() -> None:
     assert "rc*" in workflow_text
     assert "rc/**" in workflow_text
     assert (
-        r'cz bump --yes --changelog --version-files-only --tag-format "rc-\$version"'
+        r'cz bump --yes --changelog --tag-format "rc-\$version" --bump-message "chore(release): rc-{version}"'
         in workflow_text
     )
-    assert 'git commit -m "chore(release): rc-${RELEASE_VERSION}"' in workflow_text
+    assert "git commit --amend --no-edit --no-verify" in workflow_text
     assert 'git tag -a "rc-${RELEASE_VERSION}"' in workflow_text
     assert 'git push origin "rc-${RELEASE_VERSION}"' in workflow_text
     assert 'git tag -a "v${RELEASE_VERSION}"' in main_workflow_text
