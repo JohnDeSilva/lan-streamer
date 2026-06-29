@@ -553,7 +553,7 @@ class TestPopulateCombinedView:
         ]
 
         with patch(
-            "lan_streamer.db.get_combined_smart_row",
+            "lan_streamer.db.get_cached_smart_rows",
             return_value=[
                 {
                     "name": "Show A",
@@ -596,7 +596,7 @@ class TestPopulateCombinedView:
             }
         ]
 
-        with patch("lan_streamer.db.get_combined_smart_row", return_value=[]):
+        with patch("lan_streamer.db.get_cached_smart_rows", return_value=[]):
             view.populate_combined_view()
         # Empty row should be skipped, layout gets just the stretch
         # No crash is the key assertion
@@ -614,7 +614,7 @@ class TestPopulateCombinedView:
         ]
 
         with patch(
-            "lan_streamer.db.get_combined_smart_row",
+            "lan_streamer.db.get_cached_smart_rows",
             return_value=[
                 {
                     "name": "Show X",
@@ -643,7 +643,7 @@ class TestPopulateCombinedView:
         ]
 
         with patch(
-            "lan_streamer.db.get_combined_smart_row",
+            "lan_streamer.db.get_cached_smart_rows",
             return_value=[
                 {
                     "name": "Avatar",
@@ -681,7 +681,7 @@ class TestPopulateCombinedView:
             }
             for i in range(10)
         ]
-        with patch("lan_streamer.db.get_combined_smart_row", return_value=items):
+        with patch("lan_streamer.db.get_cached_smart_rows", return_value=items):
             view.populate_combined_view()
         # Row should only have 2 items (max_items=2)
 
