@@ -1,0 +1,54 @@
+{
+  "name": "Protect Main Branch",
+  "target": "branch",
+  "source_type": "Repository",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "creation"
+    },
+
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          {
+            "context": "Enforce Merge from rc to main"
+          },
+          {
+            "context": "Test (Ubuntu)"
+          },
+          {
+            "context": "Test (Fedora)"
+          },
+          {
+            "context": "Lint & Typecheck"
+          }
+        ]
+      }
+    }
+  ],
+  "bypass_actors": []
+}

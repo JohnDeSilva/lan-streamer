@@ -24,8 +24,9 @@ def test_tmdb_is_configured(tmdb) -> None:
     assert tmdb.is_configured() is True
 
 
-def test_tmdb_not_configured() -> None:
-    client = TMDBClient(api_key="")
+def test_tmdb_not_configured(mock_session) -> None:
+    mock_session.request.side_effect = Exception("mocked network failure")
+    client = TMDBClient(session=mock_session, api_key="")
     assert client.is_configured() is False
     # search_series_full short-circuits without a key
     assert client.search_series_full("Test") == []

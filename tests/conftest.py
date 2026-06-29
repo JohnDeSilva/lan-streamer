@@ -6,6 +6,27 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
+from urllib.parse import urlparse
+
+# Save the original request method for reference
+_original_request = requests.Session.request
+
+
+def mocked_request(self, method, url, *args, **kwargs):
+    parsed = urlparse(url)
+    # Allow only safe local/mock domains
+    allowed_domains = {"localhost", "127.0.0.1", "example.invalid", "jellyfin.local"}
+    if parsed.hostname and parsed.hostname not in allowed_domains:
+        raise requests.exceptions.ConnectionError(
+            f"Blocked attempt to make a real network request to external domain: {parsed.hostname} "
+            f"for URL: {url}."
+        )
+    return _original_request(self, method, url, *args, **kwargs)
+
+
+# Globally patch Session.request to intercept all HTTP requests during test runs
+requests.Session.request = mocked_request
 
 # Force offscreen rendering so individual tests run seamlessly in GUI-less IDE test explorers
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
