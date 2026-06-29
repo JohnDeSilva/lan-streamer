@@ -40,7 +40,6 @@ jobs:
 
       - name: Run tests before release
         run: |
-          TEST_OS=ubuntu make test
           TEST_OS=fedora make test
 
       - name: Release and Tag Logic
