@@ -39,6 +39,7 @@ jobs:
       - name: Create Dash Pre-release Tag
         env:
           BRANCH_NAME: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Fetch all tags from remote to ensure we have the latest
           git fetch --tags
@@ -48,6 +49,13 @@ jobs:
           COMMIT_AUTHOR=$(git log -1 --pretty=%an)
           if [[ "$COMMIT_MSG" == *"[skip ci]"* ]] || [[ "$COMMIT_AUTHOR" == *"github-actions"* ]]; then
             echo "Skipping tag creation for automated push/release commit."
+            exit 0
+          fi
+
+          # Skip if this commit is associated with a merged PR (handled by PR merge workflow)
+          MERGED_PR=$(gh api "/repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" --jq '.[] | select(.merged_at != null) | .number' | head -n 1)
+          if [ -n "$MERGED_PR" ]; then
+            echo "Skipping push release because commit is associated with merged PR #${MERGED_PR} (handled by PR merge workflow)."
             exit 0
           fi
 
