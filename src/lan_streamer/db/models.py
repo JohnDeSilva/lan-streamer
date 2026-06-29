@@ -555,6 +555,62 @@ class PlaybackState(Base):
     )
 
 
+class SmartRowCache(Base):
+    """Caches pre-computed smart row results for fast combined view rendering.
+
+    Each row represents one item in one smart row configuration.
+    The config_hash uniquely identifies a specific (libraries, sort_by, filter_mode)
+    combination. Items are ordered by sort_order within each config_hash group.
+
+    Foreign keys to ``series`` and ``movies`` provide live display data (name,
+    poster_path, library_name), while computed aggregation fields (watched_count,
+    date_added, etc.) avoid expensive recalculations on every render.
+    """
+
+    __tablename__ = "smart_row_cache"
+
+    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
+    config_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    item_type: Mapped[str] = mapped_column(
+        String, nullable=False
+    )  # "series", "season", "movie"
+
+    series_id: Mapped[Optional[str]] = mapped_column(
+        UUIDBLOB,
+        ForeignKey("series.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    movie_id: Mapped[Optional[str]] = mapped_column(
+        UUIDBLOB,
+        ForeignKey("movies.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+    season_name: Mapped[Optional[str]] = mapped_column(String)
+    date_added: Mapped[int] = mapped_column(Integer, default=0)
+    air_date: Mapped[Optional[str]] = mapped_column(String)
+    watched_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_count: Mapped[int] = mapped_column(Integer, default=1)
+    last_played_at: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[int] = mapped_column(Integer, default=0)
+
+    series: Mapped[Optional["Series"]] = relationship(
+        "Series",
+        lazy="joined",
+        foreign_keys=[series_id],
+    )
+    movie: Mapped[Optional["Movie"]] = relationship(
+        "Movie",
+        lazy="joined",
+        foreign_keys=[movie_id],
+    )
+
+    __table_args__ = (Index("idx_smart_row_cache_config", "config_hash", "sort_order"),)
+
+
 class ScannedDirectory(Base):
     """Stores the last scanned directory mtimes to minimize unnecessary scans."""
 
