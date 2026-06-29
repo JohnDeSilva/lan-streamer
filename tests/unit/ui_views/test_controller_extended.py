@@ -337,6 +337,19 @@ def test_on_scan_and_update_scan_finished_chains_cleanup(ctrl, mock_db_save) -> 
         mock_cleanup.return_value.start.assert_called_once()
 
 
+def test_on_scan_and_update_scan_finished_skips_cleanup_if_unavailable(
+    ctrl, mock_db_save
+) -> None:
+    from lan_streamer.scanner.core import LibraryDict
+
+    updated_library = LibraryDict()
+    updated_library.unavailable_directories = ["/path/not/exist"]
+
+    with patch("lan_streamer.ui_views.controller.CleanupWorker") as mock_cleanup:
+        ctrl._on_scan_and_update_scan_finished(updated_library)
+        mock_cleanup.assert_not_called()
+
+
 def test_on_scan_and_update_cleanup_finished_selects_library(
     ctrl, mock_db_save
 ) -> None:
@@ -764,6 +777,24 @@ def test_on_scan_all_finished_chains_global_cleanup(ctrl, mock_db_save) -> None:
         mock_trigger.assert_called_once()
 
 
+def test_on_scan_all_finished_skips_global_cleanup_if_unavailable(
+    ctrl, mock_db_save
+) -> None:
+    """When _running_cleanup_after_scan is True, scan-all finished skips global cleanup if root dirs are unavailable."""
+    ctrl._running_pass3_after_scan = False
+    ctrl._running_cleanup_after_scan = True
+
+    class MockWorker:
+        unavailable_directories = ["/path/not/exist"]
+
+    mock_worker_instance = MockWorker()
+    ctrl.worker_manager.scan_all._instance = mock_worker_instance
+
+    with patch.object(ctrl, "trigger_global_cleanup") as mock_trigger:
+        ctrl._on_scan_all_finished()
+        mock_trigger.assert_not_called()
+
+
 def test_on_runtime_finished_chains_global_cleanup(ctrl, mock_db_save) -> None:
     """When _running_cleanup_after_scan is True, runtime finished chains to global cleanup."""
     ctrl._running_cleanup_after_scan = True
@@ -772,6 +803,19 @@ def test_on_runtime_finished_chains_global_cleanup(ctrl, mock_db_save) -> None:
     with patch.object(ctrl, "trigger_global_cleanup") as mock_trigger:
         ctrl._on_runtime_finished(0)
         mock_trigger.assert_called_once()
+
+
+def test_on_runtime_finished_skips_global_cleanup_if_unavailable(
+    ctrl, mock_db_save
+) -> None:
+    """When _running_cleanup_after_scan is True, runtime finished skips global cleanup if root dirs were unavailable."""
+    ctrl._running_cleanup_after_scan = True
+    ctrl._running_pass3_after_scan = True
+    ctrl._scan_had_unavailable_directories = True
+
+    with patch.object(ctrl, "trigger_global_cleanup") as mock_trigger:
+        ctrl._on_runtime_finished(0)
+        mock_trigger.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
