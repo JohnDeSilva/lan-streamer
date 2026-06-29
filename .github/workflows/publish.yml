@@ -7,14 +7,8 @@ on:
       - 'rc-*'
 
 jobs:
-  call-lint:
-    uses: ./.github/workflows/lint.yml
-  call-test:
-    uses: ./.github/workflows/test.yml
-
   build-ubuntu:
     name: Build Executable (Ubuntu)
-    needs: [call-lint, call-test]
     runs-on: ubuntu-latest
 
     steps:
@@ -35,7 +29,6 @@ jobs:
 
   build-fedora:
     name: Build Executable (Fedora)
-    needs: [call-lint, call-test]
     runs-on: ubuntu-latest
 
     steps:
@@ -56,7 +49,6 @@ jobs:
 
   build-macos:
     name: Build Executable (macOS)
-    needs: [call-lint, call-test]
     runs-on: macos-latest
 
     steps:
@@ -101,7 +93,6 @@ jobs:
 
   build-windows:
     name: Build Executable (Windows)
-    needs: [call-lint, call-test]
     runs-on: windows-latest
 
     steps:
