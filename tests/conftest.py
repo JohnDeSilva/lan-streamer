@@ -7,23 +7,26 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from urllib.parse import urlparse
 
-# Save the original Session class for reference
-_original_session = requests.Session
-
-
-class MockSession(MagicMock):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(spec=_original_session)
-        self.headers = {}
+# Save the original request method for reference
+_original_request = requests.Session.request
 
 
-# Temporarily mock Session during provider module loads
-requests.Session = MockSession
+def mocked_request(self, method, url, *args, **kwargs):
+    parsed = urlparse(url)
+    # Allow only safe local/mock domains
+    allowed_domains = {"localhost", "127.0.0.1", "example.invalid", "jellyfin.local"}
+    if parsed.hostname and parsed.hostname not in allowed_domains:
+        raise requests.exceptions.ConnectionError(
+            f"Blocked attempt to make a real network request to external domain: {parsed.hostname} "
+            f"for URL: {url}."
+        )
+    return _original_request(self, method, url, *args, **kwargs)
 
 
-# Restore the original Session class to prevent breaking other libraries/pytest
-requests.Session = _original_session
+# Globally patch Session.request to intercept all HTTP requests during test runs
+requests.Session.request = mocked_request
 
 # Force offscreen rendering so individual tests run seamlessly in GUI-less IDE test explorers
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -180,34 +183,6 @@ def protect_user_dirs(tmp_path, tmp_path_factory) -> None:
     import gc
 
     gc.collect()
-
-
-@pytest.fixture(autouse=True)
-def block_external_requests(monkeypatch) -> None:
-    """Global guard to prevent any test from executing real network requests to external domains."""
-    import requests
-    from urllib.parse import urlparse
-    import pytest
-
-    original_request = requests.Session.request
-
-    def mocked_request(self, method, url, *args, **kwargs):
-        parsed = urlparse(url)
-        # Allow only safe local/mock domains
-        allowed_domains = {
-            "localhost",
-            "127.0.0.1",
-            "example.invalid",
-            "jellyfin.local",
-        }
-        if parsed.hostname and parsed.hostname not in allowed_domains:
-            pytest.fail(
-                f"Blocked attempt to make a real network request to external domain: {parsed.hostname} "
-                f"for URL: {url}. Please mock this request in your test."
-            )
-        return original_request(self, method, url, *args, **kwargs)
-
-    monkeypatch.setattr(requests.Session, "request", mocked_request)
 
 
 @pytest.fixture(scope="session")
