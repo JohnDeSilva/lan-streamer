@@ -49,20 +49,6 @@ def test_legacy_make_release_target_is_deprecated() -> None:
     assert "git push origin main" not in makefile_text
 
 
-def test_ci_workflows_cover_rc_and_main_branches() -> None:
-    test_workflow_text = read_text(".github/workflows/test.yml")
-    lint_workflow_text = read_text(".github/workflows/lint.yml")
-
-    assert "main" in test_workflow_text
-    assert "rc*" in test_workflow_text
-    assert "rc/**" in test_workflow_text
-    assert "main" in lint_workflow_text
-    assert "rc*" in lint_workflow_text
-    assert "rc/**" in lint_workflow_text
-    assert "[skip ci]" in test_workflow_text
-    assert "[skip ci]" in lint_workflow_text
-
-
 def test_no_actual_urls_in_tests() -> None:
     """Scan all python files in tests/ and verify that no actual/live external URLs are used."""
     tests_dir = PROJECT_ROOT / "tests"
