@@ -1,16 +1,7 @@
 name: Test
 
 on:
-  push:
-    branches:
-      - 'main'
-      - 'rc*'
-      - 'rc/**'
-  pull_request:
-    branches:
-      - 'main'
-      - 'rc*'
-      - 'rc/**'
+  workflow_call:
 
 jobs:
   check-source-branch:
