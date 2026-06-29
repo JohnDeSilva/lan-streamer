@@ -101,11 +101,11 @@ def rebuild_cache_for_config(
                     series_id=_lookup_series_id(item, series_ids, item_type),
                     movie_id=_lookup_movie_id(item, movie_ids, item_type),
                     season_name=item.get("season_name"),
-                    date_added=item.get("date_added", 0),
+                    date_added=item.get("date_added") or 0,
                     air_date=item.get("air_date"),
-                    watched_count=item.get("watched_count", 0),
-                    total_count=item.get("total_count", 1),
-                    last_played_at=item.get("last_played_at", 0),
+                    watched_count=item.get("watched_count") or 0,
+                    total_count=item.get("total_count") or 1,
+                    last_played_at=item.get("last_played_at") or 0,
                     updated_at=current_time,
                 )
                 session.add(cache_entry)
@@ -243,7 +243,10 @@ def _row_to_dict(row: SmartRowCache) -> Dict[str, Any]:
 
 
 def _resolve_series_ids(items: List[Dict[str, Any]]) -> Dict[str, str]:
-    """Build a map of (library_name, name) → series.id for all items."""
+    """Build a map of (library_name, name) → series.id for all items.
+
+    Uses a single bulk query with OR conditions to avoid N+1 lookups.
+    """
     names: Set[tuple] = set()
     for item in items:
         item_type = item.get("type")
@@ -261,17 +264,19 @@ def _resolve_series_ids(items: List[Dict[str, Any]]) -> Dict[str, str]:
     result: Dict[str, str] = {}
     try:
         with get_session() as session:
-            for library, name in names:
-                if not name:
-                    continue
-                series = session.scalars(
-                    select(Series).where(
-                        Series.library_name == library,
-                        Series.name == name,
-                    )
-                ).first()
-                if series is not None:
-                    result[f"{library}|{name}"] = series.id
+            from sqlalchemy import or_
+
+            name_pairs = [(lib, name) for lib, name in names if name]
+            if not name_pairs:
+                return result
+
+            conditions = [
+                (Series.library_name == lib) & (Series.name == name)
+                for lib, name in name_pairs
+            ]
+            series_list = session.scalars(select(Series).where(or_(*conditions))).all()
+            for series in series_list:
+                result[f"{series.library_name}|{series.name}"] = series.id
     except Exception:
         logger.exception("Failed to resolve series IDs for cache rebuild")
 
@@ -279,7 +284,10 @@ def _resolve_series_ids(items: List[Dict[str, Any]]) -> Dict[str, str]:
 
 
 def _resolve_movie_ids(items: List[Dict[str, Any]]) -> Dict[str, str]:
-    """Build a map of (library_name, name) → movie.id for all items."""
+    """Build a map of (library_name, name) → movie.id for all items.
+
+    Uses a single bulk query with OR conditions to avoid N+1 lookups.
+    """
     names: Set[tuple] = set()
     for item in items:
         if item.get("type") == "movie":
@@ -293,17 +301,19 @@ def _resolve_movie_ids(items: List[Dict[str, Any]]) -> Dict[str, str]:
     result: Dict[str, str] = {}
     try:
         with get_session() as session:
-            for library, name in names:
-                if not name:
-                    continue
-                movie = session.scalars(
-                    select(Movie).where(
-                        Movie.library_name == library,
-                        Movie.name == name,
-                    )
-                ).first()
-                if movie is not None:
-                    result[f"{library}|{name}"] = movie.id
+            from sqlalchemy import or_
+
+            name_pairs = [(lib, name) for lib, name in names if name]
+            if not name_pairs:
+                return result
+
+            conditions = [
+                (Movie.library_name == lib) & (Movie.name == name)
+                for lib, name in name_pairs
+            ]
+            movie_list = session.scalars(select(Movie).where(or_(*conditions))).all()
+            for movie in movie_list:
+                result[f"{movie.library_name}|{movie.name}"] = movie.id
     except Exception:
         logger.exception("Failed to resolve movie IDs for cache rebuild")
 

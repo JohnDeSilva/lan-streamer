@@ -77,22 +77,25 @@ class SmartRowService:
             db.rebuild_all_cache()
 
     def _rebuild(self, affected_libraries: Optional[List[str]] = None) -> None:
-        """Internal: rebuild cache, optionally scoped to specific libraries."""
+        """Internal: rebuild cache, optionally scoped to specific libraries.
+
+        Delegates to _rebuild_affected_configs which handles deduplication
+        and scoping internally. For full rebuilds, calls rebuild_all_cache.
+        """
         try:
             if affected_libraries:
-                config_hashes = db.get_affected_config_hashes_for_libraries(
-                    affected_libraries
-                )
-                if config_hashes:
-                    db.clear_cache_for_config_hashes(config_hashes)
-                    self._rebuild_affected_configs(affected_libraries)
+                self._rebuild_affected_configs(affected_libraries)
             else:
                 db.rebuild_all_cache()
         except Exception:
             logger.exception("SmartRowService: failed to rebuild cache")
 
     def _rebuild_affected_configs(self, library_names: List[str]) -> List[str]:
-        """Rebuild only the smart row configs that reference the given libraries."""
+        """Rebuild only the smart row configs that reference the given libraries.
+
+        Config is loaded by get_affected_config_hashes_for_libraries, so
+        no explicit load() is needed here.
+        """
         config_hashes = db.get_affected_config_hashes_for_libraries(library_names)
         if not config_hashes:
             logger.debug(
@@ -100,7 +103,6 @@ class SmartRowService:
             )
             return []
 
-        app_config.load()
         for row_config in app_config.combined_views:
             if not row_config.get("enabled", True):
                 continue
