@@ -787,11 +787,16 @@ class LibraryGridView(QWidget):
 
     @Slot(list)
     def _on_smart_rows_updated(self, changed_config_hashes: List[str]) -> None:
-        """Handle targeted smart row updates from the controller."""
-        if not self.combined_scroll_area.isVisible():
-            return
+        """Handle targeted smart row updates from the controller.
 
-        logger.debug(f"Smart rows updated for {len(changed_config_hashes)} configs")
+        Always processes updates even when the combined view is hidden,
+        so that when the user navigates back, the widgets reflect fresh
+        cache data without requiring an explicit populate_combined_view call.
+        """
+        logger.debug(
+            f"Smart rows updated for {len(changed_config_hashes)} configs "
+            f"(combined_view_visible={self.combined_scroll_area.isVisible()})"
+        )
         for config_hash in changed_config_hashes:
             # Find the row config that matches this hash
             for row in config.combined_views:
@@ -826,6 +831,22 @@ class LibraryGridView(QWidget):
                     old_widget.setParent(None)
                     old_widget.deleteLater()
                 break
+
+    def _sync_library_selector(self, library_name: str) -> None:
+        """Sync the library selector and tab bar to the given library name.
+
+        Called when navigating from the combined view to a library item detail,
+        so the selector reflects the actual library being viewed rather than
+        showing 'Combined View' while displaying library content.
+        """
+        if library_name in self.library_names_list:
+            idx = self.library_names_list.index(library_name)
+            self.library_selector.blockSignals(True)
+            self.library_selector.setCurrentText(library_name)
+            self.library_selector.blockSignals(False)
+            self.library_tab_bar.blockSignals(True)
+            self.library_tab_bar.setCurrentIndex(idx)
+            self.library_tab_bar.blockSignals(False)
 
     def _assign_item_icon_with_size(
         self,
@@ -876,6 +897,10 @@ class LibraryGridView(QWidget):
         logger.info(
             f"Combined view item clicked: '{name}' (Type: {item_type}, Library: {library_name})"
         )
+
+        # Remember the previous view before changing current_library_name
+        previous_view = self.controller.current_library_name
+        self._navigate_back_to_combined = previous_view == "Combined View"
 
         if library_name:
             self.controller.current_library_name = library_name
