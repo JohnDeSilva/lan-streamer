@@ -189,7 +189,7 @@ def test_library_grid_view_combined_view(qtbot: Any) -> None:
 
     with (
         patch(
-            "lan_streamer.db.get_combined_smart_row",
+            "lan_streamer.db.get_cached_smart_rows",
             side_effect=mock_get_combined_smart_row,
         ),
         patch("lan_streamer.db.load_library", return_value={}),
@@ -2109,7 +2109,7 @@ def test_combined_view_scan_button(qtbot: Any) -> None:
     config.enable_combined_view = True
     controller_instance = Controller()
 
-    with patch("lan_streamer.db.get_combined_smart_row", return_value=[]):
+    with patch("lan_streamer.db.get_cached_smart_rows", return_value=[]):
         grid_view = LibraryGridView(controller_instance)
         grid_view.populate_libraries(["TV Library"])
         qtbot.addWidget(grid_view)
