@@ -48,9 +48,10 @@ jobs:
       - name: Release and Tag Logic
         env:
           UV_CACHE_DIR: /tmp/uv-cache
+          BRANCH_NAME: ${{ github.ref_name }}
         run: |
-          if [[ "${{ github.ref_name }}" == rc* ]]; then
-            echo "Processing rc branch: ${{ github.ref_name }}..."
+          if [[ "$BRANCH_NAME" == rc* ]]; then
+            echo "Processing rc branch: $BRANCH_NAME..."
 
             # Fetch all tags from remote to ensure we have the latest
             git fetch --tags
@@ -82,7 +83,7 @@ jobs:
               git tag -a "rc-${RELEASE_VERSION}" -m "Release rc-${RELEASE_VERSION}"
 
               # Push commit and tag back to current branch
-              git push origin HEAD:${{ github.ref_name }}
+              git push origin HEAD:$BRANCH_NAME
               git push origin "rc-${RELEASE_VERSION}"
             else
               echo "Detected direct push/commit. Creating dash version tag..."
@@ -112,7 +113,7 @@ jobs:
               git push origin "$NEXT_TAG"
             fi
 
-          elif [ "${{ github.ref_name }}" = "main" ]; then
+          elif [ "$BRANCH_NAME" = "main" ]; then
             echo "Running tag creation on main branch..."
             # Main is merged from rc. The files already contain the bumped version.
             RELEASE_VERSION="$(uv run cz version --project)"
