@@ -43,26 +43,43 @@ jobs:
           TEST_OS=ubuntu make test
           TEST_OS=fedora make test
 
-      - name: Bump version with Commitizen
+      - name: Release and Tag Logic
         env:
           UV_CACHE_DIR: /tmp/uv-cache
         run: |
           if [ "${{ github.ref_name }}" = "rc" ]; then
-            echo "Bumping pre-release version on rc branch"
-            uv run cz bump --prerelease rc --yes --changelog --version-files-only
-          else
-            echo "Bumping stable version on main branch"
-            uv run cz bump --yes --changelog --version-files-only
-          fi
-          uv lock
+            echo "Running version bump on rc branch..."
+            # Bump version in files and update changelog
+            uv run cz bump --yes --changelog --version-files-only --tag-format "rc-\$version"
+            uv lock
 
-      - name: Commit and tag release
-        env:
-          UV_CACHE_DIR: /tmp/uv-cache
-        run: |
-          RELEASE_VERSION="$(uv run cz version --project)"
-          git add pyproject.toml src/lan_streamer/__init__.py CHANGELOG.md uv.lock
-          git commit -m "chore(release): v${RELEASE_VERSION} [skip ci]" --no-verify
-          git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
-          git push origin HEAD:${{ github.ref_name }}
-          git push origin "v${RELEASE_VERSION}"
+            # Read version
+            RELEASE_VERSION="$(uv run cz version --project)"
+            echo "Bumped to RC version: ${RELEASE_VERSION}"
+
+            # Commit files back to rc branch
+            git add pyproject.toml src/lan_streamer/__init__.py CHANGELOG.md uv.lock
+            git commit -m "chore(release): rc-${RELEASE_VERSION} [skip ci]" --no-verify
+
+            # Create tag matching the rc- prefix
+            git tag -a "rc-${RELEASE_VERSION}" -m "Release rc-${RELEASE_VERSION}"
+
+            # Push commit and tag back to rc
+            git push origin HEAD:rc
+            git push origin "rc-${RELEASE_VERSION}"
+
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            echo "Running tag creation on main branch..."
+            # Main is merged from rc. The files already contain the bumped version.
+            RELEASE_VERSION="$(uv run cz version --project)"
+            echo "Stable version is: ${RELEASE_VERSION}"
+
+            # Check if tag already exists
+            if git rev-parse "v${RELEASE_VERSION}" >/dev/null 2>&1; then
+              echo "Tag v${RELEASE_VERSION} already exists. Skipping tag creation."
+            else
+              # Tag the commit as stable release
+              git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
+              git push origin "v${RELEASE_VERSION}"
+            fi
+          fi

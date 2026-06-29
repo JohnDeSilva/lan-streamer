@@ -7,6 +7,23 @@ on:
     branches: [ "main", "rc" ]
 
 jobs:
+  check-source-branch:
+    name: Enforce Merge from rc to main
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    steps:
+      - name: Verify source branch
+        env:
+          PR_TARGET_BRANCH: ${{ github.base_ref }}
+          PR_SOURCE_BRANCH: ${{ github.head_ref }}
+        run: |
+          echo "PR target branch: $PR_TARGET_BRANCH"
+          echo "PR source branch: $PR_SOURCE_BRANCH"
+          if [ "$PR_SOURCE_BRANCH" != "rc" ]; then
+            echo "ERROR: Only pull requests from the 'rc' branch are allowed to target 'main'!"
+            exit 1
+          fi
+
   test-ubuntu:
     name: Test (Ubuntu)
     runs-on: ubuntu-latest

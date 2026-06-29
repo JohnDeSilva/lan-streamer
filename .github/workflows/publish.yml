@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - 'rc-*'
 
 jobs:
   build-ubuntu:
@@ -153,7 +154,7 @@ jobs:
           notes = []
           header_count = 0
           for line in lines:
-              if line.startswith("## v"):
+              if line.startswith("## v") or line.startswith("## rc-"):
                   header_count += 1
                   if header_count > 1:
                       break
