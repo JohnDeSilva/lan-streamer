@@ -423,27 +423,32 @@ All code pushed or submitted via Pull Request is automatically validated through
     -   Executes all `pre-commit` hooks (`hadolint`, `yamllint`, `actionlint`, etc.) across the entire codebase.
 2.  **Cross-Platform Verification (`test.yml`)**:
     -   Triggered on push and pull requests targeting `main` and `rc`.
+    -   Includes a gate check ensuring pull requests targeting `main` must originate from the `rc` branch.
     -   Runs a multi-operating system matrix validating all code paths:
         -   **Linux (Ubuntu/Fedora)**: Leverages Docker containers via `TEST_OS` in the `Makefile` to securely build, test, and validate binaries without requiring system-level dependencies on the GitHub runner.
         -   **macOS**: Configures macOS-latest with brew-installed VLC, runs tests, and compiles/validates the executable with target-specific VLC library pathing.
         -   **Windows**: Deploys Windows-latest, installs VLC/FFmpeg, applies schema migrations, runs tests, and compiles/verifies the executable.
 3.  **RC Executables (`executable.yml`)**:
-    -   Triggered on pull requests targeting the `rc` branch.
+    -   Triggered on pull requests targeting `rc` and `main` branches.
     -   Compiles and packages standalone applications for **Ubuntu**, **Fedora**, **macOS** (as a `.app` bundle), and **Windows** to verify that release candidate binaries build and run correctly prior to merge.
 4.  **Release Bump and Tag (`release.yml`)**:
     -   Triggered on pushes to `main` and `rc` branches.
-    -   Performs pre-release checks (lint, typecheck, and multi-OS/distro tests), then uses Commitizen to bump version and changelog (pre-release `rc` bumps on `rc` branch, stable bumps on `main` branch), commits the changes, and pushes the new annotated tag back to GitHub.
+    -   Performs pre-release checks (lint, typecheck, and multi-OS/distro tests).
+    -   On `rc` branch pushes: uses Commitizen to bump the version and update the changelog in the files, commits the changes back to `rc`, and pushes an RC release tag using the prefix format `rc-X.Y.Z`.
+    -   On `main` branch pushes (after merging `rc` to `main` via PR): reads the pre-bumped version from `pyproject.toml` and creates a stable release tag `vX.Y.Z`.
 5.  **Publish Release (`publish.yml`)**:
-    -   Triggered when a `v*` tag is pushed.
-    -   Rebuilds the standalone executables, uploads them as artifacts, and creates a GitHub Release (correctly marked as a pre-release for RC tags) with the packaged binaries attached.
+    -   Triggered when a `v*` (stable) or `rc-*` (pre-release) tag is pushed.
+    -   Rebuilds the standalone executables, uploads them as artifacts, and creates a GitHub Release (correctly marked as a pre-release for `rc-*` tags) with the packaged binaries attached.
 
 ### Repository Management
 -   **Dependabot**: Configured (`.github/dependabot.yml`) to perform daily updates on the `uv` package ecosystem to ensure dependencies remain secure and up-to-date.
 -   **Code Ownership**: Configured (`.github/CODEOWNERS`) to assign ownership of all project files to `@JohnDeSilva`.
 -   **Releases**: Automatic version bumps and changelog management are handled through:
     -   GitHub Actions now owns the full release pipeline.
-    -   Merge feature branches into `rc` to trigger automated Commitizen pre-release bumping (`vX.Y.Z-rc.N`), which pushes the tag and generates a GitHub Pre-Release with downloadable pre-release executables.
-    -   Merge `rc` into `main` to trigger the automated Commitizen stable release bump (`vX.Y.Z`) and publish a stable GitHub Release automatically.
+    -   Merge feature branches into `rc` (via PR) to run the testing/building pipelines and verify correctness.
+    -   Merging feature branches into `rc` triggers the version bump and tagging of `rc-X.Y.Z`, generating a GitHub Pre-release.
+    -   Create a pull request from `rc` into `main` (merges from other branches into `main` are strictly blocked by workflow checks).
+    -   Merging `rc` into `main` triggers stable tag creation `vX.Y.Z` and publishes the final stable GitHub Release automatically.
     -   The old `make release` target is deprecated and exits with guidance instead of performing a manual push/tag release.
 
 ---

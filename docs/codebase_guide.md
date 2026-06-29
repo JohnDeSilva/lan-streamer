@@ -44,10 +44,10 @@ Automated tests are divided into structured subdirectories:
     *   [codebase_guide.md](file:///home/sadmin/antigravity/lan-streamer/docs/codebase_guide.md) (This document): Summary guide of directory structures and coding standards.
 *   [Makefile](file:///home/sadmin/antigravity/lan-streamer/Makefile): Targets for local execution (`run`), formatting (`format`), check-linting (`check-lint`), full typecheck (`typecheck`), linting and pre-commits (`lint`), testing (`test`), local test suite run (`test-local`), PyInstaller building (`build`), and release deprecation guidance (`release`).
 *   GitHub Actions workflows:
-    *   `.github/workflows/test.yml`: Tests on `main` and `rc` pushes and pull requests.
+    *   `.github/workflows/test.yml`: Tests and branch gate enforcement targeting the `main` and `rc` branches.
     *   `.github/workflows/lint.yml`: Ruff, MyPy, pre-commit, and Commitizen validation on `main` and `rc` pushes and pull requests.
-    *   `.github/workflows/executable.yml`: PR-triggered verification of executable builds targeting the `rc` branch.
-    *   `.github/workflows/release.yml`: Commitizen version bump (pre-release on `rc` branch, stable release on `main` branch) and tag creation.
+    *   `.github/workflows/executable.yml`: PR-triggered verification of executable builds targeting the `rc` and `main` branches.
+    *   `.github/workflows/release.yml`: Automates version bumping/tagging (`rc-X.Y.Z`) on `rc` branch pushes and stable tagging (`vX.Y.Z`) on `main` branch pushes.
     *   `.github/workflows/publish.yml`: Tag-triggered production or pre-release executable builds and GitHub Release/Pre-Release publishing.
 *   [pyproject.toml](file:///home/sadmin/antigravity/lan-streamer/pyproject.toml) / [uv.lock](file:///home/sadmin/antigravity/lan-streamer/uv.lock): Dependencies and environment specifications managed by `uv`.
 *   [alembic.ini](file:///home/sadmin/antigravity/lan-streamer/alembic.ini) / [alembic/](file:///home/sadmin/antigravity/lan-streamer/alembic): Database migration configurations and version scripts.
