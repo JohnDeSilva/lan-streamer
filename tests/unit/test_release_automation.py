@@ -11,6 +11,24 @@ def read_text(relative_path: str) -> str:
     return (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
 
 
+def test_ci_workflows_cover_rc_and_main_branches() -> None:
+    executable_workflow_text = read_text(".github/workflows/executable.yml")
+    release_workflow_text = (
+        read_text(".github/workflows/release-main.yml")
+        + read_text(".github/workflows/release-rc-pr.yml")
+        + read_text(".github/workflows/release-rc-push.yml")
+    )
+
+    assert "main" in executable_workflow_text
+    assert "rc*" in executable_workflow_text
+    assert "rc/**" in executable_workflow_text
+
+    assert "main" in release_workflow_text
+    assert "rc*" in release_workflow_text
+    assert "rc/**" in release_workflow_text
+    assert "[skip ci]" in release_workflow_text
+
+
 def test_rc_workflow_builds_executables_for_rc_branch() -> None:
     workflow_text = read_text(".github/workflows/executable.yml")
 
@@ -23,9 +41,10 @@ def test_rc_workflow_builds_executables_for_rc_branch() -> None:
 
 
 def test_main_release_workflow_uses_commitizen_to_cut_release() -> None:
-    workflow_text = read_text(".github/workflows/release.yml")
+    workflow_text = read_text(".github/workflows/release-rc-pr.yml")
+    main_workflow_text = read_text(".github/workflows/release-main.yml")
 
-    assert "main" in workflow_text
+    assert "main" in main_workflow_text
     assert "rc*" in workflow_text
     assert "rc/**" in workflow_text
     assert (
@@ -38,8 +57,8 @@ def test_main_release_workflow_uses_commitizen_to_cut_release() -> None:
     )
     assert 'git tag -a "rc-${RELEASE_VERSION}"' in workflow_text
     assert 'git push origin "rc-${RELEASE_VERSION}"' in workflow_text
-    assert 'git tag -a "v${RELEASE_VERSION}"' in workflow_text
-    assert 'git push origin "v${RELEASE_VERSION}"' in workflow_text
+    assert 'git tag -a "v${RELEASE_VERSION}"' in main_workflow_text
+    assert 'git push origin "v${RELEASE_VERSION}"' in main_workflow_text
 
 
 def test_legacy_make_release_target_is_deprecated() -> None:

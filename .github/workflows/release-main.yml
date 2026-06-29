@@ -1,0 +1,51 @@
+name: Release (Main Branch)
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - 'main'
+
+permissions:
+  contents: write
+
+jobs:
+  release-main:
+    name: Tag Stable Release
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.base.ref }}
+          token: ${{ secrets.RELEASE_TOKEN || secrets.PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Tag and Push
+        run: |
+          RELEASE_VERSION="$(uv run cz version --project)"
+          echo "Stable version is: ${RELEASE_VERSION}"
+
+          # Check if tag already exists
+          if git rev-parse "v${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${RELEASE_VERSION} already exists. Skipping tag creation."
+          else
+            # Tag the commit as stable release
+            git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
+            git push origin "v${RELEASE_VERSION}"
+          fi
