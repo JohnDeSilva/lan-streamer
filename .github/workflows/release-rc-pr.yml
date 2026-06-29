@@ -1,0 +1,65 @@
+name: Release (RC Branch PR Merges)
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - 'rc*'
+      - 'rc/**'
+
+permissions:
+  contents: write
+
+jobs:
+  release-rc-pr:
+    name: Bump version on RC PR Merge
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.base.ref }}
+          token: ${{ secrets.RELEASE_TOKEN || secrets.PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump Version and Tag
+        env:
+          UV_CACHE_DIR: /tmp/uv-cache
+          BRANCH_NAME: ${{ github.event.pull_request.base.ref }}
+        run: |
+          # Fetch all tags from remote to ensure we have the latest
+          git fetch --tags
+
+          # Bump version in files and update changelog
+          uv run cz bump --yes --changelog --version-files-only --tag-format "rc-\$version"
+          uv lock
+
+          # Read version
+          RELEASE_VERSION="$(uv run cz version --project)"
+          echo "Bumped to RC version: ${RELEASE_VERSION}"
+
+          # Commit files back to current branch
+          git add pyproject.toml src/lan_streamer/__init__.py CHANGELOG.md uv.lock
+          git commit -m "chore(release): rc-${RELEASE_VERSION} [skip ci]" --no-verify
+
+          # Create tag matching the rc- prefix
+          git tag -a "rc-${RELEASE_VERSION}" -m "Release rc-${RELEASE_VERSION}"
+
+          # Push commit and tag back to current branch
+          git push origin "HEAD:$BRANCH_NAME"
+          git push origin "rc-${RELEASE_VERSION}"
