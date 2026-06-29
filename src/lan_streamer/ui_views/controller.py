@@ -126,6 +126,7 @@ class Controller(QObject):
         self._running_cleanup_after_scan: bool = False
         self._doing_scan_and_update: bool = False
         self._cleanup_queue: List[str] = []
+        self._scan_had_unavailable_directories: bool = False
 
         self.file_system_watcher = QFileSystemWatcher(self)
 
@@ -550,6 +551,27 @@ class Controller(QObject):
         # Now chain into cleanup
         if not self.current_library_name:
             return
+
+        unavailable_directories = getattr(
+            updated_library, "unavailable_directories", []
+        )
+        if unavailable_directories:
+            logger.warning(
+                "Skipping cleanup for library '%s' because root directories are unavailable: %s",
+                self.current_library_name,
+                unavailable_directories,
+            )
+            self.status_changed.emit(
+                "Scan complete. Cleanup skipped because root directories are unavailable."
+            )
+            self.select_library(self.current_library_name, reset_selection=False)
+            self._doing_scan_and_update = False
+            if self._running_pass3_after_scan:
+                self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
+            else:
+                self.scan_completed.emit()
+            return
+
         library_config = self._config.libraries.get(self.current_library_name, {})
         root_directories: List[str] = library_config.get("paths", [])
         self.status_changed.emit(
@@ -700,6 +722,7 @@ class Controller(QObject):
         unavailable_directories = getattr(
             scan_all_worker, "unavailable_directories", []
         )
+        self._scan_had_unavailable_directories = bool(unavailable_directories)
         if unavailable_directories:
             for directory_name in unavailable_directories:
                 self.status_changed.emit(
@@ -719,7 +742,13 @@ class Controller(QObject):
             changed_movies = getattr(scan_all_worker, "changed_movie_ids", None)
             self.trigger_runtime_extraction(changed_seasons, changed_movies)
         elif self._running_cleanup_after_scan:
-            self.trigger_global_cleanup()
+            if self._scan_had_unavailable_directories:
+                logger.warning(
+                    "Skipping global library cleanup because some root directories were unavailable during scan."
+                )
+                self.scan_completed.emit()
+            else:
+                self.trigger_global_cleanup()
         else:
             self.scan_completed.emit()
 
@@ -770,7 +799,13 @@ class Controller(QObject):
 
         if self._running_cleanup_after_scan:
             self._running_cleanup_after_scan = False
-            self.trigger_global_cleanup()
+            if getattr(self, "_scan_had_unavailable_directories", False):
+                logger.warning(
+                    "Skipping global library cleanup because some root directories were unavailable during scan."
+                )
+                self.scan_completed.emit()
+            else:
+                self.trigger_global_cleanup()
         else:
             self.scan_completed.emit()
 
