@@ -46,7 +46,7 @@ jobs:
           git fetch --tags
 
           # Bump version in files and update changelog using cz bump's native git operations
-          uv run cz bump --yes --changelog --tag-format "rc-\$version" --bump-message "chore(release): rc-{version}"
+          uv run cz bump --yes --changelog --tag-format "rc-\$version" --bump-message "chore(release): rc-\$new_version"
 
           # Read bumped version
           RELEASE_VERSION="$(uv run cz version --project)"
