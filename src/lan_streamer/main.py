@@ -234,6 +234,18 @@ async def main() -> None:
     def on_grid_back_requested() -> None:
         logger.info("Navigating back to Library Grid View")
         stacked_layout.setCurrentIndex(0)
+        # If we navigated from the Combined View, restore it
+        nav_flag = getattr(library_grid_view, "_navigate_back_to_combined", False)
+        logger.info(
+            f"Back-navigation: current_library='{controller.current_library_name}', "
+            f"_navigate_back_to_combined={nav_flag}"
+        )
+        if nav_flag:
+            logger.info("Restoring Combined View after back-navigation")
+            controller.current_library_name = "Combined View"
+            library_grid_view.populate_combined_view()
+            library_grid_view._sync_library_selector("Combined View")
+            library_grid_view._navigate_back_to_combined = False
 
     series_detail_view.back_requested.connect(on_grid_back_requested)
     movie_detail_view.back_requested.connect(on_grid_back_requested)
