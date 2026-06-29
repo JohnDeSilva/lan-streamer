@@ -13,6 +13,7 @@ from typing import (
 
 from PySide6.QtCore import QObject, Signal, QFileSystemWatcher
 
+from lan_streamer.services.smart_row_service import SmartRowService
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.config import config as _config_default
 from lan_streamer.system.scheduled_scan_service import ScheduledScanService
@@ -97,6 +98,7 @@ class Controller(QObject):
     global_progress_updated = Signal(str, int, int)
     detail_progress_updated = Signal(str, dict)
     scan_completed = Signal()
+    smart_rows_updated = Signal(list)
 
     file_system_watcher: QFileSystemWatcher
 
@@ -133,6 +135,8 @@ class Controller(QObject):
         self.worker_manager = WorkerManager(parent=self)
         logger.info("Initializing AsyncTaskManager for background coroutine lifecycle.")
         self.async_task_manager = AsyncTaskManager(parent=self)
+        logger.info("Initializing SmartRowService for combined view caching.")
+        self._smart_row_service = SmartRowService()
 
         logger.info("Initializing ScheduledScanService for periodic background scans.")
         self.scheduled_scan_service = ScheduledScanService(
@@ -300,6 +304,11 @@ class Controller(QObject):
 
         self._cache_series_metrics()
 
+        # Update smart row cache regardless of video playback state
+        changed_hashes = self._smart_row_service.on_episode_watched(absolute_path)
+        if changed_hashes:
+            self.smart_rows_updated.emit(changed_hashes)
+
         if not self.is_video_playing:
             self.library_loaded.emit()
 
@@ -319,6 +328,14 @@ class Controller(QObject):
             episode_record["watched"] = True
 
         self._cache_series_metrics()
+
+        if self.current_library_name:
+            changed_hashes = self._smart_row_service.rebuild_for_libraries(
+                [self.current_library_name]
+            )
+            if changed_hashes:
+                self.smart_rows_updated.emit(changed_hashes)
+
         if not self.is_video_playing:
             self.library_loaded.emit()
 
@@ -334,6 +351,14 @@ class Controller(QObject):
                 episode_record["watched"] = True
 
         self._cache_series_metrics()
+
+        if self.current_library_name:
+            changed_hashes = self._smart_row_service.rebuild_for_libraries(
+                [self.current_library_name]
+            )
+            if changed_hashes:
+                self.smart_rows_updated.emit(changed_hashes)
+
         if not self.is_video_playing:
             self.library_loaded.emit()
 
@@ -417,6 +442,14 @@ class Controller(QObject):
                 and not self.is_video_playing
             ):
                 self.library_loaded.emit()
+
+        if scanned_library_name:
+            changed_hashes = self._smart_row_service.rebuild_for_libraries(
+                [scanned_library_name]
+            )
+            if changed_hashes:
+                self.smart_rows_updated.emit(changed_hashes)
+
         if self._running_pass3_after_scan and not self._doing_scan_and_update:
             self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
         elif not self._doing_scan_and_update:
@@ -628,6 +661,11 @@ class Controller(QObject):
     def _on_pull_finished(self, updated_count: int) -> None:
         if self.current_library_name:
             self.select_library(self.current_library_name, reset_selection=False)
+            changed_hashes = self._smart_row_service.rebuild_for_libraries(
+                [self.current_library_name]
+            )
+            if changed_hashes:
+                self.smart_rows_updated.emit(changed_hashes)
         self.status_changed.emit(
             f"Watch history pulled successfully: updated {updated_count} episodes."
         )
@@ -737,6 +775,8 @@ class Controller(QObject):
                 self.library_loaded.emit()
             else:
                 self.select_library(self.current_library_name, reset_selection=False)
+
+        self._smart_row_service.on_scan_completed(affected_libraries=None)
         if self._running_pass3_after_scan:
             changed_seasons = getattr(scan_all_worker, "changed_season_ids", None)
             changed_movies = getattr(scan_all_worker, "changed_movie_ids", None)

@@ -56,6 +56,7 @@ class LibraryGridView(QWidget):
         self._last_order_mode: Optional[str] = None
         self.scan_progress_bar: LibraryScanProgressBar = LibraryScanProgressBar()
         self.scan_status_label: QLabel = QLabel()
+        self._smart_row_widgets: Dict[str, QWidget] = {}
 
         self._setup_ui()
         self._wire_signals()
@@ -194,6 +195,7 @@ class LibraryGridView(QWidget):
         self.series_list_widget.itemClicked.connect(self.on_item_clicked)
         self.controller.detail_progress_updated.connect(self._on_detail_progress)
         self.controller.scan_completed.connect(self._on_scan_completed)
+        self.controller.smart_rows_updated.connect(self._on_smart_rows_updated)
 
     @Slot(str, dict)
     def _on_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
@@ -643,9 +645,103 @@ class LibraryGridView(QWidget):
             else:
                 self.controller.select_series(title)
 
-    def populate_combined_view(self) -> None:
-        logger.info("populate_combined_view: started populating combined layout")
-        # Clear existing widgets in combined_scroll_layout
+    def _build_smart_row_widget(self, row_config: Dict[str, Any]) -> Optional[QWidget]:
+        """Build a single smart row widget from a row configuration dict.
+
+        Returns None if the row has no items.
+        """
+        libraries = row_config.get("libraries", [])
+        row_name = row_config.get("name", "Row")
+        sort_by = row_config.get("sort_by", "Alphabetical")
+        filter_mode = row_config.get("filter_mode", "All")
+
+        config_hash = db.compute_config_hash(libraries, sort_by, filter_mode)
+
+        logger.debug(
+            f"Building smart row widget for '{row_name}' (config_hash={config_hash})"
+        )
+        items = db.get_cached_smart_rows(libraries, sort_by, filter_mode)
+        max_items = row_config.get("max_items", 20)
+        items = items[:max_items]
+
+        if not items:
+            logger.debug(f"Skipping row '{row_name}' because it contains 0 items")
+            return None
+
+        # Create a row container
+        row_container = QWidget()
+        row_container.setObjectName(f"smart_row_{config_hash}")
+        row_layout = QVBoxLayout(row_container)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(8)
+
+        # Header
+        header_label = QLabel(f"<b>{row_name}</b>")
+        header_label.setStyleSheet("font-size: 18px; color: #2a82da;")
+        row_layout.addWidget(header_label)
+
+        # Horizontal List Widget
+        h_list = QListWidget()
+        h_list.setFlow(QListWidget.Flow.LeftToRight)
+        h_list.setWrapping(False)
+        h_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        h_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        h_list.setViewMode(QListWidget.ViewMode.IconMode)
+        h_list.setIconSize(QSize(120, 165))
+        h_list.setGridSize(QSize(145, 210))
+        h_list.setMovement(QListWidget.Movement.Static)
+        h_list.setResizeMode(QListWidget.ResizeMode.Adjust)
+        h_list.setFixedHeight(225)
+        h_list.setStyleSheet(
+            """
+            QListWidget {
+                background-color: transparent;
+                border: none;
+            }
+            QListWidget::item {
+                border: 1px solid #333333;
+                border-radius: 6px;
+                background-color: #222222;
+                margin-right: 10px;
+            }
+            QListWidget::item:hover {
+                background-color: #333333;
+                border: 1px solid #2a82da;
+            }
+            """
+        )
+
+        for media_item in items:
+            item_type = media_item.get("type")
+            name = media_item.get("name") or media_item.get("series_name") or ""
+            poster_path = media_item.get("poster_path") or ""
+            watched_count = media_item.get("watched_count", 0)
+            total_count = media_item.get("total_count", 0)
+
+            if item_type == "season":
+                season_name = media_item.get("season_name") or ""
+                display_label = f"{name}\n{season_name} ({watched_count}/{total_count})"
+            elif item_type == "series":
+                display_label = f"{name}\n({watched_count}/{total_count})"
+            else:
+                status_string = "Watched" if watched_count > 0 else "Unwatched"
+                display_label = f"{name}\n({status_string})"
+
+            list_item = QListWidgetItem(display_label)
+            list_item.setData(Qt.ItemDataRole.UserRole, media_item)
+            list_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            list_item.setToolTip(display_label)
+
+            self._assign_item_icon_with_size(list_item, poster_path, 120, 165)
+            h_list.addItem(list_item)
+
+        h_list.itemClicked.connect(self.on_combined_item_clicked)
+        row_layout.addWidget(h_list)
+
+        return row_container
+
+    def _clear_combined_view(self) -> None:
+        """Remove all widgets from the combined scroll layout."""
         while self.combined_scroll_layout.count():
             layout_item = self.combined_scroll_layout.takeAt(0)
             if layout_item is not None:
@@ -653,6 +749,11 @@ class LibraryGridView(QWidget):
                 if w is not None:
                     w.setParent(None)
                     w.deleteLater()
+        self._smart_row_widgets.clear()
+
+    def populate_combined_view(self) -> None:
+        logger.info("populate_combined_view: started populating combined layout")
+        self._clear_combined_view()
 
         enabled_rows = [
             row for row in config.combined_views if row.get("enabled", True)
@@ -671,101 +772,60 @@ class LibraryGridView(QWidget):
 
         for row in enabled_rows:
             libraries = row.get("libraries", [])
-            row_name = row.get("name", "Row")
-            sort_by = row.get("sort_by", "Alphabetical")
-            filter_mode = row.get("filter_mode", "All")
-
-            logger.info(
-                f"populate_combined_view: processing row '{row_name}' (libraries={libraries}, "
-                f"sort_by='{sort_by}', filter_mode='{filter_mode}')"
-            )
-            items = db.get_combined_smart_row(libraries, sort_by, filter_mode)
-            logger.info(
-                f"populate_combined_view: db returned {len(items)} items for row '{row_name}'"
-            )
-            max_items = row.get("max_items", 20)
-            items = items[:max_items]
-
-            if not items:
-                logger.info(
-                    f"populate_combined_view: skipping row '{row_name}' because it contains 0 items"
-                )
-                continue
-
-            # Create a row container
-            row_container = QWidget()
-            row_layout = QVBoxLayout(row_container)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(8)
-
-            # Header
-            header_label = QLabel(f"<b>{row_name}</b>")
-            header_label.setStyleSheet("font-size: 18px; color: #2a82da;")
-            row_layout.addWidget(header_label)
-
-            # Horizontal List Widget
-            h_list = QListWidget()
-            h_list.setFlow(QListWidget.Flow.LeftToRight)
-            h_list.setWrapping(False)
-            h_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-            h_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            h_list.setViewMode(QListWidget.ViewMode.IconMode)
-            h_list.setIconSize(QSize(120, 165))
-            h_list.setGridSize(QSize(145, 210))
-            h_list.setMovement(QListWidget.Movement.Static)
-            h_list.setResizeMode(QListWidget.ResizeMode.Adjust)
-            h_list.setFixedHeight(225)
-            h_list.setStyleSheet(
-                """
-                QListWidget {
-                    background-color: transparent;
-                    border: none;
-                }
-                QListWidget::item {
-                    border: 1px solid #333333;
-                    border-radius: 6px;
-                    background-color: #222222;
-                    margin-right: 10px;
-                }
-                QListWidget::item:hover {
-                    background-color: #333333;
-                    border: 1px solid #2a82da;
-                }
-                """
+            config_hash = db.compute_config_hash(
+                libraries,
+                row.get("sort_by", "Alphabetical"),
+                row.get("filter_mode", "All"),
             )
 
-            # Populate items
-            for media_item in items:
-                item_type = media_item.get("type")  # "season", "series", "movie"
-                name = media_item.get("name") or media_item.get("series_name") or ""
-                poster_path = media_item.get("poster_path") or ""
-                watched_count = media_item.get("watched_count", 0)
-                total_count = media_item.get("total_count", 0)
-
-                if item_type == "season":
-                    season_name = media_item.get("season_name") or ""
-                    display_label = (
-                        f"{name}\n{season_name} ({watched_count}/{total_count})"
-                    )
-                elif item_type == "series":
-                    display_label = f"{name}\n({watched_count}/{total_count})"
-                else:  # movie
-                    status_string = "Watched" if watched_count > 0 else "Unwatched"
-                    display_label = f"{name}\n({status_string})"
-
-                list_item = QListWidgetItem(display_label)
-                list_item.setData(Qt.ItemDataRole.UserRole, media_item)
-                list_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                list_item.setToolTip(display_label)
-
-                self._assign_item_icon_with_size(list_item, poster_path, 120, 165)
-                h_list.addItem(list_item)
-
-            h_list.itemClicked.connect(self.on_combined_item_clicked)
-            row_layout.addWidget(h_list)
-            self.combined_scroll_layout.addWidget(row_container)
+            row_container = self._build_smart_row_widget(row)
+            if row_container is not None:
+                self._smart_row_widgets[config_hash] = row_container
+                self.combined_scroll_layout.addWidget(row_container)
 
         self.combined_scroll_layout.addStretch()
+
+    @Slot(list)
+    def _on_smart_rows_updated(self, changed_config_hashes: List[str]) -> None:
+        """Handle targeted smart row updates from the controller."""
+        if not self.combined_scroll_area.isVisible():
+            return
+
+        logger.debug(f"Smart rows updated for {len(changed_config_hashes)} configs")
+        for config_hash in changed_config_hashes:
+            # Find the row config that matches this hash
+            for row in config.combined_views:
+                if not row.get("enabled", True):
+                    continue
+                libraries = row.get("libraries", [])
+                row_hash = db.compute_config_hash(
+                    libraries,
+                    row.get("sort_by", "Alphabetical"),
+                    row.get("filter_mode", "All"),
+                )
+                if row_hash != config_hash:
+                    continue
+
+                old_widget = self._smart_row_widgets.pop(config_hash, None)
+                new_widget = self._build_smart_row_widget(row)
+
+                if new_widget is not None:
+                    self._smart_row_widgets[config_hash] = new_widget
+                    if old_widget is not None:
+                        # Replace old widget
+                        index = self.combined_scroll_layout.indexOf(old_widget)
+                        old_widget.setParent(None)
+                        old_widget.deleteLater()
+                        if index >= 0:
+                            self.combined_scroll_layout.insertWidget(index, new_widget)
+                        else:
+                            self.combined_scroll_layout.addWidget(new_widget)
+                    else:
+                        self.combined_scroll_layout.addWidget(new_widget)
+                elif old_widget is not None:
+                    old_widget.setParent(None)
+                    old_widget.deleteLater()
+                break
 
     def _assign_item_icon_with_size(
         self,
