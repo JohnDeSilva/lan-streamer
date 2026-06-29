@@ -93,6 +93,14 @@ jobs:
           fi
           echo "Creating tag: ${NEXT_TAG}"
 
+          # Update CHANGELOG.md for this pre-release tag
+          uv run cz changelog --incremental --unreleased-version "$NEXT_TAG" --tag-format "rc-\$version"
+
+          # Commit changelog update back to current branch
+          git add CHANGELOG.md
+          git commit -m "chore(release): pre-release ${NEXT_TAG}" --no-verify
+
           # Tag the commit and push it
           git tag -a "$NEXT_TAG" -m "Pre-release $NEXT_TAG"
+          git push origin "HEAD:$BRANCH_NAME"
           git push origin "$NEXT_TAG"
