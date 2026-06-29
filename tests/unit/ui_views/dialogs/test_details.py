@@ -536,7 +536,11 @@ def mock_opt_controller():
 
 
 def test_series_details_dialog_lock(mock_opt_controller, qtbot):
-    dialog = SeriesDetailsDialog("Test Show", mock_opt_controller)
+    with patch(
+        "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_episode_groups",
+        return_value=[],
+    ):
+        dialog = SeriesDetailsDialog("Test Show", mock_opt_controller)
     qtbot.addWidget(dialog)
 
     assert dialog.locked_checkbox.isChecked() is False
@@ -567,7 +571,11 @@ def test_episode_details_dialog_refresh(mock_opt_controller, qtbot):
 
 
 def test_series_details_dialog_refresh(mock_opt_controller, qtbot):
-    dialog = SeriesDetailsDialog("Test Show", mock_opt_controller)
+    with patch(
+        "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_episode_groups",
+        return_value=[],
+    ):
+        dialog = SeriesDetailsDialog("Test Show", mock_opt_controller)
     qtbot.addWidget(dialog)
 
     with patch(
