@@ -14,7 +14,9 @@ def read_text(relative_path: str) -> str:
 def test_rc_workflow_builds_executables_for_rc_branch() -> None:
     workflow_text = read_text(".github/workflows/executable.yml")
 
-    assert 'branches: [ "rc", "main" ]' in workflow_text
+    assert "main" in workflow_text
+    assert "rc*" in workflow_text
+    assert "rc/**" in workflow_text
     assert "pull_request:" in workflow_text
     assert "Upload artifact" in workflow_text
     assert "Create Release" not in workflow_text
@@ -23,7 +25,9 @@ def test_rc_workflow_builds_executables_for_rc_branch() -> None:
 def test_main_release_workflow_uses_commitizen_to_cut_release() -> None:
     workflow_text = read_text(".github/workflows/release.yml")
 
-    assert 'branches: [ "main", "rc" ]' in workflow_text
+    assert "main" in workflow_text
+    assert "rc*" in workflow_text
+    assert "rc/**" in workflow_text
     assert (
         r'cz bump --yes --changelog --version-files-only --tag-format "rc-\$version"'
         in workflow_text
@@ -49,8 +53,12 @@ def test_ci_workflows_cover_rc_and_main_branches() -> None:
     test_workflow_text = read_text(".github/workflows/test.yml")
     lint_workflow_text = read_text(".github/workflows/lint.yml")
 
-    assert 'branches: [ "main", "rc" ]' in test_workflow_text
-    assert 'branches: [ "main", "rc" ]' in lint_workflow_text
+    assert "main" in test_workflow_text
+    assert "rc*" in test_workflow_text
+    assert "rc/**" in test_workflow_text
+    assert "main" in lint_workflow_text
+    assert "rc*" in lint_workflow_text
+    assert "rc/**" in lint_workflow_text
     assert "[skip ci]" in test_workflow_text
     assert "[skip ci]" in lint_workflow_text
 
