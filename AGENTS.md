@@ -24,13 +24,13 @@ This document establishes the repository-wide standards, architectural constrain
 - [src/entrypoint.py](file:///home/sadmin/antigravity/lan-streamer/src/entrypoint.py): Startup file for compiled PyInstaller target.
 - [src/lan_streamer/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/):
   - [main.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/main.py): Sets up the application GUI and controller runtime.
-  - [db/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db): ORM schemas ([models.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/models.py)), queries ([queries_playback.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/queries_playback.py), [queries_ui.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/queries_ui.py)), serialization, and database setup.
+  - [db/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db): ORM schemas ([models.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/models.py)), queries ([queries_playback.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/queries_playback.py), [queries_ui.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/queries_ui.py), [smart_row_cache.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/db/smart_row_cache.py)), serialization, and database setup.
   - [backend/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend): Background thread workers (`QThread`/`QWorker`) for non-blocking file scanning, Jellyfin sync, and metadata updates.
     - [scan_worker_base.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend/scan_worker_base.py): Shared scan helpers (`create_empty_stats`, `merge_stats_dicts`, `log_stats_breakdown`, `log_issues_report`, `discover_single_library_tree_impl`).
     - [scan_worker_all.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend/scan_worker_all.py): `ScanAllLibrariesWorker` — parallel multi-library scan via `ThreadPoolExecutor`.
     - [scan_worker_single.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend/scan_worker_single.py): `ScanSingleLibraryWorker` — single-library scan.
   - [scanner/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/scanner): Library crawler, filename parser, and bulk-renamer.
-  - [services/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/services): Business-logic services (discovery, TMDB/Jellyfin metadata merging).
+  - [services/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/services): Business-logic services (discovery, TMDB/Jellyfin metadata merging, [smart_row_service.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/services/smart_row_service.py) — combined view cache coordination).
   - [playback/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/playback): Video player widget wrapper around `libvlc` and OS wake-lock controller.
   - [providers/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/providers): External client wrappers (TMDB, Jellyfin, OpenSubtitles, MyAnimeList).
   - [system/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/system): Config manager, logging handler, backups, updater, and [threading_manager.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/system/threading_manager.py) — centralized `WorkerManager`/`WorkerSlot` lifecycle manager.
@@ -58,12 +58,22 @@ Do not abbreviate variable names. Use full, descriptive names:
 - Log key user interactions (scan initiation, view transitions, metadata mappings).
 - Log background thread lifecycles (startup, progress, errors, termination).
 
-### 4. Code Organization
+### 4. Smart Row Cache Architecture
+
+The combined view (smart rows) uses a pre-computed cache table (`SmartRowCache` in `smart_row_cache` table) for fast rendering:
+
+- **Cache table** (`db/models.py:SmartRowCache`): Stores pre-computed smart row items with FK references to `Series` and `Movie` tables. Display data (name, poster_path, library_name) is resolved via joined FK relationships. Computed aggregation fields (watched_count, date_added, etc.) avoid expensive recalculations.
+- **Cache queries** (`db/smart_row_cache.py`): Provides `get_cached_smart_rows()` (read with fallback), `rebuild_cache_for_config()` (full rebuild), `clear_cache_for_config_hashes()` (targeted clear), and `rebuild_all_cache()` (complete rebuild).
+- **Service layer** (`services/smart_row_service.py`): `SmartRowService` coordinates cache rebuilds on scan completion and watched events. Incremental updates for watched events only rebuild affected config hashes.
+- **Controller signal** (`ui_views/controller.py:Controller.smart_rows_updated`): Emits a `list` of changed config hashes. The `LibraryGridView` listens for targeted row updates.
+- **UI rendering** (`ui_views/library_grid.py`): `_build_smart_row_widget()` reads from cache. `_on_smart_rows_updated()` handles targeted row replacement without full re-render.
+
+### 5. Code Organization
 - Keep modules small, single-purpose, and grouped under descriptive directories.
 - Avoid generic filenames like `helper.py` or `utils.py` in favor of specific functional terms.
 - **Static Typing**: Enforce 100% strict `mypy` type checking for all production code in `src/lan_streamer/`.
 
-### 5. Testing URL Constraints (Strict Mock URL Rule)
+### 6. Testing URL Constraints (Strict Mock URL Rule)
 - Do not use actual, live external URLs in unit, integration, or e2e tests.
 - Always use mock/local domains (e.g. `example.invalid`, `localhost`, `127.0.0.1`, or `jellyfin.local`) to avoid external network dependencies and prevent accidental network request execution during test runs.
 
