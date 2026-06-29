@@ -11,6 +11,11 @@ permissions:
   contents: write
 
 jobs:
+  call-lint:
+    uses: ./.github/workflows/lint.yml
+  call-test:
+    uses: ./.github/workflows/test.yml
+
   release:
     name: Bump Version and Tag
     runs-on: ubuntu-latest
@@ -35,15 +40,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Run lint and typecheck before release
-        run: |
-          make check-lint
-          make typecheck
-
-      - name: Run tests before release
-        run: |
-          TEST_OS=fedora make test
 
       - name: Release and Tag Logic
         env:

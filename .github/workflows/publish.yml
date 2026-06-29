@@ -7,6 +7,11 @@ on:
       - 'rc-*'
 
 jobs:
+  call-lint:
+    uses: ./.github/workflows/lint.yml
+  call-test:
+    uses: ./.github/workflows/test.yml
+
   build-ubuntu:
     name: Build Executable (Ubuntu)
     runs-on: ubuntu-latest
