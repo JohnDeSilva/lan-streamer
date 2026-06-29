@@ -11,15 +11,17 @@ permissions:
 
 jobs:
   call-lint:
+    if: ${{ !github.event.created }}
     uses: ./.github/workflows/lint.yml
   call-test:
+    if: ${{ !github.event.created }}
     uses: ./.github/workflows/test.yml
 
   release-rc-push:
     name: Create pre-release tag on direct push
     needs: [call-lint, call-test]
     runs-on: ubuntu-latest
-    if: "${{ !contains(github.event.head_commit.message, '[skip ci]') }}"
+    if: ${{ !github.event.created && !contains(github.event.head_commit.message, '[skip ci]') }}
 
     steps:
       - name: Checkout code
