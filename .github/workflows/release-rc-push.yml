@@ -51,6 +51,13 @@ jobs:
             exit 0
           fi
 
+          # Skip if it is a merge commit or PR merge message (handled by PR merge workflow)
+          PARENT_COUNT=$(git rev-list --parents -n 1 HEAD | wc -w)
+          if [ "$PARENT_COUNT" -gt 2 ] || echo "$COMMIT_MSG" | grep -qE "Merge pull request|Merge branch|\(#[0-9]+\)"; then
+            echo "Skipping push release because this is a PR merge commit (handled by PR merge workflow)."
+            exit 0
+          fi
+
           # Skip if the current commit is already tagged
           if git tag --points-at HEAD | grep -qE "^(v|rc-)"; then
             echo "Current commit is already tagged. Skipping tag creation."
