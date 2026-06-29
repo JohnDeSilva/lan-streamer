@@ -1,4 +1,7 @@
 from unittest.mock import patch
+
+from sqlalchemy import func, select
+
 from lan_streamer.db import get_session
 from lan_streamer.db.smart_row_cache import (
     compute_config_hash,
@@ -120,11 +123,12 @@ def test_rebuild_cache_for_config_stores_entries() -> None:
 
     config_hash = compute_config_hash(["TV", "Movies"], "Alphabetical", "All")
     with get_session() as session:
-        entries = (
-            session.query(SmartRowCache)
-            .filter(SmartRowCache.config_hash == config_hash)
-            .order_by(SmartRowCache.sort_order)
-            .all()
+        entries = list(
+            session.scalars(
+                select(SmartRowCache)
+                .where(SmartRowCache.config_hash == config_hash)
+                .order_by(SmartRowCache.sort_order)
+            ).all()
         )
         assert len(entries) == 2
         assert entries[0].item_type == "series"
@@ -153,10 +157,10 @@ def test_rebuild_cache_for_config_clears_existing() -> None:
         rebuild_cache_for_config([], "Alphabetical", "All")
 
     with get_session() as session:
-        entries = (
-            session.query(SmartRowCache)
-            .filter(SmartRowCache.config_hash == config_hash)
-            .all()
+        entries = list(
+            session.scalars(
+                select(SmartRowCache).where(SmartRowCache.config_hash == config_hash)
+            ).all()
         )
         assert len(entries) == 1
 
@@ -170,10 +174,10 @@ def test_rebuild_cache_for_config_handles_empty() -> None:
 
     config_hash = compute_config_hash([], "Alphabetical", "All")
     with get_session() as session:
-        entries = (
-            session.query(SmartRowCache)
-            .filter(SmartRowCache.config_hash == config_hash)
-            .all()
+        entries = list(
+            session.scalars(
+                select(SmartRowCache).where(SmartRowCache.config_hash == config_hash)
+            ).all()
         )
         assert len(entries) == 0
 
@@ -231,7 +235,7 @@ def test_clear_cache_for_config_hashes() -> None:
 
     clear_cache_for_config_hashes([hash_a])
     with get_session() as session:
-        remaining = session.query(SmartRowCache).all()
+        remaining = list(session.scalars(select(SmartRowCache)).all())
         assert len(remaining) == 1
         assert remaining[0].config_hash == hash_b
 
@@ -247,7 +251,7 @@ def test_clear_cache_for_config_hashes_empty() -> None:
 
     clear_cache_for_config_hashes([])
     with get_session() as session:
-        count = session.query(SmartRowCache).count()
+        count = session.scalar(select(func.count()).select_from(SmartRowCache))
         assert count == 1
 
 
@@ -262,7 +266,8 @@ def test_clear_all_cache() -> None:
 
     clear_all_cache()
     with get_session() as session:
-        assert session.query(SmartRowCache).count() == 0
+        count = session.scalar(select(func.count()).select_from(SmartRowCache))
+        assert count == 0
 
 
 def test_get_affected_config_hashes_for_libraries() -> None:
