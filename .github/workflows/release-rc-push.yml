@@ -40,14 +40,22 @@ jobs:
         env:
           BRANCH_NAME: ${{ github.ref_name }}
         run: |
+          # Fetch all tags from remote to ensure we have the latest
+          git fetch --tags
+
+          # Skip if commit is from github-actions[bot] or message contains [skip ci]
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+          if [[ "$COMMIT_MSG" == *"[skip ci]"* ]] || [[ "$COMMIT_AUTHOR" == *"github-actions"* ]]; then
+            echo "Skipping tag creation for automated push/release commit."
+            exit 0
+          fi
+
           # Skip if the current commit is already tagged
           if git tag --points-at HEAD | grep -qE "^(v|rc-)"; then
             echo "Current commit is already tagged. Skipping tag creation."
             exit 0
           fi
-
-          # Fetch all tags from remote to ensure we have the latest
-          git fetch --tags
 
           # Read version from pyproject.toml
           VERSION="$(uv run cz version --project)"
