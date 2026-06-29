@@ -154,7 +154,7 @@ jobs:
           notes = []
           header_count = 0
           for line in lines:
-              if line.startswith("## v") or line.startswith("## rc-"):
+              if line.startswith("## "):
                   header_count += 1
                   if header_count > 1:
                       break

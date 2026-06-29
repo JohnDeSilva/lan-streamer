@@ -47,25 +47,67 @@ jobs:
           UV_CACHE_DIR: /tmp/uv-cache
         run: |
           if [ "${{ github.ref_name }}" = "rc" ]; then
-            echo "Running version bump on rc branch..."
-            # Bump version in files and update changelog
-            uv run cz bump --yes --changelog --version-files-only --tag-format "rc-\$version"
-            uv lock
+            echo "Processing rc branch..."
 
-            # Read version
-            RELEASE_VERSION="$(uv run cz version --project)"
-            echo "Bumped to RC version: ${RELEASE_VERSION}"
+            # Fetch all tags from remote to ensure we have the latest
+            git fetch --tags
 
-            # Commit files back to rc branch
-            git add pyproject.toml src/lan_streamer/__init__.py CHANGELOG.md uv.lock
-            git commit -m "chore(release): rc-${RELEASE_VERSION} [skip ci]" --no-verify
+            # Check commit message and parent count to determine if it is a PR merge
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            PARENT_COUNT=$(git rev-list --parents -n 1 HEAD | wc -w)
 
-            # Create tag matching the rc- prefix
-            git tag -a "rc-${RELEASE_VERSION}" -m "Release rc-${RELEASE_VERSION}"
+            IS_PR_MERGE=false
+            if [ "$PARENT_COUNT" -gt 2 ] || [[ "$COMMIT_MSG" =~ "Merge pull request" || "$COMMIT_MSG" =~ "Merge branch" || "$COMMIT_MSG" =~ \(\#[0-9]+\) ]]; then
+              IS_PR_MERGE=true
+            fi
 
-            # Push commit and tag back to rc
-            git push origin HEAD:rc
-            git push origin "rc-${RELEASE_VERSION}"
+            if [ "$IS_PR_MERGE" = "true" ]; then
+              echo "Detected PR merge. Bumping full release candidate version..."
+              # Bump version in files and update changelog
+              uv run cz bump --yes --changelog --version-files-only --tag-format "rc-\$version"
+              uv lock
+
+              # Read version
+              RELEASE_VERSION="$(uv run cz version --project)"
+              echo "Bumped to RC version: ${RELEASE_VERSION}"
+
+              # Commit files back to rc branch
+              git add pyproject.toml src/lan_streamer/__init__.py CHANGELOG.md uv.lock
+              git commit -m "chore(release): rc-${RELEASE_VERSION} [skip ci]" --no-verify
+
+              # Create tag matching the rc- prefix
+              git tag -a "rc-${RELEASE_VERSION}" -m "Release rc-${RELEASE_VERSION}"
+
+              # Push commit and tag back to rc
+              git push origin HEAD:rc
+              git push origin "rc-${RELEASE_VERSION}"
+            else
+              echo "Detected direct push/commit. Creating dash version tag..."
+              # Read version from pyproject.toml
+              VERSION="$(uv run cz version --project)"
+
+              # Find the latest tag matching rc-<VERSION>
+              LATEST_TAG=$(git tag -l "rc-${VERSION}*" --sort=-v:refname | head -n 1)
+              echo "Latest tag found: ${LATEST_TAG}"
+
+              if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "rc-${VERSION}" ]; then
+                NEXT_TAG="rc-${VERSION}-1"
+              else
+                # Extract the suffix number after the last dash
+                SUFFIX="${LATEST_TAG##*-}"
+                if [[ "$SUFFIX" =~ ^[0-9]+$ ]]; then
+                  NEXT_SUFFIX=$((SUFFIX + 1))
+                  NEXT_TAG="rc-${VERSION}-${NEXT_SUFFIX}"
+                else
+                  NEXT_TAG="rc-${VERSION}-1"
+                fi
+              fi
+              echo "Creating tag: ${NEXT_TAG}"
+
+              # Tag the commit and push it
+              git tag -a "$NEXT_TAG" -m "Pre-release $NEXT_TAG"
+              git push origin "$NEXT_TAG"
+            fi
 
           elif [ "${{ github.ref_name }}" = "main" ]; then
             echo "Running tag creation on main branch..."
