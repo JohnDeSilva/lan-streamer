@@ -55,7 +55,7 @@ jobs:
 
           # Commit files back to current branch
           git add pyproject.toml src/lan_streamer/__init__.py CHANGELOG.md uv.lock
-          git commit -m "chore(release): rc-${RELEASE_VERSION} [skip ci]" --no-verify
+          git commit -m "chore(release): rc-${RELEASE_VERSION}" --no-verify
 
           # Create tag matching the rc- prefix
           git tag -a "rc-${RELEASE_VERSION}" -m "Release rc-${RELEASE_VERSION}"
