@@ -140,7 +140,8 @@ class TestSegmentedProgressBar:
     def test_advance_root_nonexistent(self, qtbot) -> None:
         bar = SegmentedProgressBar()
         qtbot.addWidget(bar)
-        bar.advance_root("/no/such/root")  # should not crash
+        bar.advance_root("/no/such/root")
+        assert bar._libraries == {}
 
     def test_paint_event_empty(self, qtbot) -> None:
         """paintEvent with empty library order should not crash."""
@@ -283,7 +284,8 @@ class TestScanProgressTree:
     def test_mark_library_active_nonexistent(self, qtbot) -> None:
         w = ScanProgressTree()
         qtbot.addWidget(w)
-        w.mark_library_active("Nonexistent")  # should not crash
+        w.mark_library_active("Nonexistent")
+        assert "Nonexistent" not in w._lib_nodes
 
     def test_mark_folder_active(self, qtbot) -> None:
         w = ScanProgressTree()
@@ -315,7 +317,8 @@ class TestScanProgressTree:
     def test_mark_folder_active_nonexistent(self, qtbot) -> None:
         w = ScanProgressTree()
         qtbot.addWidget(w)
-        w.mark_folder_active("NonLib", "/root", "NonFolder")  # should not crash
+        w.mark_folder_active("NonLib", "/root", "NonFolder")
+        assert w._folder_nodes == {}
 
     def test_mark_season_active_existing_node(self, qtbot) -> None:
         w = ScanProgressTree()
@@ -356,7 +359,8 @@ class TestScanProgressTree:
     def test_mark_season_done_nonexistent(self, qtbot) -> None:
         w = ScanProgressTree()
         qtbot.addWidget(w)
-        w.mark_season_done("Shows", "NonExist", "Season 99")  # should not crash
+        w.mark_season_done("Shows", "NonExist", "Season 99")
+        assert w._season_nodes == {}
 
     def test_mark_file_active_updates_existing_node(self, qtbot) -> None:
         w = ScanProgressTree()
@@ -401,7 +405,8 @@ class TestScanProgressTree:
     def test_mark_file_done_nonexistent(self, qtbot) -> None:
         w = ScanProgressTree()
         qtbot.addWidget(w)
-        w.mark_file_done("/nonexistent/path.mkv")  # should not crash
+        w.mark_file_done("/nonexistent/path.mkv")
+        assert w._file_nodes == {}
 
     def test_reset_clears_all(self, qtbot) -> None:
         w = ScanProgressTree()
@@ -522,12 +527,14 @@ class TestLibraryScanProgressBar:
     def test_mark_folder_done_nonexistent_root(self, qtbot) -> None:
         bar = LibraryScanProgressBar()
         qtbot.addWidget(bar)
-        bar.mark_folder_done("/nonexistent", "SomeFolder")  # should not crash
+        bar.mark_folder_done("/nonexistent", "SomeFolder")
+        assert bar._roots == {}
 
     def test_mark_folder_active_nonexistent_root(self, qtbot) -> None:
         bar = LibraryScanProgressBar()
         qtbot.addWidget(bar)
-        bar.mark_folder_active("/nonexistent", "SomeFolder")  # should not crash
+        bar.mark_folder_active("/nonexistent", "SomeFolder")
+        assert bar._roots == {}
 
     def test_paint_event_empty(self, qtbot) -> None:
         bar = LibraryScanProgressBar()

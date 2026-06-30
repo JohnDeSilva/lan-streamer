@@ -50,34 +50,10 @@ class TestSmartRowService:
             result = self.service.on_episode_watched("/path/to/episode.mkv")
             assert result == []
 
-    def test_on_movie_watched(self) -> None:
-        result = self.service.on_movie_watched("Test Movie", "Movies")
-        self.service._rebuild_affected_configs.assert_called_once_with(["Movies"])
-        assert result == ["hash-1"]
-
     def test_rebuild_for_libraries(self) -> None:
         result = self.service.rebuild_for_libraries(["TV"])
         self.service._rebuild_affected_configs.assert_called_once_with(["TV"])
         assert result == ["hash-1"]
-
-    def test_on_libraries_changed(self) -> None:
-        with patch(
-            "lan_streamer.services.smart_row_service.db.rebuild_all_cache"
-        ) as mock_rebuild:
-            self.service.on_libraries_changed()
-            mock_rebuild.assert_called_once()
-
-    def test_on_libraries_changed_with_runner(self) -> None:
-        runner = MagicMock()
-        service = SmartRowService(background_runner=runner)
-        service.on_libraries_changed()
-        runner.assert_called_once()
-        callable_fn = runner.call_args[0][0]
-        with patch(
-            "lan_streamer.services.smart_row_service.db.rebuild_all_cache"
-        ) as mock_rebuild:
-            callable_fn()
-            mock_rebuild.assert_called_once()
 
     def test_rebuild_no_libraries(self) -> None:
         with patch(

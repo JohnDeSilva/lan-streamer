@@ -115,9 +115,9 @@ class TestStartStop:
     ) -> None:
         async def run() -> None:
             task_manager = service._controller.task_manager
-            assert task_manager.get_task("scheduled_scan") is None
+            assert task_manager._tasks.get("scheduled_scan") is None
             service.start()
-            task = task_manager.get_task("scheduled_scan")
+            task = task_manager._tasks.get("scheduled_scan")
             assert task is not None
             assert task.get_name() == "scheduled_scan"
             service.stop()
@@ -132,7 +132,7 @@ class TestStartStop:
         async def run() -> None:
             service.start()
             tm = service._controller.task_manager
-            task = tm.get_task("scheduled_scan")
+            task = tm._tasks.get("scheduled_scan")
             assert task is not None
             service.stop()
             # The task may still be in the dict in 'cancelling' state;
@@ -158,7 +158,7 @@ class TestStartStop:
                 svc.start()
             assert "Scan interval must be positive" in caplog.text
             tm = controller.task_manager
-            assert tm.get_task("scheduled_scan") is None
+            assert tm._tasks.get("scheduled_scan") is None
 
         _run(run(), event_loop)
 
@@ -351,7 +351,7 @@ class TestFullCycle:
 
         async def run() -> None:
             service.start()
-            assert controller.task_manager.get_task("scheduled_scan") is not None
+            assert controller.task_manager._tasks.get("scheduled_scan") is not None
             await asyncio.sleep(0.1)
 
         _run(run(), event_loop)

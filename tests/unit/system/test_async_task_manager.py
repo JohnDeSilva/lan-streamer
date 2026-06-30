@@ -73,16 +73,6 @@ def test_default_cancel_timeout() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_initial_task_list_is_empty(manager: AsyncTaskManager) -> None:
-    """A freshly-constructed manager tracks no tasks."""
-    assert manager.task_names() == []
-
-
-def test_initial_get_task_returns_none(manager: AsyncTaskManager) -> None:
-    """get_task on an unknown name returns None."""
-    assert manager.get_task("nonexistent") is None
-
-
 def test_initial_is_task_running_false(manager: AsyncTaskManager) -> None:
     """is_task_running on an unknown name returns False."""
     assert manager.is_task_running("nonexistent") is False
@@ -115,7 +105,7 @@ def test_create_task_tracks_the_task(
     event_loop: asyncio.AbstractEventLoop,
     manager: AsyncTaskManager,
 ) -> None:
-    """After creation the task is retrievable via get_task."""
+    """After creation the task is retrievable via the internal tracking dict."""
 
     async def noop() -> None:
         pass
@@ -123,8 +113,8 @@ def test_create_task_tracks_the_task(
     async def _run() -> None:
         task = manager.create_task(noop(), name="tracked")
         assert task is not None
-        assert manager.get_task("tracked") is task
-        assert "tracked" in manager.task_names()
+        assert manager._tasks.get("tracked") is task
+        assert manager.is_task_running("tracked")
         await task
 
     event_loop.run_until_complete(_run())
@@ -149,8 +139,8 @@ def test_create_task_auto_removes_on_completion(
         # Yield to allow the done callback to fire
         await asyncio.sleep(0)
 
-        assert manager.get_task("auto_clean") is None
-        assert "auto_clean" not in manager.task_names()
+        assert "auto_clean" not in manager._tasks
+        assert manager.is_task_running("auto_clean") is False
         assert len(completed) == 1
         assert completed[0] is task
 
@@ -267,8 +257,8 @@ def test_create_task_overwrites_existing_name(
         assert task_second is not None
 
         # The manager now tracks the second task.
-        assert manager.get_task("dupe") is task_second
-        assert manager.get_task("dupe") is not task_first
+        assert manager._tasks.get("dupe") is task_second
+        assert manager._tasks.get("dupe") is not task_first
 
         # Clean up
         task_first.cancel()
@@ -390,7 +380,7 @@ def test_cancel_all_cancels_every_task(
 
     event_loop.run_until_complete(_run())
     event_loop.run_until_complete(asyncio.sleep(0))
-    assert len(manager.task_names()) == 3
+    assert len(manager._tasks) == 3
 
     manager.cancel_all()
     event_loop.run_until_complete(asyncio.sleep(0))
@@ -398,72 +388,7 @@ def test_cancel_all_cancels_every_task(
     assert cancellation_count == 3
     # All tasks should be removed from tracking after cancellation
     event_loop.run_until_complete(asyncio.sleep(0))
-    assert len(manager.task_names()) == 0
-
-
-# ---------------------------------------------------------------------------
-# get_task
-# ---------------------------------------------------------------------------
-
-
-def test_get_task_returns_none_for_unknown(manager: AsyncTaskManager) -> None:
-    """get_task returns None for a name that was never created."""
-    assert manager.get_task("ghost") is None
-
-
-def test_get_task_returns_task_for_tracked(
-    event_loop: asyncio.AbstractEventLoop,
-    manager: AsyncTaskManager,
-) -> None:
-    """get_task returns the asyncio.Task for a tracked name."""
-
-    async def noop() -> None:
-        pass
-
-    async def _run() -> asyncio.Task[Any]:
-        task = manager.create_task(noop(), name="present")
-        assert task is not None
-        assert manager.get_task("present") is task
-        return task
-
-    task = event_loop.run_until_complete(_run())
-
-    event_loop.run_until_complete(task)
-
-
-# ---------------------------------------------------------------------------
-# task_names
-# ---------------------------------------------------------------------------
-
-
-def test_task_names_empty(manager: AsyncTaskManager) -> None:
-    """task_names returns an empty list when no tasks are tracked."""
-    assert manager.task_names() == []
-
-
-def test_task_names_returns_all_names(
-    event_loop: asyncio.AbstractEventLoop,
-    manager: AsyncTaskManager,
-) -> None:
-    """task_names returns all currently tracked task names."""
-
-    async def noop() -> None:
-        pass
-
-    async def _run() -> list[asyncio.Task[Any]]:
-        task_alpha = manager.create_task(noop(), name="alpha")
-        task_beta = manager.create_task(noop(), name="beta")
-        task_gamma = manager.create_task(noop(), name="gamma")
-        return [t for t in (task_alpha, task_beta, task_gamma) if t is not None]
-
-    tasks = event_loop.run_until_complete(_run())
-
-    names = manager.task_names()
-    assert sorted(names) == ["alpha", "beta", "gamma"]
-
-    # Clean up
-    for task in tasks:
-        event_loop.run_until_complete(task)
+    assert len(manager._tasks) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -564,7 +489,7 @@ def test_schedule_interval_creates_tracked_task(
             lambda: sample(), interval_seconds=10.0, name="interval"
         )
         assert task is not None
-        assert manager.get_task("interval") is task
+        assert manager._tasks.get("interval") is task
         assert manager.is_task_running("interval") is True
 
     event_loop.run_until_complete(_run())
@@ -661,76 +586,6 @@ def test_schedule_interval_stops_on_cancellation(
 
 
 # ---------------------------------------------------------------------------
-# schedule_once
-# ---------------------------------------------------------------------------
-
-
-def test_schedule_once_creates_tracked_task(
-    event_loop: asyncio.AbstractEventLoop,
-    manager: AsyncTaskManager,
-) -> None:
-    """schedule_once returns a task and tracks it."""
-
-    async def sample() -> None:
-        pass
-
-    async def _run() -> None:
-        task = manager.schedule_once(lambda: sample(), delay_seconds=10.0, name="once")
-        assert task is not None
-        assert manager.get_task("once") is task
-        assert manager.is_task_running("once") is True
-
-    event_loop.run_until_complete(_run())
-
-
-def test_schedule_once_runs_after_delay(
-    event_loop: asyncio.AbstractEventLoop,
-    manager: AsyncTaskManager,
-) -> None:
-    """A one-shot task runs after the specified delay."""
-    executed: bool = False
-
-    async def delayed_action() -> None:
-        nonlocal executed
-        executed = True
-
-    async def _run() -> None:
-        manager.schedule_once(
-            lambda: delayed_action(), delay_seconds=0.01, name="delayed"
-        )
-
-    event_loop.run_until_complete(_run())
-    assert executed is False
-
-    event_loop.run_until_complete(asyncio.sleep(0.02))
-    assert executed is True
-
-
-def test_schedule_once_cancelled_before_fire(
-    event_loop: asyncio.AbstractEventLoop,
-    manager: AsyncTaskManager,
-) -> None:
-    """If a one-shot task is cancelled before the delay expires, the
-    coroutine is never executed."""
-    executed: bool = False
-
-    async def should_not_run() -> None:
-        nonlocal executed
-        executed = True
-
-    async def _run() -> None:
-        manager.schedule_once(
-            lambda: should_not_run(), delay_seconds=10.0, name="not_fired"
-        )
-
-    event_loop.run_until_complete(_run())
-    manager.cancel_task("not_fired")
-    event_loop.run_until_complete(asyncio.sleep(0.05))
-
-    assert executed is False
-
-
-# ---------------------------------------------------------------------------
 # stop_all
 # ---------------------------------------------------------------------------
 
@@ -768,7 +623,7 @@ def test_stop_all_cancels_and_waits(
 
     event_loop.run_until_complete(_stop_and_wait())
 
-    assert len(manager.task_names()) == 0
+    assert len(manager._tasks) == 0
 
 
 def test_stop_all_returns_none_when_no_loop(
@@ -787,7 +642,7 @@ def test_stop_all_returns_none_when_no_loop(
 
     event_loop.run_until_complete(_create_task())
     event_loop.run_until_complete(asyncio.sleep(0))
-    assert len(manager.task_names()) == 1
+    assert len(manager._tasks) == 1
 
     from unittest.mock import patch
 
@@ -836,32 +691,6 @@ def test_schedule_interval_no_event_loop(
     assert "No running event loop" in caplog.text
 
 
-def test_schedule_once_no_event_loop(
-    manager: AsyncTaskManager,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """schedule_once returns None and warns when no loop is running."""
-    from unittest.mock import patch
-
-    def raise_no_loop() -> asyncio.AbstractEventLoop:
-        msg = "no loop"
-        raise RuntimeError(msg)
-
-    async def dummy() -> None:
-        pass
-
-    with (
-        patch("asyncio.get_running_loop", side_effect=raise_no_loop),
-        caplog.at_level("WARNING"),
-    ):
-        result = manager.schedule_once(
-            lambda: dummy(), delay_seconds=1.0, name="no_loop"
-        )
-
-    assert result is None
-    assert "No running event loop" in caplog.text
-
-
 # ---------------------------------------------------------------------------
 # Edge cases: QObject parent management
 # ---------------------------------------------------------------------------
@@ -882,45 +711,6 @@ def test_constructor_no_parent() -> None:
 # ---------------------------------------------------------------------------
 # Integration: create_task then cancel via cancel_all
 # ---------------------------------------------------------------------------
-
-
-def test_create_and_cancel_all_flow(
-    event_loop: asyncio.AbstractEventLoop,
-    manager: AsyncTaskManager,
-) -> None:
-    """Full lifecycle: create several tasks, cancel all, verify cleanup."""
-    results: dict[str, bool] = {}
-
-    async def worker(name: str) -> None:
-        try:
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            results[name] = True
-            raise
-
-    async def _setup() -> None:
-        for letter in ("a", "b", "c"):
-            manager.create_task(worker(letter), name=letter)
-
-    event_loop.run_until_complete(_setup())
-    event_loop.run_until_complete(asyncio.sleep(0))
-
-    assert len(manager.task_names()) == 3
-    for letter in ("a", "b", "c"):
-        assert manager.is_task_running(letter) is True
-
-    async def _stop_and_wait() -> None:
-        cleanup = manager.stop_all()
-        if cleanup is not None:
-            await cleanup
-
-    event_loop.run_until_complete(_stop_and_wait())
-
-    for letter in ("a", "b", "c"):
-        assert results[letter] is True
-        assert manager.is_task_running(letter) is False
-
-    assert len(manager.task_names()) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -966,64 +756,6 @@ def test_schedule_interval_factory_raises(
 # ---------------------------------------------------------------------------
 
 
-def test_schedule_once_error_logged(
-    event_loop: asyncio.AbstractEventLoop,
-    manager: AsyncTaskManager,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """An error in a one-shot task is logged."""
-
-    async def failing() -> None:
-        msg = "one-shot failure"
-        raise ValueError(msg)
-
-    async def _setup() -> None:
-        manager.schedule_once(
-            lambda: failing(), delay_seconds=0.01, name="failing_once"
-        )
-
-    event_loop.run_until_complete(_setup())
-    event_loop.run_until_complete(asyncio.sleep(0.02))
-
-    assert "raised an error" in caplog.text
-    assert "ValueError" in caplog.text
-    assert "one-shot failure" in caplog.text
-
-
 # ---------------------------------------------------------------------------
 # Large number of tasks for stop_all
 # ---------------------------------------------------------------------------
-
-
-def test_stop_all_many_tasks(
-    event_loop: asyncio.AbstractEventLoop,
-    manager: AsyncTaskManager,
-) -> None:
-    """stop_all handles a large batch of concurrent tasks."""
-    cancelled_count: int = 0
-
-    async def waiting_task() -> None:
-        nonlocal cancelled_count
-        try:
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            cancelled_count += 1
-            raise
-
-    async def _setup() -> None:
-        for idx in range(50):
-            manager.create_task(waiting_task(), name=f"batch_{idx}")
-
-    event_loop.run_until_complete(_setup())
-    event_loop.run_until_complete(asyncio.sleep(0))
-    assert len(manager.task_names()) == 50
-
-    async def _stop_and_wait() -> None:
-        cleanup = manager.stop_all()
-        if cleanup is not None:
-            await cleanup
-
-    event_loop.run_until_complete(_stop_and_wait())
-
-    assert cancelled_count == 50
-    assert len(manager.task_names()) == 0

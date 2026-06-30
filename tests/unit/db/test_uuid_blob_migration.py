@@ -28,6 +28,8 @@ import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
+from unittest.mock import patch
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -74,20 +76,38 @@ def mock_db_file(tmp_path):
     return tmp_path / "library.db"
 
 
+@pytest.fixture
+def _db_setup(mock_db_file):
+    import lan_streamer.db as db_mod
+
+    old_engine = db_mod._engine
+    old_session = db_mod._SessionLocal
+    old_init = db_mod._db_initialized
+    if old_engine is not None:
+        old_engine.dispose()
+
+    with patch.object(db_mod, "DB_FILE", mock_db_file):
+        db_mod._engine = None
+        db_mod._SessionLocal = None
+        db_mod._db_initialized = False
+        db_mod.init_db()
+        yield
+
+    if db_mod._engine is not None:
+        db_mod._engine.dispose()
+    db_mod._engine = old_engine
+    db_mod._SessionLocal = old_session
+    db_mod._db_initialized = old_init
+
+
 # ---------------------------------------------------------------------------
 # 2. ORM auto-generated UUID BLOB PKs on insert
 # ---------------------------------------------------------------------------
 
 
-def test_series_pk_is_blob_uuid(mock_db_file) -> None:
+def test_series_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
     """Series rows get a 16-byte BLOB primary key automatically on insert."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import Series
 
@@ -97,21 +117,10 @@ def test_series_pk_is_blob_uuid(mock_db_file) -> None:
         session.flush()
         assert _is_valid_uuid(s.id), f"Expected valid UUID bytes, got: {s.id!r}"
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
-
-def test_season_pk_is_blob_uuid(mock_db_file) -> None:
+def test_season_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
     """Season rows get a 16-byte BLOB primary key automatically on insert."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import Season, Series
 
@@ -126,21 +135,10 @@ def test_season_pk_is_blob_uuid(mock_db_file) -> None:
             f"Expected valid UUID bytes, got: {season.id!r}"
         )
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
-
-def test_episode_pk_is_blob_uuid(mock_db_file) -> None:
+def test_episode_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
     """Episode rows get a 16-byte BLOB primary key automatically on insert."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import Episode, Season, Series
 
@@ -158,21 +156,10 @@ def test_episode_pk_is_blob_uuid(mock_db_file) -> None:
             f"Expected valid UUID bytes, got: {episode.id!r}"
         )
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
-
-def test_movie_pk_is_blob_uuid(mock_db_file) -> None:
+def test_movie_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
     """Movie rows get a 16-byte BLOB primary key automatically on insert."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import Movie
 
@@ -182,21 +169,10 @@ def test_movie_pk_is_blob_uuid(mock_db_file) -> None:
         session.flush()
         assert _is_valid_uuid(movie.id), f"Expected valid UUID bytes, got: {movie.id!r}"
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
-
-def test_app_secret_pk_is_blob_uuid(mock_db_file) -> None:
+def test_app_secret_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
     """AppSecret rows get a 16-byte BLOB primary key automatically on insert."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import AppSecret, SecretType
 
@@ -212,21 +188,10 @@ def test_app_secret_pk_is_blob_uuid(mock_db_file) -> None:
             f"Expected valid UUID bytes, got: {secret.secret_uuid!r}"
         )
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
-
-def test_each_row_gets_unique_uuid(mock_db_file) -> None:
+def test_each_row_gets_unique_uuid(mock_db_file, _db_setup) -> None:
     """Two rows in the same table must not share the same UUID PK."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import Movie
 
@@ -237,26 +202,15 @@ def test_each_row_gets_unique_uuid(mock_db_file) -> None:
         session.flush()
         assert m1.id != m2.id
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-
 
 # ---------------------------------------------------------------------------
 # 3. FK referential integrity with BLOB keys
 # ---------------------------------------------------------------------------
 
 
-def test_season_series_fk_is_blob(mock_db_file) -> None:
+def test_season_series_fk_is_blob(mock_db_file, _db_setup) -> None:
     """Season.series_id must equal its parent Series.id (both BLOB)."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import Season, Series
 
@@ -270,21 +224,10 @@ def test_season_series_fk_is_blob(mock_db_file) -> None:
         assert season.series_id == series.id
         assert _is_valid_uuid(season.series_id)
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
-
-def test_episode_season_fk_is_blob(mock_db_file) -> None:
+def test_episode_season_fk_is_blob(mock_db_file, _db_setup) -> None:
     """Episode.season_id must equal its parent Season.id (both BLOB)."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import Episode, Season, Series
 
@@ -301,22 +244,11 @@ def test_episode_season_fk_is_blob(mock_db_file) -> None:
         assert episode.season_id == season.id
         assert _is_valid_uuid(episode.season_id)
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
-
-def test_cascade_delete_from_series(mock_db_file) -> None:
+def test_cascade_delete_from_series(mock_db_file, _db_setup) -> None:
     """Deleting a Series must cascade-delete its Seasons and Episodes."""
     import lan_streamer.db as db_mod
     from sqlalchemy import select
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import Episode, Season, Series
 
@@ -343,26 +275,15 @@ def test_cascade_delete_from_series(mock_db_file) -> None:
             session.scalars(select(Episode).where(Episode.name == "E1")).first() is None
         )
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-
 
 # ---------------------------------------------------------------------------
 # 4. set_secret() uses column default (no explicit secret_uuid)
 # ---------------------------------------------------------------------------
 
 
-def test_set_secret_creates_uuid_pk(mock_db_file) -> None:
+def test_set_secret_creates_uuid_pk(mock_db_file, _db_setup) -> None:
     """set_secret() must insert a BLOB UUID pk without being passed one."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import AppSecret, SecretType
 
@@ -377,21 +298,10 @@ def test_set_secret_creates_uuid_pk(mock_db_file) -> None:
         assert row is not None
         assert _is_valid_uuid(row.secret_uuid)
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
-
-def test_set_secret_upsert_preserves_uuid(mock_db_file) -> None:
+def test_set_secret_upsert_preserves_uuid(mock_db_file, _db_setup) -> None:
     """Calling set_secret() twice for the same type must not change the PK."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import AppSecret, SecretType
 
@@ -417,26 +327,15 @@ def test_set_secret_upsert_preserves_uuid(mock_db_file) -> None:
         assert row.secret_uuid == first_uuid
         assert json.loads(row.secret)["api_key"] == "second"
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-
 
 # ---------------------------------------------------------------------------
 # 4. update_items_runtime_batch() accepts bytes IDs
 # ---------------------------------------------------------------------------
 
 
-def test_update_items_runtime_batch_episode_bytes_id(mock_db_file) -> None:
+def test_update_items_runtime_batch_episode_bytes_id(_db_setup) -> None:
     """update_items_runtime_batch must update an episode looked up by its bytes UUID."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import Episode, Season, Series
 
@@ -478,21 +377,10 @@ def test_update_items_runtime_batch_episode_bytes_id(mock_db_file) -> None:
         assert json.loads(updated.audio_tracks) == [{"language": "eng"}]
         assert json.loads(updated.subtitle_tracks) == []
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
-
-def test_update_items_runtime_batch_movie_bytes_id(mock_db_file) -> None:
+def test_update_items_runtime_batch_movie_bytes_id(_db_setup) -> None:
     """update_items_runtime_batch must update a movie looked up by its bytes UUID."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import Movie
 
@@ -531,21 +419,10 @@ def test_update_items_runtime_batch_movie_bytes_id(mock_db_file) -> None:
         ]
         assert json.loads(updated.subtitle_tracks) == [{"language": "eng"}]
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
-
-def test_update_items_runtime_batch_nonexistent_bytes_id_is_noop(mock_db_file) -> None:
+def test_update_items_runtime_batch_nonexistent_bytes_id_is_noop(_db_setup) -> None:
     """update_items_runtime_batch with a UUID that doesn't exist must not raise."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     phantom_id = uuid.uuid4().bytes
     # Neither call should raise
@@ -564,21 +441,10 @@ def test_update_items_runtime_batch_nonexistent_bytes_id_is_noop(mock_db_file) -
         ]
     )
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
-
-def test_get_items_missing_runtime_returns_string_ids(mock_db_file) -> None:
+def test_get_items_missing_runtime_returns_string_ids(_db_setup) -> None:
     """get_items_missing_runtime must return dicts whose 'id' values are strings."""
     import lan_streamer.db as db_mod
-
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     from lan_streamer.db.models import Episode, Movie, Season, Series
 
@@ -601,11 +467,6 @@ def test_get_items_missing_runtime_returns_string_ids(mock_db_file) -> None:
             f"Expected string ID, got {type(item['id'])}: {item['id']!r}"
         )
         assert _is_valid_uuid(item["id"])
-
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
 
 
 # ---------------------------------------------------------------------------

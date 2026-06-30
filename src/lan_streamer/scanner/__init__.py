@@ -4,7 +4,6 @@ from .parser import (
     _parse_episode_number,
     _parse_season_number,
     _parse_movie_folder,
-    _is_video_file,
     has_video_files,
 )
 from .file_property_scanner import (
@@ -41,7 +40,6 @@ from lan_streamer.services.metadata_updates import clean_series_data
 from .versioning import get_version_score_key, choose_active_version
 from .core import (
     LibraryDict,
-    async_run_scan_directories,
     scan_directories,
     scan_movie,
     scan_series,

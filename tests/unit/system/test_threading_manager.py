@@ -158,28 +158,6 @@ def test_worker_slot_start_unknown_signal_warns(slot: WorkerSlot, caplog) -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_worker_slot_start_if_not_running_when_idle(slot: WorkerSlot) -> None:
-    fake_worker = MagicMock()
-    factory = MagicMock(return_value=fake_worker)
-
-    result = slot.start_if_not_running(factory)
-
-    assert result is fake_worker
-    fake_worker.start.assert_called_once()
-
-
-def test_worker_slot_start_if_not_running_when_running(slot: WorkerSlot) -> None:
-    running_worker = _FakeAsyncWorker()
-    running_worker._running = True
-    slot._instance = running_worker
-
-    factory = MagicMock()
-    result = slot.start_if_not_running(factory)
-
-    assert result is None
-    factory.assert_not_called()
-
-
 # ---------------------------------------------------------------------------
 # WorkerSlot — stop()
 # ---------------------------------------------------------------------------
@@ -278,23 +256,15 @@ def test_worker_manager_creates_all_slots(manager: WorkerManager) -> None:
     assert isinstance(manager.scan_series, WorkerSlot)
 
 
-def test_worker_manager_slots_returns_all_slots(manager: WorkerManager) -> None:
-    all_slots = manager._slots()
-    assert len(all_slots) >= 13
-    assert manager.scan in all_slots
-    assert manager.cleanup_global in all_slots
-    assert manager.cleanup_scan_update in all_slots
-
-
 def test_worker_manager_stop_all_stops_every_slot(manager: WorkerManager) -> None:
-    for slot_instance in manager._slots():
+    for slot_instance in manager._all_slots:
         worker = _FakeAsyncWorker()
         worker._running = True
         slot_instance._instance = worker
 
     manager.stop_all()
 
-    for slot_instance in manager._slots():
+    for slot_instance in manager._all_slots:
         assert slot_instance.instance is None
 
 
@@ -385,19 +355,6 @@ def test_worker_slot_is_running_async(slot: WorkerSlot) -> None:
 
     worker._running = False
     assert slot.is_running is False
-
-
-def test_worker_slot_async_start_if_not_running(slot: WorkerSlot) -> None:
-    """Verify start_if_not_running with async workers."""
-    worker = _FakeAsyncWorker()
-    worker._running = True
-    slot._instance = worker
-
-    factory = MagicMock()
-    result = slot.start_if_not_running(factory)
-
-    assert result is None
-    factory.assert_not_called()
 
 
 def test_worker_slot_async_connect_signals(slot: WorkerSlot) -> None:

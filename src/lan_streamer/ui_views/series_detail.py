@@ -154,13 +154,6 @@ class SeriesDetailView(QWidget):
         )
         self.populate_series_details(self._current_series_name)
 
-    @Slot()
-    def _on_mark_series_watched(self) -> None:
-        if not self.controller.selected_series_name:
-            return
-        self.controller.mark_series_watched(self.controller.selected_series_name)
-        self.populate_series_details(self._current_series_name)
-
     @Slot(str)
     def _on_mark_season_watched(self, season_name: str) -> None:
         if not self.controller.selected_series_name:

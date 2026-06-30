@@ -136,39 +136,6 @@ def rebuild_all_cache() -> None:
         rebuild_cache_for_config(libraries, sort_by, filter_mode)
 
 
-def clear_cache_for_config_hashes(config_hashes: List[str]) -> None:
-    """Remove all cache entries matching the given config hashes."""
-    if not config_hashes:
-        return
-    try:
-        with get_session() as session:
-            result = session.execute(
-                delete(SmartRowCache).where(
-                    SmartRowCache.config_hash.in_(config_hashes)
-                )
-            )
-            session.commit()
-            deleted_count = result.rowcount  # type: ignore[attr-defined]
-            logger.info(
-                f"Cleared {deleted_count} cache entries across "
-                f"{len(config_hashes)} configs"
-            )
-    except Exception:
-        logger.exception(f"Failed to clear smart row cache for configs {config_hashes}")
-
-
-def clear_all_cache() -> None:
-    """Clear all smart row cache entries."""
-    try:
-        with get_session() as session:
-            result = session.execute(delete(SmartRowCache))
-            session.commit()
-            deleted_count = result.rowcount  # type: ignore[attr-defined]
-            logger.info(f"Cleared all {deleted_count} smart row cache entries")
-    except Exception:
-        logger.exception("Failed to clear all smart row cache")
-
-
 def get_affected_config_hashes_for_libraries(
     library_names: List[str],
 ) -> List[str]:

@@ -213,9 +213,9 @@ def test_library_grid_view_combined_view(qtbot: Any) -> None:
         grid_view.library_selector.setCurrentText("Combined View")
         assert grid_view.sort_order_container.isHidden() is True
 
-        from PySide6.QtCore import QCoreApplication
+        from PySide6.QtTest import QTest
 
-        QCoreApplication.processEvents()
+        QTest.qWait(20)
 
         # We should find two headers and lists rendered
         headers = grid_view.combined_scroll_content.findChildren(QLabel)
@@ -1187,12 +1187,7 @@ def test_controller_additional_coverage() -> None:
     controller_instance.trigger_scan()
     assert "Select a library first." in status_msg
 
-    # 2. trigger_cleanup when not current_library_name
-    status_msg.clear()
-    controller_instance.trigger_cleanup()
-    assert "Select a library first." in status_msg
-
-    # 3. trigger_jellyfin_pull & push when not configured
+    # 2. trigger_jellyfin_pull & push when not configured
     status_msg.clear()
     with patch(
         "lan_streamer.ui_views.jellyfin_client.is_configured", return_value=False

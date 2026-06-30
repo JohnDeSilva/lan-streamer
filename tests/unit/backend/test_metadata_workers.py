@@ -4,7 +4,6 @@ from typing import List, Dict, Any
 
 from PySide6.QtCore import Qt
 
-import pytest
 
 from lan_streamer.backend import (
     FilePropertyExtractionWorker,
@@ -19,7 +18,6 @@ def test_runtime_extraction_worker_execution() -> None:
     # Successful run
     with (
         patch("lan_streamer.db.get_items_missing_runtime") as mock_get_items,
-        patch("lan_streamer.db.has_tech_and_metadata", return_value=False),
         patch(
             "lan_streamer.backend.metadata_worker_property.get_detailed_file_info"
         ) as mock_info,
@@ -324,15 +322,6 @@ def test_series_metadata_embed_worker_exception() -> None:
         worker.run()
 
     assert len(errors_emitted) == 1
-
-
-@pytest.fixture
-def mock_db_save():
-    with (
-        patch("lan_streamer.db.save_library") as mock_save,
-        patch("lan_streamer.db.save_movie_library") as mock_movie_save,
-    ):
-        yield mock_save, mock_movie_save
 
 
 def test_refresh_series_worker_success(tmp_path, mock_db_save):

@@ -78,48 +78,6 @@ class TestMergeStatsDicts:
         assert target == {"a": 5, "b": 3}
 
 
-class TestMergeStatsDictsForReport:
-    def test_merges_disjoint_keys(self) -> None:
-        from lan_streamer.backend.scan_worker_base import merge_stats_dicts_for_report
-
-        result = merge_stats_dicts_for_report({"a": 1}, {"b": 2})
-        assert result == {"a": 1, "b": 2}
-
-    def test_sums_overlapping_keys(self) -> None:
-        from lan_streamer.backend.scan_worker_base import merge_stats_dicts_for_report
-
-        result = merge_stats_dicts_for_report({"a": 3, "b": 1}, {"a": 2, "c": 4})
-        assert result == {"a": 5, "b": 1, "c": 4}
-
-    def test_does_not_mutate_inputs(self) -> None:
-        from lan_streamer.backend.scan_worker_base import merge_stats_dicts_for_report
-
-        a = {"x": 1}
-        b = {"x": 2}
-        result = merge_stats_dicts_for_report(a, b)
-        assert a == {"x": 1}
-        assert b == {"x": 2}
-        assert result == {"x": 3}
-
-    def test_empty_first_dict(self) -> None:
-        from lan_streamer.backend.scan_worker_base import merge_stats_dicts_for_report
-
-        result = merge_stats_dicts_for_report({}, {"a": 5})
-        assert result == {"a": 5}
-
-    def test_empty_second_dict(self) -> None:
-        from lan_streamer.backend.scan_worker_base import merge_stats_dicts_for_report
-
-        result = merge_stats_dicts_for_report({"a": 5}, {})
-        assert result == {"a": 5}
-
-    def test_both_empty(self) -> None:
-        from lan_streamer.backend.scan_worker_base import merge_stats_dicts_for_report
-
-        result = merge_stats_dicts_for_report({}, {})
-        assert result == {}
-
-
 class TestLogStatsBreakdown:
     def test_logs_all_sections(self) -> None:
         from lan_streamer.backend.scan_worker_base import log_stats_breakdown

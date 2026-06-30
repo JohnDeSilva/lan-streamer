@@ -50,11 +50,6 @@ def _parse_movie_folder(folder_name: str) -> tuple[str, int | None]:
     return folder_name, None
 
 
-def _is_video_file(file_path: Path) -> bool:
-    """Returns True when *file_path* has a recognised video extension."""
-    return file_path.is_file() and file_path.suffix.lower() in VIDEO_EXTENSIONS
-
-
 def find_video_files(directory: Path) -> List[Path]:
     """
     Recursively finds all video files under directory using fast os.scandir traversal.

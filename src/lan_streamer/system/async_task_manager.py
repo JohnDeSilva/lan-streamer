@@ -179,28 +179,6 @@ class AsyncTaskManager(QObject):
         for name in names:
             self.cancel_task(name)
 
-    def get_task(self, name: str) -> Optional[asyncio.Task[Any]]:
-        """
-        Return the tracked task for *name*, or ``None`` if unknown.
-
-        Args:
-            name: The name of the task.
-
-        Returns:
-            The :class:`asyncio.Task` instance if it is still tracked, else
-            ``None``.
-        """
-        return self._tasks.get(name)
-
-    def task_names(self) -> list[str]:
-        """
-        Return a list of all currently tracked task names.
-
-        Returns:
-            A new list of task name strings.
-        """
-        return list(self._tasks.keys())
-
     def is_task_running(self, name: str) -> bool:
         """
         Return ``True`` if a task with *name* exists and has not completed.
@@ -268,40 +246,6 @@ class AsyncTaskManager(QObject):
 
         logger.debug("Interval task '%s' has exited.", name)
 
-    async def _run_once(
-        self,
-        coroutine_factory: CoroutineFactory,
-        delay_seconds: float,
-        name: str,
-    ) -> None:
-        """
-        Coroutine body for :meth:`schedule_once`.
-
-        Waits for *delay_seconds*, then calls the factory and awaits the
-        returned coroutine.  If the task is cancelled during the delay the
-        coroutine is never executed.
-        """
-        logger.debug(
-            "Scheduled task '%s' waiting %.1f s before execution.",
-            name,
-            delay_seconds,
-        )
-        try:
-            await asyncio.sleep(delay_seconds)
-            coroutine = coroutine_factory()
-            await coroutine
-        except asyncio.CancelledError:
-            logger.debug("Scheduled task '%s' cancelled.", name)
-        except Exception as error:
-            logger.error(
-                "Scheduled task '%s' raised an error: %s",
-                name,
-                error,
-                exc_info=True,
-            )
-
-        logger.debug("Scheduled task '%s' finished.", name)
-
     def schedule_interval(
         self,
         coroutine_factory: CoroutineFactory,
@@ -341,45 +285,6 @@ class AsyncTaskManager(QObject):
             return None
 
         coroutine = self._run_interval(coroutine_factory, interval_seconds, name)
-        return self.create_task(coroutine, name=name)
-
-    def schedule_once(
-        self,
-        coroutine_factory: CoroutineFactory,
-        delay_seconds: float,
-        name: str,
-    ) -> Optional[asyncio.Task[Any]]:
-        """
-        Schedule a one-shot task that runs *coroutine_factory* after
-        *delay_seconds*.
-
-        The factory is a zero-argument callable that returns a coroutine.
-        The manager waits for the delay, then calls the factory and awaits the
-        coroutine.  If the task is cancelled during the delay the coroutine is
-        not executed.
-
-        Args:
-            coroutine_factory: A callable that returns a coroutine to await.
-            delay_seconds: Number of seconds to wait before execution.
-            name: A unique name for the scheduled task.
-
-        Returns:
-            The :class:`asyncio.Task` instance, or ``None`` if no event loop
-            is running.
-        """
-        # Check for a running loop *before* creating the _run_once coroutine
-        # object so we never leave an orphan unawaited coroutine when no
-        # loop is available.
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            logger.warning(
-                "No running event loop -- cannot schedule task '%s'.",
-                name,
-            )
-            return None
-
-        coroutine = self._run_once(coroutine_factory, delay_seconds, name)
         return self.create_task(coroutine, name=name)
 
     # ------------------------------------------------------------------

@@ -26,15 +26,6 @@ from lan_streamer.system.config import config
 
 
 @pytest.fixture
-def mock_db_save():
-    with (
-        patch("lan_streamer.db.save_library") as mock_save,
-        patch("lan_streamer.db.save_movie_library") as mock_movie_save,
-    ):
-        yield mock_save, mock_movie_save
-
-
-@pytest.fixture
 def ctrl_tv(mock_db_save):
     c = Controller()
     c.current_library_name = "TVLib"
