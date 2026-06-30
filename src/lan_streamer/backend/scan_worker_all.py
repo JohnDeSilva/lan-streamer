@@ -58,7 +58,6 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
     library_progress = Signal(str, int, int)
     detail_progress = Signal(str, dict)  # (event_type, payload)
     detail_progress_batch = Signal(list)
-    finished = Signal()
     error = Signal(str)
     library_error = Signal(str, str)  # (library_name, error_message)
 
@@ -1028,7 +1027,6 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             log_issues_report(self.problems, logger)
 
             logger.info("ScanAllLibrariesWorker finished successfully")
-            self.finished.emit()
 
         except Exception as exception_instance:
             logger.exception("ScanAllLibrariesWorker failed")
