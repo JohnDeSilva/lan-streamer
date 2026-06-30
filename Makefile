@@ -94,33 +94,20 @@ ifeq ($(UNAME_S),Darwin)
 	# 1. Dry run verification
 	LAN_STREAMER_DRY_RUN=1 QT_QPA_PLATFORM=offscreen ./dist/lan-streamer-$(VERSION).app/Contents/MacOS/lan-streamer-$(VERSION)
 	# 2. Runtime integration verification with timeout
-	python3 -c "import subprocess, os, sys; \
-	p = subprocess.Popen(['./dist/lan-streamer-$(VERSION).app/Contents/MacOS/lan-streamer-$(VERSION)'], env=dict(os.environ, LAN_STREAMER_TEST_RUN='1', QT_QPA_PLATFORM='offscreen')); \
-	try: \
-		sys.exit(p.wait(timeout=15)) \
-	except subprocess.TimeoutExpired: \
-		p.terminate(); \
-		p.wait(); \
-		sys.exit(124)"
+	python3 -c "import subprocess, os, sys; res = subprocess.run(['./dist/lan-streamer-$(VERSION).app/Contents/MacOS/lan-streamer-$(VERSION)'], env=dict(os.environ, LAN_STREAMER_TEST_RUN='1', QT_QPA_PLATFORM='offscreen'), timeout=15); sys.exit(res.returncode)"
 else
 	$(MAKE) build-test-image
 	# 1. Dry run verification inside container
 	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_DRY_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-$(TEST_OS):$(GIT_HASH) ./dist/lan-streamer-$(VERSION)
 	# 2. Runtime integration verification with timeout inside container (invoked from host python)
-	python3 -c "import subprocess, os, sys; \
-	p = subprocess.Popen(['$(CONTAINER_ENGINE)', 'run', '--rm', '-e', 'LAN_STREAMER_TEST_RUN=1', '-e', 'QT_QPA_PLATFORM=offscreen', 'lan-streamer-test-$(TEST_OS):$(GIT_HASH)', './dist/lan-streamer-$(VERSION)'], env=os.environ); \
-	try: \
-		sys.exit(p.wait(timeout=15)) \
-	except subprocess.TimeoutExpired: \
-		p.terminate(); \
-		p.wait(); \
-		sys.exit(124)"
+	python3 -c "import subprocess, os, sys; res = subprocess.run(['$(CONTAINER_ENGINE)', 'run', '--rm', '-e', 'LAN_STREAMER_TEST_RUN=1', '-e', 'QT_QPA_PLATFORM=offscreen', 'lan-streamer-test-$(TEST_OS):$(GIT_HASH)', './dist/lan-streamer-$(VERSION)'], env=os.environ, timeout=15); sys.exit(res.returncode)"
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-extract || true
 	$(CONTAINER_ENGINE) create --name lan-streamer-test-$(TEST_OS)-extract lan-streamer-test-$(TEST_OS):$(GIT_HASH)
 	mkdir -p dist
 	$(CONTAINER_ENGINE) cp lan-streamer-test-$(TEST_OS)-extract:/app/dist/lan-streamer-$(VERSION) ./dist/lan-streamer-$(VERSION)
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-extract
 endif
+
 
 
 
