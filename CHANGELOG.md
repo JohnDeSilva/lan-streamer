@@ -1,3 +1,10 @@
+## v0.39.0-1 (2026-06-30)
+
+### Fix
+
+- **main**: Prevent duplicate QApplication initialization during dry run
+- **main**: Resolve event loop hang in frozen executable on startup
+
 ## rc-0.38.0-1 (2026-06-29)
 
 ## rc-0.37.0-2 (2026-06-29)
