@@ -91,16 +91,23 @@ endif
 validate-executable:
 ifeq ($(UNAME_S),Darwin)
 	$(MAKE) build
+	# 1. Dry run verification
 	LAN_STREAMER_DRY_RUN=1 QT_QPA_PLATFORM=offscreen ./dist/lan-streamer-$(VERSION).app/Contents/MacOS/lan-streamer-$(VERSION)
+	# 2. Runtime integration verification with timeout
+	$(PYTHON) -c "import subprocess, os, sys; p = subprocess.Popen(['./dist/lan-streamer-$(VERSION).app/Contents/MacOS/lan-streamer-$(VERSION)'], env=dict(os.environ, LAN_STREAMER_TEST_RUN='1', QT_QPA_PLATFORM='offscreen')); exit_code = p.wait(timeout=15); sys.exit(exit_code)"
 else
 	$(MAKE) build-test-image
+	# 1. Dry run verification inside container
 	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_DRY_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-$(TEST_OS):$(GIT_HASH) ./dist/lan-streamer-$(VERSION)
+	# 2. Runtime integration verification with timeout inside container
+	$(CONTAINER_ENGINE) run --rm -e LAN_STREAMER_TEST_RUN=1 -e QT_QPA_PLATFORM=offscreen lan-streamer-test-$(TEST_OS):$(GIT_HASH) python3 -c "import subprocess, os, sys; p = subprocess.Popen(['./dist/lan-streamer-$(VERSION)'], env=dict(os.environ, LAN_STREAMER_TEST_RUN='1', QT_QPA_PLATFORM='offscreen')); exit_code = p.wait(timeout=15); sys.exit(exit_code)"
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-extract || true
 	$(CONTAINER_ENGINE) create --name lan-streamer-test-$(TEST_OS)-extract lan-streamer-test-$(TEST_OS):$(GIT_HASH)
 	mkdir -p dist
 	$(CONTAINER_ENGINE) cp lan-streamer-test-$(TEST_OS)-extract:/app/dist/lan-streamer-$(VERSION) ./dist/lan-streamer-$(VERSION)
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-extract
 endif
+
 
 clean:
 	rm -rf build/ dist/ .pytest_cache .ruff_cache *.log *.db*
