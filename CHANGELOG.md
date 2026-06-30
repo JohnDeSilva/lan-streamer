@@ -70,6 +70,36 @@
 
 - **db,services**: optimize cache rebuilds and fix None safety
 
+## v0.38.1rc0 (2026-06-30)
+
+### Fix
+
+- **main**: resolve macOS and Windows runner hangs with os._exit and cygpath
+- **main**: hide window to trigger clean shutdown instead of quitting QApplication directly
+- **release**: simplify validation timeout wrapper using single-line subprocess.run
+- **release**: use system python3 instead of virtualenv python in makefile validation
+- **main**: handle dry run checks synchronously in run_main to prevent Windows shutdown crash
+- **main**: prevent duplicate QApplication initialization during dry run
+- **main**: resolve event loop hang in frozen executable on startup
+
+## v0.38.0 (2026-06-29)
+
+### Feat
+
+- **ui**: wire smart_rows_updated signal and targeted UI updates
+- **services**: add SmartRowService to orchestrate cache rebuilds
+- **db**: add SmartRowCache model, queries, and migration
+
+### Fix
+
+- **ui**: ensure smart rows update when returning from detail views
+- **dev-dependency**: bump ruff from 0.15.18 to 0.15.20
+- **dependency**: bump alembic from 1.18.4 to 1.18.5
+
+### Refactor
+
+- **db,services**: optimize cache rebuilds and fix None safety
+
 ## v0.37.0 (2026-06-29)
 
 ### Feat
