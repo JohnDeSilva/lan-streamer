@@ -1,3 +1,9 @@
+## v0.38.2rc0-1 (2026-06-30)
+
+### Fix
+
+- **release**: Extract exact tag section from changelog without pre-release duplicates
+
 ## rc-0.38.0-1 (2026-06-29)
 
 ## rc-0.37.0-2 (2026-06-29)
