@@ -1,5 +1,6 @@
+import asyncio
 from unittest.mock import patch
-from typing import List, Dict, Any
+from typing import Any, Callable, Dict, List
 
 from PySide6.QtCore import Qt
 
@@ -9,8 +10,23 @@ from lan_streamer.backend import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Wait helper
+# ---------------------------------------------------------------------------
+
+
+async def _wait_until(
+    condition: Callable[[], bool], timeout: float = 1.0, interval: float = 0.001
+) -> None:
+    """Wait until condition() returns True, raising TimeoutError otherwise."""
+    for _ in range(int(timeout / interval)):
+        if condition():
+            return
+        await asyncio.sleep(interval)
+    raise TimeoutError(f"Condition not met within {timeout}s")
+
+
 def test_cleanup_worker_execution() -> None:
-    import asyncio
     from lan_streamer.system.async_task_manager import AsyncTaskManager
     from PySide6.QtCore import QObject
 
@@ -33,8 +49,9 @@ def test_cleanup_worker_execution() -> None:
 
             async def run_success():
                 worker.start()
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.01)  # brief yield for task startup
                 worker.stop()
+                await _wait_until(lambda: len(emitted_results) > 0)
 
             loop.run_until_complete(run_success())
             mock_clean.assert_called_once_with("TestLib", ["/path"])
@@ -53,8 +70,9 @@ def test_cleanup_worker_execution() -> None:
 
             async def run_fail():
                 worker.start()
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.01)  # brief yield for task startup
                 worker.stop()
+                await _wait_until(lambda: len(emitted_errors) > 0)
 
             loop.run_until_complete(run_fail())
             assert emitted_errors == ["Cleanup error"]

@@ -1427,33 +1427,6 @@ def test_get_ffprobe_command_default() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_is_video_file_positive(tmp_path: Path) -> None:
-    from lan_streamer.scanner import _is_video_file
-
-    for ext in [".mkv", ".mp4", ".avi", ".mov", ".wmv"]:
-        f = tmp_path / f"episode{ext}"
-        f.touch()
-        assert _is_video_file(f) is True
-
-
-def test_is_video_file_negative(tmp_path: Path) -> None:
-    from lan_streamer.scanner import _is_video_file
-
-    text_file = tmp_path / "notes.txt"
-    text_file.touch()
-    assert _is_video_file(text_file) is False
-    non_existent = tmp_path / "ghost.mkv"
-    assert _is_video_file(non_existent) is False
-
-
-def test_is_video_file_directory(tmp_path: Path) -> None:
-    from lan_streamer.scanner import _is_video_file
-
-    subdir = tmp_path / "Season 1"
-    subdir.mkdir()
-    assert _is_video_file(subdir) is False
-
-
 def test_build_locked_tv_tmdb_stub() -> None:
     from lan_streamer.scanner import _build_locked_tv_tmdb_stub
 
@@ -3681,33 +3654,3 @@ def test_scan_directories_cooperative_cancellation() -> None:
     # Since it returned early due to interruption, result should be empty.
     assert len(res) == 0
     is_interrupted_mock.assert_called()
-
-
-def test_async_run_scan_directories_wraps_scan_directories() -> None:
-    """Test that async_run_scan_directories delegates to scan_directories in the fs executor."""
-    import asyncio
-
-    from lan_streamer.scanner.core import LibraryDict, async_run_scan_directories
-
-    expected_result = LibraryDict({"foo": {"name": "foo"}})
-
-    with patch(
-        "lan_streamer.system.async_utils.run_in_fs_executor"
-    ) as mock_run_in_fs_executor:
-        mock_run_in_fs_executor.return_value = expected_result
-
-        async def _test() -> None:
-            result = await async_run_scan_directories(
-                ["/some/path"],
-                library_type="movie",
-                force_refresh=True,
-            )
-            assert result is expected_result
-
-        asyncio.run(_test())
-
-        mock_run_in_fs_executor.assert_called_once()
-        _call_args, _call_kwargs = mock_run_in_fs_executor.call_args
-        assert callable(_call_args[0])  # callable is scan_directories
-        assert _call_args[1] == ["/some/path"]  # root_directories
-        assert _call_kwargs.get("library_type") == "movie"

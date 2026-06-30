@@ -120,6 +120,14 @@ class TestSetupQtLogging:
 
 
 class TestSetApplicationLogLevel:
+    @pytest.fixture(autouse=True)
+    def _restore_logger_level(self) -> None:
+        """Save and restore root logger level to avoid polluting other tests."""
+        logger = logging.getLogger()
+        original_level = logger.level
+        yield
+        logger.setLevel(original_level)
+
     def test_set_level_debug(self) -> None:
         from lan_streamer.system.logging_handler import set_application_log_level
 

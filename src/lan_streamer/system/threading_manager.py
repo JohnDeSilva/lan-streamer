@@ -110,23 +110,6 @@ class WorkerSlot(QObject):
         )
         return worker
 
-    def start_if_not_running(
-        self,
-        factory: Callable[[], AnyWorker],
-        **signal_slots: Optional[Callable],
-    ) -> Optional[AnyWorker]:
-        """
-        Like :meth:`start` but returns ``None`` without creating a new worker
-        when a worker is already running.
-        """
-        if self.is_running:
-            logger.info(
-                "WorkerSlot: %s already running, skipping.",
-                self._instance.__class__.__name__ if self._instance else "unknown",
-            )
-            return None
-        return self.start(factory, **signal_slots)
-
     def stop(self) -> None:
         """
         Stop the current async worker if one exists.
@@ -246,6 +229,3 @@ class WorkerManager(QObject):
         logger.info("WorkerManager: stopping all workers.")
         for slot in self._all_slots:
             slot.stop()
-
-    def _slots(self) -> List[WorkerSlot]:
-        return self._all_slots

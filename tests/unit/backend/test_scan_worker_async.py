@@ -16,6 +16,22 @@ from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 
 # ---------------------------------------------------------------------------
+# Wait helper
+# ---------------------------------------------------------------------------
+
+
+async def _wait_until(
+    condition: Any, timeout: float = 1.0, interval: float = 0.001
+) -> None:
+    """Wait until condition() returns True, raising TimeoutError otherwise."""
+    for _ in range(int(timeout / interval)):
+        if condition():
+            return
+        await asyncio.sleep(interval)
+    raise TimeoutError(f"Condition not met within {timeout}s")
+
+
+# ---------------------------------------------------------------------------
 # Stubs & fixtures
 # ---------------------------------------------------------------------------
 
@@ -115,9 +131,11 @@ class TestAsyncScanWorker:
             mock_scan.return_value = LibraryDict()
 
             worker.start()
-            _run(asyncio.sleep(0.05), event_loop)
+            event_loop.run_until_complete(
+                _wait_until(lambda: worker._cancelled is False)
+            )
             worker.stop()
-            _run(asyncio.sleep(0.05), event_loop)
+            event_loop.run_until_complete(_wait_until(lambda: worker._cancelled))
 
             # After cancellation, scan_directories may or may not have been
             # called depending on timing — just verify no crash.
@@ -198,8 +216,8 @@ class TestAsyncScanWorker:
         season_data = {"episodes": [{"name": "E1"}, {"name": "E2"}], "_changed": True}
 
         worker._merge_season_result(stats, "Series1", series_data, "S1", season_data)
-        assert worker.stats["series_scanned"] >= 1
-        assert worker.stats["seasons_scanned"] >= 1
+        assert worker.stats["series_scanned"] == 1
+        assert worker.stats["seasons_scanned"] == 1
         assert "s1" in worker.changed_season_ids
 
     def test_merge_movie_result(self, task_manager: AsyncTaskManager) -> None:
@@ -217,7 +235,7 @@ class TestAsyncScanWorker:
         movie_data = {"_changed": True}
 
         worker._merge_movie_result(stats, "Movie1", movie_data)
-        assert worker.stats["movies_scanned"] >= 1
+        assert worker.stats["movies_scanned"] == 1
         assert "m1" in worker.changed_movie_ids
 
     def test_log_unavailable_directories(

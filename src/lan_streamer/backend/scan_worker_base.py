@@ -40,20 +40,6 @@ def merge_stats_dicts(target: Dict[str, int], source: Dict[str, int]) -> None:
             target[key] += value
 
 
-def merge_stats_dicts_for_report(
-    stats_a: Dict[str, int], stats_b: Dict[str, int]
-) -> Dict[str, int]:
-    """Merge two stats dicts, returning a new dict with summed values.
-
-    Unlike :func:`merge_stats_dicts`, this includes keys from both inputs
-    (handles the case where keys like ``_skipped`` only appear in one dict).
-    """
-    merged = dict(stats_a)
-    for key, value in stats_b.items():
-        merged[key] = merged.get(key, 0) + value
-    return merged
-
-
 def log_stats_breakdown(
     label: str,
     stats_dict: Dict[str, int],

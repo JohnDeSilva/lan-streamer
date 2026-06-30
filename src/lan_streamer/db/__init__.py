@@ -22,7 +22,6 @@ from lan_streamer.db.orm_serialization import (
 from lan_streamer.db.queries_technical_extraction import (
     get_items_missing_runtime,
     update_items_runtime_batch,
-    has_tech_and_metadata,
 )
 from lan_streamer.db.queries_playback import (
     update_episode_watched_status,
@@ -40,8 +39,6 @@ from lan_streamer.db.smart_row_cache import (
     get_cached_smart_rows,
     rebuild_cache_for_config,
     rebuild_all_cache,
-    clear_cache_for_config_hashes,
-    clear_all_cache,
     get_affected_config_hashes_for_libraries,
     compute_config_hash,
 )
@@ -64,19 +61,6 @@ from lan_streamer.db.library import (
     save_movie_data,
     get_directory_mtime,
     save_directory_mtime,
-)
-from lan_streamer.db.library_async import (
-    async_load_library,
-    async_load_movie_library,
-)
-from lan_streamer.db.library_shared import (
-    async_get_directory_mtime,
-    async_save_directory_mtime,
-)
-from lan_streamer.db.async_session import (
-    get_async_engine,
-    get_async_session_factory,
-    get_async_session,
 )
 from lan_streamer.db.sync import (
     sync_watched_from_jellyfin_data,

@@ -13,6 +13,22 @@ from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 
 # ---------------------------------------------------------------------------
+# Wait helper
+# ---------------------------------------------------------------------------
+
+
+async def _wait_until(
+    condition: Any, timeout: float = 1.0, interval: float = 0.001
+) -> None:
+    """Wait until condition() returns True, raising TimeoutError otherwise."""
+    for _ in range(int(timeout / interval)):
+        if condition():
+            return
+        await asyncio.sleep(interval)
+    raise TimeoutError(f"Condition not met within {timeout}s")
+
+
+# ---------------------------------------------------------------------------
 # Stub worker for testing
 # ---------------------------------------------------------------------------
 
@@ -97,12 +113,12 @@ class TestAsyncWorkerBase:
         worker = _StubAsyncWorker(async_task_manager=task_manager, sleep_duration=0.5)
 
         async def run() -> None:
-            assert task_manager.task_names() == []
+            assert list(task_manager._tasks.keys()) == []
             worker.start()
-            await asyncio.sleep(0.01)
-            assert len(task_manager.task_names()) >= 1
+            await _wait_until(lambda: len(task_manager._tasks.keys()) >= 1)
+            assert len(task_manager._tasks.keys()) >= 1
             worker.stop()
-            await asyncio.sleep(0.01)
+            await _wait_until(lambda: not worker.is_running)
 
         _run(run(), event_loop)
 
@@ -115,10 +131,10 @@ class TestAsyncWorkerBase:
         async def run() -> None:
             assert worker.is_running is False
             worker.start()
-            await asyncio.sleep(0.01)
+            await _wait_until(lambda: worker.is_running)
             assert worker.is_running is True
             worker.stop()
-            await asyncio.sleep(0.05)
+            await _wait_until(lambda: not worker.is_running)
             assert worker.is_running is False
 
         _run(run(), event_loop)
@@ -131,10 +147,10 @@ class TestAsyncWorkerBase:
 
         async def run() -> None:
             worker.start()
-            await asyncio.sleep(0.01)
+            await _wait_until(lambda: worker.is_running)
             assert worker.is_running is True
             worker.stop()
-            await asyncio.sleep(0.05)
+            await _wait_until(lambda: not worker.is_running)
             assert worker.is_running is False
 
         _run(run(), event_loop)
@@ -158,11 +174,11 @@ class TestAsyncWorkerBase:
 
         async def run() -> None:
             worker.start()
-            await asyncio.sleep(0.01)
-            task_names = task_manager.task_names()
+            await _wait_until(lambda: len(task_manager._tasks.keys()) >= 1)
+            task_names = list(task_manager._tasks.keys())
             assert any("_StubAsyncWorker" in name for name in task_names)
             worker.stop()
-            await asyncio.sleep(0.01)
+            await _wait_until(lambda: not worker.is_running)
 
         _run(run(), event_loop)
 
@@ -176,7 +192,7 @@ class TestAsyncWorkerBase:
         async def run() -> None:
             assert worker._cancelled is False
             worker.start()
-            await asyncio.sleep(0.01)
+            await _wait_until(lambda: worker.is_running)
             assert worker._cancelled is False
             worker.stop()
             assert worker._cancelled is True
@@ -197,7 +213,7 @@ class TestAsyncWorkerBase:
         async def run() -> None:
             worker.finished.connect(results.append)
             worker.start()
-            await asyncio.sleep(0.1)
+            await _wait_until(lambda: len(results) > 0)
             worker.stop()
 
         _run(run(), event_loop)
@@ -218,9 +234,9 @@ class TestAsyncWorkerBase:
         async def run() -> None:
             worker.error.connect(errors.append)
             worker.start()
-            await asyncio.sleep(0.1)
+            await _wait_until(lambda: len(errors) >= 1)
             worker.stop()
 
         _run(run(), event_loop)
-        assert len(errors) >= 1
+        assert len(errors) == 1
         assert "worker error" in errors[0]

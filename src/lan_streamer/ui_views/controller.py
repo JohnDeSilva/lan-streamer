@@ -157,17 +157,6 @@ class Controller(QObject):
         if self._config.auto_scan_enabled:
             self.scheduled_scan_service.start()
 
-    def stop_scheduled_scans(self) -> None:
-        """Stop the periodic background scan service."""
-        self.scheduled_scan_service.stop()
-
-    def trigger_scan_now(self) -> None:
-        """Manually trigger an immediate scan via the scheduled scan service."""
-        self.async_task_manager.create_task(
-            self.scheduled_scan_service.scan_now(force_refresh=False),
-            name="scan_now",
-        )
-
     def select_library(self, library_name: str, reset_selection: bool = True) -> None:
         logger.info(f"Controller loading library: {library_name}")
         self._config.load()
@@ -455,31 +444,6 @@ class Controller(QObject):
         elif not self._doing_scan_and_update:
             self.scan_completed.emit()
         return changed_season_ids, changed_movie_ids
-
-    def trigger_cleanup(self) -> None:
-        if not self.current_library_name:
-            self.status_changed.emit("Select a library first.")
-            return
-
-        if self.worker_manager.cleanup.is_running:
-            logger.info("CleanupWorker is already running. Skipping.")
-            return
-
-        library_config = self._config.libraries.get(self.current_library_name, {})
-        root_directories: List[str] = library_config.get("paths", [])
-        self.status_changed.emit(
-            f"Cleaning up missing files in '{self.current_library_name}'..."
-        )
-
-        self.worker_manager.cleanup.start(
-            lambda: CleanupWorker(
-                library_name=self.current_library_name,
-                root_directories=root_directories,
-                async_task_manager=self.async_task_manager,
-            ),
-            finished=self._on_cleanup_finished,
-            error=self._on_worker_error,
-        )
 
     def _on_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
         self.select_library(self.current_library_name, reset_selection=False)
@@ -871,147 +835,6 @@ class Controller(QObject):
                 target_dict["poster_path"] = cached_image_path or raw_poster_path
             else:
                 target_dict["poster_path"] = raw_poster_path
-
-    def _sync_tmdb_episodes_for_series(
-        self, series_record: Dict[str, Any], new_tmdb_identifier: str
-    ) -> None:
-        episode_group_details = None
-        saved_group_id = series_record.get("metadata", {}).get("tmdb_episode_group_id")
-        if saved_group_id and saved_group_id != "default":
-            try:
-                episode_group_details = self._tmdb_client.get_episode_group_details(
-                    saved_group_id
-                )
-            except Exception as e:
-                logger.exception(
-                    f"Failed to fetch saved group details {saved_group_id}: {e}"
-                )
-        if not episode_group_details:
-            episode_group_details = self._tmdb_client.get_season_based_episode_group(
-                new_tmdb_identifier
-            )
-        group_seasons = {}
-        if (
-            episode_group_details
-            and isinstance(episode_group_details, dict)
-            and "groups" in episode_group_details
-        ):
-            for group in episode_group_details.get("groups", []):
-                group_name = group.get("name") or ""
-                season_num_match = re.search(r"\d+", group_name)
-                season_num = (
-                    int(season_num_match.group())
-                    if season_num_match
-                    else group.get("order", -1)
-                )
-                if group_name.lower() == "specials":
-                    season_num = 0
-                if season_num >= 0:
-                    group_seasons[season_num] = group.get("episodes", [])
-        else:
-            episode_group_details = None
-
-        for season_folder_name, season_data_dict in series_record.get(
-            "seasons", {}
-        ).items():
-            if season_folder_name.lower() == "specials":
-                target_season_number: int = 0
-            else:
-                parsed_season_match = re.search(r"\d+", season_folder_name)
-                target_season_number = (
-                    int(parsed_season_match.group()) if parsed_season_match else -1
-                )
-
-            if target_season_number >= 0:
-                if (
-                    episode_group_details
-                    and isinstance(episode_group_details, dict)
-                    and "groups" in episode_group_details
-                ):
-                    fetched_episodes_list = []
-                    for group_ep in group_seasons.get(target_season_number, []):
-                        fetched_episodes_list.append(
-                            {
-                                "id": group_ep.get("id"),
-                                "name": group_ep.get("name"),
-                                "episode_number": group_ep.get("order")
-                                + 1,  # Using order + 1 as the 1-indexed episode number
-                                "air_date": group_ep.get("air_date") or "",
-                                "runtime": group_ep.get("runtime") or 0,
-                            }
-                        )
-                else:
-                    fetched_episodes_list = self._tmdb_client.get_episodes(
-                        new_tmdb_identifier, target_season_number
-                    )
-                for episode_item_dict in season_data_dict.get("episodes", []):
-                    episode_filename: str = str(
-                        episode_item_dict.get("name")
-                        or Path(str(episode_item_dict.get("path", ""))).name
-                    )
-                    matched_tmdb_episode: Optional[Dict[str, Any]] = None
-
-                    episode_number_match = re.search(
-                        r"[Ss]\d+[Ee](\d+)", episode_filename
-                    )
-                    if episode_number_match:
-                        target_episode_number: int = int(episode_number_match.group(1))
-                        for candidate_episode in fetched_episodes_list:
-                            if (
-                                candidate_episode.get("episode_number")
-                                == target_episode_number
-                            ):
-                                matched_tmdb_episode = candidate_episode
-                                break
-                    else:
-                        stem_lower: str = Path(episode_filename).stem.lower()
-                        for candidate_episode in fetched_episodes_list:
-                            candidate_name: str = str(
-                                candidate_episode.get("name") or ""
-                            ).lower()
-                            if candidate_name and candidate_name in stem_lower:
-                                matched_tmdb_episode = candidate_episode
-                                break
-
-                    if matched_tmdb_episode:
-                        matched_id_str: str = str(matched_tmdb_episode.get("id", ""))
-                        episode_item_dict["tmdb_identifier"] = matched_id_str
-                        episode_item_dict["tmdb_episode_identifier"] = matched_id_str
-                        if matched_tmdb_episode.get("name"):
-                            episode_item_dict["tmdb_name"] = matched_tmdb_episode.get(
-                                "name", ""
-                            )
-                        if matched_tmdb_episode.get("episode_number") is not None:
-                            episode_item_dict["tmdb_number"] = matched_tmdb_episode.get(
-                                "episode_number"
-                            )
-                        if matched_tmdb_episode.get("air_date"):
-                            episode_item_dict["air_date"] = matched_tmdb_episode.get(
-                                "air_date", ""
-                            )
-                        if matched_tmdb_episode.get("runtime"):
-                            episode_item_dict["runtime"] = matched_tmdb_episode.get(
-                                "runtime", 0
-                            )
-
-                # Add TMDB placeholders if show_future_episodes is enabled
-                show_future = self._config.libraries.get(
-                    self.current_library_name, {}
-                ).get("show_future_episodes", True)
-                if show_future:
-                    from lan_streamer.scanner.scan_tv import (
-                        _create_tmdb_placeholder_episodes,
-                    )
-
-                    season_metadata = season_data_dict.get("metadata", {})
-                    placeholders = _create_tmdb_placeholder_episodes(
-                        fetched_episodes_list,
-                        season_data_dict.get("episodes", []),
-                        season_folder_name,
-                        season_metadata,
-                        show_future_episodes=show_future,
-                    )
-                    season_data_dict["episodes"].extend(placeholders)
 
     def apply_metadata_match(
         self, series_name: str, match_dictionary: Dict[str, Any]

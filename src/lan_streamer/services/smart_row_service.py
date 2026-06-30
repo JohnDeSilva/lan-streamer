@@ -50,14 +50,6 @@ class SmartRowService:
             return self._rebuild_affected_configs(affected_libraries)
         return []
 
-    def on_movie_watched(self, movie_name: str, library_name: str) -> List[str]:
-        """Handle movie watched event by performing incremental cache update."""
-        logger.debug(
-            f"SmartRowService: movie '{movie_name}' watched in library "
-            f"'{library_name}', performing incremental update"
-        )
-        return self._rebuild_affected_configs([library_name])
-
     def rebuild_for_libraries(self, library_names: List[str]) -> List[str]:
         """Rebuild smart row cache entries that reference the given libraries.
 
@@ -65,16 +57,6 @@ class SmartRowService:
         """
         logger.info(f"SmartRowService: rebuilding cache for libraries {library_names}")
         return self._rebuild_affected_configs(library_names)
-
-    def on_libraries_changed(self) -> None:
-        """Rebuild all cache entries when library configuration changes."""
-        logger.info(
-            "SmartRowService: library configuration changed, rebuilding all cache"
-        )
-        if self._background_runner:
-            self._background_runner(lambda: db.rebuild_all_cache())
-        else:
-            db.rebuild_all_cache()
 
     def _rebuild(self, affected_libraries: Optional[List[str]] = None) -> None:
         """Internal: rebuild cache, optionally scoped to specific libraries.

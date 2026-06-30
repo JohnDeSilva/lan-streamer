@@ -1,15 +1,5 @@
-import pytest
 from unittest.mock import patch
 from lan_streamer.backend.scan_series_worker import ScanSingleSeriesWorker
-
-
-@pytest.fixture
-def mock_db_save():
-    with (
-        patch("lan_streamer.db.save_library") as mock_save,
-        patch("lan_streamer.db.save_movie_library") as mock_movie_save,
-    ):
-        yield mock_save, mock_movie_save
 
 
 def test_scan_single_series_worker_success(tmp_path, mock_db_save):
