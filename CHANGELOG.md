@@ -70,6 +70,30 @@
 
 - **db,services**: optimize cache rebuilds and fix None safety
 
+## rc-0.39.0 (2026-06-30)
+
+### Fix
+
+- **main**: resolve event loop hang in frozen executable on startup
+
+## v0.38.0 (2026-06-29)
+
+### Feat
+
+- **ui**: wire smart_rows_updated signal and targeted UI updates
+- **services**: add SmartRowService to orchestrate cache rebuilds
+- **db**: add SmartRowCache model, queries, and migration
+
+### Fix
+
+- **ui**: ensure smart rows update when returning from detail views
+- **dev-dependency**: bump ruff from 0.15.18 to 0.15.20
+- **dependency**: bump alembic from 1.18.4 to 1.18.5
+
+### Refactor
+
+- **db,services**: optimize cache rebuilds and fix None safety
+
 ## v0.37.0 (2026-06-29)
 
 ### Feat
