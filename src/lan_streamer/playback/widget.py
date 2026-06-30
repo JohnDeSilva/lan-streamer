@@ -231,9 +231,6 @@ class VideoPlayerWidget(QWidget):
                     "VLC Instance could not be initialized even after fallback."
                 )
 
-            if self.mediaplayer:
-                # Event manager for detecting end of playback
-                self.event_manager = self.mediaplayer.event_manager()
         else:
             self.instance = None
             self.mediaplayer = None
