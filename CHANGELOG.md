@@ -70,6 +70,20 @@
 
 - **db,services**: optimize cache rebuilds and fix None safety
 
+## v0.38.2rc0 (2026-06-30)
+
+### Fix
+
+- **main**: skip checking for updates on startup during test runs
+- protect _detail_progress_buffer with threading.Lock in AsyncScanWorker
+- restore VLC end-of-playback detection and remove dead test mocks
+- resolve pre-existing ScanAllLibrariesWorker finished signal bug
+
+### Refactor
+
+- remove orphaned event_manager assignment no longer used
+- remove ~1100 lines of dead code and add shared test fixtures
+
 ## v0.38.1 (2026-06-30)
 
 ### Fix
