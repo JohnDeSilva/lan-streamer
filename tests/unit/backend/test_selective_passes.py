@@ -128,7 +128,6 @@ def test_file_property_worker_no_filter(mock_db) -> None:
         {"id": "E2", "path": "/b.mkv", "type": "episode", "season_id": "S2"},
         {"id": "M1", "path": "/c.mkv", "type": "movie"},
     ]
-    mock_db.has_tech_and_metadata.return_value = False
 
     worker = FilePropertyExtractionWorker()
     with patch(
@@ -157,7 +156,6 @@ def test_file_property_worker_with_filter(mock_db) -> None:
         {"id": "E2", "path": "/b.mkv", "type": "episode", "season_id": "S2"},
         {"id": "M1", "path": "/c.mkv", "type": "movie"},
     ]
-    mock_db.has_tech_and_metadata.return_value = False
 
     worker = FilePropertyExtractionWorker(
         changed_season_ids={"S1"},
@@ -193,7 +191,6 @@ def test_file_property_worker_empty_changed_set(mock_db) -> None:
         {"id": "E1", "path": "/a.mkv", "type": "episode", "season_id": "S1"},
         {"id": "M1", "path": "/c.mkv", "type": "movie"},
     ]
-    mock_db.has_tech_and_metadata.return_value = False
 
     worker = FilePropertyExtractionWorker(
         changed_season_ids=set(),
