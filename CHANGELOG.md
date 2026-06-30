@@ -1,3 +1,18 @@
+## v0.38.2 (2026-06-30)
+
+### Fix
+
+- **release**: extract exact tag section from changelog without pre-release duplicates
+- **main**: skip checking for updates on startup during test runs
+- protect _detail_progress_buffer with threading.Lock in AsyncScanWorker
+- restore VLC end-of-playback detection and remove dead test mocks
+- resolve pre-existing ScanAllLibrariesWorker finished signal bug
+
+### Refactor
+
+- remove orphaned event_manager assignment no longer used
+- remove ~1100 lines of dead code and add shared test fixtures
+
 ## v0.38.2rc0-1 (2026-06-30)
 
 ### Fix
