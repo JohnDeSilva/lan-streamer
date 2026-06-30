@@ -387,7 +387,11 @@ async def main() -> None:
 
         asyncio.create_task(auto_shutdown())
 
-    if config.check_for_updates_on_startup and "pytest" not in sys.modules:
+    if (
+        config.check_for_updates_on_startup
+        and "pytest" not in sys.modules
+        and os.environ.get("LAN_STREAMER_TEST_RUN") != "1"
+    ):
         logger.info("Checking for application updates on startup...")
         from lan_streamer.system.updater import UpdateCheckWorker
         from lan_streamer.ui_views.dialogs.update_dialog import UpdateDialog
