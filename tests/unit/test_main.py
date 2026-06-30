@@ -399,6 +399,27 @@ def test_main_dry_run() -> None:
         assert excinfo.value.code == 0
 
 
+def test_main_dry_run_with_existing_qapp() -> None:
+    import os
+    from unittest.mock import MagicMock
+
+    def exit_side_effect(code=0):
+        raise SystemExit(code)
+
+    mock_qapp_class = MagicMock()
+    mock_qapp_class.instance.return_value = MagicMock()  # Mock existing instance
+
+    with (
+        patch.dict(os.environ, {"LAN_STREAMER_DRY_RUN": "1", "QT_QPA_PLATFORM": ""}),
+        patch("lan_streamer.main.QApplication", mock_qapp_class),
+        patch("sys.exit", side_effect=exit_side_effect),
+    ):
+        with pytest.raises(SystemExit) as excinfo:
+            asyncio.run(main.main())
+        assert excinfo.value.code == 0
+        mock_qapp_class.assert_not_called()  # Should not create new QApplication instance
+
+
 def test_main_log_cleanup_unlink_exception() -> None:
     import pathlib
 

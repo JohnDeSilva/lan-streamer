@@ -63,7 +63,9 @@ async def main() -> None:
     if os.environ.get("LAN_STREAMER_DRY_RUN") == "1":
         if not os.environ.get("QT_QPA_PLATFORM"):
             os.environ["QT_QPA_PLATFORM"] = "offscreen"
-        _app = QApplication(sys.argv)
+        app_inst = QApplication.instance()
+        if app_inst is None:
+            app_inst = QApplication(sys.argv)
         print(
             "LAN Streamer: Dry run verification successful. Qt application successfully initialized."
         )
