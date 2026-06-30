@@ -380,9 +380,10 @@ async def main() -> None:
 
         async def auto_shutdown() -> None:
             await asyncio.sleep(3.0)
-            logger.info("Automatic shutdown timer fired. Quitting application...")
+            logger.info(
+                "Automatic shutdown timer fired. Hiding window to trigger shutdown..."
+            )
             main_window.hide()
-            application_instance.quit()
 
         asyncio.create_task(auto_shutdown())
 
