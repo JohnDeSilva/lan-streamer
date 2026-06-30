@@ -392,7 +392,7 @@ def test_main_dry_run() -> None:
     with (
         patch.dict(os.environ, {"LAN_STREAMER_DRY_RUN": "1", "QT_QPA_PLATFORM": ""}),
         patch("PySide6.QtWidgets.QApplication", MagicMock()),
-        patch("sys.exit", side_effect=exit_side_effect),
+        patch("os._exit", side_effect=exit_side_effect),
     ):
         with pytest.raises(SystemExit) as excinfo:
             main.run_main()
@@ -412,7 +412,7 @@ def test_main_dry_run_with_existing_qapp() -> None:
     with (
         patch.dict(os.environ, {"LAN_STREAMER_DRY_RUN": "1", "QT_QPA_PLATFORM": ""}),
         patch("PySide6.QtWidgets.QApplication", mock_qapp_class),
-        patch("sys.exit", side_effect=exit_side_effect),
+        patch("os._exit", side_effect=exit_side_effect),
     ):
         with pytest.raises(SystemExit) as excinfo:
             main.run_main()
