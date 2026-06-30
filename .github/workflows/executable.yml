@@ -133,13 +133,24 @@ jobs:
         shell: bash
         run: uv run pyinstaller --noconfirm lan-streamer.spec
 
-      - name: Validate executable runs
+      - name: Validate executable runs (Dry Run)
         shell: bash
         env:
           PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
           LAN_STREAMER_DRY_RUN: '1'
           QT_QPA_PLATFORM: offscreen
         run: for f in ./dist/lan-streamer-*.exe; do "$f"; break; done
+
+      - name: Validate executable runs (Runtime Integration with Timeout)
+        shell: bash
+        env:
+          PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
+        run: |
+          for f in ./dist/lan-streamer-*.exe; do
+            python -c "import subprocess, os, sys; p = subprocess.Popen(['$f'], env=dict(os.environ, LAN_STREAMER_TEST_RUN='1', QT_QPA_PLATFORM='offscreen')); exit_code = p.wait(timeout=15); sys.exit(exit_code)"
+            break
+          done
+
 
       - name: Rename executable for artifact
         shell: bash
