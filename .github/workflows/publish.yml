@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'v*'
-      - 'rc-*'
+
 
 jobs:
   build-ubuntu:
@@ -169,7 +169,7 @@ jobs:
               sections.append(raw_sections[i] + raw_sections[i+1])
 
           notes = []
-          is_stable = tag_name.startswith("v")
+          is_stable = tag_name.startswith("v") and not any(x in tag_name for x in ["rc", "alpha", "beta"])
 
           for section in sections:
               header_line = section.split("\n")[0]
