@@ -25,15 +25,6 @@ from lan_streamer.system.config import config
 
 
 @pytest.fixture
-def mock_db_save():
-    with (
-        patch("lan_streamer.db.save_library") as mock_save,
-        patch("lan_streamer.db.save_movie_library") as mock_movie_save,
-    ):
-        yield mock_save, mock_movie_save
-
-
-@pytest.fixture
 def grid_view(qtbot, mock_db_save):
     """Creates a LibraryGridView with a mock-backed controller."""
     controller = Controller()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 import sqlalchemy as sa
@@ -38,6 +39,28 @@ def _engine(db_path: Any) -> sa.Engine:
 @pytest.fixture
 def mock_db_file(tmp_path):
     return tmp_path / "library.db"
+
+
+@pytest.fixture
+def _db_setup(mock_db_file):
+    old_engine = db_mod._engine
+    old_session = db_mod._SessionLocal
+    old_init = db_mod._db_initialized
+    if old_engine is not None:
+        old_engine.dispose()
+
+    with patch.object(db_mod, "DB_FILE", mock_db_file):
+        db_mod._engine = None
+        db_mod._SessionLocal = None
+        db_mod._db_initialized = False
+        db_mod.init_db()
+        yield
+
+    if db_mod._engine is not None:
+        db_mod._engine.dispose()
+    db_mod._engine = old_engine
+    db_mod._SessionLocal = old_session
+    db_mod._db_initialized = old_init
 
 
 # ---------------------------------------------------------------------------
@@ -232,13 +255,8 @@ def test_media_files_migration_data_flow(tmp_path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_media_files_orm_relationships_and_cascade(mock_db_file) -> None:
+def test_media_files_orm_relationships_and_cascade(_db_setup) -> None:
     """Test ORM relationships & cascade deletes between Series, Season, Episode, Movie and MediaFile."""
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     # 1. Test Episode -> MediaFiles relationship and cascade delete
     with db_mod.get_session() as session:
@@ -378,24 +396,14 @@ def test_media_files_orm_relationships_and_cascade(mock_db_file) -> None:
         assert session.get(Episode, ep_id) is None
         assert session.get(MediaFile, mf_id) is not None
 
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-
 
 # ---------------------------------------------------------------------------
 # Helper and Redirect Property Tests
 # ---------------------------------------------------------------------------
 
 
-def test_episode_movie_properties_and_helpers(mock_db_file) -> None:
+def test_episode_movie_properties_and_helpers(_db_setup) -> None:
     """Test properties (path, resolution, audio_tracks, subtitle_tracks, bit_rate) on Episode and Movie models."""
-    db_mod.DB_FILE = mock_db_file
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False
-    db_mod.init_db()
 
     with db_mod.get_session() as session:
         series = Series(library_name="TV", name="Helpers Show")
@@ -478,8 +486,3 @@ def test_episode_movie_properties_and_helpers(mock_db_file) -> None:
         movie.path = None
         assert len(movie.media_files) == 0
         assert movie.path is None
-
-    db_mod._engine.dispose()
-    db_mod._engine = None
-    db_mod._SessionLocal = None
-    db_mod._db_initialized = False

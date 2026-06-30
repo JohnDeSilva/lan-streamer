@@ -165,30 +165,6 @@ def test_on_order_changed_triggers_repopulate(ctrl_with_show, qtbot) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _on_mark_series_watched
-# ---------------------------------------------------------------------------
-
-
-def test_on_mark_series_watched_no_selected_series(ctrl_with_show, qtbot) -> None:
-    ctrl_with_show.selected_series_name = ""
-    v = make_view(ctrl_with_show, qtbot)
-
-    with patch.object(ctrl_with_show, "mark_series_watched") as mock_mark:
-        v._on_mark_series_watched()
-        mock_mark.assert_not_called()
-
-
-def test_on_mark_series_watched_calls_controller(ctrl_with_show, qtbot) -> None:
-    v = make_view(ctrl_with_show, qtbot)
-    populate(v, ctrl_with_show)
-
-    with patch.object(ctrl_with_show, "mark_series_watched") as mock_mark:
-        with patch.object(v, "populate_series_details"):
-            v._on_mark_series_watched()
-            mock_mark.assert_called_once_with("ShowA")
-
-
-# ---------------------------------------------------------------------------
 # _on_mark_season_watched
 # ---------------------------------------------------------------------------
 

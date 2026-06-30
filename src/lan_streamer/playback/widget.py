@@ -175,7 +175,6 @@ class VideoPlayerWidget(QWidget):
     back_requested = Signal()
     watched_marked = Signal(str)  # path
     fullscreen_changed = Signal(bool)
-    _playback_finished_signal = Signal()  # Internal for cross-thread VLC events
 
     def __init__(self, parent: Any = None) -> None:
         super().__init__(parent)
@@ -235,9 +234,6 @@ class VideoPlayerWidget(QWidget):
             if self.mediaplayer:
                 # Event manager for detecting end of playback
                 self.event_manager = self.mediaplayer.event_manager()
-                self.event_manager.event_attach(
-                    vlc.EventType.MediaPlayerEndReached, self._on_playback_finished
-                )
         else:
             self.instance = None
             self.mediaplayer = None
@@ -1673,17 +1669,6 @@ class VideoPlayerWidget(QWidget):
         self.stop()
         self.back_requested.emit()
 
-    def _on_playback_finished(self, event: Any) -> None:
-        """Called by VLC thread when video ends."""
-        self._playback_finished_signal.emit()
-
-    @Slot()
-    def _handle_playback_finished(self) -> None:
-        """Handles the end of playback on the UI thread."""
-        self._is_playback_finished = True
-        self.stop()
-        self.back_requested.emit()
-
     def set_volume(self, volume: int) -> None:
         logger.debug(f"Setting playback volume to {volume}%")
         if self.mediaplayer:
@@ -2022,6 +2007,13 @@ class VideoPlayerWidget(QWidget):
             logger.exception("Error during cache cleanup")
 
     def on_back_clicked(self) -> None:
+        self.stop()
+        self.back_requested.emit()
+
+    @Slot()
+    def _handle_playback_finished(self) -> None:
+        """Handles the end of playback on the UI thread."""
+        self._is_playback_finished = True
         self.stop()
         self.back_requested.emit()
 

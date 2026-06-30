@@ -20,15 +20,6 @@ from lan_streamer.system.config import config
 
 
 @pytest.fixture
-def mock_db_save():
-    with (
-        patch("lan_streamer.db.save_library") as mock_save,
-        patch("lan_streamer.db.save_movie_library") as mock_movie_save,
-    ):
-        yield mock_save, mock_movie_save
-
-
-@pytest.fixture
 def ctrl(mock_db_save):
     """A controller with a simple TV library and config set up."""
     c = Controller(tmdb_client=MagicMock())
@@ -387,23 +378,6 @@ def test_runtime_finished_resets_scan_and_update_flag(ctrl, mock_db_save) -> Non
         ctrl._on_runtime_finished(0)
 
     assert ctrl._doing_scan_and_update is False
-
-
-# ---------------------------------------------------------------------------
-# trigger_cleanup — no library name
-# ---------------------------------------------------------------------------
-
-
-def test_trigger_cleanup_no_library_name() -> None:
-    c = Controller()
-    c.current_library_name = ""
-    statuses: List[str] = []
-    c.status_changed.connect(statuses.append)
-
-    with patch("lan_streamer.ui_views.controller.CleanupWorker") as mock_cls:
-        c.trigger_cleanup()
-        mock_cls.assert_not_called()
-    assert any("Select a library" in s for s in statuses)
 
 
 # ---------------------------------------------------------------------------

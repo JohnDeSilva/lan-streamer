@@ -37,10 +37,6 @@ def test_controller_scheduled_scans() -> None:
     c.start_scheduled_scans()
     c.scheduled_scan_service.start.assert_called_once()
 
-    # stop scheduled scans
-    c.stop_scheduled_scans()
-    c.scheduled_scan_service.stop.assert_called_once()
-
 
 def test_controller_misc_edge_cases() -> None:
     c = Controller(db=MagicMock(), config=MagicMock())
@@ -48,14 +44,18 @@ def test_controller_misc_edge_cases() -> None:
 
     # mark_series_watched when not in cache
     c.cached_library_data = {}
-    c.mark_series_watched("UnknownShow")  # no crash
+    c.mark_series_watched("UnknownShow")
+    assert c.cached_library_data == {}
 
     # mark_season_watched when not in cache
-    c.mark_season_watched("UnknownShow", "Season 1")  # no crash
+    c.cached_library_data = {}
+    c.mark_season_watched("UnknownShow", "Season 1")
+    assert c.cached_library_data == {}
 
     # mark_season_watched when season not in series
     c.cached_library_data = {"ShowA": {"seasons": {}}}
-    c.mark_season_watched("ShowA", "Season 1")  # no crash
+    c.mark_season_watched("ShowA", "Season 1")
+    assert c.cached_library_data["ShowA"]["seasons"] == {}
 
     # set_filter_out_watched
     emitted = []

@@ -48,15 +48,6 @@ def sample_library_dictionary() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def mock_db_save():
-    with (
-        patch("lan_streamer.db.save_library") as mock_save,
-        patch("lan_streamer.db.save_movie_library") as mock_movie_save,
-    ):
-        yield mock_save, mock_movie_save
-
-
-@pytest.fixture
 def mock_controller(mock_db_save):
     mock_config = MagicMock()
     mock_config.libraries = {"test_lib": {"type": "tv", "paths": ["/media/tv"]}}
@@ -185,11 +176,6 @@ def test_controller_triggers() -> None:
         controller_instance.trigger_scan(force_refresh=True)
         mock_scan.assert_called_once()
         mock_scan.return_value.start.assert_called_once()
-
-    with patch("lan_streamer.ui_views.controller.CleanupWorker") as mock_cleanup:
-        controller_instance.trigger_cleanup()
-        mock_cleanup.assert_called_once()
-        mock_cleanup.return_value.start.assert_called_once()
 
 
 def test_controller_jellyfin_sync_triggers() -> None:

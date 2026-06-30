@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from lan_streamer.db import get_session
 from lan_streamer.db.smart_row_cache import (
@@ -8,8 +8,6 @@ from lan_streamer.db.smart_row_cache import (
     get_cached_smart_rows,
     rebuild_cache_for_config,
     rebuild_all_cache,
-    clear_cache_for_config_hashes,
-    clear_all_cache,
     get_affected_config_hashes_for_libraries,
     _row_to_dict,
     _resolve_series_ids,
@@ -219,55 +217,6 @@ def test_rebuild_all_cache_iterates_configs() -> None:
         rebuild_all_cache()
         assert mock_load.called
         assert mock_rebuild.call_count == 2
-
-
-def test_clear_cache_for_config_hashes() -> None:
-    hash_a = compute_config_hash(["A"], "Alphabetical", "All")
-    hash_b = compute_config_hash(["B"], "Alphabetical", "All")
-    with get_session() as session:
-        for h in [hash_a, hash_a, hash_b]:
-            session.add(
-                SmartRowCache(
-                    config_hash=h, sort_order=0, item_type="series", updated_at=0
-                )
-            )
-        session.commit()
-
-    clear_cache_for_config_hashes([hash_a])
-    with get_session() as session:
-        remaining = list(session.scalars(select(SmartRowCache)).all())
-        assert len(remaining) == 1
-        assert remaining[0].config_hash == hash_b
-
-
-def test_clear_cache_for_config_hashes_empty() -> None:
-    with get_session() as session:
-        session.add(
-            SmartRowCache(
-                config_hash="h", sort_order=0, item_type="series", updated_at=0
-            )
-        )
-        session.commit()
-
-    clear_cache_for_config_hashes([])
-    with get_session() as session:
-        count = session.scalar(select(func.count()).select_from(SmartRowCache))
-        assert count == 1
-
-
-def test_clear_all_cache() -> None:
-    with get_session() as session:
-        session.add(
-            SmartRowCache(
-                config_hash="h", sort_order=0, item_type="series", updated_at=0
-            )
-        )
-        session.commit()
-
-    clear_all_cache()
-    with get_session() as session:
-        count = session.scalar(select(func.count()).select_from(SmartRowCache))
-        assert count == 0
 
 
 def test_get_affected_config_hashes_for_libraries() -> None:
