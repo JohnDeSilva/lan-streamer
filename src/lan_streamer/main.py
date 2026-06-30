@@ -447,6 +447,24 @@ def run_main() -> None:
     Attempts to use qasync for asyncio-Qt event loop integration.
     Falls back to :func:`asyncio.run` if qasync is not available.
     """
+    import os
+    from PySide6.QtWidgets import QApplication
+
+    if len(sys.argv) > 1 and sys.argv[1] in ("--version", "-v", "-V"):
+        print(f"lan-streamer {__version__}")
+        sys.exit(0)
+
+    if os.environ.get("LAN_STREAMER_DRY_RUN") == "1":
+        if not os.environ.get("QT_QPA_PLATFORM"):
+            os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        app_inst = QApplication.instance()
+        if app_inst is None:
+            app_inst = QApplication(sys.argv)
+        print(
+            "LAN Streamer: Dry run verification successful. Qt application successfully initialized."
+        )
+        sys.exit(0)
+
     try:
         import qasync
 
