@@ -99,3 +99,55 @@ def test_no_actual_urls_in_tests() -> None:
                 f"{path.relative_to(PROJECT_ROOT)}: {host} (from '{url}'). "
                 f"Please use mock/test domains like 'example.invalid'."
             )
+
+
+def test_extract_changelog_section_logic() -> None:
+    def extract_notes(changelog_content: str, tag_name: str) -> list[str]:
+        raw_sections = re.split(r"^(##\s+)", changelog_content, flags=re.MULTILINE)
+
+        sections = []
+        for i in range(1, len(raw_sections), 2):
+            sections.append(raw_sections[i] + raw_sections[i + 1])
+
+        notes = []
+        for section in sections:
+            header_line = section.split("\n")[0]
+            header_match = re.match(r"^##\s+([^\s]+)", header_line)
+            if header_match:
+                sec_tag = header_match.group(1)
+                sec_version_match = re.search(
+                    r"^(?:v|rc-)?([0-9]+\.[0-9]+\.[0-9]+)", sec_tag
+                )
+                if sec_version_match:
+                    if sec_tag.lstrip("v") == tag_name.lstrip("v"):
+                        notes.append(section)
+                        break
+
+        if not notes and sections:
+            notes.append(sections[0])
+        return notes
+
+    mock_changelog = """## v0.38.1 (2026-06-30)
+
+- Fix issue with macOS runner hangs.
+- Prevent duplicate QApplication instance.
+
+## v0.38.1rc0 (2026-06-30)
+
+- Fix issue with macOS runner hangs.
+- Prevent duplicate QApplication instance.
+
+## v0.38.0 (2026-06-29)
+
+- Initial stable release.
+"""
+
+    notes_stable = extract_notes(mock_changelog, "v0.38.1")
+    assert len(notes_stable) == 1
+    assert "v0.38.1 (2026-06-30)" in notes_stable[0]
+    assert "v0.38.1rc0" not in notes_stable[0]
+
+    notes_rc = extract_notes(mock_changelog, "v0.38.1rc0")
+    assert len(notes_rc) == 1
+    assert "v0.38.1rc0" in notes_rc[0]
+    assert "## v0.38.1 (2026-06-30)" not in notes_rc[0]
