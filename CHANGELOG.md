@@ -70,6 +70,18 @@
 
 - **db,services**: optimize cache rebuilds and fix None safety
 
+## v0.38.1 (2026-06-30)
+
+### Fix
+
+- **main**: resolve macOS and Windows runner hangs with os._exit and cygpath
+- **main**: hide window to trigger clean shutdown instead of quitting QApplication directly
+- **release**: simplify validation timeout wrapper using single-line subprocess.run
+- **release**: use system python3 instead of virtualenv python in makefile validation
+- **main**: handle dry run checks synchronously in run_main to prevent Windows shutdown crash
+- **main**: prevent duplicate QApplication initialization during dry run
+- **main**: resolve event loop hang in frozen executable on startup
+
 ## v0.38.1rc0 (2026-06-30)
 
 ### Fix
