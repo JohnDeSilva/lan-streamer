@@ -83,20 +83,22 @@ jobs:
           # Read version from pyproject.toml
           VERSION="$(uv run cz version --project)"
 
-          # Find the latest tag matching rc-<VERSION>
-          LATEST_TAG=$(git tag -l "rc-${VERSION}*" --sort=-v:refname | head -n 1)
+          # Find the latest tag matching v<VERSION>-*
+          LATEST_TAG=$(git tag -l "v${VERSION}-*" --sort=-v:refname | head -n 1)
           echo "Latest tag found: ${LATEST_TAG}"
 
-          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "rc-${VERSION}" ]; then
-            NEXT_TAG="rc-${VERSION}-1"
+          if [ -z "$LATEST_TAG" ]; then
+            # If no tagged pre-release suffix exists yet, we fall back to the closest tag in history
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            NEXT_TAG="v${VERSION}-1"
           else
             # Extract the suffix number after the last dash
             SUFFIX="${LATEST_TAG##*-}"
             if [[ "$SUFFIX" =~ ^[0-9]+$ ]]; then
               NEXT_SUFFIX=$((SUFFIX + 1))
-              NEXT_TAG="rc-${VERSION}-${NEXT_SUFFIX}"
+              NEXT_TAG="v${VERSION}-${NEXT_SUFFIX}"
             else
-              NEXT_TAG="rc-${VERSION}-1"
+              NEXT_TAG="v${VERSION}-1"
             fi
           fi
           echo "Creating tag: ${NEXT_TAG}"

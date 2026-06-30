@@ -36,16 +36,29 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Tag and Push
+      - name: Bump Version to Stable and Tag
         run: |
-          RELEASE_VERSION="$(uv run cz version --project)"
-          echo "Stable version is: ${RELEASE_VERSION}"
-
-          # Check if tag already exists
-          if git rev-parse "v${RELEASE_VERSION}" >/dev/null 2>&1; then
-            echo "Tag v${RELEASE_VERSION} already exists. Skipping tag creation."
-          else
-            # Tag the commit as stable release
+          CURRENT_VERSION="$(uv run cz version --project)"
+          if [[ "$CURRENT_VERSION" == *"rc"* || "$CURRENT_VERSION" == *"alpha"* || "$CURRENT_VERSION" == *"beta"* ]]; then
+            echo "Current pre-release version is: ${CURRENT_VERSION}. Bumping to stable..."
+            uv run cz bump --yes --changelog --bump-message "chore(release): v\$new_version"
+            RELEASE_VERSION="$(uv run cz version --project)"
+            # Update lock file with the new version and commit it
+            uv lock
+            git add uv.lock
+            git commit --amend --no-edit --no-verify || true
+            # Recreate tag to point to the amended commit
+            git tag -d "v${RELEASE_VERSION}" || true
             git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
+            # Push commit and tag back to main
+            git push origin "HEAD:main"
             git push origin "v${RELEASE_VERSION}"
+          else
+            echo "Current version is already stable: ${CURRENT_VERSION}."
+            if git rev-parse "v${CURRENT_VERSION}" >/dev/null 2>&1; then
+              echo "Tag v${CURRENT_VERSION} already exists. Skipping tag creation."
+            else
+              git tag -a "v${CURRENT_VERSION}" -m "Release v${CURRENT_VERSION}"
+              git push origin "v${CURRENT_VERSION}"
+            fi
           fi

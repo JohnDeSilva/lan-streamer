@@ -45,8 +45,8 @@ jobs:
           # Fetch all tags from remote to ensure we have the latest
           git fetch --tags
 
-          # Bump version in files and update changelog using cz bump's native git operations
-          uv run cz bump --yes --changelog --tag-format "rc-\$version" --bump-message "chore(release): rc-\$new_version"
+          # Bump version in files and update changelog to a pre-release version using cz bump
+          uv run cz bump --yes --changelog --prerelease rc --bump-message "chore(release): rc-\$new_version"
 
           # Read bumped version
           RELEASE_VERSION="$(uv run cz version --project)"
@@ -57,10 +57,10 @@ jobs:
           git add uv.lock
           git commit --amend --no-edit --no-verify
 
-          # Re-create tag matching the rc- prefix pointing to the amended commit
-          git tag -d "rc-${RELEASE_VERSION}"
-          git tag -a "rc-${RELEASE_VERSION}" -m "Release rc-${RELEASE_VERSION}"
+          # Re-create tag matching the v- prefix pointing to the amended commit
+          git tag -d "v${RELEASE_VERSION}"
+          git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
 
           # Push commit and tag back to current branch
           git push origin "HEAD:$BRANCH_NAME"
-          git push origin "rc-${RELEASE_VERSION}"
+          git push origin "v${RELEASE_VERSION}"
