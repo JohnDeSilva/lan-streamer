@@ -60,3 +60,16 @@ def test_entrypoint_macos_frozen_user_applications() -> None:
         importlib.reload(entrypoint)
 
         assert os.environ.get("VLC_PLUGIN_PATH") == user_app_path
+
+
+def test_entrypoint_main_execution() -> None:
+    import runpy
+
+    # Verify that entrypoint.py calls run_main() from lan_streamer.main
+    # when executed as the main script.
+    with (
+        patch("entrypoint.setup_vlc_environment"),
+        patch("lan_streamer.main.run_main") as mock_run_main,
+    ):
+        runpy.run_path("src/entrypoint.py", run_name="__main__")
+        mock_run_main.assert_called_once()
