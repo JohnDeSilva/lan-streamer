@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from typing import Any, Dict, List, Optional, Set
 
@@ -83,9 +84,10 @@ class AsyncScanWorker(AsyncWorkerBase):
         # Async database writer — created in run_async
         self.database_writer: Optional[AsyncDatabaseWriter] = None
 
-        # Detail-progress buffer (thread-safe, lock-free by design: only
-        # mutated in the run_async coroutine, not from scanner threads).
+        # Detail-progress buffer protected by a lock because _detail_callback
+        # runs inside a scanner thread (via run_in_fs_executor).
         self._detail_progress_buffer: List[Dict[str, Any]] = []
+        self._detail_lock: threading.Lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Public API — overrides AsyncWorkerBase
@@ -137,10 +139,11 @@ class AsyncScanWorker(AsyncWorkerBase):
 
             # Callbacks for the sync scanner
             def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
-                # This runs inside the scanner thread; queue for flush later.
-                self._detail_progress_buffer.append(
-                    {"event": event, "payload": payload}
-                )
+                # This runs inside the scanner thread; lock the buffer.
+                with self._detail_lock:
+                    self._detail_progress_buffer.append(
+                        {"event": event, "payload": payload}
+                    )
 
             def _season_callback(
                 series_name: str,
@@ -322,15 +325,20 @@ class AsyncScanWorker(AsyncWorkerBase):
             self.pass2_stats[key] = 0
 
     def _emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
-        self._detail_progress_buffer.append({"event": event, "payload": payload})
-        if len(self._detail_progress_buffer) >= 20:
+        flush_needed = False
+        with self._detail_lock:
+            self._detail_progress_buffer.append({"event": event, "payload": payload})
+            if len(self._detail_progress_buffer) >= 20:
+                flush_needed = True
+        if flush_needed:
             self._flush_detail_progress()
 
     def _flush_detail_progress(self) -> None:
-        if not self._detail_progress_buffer:
-            return
-        batch = list(self._detail_progress_buffer)
-        self._detail_progress_buffer.clear()
+        with self._detail_lock:
+            if not self._detail_progress_buffer:
+                return
+            batch = list(self._detail_progress_buffer)
+            self._detail_progress_buffer.clear()
         self.detail_progress_batch.emit(batch)
 
     def _merge_season_result(
