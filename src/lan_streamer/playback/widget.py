@@ -1827,6 +1827,14 @@ class VideoPlayerWidget(QWidget):
         if not self.mediaplayer.get_media():
             return
 
+        # Check if VLC playback has ended naturally
+        try:
+            if self.mediaplayer.get_state() == vlc.State.Ended:
+                self._handle_playback_finished()
+                return
+        except AttributeError, ImportError:
+            pass
+
         # Update seek bar
         pos = self.mediaplayer.get_position()
         self.seek_slider.setValue(int(pos * 1000))
