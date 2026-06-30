@@ -69,7 +69,7 @@ async def main() -> None:
         print(
             "LAN Streamer: Dry run verification successful. Qt application successfully initialized."
         )
-        sys.exit(0)
+        os._exit(0)
 
     if sys.platform.startswith("linux") and not os.environ.get("QT_QPA_PLATFORM"):
         if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
@@ -449,7 +449,8 @@ async def main() -> None:
                 logger.warning("Timeout waiting for pending tasks to shut down.")
             logger.info("All pending tasks shut down.")
         logger.info("Application teardown complete. Exiting process.")
-        sys.exit(0)
+        os._exit(0)
+
     except ImportError:
         logger.warning("qasync not available, falling back to synchronous event loop.")
         sys.exit(application_instance.exec())
@@ -477,7 +478,7 @@ def run_main() -> None:
         print(
             "LAN Streamer: Dry run verification successful. Qt application successfully initialized."
         )
-        sys.exit(0)
+        os._exit(0)
 
     try:
         import qasync
