@@ -147,9 +147,11 @@ jobs:
           PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
         run: |
           for f in ./dist/lan-streamer-*.exe; do
-            python -c "import subprocess, os, sys; p = subprocess.Popen(['$f'], env=dict(os.environ, LAN_STREAMER_TEST_RUN='1', QT_QPA_PLATFORM='offscreen')); exit_code = p.wait(timeout=15); sys.exit(exit_code)"
+            f_abs=$(realpath "$f")
+            uv run python -c "import subprocess, os, sys; res = subprocess.run(['$f_abs'], env=dict(os.environ, LAN_STREAMER_TEST_RUN='1', QT_QPA_PLATFORM='offscreen'), timeout=15); sys.exit(res.returncode)"
             break
           done
+
 
 
       - name: Rename executable for artifact
