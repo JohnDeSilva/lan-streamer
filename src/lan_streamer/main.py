@@ -373,6 +373,19 @@ async def main() -> None:
     logger.info("Displaying Main Window. Starting Qt event loop.")
     main_window.show()
 
+    if os.environ.get("LAN_STREAMER_TEST_RUN") == "1":
+        logger.info(
+            "Test run mode active. Scheduling automatic shutdown in 3 seconds..."
+        )
+
+        async def auto_shutdown() -> None:
+            await asyncio.sleep(3.0)
+            logger.info("Automatic shutdown timer fired. Quitting application...")
+            main_window.hide()
+            application_instance.quit()
+
+        asyncio.create_task(auto_shutdown())
+
     if config.check_for_updates_on_startup and "pytest" not in sys.modules:
         logger.info("Checking for application updates on startup...")
         from lan_streamer.system.updater import UpdateCheckWorker
