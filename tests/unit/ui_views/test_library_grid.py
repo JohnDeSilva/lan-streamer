@@ -821,7 +821,7 @@ class TestSearchButton:
             mock_dialog_class.assert_called_once_with(library_name=None, parent=view)
 
     def test_open_search_dialog_connects_signal(self, grid_view) -> None:
-        """Opening search should connect series_selected signal."""
+        """Opening search should connect item_selected signal."""
         view, controller = grid_view
         controller.current_library_name = "MyLib"
 
@@ -834,25 +834,43 @@ class TestSearchButton:
 
             view._open_search_dialog()
 
-            mock_dialog_instance.series_selected.connect.assert_called_once_with(
+            mock_dialog_instance.item_selected.connect.assert_called_once_with(
                 view._on_search_result_selected
             )
 
 
 class TestOnSearchResultSelected:
     def test_navigates_to_series(self, grid_view) -> None:
-        """Selecting a search result should navigate to the series."""
+        """Selecting a series result should navigate to the series."""
         view, controller = grid_view
 
         with (
             patch.object(controller, "select_library") as mock_select_library,
             patch.object(controller, "select_series") as mock_select_series,
+            patch.object(controller, "select_movie") as mock_select_movie,
         ):
-            view._on_search_result_selected("My Series", "MyLib")
+            view._on_search_result_selected("My Series", "MyLib", "series")
 
             assert controller.current_library_name == "MyLib"
             mock_select_library.assert_called_once_with("MyLib")
             mock_select_series.assert_called_once_with("My Series")
+            mock_select_movie.assert_not_called()
+
+    def test_navigates_to_movie(self, grid_view) -> None:
+        """Selecting a movie result should navigate to the movie."""
+        view, controller = grid_view
+
+        with (
+            patch.object(controller, "select_library") as mock_select_library,
+            patch.object(controller, "select_movie") as mock_select_movie,
+            patch.object(controller, "select_series") as mock_select_series,
+        ):
+            view._on_search_result_selected("My Movie", "Movies", "movie")
+
+            assert controller.current_library_name == "Movies"
+            mock_select_library.assert_called_once_with("Movies")
+            mock_select_movie.assert_called_once_with("My Movie")
+            mock_select_series.assert_not_called()
 
     def test_navigate_from_combined_sets_flag(self, grid_view) -> None:
         """Navigating from Combined View should set _navigate_back_to_combined."""
@@ -862,8 +880,9 @@ class TestOnSearchResultSelected:
         with (
             patch.object(controller, "select_library"),
             patch.object(controller, "select_series"),
+            patch.object(controller, "select_movie"),
         ):
-            view._on_search_result_selected("My Series", "MyLib")
+            view._on_search_result_selected("My Series", "MyLib", "series")
 
             assert view._navigate_back_to_combined is True
 
@@ -875,8 +894,9 @@ class TestOnSearchResultSelected:
         with (
             patch.object(controller, "select_library"),
             patch.object(controller, "select_series"),
+            patch.object(controller, "select_movie"),
         ):
-            view._on_search_result_selected("My Series", "MyLib")
+            view._on_search_result_selected("My Series", "MyLib", "series")
 
             assert view._navigate_back_to_combined is False
 
@@ -887,11 +907,13 @@ class TestOnSearchResultSelected:
         with (
             patch.object(controller, "select_library") as mock_select_library,
             patch.object(controller, "select_series") as mock_select_series,
+            patch.object(controller, "select_movie") as mock_select_movie,
         ):
-            view._on_search_result_selected("My Series", "")
+            view._on_search_result_selected("My Series", "", "series")
 
             mock_select_library.assert_not_called()
             mock_select_series.assert_not_called()
+            mock_select_movie.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
