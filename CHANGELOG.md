@@ -1,3 +1,21 @@
+## v0.39.0 (2026-07-01)
+
+### Feat
+
+- **db**: extend search to include movies, rename search_series_names to search_media_names
+- **ui**: add search button to LibraryGridView toolbars
+- **ui**: create SearchDialog with debounced autocomplete for series discovery
+- **db**: add search_series_names query for series search with library scoping
+
+### Fix
+
+- resolve 5 review issues for search feature
+- **ui**: remove duplicate search button
+
+### Refactor
+
+- **ui**: route search through controller instead of direct DB call
+
 ## v0.39.0rc0 (2026-07-01)
 
 ### Feat
