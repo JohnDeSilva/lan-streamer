@@ -59,6 +59,7 @@ class SearchDialog(QDialog):
         self._controller: "Controller" = controller
         self._library_name: Optional[str] = library_name
         self._cached_icons: Dict[str, QIcon] = {}
+        self._pending_thumbnails: List = []
 
         title = "Search"
         if library_name:
@@ -166,6 +167,8 @@ class SearchDialog(QDialog):
         results = self._controller.search_media(query_text, library_names)
 
         self.results_list.clear()
+        self._pending_thumbnails = []
+
         for result in results:
             item_name = result.get("name", "")
             result_library_name = result.get("library_name", "")
@@ -180,9 +183,8 @@ class SearchDialog(QDialog):
             list_item.setData(Qt.ItemDataRole.UserRole + 2, item_type)
             list_item.setToolTip(f"{item_name} ({type_label}, {result_library_name})")
 
-            # Try to load poster thumbnail
             if poster_path:
-                self._assign_thumbnail_icon(list_item, poster_path)
+                self._pending_thumbnails.append((list_item, poster_path))
 
             self.results_list.addItem(list_item)
 
@@ -191,6 +193,20 @@ class SearchDialog(QDialog):
             empty_item.setFlags(empty_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             empty_item.setForeground(QColor(136, 136, 136))
             self.results_list.addItem(empty_item)
+
+        # Deferred thumbnail loading — process 3 per event-loop tick
+        if self._pending_thumbnails:
+            QTimer.singleShot(0, self._process_thumbnail_batch)
+
+    @Slot()
+    def _process_thumbnail_batch(self) -> None:
+        """Process up to 3 thumbnail loads, then schedule the next batch."""
+        batch = self._pending_thumbnails[:3]
+        self._pending_thumbnails = self._pending_thumbnails[3:]
+        for list_item, poster_path_value in batch:
+            self._assign_thumbnail_icon(list_item, poster_path_value)
+        if self._pending_thumbnails:
+            QTimer.singleShot(0, self._process_thumbnail_batch)
 
     def _assign_thumbnail_icon(
         self, item_target: QListWidgetItem, poster_path_value: str

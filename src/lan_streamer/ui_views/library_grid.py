@@ -96,7 +96,7 @@ class LibraryGridView(QWidget):
         top_toolbar_layout.addStretch()
 
         search_button: QPushButton = QPushButton("Search")
-        search_button.setObjectName("searchSeriesButton")
+        search_button.setObjectName("searchMediaButton")
         search_button.clicked.connect(self._open_search_dialog)
         top_toolbar_layout.addWidget(search_button)
 
@@ -680,7 +680,6 @@ class LibraryGridView(QWidget):
             previous_view = self.controller.current_library_name
             self._navigate_back_to_combined = previous_view == "Combined View"
 
-            self.controller.current_library_name = library_name
             self.controller.select_library(library_name)
             if item_type == "movie":
                 self.controller.select_movie(item_name)
