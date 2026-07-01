@@ -660,7 +660,9 @@ class LibraryGridView(QWidget):
         logger.info(
             f"Opening search dialog for library: {library_name or 'All Libraries'}"
         )
-        dialog = SearchDialog(library_name=library_name, parent=self)
+        dialog = SearchDialog(
+            controller=self.controller, library_name=library_name, parent=self
+        )
         dialog.item_selected.connect(self._on_search_result_selected)
         dialog.exec()
 
