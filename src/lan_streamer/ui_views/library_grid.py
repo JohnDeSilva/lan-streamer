@@ -152,11 +152,6 @@ class LibraryGridView(QWidget):
         combined_scan_button.clicked.connect(self.trigger_combined_scan)
         combined_actions_toolbar_layout.addWidget(combined_scan_button)
 
-        combined_search_button: QPushButton = QPushButton("Search")
-        combined_search_button.setObjectName("searchSeriesButton")
-        combined_search_button.clicked.connect(self._open_search_dialog)
-        combined_actions_toolbar_layout.addWidget(combined_search_button)
-
         combined_actions_toolbar_layout.addStretch()
         self.combined_actions_toolbar_widget.setVisible(False)
         main_layout.addWidget(self.combined_actions_toolbar_widget)
