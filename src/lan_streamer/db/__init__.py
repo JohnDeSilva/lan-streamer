@@ -79,6 +79,25 @@ from lan_streamer.db.models import (
     ScannedDirectory,
     SmartRowCache,
 )
+from lan_streamer.db.models_cast import (
+    Person,
+    MediaCast,
+    MediaImage,
+)
+from lan_streamer.db.queries_cast import (
+    get_cast_for_series,
+    get_cast_for_season,
+    get_cast_for_episode,
+    get_cast_for_movie,
+    get_person_by_id,
+    get_person_by_tmdb_id,
+    get_or_create_person,
+    get_filmography,
+    delete_cast_for_media,
+    get_images_for_media,
+    set_selected_image,
+    add_media_image,
+)
 
 DB_FILE = Path(os.getenv("LAN_STREAMER_DB", config.database_path))
 

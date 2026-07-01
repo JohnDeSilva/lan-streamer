@@ -65,6 +65,7 @@ def get_session_factory() -> sessionmaker[Session]:
 def get_session() -> Generator[Session, None, None]:
     session_factory = get_session_factory()
     session = session_factory()
+    session.expire_on_commit = False
     logger.debug("Database session opened.")
     try:
         yield session
