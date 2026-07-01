@@ -902,6 +902,28 @@ class TestOnSearchResultSelected:
 
             assert view._navigate_back_to_combined is False
 
+    def test_search_result_item_not_in_cache_does_not_crash(self, grid_view) -> None:
+        """When the searched item is absent from cached_library_data, no crash."""
+        view, controller = grid_view
+        controller.cached_library_data = {}
+
+        with patch.object(controller, "select_library"):
+            view._on_search_result_selected("Missing Item", "MyLib", "series")
+
+            # select_series runs for real; "Missing Item" is not in cache,
+            # so selected_series_name stays unchanged — no crash
+            assert controller.selected_series_name == ""
+
+    def test_search_result_movie_not_in_cache_does_not_crash(self, grid_view) -> None:
+        """When the searched movie is absent from cached_library_data, no crash."""
+        view, controller = grid_view
+        controller.cached_library_data = {}
+
+        with patch.object(controller, "select_library"):
+            view._on_search_result_selected("Missing Movie", "Movies", "movie")
+
+            assert controller.selected_series_name == ""
+
     def test_empty_library_name_skips_navigation(self, grid_view) -> None:
         """Empty library name should not crash but should skip navigation."""
         view, controller = grid_view

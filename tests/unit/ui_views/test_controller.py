@@ -546,3 +546,41 @@ def test_controller_scan_and_update_flow_isolation(mock_controller) -> None:
     mock_controller._on_scan_and_update_cleanup_finished({}, seasons, movies)
 
     mock_controller.trigger_runtime_extraction.assert_called_once_with(seasons, movies)
+
+
+class TestControllerSearchMedia:
+    """Tests for Controller.search_media."""
+
+    def test_search_media_delegates_to_db(self, mock_controller) -> None:
+        """search_media should delegate to db.search_media_names."""
+        controller = mock_controller
+        controller._db.search_media_names = MagicMock(
+            return_value=[{"name": "Result", "type": "series"}]
+        )
+
+        result = controller.search_media("Test Query", ["MyLib"])
+
+        controller._db.search_media_names.assert_called_once_with(
+            "Test Query", ["MyLib"]
+        )
+        assert result == [{"name": "Result", "type": "series"}]
+
+    def test_search_media_returns_empty_on_db_error(self, mock_controller) -> None:
+        """search_media should return [] when the db call raises."""
+        controller = mock_controller
+        controller._db.search_media_names = MagicMock(
+            side_effect=Exception("DB connection lost")
+        )
+
+        result = controller.search_media("Bad Query")
+
+        assert result == []
+
+    def test_search_media_calls_with_none_libraries(self, mock_controller) -> None:
+        """search_media should pass library_names=None when searching all."""
+        controller = mock_controller
+        controller._db.search_media_names = MagicMock(return_value=[])
+
+        controller.search_media("Any")
+
+        controller._db.search_media_names.assert_called_once_with("Any", None)
