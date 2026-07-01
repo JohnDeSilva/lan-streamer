@@ -26,6 +26,7 @@ from lan_streamer.backend.scan_worker_base import (
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.backend.database_writer import AsyncDatabaseWriter
+from lan_streamer.services import metadata_cast, metadata_images
 from lan_streamer.system.async_utils import run_in_fs_executor, run_in_executor
 
 logger = logging.getLogger("lan_streamer.backend")
@@ -421,6 +422,28 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                             if series_id not in self._skipped_series_ids:
                                 self._skipped_series_ids.add(series_id)
                                 self.stats["series_skipped"] += 1
+
+                    # Fetch cast/crew and images for newly scanned series
+                    if is_new_series_scan and stats.get("series_id"):
+                        tmdb_id = series_data.get("metadata", {}).get("tmdb_identifier")
+                        if tmdb_id:
+                            try:
+                                metadata_cast.fetch_and_store_series_credits(
+                                    series_id, int(tmdb_id)
+                                )
+                                metadata_images.fetch_and_store_series_images(
+                                    series_id, int(tmdb_id)
+                                )
+                                logger.info(
+                                    "Fetched cast and images for series '%s'",
+                                    series_name,
+                                )
+                            except Exception as fetch_error:
+                                logger.warning(
+                                    "Failed to fetch cast/images for series '%s': %s",
+                                    series_name,
+                                    fetch_error,
+                                )
             except Exception as error:
                 with local_lock:
                     log_db_write_error(
@@ -487,6 +510,31 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                             if movie_id not in self._skipped_movie_ids:
                                 self._skipped_movie_ids.add(movie_id)
                                 self.stats["movies_skipped"] += 1
+
+                    # Fetch cast/crew and images for newly scanned movie
+                    if is_new_movie_scan and stats.get("movie_id"):
+                        tmdb_id = movie_data.get("tmdb_identifier")
+                        if not tmdb_id:
+                            tmdb_id = movie_data.get("metadata", {}).get(
+                                "tmdb_identifier"
+                            )
+                        if tmdb_id:
+                            try:
+                                metadata_cast.fetch_and_store_movie_credits(
+                                    movie_id, int(tmdb_id)
+                                )
+                                metadata_images.fetch_and_store_movie_images(
+                                    movie_id, int(tmdb_id)
+                                )
+                                logger.info(
+                                    "Fetched cast and images for movie '%s'", movie_name
+                                )
+                            except Exception as fetch_error:
+                                logger.warning(
+                                    "Failed to fetch cast/images for movie '%s': %s",
+                                    movie_name,
+                                    fetch_error,
+                                )
             except Exception as error:
                 with local_lock:
                     log_db_write_error(
