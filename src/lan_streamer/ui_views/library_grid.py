@@ -661,19 +661,29 @@ class LibraryGridView(QWidget):
             f"Opening search dialog for library: {library_name or 'All Libraries'}"
         )
         dialog = SearchDialog(library_name=library_name, parent=self)
-        dialog.series_selected.connect(self._on_search_result_selected)
+        dialog.item_selected.connect(self._on_search_result_selected)
         dialog.exec()
 
-    @Slot(str, str)
-    def _on_search_result_selected(self, series_name: str, library_name: str) -> None:
-        """Navigate to the series selected from search results."""
+    @Slot(str, str, str)
+    def _on_search_result_selected(
+        self, item_name: str, library_name: str, item_type: str
+    ) -> None:
+        """Navigate to the series or movie selected from search results."""
         logger.info(
-            f"Search result navigation: '{series_name}' in library '{library_name}'"
+            f"Search result navigation: '{item_name}' (Type: {item_type}) "
+            f"in library '{library_name}'"
         )
         if library_name:
+            # Remember previous view for correct back navigation
+            previous_view = self.controller.current_library_name
+            self._navigate_back_to_combined = previous_view == "Combined View"
+
             self.controller.current_library_name = library_name
             self.controller.select_library(library_name)
-            self.controller.select_series(series_name)
+            if item_type == "movie":
+                self.controller.select_movie(item_name)
+            else:
+                self.controller.select_series(item_name)
 
     def _build_smart_row_widget(self, row_config: Dict[str, Any]) -> Optional[QWidget]:
         """Build a single smart row widget from a row configuration dict.
