@@ -397,7 +397,11 @@ async def main() -> None:
         from lan_streamer.ui_views.dialogs.update_dialog import UpdateDialog
 
         # Keep reference to prevent GC
-        setattr(main_window, "startup_update_worker", UpdateCheckWorker())
+        setattr(
+            main_window,
+            "startup_update_worker",
+            UpdateCheckWorker(release_channel=config.update_release_channel),
+        )
         worker = getattr(main_window, "startup_update_worker")
 
         def on_startup_check_finished(
