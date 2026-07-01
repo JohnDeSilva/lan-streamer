@@ -24,7 +24,7 @@ from lan_streamer.ui_views.proxy import QPixmap
 from lan_streamer.system.config import config
 from lan_streamer import db
 from lan_streamer.ui_views.progress_widgets import LibraryScanProgressBar
-from lan_streamer.ui_views.dialogs import SettingsDialog
+from lan_streamer.ui_views.dialogs import SettingsDialog, SearchDialog
 from lan_streamer.ui_views.controller import Controller
 
 logger = logging.getLogger(__name__)
@@ -95,6 +95,11 @@ class LibraryGridView(QWidget):
 
         top_toolbar_layout.addStretch()
 
+        search_button: QPushButton = QPushButton("Search")
+        search_button.setObjectName("searchSeriesButton")
+        search_button.clicked.connect(self._open_search_dialog)
+        top_toolbar_layout.addWidget(search_button)
+
         settings_button: QPushButton = QPushButton("Settings...")
         settings_button.setObjectName("openSettingsButton")
         settings_button.clicked.connect(self.open_settings_dialog)
@@ -146,6 +151,11 @@ class LibraryGridView(QWidget):
         )
         combined_scan_button.clicked.connect(self.trigger_combined_scan)
         combined_actions_toolbar_layout.addWidget(combined_scan_button)
+
+        combined_search_button: QPushButton = QPushButton("Search")
+        combined_search_button.setObjectName("searchSeriesButton")
+        combined_search_button.clicked.connect(self._open_search_dialog)
+        combined_actions_toolbar_layout.addWidget(combined_search_button)
 
         combined_actions_toolbar_layout.addStretch()
         self.combined_actions_toolbar_widget.setVisible(False)
@@ -644,6 +654,31 @@ class LibraryGridView(QWidget):
                 self.controller.select_movie(title)
             else:
                 self.controller.select_series(title)
+
+    @Slot()
+    def _open_search_dialog(self) -> None:
+        """Open the search dialog, scoped to current library (or all if combined view)."""
+        library_name: Optional[str] = None
+        if self.controller.current_library_name != "Combined View":
+            library_name = self.controller.current_library_name
+
+        logger.info(
+            f"Opening search dialog for library: {library_name or 'All Libraries'}"
+        )
+        dialog = SearchDialog(library_name=library_name, parent=self)
+        dialog.series_selected.connect(self._on_search_result_selected)
+        dialog.exec()
+
+    @Slot(str, str)
+    def _on_search_result_selected(self, series_name: str, library_name: str) -> None:
+        """Navigate to the series selected from search results."""
+        logger.info(
+            f"Search result navigation: '{series_name}' in library '{library_name}'"
+        )
+        if library_name:
+            self.controller.current_library_name = library_name
+            self.controller.select_library(library_name)
+            self.controller.select_series(series_name)
 
     def _build_smart_row_widget(self, row_config: Dict[str, Any]) -> Optional[QWidget]:
         """Build a single smart row widget from a row configuration dict.
