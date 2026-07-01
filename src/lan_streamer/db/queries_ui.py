@@ -448,3 +448,74 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
     except Exception:
         logger.exception(f"Error getting next episode for path {current_path}")
     return None
+
+
+def search_series_names(
+    query_text: str,
+    library_names: Optional[List[str]] = None,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """
+    Search series by name using case-insensitive partial matching.
+
+    Results are ordered: exact matches first, starts-with matches second,
+    contains matches third. If library_names is None or empty, searches all
+    libraries. If library_names is provided, only searches those libraries.
+
+    Args:
+        query_text: The search string (minimum 2 characters after stripping).
+        library_names: Optional filter to restrict which libraries to search.
+        limit: Maximum number of results to return (default 50).
+
+    Returns:
+        A list of dicts with keys: name, library_name, poster_path.
+    """
+    try:
+        logger.debug(
+            f"Searching series names for query='{query_text}', "
+            f"library_names={library_names}, limit={limit}"
+        )
+        if not query_text or len(query_text.strip()) < 2:
+            return []
+
+        clean_query = query_text.strip()
+
+        with get_session() as session:
+            statement = select(Series).where(Series.name.ilike(f"%{clean_query}%"))
+            if library_names:
+                statement = statement.where(Series.library_name.in_(library_names))
+
+            # Fetch all matching series
+            series_list = session.scalars(statement).all()
+
+            # Sort: exact match first, starts with second, contains third
+            def sort_key(series_item: Series) -> Tuple[int, str]:
+                name_lower = (series_item.name or "").lower()
+                query_lower = clean_query.lower()
+                if name_lower == query_lower:
+                    return (0, name_lower)
+                if name_lower.startswith(query_lower):
+                    return (1, name_lower)
+                return (2, name_lower)
+
+            series_list = sorted(series_list, key=sort_key)
+
+            results: List[Dict[str, Any]] = []
+            for series in series_list[:limit]:
+                results.append(
+                    {
+                        "name": series.name,
+                        "library_name": series.library_name,
+                        "poster_path": series.poster_path or "",
+                    }
+                )
+
+            logger.info(
+                f"search_series_names: found {len(results)} results for '{clean_query}'"
+            )
+            logger.debug(f"search_series_names results: {results}")
+            return results
+
+    except Exception:
+        logger.exception(f"Error searching series names for query '{query_text}'")
+        return []
