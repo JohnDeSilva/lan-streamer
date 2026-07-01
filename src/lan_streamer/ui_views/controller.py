@@ -270,7 +270,15 @@ class Controller(QObject):
             query_text,
             library_names,
         )
-        return self._db.search_media_names(query_text, library_names)
+        try:
+            return self._db.search_media_names(query_text, library_names)
+        except Exception:
+            logger.exception(
+                "Controller.search_media failed for query='%s' libraries=%s",
+                query_text,
+                library_names,
+            )
+            return []
 
     def set_sort_mode(self, mode: str) -> None:
         if self.sort_mode != mode:

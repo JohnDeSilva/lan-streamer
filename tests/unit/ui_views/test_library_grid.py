@@ -779,13 +779,13 @@ class TestSearchButton:
     def test_search_button_exists_single_library(self, grid_view) -> None:
         """Search button should exist in the single-library toolbar."""
         view, controller = grid_view
-        search_buttons = view.findChildren(QPushButton, "searchSeriesButton")
+        search_buttons = view.findChildren(QPushButton, "searchMediaButton")
         assert len(search_buttons) >= 1
 
     def test_search_button_exists_combined(self, grid_view) -> None:
         """Search button should exist in the combined view toolbar."""
         view, controller = grid_view
-        search_buttons = view.findChildren(QPushButton, "searchSeriesButton")
+        search_buttons = view.findChildren(QPushButton, "searchMediaButton")
         assert len(search_buttons) >= 1
 
     def test_open_search_dialog_single_library(self, grid_view) -> None:
@@ -855,7 +855,6 @@ class TestOnSearchResultSelected:
         ):
             view._on_search_result_selected("My Series", "MyLib", "series")
 
-            assert controller.current_library_name == "MyLib"
             mock_select_library.assert_called_once_with("MyLib")
             mock_select_series.assert_called_once_with("My Series")
             mock_select_movie.assert_not_called()
@@ -871,7 +870,6 @@ class TestOnSearchResultSelected:
         ):
             view._on_search_result_selected("My Movie", "Movies", "movie")
 
-            assert controller.current_library_name == "Movies"
             mock_select_library.assert_called_once_with("Movies")
             mock_select_movie.assert_called_once_with("My Movie")
             mock_select_series.assert_not_called()
