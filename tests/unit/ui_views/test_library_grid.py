@@ -4,15 +4,16 @@ Covers: __init__, _setup_ui, _wire_signals, populate_libraries, on_library_chang
         on_library_tab_changed, populate_grid (various sort modes), _on_detail_progress,
         _on_scan_completed, on_order_changed, on_item_clicked, populate_combined_view,
         on_combined_item_clicked, trigger_combined_scan, _assign_item_icon,
-        _assign_item_icon_with_size, _on_selector_text_changed.
+        _assign_item_icon_with_size, _on_selector_text_changed,
+        _open_search_dialog, _on_search_result_selected, search button integration.
 """
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from typing import Any, Dict
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QListWidgetItem
+from PySide6.QtWidgets import QListWidgetItem, QPushButton, QDialog
 
 from lan_streamer.ui_views import Controller
 from lan_streamer.ui_views.library_grid import LibraryGridView
@@ -762,6 +763,109 @@ class TestTriggerCombinedScan:
         with patch.object(controller, "trigger_scan_all") as mock_scan:
             view.trigger_combined_scan()
             mock_scan.assert_called_once_with(False)
+
+
+# ---------------------------------------------------------------------------
+# Fixtures re-use
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Search Button & Dialog
+# ---------------------------------------------------------------------------
+
+
+class TestSearchButton:
+    def test_search_button_exists_single_library(self, grid_view) -> None:
+        """Search button should exist in the single-library toolbar."""
+        view, controller = grid_view
+        search_buttons = view.findChildren(QPushButton, "searchSeriesButton")
+        assert len(search_buttons) >= 1
+
+    def test_search_button_exists_combined(self, grid_view) -> None:
+        """Search button should exist in the combined view toolbar."""
+        view, controller = grid_view
+        search_buttons = view.findChildren(QPushButton, "searchSeriesButton")
+        assert len(search_buttons) >= 1
+
+    def test_open_search_dialog_single_library(self, grid_view) -> None:
+        """Opening search on a library tab should scope to that library."""
+        view, controller = grid_view
+        controller.current_library_name = "MyLib"
+
+        with patch(
+            "lan_streamer.ui_views.library_grid.SearchDialog"
+        ) as mock_dialog_class:
+            mock_dialog_instance = MagicMock()
+            mock_dialog_class.return_value = mock_dialog_instance
+            mock_dialog_instance.exec.return_value = QDialog.DialogCode.Accepted
+
+            view._open_search_dialog()
+
+            mock_dialog_class.assert_called_once_with(library_name="MyLib", parent=view)
+
+    def test_open_search_dialog_combined_view(self, grid_view) -> None:
+        """Opening search on Combined View tab should search all libraries."""
+        view, controller = grid_view
+        controller.current_library_name = "Combined View"
+
+        with patch(
+            "lan_streamer.ui_views.library_grid.SearchDialog"
+        ) as mock_dialog_class:
+            mock_dialog_instance = MagicMock()
+            mock_dialog_class.return_value = mock_dialog_instance
+            mock_dialog_instance.exec.return_value = QDialog.DialogCode.Accepted
+
+            view._open_search_dialog()
+
+            mock_dialog_class.assert_called_once_with(library_name=None, parent=view)
+
+    def test_open_search_dialog_connects_signal(self, grid_view) -> None:
+        """Opening search should connect series_selected signal."""
+        view, controller = grid_view
+        controller.current_library_name = "MyLib"
+
+        with patch(
+            "lan_streamer.ui_views.library_grid.SearchDialog"
+        ) as mock_dialog_class:
+            mock_dialog_instance = MagicMock()
+            mock_dialog_class.return_value = mock_dialog_instance
+            mock_dialog_instance.exec.return_value = QDialog.DialogCode.Accepted
+
+            view._open_search_dialog()
+
+            mock_dialog_instance.series_selected.connect.assert_called_once_with(
+                view._on_search_result_selected
+            )
+
+
+class TestOnSearchResultSelected:
+    def test_navigates_to_series(self, grid_view) -> None:
+        """Selecting a search result should navigate to the series."""
+        view, controller = grid_view
+
+        with (
+            patch.object(controller, "select_library") as mock_select_library,
+            patch.object(controller, "select_series") as mock_select_series,
+        ):
+            view._on_search_result_selected("My Series", "MyLib")
+
+            assert controller.current_library_name == "MyLib"
+            mock_select_library.assert_called_once_with("MyLib")
+            mock_select_series.assert_called_once_with("My Series")
+
+    def test_empty_library_name_skips_navigation(self, grid_view) -> None:
+        """Empty library name should not crash but should skip navigation."""
+        view, controller = grid_view
+
+        with (
+            patch.object(controller, "select_library") as mock_select_library,
+            patch.object(controller, "select_series") as mock_select_series,
+        ):
+            view._on_search_result_selected("My Series", "")
+
+            mock_select_library.assert_not_called()
+            mock_select_series.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
