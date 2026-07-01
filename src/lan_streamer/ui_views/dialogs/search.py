@@ -164,7 +164,11 @@ class SearchDialog(QDialog):
         if self._library_name:
             library_names = [self._library_name]
 
-        results = self._controller.search_media(query_text, library_names)
+        try:
+            results = self._controller.search_media(query_text, library_names)
+        except Exception:
+            logger.exception("Search query failed for '%s'", query_text)
+            results = []
 
         self.results_list.clear()
         self._pending_thumbnails = []

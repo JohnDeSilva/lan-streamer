@@ -203,6 +203,20 @@ class TestSearchDialogSearch:
 
         controller.search_media.assert_called_once_with("Test", None)
 
+    def test_execute_search_controller_raises_shows_no_results(self, qtbot) -> None:
+        """When controller.search_media raises, dialog should show placeholder."""
+        controller = _make_mock_controller()
+        controller.search_media.side_effect = RuntimeError("Unexpected failure")
+
+        dialog = SearchDialog(controller=controller)
+        qtbot.addWidget(dialog)
+        dialog.search_input.setText("Crash")
+        dialog._execute_search()
+
+        assert dialog.results_list.count() == 1
+        placeholder = dialog.results_list.item(0)
+        assert "No results found" in placeholder.text()
+
     def test_execute_search_short_query_noop(self, qtbot) -> None:
         """Execute search with short query should not call DB."""
         controller = _make_mock_controller()
@@ -312,7 +326,7 @@ class TestSearchDialogThumbnail:
         # Should not crash, icon should be missing
 
     def test_thumbnail_loading_cached(self, qtbot, tmp_path) -> None:
-        """Thumbnail loading should cache results."""
+        """Thumbnail loading should cache results and reuse on subsequent calls."""
         controller = _make_mock_controller()
         dialog = SearchDialog(controller=controller)
         qtbot.addWidget(dialog)
@@ -330,9 +344,16 @@ class TestSearchDialogThumbnail:
         item1 = QListWidgetItem("Test")
         dialog._assign_thumbnail_icon(item1, str(image_path))
 
-        # Second call should use cache
+        cache_key = f"search_{image_path}"
+        assert cache_key in dialog._cached_icons
+
+        # Delete the source file; second call must use the in-memory cache
+        image_path.unlink()
+
         item2 = QListWidgetItem("Test")
         dialog._assign_thumbnail_icon(item2, str(image_path))
 
-        cache_key = f"search_{image_path}"
+        # Cache should have been hit — icon should be non-null even though
+        # the source file no longer exists
         assert cache_key in dialog._cached_icons
+        assert not item2.icon().isNull()
