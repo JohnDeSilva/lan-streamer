@@ -42,6 +42,25 @@ def get_linux_distro() -> str:
     return "ubuntu"
 
 
+def parse_base_version(version_str: str) -> tuple[int, ...]:
+    """Parse only the base version, stripping any pre-release suffix.
+
+    E.g. 'v0.27.0-rc.1' -> (0, 27, 0)
+    """
+    base = version_str.strip().lower().lstrip("v").split("-")[0]
+    parts = []
+    for part in base.split("."):
+        digits = "".join(c for c in part if c.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def is_prerelease_tag(tag_name: str) -> bool:
+    """Return True if the tag name indicates a pre-release version."""
+    stripped = tag_name.strip().lower().lstrip("v")
+    return "-" in stripped
+
+
 def get_target_asset_name() -> str:
     """
     Determines the release asset file name expected on GitHub for the current platform.
@@ -63,57 +82,130 @@ def get_target_asset_name() -> str:
 class UpdateCheckWorker(QThread):
     """
     Background worker thread to check the GitHub repository for the latest release.
+    Supports \"stable\" (main releases only) and \"rc\" (includes release candidates).
     """
 
     finished = Signal(bool, dict, str)  # success, release_info, error_msg
 
+    def __init__(self, release_channel: str = "stable") -> None:
+        super().__init__()
+        self.release_channel = release_channel
+
+    @staticmethod
+    def _extract_release_data(release: dict) -> dict | None:
+        """Extract version, body, and download url from a release dict."""
+        tag_name = release.get("tag_name", "")
+        if not tag_name:
+            return None
+        target_asset_name = get_target_asset_name()
+        download_url = ""
+        for asset in release.get("assets", []):
+            if asset.get("name") == target_asset_name:
+                download_url = asset.get("browser_download_url", "")
+                break
+        return {
+            "version": tag_name,
+            "release_notes": release.get("body", ""),
+            "download_url": download_url,
+        }
+
+    def _check_stable(self) -> None:
+        """Check the latest stable (non-prerelease) release."""
+        from lan_streamer import __version__
+
+        headers = {"User-Agent": "lan-streamer-updater"}
+        response = requests.get(
+            "https://api.github.com/repos/JohnDeSilva/lan-streamer/releases/latest",
+            headers=headers,
+            timeout=10,
+        )
+        if response.status_code != 200:
+            self.finished.emit(False, {}, f"HTTP Error {response.status_code}")
+            return
+
+        data = response.json()
+        tag_name = data.get("tag_name", "")
+        if not tag_name:
+            self.finished.emit(False, {}, "Invalid release format: missing tag_name")
+            return
+
+        if parse_version(tag_name) > parse_version(__version__):
+            release_data = self._extract_release_data(data)
+            if release_data and release_data["download_url"]:
+                self.finished.emit(True, release_data, "")
+            else:
+                logger.warning(
+                    f"Newer version {tag_name} found, but no matching asset was found."
+                )
+                self.finished.emit(True, {}, "")
+        else:
+            self.finished.emit(True, {}, "")
+
+    def _check_rc(self) -> None:
+        """Check all releases including pre-releases / release candidates.
+
+        When the same base version exists as both stable and pre-release,
+        the stable release is preferred.
+        """
+        from lan_streamer import __version__
+
+        headers = {"User-Agent": "lan-streamer-updater"}
+        response = requests.get(
+            "https://api.github.com/repos/JohnDeSilva/lan-streamer/releases",
+            headers=headers,
+            timeout=10,
+        )
+        if response.status_code != 200:
+            self.finished.emit(False, {}, f"HTTP Error {response.status_code}")
+            return
+
+        releases = response.json()
+        if not isinstance(releases, list) or not releases:
+            self.finished.emit(True, {}, "")
+            return
+
+        # best_release_per_version[base_version] = (is_prerelease, release_data)
+        best_release_per_version: dict[tuple[int, ...], tuple[bool, dict]] = {}
+
+        for release in releases:
+            if release.get("draft", False):
+                continue
+            tag_name = release.get("tag_name", "")
+            if not tag_name:
+                continue
+
+            base_version = parse_base_version(tag_name)
+            prerelease = is_prerelease_tag(tag_name)
+            release_data = self._extract_release_data(release)
+            if not release_data or not release_data["download_url"]:
+                continue
+
+            existing = best_release_per_version.get(base_version)
+            if existing is None:
+                best_release_per_version[base_version] = (prerelease, release_data)
+            elif existing[0] and not prerelease:
+                # Prefer stable over pre-release at the same base version
+                best_release_per_version[base_version] = (prerelease, release_data)
+
+        if not best_release_per_version:
+            self.finished.emit(True, {}, "")
+            return
+
+        best_base_version = max(best_release_per_version.keys())
+        _, best_release_data = best_release_per_version[best_base_version]
+
+        current_base_version = parse_base_version(__version__)
+        if best_base_version > current_base_version:
+            self.finished.emit(True, best_release_data, "")
+        else:
+            self.finished.emit(True, {}, "")
+
     def run(self) -> None:
         try:
-            from lan_streamer import __version__
-
-            headers = {"User-Agent": "lan-streamer-updater"}
-            response = requests.get(
-                "https://api.github.com/repos/JohnDeSilva/lan-streamer/releases/latest",
-                headers=headers,
-                timeout=10,
-            )
-            if response.status_code != 200:
-                self.finished.emit(False, {}, f"HTTP Error {response.status_code}")
-                return
-
-            data = response.json()
-            tag_name = data.get("tag_name", "")
-            body = data.get("body", "")
-            assets = data.get("assets", [])
-
-            if not tag_name:
-                self.finished.emit(
-                    False, {}, "Invalid release format: missing tag_name"
-                )
-                return
-
-            if parse_version(tag_name) > parse_version(__version__):
-                target_asset_name = get_target_asset_name()
-                download_url = ""
-                for asset in assets:
-                    if asset.get("name") == target_asset_name:
-                        download_url = asset.get("browser_download_url", "")
-                        break
-
-                if download_url:
-                    release_info = {
-                        "version": tag_name,
-                        "release_notes": body,
-                        "download_url": download_url,
-                    }
-                    self.finished.emit(True, release_info, "")
-                else:
-                    logger.warning(
-                        f"Newer version {tag_name} found, but no asset matching '{target_asset_name}' was found."
-                    )
-                    self.finished.emit(True, {}, "")
+            if self.release_channel == "rc":
+                self._check_rc()
             else:
-                self.finished.emit(True, {}, "")
+                self._check_stable()
         except Exception as e:
             logger.exception("Error checking for updates")
             self.finished.emit(False, {}, str(e))

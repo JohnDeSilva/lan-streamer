@@ -70,6 +70,7 @@ class Config:
         ],
         "preferred_audio_device": "",
         "check_for_updates_on_startup": True,
+        "update_release_channel": "stable",
         "database_write_timeout": 60.0,
         "scan_interval_hours": 1,
         "auto_scan_enabled": True,
@@ -272,6 +273,7 @@ class Config:
             self.check_for_updates_on_startup = config_dict[
                 "check_for_updates_on_startup"
             ]
+            self.update_release_channel = config_dict["update_release_channel"]
             self.database_write_timeout = float(config_dict["database_write_timeout"])
             self.scan_interval_hours = int(config_dict["scan_interval_hours"])
             self.auto_scan_enabled = bool(config_dict["auto_scan_enabled"])
@@ -350,6 +352,7 @@ class Config:
             set_app_config(
                 "check_for_updates_on_startup", self.check_for_updates_on_startup
             )
+            set_app_config("update_release_channel", self.update_release_channel)
             set_app_config("database_write_timeout", self.database_write_timeout)
 
             # Secrets

@@ -206,3 +206,206 @@ def test_download_worker_cancelled(qtbot, tmp_path) -> None:
         success, path_or_err = blocker.args
         assert success is False
         assert "cancelled" in path_or_err.lower()
+
+
+def test_update_check_worker_rc_no_update(qtbot) -> None:
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = [
+        {
+            "tag_name": "v0.26.0",
+            "body": "Stable",
+            "draft": False,
+            "assets": [],
+        }
+    ]
+
+    with (
+        patch("requests.get", return_value=mock_response),
+        patch("lan_streamer.__version__", "0.26.0"),
+    ):
+        worker = UpdateCheckWorker(release_channel="rc")
+
+        with qtbot.waitSignal(worker.finished) as blocker:
+            worker.start()
+
+        success, release_info, error_msg = blocker.args
+        assert success is True
+        assert release_info == {}
+        assert error_msg == ""
+
+
+def test_update_check_worker_rc_has_update(qtbot) -> None:
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = [
+        {
+            "tag_name": "v0.27.0-rc.1",
+            "body": "RC release notes",
+            "draft": False,
+            "assets": [
+                {
+                    "name": "lan-streamer-windows.exe",
+                    "browser_download_url": "https://example.invalid/download/rc.exe",
+                }
+            ],
+        }
+    ]
+
+    with (
+        patch("requests.get", return_value=mock_response),
+        patch("lan_streamer.__version__", "0.26.0"),
+        patch("sys.platform", "win32"),
+    ):
+        worker = UpdateCheckWorker(release_channel="rc")
+
+        with qtbot.waitSignal(worker.finished) as blocker:
+            worker.start()
+
+        success, release_info, error_msg = blocker.args
+        assert success is True
+        assert release_info["version"] == "v0.27.0-rc.1"
+        assert release_info["release_notes"] == "RC release notes"
+        assert release_info["download_url"] == "https://example.invalid/download/rc.exe"
+        assert error_msg == ""
+
+
+def test_update_check_worker_rc_picks_newest(qtbot) -> None:
+    """RC channel should pick the newest version across all releases."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = [
+        {
+            "tag_name": "v0.27.0-rc.1",
+            "body": "RC",
+            "draft": False,
+            "assets": [
+                {
+                    "name": "lan-streamer-windows.exe",
+                    "browser_download_url": "https://example.invalid/download/rc.exe",
+                }
+            ],
+        },
+        {
+            "tag_name": "v0.26.0",
+            "body": "Stable",
+            "draft": False,
+            "assets": [
+                {
+                    "name": "lan-streamer-windows.exe",
+                    "browser_download_url": "https://example.invalid/download/stable.exe",
+                }
+            ],
+        },
+    ]
+
+    with (
+        patch("requests.get", return_value=mock_response),
+        patch("lan_streamer.__version__", "0.25.0"),
+        patch("sys.platform", "win32"),
+    ):
+        worker = UpdateCheckWorker(release_channel="rc")
+
+        with qtbot.waitSignal(worker.finished) as blocker:
+            worker.start()
+
+        success, release_info, error_msg = blocker.args
+        assert success is True
+        assert release_info["version"] == "v0.27.0-rc.1"
+        assert release_info["download_url"] == "https://example.invalid/download/rc.exe"
+
+
+def test_update_check_worker_rc_skips_drafts(qtbot) -> None:
+    """RC channel should skip draft releases."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = [
+        {
+            "tag_name": "v99.0.0-draft",
+            "body": "Draft",
+            "draft": True,
+            "assets": [
+                {
+                    "name": "lan-streamer-windows.exe",
+                    "browser_download_url": "https://example.invalid/download/draft.exe",
+                }
+            ],
+        },
+        {
+            "tag_name": "v0.26.0",
+            "body": "Stable",
+            "draft": False,
+            "assets": [
+                {
+                    "name": "lan-streamer-windows.exe",
+                    "browser_download_url": "https://example.invalid/download/stable.exe",
+                }
+            ],
+        },
+    ]
+
+    with (
+        patch("requests.get", return_value=mock_response),
+        patch("lan_streamer.__version__", "0.25.0"),
+        patch("sys.platform", "win32"),
+    ):
+        worker = UpdateCheckWorker(release_channel="rc")
+
+        with qtbot.waitSignal(worker.finished) as blocker:
+            worker.start()
+
+        success, release_info, error_msg = blocker.args
+        assert success is True
+        assert release_info["version"] == "v0.26.0"
+        assert (
+            release_info["download_url"]
+            == "https://example.invalid/download/stable.exe"
+        )
+
+
+def test_update_check_worker_rc_prefers_stable_over_prerelease(qtbot) -> None:
+    """RC channel should prefer stable over prerelease at the same base version."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = [
+        {
+            "tag_name": "v0.27.0-rc.1",
+            "body": "RC release",
+            "draft": False,
+            "assets": [
+                {
+                    "name": "lan-streamer-windows.exe",
+                    "browser_download_url": "https://example.invalid/download/rc.exe",
+                }
+            ],
+        },
+        {
+            "tag_name": "v0.27.0",
+            "body": "Stable release",
+            "draft": False,
+            "assets": [
+                {
+                    "name": "lan-streamer-windows.exe",
+                    "browser_download_url": "https://example.invalid/download/stable.exe",
+                }
+            ],
+        },
+    ]
+
+    with (
+        patch("requests.get", return_value=mock_response),
+        patch("lan_streamer.__version__", "0.26.0"),
+        patch("sys.platform", "win32"),
+    ):
+        worker = UpdateCheckWorker(release_channel="rc")
+
+        with qtbot.waitSignal(worker.finished) as blocker:
+            worker.start()
+
+        success, release_info, error_msg = blocker.args
+        assert success is True
+        assert release_info["version"] == "v0.27.0"
+        assert (
+            release_info["download_url"]
+            == "https://example.invalid/download/stable.exe"
+        )

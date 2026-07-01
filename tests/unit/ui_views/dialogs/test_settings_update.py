@@ -16,35 +16,47 @@ def test_settings_dialog_updates_ui_initialization(dialog) -> None:
     # Verify widgets exist
     assert dialog.check_updates_startup_checkbox is not None
     assert dialog.check_updates_now_button is not None
+    assert dialog.update_release_channel_selector is not None
     assert not dialog.check_updates_startup_checkbox.isHidden()
     assert not dialog.check_updates_now_button.isHidden()
+    assert not dialog.update_release_channel_selector.isHidden()
+    assert dialog.update_release_channel_selector.count() == 2
+    assert dialog.update_release_channel_selector.itemText(0) == "Main Releases"
+    assert dialog.update_release_channel_selector.itemText(1) == "Release Candidates"
 
 
 def test_settings_dialog_updates_load_and_save(qtbot) -> None:
     config.check_for_updates_on_startup = True
+    config.update_release_channel = "stable"
     d1 = SettingsDialog()
     qtbot.addWidget(d1)
     assert d1.check_updates_startup_checkbox.isChecked() is True
+    assert d1.update_release_channel_selector.currentText() == "Main Releases"
 
-    # Modify value
+    # Modify values
     d1.check_updates_startup_checkbox.setChecked(False)
+    d1.update_release_channel_selector.setCurrentText("Release Candidates")
 
     with patch.object(config, "save") as mock_save:
         d1.save_config()
         assert config.check_for_updates_on_startup is False
+        assert config.update_release_channel == "rc"
         mock_save.assert_called_once()
 
     d1.reject()
 
-    # Load again with new value
+    # Load again with new values
     config.check_for_updates_on_startup = False
+    config.update_release_channel = "rc"
     d2 = SettingsDialog()
     qtbot.addWidget(d2)
     assert d2.check_updates_startup_checkbox.isChecked() is False
+    assert d2.update_release_channel_selector.currentText() == "Release Candidates"
     d2.reject()
 
 
 def test_settings_dialog_manual_check_no_updates(dialog, qtbot) -> None:
+    config.update_release_channel = "stable"
     mock_worker = MagicMock()
 
     with (
@@ -58,7 +70,7 @@ def test_settings_dialog_manual_check_no_updates(dialog, qtbot) -> None:
     ):
         dialog.trigger_manual_update_check()
 
-        mock_worker_class.assert_called_once()
+        mock_worker_class.assert_called_once_with(release_channel="stable")
         mock_worker.start.assert_called_once()
         assert dialog.check_updates_now_button.text() == "Checking..."
         assert dialog.check_updates_now_button.isEnabled() is False
@@ -73,6 +85,7 @@ def test_settings_dialog_manual_check_no_updates(dialog, qtbot) -> None:
 
 
 def test_settings_dialog_manual_check_has_updates(dialog, qtbot) -> None:
+    config.update_release_channel = "rc"
     mock_worker = MagicMock()
     release_info = {
         "version": "v0.27.0",
@@ -84,13 +97,14 @@ def test_settings_dialog_manual_check_has_updates(dialog, qtbot) -> None:
         patch(
             "lan_streamer.ui_views.dialogs.settings.UpdateCheckWorker",
             return_value=mock_worker,
-        ),
+        ) as mock_worker_class,
         patch(
             "lan_streamer.ui_views.dialogs.settings.UpdateDialog"
         ) as mock_update_dialog_class,
     ):
         dialog.trigger_manual_update_check()
 
+        mock_worker_class.assert_called_once_with(release_channel="rc")
         mock_dialog_instance = MagicMock()
         mock_update_dialog_class.return_value = mock_dialog_instance
 
@@ -102,18 +116,21 @@ def test_settings_dialog_manual_check_has_updates(dialog, qtbot) -> None:
 
 
 def test_settings_dialog_manual_check_failed(dialog, qtbot) -> None:
+    config.update_release_channel = "stable"
     mock_worker = MagicMock()
 
     with (
         patch(
             "lan_streamer.ui_views.dialogs.settings.UpdateCheckWorker",
             return_value=mock_worker,
-        ),
+        ) as mock_worker_class,
         patch(
             "lan_streamer.ui_views.dialogs.settings.QMessageBox.warning"
         ) as mock_warn,
     ):
         dialog.trigger_manual_update_check()
+
+        mock_worker_class.assert_called_once_with(release_channel="stable")
 
         # Mock signal finish with error
         mock_worker.finished.connect.call_args[0][0](False, {}, "Timeout error")
