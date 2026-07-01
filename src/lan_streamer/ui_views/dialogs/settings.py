@@ -98,6 +98,10 @@ class SettingsDialog(QDialog):
         self.check_updates_startup_checkbox: QCheckBox = QCheckBox(
             "Automatically check for updates on startup"
         )
+        self.update_release_channel_selector: QComboBox = QComboBox()
+        self.update_release_channel_selector.addItems(
+            ["Main Releases", "Release Candidates"]
+        )
         self.tmdb_key_input: QLineEdit = QLineEdit()
         self.opensubtitles_username_input: QLineEdit = QLineEdit()
         self.opensubtitles_password_input: QLineEdit = QLineEdit()
@@ -686,11 +690,15 @@ class SettingsDialog(QDialog):
 
         updates_group_layout.addWidget(self.check_updates_startup_checkbox, 1, 0, 1, 3)
 
+        updates_channel_label: QLabel = QLabel("Update Channel:")
+        updates_group_layout.addWidget(updates_channel_label, 2, 0, 1, 1)
+        updates_group_layout.addWidget(self.update_release_channel_selector, 2, 1, 1, 1)
+
         self.check_updates_now_button: QPushButton = QPushButton(
             "Check for Updates Now"
         )
         self.check_updates_now_button.clicked.connect(self.trigger_manual_update_check)
-        updates_group_layout.addWidget(self.check_updates_now_button, 2, 0, 1, 1)
+        updates_group_layout.addWidget(self.check_updates_now_button, 3, 0, 1, 1)
 
         advanced_layout.addWidget(updates_frame)
 
@@ -899,6 +907,13 @@ class SettingsDialog(QDialog):
         self.check_updates_startup_checkbox.setChecked(
             config.check_for_updates_on_startup
         )
+        channel_index = self.update_release_channel_selector.findText(
+            "Release Candidates"
+            if config.update_release_channel == "rc"
+            else "Main Releases"
+        )
+        if channel_index >= 0:
+            self.update_release_channel_selector.setCurrentIndex(channel_index)
         self.tmdb_key_input.setText(config.tmdb_api_key)
         self.opensubtitles_username_input.setText(config.opensubtitles_username)
         self.opensubtitles_password_input.setText(config.opensubtitles_password)
@@ -1415,6 +1430,12 @@ class SettingsDialog(QDialog):
         config.check_for_updates_on_startup = (
             self.check_updates_startup_checkbox.isChecked()
         )
+        config.update_release_channel = (
+            "rc"
+            if self.update_release_channel_selector.currentText()
+            == "Release Candidates"
+            else "stable"
+        )
 
         config.use_embedded_player = self.use_embedded_checkbox.isChecked()
         config.enable_caching = self.enable_caching_checkbox.isChecked()
@@ -1872,7 +1893,9 @@ class SettingsDialog(QDialog):
         self.check_updates_now_button.setEnabled(False)
         self.check_updates_now_button.setText("Checking...")
 
-        self.update_check_worker = UpdateCheckWorker()
+        self.update_check_worker = UpdateCheckWorker(
+            release_channel=config.update_release_channel
+        )
 
         def on_check_finished(
             success: bool, release_info: dict, error_msg: str
