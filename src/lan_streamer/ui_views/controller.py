@@ -247,6 +247,31 @@ class Controller(QObject):
             self.selected_series_name = movie_name
             self.movie_selected.emit(movie_name)
 
+    def search_media(
+        self,
+        query_text: str,
+        library_names: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Search series and movies by name.
+
+        Delegates to ``db.search_media_names``.
+
+        Args:
+            query_text: The search query string.
+            library_names: Optional list of library names to scope the
+                search.  ``None`` means all libraries.
+
+        Returns:
+            A list of result dicts with keys ``name``, ``library_name``,
+            ``poster_path``, and ``type``.
+        """
+        logger.info(
+            "Controller search_media called: query='%s', libraries=%s",
+            query_text,
+            library_names,
+        )
+        return self._db.search_media_names(query_text, library_names)
+
     def set_sort_mode(self, mode: str) -> None:
         if self.sort_mode != mode:
             logger.info(f"Sort mode changed from '{self.sort_mode}' to '{mode}'")
