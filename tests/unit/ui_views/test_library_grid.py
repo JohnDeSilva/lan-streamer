@@ -802,7 +802,9 @@ class TestSearchButton:
 
             view._open_search_dialog()
 
-            mock_dialog_class.assert_called_once_with(library_name="MyLib", parent=view)
+            mock_dialog_class.assert_called_once_with(
+                controller=view.controller, library_name="MyLib", parent=view
+            )
 
     def test_open_search_dialog_combined_view(self, grid_view) -> None:
         """Opening search on Combined View tab should search all libraries."""
@@ -818,7 +820,9 @@ class TestSearchButton:
 
             view._open_search_dialog()
 
-            mock_dialog_class.assert_called_once_with(library_name=None, parent=view)
+            mock_dialog_class.assert_called_once_with(
+                controller=view.controller, library_name=None, parent=view
+            )
 
     def test_open_search_dialog_connects_signal(self, grid_view) -> None:
         """Opening search should connect item_selected signal."""
