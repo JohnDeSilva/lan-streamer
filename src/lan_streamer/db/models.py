@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 import enum
 import uuid
-from typing import Optional, List, Any
+from typing import TYPE_CHECKING, Any, List, Optional
+
+if TYPE_CHECKING:
+    from lan_streamer.db.models_cast import MediaCast, MediaImage
 from sqlalchemy import (
     Integer,
     String,
@@ -149,6 +154,8 @@ class Series(Base):
     tmdb_name: Mapped[Optional[str]] = mapped_column(String)
     locked_metadata: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     first_air_date: Mapped[Optional[str]] = mapped_column(String)
+    rating: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
+    genre: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
     tmdb_episode_group_id: Mapped[Optional[str]] = mapped_column(String)
     # Per-series user preferences
     pref_hide_missing_future: Mapped[Optional[bool]] = mapped_column(
@@ -161,6 +168,20 @@ class Series(Base):
         back_populates="series",
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    media_cast: Mapped[List["MediaCast"]] = relationship(
+        "MediaCast",
+        back_populates="series",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="MediaCast.series_id",
+    )
+    images: Mapped[List["MediaImage"]] = relationship(
+        "MediaImage",
+        back_populates="series",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="MediaImage.series_id",
     )
 
     __table_args__ = (
@@ -190,6 +211,13 @@ class Season(Base):
         back_populates="season",
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    media_cast: Mapped[List["MediaCast"]] = relationship(
+        "MediaCast",
+        back_populates="season",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="MediaCast.season_id",
     )
 
     __table_args__ = (
@@ -417,6 +445,13 @@ class Episode(CompatibilityMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    media_cast: Mapped[List["MediaCast"]] = relationship(
+        "MediaCast",
+        back_populates="episode",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="MediaCast.episode_id",
+    )
 
     __table_args__ = (
         UniqueConstraint("season_id", "name", name="uq_episodes_season_id_name"),
@@ -459,6 +494,20 @@ class Movie(CompatibilityMixin, Base):
         back_populates="movie",
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    media_cast: Mapped[List["MediaCast"]] = relationship(
+        "MediaCast",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="MediaCast.movie_id",
+    )
+    images: Mapped[List["MediaImage"]] = relationship(
+        "MediaImage",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="MediaImage.movie_id",
     )
 
     __table_args__ = (
