@@ -450,13 +450,13 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def search_series_names(
+def search_media_names(
     query_text: str,
     library_names: Optional[List[str]] = None,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """
-    Search series by name using case-insensitive partial matching.
+    Search series and movies by name using case-insensitive partial matching.
 
     Results are ordered: exact matches first, starts-with matches second,
     contains matches third. If library_names is None or empty, searches all
@@ -468,29 +468,39 @@ def search_series_names(
         limit: Maximum number of results to return (default 50).
 
     Returns:
-        A list of dicts with keys: name, library_name, poster_path.
+        A list of dicts with keys: name, library_name, poster_path, type.
     """
     try:
         logger.debug(
-            f"Searching series names for query='{query_text}', "
+            f"Searching media names for query='{query_text}', "
             f"library_names={library_names}, limit={limit}"
         )
         if not query_text or len(query_text.strip()) < 2:
             return []
 
         clean_query = query_text.strip()
+        like_pattern = f"%{clean_query}%"
 
         with get_session() as session:
-            statement = select(Series).where(Series.name.ilike(f"%{clean_query}%"))
+            # Fetch matching series
+            series_statement = select(Series).where(Series.name.ilike(like_pattern))
             if library_names:
-                statement = statement.where(Series.library_name.in_(library_names))
+                series_statement = series_statement.where(
+                    Series.library_name.in_(library_names)
+                )
+            series_list = list(session.scalars(series_statement).all())
 
-            # Fetch all matching series
-            series_list = session.scalars(statement).all()
+            # Fetch matching movies
+            movie_statement = select(Movie).where(Movie.name.ilike(like_pattern))
+            if library_names:
+                movie_statement = movie_statement.where(
+                    Movie.library_name.in_(library_names)
+                )
+            movie_list = list(session.scalars(movie_statement).all())
 
-            # Sort: exact match first, starts with second, contains third
-            def sort_key(series_item: Series) -> Tuple[int, str]:
-                name_lower = (series_item.name or "").lower()
+            # Sort all results together: exact match first, starts with second, contains third
+            def sort_key(item: Any) -> Tuple[int, str]:
+                name_lower = (item.name or "").lower()
                 query_lower = clean_query.lower()
                 if name_lower == query_lower:
                     return (0, name_lower)
@@ -498,24 +508,26 @@ def search_series_names(
                     return (1, name_lower)
                 return (2, name_lower)
 
-            series_list = sorted(series_list, key=sort_key)
+            all_items: List[Any] = sorted(series_list + movie_list, key=sort_key)
 
             results: List[Dict[str, Any]] = []
-            for series in series_list[:limit]:
+            for item in all_items[:limit]:
+                item_type = "series" if isinstance(item, Series) else "movie"
                 results.append(
                     {
-                        "name": series.name,
-                        "library_name": series.library_name,
-                        "poster_path": series.poster_path or "",
+                        "name": item.name,
+                        "library_name": item.library_name,
+                        "poster_path": item.poster_path or "",
+                        "type": item_type,
                     }
                 )
 
             logger.info(
-                f"search_series_names: found {len(results)} results for '{clean_query}'"
+                f"search_media_names: found {len(results)} results for '{clean_query}'"
             )
-            logger.debug(f"search_series_names results: {results}")
+            logger.debug(f"search_media_names results: {results}")
             return results
 
     except Exception:
-        logger.exception(f"Error searching series names for query '{query_text}'")
+        logger.exception(f"Error searching media names for query '{query_text}'")
         return []

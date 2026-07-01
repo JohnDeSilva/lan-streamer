@@ -854,6 +854,32 @@ class TestOnSearchResultSelected:
             mock_select_library.assert_called_once_with("MyLib")
             mock_select_series.assert_called_once_with("My Series")
 
+    def test_navigate_from_combined_sets_flag(self, grid_view) -> None:
+        """Navigating from Combined View should set _navigate_back_to_combined."""
+        view, controller = grid_view
+        controller.current_library_name = "Combined View"
+
+        with (
+            patch.object(controller, "select_library"),
+            patch.object(controller, "select_series"),
+        ):
+            view._on_search_result_selected("My Series", "MyLib")
+
+            assert view._navigate_back_to_combined is True
+
+    def test_navigate_from_library_clears_flag(self, grid_view) -> None:
+        """Navigating from a library tab should clear _navigate_back_to_combined."""
+        view, controller = grid_view
+        controller.current_library_name = "Anime"
+
+        with (
+            patch.object(controller, "select_library"),
+            patch.object(controller, "select_series"),
+        ):
+            view._on_search_result_selected("My Series", "MyLib")
+
+            assert view._navigate_back_to_combined is False
+
     def test_empty_library_name_skips_navigation(self, grid_view) -> None:
         """Empty library name should not crash but should skip navigation."""
         view, controller = grid_view
