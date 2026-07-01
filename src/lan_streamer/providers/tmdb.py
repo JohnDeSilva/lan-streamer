@@ -18,7 +18,10 @@ logger = logging.getLogger(__name__)
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
+TMDB_IMAGE_BASE_BACKDROP = "https://image.tmdb.org/t/p/w1280"
+TMDB_IMAGE_BASE_ORIGINAL = "https://image.tmdb.org/t/p/original"
 CACHE_DIR = Path.home() / ".config" / "lan-streamer" / "cache" / "images"
+PERSON_CACHE_DIR = Path.home() / ".config" / "lan-streamer" / "cache" / "people"
 
 
 class TMDBClient:
@@ -499,6 +502,170 @@ class TMDBClient:
         if selected_group:
             return self.get_episode_group_details(selected_group["id"])
         return None
+
+    # ------------------------------------------------------------------
+    # Credits & Images API
+    # ------------------------------------------------------------------
+
+    def get_series_credits(self, series_tmdb_id: int) -> dict:
+        """Fetch cast and crew for a TV series from /tv/{id}/credits."""
+        logger.info("Requesting TMDB series credits for ID '%s'", series_tmdb_id)
+        try:
+            resp = self._make_request(
+                "GET",
+                f"{TMDB_BASE_URL}/tv/{series_tmdb_id}/credits",
+                params=self._params(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            logger.exception("TMDB get_series_credits(%s) failed", series_tmdb_id)
+            return {}
+
+    def get_movie_credits(self, movie_tmdb_id: int) -> dict:
+        """Fetch cast and crew for a movie from /movie/{id}/credits."""
+        logger.info("Requesting TMDB movie credits for ID '%s'", movie_tmdb_id)
+        try:
+            resp = self._make_request(
+                "GET",
+                f"{TMDB_BASE_URL}/movie/{movie_tmdb_id}/credits",
+                params=self._params(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            logger.exception("TMDB get_movie_credits(%s) failed", movie_tmdb_id)
+            return {}
+
+    def get_episode_credits(
+        self, series_tmdb_id: int, season_number: int, episode_number: int
+    ) -> dict:
+        """Fetch cast and crew for an episode from /tv/{id}/season/{n}/episode/{m}/credits."""
+        logger.info(
+            "Requesting TMDB episode credits for S%02dE%02d of series ID '%s'",
+            season_number,
+            episode_number,
+            series_tmdb_id,
+        )
+        try:
+            resp = self._make_request(
+                "GET",
+                f"{TMDB_BASE_URL}/tv/{series_tmdb_id}/season/{season_number}/episode/{episode_number}/credits",
+                params=self._params(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            logger.exception(
+                "TMDB get_episode_credits(%s, S%02dE%02d) failed",
+                series_tmdb_id,
+                season_number,
+                episode_number,
+            )
+            return {}
+
+    def get_series_images(self, series_tmdb_id: int) -> dict:
+        """Fetch all images for a TV series from /tv/{id}/images."""
+        logger.info("Requesting TMDB series images for ID '%s'", series_tmdb_id)
+        try:
+            resp = self._make_request(
+                "GET",
+                f"{TMDB_BASE_URL}/tv/{series_tmdb_id}/images",
+                params=self._params({"include_image_language": "en,null"}),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            logger.exception("TMDB get_series_images(%s) failed", series_tmdb_id)
+            return {}
+
+    def get_movie_images(self, movie_tmdb_id: int) -> dict:
+        """Fetch all images for a movie from /movie/{id}/images."""
+        logger.info("Requesting TMDB movie images for ID '%s'", movie_tmdb_id)
+        try:
+            resp = self._make_request(
+                "GET",
+                f"{TMDB_BASE_URL}/movie/{movie_tmdb_id}/images",
+                params=self._params({"include_image_language": "en,null"}),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            logger.exception("TMDB get_movie_images(%s) failed", movie_tmdb_id)
+            return {}
+
+    def get_person_details(self, person_tmdb_id: int) -> dict:
+        """Fetch person details from /person/{id}."""
+        logger.info("Requesting TMDB person details for ID '%s'", person_tmdb_id)
+        try:
+            resp = self._make_request(
+                "GET",
+                f"{TMDB_BASE_URL}/person/{person_tmdb_id}",
+                params=self._params(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            logger.exception("TMDB get_person_details(%s) failed", person_tmdb_id)
+            return {}
+
+    def download_and_cache_profile(self, profile_path: str, tmdb_id: int) -> str:
+        """Download a person profile image and cache it locally."""
+        if not profile_path:
+            return ""
+        cache_key = f"tmdb_person_{tmdb_id}"
+        person_cache = PERSON_CACHE_DIR
+        person_cache.mkdir(parents=True, exist_ok=True)
+        for existing in person_cache.glob(f"{cache_key}.*"):
+            if existing.is_file():
+                return str(existing)
+        if profile_path.startswith("/"):
+            image_url = f"{TMDB_IMAGE_BASE}{profile_path}"
+        else:
+            image_url = profile_path
+        suffix = Path(image_url.split("?")[0]).suffix or ".jpg"
+        image_path = person_cache / f"{cache_key}{suffix}"
+        try:
+            resp = self._make_request("GET", image_url, timeout=15)
+            if resp.status_code == 200:
+                with open(image_path, "wb") as f:
+                    f.write(resp.content)
+                return str(image_path)
+        except Exception:
+            logger.exception("Failed to download profile image from '%s'", image_url)
+        return ""
+
+    def download_and_cache_image(self, image_path: str, size: str = "w500") -> str:
+        """Download an image from TMDB CDN and cache it locally. Returns local path."""
+        if not image_path:
+            return ""
+        base_url = TMDB_IMAGE_BASE_BACKDROP if size == "w1280" else TMDB_IMAGE_BASE
+        if image_path.startswith("/"):
+            image_url = f"{base_url}{image_path}"
+        else:
+            image_url = image_path
+        cache_key = image_path.replace("/", "_").replace(".", "_")
+        cache_dir = self._effective_cache_dir
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        suffix = Path(image_url.split("?")[0]).suffix or ".jpg"
+        local_path = cache_dir / f"tmdb_img_{cache_key}{suffix}"
+        if local_path.exists():
+            return str(local_path)
+        try:
+            resp = self._make_request("GET", image_url, timeout=15)
+            if resp.status_code == 200:
+                with open(local_path, "wb") as f:
+                    f.write(resp.content)
+                return str(local_path)
+        except Exception:
+            logger.exception("Failed to download image from '%s'", image_url)
+        return ""
 
     def get_cached_image(self, cache_key: str) -> str:
         """Checks the /cache/images directory first to see if a poster already exists for the given cache_key."""

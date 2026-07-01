@@ -829,6 +829,7 @@ def save_season_data(
                 existing_series,
                 stats,
             )
+            stats["series_id"] = series.id
 
             existing_seasons = {
                 season_obj.name: season_obj
