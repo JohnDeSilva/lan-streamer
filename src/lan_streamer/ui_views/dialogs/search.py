@@ -1,5 +1,5 @@
 """
-Search dialog with debounced autocomplete for series discovery.
+Search dialog with debounced autocomplete for series and movie discovery.
 """
 
 import logging
@@ -25,18 +25,19 @@ logger = logging.getLogger(__name__)
 
 class SearchDialog(QDialog):
     """
-    Modal dialog for searching series by name with debounced autocomplete.
+    Modal dialog for searching series and movies by name with debounced autocomplete.
 
-    Emits ``series_selected(series_name, library_name)`` when a result is
+    Emits ``item_selected(item_name, library_name, item_type)`` when a result is
     chosen by the user via click or activation (Enter / double-click).
+    ``item_type`` is ``\"series\"`` or ``\"movie\"``.
 
-    .. py:data:: series_selected
+    .. py:data:: item_selected
 
-        :type: Signal(str, str)
-        :emit: ``series_selected(series_name, library_name)``
+        :type: Signal(str, str, str)
+        :emit: ``item_selected(item_name, library_name, item_type)``
     """
 
-    series_selected = Signal(str, str)  # series_name, library_name
+    item_selected = Signal(str, str, str)  # item_name, library_name, item_type
 
     def __init__(
         self,
@@ -54,7 +55,7 @@ class SearchDialog(QDialog):
         self._library_name: Optional[str] = library_name
         self._cached_icons: Dict[str, QIcon] = {}
 
-        title = "Search Series"
+        title = "Search"
         if library_name:
             title += f" - {library_name}"
         self.setWindowTitle(title)
@@ -75,7 +76,7 @@ class SearchDialog(QDialog):
 
         # Search input
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search series...")
+        self.search_input.setPlaceholderText("Search...")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.setStyleSheet(
             """
@@ -157,19 +158,22 @@ class SearchDialog(QDialog):
         if self._library_name:
             library_names = [self._library_name]
 
-        results = db.search_series_names(query_text, library_names)
+        results = db.search_media_names(query_text, library_names)
 
         self.results_list.clear()
         for result in results:
-            series_name = result.get("name", "")
+            item_name = result.get("name", "")
             result_library_name = result.get("library_name", "")
             poster_path = result.get("poster_path", "")
+            item_type = result.get("type", "series")
 
-            display_text = f"{series_name}\n(Library: {result_library_name})"
+            type_label = "Series" if item_type == "series" else "Movie"
+            display_text = f"{item_name}\n({type_label} - {result_library_name})"
             list_item = QListWidgetItem(display_text)
-            list_item.setData(Qt.ItemDataRole.UserRole, series_name)
+            list_item.setData(Qt.ItemDataRole.UserRole, item_name)
             list_item.setData(Qt.ItemDataRole.UserRole + 1, result_library_name)
-            list_item.setToolTip(f"{series_name} ({result_library_name})")
+            list_item.setData(Qt.ItemDataRole.UserRole + 2, item_type)
+            list_item.setToolTip(f"{item_name} ({type_label}, {result_library_name})")
 
             # Try to load poster thumbnail
             if poster_path:
@@ -178,7 +182,7 @@ class SearchDialog(QDialog):
             self.results_list.addItem(list_item)
 
         if not results:
-            empty_item = QListWidgetItem("No series found")
+            empty_item = QListWidgetItem("No results found")
             empty_item.setFlags(empty_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             empty_item.setForeground(QColor(136, 136, 136))
             self.results_list.addItem(empty_item)
@@ -186,7 +190,7 @@ class SearchDialog(QDialog):
     def _assign_thumbnail_icon(
         self, item_target: QListWidgetItem, poster_path_value: str
     ) -> None:
-        """Load a 32×48 thumbnail icon for the given poster path into the item.
+        """Load a 32x48 thumbnail icon for the given poster path into the item.
 
         Results are cached in ``self._cached_icons`` by path to avoid
         repeated disk reads.
@@ -216,14 +220,16 @@ class SearchDialog(QDialog):
 
     @Slot(QListWidgetItem)
     def _on_item_clicked(self, item_target: QListWidgetItem) -> None:
-        """Emit ``series_selected`` with the chosen series and close dialog."""
-        series_name = item_target.data(Qt.ItemDataRole.UserRole)
+        """Emit ``item_selected`` with the chosen item and close dialog."""
+        item_name = item_target.data(Qt.ItemDataRole.UserRole)
         result_library_name = item_target.data(Qt.ItemDataRole.UserRole + 1)
-        if series_name and result_library_name:
+        item_type = item_target.data(Qt.ItemDataRole.UserRole + 2) or "series"
+        if item_name and result_library_name:
             logger.info(
-                "Search result selected: '%s' (Library: %s)",
-                series_name,
+                "Search result selected: '%s' (Type: %s, Library: %s)",
+                item_name,
+                item_type,
                 result_library_name,
             )
-            self.series_selected.emit(series_name, result_library_name)
+            self.item_selected.emit(item_name, result_library_name, item_type)
             self.accept()

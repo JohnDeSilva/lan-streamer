@@ -34,7 +34,7 @@ from lan_streamer.db.queries_ui import (
     get_next_episode,
     get_combined_next_up,
     get_combined_smart_row,
-    search_series_names,
+    search_media_names,
 )
 from lan_streamer.db.smart_row_cache import (
     get_cached_smart_rows,
