@@ -38,4 +38,5 @@ from lan_streamer.ui_views.dialogs import (
     RenamePreviewDialog,
     SettingsDialog,
     UpdateDialog,
+    SearchDialog,
 )
