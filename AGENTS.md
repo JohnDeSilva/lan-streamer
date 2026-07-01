@@ -35,6 +35,7 @@ This document establishes the repository-wide standards, architectural constrain
   - [providers/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/providers): External client wrappers (TMDB, Jellyfin, OpenSubtitles, MyAnimeList).
   - [system/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/system): Config manager, logging handler, backups, updater, and [threading_manager.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/system/threading_manager.py) — centralized `WorkerManager`/`WorkerSlot` lifecycle manager.
   - [ui_views/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/ui_views): Desktop PySide6 QtWidgets view screens, stylesheet themes, and controllers.
+    - [dialogs/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/ui_views/dialogs): Dialog windows including settings, details views, and [search.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/ui_views/dialogs/search.py) — `SearchDialog` with debounced autocomplete for series discovery.
 - [tests/](file:///home/sadmin/antigravity/lan-streamer/tests): Structured unit, integration, and end-to-end tests (minimum 90% code coverage target).
 
 ---
