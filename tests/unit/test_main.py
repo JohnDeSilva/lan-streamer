@@ -607,3 +607,53 @@ def test_main_more_signal_routings() -> None:
         )
         series_detail_slot("Show")
         mock_series_detail_dialog.return_value.exec.assert_called_once()
+
+
+def test_main_cast_detail_navigation_and_back_stack() -> None:
+    """Verify that back button on cast details preserves navigation source view index."""
+    from lan_streamer import main
+
+    with (
+        patch("sys.exit", MagicMock()),
+        patch("lan_streamer.main.QApplication", MagicMock()),
+        patch("lan_streamer.main.QMainWindow", MagicMock()),
+        patch("lan_streamer.main.QWidget", MagicMock()),
+        patch("lan_streamer.main.QStackedLayout", MagicMock()) as mock_layout_class,
+        patch("lan_streamer.main.Controller", MagicMock()) as mock_controller_class,
+        patch("lan_streamer.main.LibraryGridView", MagicMock()),
+        patch("lan_streamer.main.SeriesDetailView", MagicMock()),
+        patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.SeasonDetailView", MagicMock()),
+        patch(
+            "lan_streamer.main.CastDetailView", MagicMock()
+        ) as mock_cast_detail_class,
+        patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
+        patch("lan_streamer.main.db.init_db", MagicMock()),
+        patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
+    ):
+        asyncio.run(main.main())
+
+        mock_controller_instance = mock_controller_class.return_value
+        mock_layout_instance = mock_layout_class.return_value
+        mock_cast_detail_instance = mock_cast_detail_class.return_value
+
+        # Emulate starting from Season Detail View (index 3)
+        mock_layout_instance.currentIndex.return_value = 3
+
+        # Trigger cast member selection
+        cast_selected_slot: Callable[[str], None] = (
+            mock_controller_instance.cast_member_selected.connect.call_args[0][0]
+        )
+        cast_selected_slot("person-123")
+
+        mock_cast_detail_instance.display_person.assert_called_with("person-123")
+        mock_layout_instance.setCurrentIndex.assert_called_with(4)
+
+        # Trigger cast detail back button
+        cast_back_slot: Callable[[], None] = (
+            mock_cast_detail_instance.back_requested.connect.call_args[0][0]
+        )
+        cast_back_slot()
+
+        # It should switch back to the index it came from (index 3)
+        mock_layout_instance.setCurrentIndex.assert_called_with(3)
