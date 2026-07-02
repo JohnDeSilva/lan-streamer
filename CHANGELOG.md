@@ -1,3 +1,27 @@
+## v0.40.0 (2026-07-02)
+
+### Feat
+
+- **ui**: implement circular cast image masking and back-stack index tracking
+- **ui**: add right-click poster selector for series, season, and movie views
+- **ui**: add force-refetch checkboxes for file scan and runtime extraction
+- **ui**: add cast/crew display, season detail, cast detail, poster selector views
+- **tmdb**: add credits and images API integration with scan pipeline
+- **db**: add cast, crew, and image database models
+- **updater**: add release channel setting for stable/RC updates
+
+### Fix
+
+- **ui**: use KeepAspectRatio for circular cast image masking to preserve framing
+- **ui,db**: resolve poster thumbnail thread violation and serialize cast writes during scans
+- **metadata**: address must-fix bugs and improve database/UI reliability
+- **ui**: correct cast display caching, layout, and add force-refresh option
+
+### Refactor
+
+- **ui**: remove circular photo masking and render cast photos as standard rounded rectangles
+- **db,test**: remove redundant commits and clean test temporary directories
+
 ## v0.40.0rc0 (2026-07-02)
 
 ### Feat
