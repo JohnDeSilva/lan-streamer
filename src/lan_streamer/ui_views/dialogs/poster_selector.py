@@ -13,7 +13,7 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import Qt, QThread, Signal, QObject
+from PySide6.QtCore import Qt, QThread, Signal, QObject, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog,
@@ -104,11 +104,14 @@ class _TmdbImageFetchWorker(QObject):
 class _ThumbnailDownloader(QObject):
     """Asynchronous worker to download thumbnail images."""
 
-    downloaded = Signal(bytes)
+    downloaded = Signal(bytes, object)  # content, label
 
-    def __init__(self, image_url: str, parent: Optional[QObject] = None) -> None:
+    def __init__(
+        self, image_url: str, label: QLabel, parent: Optional[QObject] = None
+    ) -> None:
         super().__init__(parent)
         self.image_url = image_url
+        self.label = label
 
     def start_download(self) -> None:
         import threading
@@ -119,7 +122,7 @@ class _ThumbnailDownloader(QObject):
 
                 response = http_requests.get(self.image_url, timeout=8)
                 if response.status_code == 200:
-                    self.downloaded.emit(response.content)
+                    self.downloaded.emit(response.content, self.label)
             except Exception:
                 logger.debug("Thumbnail fetch failed for %s", self.image_url)
 
@@ -598,27 +601,30 @@ class PosterSelectorDialog(QDialog):
             image_url: Full URL for the thumbnail image.
             label: QLabel widget to display the pixmap in.
         """
-        downloader = _ThumbnailDownloader(image_url)
+        downloader = _ThumbnailDownloader(image_url, label, parent=self)
         label.setProperty("_downloader", downloader)
-
-        def on_downloaded(content: bytes) -> None:
-            pixmap = QPixmap()
-            pixmap.loadFromData(content)
-            if not pixmap.isNull():
-                label.setPixmap(
-                    pixmap.scaled(
-                        170,
-                        255,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                )
-            else:
-                label.setText("📷")
-            label.setProperty("_downloader", None)
-
-        downloader.downloaded.connect(on_downloaded)
+        downloader.downloaded.connect(self._on_thumbnail_downloaded)
         downloader.start_download()
+
+    @Slot(bytes, object)
+    def _on_thumbnail_downloaded(self, content: bytes, label: object) -> None:
+        """Process downloaded thumbnail bytes on the main GUI thread."""
+        if not isinstance(label, QLabel):
+            return
+        pixmap = QPixmap()
+        pixmap.loadFromData(content)
+        if not pixmap.isNull():
+            label.setPixmap(
+                pixmap.scaled(
+                    170,
+                    255,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+        else:
+            label.setText("📷")
+        label.setProperty("_downloader", None)
 
     def _on_select_tmdb_image(self, tmdb_file_path: str, image_type: str) -> None:
         """Download the selected TMDB image and apply it as the active poster.

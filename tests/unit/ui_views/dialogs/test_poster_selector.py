@@ -599,3 +599,58 @@ def test_season_open_poster_selector_no_op_when_no_season(qtbot):
     qtbot.addWidget(view)
 
     view._open_poster_selector()
+
+
+def test_thumbnail_downloader_callback_on_gui_thread(qtbot, series_record) -> None:
+    """Thumbnail downloader callbacks must always run on the main GUI thread."""
+    from PySide6.QtCore import QThread
+    from PySide6.QtWidgets import QApplication, QLabel
+    from unittest.mock import MagicMock, patch
+
+    dialog = PosterSelectorDialog(
+        media_name=series_record,
+        media_kind="series",
+    )
+    qtbot.addWidget(dialog)
+
+    label = QLabel()
+    fake_bytes = b"fake_image_content"
+
+    callback_thread = None
+
+    def mock_setPixmap(pixmap):
+        nonlocal callback_thread
+        callback_thread = QThread.currentThread()
+
+    def mock_setText(text):
+        nonlocal callback_thread
+        callback_thread = QThread.currentThread()
+
+    # We mock setPixmap and setText on the label to record the thread they are called in
+    with (
+        patch.object(label, "setPixmap", side_effect=mock_setPixmap),
+        patch.object(label, "setText", side_effect=mock_setText),
+    ):
+        with patch("requests.get") as mock_get:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.content = fake_bytes
+            mock_get.return_value = mock_response
+
+            from lan_streamer.ui_views.dialogs.poster_selector import (
+                _ThumbnailDownloader,
+            )
+
+            downloader = _ThumbnailDownloader(
+                "https://example.invalid/thumb.jpg", label, parent=dialog
+            )
+            label.setProperty("_downloader", downloader)
+            downloader.downloaded.connect(dialog._on_thumbnail_downloaded)
+
+            with qtbot.waitSignal(downloader.downloaded, timeout=2000):
+                downloader.start_download()
+
+            # Yield control to the Qt event loop to process any queued connection slots
+            QApplication.processEvents()
+
+    assert callback_thread == QApplication.instance().thread()
