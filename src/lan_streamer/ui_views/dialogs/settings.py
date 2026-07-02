@@ -752,9 +752,15 @@ class SettingsDialog(QDialog):
         self.pass1_button.clicked.connect(self.trigger_pass1_scan)
         passes_layout.addWidget(self.pass1_button)
 
+        pass2_row: QHBoxLayout = QHBoxLayout()
         self.pass2_button: QPushButton = QPushButton("Metadata Resolution")
         self.pass2_button.clicked.connect(self.trigger_pass2_scan)
-        passes_layout.addWidget(self.pass2_button)
+        pass2_row.addWidget(self.pass2_button)
+        self.force_metadata_checkbox: QCheckBox = QCheckBox(
+            "Force re-fetch for all (respects locks)"
+        )
+        pass2_row.addWidget(self.force_metadata_checkbox)
+        passes_layout.addLayout(pass2_row)
 
         self.pass3_button: QPushButton = QPushButton("Runtime Extraction")
         self.pass3_button.clicked.connect(self.trigger_pass3_scan)
@@ -1843,8 +1849,9 @@ class SettingsDialog(QDialog):
     def trigger_pass2_scan(self) -> None:
         if self.controller is not None:
             self._show_scan_progress_widgets()
+            force_refresh = self.force_metadata_checkbox.isChecked()
             self.controller.trigger_scan_all(
-                force_refresh=False,
+                force_refresh=force_refresh,
                 run_pass1=False,
                 run_pass2=True,
                 chain_pass3=False,

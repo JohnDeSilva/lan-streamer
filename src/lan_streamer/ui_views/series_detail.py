@@ -70,11 +70,13 @@ class SeriesDetailView(QWidget):
         self.controller.library_loaded.connect(self.on_library_loaded)
 
     def _setup_ui(self) -> None:
-        main_layout: QHBoxLayout = QHBoxLayout(self)
+        main_layout: QVBoxLayout = QVBoxLayout(self)
         main_layout.setContentsMargins(15, 15, 15, 15)
-        main_layout.setSpacing(20)
+        main_layout.setSpacing(15)
 
-        # Left Column (1/4 width stretch)
+        top_row: QHBoxLayout = QHBoxLayout()
+        top_row.setSpacing(20)
+
         left_container: QWidget = QWidget()
         left_layout: QVBoxLayout = QVBoxLayout(left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -111,7 +113,6 @@ class SeriesDetailView(QWidget):
         self.overview_label.setStyleSheet("color: #94A3B8;")
         left_layout.addWidget(self.overview_label)
 
-        # Actions Panel
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(10)
 
@@ -133,44 +134,36 @@ class SeriesDetailView(QWidget):
         actions_layout.addStretch()
         left_layout.addLayout(actions_layout)
 
-        main_layout.addWidget(left_container, 1)  # 1/4 stretch
+        top_row.addWidget(left_container)
 
-        # Right Column (3/4 width stretch)
         right_container: QWidget = QWidget()
         right_layout: QVBoxLayout = QVBoxLayout(right_container)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(10)
 
-        # Cast section
-        cast_section_widget: QWidget = QWidget()
-        cast_section_layout: QVBoxLayout = QVBoxLayout(cast_section_widget)
-        cast_section_layout.setContentsMargins(0, 0, 0, 0)
-        cast_section_layout.setSpacing(6)
+        self.seasons_tab_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        right_layout.addWidget(self.seasons_tab_widget, 1)
+        top_row.addWidget(right_container, 1)
+
+        main_layout.addLayout(top_row, 1)
 
         cast_header: QLabel = QLabel("Cast")
         cast_header.setFont(QFont("Inter", 14, QFont.Weight.Bold))
-        cast_section_layout.addWidget(cast_header)
+        main_layout.addWidget(cast_header)
 
         self._cast_scroll = QScrollArea()
         self._cast_scroll.setWidgetResizable(True)
         self._cast_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._cast_scroll.setMaximumHeight(220)
+        self._cast_scroll.setFixedHeight(190)
         self._cast_scroll.setStyleSheet("QScrollArea { background: transparent; }")
         cast_scroll_content = QWidget()
         self._cast_grid = QHBoxLayout(cast_scroll_content)
         self._cast_grid.setSpacing(10)
         self._cast_grid.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self._cast_scroll.setWidget(cast_scroll_content)
-        cast_section_layout.addWidget(self._cast_scroll)
-
-        right_layout.addWidget(cast_section_widget)
-
-        self.seasons_tab_widget.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        right_layout.addWidget(self.seasons_tab_widget, 1)
-
-        main_layout.addWidget(right_container, 3)  # 3/4 stretch
+        main_layout.addWidget(self._cast_scroll)
 
     def _lookup_series_id(self) -> Optional[str]:
         """Query the database for the Series UUID matching the current series name."""
@@ -372,6 +365,7 @@ class SeriesDetailView(QWidget):
         )
         is_opening: bool = self._current_series_name != series_name
         self._current_series_name = series_name
+        self._current_series_db_id = None
         self._season_tables = {}
 
         series_record: Dict[str, Any] = self.controller.cached_library_data.get(
