@@ -284,15 +284,18 @@ class SeasonDetailView(QWidget):
             if person.profile_path:
                 pixmap = QPixmap(person.profile_path)
                 if not pixmap.isNull():
-                    from lan_streamer.ui_views.image_masking import get_circular_pixmap
-
-                    circular_pixmap = get_circular_pixmap(pixmap, 60)
-                    photo.setPixmap(circular_pixmap)
+                    scaled_pixmap = pixmap.scaled(
+                        60,
+                        60,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    photo.setPixmap(scaled_pixmap)
                 else:
                     photo.setText("🎭")
             else:
                 photo.setText("🎭")
-            photo.setStyleSheet("background-color: #0f3460; border-radius: 30px;")
+            photo.setStyleSheet("background-color: #0f3460; border-radius: 4px;")
             card_layout.addWidget(photo, 0, Qt.AlignmentFlag.AlignCenter)
 
             name_label = QLabel(person.name or "Unknown")
