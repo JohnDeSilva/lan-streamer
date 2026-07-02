@@ -1,10 +1,11 @@
+import os
 from unittest.mock import patch
 from typing import Any
 from sqlalchemy import text
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel, QLayout
 from lan_streamer.ui_views import CastDetailView
 from lan_streamer.db.connection import get_session
-from lan_streamer.db.models import Series, Episode, Season
+from lan_streamer.db.models import Series, Episode, Season, Movie
 from lan_streamer.db.models_cast import Person, MediaCast
 
 
@@ -76,17 +77,118 @@ def test_cast_detail_display(qtbot: Any) -> None:
     card = view._filmography_layout.itemAt(0).widget()
     assert card is not None
 
-    # Find title label in the card
+    # Find title label in the card (may be nested in sub-layouts)
     title_label = None
-    for i in range(card.layout().count()):
-        item = card.layout().itemAt(i)
-        if item.widget() and isinstance(item.widget(), QLabel):
-            if "Test Series" in item.widget().text():
-                title_label = item.widget()
-                break
 
+    def _find_label(layout: QLayout) -> None:
+        nonlocal title_label
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None and isinstance(widget, QLabel):
+                if "Test Series" in widget.text():
+                    title_label = widget
+                    return
+            sub_layout = item.layout()
+            if sub_layout is not None:
+                _find_label(sub_layout)
+                if title_label is not None:
+                    return
+
+    _find_label(card.layout())
     assert title_label is not None
     assert title_label.text() == "Test Series"
+
+
+def test_cast_detail_movie_filmography(qtbot: Any) -> None:
+    """Test filmography display with a movie entry and poster path."""
+    # Clean up existing data first
+    with get_session() as cleanup_session:
+        cleanup_session.execute(text("PRAGMA foreign_keys = OFF"))
+        cleanup_session.execute(MediaCast.__table__.delete())
+        cleanup_session.execute(Person.__table__.delete())
+        cleanup_session.execute(Episode.__table__.delete())
+        cleanup_session.execute(Season.__table__.delete())
+        cleanup_session.execute(Series.__table__.delete())
+        cleanup_session.execute(Movie.__table__.delete())
+        cleanup_session.execute(text("PRAGMA foreign_keys = ON"))
+
+    # Create a temporary poster file
+    temp_poster = "/tmp/test_poster.jpg"
+    try:
+        open(temp_poster, "w").close()
+
+        with get_session() as session:
+            person = Person(
+                tmdb_identifier=54321,
+                name="Movie Actor",
+                biography="Another test biography.",
+            )
+            session.add(person)
+            session.flush()
+
+            movie = Movie(
+                library_name="Movies",
+                name="Test Movie",
+                poster_path=temp_poster,
+            )
+            session.add(movie)
+            session.flush()
+
+            cast_entry = MediaCast(
+                person_id=person.id,
+                movie_id=movie.id,
+                role="actor",
+                character="Lead Role",
+                sort_order=1,
+            )
+            session.add(cast_entry)
+            person_id = person.id
+
+        view = CastDetailView()
+        qtbot.addWidget(view)
+
+        with (
+            patch("lan_streamer.ui_views.cast_detail.QPixmap") as mock_pixmap,
+            patch.object(QLabel, "setPixmap", return_value=None),
+        ):
+            mock_pixmap.return_value.isNull.return_value = False
+            view.display_person(person_id)
+
+        assert view._name_label.text() == "Movie Actor"
+        assert view._filmography_layout.count() > 0
+
+        card = view._filmography_layout.itemAt(0).widget()
+        assert card is not None
+
+        title_label = None
+
+        def _find_label(layout: QLayout) -> None:
+            nonlocal title_label
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                if item is None:
+                    continue
+                widget = item.widget()
+                if widget is not None and isinstance(widget, QLabel):
+                    if "Test Movie" in widget.text():
+                        title_label = widget
+                        return
+                sub_layout = item.layout()
+                if sub_layout is not None:
+                    _find_label(sub_layout)
+                    if title_label is not None:
+                        return
+
+        _find_label(card.layout())
+        assert title_label is not None
+        assert title_label.text() == "Test Movie"
+
+    finally:
+        if os.path.exists(temp_poster):
+            os.remove(temp_poster)
 
 
 def test_cast_detail_not_found(qtbot: Any) -> None:
