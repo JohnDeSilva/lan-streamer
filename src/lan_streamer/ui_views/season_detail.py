@@ -1,4 +1,4 @@
-"""Full-page season detail view with cast, poster, and episode table."""
+"""Full-page season detail view with poster, cast, and episode table."""
 
 import logging
 from typing import Any, Optional
@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
-    QGridLayout,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
     QPushButton,
@@ -21,7 +21,7 @@ from sqlalchemy import select
 
 from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Season, Series
-from lan_streamer.db.queries_cast import get_cast_for_season
+from lan_streamer.db.queries_cast import get_cast_for_series
 
 logger = logging.getLogger(__name__)
 
@@ -34,25 +34,19 @@ class SeasonDetailView(QWidget):
     cast_member_clicked = Signal(str)  # person_id
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
-        """Initialize the season detail view.
-
-        Args:
-            parent: Optional parent widget.
-        """
         super().__init__(parent)
         self._current_series_name: Optional[str] = None
         self._current_season_name: Optional[str] = None
         self._season_id: Optional[str] = None
+        self._series_id: Optional[str] = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Back button
         back_button = QPushButton("← Back")
         back_button.clicked.connect(self.back_requested.emit)
         layout.addWidget(back_button)
 
-        # Scroll area for content
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -61,58 +55,44 @@ class SeasonDetailView(QWidget):
         scroll.setWidget(content)
         layout.addWidget(scroll)
 
-        # Header section (poster + info)
-        header_layout = QVBoxLayout()
+        top_row = QHBoxLayout()
+        top_row.setSpacing(20)
 
-        # Poster row
-        poster_row = QVBoxLayout()
+        left_column = QVBoxLayout()
         self._poster_label = QLabel()
         self._poster_label.setFixedSize(200, 300)
         self._poster_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._poster_label.setStyleSheet("background-color: #1a1a2e; color: #666;")
-        poster_row.addWidget(self._poster_label)
-        header_layout.addLayout(poster_row)
+        left_column.addWidget(self._poster_label)
 
-        # Info section
         self._title_label = QLabel()
         title_font = QFont()
         title_font.setPointSize(18)
         title_font.setBold(True)
         self._title_label.setFont(title_font)
-        header_layout.addWidget(self._title_label)
+        left_column.addWidget(self._title_label)
 
         self._series_label = QLabel()
         series_font = QFont()
         series_font.setPointSize(12)
         self._series_label.setFont(series_font)
         self._series_label.setStyleSheet("color: #94A3B8;")
-        header_layout.addWidget(self._series_label)
+        left_column.addWidget(self._series_label)
 
         self._episode_count_label = QLabel()
         self._episode_count_label.setStyleSheet("color: #94A3B8;")
-        header_layout.addWidget(self._episode_count_label)
+        left_column.addWidget(self._episode_count_label)
 
-        self._content_layout.addLayout(header_layout)
+        left_column.addStretch()
+        top_row.addLayout(left_column)
 
-        # Cast section
-        cast_header = QLabel("Cast")
-        cast_header_font = QFont()
-        cast_header_font.setPointSize(14)
-        cast_header_font.setBold(True)
-        cast_header.setFont(cast_header_font)
-        self._content_layout.addWidget(cast_header)
-
-        self._cast_grid = QGridLayout()
-        self._cast_grid.setSpacing(10)
-        self._content_layout.addLayout(self._cast_grid)
-
-        # Episode table
+        right_column = QVBoxLayout()
         episodes_header = QLabel("Episodes")
         episodes_header_font = QFont()
         episodes_header_font.setPointSize(14)
         episodes_header_font.setBold(True)
         episodes_header.setFont(episodes_header_font)
-        self._content_layout.addWidget(episodes_header)
+        right_column.addWidget(episodes_header)
 
         self._episode_table = QTableWidget()
         self._episode_table.setColumnCount(4)
@@ -128,15 +108,32 @@ class SeasonDetailView(QWidget):
         )
         self._episode_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._episode_table.verticalHeader().setVisible(False)
-        self._content_layout.addWidget(self._episode_table)
+        right_column.addWidget(self._episode_table, 1)
+        top_row.addLayout(right_column, 1)
+
+        self._content_layout.addLayout(top_row)
+
+        # Cast section
+        cast_header = QLabel("Cast")
+        cast_header_font = QFont()
+        cast_header_font.setPointSize(14)
+        cast_header_font.setBold(True)
+        cast_header.setFont(cast_header_font)
+        self._content_layout.addWidget(cast_header)
+
+        self._cast_scroll = QScrollArea()
+        self._cast_scroll.setWidgetResizable(True)
+        self._cast_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._cast_scroll.setMaximumHeight(300)
+        self._cast_scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        cast_scroll_content = QWidget()
+        self._cast_grid = QHBoxLayout(cast_scroll_content)
+        self._cast_grid.setSpacing(10)
+        self._cast_grid.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self._cast_scroll.setWidget(cast_scroll_content)
+        self._content_layout.addWidget(self._cast_scroll)
 
     def display_season(self, series_name: str, season_name: str) -> None:
-        """Load and display season data.
-
-        Args:
-            series_name: Name of the parent series.
-            season_name: Name of the season to display.
-        """
         self._current_series_name = series_name
         self._current_season_name = season_name
         self._title_label.setText(season_name)
@@ -161,8 +158,8 @@ class SeasonDetailView(QWidget):
                 return
 
             self._season_id = season.id
+            self._series_id = series.id
 
-            # Load poster
             poster_path = season.poster_path or series.poster_path
             if poster_path:
                 pixmap = QPixmap(poster_path)
@@ -175,7 +172,6 @@ class SeasonDetailView(QWidget):
                     )
                     self._poster_label.setPixmap(pixmap)
 
-            # Load episodes
             episodes = list(season.episodes)
             self._episode_count_label.setText(f"{len(episodes)} episodes")
             self._episode_table.setRowCount(len(episodes))
@@ -201,12 +197,9 @@ class SeasonDetailView(QWidget):
                     QTableWidgetItem(f"{episode.runtime or 0} min"),
                 )
 
-        # Load cast
         self._display_cast()
 
     def _display_cast(self) -> None:
-        """Display cast members in the cast grid."""
-        # Clear existing cast widgets
         while self._cast_grid.count():
             item = self._cast_grid.takeAt(0)
             if item is not None:
@@ -214,91 +207,66 @@ class SeasonDetailView(QWidget):
                 if widget is not None:
                     widget.deleteLater()
 
-        if not self._season_id:
+        if not self._series_id:
             return
 
-        cast_entries = get_cast_for_season(self._season_id)
+        cast_entries = get_cast_for_series(self._series_id)
         if not cast_entries:
-            no_cast = QLabel("No cast information available")
-            no_cast.setStyleSheet("color: #888;")
-            self._cast_grid.addWidget(no_cast, 0, 0)
             return
 
-        row_index, col_index = 0, 0
-        max_columns = 6
-        for cast_entry in cast_entries:
+        for cast_entry in cast_entries[:20]:
             person = cast_entry.person
             if not person:
                 continue
 
             card = QFrame()
             card.setFrameShape(QFrame.Shape.StyledPanel)
-            card.setFixedSize(140, 200)
+            card.setFixedSize(100, 150)
             card.setStyleSheet(
-                "background-color: #16213e; border-radius: 8px; padding: 8px;"
+                "background-color: #16213e; border-radius: 8px; padding: 6px;"
             )
 
             card_layout = QVBoxLayout(card)
             card_layout.setSpacing(4)
+            card_layout.setContentsMargins(4, 4, 4, 4)
 
-            # Profile photo
             photo = QLabel()
-            photo.setFixedSize(80, 80)
+            photo.setFixedSize(60, 60)
             photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
             if person.profile_path:
                 pixmap = QPixmap(person.profile_path)
                 if not pixmap.isNull():
                     pixmap = pixmap.scaled(
-                        80,
-                        80,
+                        60,
+                        60,
                         Qt.AspectRatioMode.KeepAspectRatio,
                         Qt.TransformationMode.SmoothTransformation,
                     )
                     photo.setPixmap(pixmap)
                 else:
-                    photo.setText("📷")
+                    photo.setText("🎭")
             else:
-                photo.setText("📷")
-            photo.setStyleSheet("background-color: #0f3460; border-radius: 40px;")
+                photo.setText("🎭")
+            photo.setStyleSheet("background-color: #0f3460; border-radius: 30px;")
             card_layout.addWidget(photo, 0, Qt.AlignmentFlag.AlignCenter)
 
             name_label = QLabel(person.name or "Unknown")
             name_label.setWordWrap(True)
             name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             name_label.setStyleSheet(
-                "color: #e0e0e0; font-weight: bold; font-size: 11px;"
+                "color: #e0e0e0; font-weight: bold; font-size: 10px;"
             )
             card_layout.addWidget(name_label)
 
-            if cast_entry.character:
-                character_label = QLabel(cast_entry.character)
-                character_label.setWordWrap(True)
-                character_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                character_label.setStyleSheet("color: #aaa; font-size: 10px;")
-                card_layout.addWidget(character_label)
-
-            # Make card clickable
             card.mousePressEvent = self._make_person_click_handler(person.id)
-
-            self._cast_grid.addWidget(card, row_index, col_index)
-            col_index += 1
-            if col_index >= max_columns:
-                col_index = 0
-                row_index += 1
+            self._cast_grid.addWidget(card)
 
     def _make_person_click_handler(self, person_id: str) -> Any:
-        """Create a mouse press event handler for a cast member card."""
-
         def handler(event: object) -> None:
             self._on_cast_clicked(person_id)
 
         return handler
 
     def _on_cast_clicked(self, person_id: str) -> None:
-        """Handle cast member click.
-
-        Args:
-            person_id: The UUID of the person to navigate to.
-        """
         logger.info("Cast member clicked: %s", person_id)
         self.cast_member_clicked.emit(person_id)

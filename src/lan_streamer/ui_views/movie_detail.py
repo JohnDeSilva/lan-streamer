@@ -154,6 +154,7 @@ class MovieDetailView(QWidget):
 
         logger.info(f"Populating movie details for: '{movie_name}'")
         self._current_movie_name = movie_name
+        self._current_movie_db_id = None
         movie_record: Dict[str, Any] = self.controller.cached_library_data.get(
             movie_name, {}
         )

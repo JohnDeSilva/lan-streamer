@@ -69,12 +69,26 @@ The combined view (smart rows) uses a pre-computed cache table (`SmartRowCache` 
 - **Controller signal** (`ui_views/controller.py:Controller.smart_rows_updated`): Emits a `list` of changed config hashes. The `LibraryGridView` listens for targeted row updates.
 - **UI rendering** (`ui_views/library_grid.py`): `_build_smart_row_widget()` reads from cache. `_on_smart_rows_updated()` handles targeted row replacement without full re-render.
 
-### 5. Code Organization
+### 5. Cast & Crew UI Architecture
+
+The detail views display cast/crew metadata via a dedicated DB backend:
+
+- **DB models** (`db/models_cast.py`): `Person` (biography, birth/death, profile), `MediaCast` (polymorphic FK to series/season/episode/movie), `MediaImage` (posters/backdrops at multiple resolutions).
+- **Cast queries** (`db/queries_cast.py`): `get_cast_for_series()`, `get_cast_for_season()`, `get_cast_for_episode()`, `get_cast_for_movie()`, `get_filmography()`, `get_person_by_id()`.
+- **Service layer** (`services/metadata_cast.py`, `services/metadata_images.py`): Coordinates TMDB API calls, role mapping (actor/director/writer/producer), dedup, and batch DB storage.
+- **Scan pipeline**: Cast/image fetch integrated into scan worker callbacks (`_season_callback`, `_movie_callback` in `scan_worker_all.py`).
+- **Cast cards in detail views**: `SeriesDetailView._display_cast_section()` and `MovieDetailView._display_cast_section()` render horizontal scrollable cast grids; clicking a card emits `controller.cast_member_selected`.
+- **SeasonDetailView** (`ui_views/season_detail.py`): Full-page view with poster, cast grid, episode table. Signals: `back_requested`, `cast_member_clicked`.
+- **CastDetailView** (`ui_views/cast_detail.py`): Full-page view with photo, biography, birth/death info, filmography. Signals: `back_requested`, `media_item_clicked`.
+- **PosterSelectorDialog** (`ui_views/dialogs/poster_selector.py`): Dialog for selecting posters/backdrops from TMDB images.
+- **Wiring** (`main.py`): Stacked layout indices — 0: grid, 1: series_detail, 2: movie_detail, 3: season_detail, 4: cast_detail, 5: player. Navigation signals wire between views.
+
+### 7. Code Organization
 - Keep modules small, single-purpose, and grouped under descriptive directories.
 - Avoid generic filenames like `helper.py` or `utils.py` in favor of specific functional terms.
 - **Static Typing**: Enforce 100% strict `mypy` type checking for all production code in `src/lan_streamer/`.
 
-### 6. Testing URL Constraints (Strict Mock URL Rule)
+### 8. Testing URL Constraints (Strict Mock URL Rule)
 - Do not use actual, live external URLs in unit, integration, or e2e tests.
 - Always use mock/local domains (e.g. `example.invalid`, `localhost`, `127.0.0.1`, or `jellyfin.local`) to avoid external network dependencies and prevent accidental network request execution during test runs.
 
