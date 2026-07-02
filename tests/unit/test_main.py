@@ -60,6 +60,8 @@ def test_main_execution() -> None:
         patch("lan_streamer.main.LibraryGridView", MagicMock()) as mock_grid_class,
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.SeasonDetailView", MagicMock()),
+        patch("lan_streamer.main.CastDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch(
@@ -164,6 +166,8 @@ def test_main_logging_failure() -> None:
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.SeasonDetailView", MagicMock()),
+        patch("lan_streamer.main.CastDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
         patch("sys.exit", lambda exit_code: None),
@@ -199,6 +203,8 @@ def test_main_proactive_log_cleanup(tmp_path: Any) -> None:
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.SeasonDetailView", MagicMock()),
+        patch("lan_streamer.main.CastDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
@@ -226,6 +232,8 @@ def test_main_signal_routing() -> None:
         patch(
             "lan_streamer.main.MovieDetailView", MagicMock()
         ) as mock_movie_detail_class,
+        patch("lan_streamer.main.SeasonDetailView", MagicMock()),
+        patch("lan_streamer.main.CastDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
@@ -278,7 +286,7 @@ def test_main_signal_routing() -> None:
         playback_slot("/path/to/vid.mkv")
         mock_controller_instance.set_video_playing.assert_called_once_with(True)
         mock_player_instance.play_video.assert_called_once_with("/path/to/vid.mkv")
-        mock_layout_instance.setCurrentIndex.assert_called_with(3)
+        mock_layout_instance.setCurrentIndex.assert_called_with(5)
 
         # Test player back button routes to detail view (index 1)
         player_back_slot: Callable[[], None] = (
@@ -359,6 +367,8 @@ def test_main_playback_requested_external_exception() -> None:
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.SeasonDetailView", MagicMock()),
+        patch("lan_streamer.main.CastDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
@@ -433,6 +443,8 @@ def test_main_log_cleanup_unlink_exception() -> None:
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.SeasonDetailView", MagicMock()),
+        patch("lan_streamer.main.CastDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
@@ -464,6 +476,8 @@ def test_main_wayland_platform() -> None:
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.SeasonDetailView", MagicMock()),
+        patch("lan_streamer.main.CastDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
@@ -483,6 +497,8 @@ def test_main_log_directory_creation_failure() -> None:
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.SeasonDetailView", MagicMock()),
+        patch("lan_streamer.main.CastDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),
@@ -502,6 +518,8 @@ def test_main_log_cleanup_exception() -> None:
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.SeasonDetailView", MagicMock()),
+        patch("lan_streamer.main.CastDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()),
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),

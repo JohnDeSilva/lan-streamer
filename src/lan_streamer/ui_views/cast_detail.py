@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QScrollArea,
@@ -177,15 +178,17 @@ class CastDetailView(QWidget):
             card.setFrameShape(QFrame.Shape.StyledPanel)
             card.setStyleSheet(
                 "background-color: #16213e; border-radius: 8px;"
-                " padding: 12px; margin: 4px 0;"
+                " padding: 8px; margin: 4px 0;"
             )
-            card_layout = QVBoxLayout(card)
+            card_layout = QHBoxLayout(card)
+            card_layout.setSpacing(12)
 
             # Determine what media this entry is for
             if cast_entry.series:
                 title = cast_entry.series.name or "Unknown Series"
                 media_type = "series"
                 media_id = cast_entry.series.id
+                poster_path = cast_entry.series.poster_path
                 role_parts = [f"Role: {cast_entry.role}"]
                 if cast_entry.character:
                     role_parts.append(f"as {cast_entry.character}")
@@ -194,6 +197,7 @@ class CastDetailView(QWidget):
                 title = cast_entry.movie.name or "Unknown Movie"
                 media_type = "movie"
                 media_id = cast_entry.movie.id
+                poster_path = cast_entry.movie.poster_path
                 role_parts = [f"Role: {cast_entry.role}"]
                 if cast_entry.character:
                     role_parts.append(f"as {cast_entry.character}")
@@ -201,15 +205,41 @@ class CastDetailView(QWidget):
             else:
                 continue
 
+            # Poster thumbnail – fixed width, stretches to full row height
+            poster_label = QLabel()
+            poster_label.setFixedWidth(50)
+            poster_label.setStyleSheet(
+                "background-color: #1a1a2e; border-radius: 4px; color: #555;"
+            )
+            poster_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            if poster_path:
+                pixmap = QPixmap(poster_path)
+                if not pixmap.isNull():
+                    pixmap = pixmap.scaledToWidth(
+                        50,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    poster_label.setPixmap(pixmap)
+            else:
+                poster_label.setText("N/A")
+            card_layout.addWidget(poster_label)
+
+            # Text info
+            text_layout = QVBoxLayout()
+            text_layout.setSpacing(2)
+
             title_label = QLabel(title)
             title_label.setStyleSheet(
                 "color: #e0e0e0; font-weight: bold; font-size: 13px;"
             )
-            card_layout.addWidget(title_label)
+            text_layout.addWidget(title_label)
 
             role_label = QLabel(subtitle)
             role_label.setStyleSheet("color: #aaa; font-size: 11px;")
-            card_layout.addWidget(role_label)
+            text_layout.addWidget(role_label)
+
+            text_layout.addStretch()
+            card_layout.addLayout(text_layout, 1)
 
             card.mousePressEvent = self._make_media_click_handler(media_type, media_id)
             card.setCursor(Qt.CursorShape.PointingHandCursor)

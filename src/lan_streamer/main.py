@@ -407,6 +407,65 @@ async def main() -> None:
 
     cast_detail_view.back_requested.connect(on_cast_detail_back)
 
+    # Wire filmography item click to navigate to series/movie detail
+    def on_filmography_item_clicked(media_type: str, media_id: str) -> None:
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        logger.info("Filmography item clicked: type=%s, id=%s", media_type, media_id)
+        try:
+            with db.get_session() as session:
+                if media_type == "series":
+                    series_statement = (
+                        select(db.Series)
+                        .where(db.Series.id == media_id)
+                        .options(
+                            selectinload(db.Series.seasons)
+                            .selectinload(db.Season.episodes)
+                            .selectinload(db.Episode.media_files),
+                            selectinload(db.Series.seasons)
+                            .selectinload(db.Season.episodes)
+                            .selectinload(db.Episode.playback_state),
+                        )
+                    )
+                    series = session.scalar(series_statement)
+                    if series is None or series.name is None:
+                        return
+                    series_name = series.name
+                    if series_name not in controller.cached_library_data:
+                        series_dict = db._build_series_dict(series)
+                        controller.cached_library_data[series_name] = series_dict
+                    controller.selected_series_name = series_name
+                    series_detail_view.populate_series_details(series_name)
+                    stacked_layout.setCurrentIndex(1)
+                elif media_type == "movie":
+                    movie_statement = (
+                        select(db.Movie)
+                        .where(db.Movie.id == media_id)
+                        .options(
+                            selectinload(db.Movie.media_files),
+                            selectinload(db.Movie.playback_state),
+                        )
+                    )
+                    movie = session.scalar(movie_statement)
+                    if movie is None or movie.name is None:
+                        return
+                    movie_name = movie.name
+                    if movie_name not in controller.cached_library_data:
+                        movie_dict = db._build_movie_dict(movie)
+                        controller.cached_library_data[movie_name] = movie_dict
+                    controller.selected_series_name = movie_name
+                    movie_detail_view.populate_movie_details(movie_name)
+                    stacked_layout.setCurrentIndex(2)
+        except Exception:
+            logger.exception(
+                "Error navigating to %s detail from filmography: id=%s",
+                media_type,
+                media_id,
+            )
+
+    cast_detail_view.media_item_clicked.connect(on_filmography_item_clicked)
+
     # Wire season detail cast member click to cast detail
     season_detail_view.cast_member_clicked.connect(controller.select_cast_member)
 

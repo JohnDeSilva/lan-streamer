@@ -126,7 +126,18 @@ class MediaCast(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "person_id", "tmdb_credit_id", name="uq_media_cast_person_credit"
+            "person_id",
+            "series_id",
+            "role",
+            "tmdb_credit_id",
+            name="uq_media_cast_person_series",
+        ),
+        UniqueConstraint(
+            "person_id",
+            "movie_id",
+            "role",
+            "tmdb_credit_id",
+            name="uq_media_cast_person_movie",
         ),
     )
 

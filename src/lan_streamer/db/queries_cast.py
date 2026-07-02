@@ -1,7 +1,7 @@
 """Database queries for cast, crew, and person data."""
 
 import logging
-from typing import Optional, List
+from typing import Optional, List, Any
 
 from sqlalchemy import select, delete
 from sqlalchemy.orm import joinedload
@@ -138,6 +138,7 @@ def get_or_create_person(
     tmdb_identifier: int,
     name: str,
     profile_path: Optional[str] = None,
+    session: Optional[Any] = None,
 ) -> Person:
     """Get existing person by TMDB identifier or create a new one.
 
@@ -147,35 +148,56 @@ def get_or_create_person(
         tmdb_identifier: The TMDB person identifier.
         name: The person's display name.
         profile_path: Optional URL path to profile image.
+        session: Optional SQLAlchemy session.
 
     Returns:
         The existing or newly created Person record.
     """
-    with get_session() as session:
-        statement = select(Person).where(Person.tmdb_identifier == tmdb_identifier)
-        person = session.execute(statement).unique().scalar_one_or_none()
+    if session is not None:
+        return _get_or_create_person_impl(session, tmdb_identifier, name, profile_path)
 
-        if person is not None:
-            needs_update = False
-            if person.name != name:
-                person.name = name
-                needs_update = True
-            if profile_path and person.profile_path != profile_path:
-                person.profile_path = profile_path
-                needs_update = True
-            if needs_update:
-                logger.info("Updated person %s (%s)", person.name, tmdb_identifier)
-        else:
-            person = Person(
-                tmdb_identifier=tmdb_identifier,
-                name=name,
-                profile_path=profile_path,
-            )
-            session.add(person)
-            logger.info("Created new person %s (%s)", name, tmdb_identifier)
-
-        session.commit()
+    with get_session() as session_ctx:
+        person = _get_or_create_person_impl(
+            session_ctx, tmdb_identifier, name, profile_path
+        )
+        session_ctx.commit()
+        # Access attributes to prevent DetachedInstanceError
+        _ = person.id
+        _ = person.name
+        _ = person.profile_path
         return person
+
+
+def _get_or_create_person_impl(
+    session: Any,
+    tmdb_identifier: int,
+    name: str,
+    profile_path: Optional[str] = None,
+) -> Person:
+    statement = select(Person).where(Person.tmdb_identifier == tmdb_identifier)
+    person = session.execute(statement).unique().scalar_one_or_none()
+
+    if person is not None:
+        needs_update = False
+        if person.name != name:
+            person.name = name
+            needs_update = True
+        if profile_path and person.profile_path != profile_path:
+            person.profile_path = profile_path
+            needs_update = True
+        if needs_update:
+            logger.info("Updated person %s (%s)", person.name, tmdb_identifier)
+    else:
+        person = Person(
+            tmdb_identifier=tmdb_identifier,
+            name=name,
+            profile_path=profile_path,
+        )
+        session.add(person)
+        logger.info("Created new person %s (%s)", name, tmdb_identifier)
+
+    session.flush()
+    return person
 
 
 def get_filmography(person_id: str) -> List[MediaCast]:
@@ -211,19 +233,40 @@ def get_filmography(person_id: str) -> List[MediaCast]:
 
 def delete_cast_for_media(
     series_id: Optional[str] = None,
+    season_id: Optional[str] = None,
+    episode_id: Optional[str] = None,
     movie_id: Optional[str] = None,
 ) -> None:
-    """Delete all cast entries for a specific series or movie (for re-fetch).
+    """Delete all cast entries for a specific series, season, episode, or movie (for re-fetch).
 
     Args:
         series_id: Optional UUID of the series to clear cast for.
+        season_id: Optional UUID of the season to clear cast for.
+        episode_id: Optional UUID of the episode to clear cast for.
         movie_id: Optional UUID of the movie to clear cast for.
     """
+    if (
+        series_id is None
+        and season_id is None
+        and episode_id is None
+        and movie_id is None
+    ):
+        logger.warning("delete_cast_for_media called with no media identifier")
+        return
+
     with get_session() as session:
         if series_id is not None:
             statement = delete(MediaCast).where(MediaCast.series_id == series_id)
             session.execute(statement)
             logger.info("Deleted cast entries for series %s", series_id)
+        if season_id is not None:
+            statement = delete(MediaCast).where(MediaCast.season_id == season_id)
+            session.execute(statement)
+            logger.info("Deleted cast entries for season %s", season_id)
+        if episode_id is not None:
+            statement = delete(MediaCast).where(MediaCast.episode_id == episode_id)
+            session.execute(statement)
+            logger.info("Deleted cast entries for episode %s", episode_id)
         if movie_id is not None:
             statement = delete(MediaCast).where(MediaCast.movie_id == movie_id)
             session.execute(statement)
@@ -246,6 +289,10 @@ def get_images_for_media(
     Returns:
         List of MediaImage records matching the criteria.
     """
+    if series_id is None and movie_id is None:
+        logger.warning("get_images_for_media called with no media identifier")
+        return []
+
     with get_session() as session:
         conditions: list = []
         if series_id is not None:
@@ -327,6 +374,22 @@ def add_media_image(
         The newly created MediaImage record.
     """
     with get_session() as session:
+        # Check if the image already exists
+        if remote_url:
+            existing_check = select(MediaImage).where(
+                MediaImage.image_type == image_type,
+                MediaImage.remote_url == remote_url,
+            )
+            if series_id is not None:
+                existing_check = existing_check.where(MediaImage.series_id == series_id)
+            if movie_id is not None:
+                existing_check = existing_check.where(MediaImage.movie_id == movie_id)
+
+            existing_img = session.execute(existing_check).unique().scalar_one_or_none()
+            if existing_img is not None:
+                logger.debug("Image already exists: %s", remote_url)
+                return existing_img
+
         # Count existing images of this type for sort order
         conditions: list = [MediaImage.image_type == image_type]
         if series_id is not None:

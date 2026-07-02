@@ -345,7 +345,7 @@ class TestImageQueries:
                 series_id=series.id,
                 image_type="poster",
                 source="tmdb",
-                remote_url="https://example.com/p1.jpg",
+                remote_url="https://example.invalid/p1.jpg",
                 is_selected=True,
                 sort_order=0,
             )
@@ -353,7 +353,7 @@ class TestImageQueries:
                 series_id=series.id,
                 image_type="backdrop",
                 source="tmdb",
-                remote_url="https://example.com/b1.jpg",
+                remote_url="https://example.invalid/b1.jpg",
                 is_selected=True,
                 sort_order=0,
             )
@@ -375,7 +375,7 @@ class TestImageQueries:
                 series_id=series.id,
                 image_type="poster",
                 source="tmdb",
-                remote_url="https://example.com/p.jpg",
+                remote_url="https://example.invalid/p.jpg",
                 is_selected=True,
                 sort_order=0,
             )
@@ -383,7 +383,7 @@ class TestImageQueries:
                 series_id=series.id,
                 image_type="backdrop",
                 source="tmdb",
-                remote_url="https://example.com/b.jpg",
+                remote_url="https://example.invalid/b.jpg",
                 is_selected=True,
                 sort_order=0,
             )
@@ -410,7 +410,7 @@ class TestImageQueries:
                 movie_id=movie.id,
                 image_type="poster",
                 source="tmdb",
-                remote_url="https://example.com/movie.jpg",
+                remote_url="https://example.invalid/movie.jpg",
                 is_selected=True,
                 sort_order=0,
             )
@@ -420,7 +420,7 @@ class TestImageQueries:
 
         result = get_images_for_media(movie_id=movie_id)
         assert len(result) == 1
-        assert result[0].remote_url == "https://example.com/movie.jpg"
+        assert result[0].remote_url == "https://example.invalid/movie.jpg"
 
     def test_set_selected_image(self) -> None:
         """Test setting a specific image as selected."""
@@ -433,7 +433,7 @@ class TestImageQueries:
                 series_id=series.id,
                 image_type="poster",
                 source="tmdb",
-                remote_url="https://example.com/p1.jpg",
+                remote_url="https://example.invalid/p1.jpg",
                 is_selected=True,
                 sort_order=0,
             )
@@ -441,7 +441,7 @@ class TestImageQueries:
                 series_id=series.id,
                 image_type="poster",
                 source="tmdb",
-                remote_url="https://example.com/p2.jpg",
+                remote_url="https://example.invalid/p2.jpg",
                 is_selected=False,
                 sort_order=1,
             )
@@ -486,7 +486,7 @@ class TestImageQueries:
             series_id=series_id,
             image_type="poster",
             source="tmdb",
-            remote_url="https://example.com/first.jpg",
+            remote_url="https://example.invalid/first.jpg",
         )
         assert image.is_selected is True
         assert image.sort_order == 0

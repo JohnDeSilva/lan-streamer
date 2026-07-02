@@ -101,6 +101,31 @@ class _TmdbImageFetchWorker(QObject):
             self.finished.emit()
 
 
+class _ThumbnailDownloader(QObject):
+    """Asynchronous worker to download thumbnail images."""
+
+    downloaded = Signal(bytes)
+
+    def __init__(self, image_url: str, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self.image_url = image_url
+
+    def start_download(self) -> None:
+        import threading
+
+        def worker() -> None:
+            try:
+                import requests as http_requests
+
+                response = http_requests.get(self.image_url, timeout=8)
+                if response.status_code == 200:
+                    self.downloaded.emit(response.content)
+            except Exception:
+                logger.debug("Thumbnail fetch failed for %s", self.image_url)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+
 class PosterSelectorDialog(QDialog):
     """Dialog for browsing and selecting posters/backdrops for media.
 
@@ -567,33 +592,33 @@ class PosterSelectorDialog(QDialog):
     def _load_thumbnail_into_label(self, image_url: str, label: QLabel) -> None:
         """Download and display a thumbnail image in the given label.
 
-        Runs synchronously in the UI thread for simplicity since thumbnails
-        are small. Falls back to placeholder text on failure.
+        Runs asynchronously in a background thread and updates the UI on completion.
 
         Args:
             image_url: Full URL for the thumbnail image.
             label: QLabel widget to display the pixmap in.
         """
-        try:
-            import requests as http_requests
+        downloader = _ThumbnailDownloader(image_url)
+        label.setProperty("_downloader", downloader)
 
-            response = http_requests.get(image_url, timeout=8)
-            if response.status_code == 200:
-                pixmap = QPixmap()
-                pixmap.loadFromData(response.content)
-                if not pixmap.isNull():
-                    label.setPixmap(
-                        pixmap.scaled(
-                            170,
-                            255,
-                            Qt.AspectRatioMode.KeepAspectRatio,
-                            Qt.TransformationMode.SmoothTransformation,
-                        )
+        def on_downloaded(content: bytes) -> None:
+            pixmap = QPixmap()
+            pixmap.loadFromData(content)
+            if not pixmap.isNull():
+                label.setPixmap(
+                    pixmap.scaled(
+                        170,
+                        255,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
                     )
-                    return
-        except Exception:
-            logger.debug("Thumbnail fetch failed for %s", image_url)
-        label.setText("📷")
+                )
+            else:
+                label.setText("📷")
+            label.setProperty("_downloader", None)
+
+        downloader.downloaded.connect(on_downloaded)
+        downloader.start_download()
 
     def _on_select_tmdb_image(self, tmdb_file_path: str, image_type: str) -> None:
         """Download the selected TMDB image and apply it as the active poster.
