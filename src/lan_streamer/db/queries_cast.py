@@ -271,7 +271,6 @@ def delete_cast_for_media(
             statement = delete(MediaCast).where(MediaCast.movie_id == movie_id)
             session.execute(statement)
             logger.info("Deleted cast entries for movie %s", movie_id)
-        session.commit()
 
 
 def get_images_for_media(
@@ -341,7 +340,6 @@ def set_selected_image(image_id: str) -> None:
             existing_image.is_selected = False
 
         image.is_selected = True
-        session.commit()
         logger.info(
             "Set image %s as selected %s for media",
             image_id,
@@ -415,7 +413,6 @@ def add_media_image(
             sort_order=sort_order,
         )
         session.add(image)
-        session.commit()
         logger.debug(
             "Added %s image for media (sort_order=%d, selected=%s)",
             image_type,
