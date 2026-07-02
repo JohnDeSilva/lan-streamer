@@ -17,11 +17,11 @@ def get_circular_pixmap(pixmap: QPixmap, size: int) -> QPixmap:
     if pixmap.isNull():
         return pixmap
 
-    # Scale to square matching the target size
+    # Scale to fit within the target size
     scaled_pixmap = pixmap.scaled(
         size,
         size,
-        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.AspectRatioMode.KeepAspectRatio,
         Qt.TransformationMode.SmoothTransformation,
     )
 
