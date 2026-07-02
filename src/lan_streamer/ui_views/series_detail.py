@@ -92,6 +92,11 @@ class SeriesDetailView(QWidget):
             "background-color: #1a1a1f; border: 1px solid #2d2d35; border-radius: 8px;"
         )
         self.poster_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.poster_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.poster_label.customContextMenuRequested.connect(
+            self._on_poster_context_menu
+        )
+        self.poster_label.setToolTip("Right-click to change poster")
         left_layout.addWidget(self.poster_label)
 
         self.trailers_button: QPushButton = QPushButton("Trailers")
@@ -164,6 +169,34 @@ class SeriesDetailView(QWidget):
         self._cast_grid.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self._cast_scroll.setWidget(cast_scroll_content)
         main_layout.addWidget(self._cast_scroll)
+
+    def _on_poster_context_menu(self, position: QPoint) -> None:
+        """Show context menu when the user right-clicks the series poster."""
+        menu: QMenu = QMenu(self)
+        change_poster_action = QAction("🖼  Change Poster…", self)
+        change_poster_action.triggered.connect(self._open_poster_selector)
+        menu.addAction(change_poster_action)
+        menu.exec(self.poster_label.mapToGlobal(position))
+
+    def _open_poster_selector(self) -> None:
+        """Open the PosterSelectorDialog for the current series."""
+        if not self._current_series_name:
+            return
+        from lan_streamer.ui_views.dialogs.poster_selector import PosterSelectorDialog
+
+        logger.info(
+            "Opening PosterSelectorDialog for series '%s'",
+            self._current_series_name,
+        )
+        dialog = PosterSelectorDialog(
+            media_name=self._current_series_name,
+            media_kind="series",
+            parent=self,
+        )
+        dialog.poster_updated.connect(
+            lambda new_path: self.populate_series_details(self._current_series_name)
+        )
+        dialog.exec()
 
     def _lookup_series_id(self) -> Optional[str]:
         """Query the database for the Series UUID matching the current series name."""
