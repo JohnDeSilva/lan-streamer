@@ -26,8 +26,8 @@ from lan_streamer.backend.scan_worker_base import (
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.backend.database_writer import AsyncDatabaseWriter
-from lan_streamer.services import metadata_cast, metadata_images
 from lan_streamer.system.async_utils import run_in_fs_executor, run_in_executor
+
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -434,12 +434,16 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                                     or stats.get("series_added", 0) > 0
                                     or not has_cast
                                 ):
-                                    metadata_cast.fetch_and_store_series_credits(
-                                        series_id, int(tmdb_id)
+                                    task_credits = writer.sync_submit(
+                                        "fetch_and_store_series_credits_and_images",
+                                        {
+                                            "series_id": series_id,
+                                            "tmdb_id": int(tmdb_id),
+                                        },
+                                        loop,
                                     )
-                                    metadata_images.fetch_and_store_series_images(
-                                        series_id, int(tmdb_id)
-                                    )
+                                    if task_credits.error:
+                                        raise task_credits.error
                                     logger.info(
                                         "Fetched cast and images for series '%s'",
                                         series_name,
@@ -537,12 +541,16 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                                     or stats.get("movies_added", 0) > 0
                                     or not has_cast
                                 ):
-                                    metadata_cast.fetch_and_store_movie_credits(
-                                        movie_id, int(tmdb_id)
+                                    task_credits = writer.sync_submit(
+                                        "fetch_and_store_movie_credits_and_images",
+                                        {
+                                            "movie_id": movie_id,
+                                            "tmdb_id": int(tmdb_id),
+                                        },
+                                        loop,
                                     )
-                                    metadata_images.fetch_and_store_movie_images(
-                                        movie_id, int(tmdb_id)
-                                    )
+                                    if task_credits.error:
+                                        raise task_credits.error
                                     logger.info(
                                         "Fetched cast and images for movie '%s'",
                                         movie_name,
