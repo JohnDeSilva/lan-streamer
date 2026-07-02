@@ -99,6 +99,9 @@ class Controller(QObject):
     detail_progress_updated = Signal(str, dict)
     scan_completed = Signal()
     smart_rows_updated = Signal(list)
+    cast_member_selected = Signal(str)  # person_id
+    season_detail_requested = Signal(str, str)  # series_name, season_name
+    poster_selector_requested = Signal(str)  # series_name or movie_name
 
     file_system_watcher: QFileSystemWatcher
 
@@ -246,6 +249,29 @@ class Controller(QObject):
         if movie_name in self.cached_library_data:
             self.selected_series_name = movie_name
             self.movie_selected.emit(movie_name)
+
+    def select_cast_member(self, person_id: str) -> None:
+        """Navigate to cast detail page.
+
+        Args:
+            person_id: The UUID of the person to display.
+        """
+        logger.info("Controller selecting cast member: %s", person_id)
+        self.cast_member_selected.emit(person_id)
+
+    def select_season_detail(self, series_name: str, season_name: str) -> None:
+        """Navigate to season detail page.
+
+        Args:
+            series_name: Name of the parent series.
+            season_name: Name of the season to display.
+        """
+        logger.info(
+            "Controller selecting season detail: '%s' - '%s'",
+            series_name,
+            season_name,
+        )
+        self.season_detail_requested.emit(series_name, season_name)
 
     def search_media(
         self,

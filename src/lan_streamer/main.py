@@ -16,6 +16,8 @@ from lan_streamer.ui_views import (
     LibraryGridView,
     SeriesDetailView,
     MovieDetailView,
+    SeasonDetailView,
+    CastDetailView,
     MetadataMatchDialog,
     JellyfinMatchDialog,
     EpisodeMatchDialog,
@@ -211,12 +213,16 @@ async def main() -> None:
     library_grid_view = LibraryGridView(controller)
     series_detail_view = SeriesDetailView(controller)
     movie_detail_view = MovieDetailView(controller)
+    season_detail_view = SeasonDetailView()
+    cast_detail_view = CastDetailView()
     player_view = VideoPlayerWidget()
 
-    stacked_layout.addWidget(library_grid_view)
-    stacked_layout.addWidget(series_detail_view)
-    stacked_layout.addWidget(movie_detail_view)
-    stacked_layout.addWidget(player_view)
+    stacked_layout.addWidget(library_grid_view)  # index 0
+    stacked_layout.addWidget(series_detail_view)  # index 1
+    stacked_layout.addWidget(movie_detail_view)  # index 2
+    stacked_layout.addWidget(season_detail_view)  # index 3
+    stacked_layout.addWidget(cast_detail_view)  # index 4
+    stacked_layout.addWidget(player_view)  # index 5
 
     # Wire view routing and modal display signals
     def on_series_selected(series_name: str) -> None:
@@ -263,7 +269,7 @@ async def main() -> None:
                 controller.set_video_playing(True)
             previous_layout_index[0] = stacked_layout.currentIndex()
             player_view.play_video(file_path)
-            stacked_layout.setCurrentIndex(3)
+            stacked_layout.setCurrentIndex(5)
         else:
             try:
                 play_video(file_path)
@@ -362,6 +368,47 @@ async def main() -> None:
                 series_detail_view.populate_series_details(series_name)
 
     controller.series_details_requested.connect(on_series_details_requested)
+
+    # Wire season detail navigation
+    def on_season_detail_requested(series_name: str, season_name: str) -> None:
+        logger.info(
+            "Navigating to Season Detail View for '%s' - '%s'",
+            series_name,
+            season_name,
+        )
+        season_detail_view.display_season(series_name, season_name)
+        stacked_layout.setCurrentIndex(3)
+
+    controller.season_detail_requested.connect(on_season_detail_requested)
+
+    def on_season_detail_back() -> None:
+        logger.info("Navigating back from Season Detail to Series Detail")
+        if controller.selected_series_name:
+            series_detail_view.populate_series_details(controller.selected_series_name)
+        stacked_layout.setCurrentIndex(1)
+
+    season_detail_view.back_requested.connect(on_season_detail_back)
+
+    # Wire cast detail navigation
+    def on_cast_member_selected(person_id: str) -> None:
+        logger.info("Navigating to Cast Detail View for person: %s", person_id)
+        cast_detail_view.display_person(person_id)
+        stacked_layout.setCurrentIndex(4)
+
+    controller.cast_member_selected.connect(on_cast_member_selected)
+
+    def on_cast_detail_back() -> None:
+        logger.info("Navigating back from Cast Detail to previous view")
+        library_config = config.libraries.get(controller.current_library_name, {})
+        if library_config.get("type") == "movie":
+            stacked_layout.setCurrentIndex(2)
+        else:
+            stacked_layout.setCurrentIndex(1)
+
+    cast_detail_view.back_requested.connect(on_cast_detail_back)
+
+    # Wire season detail cast member click to cast detail
+    season_detail_view.cast_member_clicked.connect(controller.select_cast_member)
 
     controller.status_changed.connect(main_window.statusBar().showMessage)
 
