@@ -3,13 +3,14 @@
 import logging
 from typing import Any, Optional
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtCore import Qt, Signal, QPoint
+from PySide6.QtGui import QFont, QPixmap, QAction
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPushButton,
     QScrollArea,
     QTableWidget,
@@ -63,6 +64,11 @@ class SeasonDetailView(QWidget):
         self._poster_label.setFixedSize(200, 300)
         self._poster_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._poster_label.setStyleSheet("background-color: #1a1a2e; color: #666;")
+        self._poster_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._poster_label.customContextMenuRequested.connect(
+            self._on_poster_context_menu
+        )
+        self._poster_label.setToolTip("Right-click to change poster")
         left_column.addWidget(self._poster_label)
 
         self._title_label = QLabel()
@@ -198,6 +204,48 @@ class SeasonDetailView(QWidget):
                 )
 
         self._display_cast()
+
+    def _on_poster_context_menu(self, position: QPoint) -> None:
+        """Show context menu when the user right-clicks the season poster."""
+        menu = QMenu(self)
+        change_poster_action = QAction("\U0001f5bc  Change Poster\u2026", self)
+        change_poster_action.triggered.connect(self._open_poster_selector)
+        menu.addAction(change_poster_action)
+        menu.exec(self._poster_label.mapToGlobal(position))
+
+    def _open_poster_selector(self) -> None:
+        """Open PosterSelectorDialog for the current season."""
+        if not self._current_season_name:
+            return
+        from lan_streamer.ui_views.dialogs.poster_selector import PosterSelectorDialog
+
+        logger.info(
+            "Opening PosterSelectorDialog for season '%s' of series '%s'",
+            self._current_season_name,
+            self._current_series_name,
+        )
+        dialog = PosterSelectorDialog(
+            media_name=self._current_season_name,
+            media_kind="season",
+            series_name=self._current_series_name,
+            parent=self,
+        )
+        dialog.poster_updated.connect(self._on_poster_updated)
+        dialog.exec()
+
+    def _on_poster_updated(self, new_poster_path: str) -> None:
+        """Reload the poster label after a successful update."""
+        pixmap = QPixmap(new_poster_path)
+        if not pixmap.isNull():
+            self._poster_label.setPixmap(
+                pixmap.scaled(
+                    200,
+                    300,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+            logger.info("Season poster label refreshed with '%s'", new_poster_path)
 
     def _display_cast(self) -> None:
         while self._cast_grid.count():

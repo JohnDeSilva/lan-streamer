@@ -9,13 +9,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QFrame,
     QScrollArea,
     QSizePolicy,
 )
 from PySide6.QtCore import Qt, Slot, QPoint, Signal
-from PySide6.QtGui import QFont, QIcon, QPainter, QPolygon, QColor
+from PySide6.QtGui import QFont, QIcon, QPainter, QPolygon, QColor, QAction
 from lan_streamer.ui_views.proxy import QPixmap
 from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Movie
@@ -69,6 +70,11 @@ class MovieDetailView(QWidget):
             "background-color: #222222; border: 1px solid #444444; border-radius: 6px;"
         )
         self.poster_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.poster_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.poster_label.customContextMenuRequested.connect(
+            self._on_poster_context_menu
+        )
+        self.poster_label.setToolTip("Right-click to change poster")
         header_layout.addWidget(self.poster_label, 0, Qt.AlignmentFlag.AlignTop)
 
         info_layout: QVBoxLayout = QVBoxLayout()
@@ -211,6 +217,34 @@ class MovieDetailView(QWidget):
             self.poster_label.setText("No Poster")
 
         self._display_cast_section()
+
+    def _on_poster_context_menu(self, position: QPoint) -> None:
+        """Show context menu when the user right-clicks the movie poster."""
+        menu = QMenu(self)
+        change_poster_action = QAction("\U0001f5bc  Change Poster\u2026", self)
+        change_poster_action.triggered.connect(self._open_poster_selector)
+        menu.addAction(change_poster_action)
+        menu.exec(self.poster_label.mapToGlobal(position))
+
+    def _open_poster_selector(self) -> None:
+        """Open PosterSelectorDialog for the current movie."""
+        if not self._current_movie_name:
+            return
+        from lan_streamer.ui_views.dialogs.poster_selector import PosterSelectorDialog
+
+        logger.info(
+            "Opening PosterSelectorDialog for movie '%s'",
+            self._current_movie_name,
+        )
+        dialog = PosterSelectorDialog(
+            media_name=self._current_movie_name,
+            media_kind="movie",
+            parent=self,
+        )
+        dialog.poster_updated.connect(
+            lambda new_path: self.populate_movie_details(self._current_movie_name)
+        )
+        dialog.exec()
 
     def _lookup_movie_id(self) -> Optional[str]:
         """Query the database for the Movie UUID matching the current movie name."""
