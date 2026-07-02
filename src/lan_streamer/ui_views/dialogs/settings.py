@@ -752,9 +752,7 @@ class SettingsDialog(QDialog):
         self.pass1_button: QPushButton = QPushButton("File Scan")
         self.pass1_button.clicked.connect(self.trigger_pass1_scan)
         pass1_row.addWidget(self.pass1_button)
-        self.force_file_scan_checkbox: QCheckBox = QCheckBox(
-            "Force re-scan all files (ignores mtimes)"
-        )
+        self.force_file_scan_checkbox: QCheckBox = QCheckBox("Force re-scan")
         pass1_row.addWidget(self.force_file_scan_checkbox)
         passes_layout.addLayout(pass1_row)
 
@@ -762,9 +760,7 @@ class SettingsDialog(QDialog):
         self.pass2_button: QPushButton = QPushButton("Metadata Resolution")
         self.pass2_button.clicked.connect(self.trigger_pass2_scan)
         pass2_row.addWidget(self.pass2_button)
-        self.force_metadata_checkbox: QCheckBox = QCheckBox(
-            "Force re-fetch for all (respects locks)"
-        )
+        self.force_metadata_checkbox: QCheckBox = QCheckBox("Force re-fetch ")
         pass2_row.addWidget(self.force_metadata_checkbox)
         passes_layout.addLayout(pass2_row)
 
@@ -772,9 +768,7 @@ class SettingsDialog(QDialog):
         self.pass3_button: QPushButton = QPushButton("Runtime Extraction")
         self.pass3_button.clicked.connect(self.trigger_pass3_scan)
         pass3_row.addWidget(self.pass3_button)
-        self.force_runtime_checkbox: QCheckBox = QCheckBox(
-            "Force re-extract for all files (re-runs ffprobe)"
-        )
+        self.force_runtime_checkbox: QCheckBox = QCheckBox("Force re-extract")
         pass3_row.addWidget(self.force_runtime_checkbox)
         passes_layout.addLayout(pass3_row)
 

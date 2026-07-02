@@ -210,7 +210,7 @@ def test_create_media_image() -> None:
             series_id=series.id,
             image_type="poster",
             source="tmdb",
-            remote_url="https://example.com/poster.jpg",
+            remote_url="https://example.invalid/poster.jpg",
             local_path="/cache/posters/poster.jpg",
             is_selected=True,
             sort_order=0,
@@ -245,7 +245,7 @@ def test_media_image_for_movie() -> None:
             movie_id=movie.id,
             image_type="backdrop",
             source="tmdb",
-            remote_url="https://example.com/backdrop.jpg",
+            remote_url="https://example.invalid/backdrop.jpg",
             is_selected=False,
             sort_order=0,
         )
@@ -265,7 +265,7 @@ def test_media_image_for_movie() -> None:
         result = session.execute(image_statement).unique().scalars().all()
         assert len(result) == 1
         assert result[0].image_type == "backdrop"
-        assert result[0].remote_url == "https://example.com/backdrop.jpg"
+        assert result[0].remote_url == "https://example.invalid/backdrop.jpg"
 
 
 def test_person_tmdb_identifier_unique() -> None:
@@ -320,7 +320,7 @@ def test_media_image_multiple_types() -> None:
             series_id=series.id,
             image_type="poster",
             source="tmdb",
-            remote_url="https://example.com/poster1.jpg",
+            remote_url="https://example.invalid/poster1.jpg",
             is_selected=True,
             sort_order=0,
         )
@@ -328,7 +328,7 @@ def test_media_image_multiple_types() -> None:
             series_id=series.id,
             image_type="poster",
             source="tmdb",
-            remote_url="https://example.com/poster2.jpg",
+            remote_url="https://example.invalid/poster2.jpg",
             is_selected=False,
             sort_order=1,
         )
@@ -336,7 +336,7 @@ def test_media_image_multiple_types() -> None:
             series_id=series.id,
             image_type="backdrop",
             source="tmdb",
-            remote_url="https://example.com/backdrop.jpg",
+            remote_url="https://example.invalid/backdrop.jpg",
             is_selected=True,
             sort_order=0,
         )

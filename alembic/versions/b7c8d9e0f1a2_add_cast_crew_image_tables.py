@@ -74,7 +74,18 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["movie_id"], ["movies.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
-            "person_id", "tmdb_credit_id", name="uq_media_cast_person_credit"
+            "person_id",
+            "series_id",
+            "role",
+            "tmdb_credit_id",
+            name="uq_media_cast_person_series",
+        ),
+        sa.UniqueConstraint(
+            "person_id",
+            "movie_id",
+            "role",
+            "tmdb_credit_id",
+            name="uq_media_cast_person_movie",
         ),
     )
     op.create_index(

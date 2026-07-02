@@ -428,16 +428,27 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         tmdb_id = series_data.get("metadata", {}).get("tmdb_identifier")
                         if tmdb_id:
                             try:
-                                metadata_cast.fetch_and_store_series_credits(
-                                    series_id, int(tmdb_id)
-                                )
-                                metadata_images.fetch_and_store_series_images(
-                                    series_id, int(tmdb_id)
-                                )
-                                logger.info(
-                                    "Fetched cast and images for series '%s'",
-                                    series_name,
-                                )
+                                has_cast = len(db.get_cast_for_series(series_id)) > 0
+                                if (
+                                    self.force_refresh
+                                    or stats.get("series_added", 0) > 0
+                                    or not has_cast
+                                ):
+                                    metadata_cast.fetch_and_store_series_credits(
+                                        series_id, int(tmdb_id)
+                                    )
+                                    metadata_images.fetch_and_store_series_images(
+                                        series_id, int(tmdb_id)
+                                    )
+                                    logger.info(
+                                        "Fetched cast and images for series '%s'",
+                                        series_name,
+                                    )
+                                else:
+                                    logger.info(
+                                        "Skipping cast/image fetch for series '%s' (cached)",
+                                        series_name,
+                                    )
                             except Exception as fetch_error:
                                 logger.warning(
                                     "Failed to fetch cast/images for series '%s': %s",
@@ -520,15 +531,27 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                             )
                         if tmdb_id:
                             try:
-                                metadata_cast.fetch_and_store_movie_credits(
-                                    movie_id, int(tmdb_id)
-                                )
-                                metadata_images.fetch_and_store_movie_images(
-                                    movie_id, int(tmdb_id)
-                                )
-                                logger.info(
-                                    "Fetched cast and images for movie '%s'", movie_name
-                                )
+                                has_cast = len(db.get_cast_for_movie(movie_id)) > 0
+                                if (
+                                    self.force_refresh
+                                    or stats.get("movies_added", 0) > 0
+                                    or not has_cast
+                                ):
+                                    metadata_cast.fetch_and_store_movie_credits(
+                                        movie_id, int(tmdb_id)
+                                    )
+                                    metadata_images.fetch_and_store_movie_images(
+                                        movie_id, int(tmdb_id)
+                                    )
+                                    logger.info(
+                                        "Fetched cast and images for movie '%s'",
+                                        movie_name,
+                                    )
+                                else:
+                                    logger.info(
+                                        "Skipping cast/image fetch for movie '%s' (cached)",
+                                        movie_name,
+                                    )
                             except Exception as fetch_error:
                                 logger.warning(
                                     "Failed to fetch cast/images for movie '%s': %s",
