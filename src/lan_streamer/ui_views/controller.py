@@ -819,17 +819,24 @@ class Controller(QObject):
         self,
         changed_season_ids: Optional[Set[str]] = None,
         changed_movie_ids: Optional[Set[str]] = None,
+        force_refresh: bool = False,
     ) -> None:
         if self.worker_manager.file_property.is_running:
             logger.info("FilePropertyExtractionWorker is already running.")
             return
 
-        self.status_changed.emit("Extracting missing video runtimes in background...")
+        status_message = (
+            "Extracting runtimes for all files..."
+            if force_refresh
+            else "Extracting missing video runtimes in background..."
+        )
+        self.status_changed.emit(status_message)
         self.worker_manager.file_property.start(
             lambda: FilePropertyExtractionWorker(
                 async_task_manager=self.async_task_manager,
                 changed_season_ids=changed_season_ids,
                 changed_movie_ids=changed_movie_ids,
+                force_refresh=force_refresh,
             ),
             progress_updated=self._on_runtime_progress,
             finished=self._on_runtime_finished,

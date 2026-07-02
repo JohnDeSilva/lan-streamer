@@ -59,11 +59,13 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
         async_task_manager: Optional[AsyncTaskManager] = None,
         changed_season_ids: Optional[Set[str]] = None,
         changed_movie_ids: Optional[Set[str]] = None,
+        force_refresh: bool = False,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
         self.changed_season_ids: Optional[Set[str]] = changed_season_ids
         self.changed_movie_ids: Optional[Set[str]] = changed_movie_ids
+        self.force_refresh: bool = force_refresh
         self._lock: asyncio.Lock = asyncio.Lock()
         self._total_count: int = 0
         self._completed_count: int = 0
@@ -90,9 +92,11 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
                 "Starting Pass 3 (Technical Metadata Extraction) for candidates..."
             )
 
-            items_list: List[Dict[str, Any]] = await asyncio.to_thread(
-                db.get_items_missing_runtime
-            )
+            if self.force_refresh:
+                items_list = await asyncio.to_thread(db.get_all_media_items)
+                logger.info("Force-refresh: processing all media items for extraction")
+            else:
+                items_list = await asyncio.to_thread(db.get_items_missing_runtime)
 
             # Filter out items that already have complete metadata
             candidates: List[Dict[str, Any]] = []
