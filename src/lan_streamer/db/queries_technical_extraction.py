@@ -15,6 +15,66 @@ def get_session() -> Any:
     return lan_streamer.db.connection.get_session()
 
 
+def get_all_media_items() -> List[Dict[str, Any]]:
+    """Retrieves ALL episodes and movies with file paths for force-refresh extraction."""
+    items_list: List[Dict[str, Any]] = []
+    try:
+        logger.debug("Executing DB query: get_all_media_items")
+        with get_session() as session:
+            episodes = (
+                session.scalars(
+                    select(Episode).options(
+                        joinedload(Episode.season).joinedload(Season.series),
+                        joinedload(Episode.media_files),
+                    )
+                )
+                .unique()
+                .all()
+            )
+            for episode in episodes:
+                path = episode.default_path or (
+                    episode.media_files[0].path if episode.media_files else None
+                )
+                if path:
+                    library_name: Optional[str] = None
+                    if episode.season and episode.season.series:
+                        library_name = episode.season.series.library_name
+                    items_list.append(
+                        {
+                            "id": episode.id,
+                            "path": path,
+                            "type": "episode",
+                            "season_id": episode.season_id,
+                            "library_name": library_name,
+                        }
+                    )
+
+            movies = (
+                session.scalars(select(Movie).options(joinedload(Movie.media_files)))
+                .unique()
+                .all()
+            )
+            for movie in movies:
+                path = movie.default_path or (
+                    movie.media_files[0].path if movie.media_files else None
+                )
+                if path:
+                    items_list.append(
+                        {
+                            "id": movie.id,
+                            "path": path,
+                            "type": "movie",
+                            "library_name": movie.library_name,
+                        }
+                    )
+        logger.debug(
+            f"get_all_media_items query response: found {len(items_list)} items"
+        )
+    except Exception:
+        logger.exception("Error fetching all media items")
+    return items_list
+
+
 def get_items_missing_runtime() -> List[Dict[str, Any]]:
     """Retrieves all episodes and movies whose runtime is 0/missing or whose technical metadata (codec, bit rate, resolution) is missing."""
     items_list: List[Dict[str, Any]] = []

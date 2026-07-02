@@ -748,9 +748,15 @@ class SettingsDialog(QDialog):
         )
         passes_layout.addWidget(passes_title)
 
+        pass1_row: QHBoxLayout = QHBoxLayout()
         self.pass1_button: QPushButton = QPushButton("File Scan")
         self.pass1_button.clicked.connect(self.trigger_pass1_scan)
-        passes_layout.addWidget(self.pass1_button)
+        pass1_row.addWidget(self.pass1_button)
+        self.force_file_scan_checkbox: QCheckBox = QCheckBox(
+            "Force re-scan all files (ignores mtimes)"
+        )
+        pass1_row.addWidget(self.force_file_scan_checkbox)
+        passes_layout.addLayout(pass1_row)
 
         pass2_row: QHBoxLayout = QHBoxLayout()
         self.pass2_button: QPushButton = QPushButton("Metadata Resolution")
@@ -762,9 +768,15 @@ class SettingsDialog(QDialog):
         pass2_row.addWidget(self.force_metadata_checkbox)
         passes_layout.addLayout(pass2_row)
 
+        pass3_row: QHBoxLayout = QHBoxLayout()
         self.pass3_button: QPushButton = QPushButton("Runtime Extraction")
         self.pass3_button.clicked.connect(self.trigger_pass3_scan)
-        passes_layout.addWidget(self.pass3_button)
+        pass3_row.addWidget(self.pass3_button)
+        self.force_runtime_checkbox: QCheckBox = QCheckBox(
+            "Force re-extract for all files (re-runs ffprobe)"
+        )
+        pass3_row.addWidget(self.force_runtime_checkbox)
+        passes_layout.addLayout(pass3_row)
 
         self.cleanup_button: QPushButton = QPushButton("Garbage Cleanup")
         self.cleanup_button.clicked.connect(self.trigger_garbage_cleanup)
@@ -1837,8 +1849,9 @@ class SettingsDialog(QDialog):
     def trigger_pass1_scan(self) -> None:
         if self.controller is not None:
             self._show_scan_progress_widgets()
+            force_refresh = self.force_file_scan_checkbox.isChecked()
             self.controller.trigger_scan_all(
-                force_refresh=False,
+                force_refresh=force_refresh,
                 run_pass1=True,
                 run_pass2=False,
                 chain_pass3=False,
@@ -1862,8 +1875,8 @@ class SettingsDialog(QDialog):
     def trigger_pass3_scan(self) -> None:
         if self.controller is not None:
             self._show_scan_progress_widgets()
-            # Pass 3 uses the file property extractor, which notifies detail_progress_updated
-            self.controller.trigger_runtime_extraction()
+            force_refresh = self.force_runtime_checkbox.isChecked()
+            self.controller.trigger_runtime_extraction(force_refresh=force_refresh)
 
     @Slot()
     def trigger_garbage_cleanup(self) -> None:
