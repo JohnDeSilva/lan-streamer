@@ -102,7 +102,7 @@ def test_cast_detail_display(qtbot: Any) -> None:
     assert title_label.text() == "Test Series"
 
 
-def test_cast_detail_movie_filmography(qtbot: Any) -> None:
+def test_cast_detail_movie_filmography(qtbot: Any, tmp_path: Any) -> None:
     """Test filmography display with a movie entry and poster path."""
     # Clean up existing data first
     with get_session() as cleanup_session:
@@ -116,7 +116,7 @@ def test_cast_detail_movie_filmography(qtbot: Any) -> None:
         cleanup_session.execute(text("PRAGMA foreign_keys = ON"))
 
     # Create a temporary poster file
-    temp_poster = "/tmp/test_poster.jpg"
+    temp_poster = str(tmp_path / "test_poster.jpg")
     try:
         open(temp_poster, "w").close()
 
