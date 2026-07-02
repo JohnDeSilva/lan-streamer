@@ -15,12 +15,19 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QSizePolicy,
     QComboBox,
+    QScrollArea,
+    QFrame,
 )
 from PySide6.QtCore import Qt, Slot, QPoint, Signal
 from PySide6.QtGui import QFont, QColor, QAction, QIcon, QPainter, QPolygon
 from lan_streamer.ui_views.proxy import QPixmap
 
+from sqlalchemy import select
+
 from lan_streamer import db
+from lan_streamer.db.connection import get_session
+from lan_streamer.db.models import Series
+from lan_streamer.db.queries_cast import get_cast_for_series
 from lan_streamer.system.config import config
 
 if TYPE_CHECKING:
@@ -53,6 +60,7 @@ class SeriesDetailView(QWidget):
         self._next_episode_path: str = ""
         self.seasons_tab_widget: QTabWidget = QTabWidget()
         self._current_series_name: str = ""
+        self._current_series_db_id: Optional[str] = None
         self._season_tables: Dict[str, QTableWidget] = {}
         self.episode_groups_cache: Dict[str, List[Dict[str, Any]]] = {}
         self.episode_group_details_cache: Dict[str, Dict[str, Any]] = {}
@@ -128,10 +136,144 @@ class SeriesDetailView(QWidget):
         main_layout.addWidget(left_container, 1)  # 1/4 stretch
 
         # Right Column (3/4 width stretch)
+        right_container: QWidget = QWidget()
+        right_layout: QVBoxLayout = QVBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(10)
+
+        # Cast section
+        cast_section_widget: QWidget = QWidget()
+        cast_section_layout: QVBoxLayout = QVBoxLayout(cast_section_widget)
+        cast_section_layout.setContentsMargins(0, 0, 0, 0)
+        cast_section_layout.setSpacing(6)
+
+        cast_header: QLabel = QLabel("Cast")
+        cast_header.setFont(QFont("Inter", 14, QFont.Weight.Bold))
+        cast_section_layout.addWidget(cast_header)
+
+        self._cast_scroll = QScrollArea()
+        self._cast_scroll.setWidgetResizable(True)
+        self._cast_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._cast_scroll.setMaximumHeight(220)
+        self._cast_scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        cast_scroll_content = QWidget()
+        self._cast_grid = QHBoxLayout(cast_scroll_content)
+        self._cast_grid.setSpacing(10)
+        self._cast_grid.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self._cast_scroll.setWidget(cast_scroll_content)
+        cast_section_layout.addWidget(self._cast_scroll)
+
+        right_layout.addWidget(cast_section_widget)
+
         self.seasons_tab_widget.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        main_layout.addWidget(self.seasons_tab_widget, 3)  # 3/4 stretch
+        right_layout.addWidget(self.seasons_tab_widget, 1)
+
+        main_layout.addWidget(right_container, 3)  # 3/4 stretch
+
+    def _lookup_series_id(self) -> Optional[str]:
+        """Query the database for the Series UUID matching the current series name."""
+        if not self._current_series_name:
+            return None
+        if self._current_series_db_id is not None:
+            return self._current_series_db_id
+        with get_session() as session:
+            statement = select(Series).where(
+                Series.library_name == self.controller.current_library_name,
+                Series.name == self._current_series_name,
+            )
+            series = session.execute(statement).unique().scalar_one_or_none()
+            if series is not None:
+                self._current_series_db_id = series.id
+                return series.id
+        return None
+
+    def _make_person_click_handler(self, person_id: str) -> Any:
+        """Create a mouse press event handler for a cast member card."""
+
+        def handler(event: object) -> None:
+            self._on_cast_member_clicked(person_id)
+
+        return handler
+
+    def _on_cast_member_clicked(self, person_id: str) -> None:
+        """Handle cast member card click."""
+        logger.info("Cast member clicked in series detail: %s", person_id)
+        self.controller.select_cast_member(person_id)
+
+    def _display_cast_section(self) -> None:
+        """Populate the cast grid for the current series."""
+        # Clear existing cast cards
+        while self._cast_grid.count():
+            item = self._cast_grid.takeAt(0)
+            if item is not None:
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+
+        series_id = self._lookup_series_id()
+        if not series_id:
+            return
+
+        cast_entries = get_cast_for_series(series_id)
+        if not cast_entries:
+            return
+
+        for cast_entry in cast_entries[:20]:  # max 20 cast cards
+            person = cast_entry.person
+            if not person:
+                continue
+
+            card = QFrame()
+            card.setFrameShape(QFrame.Shape.StyledPanel)
+            card.setFixedSize(100, 150)
+            card.setStyleSheet(
+                "background-color: #16213e; border-radius: 8px; padding: 6px;"
+            )
+
+            card_layout = QVBoxLayout(card)
+            card_layout.setSpacing(4)
+            card_layout.setContentsMargins(4, 4, 4, 4)
+
+            photo = QLabel()
+            photo.setFixedSize(60, 60)
+            photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            if person.profile_path:
+                pixmap = QPixmap(person.profile_path)
+                if not pixmap.isNull():
+                    pixmap = pixmap.scaled(
+                        60,
+                        60,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    photo.setPixmap(pixmap)
+                else:
+                    photo.setText("🎭")
+            else:
+                photo.setText("🎭")
+            photo.setStyleSheet("background-color: #0f3460; border-radius: 30px;")
+            card_layout.addWidget(photo, 0, Qt.AlignmentFlag.AlignCenter)
+
+            name_label = QLabel(person.name or "Unknown")
+            name_label.setWordWrap(True)
+            name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            name_label.setStyleSheet(
+                "color: #e0e0e0; font-weight: bold; font-size: 10px;"
+            )
+            card_layout.addWidget(name_label)
+
+            if cast_entry.character:
+                character_label = QLabel(cast_entry.character)
+                character_label.setWordWrap(True)
+                character_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                character_label.setStyleSheet("color: #aaa; font-size: 9px;")
+                card_layout.addWidget(character_label)
+
+            card.mousePressEvent = self._make_person_click_handler(person.id)
+            card.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._cast_grid.addWidget(card)
 
     @Slot()
     def on_library_loaded(self) -> None:
@@ -738,6 +880,23 @@ class SeriesDetailView(QWidget):
 
             mark_season_button.clicked.connect(make_season_watched_slot(season_name))
             season_actions_layout.addWidget(mark_season_button)
+
+            # Season detail button
+            season_detail_button: QPushButton = QPushButton("View Details")
+            season_detail_button.setObjectName(f"seasonDetailButton_{season_name}")
+
+            def make_season_detail_slot(
+                target_series: str, target_season: str
+            ) -> Callable[[], None]:
+                return lambda: self.controller.season_detail_requested.emit(
+                    target_series, target_season
+                )
+
+            season_detail_button.clicked.connect(
+                make_season_detail_slot(series_name, season_name)
+            )
+            season_actions_layout.addWidget(season_detail_button)
+
             season_actions_layout.addStretch()
             season_layout.addLayout(season_actions_layout)
 
@@ -754,6 +913,9 @@ class SeriesDetailView(QWidget):
                     self.seasons_tab_widget.setCurrentIndex(idx)
                     restored_tab = True
                     break
+
+        # Display cast section
+        self._display_cast_section()
 
         if not restored_tab and sorted_season_names:
             target_tab_index: int = 0

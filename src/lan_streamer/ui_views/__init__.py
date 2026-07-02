@@ -27,6 +27,8 @@ from lan_streamer.ui_views.controller import Controller
 from lan_streamer.ui_views.library_grid import LibraryGridView
 from lan_streamer.ui_views.series_detail import SeriesDetailView
 from lan_streamer.ui_views.movie_detail import MovieDetailView
+from lan_streamer.ui_views.season_detail import SeasonDetailView
+from lan_streamer.ui_views.cast_detail import CastDetailView
 from lan_streamer.ui_views.dialogs import (
     MetadataMatchDialog,
     JellyfinMatchDialog,
