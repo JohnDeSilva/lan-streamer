@@ -752,7 +752,6 @@ class PosterSelectorDialog(QDialog):
                     .where(Series.id == self._series_db_id)
                     .values(poster_path=local_image_path)
                 )
-                session.commit()
                 logger.info(
                     "Updated series '%s' poster_path to '%s'",
                     self._media_name,
@@ -765,7 +764,6 @@ class PosterSelectorDialog(QDialog):
                     .where(Season.id == self._season_db_id)
                     .values(poster_path=local_image_path)
                 )
-                session.commit()
                 logger.info(
                     "Updated season '%s' poster_path to '%s'",
                     self._media_name,
@@ -778,7 +776,6 @@ class PosterSelectorDialog(QDialog):
                     .where(Movie.id == self._movie_db_id)
                     .values(poster_path=local_image_path)
                 )
-                session.commit()
                 logger.info(
                     "Updated movie '%s' poster_path to '%s'",
                     self._media_name,
