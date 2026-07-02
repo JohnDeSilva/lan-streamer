@@ -315,13 +315,10 @@ class MovieDetailView(QWidget):
             if person.profile_path:
                 pixmap = QPixmap(person.profile_path)
                 if not pixmap.isNull():
-                    pixmap = pixmap.scaled(
-                        60,
-                        60,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    photo.setPixmap(pixmap)
+                    from lan_streamer.ui_views.image_masking import get_circular_pixmap
+
+                    circular_pixmap = get_circular_pixmap(pixmap, 60)
+                    photo.setPixmap(circular_pixmap)
                 else:
                     photo.setText("🎭")
             else:

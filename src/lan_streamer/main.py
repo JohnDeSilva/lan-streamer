@@ -390,20 +390,27 @@ async def main() -> None:
     season_detail_view.back_requested.connect(on_season_detail_back)
 
     # Wire cast detail navigation
+    cast_detail_previous_index = 1
+
     def on_cast_member_selected(person_id: str) -> None:
-        logger.info("Navigating to Cast Detail View for person: %s", person_id)
+        nonlocal cast_detail_previous_index
+        cast_detail_previous_index = stacked_layout.currentIndex()
+        logger.info(
+            "Navigating to Cast Detail View for person: %s (from index %d)",
+            person_id,
+            cast_detail_previous_index,
+        )
         cast_detail_view.display_person(person_id)
         stacked_layout.setCurrentIndex(4)
 
     controller.cast_member_selected.connect(on_cast_member_selected)
 
     def on_cast_detail_back() -> None:
-        logger.info("Navigating back from Cast Detail to previous view")
-        library_config = config.libraries.get(controller.current_library_name, {})
-        if library_config.get("type") == "movie":
-            stacked_layout.setCurrentIndex(2)
-        else:
-            stacked_layout.setCurrentIndex(1)
+        logger.info(
+            "Navigating back from Cast Detail to previous view (index %d)",
+            cast_detail_previous_index,
+        )
+        stacked_layout.setCurrentIndex(cast_detail_previous_index)
 
     cast_detail_view.back_requested.connect(on_cast_detail_back)
 
