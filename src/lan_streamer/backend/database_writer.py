@@ -143,6 +143,26 @@ class AsyncDatabaseWriter:
         elif action == "update_items_runtime_batch":
             database_module.update_items_runtime_batch(payload["updates"])
             return {}
+        elif action == "fetch_and_store_series_credits_and_images":
+            from lan_streamer.services import metadata_cast, metadata_images
+
+            metadata_cast.fetch_and_store_series_credits(
+                payload["series_id"], payload["tmdb_id"]
+            )
+            metadata_images.fetch_and_store_series_images(
+                payload["series_id"], payload["tmdb_id"]
+            )
+            return {}
+        elif action == "fetch_and_store_movie_credits_and_images":
+            from lan_streamer.services import metadata_cast, metadata_images
+
+            metadata_cast.fetch_and_store_movie_credits(
+                payload["movie_id"], payload["tmdb_id"]
+            )
+            metadata_images.fetch_and_store_movie_images(
+                payload["movie_id"], payload["tmdb_id"]
+            )
+            return {}
         else:
             raise ValueError(f"Unknown database write action: {action}")
 

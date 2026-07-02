@@ -156,3 +156,63 @@ class TestAsyncDatabaseWriter:
             "lan_streamer.backend.database_writer.database_module.save_directory_mtime"
         ):
             _run(run(), event_loop)
+
+    def test_execute_fetch_and_store_series_credits_and_images(
+        self, event_loop: asyncio.AbstractEventLoop
+    ) -> None:
+        """Verify the writer executes fetch_and_store_series_credits_and_images."""
+        writer = AsyncDatabaseWriter()
+        payload = {"series_id": "series-123", "tmdb_id": 456}
+
+        async def run() -> None:
+            await writer.start()
+            task = await writer.submit(
+                "fetch_and_store_series_credits_and_images", payload
+            )
+            await asyncio.wait_for(task.async_event.wait(), timeout=2.0)
+            assert task.result == {}
+            assert task.error is None
+            await writer.stop()
+
+        with (
+            patch(
+                "lan_streamer.services.metadata_cast.fetch_and_store_series_credits"
+            ) as mock_cast,
+            patch(
+                "lan_streamer.services.metadata_images.fetch_and_store_series_images"
+            ) as mock_images,
+        ):
+            _run(run(), event_loop)
+
+        mock_cast.assert_called_once_with("series-123", 456)
+        mock_images.assert_called_once_with("series-123", 456)
+
+    def test_execute_fetch_and_store_movie_credits_and_images(
+        self, event_loop: asyncio.AbstractEventLoop
+    ) -> None:
+        """Verify the writer executes fetch_and_store_movie_credits_and_images."""
+        writer = AsyncDatabaseWriter()
+        payload = {"movie_id": "movie-123", "tmdb_id": 789}
+
+        async def run() -> None:
+            await writer.start()
+            task = await writer.submit(
+                "fetch_and_store_movie_credits_and_images", payload
+            )
+            await asyncio.wait_for(task.async_event.wait(), timeout=2.0)
+            assert task.result == {}
+            assert task.error is None
+            await writer.stop()
+
+        with (
+            patch(
+                "lan_streamer.services.metadata_cast.fetch_and_store_movie_credits"
+            ) as mock_cast,
+            patch(
+                "lan_streamer.services.metadata_images.fetch_and_store_movie_images"
+            ) as mock_images,
+        ):
+            _run(run(), event_loop)
+
+        mock_cast.assert_called_once_with("movie-123", 789)
+        mock_images.assert_called_once_with("movie-123", 789)
