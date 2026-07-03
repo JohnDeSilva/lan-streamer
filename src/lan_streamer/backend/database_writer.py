@@ -166,8 +166,26 @@ class AsyncDatabaseWriter:
         else:
             raise ValueError(f"Unknown database write action: {action}")
 
+    def _execute_batch(self, batch: list[DatabaseWriteTask]) -> None:
+        """Execute a batch of write tasks in sequence within a single thread."""
+        for task in batch:
+            try:
+                task.result = self._execute_write_task(task.action, task.payload)
+                if task.callback and task.result is not None:
+                    task.callback(task.result)
+            except Exception as error:
+                logger.exception(
+                    f"AsyncDatabaseWriter task '{task.action}' execution failed"
+                )
+                task.error = error
+
     async def _run(self) -> None:
-        """Background coroutine: drain the queue and execute writes."""
+        """Background coroutine: drain the queue and execute writes in batches.
+
+        Tasks are collected into batches of up to 5 and dispatched together
+        via a single ``asyncio.to_thread`` call, reducing thread creation
+        overhead and SQLite transaction costs.
+        """
         logger.info("AsyncDatabaseWriter started.")
         while True:
             task = await self._queue.get()
@@ -176,20 +194,26 @@ class AsyncDatabaseWriter:
                 self._queue.task_done()
                 break
 
-            try:
-                task.result = await asyncio.to_thread(
-                    self._execute_write_task, task.action, task.payload
-                )
-                if task.callback and task.result is not None:
-                    task.callback(task.result)
-            except Exception as error:
-                logger.exception(
-                    f"AsyncDatabaseWriter task '{task.action}' execution failed"
-                )
-                task.error = error
-            finally:
-                if task.async_event is not None:
-                    task.async_event.set()
-                if task.event is not None:
-                    task.event.set()
+            batch: list[DatabaseWriteTask] = [task]
+            saw_sentinel = False
+            while len(batch) < 5 and not saw_sentinel:
+                try:
+                    next_task = self._queue.get_nowait()
+                    if next_task is None:
+                        self._queue.task_done()
+                        saw_sentinel = True
+                    else:
+                        batch.append(next_task)
+                except asyncio.QueueEmpty:
+                    break
+
+            await asyncio.to_thread(self._execute_batch, batch)
+            for bt in batch:
+                if bt.async_event is not None:
+                    bt.async_event.set()
+                if bt.event is not None:
+                    bt.event.set()
                 self._queue.task_done()
+
+            if saw_sentinel:
+                break
