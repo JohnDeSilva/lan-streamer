@@ -799,7 +799,8 @@ class Controller(QObject):
             else:
                 self.select_library(self.current_library_name, reset_selection=False)
 
-        self._smart_row_service.on_scan_completed(affected_libraries=None)
+        affected_libraries = list(self._config.libraries.keys())
+        self._smart_row_service.on_scan_completed(affected_libraries=affected_libraries)
         if self._running_pass3_after_scan:
             changed_seasons = getattr(scan_all_worker, "changed_season_ids", None)
             changed_movies = getattr(scan_all_worker, "changed_movie_ids", None)
