@@ -5,6 +5,7 @@ from .parser import (
     _parse_season_number,
     _parse_movie_folder,
     has_video_files,
+    has_video_files_shallow,
 )
 from .file_property_scanner import (
     get_detailed_file_info,
