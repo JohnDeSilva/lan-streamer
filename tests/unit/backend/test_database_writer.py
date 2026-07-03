@@ -273,7 +273,8 @@ class TestAsyncDatabaseWriter:
             await asyncio.wait_for(task1.async_event.wait(), timeout=2.0)
             await asyncio.wait_for(task2.async_event.wait(), timeout=2.0)
 
-            assert task1.error is not None or task2.error is not None
+            assert task1.error is not None
+            assert task2.error is not None
             await writer.stop()
 
         with patch(

@@ -39,7 +39,14 @@ class TestPostScanWorker:
         # Trigger start - since no event loop runs, it should run synchronously
         mock_finished = MagicMock()
         worker.finished.connect(mock_finished)
-        worker.start()
+
+        with (
+            patch("lan_streamer.db.save_library") as mock_save_tv,
+            patch("lan_streamer.db.save_movie_library") as mock_save_movie,
+        ):
+            worker.start()
+            mock_save_tv.assert_called_once_with("TestTV", {"series": {}})
+            mock_save_movie.assert_not_called()
 
         mock_finished.assert_called_once_with(
             {

@@ -7,7 +7,6 @@ import datetime
 import logging
 import os
 import re
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
@@ -33,34 +32,24 @@ logger = logging.getLogger("lan_streamer.scanner")
 # Computed once per process start; accurate enough for a single scan run.
 _TODAY_STR = datetime.date.today().isoformat()
 
-# Shared thread-pool executor for TMDB pre-fetch; reused across series
-# to avoid creating and destroying short-lived thread pools.
-_TMDB_PREFETCH_EXECUTOR: concurrent.futures.ThreadPoolExecutor | None = None
-_TMDB_PREFETCH_EXECUTOR_LOCK = threading.Lock()
-
-
-def _get_tmdb_prefetch_executor() -> concurrent.futures.ThreadPoolExecutor:
-    """Return the shared TMDB pre-fetch thread pool (lazily created)."""
-    global _TMDB_PREFETCH_EXECUTOR
-    if _TMDB_PREFETCH_EXECUTOR is None:
-        with _TMDB_PREFETCH_EXECUTOR_LOCK:
-            if _TMDB_PREFETCH_EXECUTOR is None:
-                _TMDB_PREFETCH_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=4, thread_name_prefix="tmdb_prefetch"
-                )
-    return _TMDB_PREFETCH_EXECUTOR
-
 
 def _fetch_tmdb_episodes_parallel(
     tmdb_series_id: str | int,
     season_indices: Dict[str, int],
+    executor: concurrent.futures.ThreadPoolExecutor,
 ) -> Dict[str, list]:
     """Fetch TMDB episode lists for multiple seasons in parallel.
 
     Returns a dict mapping season_name -> list[episode_dict].
     This is a module-level function so tests can patch it easily.
+
+    Args:
+        tmdb_series_id: TMDB series identifier.
+        season_indices: Mapping of season_name -> season_number.
+        executor: Thread-pool executor to submit fetch tasks to. The caller
+            (ScanAllLibrariesWorker) owns the executor lifecycle and is
+            responsible for calling ``executor.shutdown()`` after the scan.
     """
-    executor = _get_tmdb_prefetch_executor()
     prefetched: Dict[str, list] = {}
     fetch_futures = {
         executor.submit(
@@ -629,6 +618,7 @@ def scan_series(
     metadata_only: bool = False,
     database_queue: Any | None = None,
     disregard_mtimes: bool = False,
+    tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None = None,
 ) -> Dict[str, Any]:
     """Scans a single series directory and fetches metadata from TMDB."""
 
@@ -698,9 +688,24 @@ def scan_series(
                     f"Pre-fetching TMDB episode lists for {len(season_indices)} "
                     f"seasons of series '{series_directory.name}'"
                 )
-                prefetched_season_episodes = _fetch_tmdb_episodes_parallel(
-                    tmdb_series_id, season_indices
-                )
+                if tmdb_prefetch_executor is not None:
+                    prefetched_season_episodes = _fetch_tmdb_episodes_parallel(
+                        tmdb_series_id, season_indices, tmdb_prefetch_executor
+                    )
+                else:
+                    # Fallback: create a short-lived executor for standalone callers
+                    # (e.g., AsyncScanWorker, single-series scan, tests).
+                    logger.debug(
+                        "scan_series: no tmdb_prefetch_executor provided — "
+                        "creating a temporary executor for series '%s'.",
+                        series_directory.name,
+                    )
+                    with concurrent.futures.ThreadPoolExecutor(
+                        max_workers=4, thread_name_prefix="tmdb_prefetch_tmp"
+                    ) as temporary_executor:
+                        prefetched_season_episodes = _fetch_tmdb_episodes_parallel(
+                            tmdb_series_id, season_indices, temporary_executor
+                        )
 
     # Phase 4: Per-season loop
     for season_name, is_season_changed, existing_season in seasons_to_process:

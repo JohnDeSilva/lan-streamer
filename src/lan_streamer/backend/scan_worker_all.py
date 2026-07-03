@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import logging
 import threading
 import time
@@ -267,6 +268,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         existing_library_data: Dict[str, Any],
         jellyfin_data: Optional[Dict[str, Any]],
         is_pass1: bool,
+        tmdb_prefetch_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
     ) -> Dict[str, Any]:
         """Execute one scan pass for a single library inside a thread-pool worker.
 
@@ -285,6 +287,19 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
            ``scan_directories`` is called **synchronously** inside this method.
            The callback closures close over this stack frame; they are valid
            because the frame stays alive for the full duration of the call.
+
+        Args:
+            library_name: Name of the library to scan.
+            library_configuration: Configuration dict for the library
+                (keys include ``paths``, ``type``, ``show_future_episodes``).
+            existing_library_data: Previously persisted library data loaded
+                from the database.
+            jellyfin_data: Jellyfin correlation data (``None`` for Pass 1).
+            is_pass1: ``True`` for the offline file-discovery pass,
+                ``False`` for the online metadata-resolution pass.
+            tmdb_prefetch_executor: Shared thread-pool executor for TMDB
+                pre-fetch calls. Owned by ``run_async``; ``None`` disables
+                pre-fetching for this library pass.
 
         Returns:
             A dictionary with the following keys:
@@ -635,6 +650,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 movie_callback=_movie_callback,
                 metadata_only=not is_pass1,
                 is_interrupted=self.isInterruptionRequested,
+                tmdb_prefetch_executor=tmdb_prefetch_executor,
             )
             # Collect unavailable directories from this scan.
             if updated_library_data.unavailable_directories:
@@ -689,6 +705,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                     movie_callback=_movie_callback,
                     metadata_only=not is_pass1,
                     is_interrupted=self.isInterruptionRequested,
+                    tmdb_prefetch_executor=tmdb_prefetch_executor,
                 )
                 if self.isInterruptionRequested():
                     raise InterruptedError("Scan interrupted.")
@@ -884,6 +901,17 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         self._database_writer = AsyncDatabaseWriter()
         self._event_loop = asyncio.get_running_loop()
 
+        # Create the TMDB pre-fetch executor for the duration of this scan run.
+        # It is shared across all libraries in both passes to avoid creating and
+        # destroying short-lived thread pools on every series scan.
+        # Ownership is here: shut down in the finally block below.
+        tmdb_prefetch_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="tmdb_prefetch"
+        )
+        logger.info(
+            "ScanAllLibrariesWorker: created TMDB pre-fetch executor (max_workers=4)."
+        )
+
         try:
             await self._database_writer.start()
             logger.info("ScanAllLibrariesWorker starting global scan run")
@@ -931,7 +959,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 logger.info("ScanAllLibrariesWorker starting Pass 1 (Offline Scan)")
                 self.emit_detail_progress("start_offline_scan", {})
 
-                library_task_map: Dict[str, asyncio.Task] = {}
+                library_task_map: Dict[asyncio.Task, str] = {}
                 for (
                     library_name,
                     library_configuration,
@@ -943,10 +971,12 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         library_data_by_name[library_name],
                         None,  # jellyfin_data is None for Pass 1
                         True,  # is_pass1
+                        tmdb_prefetch_executor,
                     )
-                    library_task_map[library_name] = asyncio.create_task(coro)
+                    task = asyncio.create_task(coro)
+                    library_task_map[task] = library_name
 
-                pending = set(library_task_map.values())
+                pending = set(library_task_map.keys())
                 while pending:
                     if self.isInterruptionRequested():
                         logger.info(
@@ -960,9 +990,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         pending, return_when=asyncio.FIRST_COMPLETED
                     )
                     for task in done:
-                        library_name = next(
-                            name for name, t in library_task_map.items() if t == task
-                        )
+                        library_name = library_task_map[task]
                         try:
                             result = await task
                         except asyncio.CancelledError:
@@ -1036,7 +1064,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 self.emit_detail_progress("start_metadata_resolution", {})
 
                 completed_count: int = 0
-                library_task_map_pass2: Dict[str, asyncio.Task] = {}
+                library_task_map_pass2: Dict[asyncio.Task, str] = {}
                 for (
                     library_name,
                     library_configuration,
@@ -1050,10 +1078,12 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         library_data_by_name[library_name],
                         jellyfin_data,
                         False,  # is_pass1
+                        tmdb_prefetch_executor,
                     )
-                    library_task_map_pass2[library_name] = asyncio.create_task(coro)
+                    task = asyncio.create_task(coro)
+                    library_task_map_pass2[task] = library_name
 
-                pending_pass2 = set(library_task_map_pass2.values())
+                pending_pass2 = set(library_task_map_pass2.keys())
                 while pending_pass2:
                     if self.isInterruptionRequested():
                         logger.info(
@@ -1067,11 +1097,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         pending_pass2, return_when=asyncio.FIRST_COMPLETED
                     )
                     for task in done_pass2:
-                        library_name = next(
-                            name
-                            for name, t in library_task_map_pass2.items()
-                            if t == task
-                        )
+                        library_name = library_task_map_pass2[task]
                         try:
                             result = await task
                         except asyncio.CancelledError:
@@ -1155,3 +1181,10 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             self.flush_detail_progress()
             if self._database_writer is not None:
                 await self._database_writer.stop()
+            # Shut down the TMDB pre-fetch executor.  Use wait=False so that
+            # any pending futures (e.g. after an interruption) are not waited
+            # for — they will be abandoned but not block the scan teardown.
+            logger.info(
+                "ScanAllLibrariesWorker: shutting down TMDB pre-fetch executor."
+            )
+            tmdb_prefetch_executor.shutdown(wait=False)
