@@ -216,3 +216,68 @@ class TestAsyncDatabaseWriter:
 
         mock_cast.assert_called_once_with("movie-123", 789)
         mock_images.assert_called_once_with("movie-123", 789)
+
+    def test_exclusive_task_not_batched(
+        self, event_loop: asyncio.AbstractEventLoop
+    ) -> None:
+        """Verify that an exclusive task encountered in the queue stops batching and runs separately."""
+        writer = AsyncDatabaseWriter()
+
+        async def run() -> None:
+            await writer.start()
+            # Enqueue normal task, then exclusive, then another normal task
+            task1 = await writer.submit(
+                "save_directory_mtime", {"path": "/tmp/a", "mtime": 1.0}
+            )
+            task2 = await writer.submit(
+                "fetch_and_store_series_credits_and_images",
+                {"series_id": "s1", "tmdb_id": 1},
+            )
+            task3 = await writer.submit(
+                "save_directory_mtime", {"path": "/tmp/b", "mtime": 2.0}
+            )
+
+            # Wait for all
+            await asyncio.wait_for(task1.async_event.wait(), timeout=2.0)
+            await asyncio.wait_for(task2.async_event.wait(), timeout=2.0)
+            await asyncio.wait_for(task3.async_event.wait(), timeout=2.0)
+
+            await writer.stop()
+
+        with (
+            patch("lan_streamer.db.save_directory_mtime") as mock_save,
+            patch("lan_streamer.services.metadata_cast.fetch_and_store_series_credits"),
+            patch(
+                "lan_streamer.services.metadata_images.fetch_and_store_series_images"
+            ),
+        ):
+            _run(run(), event_loop)
+            assert mock_save.call_count == 2
+
+    def test_batch_robustness_on_exception(
+        self, event_loop: asyncio.AbstractEventLoop
+    ) -> None:
+        """Verify that all tasks in a batch are finalized even if execution raises an exception."""
+        writer = AsyncDatabaseWriter()
+
+        async def run() -> None:
+            await writer.start()
+            task1 = await writer.submit(
+                "save_directory_mtime", {"path": "/tmp/a", "mtime": 1.0}
+            )
+            task2 = await writer.submit(
+                "save_directory_mtime", {"path": "/tmp/b", "mtime": 2.0}
+            )
+
+            # Wait for events (they must be set despite the error)
+            await asyncio.wait_for(task1.async_event.wait(), timeout=2.0)
+            await asyncio.wait_for(task2.async_event.wait(), timeout=2.0)
+
+            assert task1.error is not None or task2.error is not None
+            await writer.stop()
+
+        with patch(
+            "lan_streamer.db.save_directory_mtime",
+            side_effect=RuntimeError("DB write failed"),
+        ):
+            _run(run(), event_loop)

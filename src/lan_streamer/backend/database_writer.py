@@ -55,10 +55,12 @@ class AsyncDatabaseWriter:
     def __init__(self) -> None:
         self._queue: asyncio.Queue[DatabaseWriteTask | None] = asyncio.Queue()
         self._task: asyncio.Task[None] | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     async def start(self) -> None:
         """Launch the background processing coroutine."""
         loop = asyncio.get_running_loop()
+        self._loop = loop
         self._task = loop.create_task(self._run())
 
     async def stop(self) -> None:
@@ -172,7 +174,10 @@ class AsyncDatabaseWriter:
             try:
                 task.result = self._execute_write_task(task.action, task.payload)
                 if task.callback and task.result is not None:
-                    task.callback(task.result)
+                    if self._loop is not None and self._loop.is_running():
+                        self._loop.call_soon_threadsafe(task.callback, task.result)
+                    else:
+                        task.callback(task.result)
             except Exception as error:
                 logger.exception(
                     f"AsyncDatabaseWriter task '{task.action}' execution failed"
@@ -202,39 +207,66 @@ class AsyncDatabaseWriter:
         while True:
             task = await self._queue.get()
             if task is None:
-                logger.info("AsyncDatabaseWriter received sentinel; stopping.")
                 self._queue.task_done()
                 break
 
             if task.action in self._EXCLUSIVE_ACTIONS:
-                await asyncio.to_thread(self._execute_batch, [task])
-                if task.async_event is not None:
-                    task.async_event.set()
-                if task.event is not None:
-                    task.event.set()
-                self._queue.task_done()
+                try:
+                    await asyncio.to_thread(self._execute_batch, [task])
+                except Exception as error:
+                    logger.exception(
+                        f"AsyncDatabaseWriter task '{task.action}' execution failed: {error}"
+                    )
+                finally:
+                    if task.async_event is not None:
+                        task.async_event.set()
+                    if task.event is not None:
+                        task.event.set()
+                    self._queue.task_done()
                 continue
 
             batch: list[DatabaseWriteTask] = [task]
             saw_sentinel = False
+            exclusive_task: DatabaseWriteTask | None = None
             while len(batch) < 5 and not saw_sentinel:
                 try:
                     next_task = self._queue.get_nowait()
                     if next_task is None:
                         self._queue.task_done()
                         saw_sentinel = True
+                    elif next_task.action in self._EXCLUSIVE_ACTIONS:
+                        exclusive_task = next_task
+                        break
                     else:
                         batch.append(next_task)
                 except asyncio.QueueEmpty:
                     break
 
-            await asyncio.to_thread(self._execute_batch, batch)
-            for bt in batch:
-                if bt.async_event is not None:
-                    bt.async_event.set()
-                if bt.event is not None:
-                    bt.event.set()
-                self._queue.task_done()
+            try:
+                await asyncio.to_thread(self._execute_batch, batch)
+            except Exception as error:
+                logger.exception(f"AsyncDatabaseWriter batch execution failed: {error}")
+            finally:
+                for bt in batch:
+                    if bt.async_event is not None:
+                        bt.async_event.set()
+                    if bt.event is not None:
+                        bt.event.set()
+                    self._queue.task_done()
+
+            if exclusive_task is not None:
+                try:
+                    await asyncio.to_thread(self._execute_batch, [exclusive_task])
+                except Exception as error:
+                    logger.exception(
+                        f"AsyncDatabaseWriter task '{exclusive_task.action}' execution failed: {error}"
+                    )
+                finally:
+                    if exclusive_task.async_event is not None:
+                        exclusive_task.async_event.set()
+                    if exclusive_task.event is not None:
+                        exclusive_task.event.set()
+                    self._queue.task_done()
 
             if saw_sentinel:
                 break
