@@ -464,13 +464,9 @@ class Controller(QObject):
         changed_movie_ids = getattr(scan_worker, "changed_movie_ids", None)
         unavailable_directories = getattr(scan_worker, "unavailable_directories", [])
         scanned_library_name = self.current_library_name
-        if scanned_library_name:
-            library_config = self._config.libraries.get(scanned_library_name, {})
-            if library_config.get("type", "tv") == "movie":
-                self._db.save_movie_library(scanned_library_name, updated_library)
-            else:
-                self._db.save_library(scanned_library_name, updated_library)
 
+        # Update cached data on the main thread (cheap operation)
+        if scanned_library_name:
             if self.current_library_name == scanned_library_name:
                 self.cached_library_data = updated_library
                 self._cache_series_metrics()
@@ -478,7 +474,8 @@ class Controller(QObject):
             if unavailable_directories:
                 for directory_name in unavailable_directories:
                     self.status_changed.emit(
-                        f"root directory {directory_name} is unavailable check connection to {directory_name}"
+                        f"root directory {directory_name} is unavailable "
+                        f"check connection to {directory_name}"
                     )
             else:
                 self.status_changed.emit(
@@ -491,18 +488,44 @@ class Controller(QObject):
             ):
                 self.library_loaded.emit()
 
+        # Offload DB save + cache rebuild to background thread
         if scanned_library_name:
-            changed_hashes = self._smart_row_service.rebuild_for_libraries(
-                [scanned_library_name]
+            library_config = self._config.libraries.get(scanned_library_name, {})
+            from lan_streamer.backend.post_scan_worker import PostScanWorker
+
+            post_scan_worker = PostScanWorker(
+                library_name=scanned_library_name,
+                library_data=updated_library,
+                library_type=library_config.get("type", "tv"),
+                smart_row_service=self._smart_row_service,
+                async_task_manager=self.async_task_manager,
+                parent=self,
             )
-            if changed_hashes:
-                self.smart_rows_updated.emit(changed_hashes)
+            post_scan_worker.finished.connect(
+                lambda result: self._on_post_scan_finished(
+                    result,
+                    changed_season_ids,
+                    changed_movie_ids,
+                )
+            )
+            post_scan_worker.start()
 
         if self._running_pass3_after_scan and not self._doing_scan_and_update:
             self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
         elif not self._doing_scan_and_update:
             self.scan_completed.emit()
         return changed_season_ids, changed_movie_ids
+
+    def _on_post_scan_finished(
+        self,
+        result: Dict[str, Any],
+        changed_season_ids: Optional[Set[str]],
+        changed_movie_ids: Optional[Set[str]],
+    ) -> None:
+        """Handle completion of post-scan DB save and cache rebuild."""
+        changed_hashes: List[str] = result.get("changed_hashes", [])
+        if changed_hashes:
+            self.smart_rows_updated.emit(changed_hashes)
 
     def _on_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
         self.select_library(self.current_library_name, reset_selection=False)
