@@ -137,18 +137,9 @@ def has_video_files_shallow(directory: Path) -> bool:
                             or "movie" in name_lower
                             or name_lower in ("op", "ed", "nced", "ncop")
                             or re.search(r"\d{4}", name_lower)
+                            or re.search(r"\bs\d+\b", name_lower)
                         ):
                             return True
-                        # Shallow check inside the subdirectory (immediate files only)
-                        try:
-                            with os.scandir(entry.path) as sub_scanner:
-                                for sub_entry in sub_scanner:
-                                    if sub_entry.is_file(follow_symlinks=True):
-                                        _, ext = os.path.splitext(sub_entry.name)
-                                        if ext.lower() in VIDEO_EXTENSIONS:
-                                            return True
-                        except OSError:
-                            pass
                 except OSError:
                     continue
     except OSError:

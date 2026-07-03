@@ -543,6 +543,8 @@ def test_main_more_signal_routings() -> None:
         patch("lan_streamer.main.LibraryGridView", MagicMock()),
         patch("lan_streamer.main.SeriesDetailView", MagicMock()),
         patch("lan_streamer.main.MovieDetailView", MagicMock()),
+        patch("lan_streamer.main.SeasonDetailView", MagicMock()),
+        patch("lan_streamer.main.CastDetailView", MagicMock()),
         patch("lan_streamer.main.VideoPlayerWidget", MagicMock()) as mock_player_class,
         patch("lan_streamer.main.db.init_db", MagicMock()),
         patch("lan_streamer.system.backup.perform_scheduled_backups", MagicMock()),

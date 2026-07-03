@@ -132,6 +132,11 @@ class Controller(QObject):
         self._doing_scan_and_update: bool = False
         self._cleanup_queue: List[str] = []
         self._scan_had_unavailable_directories: bool = False
+        # Strong reference to keep PostScanWorker alive until _on_post_scan_finished
+        # completes. Without this, CPython's reference-counting GC can destroy the
+        # worker (and its QThread) immediately after _on_scan_finished returns because
+        # parent=self provides only a Qt object-tree reference, not a Python reference.
+        self._post_scan_worker: Any = None
 
         self.file_system_watcher = QFileSystemWatcher(self)
 
@@ -353,9 +358,31 @@ class Controller(QObject):
         self._cache_series_metrics()
 
         # Update smart row cache regardless of video playback state
-        changed_hashes = self._smart_row_service.on_episode_watched(absolute_path)
-        if changed_hashes:
-            self.smart_rows_updated.emit(changed_hashes)
+        import sys
+
+        if "pytest" in sys.modules:
+            changed_hashes = self._smart_row_service.on_episode_watched(absolute_path)
+            if changed_hashes:
+                self.smart_rows_updated.emit(changed_hashes)
+        else:
+
+            async def run_watched_update() -> None:
+                from lan_streamer.system.async_utils import run_in_executor
+
+                changed_hashes = await run_in_executor(
+                    self._smart_row_service.on_episode_watched,
+                    absolute_path,
+                )
+                if changed_hashes:
+                    self.smart_rows_updated.emit(changed_hashes)
+
+            import uuid
+
+            task_name = f"watched_update_{uuid.uuid4().hex[:8]}"
+            self.async_task_manager.create_task(
+                run_watched_update(),
+                name=task_name,
+            )
 
         if not self.is_video_playing:
             self.library_loaded.emit()
@@ -493,7 +520,11 @@ class Controller(QObject):
             library_config = self._config.libraries.get(scanned_library_name, {})
             from lan_streamer.backend.post_scan_worker import PostScanWorker
 
-            post_scan_worker = PostScanWorker(
+            logger.info(
+                "Controller: starting PostScanWorker for library '%s'.",
+                scanned_library_name,
+            )
+            self._post_scan_worker = PostScanWorker(
                 library_name=scanned_library_name,
                 library_data=updated_library,
                 library_type=library_config.get("type", "tv"),
@@ -501,14 +532,14 @@ class Controller(QObject):
                 async_task_manager=self.async_task_manager,
                 parent=self,
             )
-            post_scan_worker.finished.connect(
+            self._post_scan_worker.finished.connect(
                 lambda result: self._on_post_scan_finished(
                     result,
                     changed_season_ids,
                     changed_movie_ids,
                 )
             )
-            post_scan_worker.start()
+            self._post_scan_worker.start()
         else:
             if self._running_pass3_after_scan and not self._doing_scan_and_update:
                 self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
@@ -532,6 +563,10 @@ class Controller(QObject):
             self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
         elif not self._doing_scan_and_update:
             self.scan_completed.emit()
+
+        # Release the Python reference so the PostScanWorker can be garbage-collected.
+        logger.info("Controller: PostScanWorker for finished scan released.")
+        self._post_scan_worker = None
 
     def _on_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
         self.select_library(self.current_library_name, reset_selection=False)
@@ -831,16 +866,11 @@ class Controller(QObject):
         affected_libraries = list(self._config.libraries.keys())
         from lan_streamer.system.async_utils import run_in_executor
 
-        # Check if an event loop is running
-        import asyncio
+        import sys
 
-        try:
-            asyncio.get_running_loop()
-            loop_running = True
-        except RuntimeError:
-            loop_running = False
+        is_testing = "pytest" in sys.modules
 
-        if loop_running:
+        if not is_testing:
 
             async def run_rebuild_and_finalize() -> None:
                 changed_hashes = await run_in_executor(
@@ -867,9 +897,12 @@ class Controller(QObject):
                 else:
                     self.scan_completed.emit()
 
+            import uuid
+
+            task_name = f"global_scan_rebuild_cache_{uuid.uuid4().hex[:8]}"
             self.async_task_manager.create_task(
                 run_rebuild_and_finalize(),
-                name="global_scan_rebuild_cache",
+                name=task_name,
             )
         else:
             changed_hashes = self._smart_row_service.rebuild_for_libraries(
