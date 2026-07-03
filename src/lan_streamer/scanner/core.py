@@ -1,4 +1,5 @@
 import atexit
+import concurrent.futures
 import logging
 import os
 import threading
@@ -97,6 +98,7 @@ def scan_directories(
     database_queue: Optional[Any] = None,
     disregard_mtimes: bool = False,
     is_interrupted: Optional[Any] = None,
+    tmdb_prefetch_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
 ) -> LibraryDict:
     """
     Scans root directories and matches with TMDB to pull metadata.
@@ -254,6 +256,7 @@ def scan_directories(
                         season_callback=season_callback,
                         metadata_only=True,
                         database_queue=database_queue,
+                        tmdb_prefetch_executor=tmdb_prefetch_executor,
                     )
                 future_to_item[future] = (series_name, is_locked)
 
@@ -539,6 +542,7 @@ def scan_directories(
                     offline=offline,
                     season_callback=season_callback,
                     database_queue=database_queue,
+                    tmdb_prefetch_executor=tmdb_prefetch_executor,
                 )
             future_to_series_directory[future] = (series_name, is_locked)
 

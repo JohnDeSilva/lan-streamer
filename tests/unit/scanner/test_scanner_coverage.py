@@ -144,22 +144,16 @@ class TestScannerParser:
         (tmp_path / "ova").mkdir()
         assert has_video_files_shallow(tmp_path) is True
 
-    def test_has_video_files_shallow_true_with_fallback_immediate_video(
-        self, tmp_path
-    ) -> None:
+    def test_has_video_files_shallow_true_with_s_prefixed_dir(self, tmp_path) -> None:
         from lan_streamer.scanner.parser import has_video_files_shallow
 
-        (tmp_path / "custom_folder_name").mkdir()
-        (tmp_path / "custom_folder_name" / "episode.mkv").write_bytes(b"\x00")
+        (tmp_path / "s02").mkdir()
         assert has_video_files_shallow(tmp_path) is True
 
-    def test_has_video_files_shallow_false_with_fallback_no_video(
-        self, tmp_path
-    ) -> None:
+    def test_has_video_files_shallow_false_with_unmatched_dir(self, tmp_path) -> None:
         from lan_streamer.scanner.parser import has_video_files_shallow
 
         (tmp_path / "custom_folder_name").mkdir()
-        (tmp_path / "custom_folder_name" / "info.txt").write_text("hello")
         assert has_video_files_shallow(tmp_path) is False
 
 

@@ -1,6 +1,6 @@
 import logging
 import threading
-from typing import List, Optional, Callable, Any
+from typing import List
 
 from lan_streamer import db
 from lan_streamer.system.config import config as app_config
@@ -17,25 +17,8 @@ class SmartRowService:
 
     def __init__(
         self,
-        background_runner: Optional[Callable[[Callable[[], Any]], Any]] = None,
     ) -> None:
-        self._background_runner = background_runner
         self._cache_lock: threading.Lock = threading.Lock()
-
-    def on_scan_completed(self, affected_libraries: Optional[List[str]] = None) -> None:
-        """Handle scan completion by rebuilding the smart row cache.
-
-        If affected_libraries is provided, only rebuilds configs that reference
-        those libraries. Otherwise rebuilds all enabled configs.
-        """
-        logger.info(
-            f"SmartRowService: scan completed, rebuilding cache for "
-            f"libraries={affected_libraries or 'all'}"
-        )
-        if self._background_runner:
-            self._background_runner(lambda: self._rebuild(affected_libraries))
-        else:
-            self._rebuild(affected_libraries)
 
     def on_episode_watched(self, file_path: str) -> List[str]:
         """Handle episode watched event by performing incremental cache update.
@@ -59,20 +42,6 @@ class SmartRowService:
         """
         logger.info(f"SmartRowService: rebuilding cache for libraries {library_names}")
         return self._rebuild_affected_configs(library_names)
-
-    def _rebuild(self, affected_libraries: Optional[List[str]] = None) -> None:
-        """Internal: rebuild cache, optionally scoped to specific libraries.
-
-        Delegates to _rebuild_affected_configs which handles deduplication
-        and scoping internally. For full rebuilds, calls rebuild_all_cache.
-        """
-        try:
-            if affected_libraries:
-                self._rebuild_affected_configs(affected_libraries)
-            else:
-                db.rebuild_all_cache()
-        except Exception:
-            logger.exception("SmartRowService: failed to rebuild cache")
 
     def _rebuild_affected_configs(self, library_names: List[str]) -> List[str]:
         """Rebuild only the smart row configs that reference the given libraries.
