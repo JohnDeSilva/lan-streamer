@@ -185,7 +185,11 @@ def test_on_mark_season_watched_calls_controller(ctrl_with_show, qtbot) -> None:
     with patch.object(ctrl_with_show, "mark_season_watched") as mock_mark:
         with patch.object(v, "populate_series_details"):
             v._on_mark_season_watched("Season 1")
-            mock_mark.assert_called_once_with("ShowA", "Season 1")
+            mock_mark.assert_called_once_with("ShowA", "Season 1", True)
+
+            mock_mark.reset_mock()
+            v._on_mark_season_watched("Season 1", watched=False)
+            mock_mark.assert_called_once_with("ShowA", "Season 1", False)
 
 
 # ---------------------------------------------------------------------------
@@ -373,3 +377,33 @@ def test_populate_hides_future_episodes_when_show_future_false(
 
     # Reset
     config.libraries["TVLib"]["show_future_episodes"] = True
+
+
+def test_season_watched_button_text_toggle(ctrl_with_show, qtbot) -> None:
+    from PySide6.QtWidgets import QPushButton
+
+    v = make_view(ctrl_with_show, qtbot)
+
+    # 1. Season is NOT fully watched (S01E01 has watched=False)
+    populate(v, ctrl_with_show)
+    current_tab = v.seasons_tab_widget.currentWidget()
+    assert current_tab is not None
+    btn = current_tab.findChild(QPushButton, "markSeasonWatchedButton_Season 1")
+    assert btn is not None
+    assert btn.text() == "Mark season as watched"
+
+    # 2. Mark the episodes in Season 1 as watched so season is fully watched
+    episodes = ctrl_with_show.cached_library_data["ShowA"]["seasons"]["Season 1"][
+        "episodes"
+    ]
+    for ep in episodes:
+        ep["watched"] = True
+
+    populate(v, ctrl_with_show)
+    current_tab_toggle = v.seasons_tab_widget.currentWidget()
+    assert current_tab_toggle is not None
+    btn_toggle = current_tab_toggle.findChild(
+        QPushButton, "markSeasonWatchedButton_Season 1"
+    )
+    assert btn_toggle is not None
+    assert btn_toggle.text() == "Mark season as unwatched"

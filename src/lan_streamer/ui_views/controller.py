@@ -387,12 +387,14 @@ class Controller(QObject):
         if not self.is_video_playing:
             self.library_loaded.emit()
 
-    def mark_season_watched(self, series_name: str, season_name: str) -> None:
+    def mark_season_watched(
+        self, series_name: str, season_name: str, watched: bool = True
+    ) -> None:
         logger.info(
-            f"Controller marking season watched for series '{series_name}', season '{season_name}'"
+            f"Controller marking season watched={watched} for series '{series_name}', season '{season_name}'"
         )
         self._db.update_season_watched_status(
-            self.current_library_name, series_name, season_name, True
+            self.current_library_name, series_name, season_name, watched
         )
 
         series_data: Dict[str, Any] = self.cached_library_data.get(series_name, {})
@@ -400,7 +402,7 @@ class Controller(QObject):
             season_name, {}
         )
         for episode_record in season_data.get("episodes", []):
-            episode_record["watched"] = True
+            episode_record["watched"] = watched
 
         self._cache_series_metrics()
 
