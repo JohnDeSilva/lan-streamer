@@ -1,4 +1,5 @@
 import logging
+import threading
 from typing import List, Optional, Callable, Any
 
 from lan_streamer import db
@@ -19,6 +20,7 @@ class SmartRowService:
         background_runner: Optional[Callable[[Callable[[], Any]], Any]] = None,
     ) -> None:
         self._background_runner = background_runner
+        self._cache_lock: threading.Lock = threading.Lock()
 
     def on_scan_completed(self, affected_libraries: Optional[List[str]] = None) -> None:
         """Handle scan completion by rebuilding the smart row cache.
@@ -77,28 +79,35 @@ class SmartRowService:
 
         Config is loaded by get_affected_config_hashes_for_libraries, so
         no explicit load() is needed here.
+
+        Thread-safe — serializes cache rebuild operations via a lock so that
+        background PostScanWorker invocations do not race with main-thread
+        watched-event updates or settings changes.
         """
-        config_hashes = db.get_affected_config_hashes_for_libraries(library_names)
-        if not config_hashes:
-            logger.debug(
-                f"SmartRowService: no configs found for libraries {library_names}"
-            )
-            return []
+        with self._cache_lock:
+            config_hashes = db.get_affected_config_hashes_for_libraries(library_names)
+            if not config_hashes:
+                logger.debug(
+                    f"SmartRowService: no configs found for libraries {library_names}"
+                )
+                return []
 
-        for row_config in app_config.combined_views:
-            if not row_config.get("enabled", True):
-                continue
-            row_libraries = row_config.get("libraries", [])
-            if row_libraries and not any(lib in library_names for lib in row_libraries):
-                continue
-            libraries = row_config.get("libraries", [])
-            sort_by = row_config.get("sort_by", "Alphabetical")
-            filter_mode = row_config.get("filter_mode", "All")
-            config_hash = db.compute_config_hash(libraries, sort_by, filter_mode)
-            if config_hash in config_hashes:
-                db.rebuild_cache_for_config(libraries, sort_by, filter_mode)
+            for row_config in app_config.combined_views:
+                if not row_config.get("enabled", True):
+                    continue
+                row_libraries = row_config.get("libraries", [])
+                if row_libraries and not any(
+                    lib in library_names for lib in row_libraries
+                ):
+                    continue
+                libraries = row_config.get("libraries", [])
+                sort_by = row_config.get("sort_by", "Alphabetical")
+                filter_mode = row_config.get("filter_mode", "All")
+                config_hash = db.compute_config_hash(libraries, sort_by, filter_mode)
+                if config_hash in config_hashes:
+                    db.rebuild_cache_for_config(libraries, sort_by, filter_mode)
 
-        return config_hashes
+            return config_hashes
 
     def _resolve_libraries_for_path(self, file_path: str) -> List[str]:
         """Determine which libraries contain the given file path."""
