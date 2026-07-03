@@ -4,10 +4,13 @@ import shutil
 import functools
 import json
 import subprocess
+import threading
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
+
+_ffprobe_semaphore = threading.BoundedSemaphore(3)
 
 
 @functools.lru_cache(maxsize=1)
@@ -50,21 +53,22 @@ def _extract_video_runtime(file_path: str) -> Optional[int]:
         return None
 
     try:
-        process_result: subprocess.CompletedProcess[str] = subprocess.run(
-            [
-                _get_ffprobe_command(),
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                file_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+        with _ffprobe_semaphore:
+            process_result: subprocess.CompletedProcess[str] = subprocess.run(
+                [
+                    _get_ffprobe_command(),
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    file_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
         if process_result.returncode == 0 and process_result.stdout.strip():
             duration_seconds: float = float(process_result.stdout.strip())
             return int(round(duration_seconds / 60.0))
@@ -125,21 +129,22 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
     info["video_type"] = suffix.upper().replace(".", "") if suffix else None
 
     try:
-        process_result = subprocess.run(
-            [
-                _get_ffprobe_command(),
-                "-v",
-                "quiet",
-                "-print_format",
-                "json",
-                "-show_format",
-                "-show_streams",
-                file_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        with _ffprobe_semaphore:
+            process_result = subprocess.run(
+                [
+                    _get_ffprobe_command(),
+                    "-v",
+                    "quiet",
+                    "-print_format",
+                    "json",
+                    "-show_format",
+                    "-show_streams",
+                    file_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
         if process_result.returncode == 0:
             data = json.loads(process_result.stdout)
             streams = data.get("streams", [])
