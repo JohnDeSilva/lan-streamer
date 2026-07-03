@@ -7,6 +7,7 @@ import datetime
 import logging
 import os
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
@@ -32,6 +33,23 @@ logger = logging.getLogger("lan_streamer.scanner")
 # Computed once per process start; accurate enough for a single scan run.
 _TODAY_STR = datetime.date.today().isoformat()
 
+# Shared thread-pool executor for TMDB pre-fetch; reused across series
+# to avoid creating and destroying short-lived thread pools.
+_TMDB_PREFETCH_EXECUTOR: concurrent.futures.ThreadPoolExecutor | None = None
+_TMDB_PREFETCH_EXECUTOR_LOCK = threading.Lock()
+
+
+def _get_tmdb_prefetch_executor() -> concurrent.futures.ThreadPoolExecutor:
+    """Return the shared TMDB pre-fetch thread pool (lazily created)."""
+    global _TMDB_PREFETCH_EXECUTOR
+    if _TMDB_PREFETCH_EXECUTOR is None:
+        with _TMDB_PREFETCH_EXECUTOR_LOCK:
+            if _TMDB_PREFETCH_EXECUTOR is None:
+                _TMDB_PREFETCH_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=4, thread_name_prefix="tmdb_prefetch"
+                )
+    return _TMDB_PREFETCH_EXECUTOR
+
 
 def _fetch_tmdb_episodes_parallel(
     tmdb_series_id: str | int,
@@ -42,28 +60,26 @@ def _fetch_tmdb_episodes_parallel(
     Returns a dict mapping season_name -> list[episode_dict].
     This is a module-level function so tests can patch it easily.
     """
+    executor = _get_tmdb_prefetch_executor()
     prefetched: Dict[str, list] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        fetch_futures = {
-            executor.submit(
-                _tmdb_client.get_episodes, tmdb_series_id, season_index
-            ): season_name
-            for season_name, season_index in season_indices.items()
-        }
-        for future in concurrent.futures.as_completed(fetch_futures):
-            season_name = fetch_futures[future]
-            try:
-                episodes = future.result()
-                prefetched[season_name] = episodes
-                logger.debug(
-                    f"Pre-fetched {len(episodes)} TMDB episodes "
-                    f"for season '{season_name}'"
-                )
-            except Exception as error:
-                logger.warning(
-                    f"Failed to pre-fetch TMDB episodes for "
-                    f"season '{season_name}': {error}"
-                )
+    fetch_futures = {
+        executor.submit(
+            _tmdb_client.get_episodes, tmdb_series_id, season_index
+        ): season_name
+        for season_name, season_index in season_indices.items()
+    }
+    for future in concurrent.futures.as_completed(fetch_futures):
+        season_name = fetch_futures[future]
+        try:
+            episodes = future.result()
+            prefetched[season_name] = episodes
+            logger.debug(
+                f"Pre-fetched {len(episodes)} TMDB episodes for season '{season_name}'"
+            )
+        except Exception as error:
+            logger.warning(
+                f"Failed to pre-fetch TMDB episodes for season '{season_name}': {error}"
+            )
     return prefetched
 
 
