@@ -2,6 +2,7 @@ import logging
 import time
 from typing import Any
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from lan_streamer.db.models import (
     Series,
@@ -32,10 +33,17 @@ def update_episode_watched_status(path: str, watched: bool) -> None:
         )
         logger.info(f"Updating watched status for {path} to {watched}")
         with get_session() as session:
-            from lan_streamer.db.models import PlaybackState
+            from lan_streamer.db.models import Episode, Movie, PlaybackState
 
             mf = session.scalars(
-                select(MediaFile).where(MediaFile.path == path)
+                select(MediaFile)
+                .options(
+                    selectinload(MediaFile.episodes).selectinload(
+                        Episode.playback_state
+                    ),
+                    selectinload(MediaFile.movies).selectinload(Movie.playback_state),
+                )
+                .where(MediaFile.path == path)
             ).first()
             if mf:
                 for ep in mf.episodes:
@@ -75,8 +83,17 @@ def update_episode_playback_position(path: str, position: int) -> bool:
         with get_session() as session:
             from lan_streamer.db.models import PlaybackState
 
+            from lan_streamer.db.models import Episode, Movie
+
             mf = session.scalars(
-                select(MediaFile).where(MediaFile.path == path)
+                select(MediaFile)
+                .options(
+                    selectinload(MediaFile.episodes).selectinload(
+                        Episode.playback_state
+                    ),
+                    selectinload(MediaFile.movies).selectinload(Movie.playback_state),
+                )
+                .where(MediaFile.path == path)
             ).first()
             if mf:
                 for ep in mf.episodes:
@@ -100,8 +117,17 @@ def get_episode_playback_position(path: str) -> int:
     try:
         logger.debug(f"Retrieving playback position for '{path}'")
         with get_session() as session:
+            from lan_streamer.db.models import Episode, Movie
+
             mf = session.scalars(
-                select(MediaFile).where(MediaFile.path == path)
+                select(MediaFile)
+                .options(
+                    selectinload(MediaFile.episodes).selectinload(
+                        Episode.playback_state
+                    ),
+                    selectinload(MediaFile.movies).selectinload(Movie.playback_state),
+                )
+                .where(MediaFile.path == path)
             ).first()
             if mf:
                 if mf.episodes and mf.episodes[0].playback_state:
@@ -130,8 +156,13 @@ def update_season_watched_status(
             f"Updating watched status for {series_name} - {season_name} in {library_name} to {watched}"
         )
         with get_session() as session:
+            from lan_streamer.db.models import Episode, PlaybackState
+
             season = session.scalars(
                 select(Season)
+                .options(
+                    selectinload(Season.episodes).selectinload(Episode.playback_state),
+                )
                 .join(Series)
                 .where(
                     Series.library_name == library_name,
@@ -140,8 +171,6 @@ def update_season_watched_status(
                 )
             ).first()
             if season:
-                from lan_streamer.db.models import PlaybackState
-
                 for ep in season.episodes:
                     if not ep.playback_state:
                         ep.playback_state = PlaybackState(episode_id=ep.id)
@@ -184,14 +213,18 @@ def update_series_watched_status(
             f"Updating watched status for entire series {series_name} in {library_name} to {watched}"
         )
         with get_session() as session:
+            from lan_streamer.db.models import Episode, PlaybackState, Season
+
             series = session.scalars(
-                select(Series).where(
-                    Series.library_name == library_name, Series.name == series_name
+                select(Series)
+                .options(
+                    selectinload(Series.seasons)
+                    .selectinload(Season.episodes)
+                    .selectinload(Episode.playback_state),
                 )
+                .where(Series.library_name == library_name, Series.name == series_name)
             ).first()
             if series:
-                from lan_streamer.db.models import PlaybackState
-
                 for season in series.seasons:
                     for ep in season.episodes:
                         if not ep.playback_state:
