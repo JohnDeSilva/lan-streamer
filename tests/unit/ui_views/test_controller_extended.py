@@ -237,6 +237,19 @@ def test_mark_season_watched(ctrl) -> None:
     assert ep["watched"] is True
 
 
+def test_mark_season_unwatched(ctrl) -> None:
+    ep = ctrl.cached_library_data["ShowA"]["seasons"]["Season 1"]["episodes"][0]
+    ep["watched"] = True
+
+    with patch("lan_streamer.db.update_season_watched_status") as mock_update:
+        ctrl.mark_season_watched("ShowA", "Season 1", watched=False)
+        mock_update.assert_called_once_with(
+            ctrl.current_library_name, "ShowA", "Season 1", False
+        )
+
+    assert ep["watched"] is False
+
+
 def test_mark_season_watched_suppressed_during_playback(ctrl) -> None:
     ctrl.is_video_playing = True
     signals: List[bool] = []

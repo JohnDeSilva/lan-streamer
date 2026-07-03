@@ -322,12 +322,12 @@ class SeriesDetailView(QWidget):
         )
         self.populate_series_details(self._current_series_name)
 
-    @Slot(str)
-    def _on_mark_season_watched(self, season_name: str) -> None:
+    @Slot(str, bool)
+    def _on_mark_season_watched(self, season_name: str, watched: bool = True) -> None:
         if not self.controller.selected_series_name:
             return
         self.controller.mark_season_watched(
-            self.controller.selected_series_name, season_name
+            self.controller.selected_series_name, season_name, watched
         )
         self.populate_series_details(self._current_series_name)
 
@@ -897,15 +897,29 @@ class SeriesDetailView(QWidget):
             season_layout.setSpacing(10)
 
             season_actions_layout: QHBoxLayout = QHBoxLayout()
-            mark_season_button: QPushButton = QPushButton("Mark season as watched")
+            local_episodes = [ep for ep in sorted_episodes if ep.get("path")]
+            is_season_watched = len(local_episodes) > 0 and all(
+                ep.get("watched", False) for ep in local_episodes
+            )
+            button_text = (
+                "Mark season as unwatched"
+                if is_season_watched
+                else "Mark season as watched"
+            )
+            mark_season_button: QPushButton = QPushButton(button_text)
             mark_season_button.setObjectName(f"markSeasonWatchedButton_{season_name}")
 
             def make_season_watched_slot(
                 target_season: str,
+                target_watched_state: bool,
             ) -> Callable[[], None]:
-                return lambda: self._on_mark_season_watched(target_season)
+                return lambda: self._on_mark_season_watched(
+                    target_season, target_watched_state
+                )
 
-            mark_season_button.clicked.connect(make_season_watched_slot(season_name))
+            mark_season_button.clicked.connect(
+                make_season_watched_slot(season_name, not is_season_watched)
+            )
             season_actions_layout.addWidget(mark_season_button)
 
             # Season detail button
