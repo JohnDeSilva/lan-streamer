@@ -179,12 +179,24 @@ class AsyncDatabaseWriter:
                 )
                 task.error = error
 
+    # Long-running actions (HTTP calls) are not batched with quick DB writes
+    # to avoid blocking the fast tasks behind network latency.
+    _EXCLUSIVE_ACTIONS = frozenset(
+        {
+            "fetch_and_store_series_credits_and_images",
+            "fetch_and_store_movie_credits_and_images",
+        }
+    )
+
     async def _run(self) -> None:
         """Background coroutine: drain the queue and execute writes in batches.
 
         Tasks are collected into batches of up to 5 and dispatched together
         via a single ``asyncio.to_thread`` call, reducing thread creation
         overhead and SQLite transaction costs.
+
+        Long-running HTTP actions (fetch_and_store_*) are processed
+        individually to avoid blocking quick DB writes behind network I/O.
         """
         logger.info("AsyncDatabaseWriter started.")
         while True:
@@ -193,6 +205,15 @@ class AsyncDatabaseWriter:
                 logger.info("AsyncDatabaseWriter received sentinel; stopping.")
                 self._queue.task_done()
                 break
+
+            if task.action in self._EXCLUSIVE_ACTIONS:
+                await asyncio.to_thread(self._execute_batch, [task])
+                if task.async_event is not None:
+                    task.async_event.set()
+                if task.event is not None:
+                    task.event.set()
+                self._queue.task_done()
+                continue
 
             batch: list[DatabaseWriteTask] = [task]
             saw_sentinel = False
