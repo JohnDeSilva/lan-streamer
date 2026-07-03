@@ -103,3 +103,35 @@ def has_video_files(directory: Path) -> bool:
     except Exception:
         pass
     return False
+
+
+def has_video_files_shallow(directory: Path) -> bool:
+    """Checks if a directory contains video files or season subdirectories
+    by looking only at immediate children (no deep recursion).
+
+    Much faster than ``has_video_files`` for tree discovery on network
+    shares, since it avoids walking the full directory tree.
+    """
+    try:
+        with os.scandir(str(directory)) as scanner:
+            for entry in scanner:
+                if entry.name.startswith("."):
+                    continue
+                try:
+                    if entry.is_file(follow_symlinks=True):
+                        _, ext = os.path.splitext(entry.name)
+                        if ext.lower() in VIDEO_EXTENSIONS:
+                            return True
+                    elif entry.is_dir(follow_symlinks=True):
+                        name_lower = entry.name.lower()
+                        if (
+                            "season" in name_lower
+                            or "special" in name_lower
+                            or re.search(r"\d{4}", name_lower)
+                        ):
+                            return True
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return False

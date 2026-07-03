@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from lan_streamer.scanner import has_video_files
+from lan_streamer.scanner import has_video_files_shallow
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -191,7 +191,9 @@ def discover_single_library_tree_impl(
             [
                 x
                 for x in root_path.iterdir()
-                if x.is_dir() and not x.name.startswith(".") and has_video_files(x)
+                if x.is_dir()
+                and not x.name.startswith(".")
+                and has_video_files_shallow(x)
             ],
             key=lambda x: x.stat().st_mtime,
             reverse=True,

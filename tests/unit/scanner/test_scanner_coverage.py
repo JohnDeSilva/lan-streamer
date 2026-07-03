@@ -101,6 +101,41 @@ class TestScannerParser:
         (tmp_path / "readme.txt").write_text("hello")
         assert has_video_files(tmp_path) is False
 
+    def test_has_video_files_shallow_true_with_video_file(self, tmp_path) -> None:
+        from lan_streamer.scanner.parser import has_video_files_shallow
+
+        (tmp_path / "video.mkv").write_bytes(b"\x00")
+        assert has_video_files_shallow(tmp_path) is True
+
+    def test_has_video_files_shallow_true_with_season_dir(self, tmp_path) -> None:
+        from lan_streamer.scanner.parser import has_video_files_shallow
+
+        (tmp_path / "Season 1").mkdir()
+        assert has_video_files_shallow(tmp_path) is True
+
+    def test_has_video_files_shallow_true_with_specials_dir(self, tmp_path) -> None:
+        from lan_streamer.scanner.parser import has_video_files_shallow
+
+        (tmp_path / "Specials").mkdir()
+        assert has_video_files_shallow(tmp_path) is True
+
+    def test_has_video_files_shallow_false_no_videos(self, tmp_path) -> None:
+        from lan_streamer.scanner.parser import has_video_files_shallow
+
+        (tmp_path / "readme.txt").write_text("hello")
+        assert has_video_files_shallow(tmp_path) is False
+
+    def test_has_video_files_shallow_ignores_hidden(self, tmp_path) -> None:
+        from lan_streamer.scanner.parser import has_video_files_shallow
+
+        (tmp_path / ".hidden.mkv").write_bytes(b"\x00")
+        assert has_video_files_shallow(tmp_path) is False
+
+    def test_has_video_files_shallow_empty_dir(self, tmp_path) -> None:
+        from lan_streamer.scanner.parser import has_video_files_shallow
+
+        assert has_video_files_shallow(tmp_path) is False
+
 
 # ---------------------------------------------------------------------------
 # scanner/metadata.py - clean_series_data
