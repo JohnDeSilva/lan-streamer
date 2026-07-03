@@ -29,6 +29,7 @@ def _process_season_metadata(
     single_item_refresh: bool = False,
     offline: bool = False,
     metadata_only: bool = False,
+    prefetched_tmdb_episodes: list[Any] | None = None,
 ) -> tuple[str, int, Dict[str, Any], list[Any]]:
     """Season-level metadata resolution + TMDB episode fetch.
 
@@ -45,6 +46,8 @@ def _process_season_metadata(
         single_item_refresh: Refresh just this single item.
         offline: When ``True``, skip network calls.
         metadata_only: Only resolve metadata, skip disk I/O.
+        prefetched_tmdb_episodes: Pre-fetched TMDB episode list for this
+            season. When provided, skips the TMDB API call.
 
     Returns:
         A 4-tuple ``(season_name, season_index, season_metadata, tmdb_episodes)``.
@@ -143,53 +146,59 @@ def _process_season_metadata(
 
     tmdb_episodes = []
     if needs_episode_search and series_data["_tmdb_series_id"]:
-        episode_group_details = series_data.get("_tmdb_episode_group_details")
-        if (
-            episode_group_details
-            and isinstance(episode_group_details, dict)
-            and "groups" in episode_group_details
-        ):
-            # Find the sub-group for this season
-            matched_group = None
-            for group in episode_group_details.get("groups", []):
-                group_name = group.get("name") or ""
-                season_num_match = re.search(r"\d+", group_name)
-                group_season_index = (
-                    int(season_num_match.group())
-                    if season_num_match
-                    else group.get("order", -1)
-                )
-                if group_name.lower() == "specials":
-                    group_season_index = 0
-                if group_season_index == season_index:
-                    matched_group = group
-                    break
-            if matched_group:
-                for group_ep in matched_group.get("episodes", []):
-                    tmdb_episodes.append(
-                        {
-                            "id": group_ep.get("id"),
-                            "name": group_ep.get("name"),
-                            "episode_number": group_ep.get("order")
-                            + 1,  # Using order + 1 as the 1-indexed episode number
-                            "air_date": group_ep.get("air_date") or "",
-                            "runtime": group_ep.get("runtime") or 0,
-                        }
-                    )
+        if prefetched_tmdb_episodes is not None:
+            tmdb_episodes = prefetched_tmdb_episodes
+            logger.debug(
+                f"Using prefetched TMDB episodes for season '{season_name}' "
+                f"({len(tmdb_episodes)} episodes)"
+            )
         else:
-            if season_index < 0:
-                logger.warning(
-                    f"Skipping TMDB episode fetch for series ID '{series_data['_tmdb_series_id']}': "
-                    f"season index '{season_index}' is invalid (could not parse a season number "
-                    f"from directory name '{season_name}')."
-                )
+            episode_group_details = series_data.get("_tmdb_episode_group_details")
+            if (
+                episode_group_details
+                and isinstance(episode_group_details, dict)
+                and "groups" in episode_group_details
+            ):
+                # Find the sub-group for this season
+                matched_group = None
+                for group in episode_group_details.get("groups", []):
+                    group_name = group.get("name") or ""
+                    season_num_match = re.search(r"\d+", group_name)
+                    group_season_index = (
+                        int(season_num_match.group())
+                        if season_num_match
+                        else group.get("order", -1)
+                    )
+                    if group_name.lower() == "specials":
+                        group_season_index = 0
+                    if group_season_index == season_index:
+                        matched_group = group
+                        break
+                if matched_group:
+                    for group_ep in matched_group.get("episodes", []):
+                        tmdb_episodes.append(
+                            {
+                                "id": group_ep.get("id"),
+                                "name": group_ep.get("name"),
+                                "episode_number": group_ep.get("order") + 1,
+                                "air_date": group_ep.get("air_date") or "",
+                                "runtime": group_ep.get("runtime") or 0,
+                            }
+                        )
             else:
-                logger.info(
-                    f"Fetching TMDB episodes list for series ID '{series_data['_tmdb_series_id']}', season index '{season_index}'"
-                )
-                tmdb_episodes = tmdb_client.get_episodes(
-                    series_data["_tmdb_series_id"], season_index
-                )
+                if season_index < 0:
+                    logger.warning(
+                        f"Skipping TMDB episode fetch for series ID '{series_data['_tmdb_series_id']}': "
+                        f"season index '{season_index}' is invalid (could not parse a season number "
+                        f"from directory name '{season_name}')."
+                    )
+                else:
+                    logger.info(
+                        f"Fetching TMDB episodes list for series ID '{series_data['_tmdb_series_id']}', season index '{season_index}'"
+                    )
+                    tmdb_episodes = tmdb_client.get_episodes(
+                        series_data["_tmdb_series_id"], season_index
+                    )
 
     current_mtime = None
     if not metadata_only and season_directory.exists():
