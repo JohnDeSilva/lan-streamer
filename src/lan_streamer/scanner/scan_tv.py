@@ -2,6 +2,7 @@
 TV/series scanning functions — scan a single series directory and detect file changes.
 """
 
+import concurrent.futures
 import datetime
 import logging
 import os
@@ -12,6 +13,7 @@ from collections.abc import Callable
 from typing import Any, Dict
 
 from lan_streamer.db.utils import natural_sort_key
+from lan_streamer.providers.tmdb import tmdb_client as _tmdb_client
 from lan_streamer.scanner.file_property_scanner import (
     get_detailed_file_info,
     get_stub_file_info,
@@ -29,6 +31,40 @@ logger = logging.getLogger("lan_streamer.scanner")
 
 # Computed once per process start; accurate enough for a single scan run.
 _TODAY_STR = datetime.date.today().isoformat()
+
+
+def _fetch_tmdb_episodes_parallel(
+    tmdb_series_id: str | int,
+    season_indices: Dict[str, int],
+) -> Dict[str, list]:
+    """Fetch TMDB episode lists for multiple seasons in parallel.
+
+    Returns a dict mapping season_name -> list[episode_dict].
+    This is a module-level function so tests can patch it easily.
+    """
+    prefetched: Dict[str, list] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        fetch_futures = {
+            executor.submit(
+                _tmdb_client.get_episodes, tmdb_series_id, season_index
+            ): season_name
+            for season_name, season_index in season_indices.items()
+        }
+        for future in concurrent.futures.as_completed(fetch_futures):
+            season_name = fetch_futures[future]
+            try:
+                episodes = future.result()
+                prefetched[season_name] = episodes
+                logger.debug(
+                    f"Pre-fetched {len(episodes)} TMDB episodes "
+                    f"for season '{season_name}'"
+                )
+            except Exception as error:
+                logger.warning(
+                    f"Failed to pre-fetch TMDB episodes for "
+                    f"season '{season_name}': {error}"
+                )
+    return prefetched
 
 
 @dataclass
@@ -616,6 +652,40 @@ def scan_series(
         disregard_mtimes=disregard_mtimes,
     )
 
+    # Phase 3.5: Parallel TMDB episode pre-fetch
+    # Fetch TMDB episode lists for all seasons that need online data concurrently,
+    # reducing sequential N-season HTTP call overhead to a single round-trip.
+    prefetched_season_episodes: Dict[str, list[Any]] = {}
+    if not offline and _tmdb_client.is_configured():
+        tmdb_series_id = series_data.get("_tmdb_series_id")
+        if tmdb_series_id and not series_data.get("metadata", {}).get(
+            "locked_metadata", False
+        ):
+            season_indices: Dict[str, int] = {}
+            for season_name, is_season_changed, _ in seasons_to_process:
+                if is_season_changed:
+                    season_lower = season_name.lower()
+                    if season_lower == "specials":
+                        season_indices[season_name] = 0
+                    else:
+                        match = re.search(r"\d+", season_name)
+                        if match:
+                            season_indices[season_name] = int(match.group())
+                        else:
+                            logger.warning(
+                                f"Skipping pre-fetch for season '{season_name}': "
+                                f"no recognisable season number."
+                            )
+
+            if season_indices:
+                logger.info(
+                    f"Pre-fetching TMDB episode lists for {len(season_indices)} "
+                    f"seasons of series '{series_directory.name}'"
+                )
+                prefetched_season_episodes = _fetch_tmdb_episodes_parallel(
+                    tmdb_series_id, season_indices
+                )
+
     # Phase 4: Per-season loop
     for season_name, is_season_changed, existing_season in seasons_to_process:
         season_directory = series_directory / season_name
@@ -631,6 +701,7 @@ def scan_series(
                 single_item_refresh,
                 offline=season_offline,
                 metadata_only=metadata_only,
+                prefetched_tmdb_episodes=prefetched_season_episodes.get(season_name),
             )
         )
 
