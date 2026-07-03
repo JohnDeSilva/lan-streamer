@@ -509,11 +509,12 @@ class Controller(QObject):
                 )
             )
             post_scan_worker.start()
+        else:
+            if self._running_pass3_after_scan and not self._doing_scan_and_update:
+                self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
+            elif not self._doing_scan_and_update:
+                self.scan_completed.emit()
 
-        if self._running_pass3_after_scan and not self._doing_scan_and_update:
-            self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
-        elif not self._doing_scan_and_update:
-            self.scan_completed.emit()
         return changed_season_ids, changed_movie_ids
 
     def _on_post_scan_finished(
@@ -526,6 +527,11 @@ class Controller(QObject):
         changed_hashes: List[str] = result.get("changed_hashes", [])
         if changed_hashes:
             self.smart_rows_updated.emit(changed_hashes)
+
+        if self._running_pass3_after_scan and not self._doing_scan_and_update:
+            self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
+        elif not self._doing_scan_and_update:
+            self.scan_completed.emit()
 
     def _on_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
         self.select_library(self.current_library_name, reset_selection=False)
@@ -823,21 +829,66 @@ class Controller(QObject):
                 self.select_library(self.current_library_name, reset_selection=False)
 
         affected_libraries = list(self._config.libraries.keys())
-        self._smart_row_service.on_scan_completed(affected_libraries=affected_libraries)
-        if self._running_pass3_after_scan:
-            changed_seasons = getattr(scan_all_worker, "changed_season_ids", None)
-            changed_movies = getattr(scan_all_worker, "changed_movie_ids", None)
-            self.trigger_runtime_extraction(changed_seasons, changed_movies)
-        elif self._running_cleanup_after_scan:
-            if self._scan_had_unavailable_directories:
-                logger.warning(
-                    "Skipping global library cleanup because some root directories were unavailable during scan."
+        from lan_streamer.system.async_utils import run_in_executor
+
+        # Check if an event loop is running
+        import asyncio
+
+        try:
+            asyncio.get_running_loop()
+            loop_running = True
+        except RuntimeError:
+            loop_running = False
+
+        if loop_running:
+
+            async def run_rebuild_and_finalize() -> None:
+                changed_hashes = await run_in_executor(
+                    self._smart_row_service.rebuild_for_libraries,
+                    affected_libraries,
                 )
-                self.scan_completed.emit()
-            else:
-                self.trigger_global_cleanup()
+                if changed_hashes:
+                    self.smart_rows_updated.emit(changed_hashes)
+
+                if self._running_pass3_after_scan:
+                    changed_seasons = getattr(
+                        scan_all_worker, "changed_season_ids", None
+                    )
+                    changed_movies = getattr(scan_all_worker, "changed_movie_ids", None)
+                    self.trigger_runtime_extraction(changed_seasons, changed_movies)
+                elif self._running_cleanup_after_scan:
+                    if self._scan_had_unavailable_directories:
+                        logger.warning(
+                            "Skipping global library cleanup because some root directories were unavailable during scan."
+                        )
+                        self.scan_completed.emit()
+                    else:
+                        self.trigger_global_cleanup()
+                else:
+                    self.scan_completed.emit()
+
+            self.async_task_manager.create_task(
+                run_rebuild_and_finalize(),
+                name="global_scan_rebuild_cache",
+            )
         else:
-            self.scan_completed.emit()
+            changed_hashes = self._smart_row_service.rebuild_for_libraries(
+                affected_libraries
+            )
+            if changed_hashes:
+                self.smart_rows_updated.emit(changed_hashes)
+
+            if self._running_pass3_after_scan:
+                changed_seasons = getattr(scan_all_worker, "changed_season_ids", None)
+                changed_movies = getattr(scan_all_worker, "changed_movie_ids", None)
+                self.trigger_runtime_extraction(changed_seasons, changed_movies)
+            elif self._running_cleanup_after_scan:
+                if self._scan_had_unavailable_directories:
+                    self.scan_completed.emit()
+                else:
+                    self.trigger_global_cleanup()
+            else:
+                self.scan_completed.emit()
 
     def trigger_runtime_extraction(
         self,
