@@ -965,6 +965,15 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         )
                         try:
                             result = await task
+                        except asyncio.CancelledError:
+                            logger.info(
+                                f"ScanAllLibrariesWorker: scan for library "
+                                f"'{library_name}' was cancelled."
+                            )
+                            self.pass1_stats_per_library[library_name] = {
+                                "_skipped": True
+                            }
+                            continue
                         except Exception as error:
                             if isinstance(error, InterruptedError):
                                 logger.info(
@@ -1065,6 +1074,15 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         )
                         try:
                             result = await task
+                        except asyncio.CancelledError:
+                            logger.info(
+                                f"ScanAllLibrariesWorker: scan for library "
+                                f"'{library_name}' was cancelled."
+                            )
+                            self.pass2_stats_per_library[library_name] = {
+                                "_skipped": True
+                            }
+                            continue
                         except Exception as error:
                             if isinstance(error, InterruptedError):
                                 logger.info(
