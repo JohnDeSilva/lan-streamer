@@ -545,3 +545,69 @@ def test_scan_all_libraries_worker_cancellation() -> None:
         mock_writer_instance = mock_writer_class.return_value
         mock_writer_instance.submit.assert_not_called()
         mock_writer_instance.sync_submit.assert_not_called()
+
+
+def test_scan_report_statistics_correctness() -> None:
+    """Verify that worker.stats contains correct seasons and episodes scanned/skipped counts,
+    and that skipped episodes inside a changed season are counted in episodes_skipped.
+    """
+    from unittest.mock import patch
+    from lan_streamer.backend.scan_worker_all import ScanAllLibrariesWorker
+    from lan_streamer.scanner.core import LibraryDict
+
+    lib = LibraryDict({"Cosmos": {}})
+    lib.unavailable_directories = []
+
+    with (
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+        patch(
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
+            return_value=False,
+        ),
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch(
+            "lan_streamer.backend.database_writer.database_module.save_season_data",
+            return_value={
+                "series_added": 1,
+                "seasons_added": 1,
+                "episodes_added": 2,
+                "episodes_updated": 1,
+                "series_id": "cosmos_series_id",
+                "season_id": "cosmos_season_1_id",
+            },
+        ),
+        patch(
+            "lan_streamer.backend.scan_worker_all.scan_directories",
+            return_value=lib,
+        ) as mock_scan_all,
+    ):
+        mock_config.libraries = {"TV_Lib": {"paths": ["/path"], "type": "tv"}}
+
+        def fake_scan(*args, **kwargs):
+            season_cb = kwargs.get("season_callback")
+            if season_cb:
+                # Season contains 5 episodes: 2 added, 1 updated -> 2 skipped
+                season_data = {
+                    "_changed": True,
+                    "episodes": [
+                        {"name": "Ep 1"},
+                        {"name": "Ep 2"},
+                        {"name": "Ep 3"},
+                        {"name": "Ep 4"},
+                        {"name": "Ep 5"},
+                    ],
+                }
+                season_cb("Cosmos", {}, "Season 1", season_data)
+            return lib
+
+        mock_scan_all.side_effect = fake_scan
+
+        worker = ScanAllLibrariesWorker()
+        worker.run()
+
+        # Check stats were accumulated in worker.stats
+        assert worker.stats["seasons_scanned"] == 1
+        assert worker.stats["episodes_scanned"] == 5
+        # 5 episodes total - 2 added - 1 updated = 2 skipped
+        assert worker.stats["episodes_skipped"] == 2
+        assert worker.stats["seasons_skipped"] == 0

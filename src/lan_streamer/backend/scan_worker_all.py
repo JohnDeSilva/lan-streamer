@@ -418,6 +418,11 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         if not season_data.get("_changed", True):
                             local_stats["seasons_skipped"] += 1
                             local_stats["episodes_skipped"] += episode_count
+                        else:
+                            added = stats.get("episodes_added", 0)
+                            updated = stats.get("episodes_updated", 0)
+                            skipped = max(0, episode_count - added - updated)
+                            local_stats["episodes_skipped"] += skipped
 
                         # Add/update/remove counts from db return value
                         for key in local_stats:
@@ -1188,9 +1193,17 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
 
             self.flush_detail_progress()
 
-            # ------------------------------------------------------------------
-            # Final summary logging
-            # ------------------------------------------------------------------
+            # Calculate final overall statistics for seasons and episodes to avoid double-counting across passes
+            for key in [
+                "seasons_scanned",
+                "seasons_skipped",
+                "episodes_scanned",
+                "episodes_skipped",
+            ]:
+                self.stats[key] = max(
+                    self.pass1_stats.get(key, 0), self.pass2_stats.get(key, 0)
+                )
+
             duration = time.time() - start_time
             self._log_scan_summary(duration, libraries_dictionary)
             logger.info("[SCAN_REPORT] *** SCAN COMPLETED ***")
