@@ -156,6 +156,29 @@ class TestScannerParser:
         (tmp_path / "custom_folder_name").mkdir()
         assert has_video_files_shallow(tmp_path) is False
 
+    def test_has_video_files_shallow_true_with_s01e01_dir(self, tmp_path) -> None:
+        """S01E01 style season folder (missed by \\bs\\d+\\b without fix)."""
+        from lan_streamer.scanner.parser import has_video_files_shallow
+
+        (tmp_path / "S01E01 My Episode").mkdir()
+        assert has_video_files_shallow(tmp_path) is True
+
+    def test_has_video_files_shallow_true_with_fallback_subdir(self, tmp_path) -> None:
+        """Folder with no keyword match but contains video files (fallback)."""
+        from lan_streamer.scanner.parser import has_video_files_shallow
+
+        subdir = tmp_path / "Some Random Name"
+        subdir.mkdir()
+        (subdir / "video.mkv").write_bytes(b"\x00")
+        assert has_video_files_shallow(tmp_path) is True
+
+    def test_has_video_files_shallow_false_with_empty_subdir(self, tmp_path) -> None:
+        """Folder with no keyword match and no video files (fallback returns false)."""
+        from lan_streamer.scanner.parser import has_video_files_shallow
+
+        (tmp_path / "Another Random Name").mkdir()
+        assert has_video_files_shallow(tmp_path) is False
+
 
 # ---------------------------------------------------------------------------
 # scanner/metadata.py - clean_series_data
