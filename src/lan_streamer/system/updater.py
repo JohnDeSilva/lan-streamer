@@ -43,23 +43,76 @@ def get_linux_distro() -> str:
     return "ubuntu"
 
 
-def parse_base_version(version_str: str) -> tuple[int, ...]:
+def parse_comparable_version(version_string: str) -> tuple[int, int, int, int, int]:
+    """Parses a version string into a comparable tuple:
+    (major, minor, patch, release_weight, prerelease_number)
+
+    where release_weight is:
+        2: stable release
+        1: release candidate (rc)
+        0: other pre-releases (alpha, beta, dev, etc.)
+    """
+    import re
+
+    cleaned_version = version_string.strip().lower().lstrip("v")
+    regex_match = re.match(
+        r"^(\d+)\.(\d+)\.(\d+)(?:-?(rc|a|b|alpha|beta|dev|post|preview)\.?(\d+))?",
+        cleaned_version,
+    )
+    if not regex_match:
+        # Fallback to parse_version logic if regex does not match
+        parts = []
+        for part in cleaned_version.split("."):
+            digits = "".join(c for c in part if c.isdigit())
+            parts.append(int(digits) if digits else 0)
+        while len(parts) < 3:
+            parts.append(0)
+        return (parts[0], parts[1], parts[2], 2, 0)
+
+    major_version = int(regex_match.group(1))
+    minor_version = int(regex_match.group(2))
+    patch_version = int(regex_match.group(3))
+    prerelease_type = regex_match.group(4)
+    prerelease_number_string = regex_match.group(5)
+
+    if not prerelease_type:
+        release_weight = 2
+        prerelease_number = 0
+    elif prerelease_type == "rc":
+        release_weight = 1
+        prerelease_number = (
+            int(prerelease_number_string) if prerelease_number_string else 0
+        )
+    else:
+        release_weight = 0
+        prerelease_number = (
+            int(prerelease_number_string) if prerelease_number_string else 0
+        )
+
+    return (
+        major_version,
+        minor_version,
+        patch_version,
+        release_weight,
+        prerelease_number,
+    )
+
+
+def parse_base_version(version_string: str) -> tuple[int, int, int]:
     """Parse only the base version, stripping any pre-release suffix.
 
     E.g. 'v0.27.0-rc.1' -> (0, 27, 0)
     """
-    base = version_str.strip().lower().lstrip("v").split("-")[0]
-    parts = []
-    for part in base.split("."):
-        digits = "".join(c for c in part if c.isdigit())
-        parts.append(int(digits) if digits else 0)
-    return tuple(parts)
+    major_version, minor_version, patch_version, _, _ = parse_comparable_version(
+        version_string
+    )
+    return (major_version, minor_version, patch_version)
 
 
 def is_prerelease_tag(tag_name: str) -> bool:
     """Return True if the tag name indicates a pre-release version."""
-    stripped = tag_name.strip().lower().lstrip("v")
-    return "-" in stripped
+    _, _, _, release_weight, _ = parse_comparable_version(tag_name)
+    return release_weight < 2
 
 
 def get_target_asset_name() -> str:
@@ -130,7 +183,7 @@ class UpdateCheckWorker(QThread):
             self.finished.emit(False, {}, "Invalid release format: missing tag_name")
             return
 
-        if parse_version(tag_name) > parse_version(__version__):
+        if parse_comparable_version(tag_name) > parse_comparable_version(__version__):
             release_data = self._extract_release_data(data)
             if release_data and release_data["download_url"]:
                 self.finished.emit(True, release_data, "")
@@ -176,30 +229,52 @@ class UpdateCheckWorker(QThread):
                 continue
 
             base_version = parse_base_version(tag_name)
-            prerelease = is_prerelease_tag(tag_name)
+            is_prerelease = is_prerelease_tag(tag_name)
             release_data = self._extract_release_data(release)
             if not release_data or not release_data["download_url"]:
                 continue
 
             existing = best_release_per_version.get(base_version)
             if existing is None:
-                best_release_per_version[base_version] = (prerelease, release_data)
-            elif existing[0] and not prerelease:
-                # Prefer stable over pre-release at the same base version
-                best_release_per_version[base_version] = (prerelease, release_data)
+                best_release_per_version[base_version] = (is_prerelease, release_data)
+            else:
+                existing_prerelease, existing_data = existing
+                if existing_prerelease and not is_prerelease:
+                    # Prefer stable over pre-release
+                    best_release_per_version[base_version] = (
+                        is_prerelease,
+                        release_data,
+                    )
+                elif existing_prerelease == is_prerelease:
+                    # If both are stable or both are pre-releases, keep the newer one
+                    if parse_comparable_version(tag_name) > parse_comparable_version(
+                        existing_data["version"]
+                    ):
+                        best_release_per_version[base_version] = (
+                            is_prerelease,
+                            release_data,
+                        )
 
         if not best_release_per_version:
             self.finished.emit(True, {}, "")
             return
 
-        best_base_version = max(best_release_per_version.keys())
-        _, best_release_data = best_release_per_version[best_base_version]
+        best_release_data = None
+        best_release_value = None
 
-        current_base_version = parse_base_version(__version__)
-        if best_base_version > current_base_version:
-            self.finished.emit(True, best_release_data, "")
-        else:
-            self.finished.emit(True, {}, "")
+        for _, (is_prerelease, release_data) in best_release_per_version.items():
+            comparable_value = parse_comparable_version(release_data["version"])
+            if best_release_value is None or comparable_value > best_release_value:
+                best_release_value = comparable_value
+                best_release_data = release_data
+
+        if best_release_data and best_release_value is not None:
+            current_version_value = parse_comparable_version(__version__)
+            if best_release_value > current_version_value:
+                self.finished.emit(True, best_release_data, "")
+                return
+
+        self.finished.emit(True, {}, "")
 
     def run(self) -> None:
         try:
