@@ -293,9 +293,17 @@ class AsyncScanWorker(AsyncWorkerBase):
 
             self._flush_detail_progress()
 
-            # ------------------------------------------------------------------
-            # Log final stats
-            # ------------------------------------------------------------------
+            # Calculate final overall statistics for seasons and episodes to avoid double-counting across passes
+            for key in [
+                "seasons_scanned",
+                "seasons_skipped",
+                "episodes_scanned",
+                "episodes_skipped",
+            ]:
+                self.stats[key] = max(
+                    self.pass1_stats.get(key, 0), self.pass2_stats.get(key, 0)
+                )
+
             duration = time.time() - start_time
             self._log_scan_summary(duration)
 
@@ -373,17 +381,19 @@ class AsyncScanWorker(AsyncWorkerBase):
                 self.stats["series_skipped"] += 1
 
         target_stats["seasons_scanned"] += 1
-        self.stats["seasons_scanned"] += 1
 
         episode_count = len(season_data.get("episodes", []))
         target_stats["episodes_scanned"] += episode_count
-        self.stats["episodes_scanned"] += episode_count
 
         if not season_data.get("_changed", True):
             target_stats["seasons_skipped"] += 1
-            self.stats["seasons_skipped"] += 1
             target_stats["episodes_skipped"] += episode_count
-            self.stats["episodes_skipped"] += episode_count
+        else:
+            # If season is changed, some episodes might still be skipped (unchanged)
+            added = stats.get("episodes_added", 0)
+            updated = stats.get("episodes_updated", 0)
+            skipped = max(0, episode_count - added - updated)
+            target_stats["episodes_skipped"] += skipped
 
         for key in self.stats:
             if key in stats and not (

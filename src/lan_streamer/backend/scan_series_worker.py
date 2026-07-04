@@ -113,5 +113,8 @@ class ScanSingleSeriesWorker(AsyncWorkerBase):
         updated_library[self.series_name] = item_data
 
         # Persist back to database
-        db.save_library(self.library_name, updated_library)
+        if self.library_type == "movie":
+            db.save_movie_library(self.library_name, updated_library)
+        else:
+            db.save_library(self.library_name, updated_library)
         return updated_library

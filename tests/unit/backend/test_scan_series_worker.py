@@ -105,7 +105,7 @@ def test_scan_single_series_worker_success(tmp_path, mock_db_save):
 
 
 def test_scan_single_series_worker_movie_success(tmp_path, mock_db_save):
-    mock_save, _ = mock_db_save
+    _, mock_movie_save = mock_db_save
     root1 = tmp_path / "root1"
     root2 = tmp_path / "root2"
     root1.mkdir()
@@ -167,7 +167,7 @@ def test_scan_single_series_worker_movie_success(tmp_path, mock_db_save):
         versions = finished_data["Test Movie"]["versions"]
         assert len(versions) == 2
         assert mock_scan.call_count == 2
-        mock_save.assert_called_once()
+        mock_movie_save.assert_called_once()
         # Verify it passed disregard_mtimes=True
         mock_scan.assert_any_call(
             movie_dir1,
