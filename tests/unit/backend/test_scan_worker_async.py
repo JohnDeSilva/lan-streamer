@@ -125,17 +125,22 @@ class TestAsyncScanWorker:
             library_name="TestLib",
         )
 
+        async def _run_and_cancel() -> None:
+            scan_task = asyncio.create_task(worker.run_async())
+            # Yield briefly so run_async can start executing
+            await asyncio.sleep(0.01)
+            worker.stop()
+            try:
+                await asyncio.wait_for(scan_task, timeout=2.0)
+            except asyncio.CancelledError:
+                pass
+
         with patch(
             "lan_streamer.backend.scan_worker_async.scan_directories"
         ) as mock_scan:
             mock_scan.return_value = LibraryDict()
 
-            worker.start()
-            event_loop.run_until_complete(
-                _wait_until(lambda: worker._cancelled is False)
-            )
-            worker.stop()
-            event_loop.run_until_complete(_wait_until(lambda: worker._cancelled))
+            event_loop.run_until_complete(_run_and_cancel())
 
             # After cancellation, scan_directories may or may not have been
             # called depending on timing — just verify no crash.

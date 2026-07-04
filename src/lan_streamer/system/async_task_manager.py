@@ -107,11 +107,22 @@ class AsyncTaskManager(QObject):
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            logger.warning("No running event loop -- cannot create task '%s'.", name)
+            logger.warning(
+                "No running event loop -- running task '%s' synchronously.", name
+            )
             try:
-                coroutine.close()
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    task = loop.create_task(coroutine, name=name)
+                    loop.run_until_complete(task)
+                    if on_done_callback is not None:
+                        on_done_callback(task)
+                    return task
+                finally:
+                    loop.close()
             except Exception:
-                pass
+                logger.exception("Synchronous fallback for task '%s' failed.", name)
             return None
 
         task = asyncio.create_task(coroutine, name=name)
