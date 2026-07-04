@@ -1,3 +1,33 @@
+## v0.41.0 (2026-07-04)
+
+### Feat
+
+- **ui**: toggle season mark watched/unwatched button and bulk update watched states
+- **scan**: batch TMDB season episode fetches with parallel pre-fetch
+
+### Fix
+
+- **scan**: address BUG-08, BUG-09, BUG-12 from code review
+- **scan**: address BUG-07, BUG-10, BUG-12 from code review
+- **scan**: prevent double scan when closing settings dialog with auto-scan enabled
+- **scan**: resolve all 13 bugs from code review of scan_improvements branch
+- **scan**: resolve remaining scanner, task lookup, cache locking, and testing issues
+- **scan**: resolve race conditions, thread safety, and batching issues in scan improvements
+- **services**: add thread safety lock to SmartRowService rebuild path
+- **scan**: catch CancelledError in asyncio.wait completion loops
+
+### Perf
+
+- **db**: process long-running fetch_and_store actions individually
+- **scanner**: reuse shared thread pool for TMDB episode pre-fetch
+- **scan**: offload post-scan DB save and cache rebuild to background worker
+- **scan**: process library scan results as they complete with asyncio.wait
+- **backend**: batch database writes in AsyncDatabaseWriter for throughput
+- **db**: eliminate N+1 queries in playback state functions with selectinload
+- **scanner**: optimize tree discovery with shallow video file check
+- **ui**: pass affected libraries to smart row cache rebuild instead of full rebuild
+- **scanner**: throttle ffprobe subprocess with threading semaphore
+
 ## v0.41.0rc0 (2026-07-04)
 
 ### Feat
