@@ -210,10 +210,10 @@ class AsyncTaskManager(QObject):
         """
         Coroutine body for :meth:`schedule_interval`.
 
-        Calls the factory, awaits the returned coroutine, sleeps for the
-        interval, then repeats.  If the coroutine or the factory raises, the
-        error is logged and the loop continues.  If the task is cancelled the
-        loop exits cleanly.
+        Sleeps for the interval first (delaying initial execution), then calls
+        the factory, awaits the returned coroutine, and repeats.
+        If the coroutine or the factory raises, the error is logged and the
+        loop continues.  If the task is cancelled the loop exits cleanly.
         """
         logger.debug(
             "Interval task '%s' starting (interval=%.1f s).",
@@ -221,6 +221,15 @@ class AsyncTaskManager(QObject):
             interval_seconds,
         )
         while True:
+            try:
+                await asyncio.sleep(interval_seconds)
+            except asyncio.CancelledError:
+                logger.debug(
+                    "Interval task '%s' cancelled during sleep.",
+                    name,
+                )
+                break
+
             try:
                 coroutine = coroutine_factory()
                 await coroutine
@@ -234,15 +243,6 @@ class AsyncTaskManager(QObject):
                     error,
                     exc_info=True,
                 )
-
-            try:
-                await asyncio.sleep(interval_seconds)
-            except asyncio.CancelledError:
-                logger.debug(
-                    "Interval task '%s' cancelled during sleep -- stopping loop.",
-                    name,
-                )
-                break
 
         logger.debug("Interval task '%s' has exited.", name)
 
