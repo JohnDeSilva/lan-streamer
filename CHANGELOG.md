@@ -1,3 +1,9 @@
+## v0.42.0rc0 (2026-07-04)
+
+### Feat
+
+- **updater**: add InstallWorker for atomic self-replacement of executable
+
 ## v0.41.0 (2026-07-04)
 
 ### Feat
