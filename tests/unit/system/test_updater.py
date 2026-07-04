@@ -1,3 +1,4 @@
+import stat
 from unittest.mock import patch, mock_open, MagicMock
 import requests
 
@@ -7,6 +8,7 @@ from lan_streamer.system.updater import (
     get_target_asset_name,
     UpdateCheckWorker,
     DownloadWorker,
+    InstallWorker,
 )
 
 
@@ -409,3 +411,113 @@ def test_update_check_worker_rc_prefers_stable_over_prerelease(qtbot) -> None:
             release_info["download_url"]
             == "https://example.invalid/download/stable.exe"
         )
+
+
+# ---------------------------------------------------------------------------
+# InstallWorker tests
+# ---------------------------------------------------------------------------
+
+
+def test_install_worker_success(qtbot, tmp_path) -> None:
+    """Downloaded binary is atomically moved to the target path and made executable."""
+    downloaded_binary = tmp_path / "lan-streamer-ubuntu.new"
+    downloaded_binary.write_bytes(b"new-binary-content")
+
+    install_target = tmp_path / "lan-streamer-ubuntu"
+    install_target.write_bytes(b"old-binary-content")
+
+    worker = InstallWorker(
+        downloaded_path=str(downloaded_binary),
+        install_target_path=str(install_target),
+    )
+
+    with qtbot.waitSignal(worker.finished) as blocker:
+        worker.start()
+
+    success, error_message = blocker.args
+    assert success is True
+    assert error_message == ""
+
+    # Target should contain the new content after atomic replace
+    assert install_target.read_bytes() == b"new-binary-content"
+
+    # Target must be executable by owner, group, and other
+    mode = install_target.stat().st_mode
+    assert mode & stat.S_IXUSR, "Owner execute bit must be set"
+    assert mode & stat.S_IXGRP, "Group execute bit must be set"
+    assert mode & stat.S_IXOTH, "Other execute bit must be set"
+
+
+def test_install_worker_downloaded_file_missing(qtbot, tmp_path) -> None:
+    """Emits failure when the downloaded file does not exist."""
+    install_target = tmp_path / "lan-streamer-ubuntu"
+    install_target.write_bytes(b"old-binary-content")
+
+    worker = InstallWorker(
+        downloaded_path=str(tmp_path / "nonexistent.bin"),
+        install_target_path=str(install_target),
+    )
+
+    with qtbot.waitSignal(worker.finished) as blocker:
+        worker.start()
+
+    success, error_message = blocker.args
+    assert success is False
+    assert "not found" in error_message.lower()
+
+    # Original target must be untouched
+    assert install_target.read_bytes() == b"old-binary-content"
+
+
+def test_install_worker_replace_raises_os_error(qtbot, tmp_path) -> None:
+    """Emits failure when os.replace raises an OSError."""
+    downloaded_binary = tmp_path / "lan-streamer-ubuntu.new"
+    downloaded_binary.write_bytes(b"new-binary-content")
+
+    install_target = tmp_path / "lan-streamer-ubuntu"
+    install_target.write_bytes(b"old-binary-content")
+
+    worker = InstallWorker(
+        downloaded_path=str(downloaded_binary),
+        install_target_path=str(install_target),
+    )
+
+    with (
+        patch(
+            "lan_streamer.system.updater.os.replace",
+            side_effect=OSError("cross-device link"),
+        ),
+        qtbot.waitSignal(worker.finished) as blocker,
+    ):
+        worker.start()
+
+    success, error_message = blocker.args
+    assert success is False
+    assert "cross-device link" in error_message
+
+
+def test_install_worker_chmod_raises_os_error(qtbot, tmp_path) -> None:
+    """Emits failure when os.chmod raises an OSError after the replace."""
+    downloaded_binary = tmp_path / "lan-streamer-ubuntu.new"
+    downloaded_binary.write_bytes(b"new-binary-content")
+
+    install_target = tmp_path / "lan-streamer-ubuntu"
+    install_target.write_bytes(b"old-binary-content")
+
+    worker = InstallWorker(
+        downloaded_path=str(downloaded_binary),
+        install_target_path=str(install_target),
+    )
+
+    with (
+        patch(
+            "lan_streamer.system.updater.os.chmod",
+            side_effect=OSError("permission denied"),
+        ),
+        qtbot.waitSignal(worker.finished) as blocker,
+    ):
+        worker.start()
+
+    success, error_message = blocker.args
+    assert success is False
+    assert "permission denied" in error_message

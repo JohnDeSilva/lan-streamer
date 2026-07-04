@@ -1,4 +1,5 @@
 import os
+import stat
 import sys
 import logging
 import requests
@@ -255,3 +256,75 @@ class DownloadWorker(QThread):
 
     def cancel(self) -> None:
         self._is_cancelled = True
+
+
+class InstallWorker(QThread):
+    """
+    Background worker thread that atomically replaces the currently installed
+    executable with a newly downloaded binary.
+
+    The replacement is performed with ``os.replace()``, which is an atomic
+    rename on POSIX systems and works even while the old binary is running
+    (the kernel keeps the old inode open; only the directory entry changes).
+    The replacement source and destination **must** reside on the same
+    filesystem to avoid a cross-device ``OSError`` — callers should place the
+    downloaded file in the same directory as the install target.
+
+    After a successful replace the new file is made executable
+    (``rwxr-xr-x`` permissions) so the OS can run it directly.
+
+    Signals
+    -------
+    finished : Signal(bool, str)
+        Emitted when the install attempt completes.
+        First argument is ``True`` on success, ``False`` on failure.
+        Second argument is an empty string on success or a human-readable
+        error description on failure.
+    """
+
+    finished = Signal(bool, str)  # success, error_message
+
+    def __init__(self, downloaded_path: str, install_target_path: str) -> None:
+        super().__init__()
+        self.downloaded_path = downloaded_path
+        self.install_target_path = install_target_path
+
+    def run(self) -> None:
+        logger.info(
+            "InstallWorker started: replacing '%s' with '%s'",
+            self.install_target_path,
+            self.downloaded_path,
+        )
+        try:
+            if not os.path.isfile(self.downloaded_path):
+                error_message = f"Downloaded binary not found: '{self.downloaded_path}'"
+                logger.error(error_message)
+                self.finished.emit(False, error_message)
+                return
+
+            # chmod before replace so the new inode is executable immediately
+            # after the directory entry is updated.
+            executable_mode = (
+                stat.S_IRUSR
+                | stat.S_IWUSR
+                | stat.S_IXUSR
+                | stat.S_IRGRP
+                | stat.S_IXGRP
+                | stat.S_IROTH
+                | stat.S_IXOTH
+            )
+            os.chmod(self.downloaded_path, executable_mode)
+
+            os.replace(self.downloaded_path, self.install_target_path)
+
+            logger.info(
+                "InstallWorker: executable successfully replaced at '%s'",
+                self.install_target_path,
+            )
+            self.finished.emit(True, "")
+        except Exception as exception:
+            error_message = str(exception)
+            logger.exception(
+                "InstallWorker: failed to replace executable — %s", error_message
+            )
+            self.finished.emit(False, error_message)
