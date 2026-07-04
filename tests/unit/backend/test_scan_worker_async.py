@@ -222,7 +222,22 @@ class TestAsyncScanWorker:
 
         worker._merge_season_result(stats, "Series1", series_data, "S1", season_data)
         assert worker.stats["series_scanned"] == 1
+        assert worker.pass1_stats["seasons_scanned"] == 1
+        assert worker.pass1_stats["episodes_scanned"] == 2
+
+        # Simulate the final statistics calculation at the end of the scan run
+        for key in [
+            "seasons_scanned",
+            "seasons_skipped",
+            "episodes_scanned",
+            "episodes_skipped",
+        ]:
+            worker.stats[key] = max(
+                worker.pass1_stats.get(key, 0), worker.pass2_stats.get(key, 0)
+            )
+
         assert worker.stats["seasons_scanned"] == 1
+        assert worker.stats["episodes_scanned"] == 2
         assert "s1" in worker.changed_season_ids
 
     def test_merge_movie_result(self, task_manager: AsyncTaskManager) -> None:
