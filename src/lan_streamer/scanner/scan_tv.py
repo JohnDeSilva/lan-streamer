@@ -7,6 +7,7 @@ import datetime
 import logging
 import os
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
@@ -28,6 +29,22 @@ from lan_streamer.services.metadata_series import (
 )
 
 logger = logging.getLogger("lan_streamer.scanner")
+
+# Shared fallback executor for scan_series callers that don't provide one.
+_fallback_tmdb_executor: concurrent.futures.ThreadPoolExecutor | None = None
+_fallback_tmdb_lock = threading.Lock()
+
+
+def _get_fallback_executor() -> concurrent.futures.ThreadPoolExecutor:
+    global _fallback_tmdb_executor
+    if _fallback_tmdb_executor is None:
+        with _fallback_tmdb_lock:
+            if _fallback_tmdb_executor is None:
+                _fallback_tmdb_executor = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=4, thread_name_prefix="tmdb_prefetch_fallback"
+                )
+    return _fallback_tmdb_executor
+
 
 # Computed once per process start; accurate enough for a single scan run.
 _TODAY_STR = datetime.date.today().isoformat()
@@ -693,19 +710,10 @@ def scan_series(
                         tmdb_series_id, season_indices, tmdb_prefetch_executor
                     )
                 else:
-                    # Fallback: create a short-lived executor for standalone callers
-                    # (e.g., AsyncScanWorker, single-series scan, tests).
-                    logger.debug(
-                        "scan_series: no tmdb_prefetch_executor provided — "
-                        "creating a temporary executor for series '%s'.",
-                        series_directory.name,
+                    shared_executor = _get_fallback_executor()
+                    prefetched_season_episodes = _fetch_tmdb_episodes_parallel(
+                        tmdb_series_id, season_indices, shared_executor
                     )
-                    with concurrent.futures.ThreadPoolExecutor(
-                        max_workers=4, thread_name_prefix="tmdb_prefetch_tmp"
-                    ) as temporary_executor:
-                        prefetched_season_episodes = _fetch_tmdb_episodes_parallel(
-                            tmdb_series_id, season_indices, temporary_executor
-                        )
 
     # Phase 4: Per-season loop
     for season_name, is_season_changed, existing_season in seasons_to_process:
