@@ -645,6 +645,170 @@ def test_controller_scan_and_update_flow_isolation(mock_controller) -> None:
     mock_controller.trigger_runtime_extraction.assert_called_once_with(seasons, movies)
 
 
+# ------------------------------------------------------------------
+# BUG-08: scan_completed must be emitted even when rebuild_for_libraries raises
+# ------------------------------------------------------------------
+
+
+def test_scan_all_emits_scan_completed_on_cache_rebuild_error() -> None:
+    """BUG-08: scan_completed must fire when rebuild_for_libraries raises."""
+    controller_instance = Controller()
+    controller_instance.current_library_name = "TV"
+
+    mock_scan_all_worker = MagicMock()
+    mock_scan_all_worker.unavailable_directories = []
+    mock_scan_all_worker.changed_libraries = {"TV"}
+    controller_instance.worker_manager.scan_all._instance = mock_scan_all_worker
+
+    scan_completed_emitted = MagicMock()
+    controller_instance.scan_completed.connect(scan_completed_emitted)
+
+    with (
+        patch.object(controller_instance, "select_library"),
+        patch.object(
+            controller_instance._smart_row_service,
+            "rebuild_for_libraries",
+            side_effect=Exception("Simulated DB error during cache rebuild"),
+        ),
+    ):
+        controller_instance._on_scan_all_finished()
+
+    scan_completed_emitted.assert_called_once()
+
+
+# ------------------------------------------------------------------
+# BUG-12: PostScanWorker with _skip_scan_completed must not emit scan_completed
+# ------------------------------------------------------------------
+
+
+def test_post_scan_worker_skip_scan_completed_done_callback() -> None:
+    """BUG-12: _skip_scan_completed=True prevents PostScanWorker done from
+    emitting scan_completed (avoids double-emit on scan-and-update path)."""
+    with patch("lan_streamer.ui_views.controller.QFileSystemWatcher"):
+        controller = Controller()
+    controller.current_library_name = "test_lib"
+
+    mock_worker_instance = MagicMock()
+    mock_worker_instance.start = MagicMock()
+    mock_worker_instance.finished = MagicMock()
+    mock_worker_instance.finished.connect = MagicMock()
+    mock_worker_instance.error = MagicMock()
+    mock_worker_instance.error.connect = MagicMock()
+    mock_worker_class = MagicMock(return_value=mock_worker_instance)
+
+    mock_scan_worker = MagicMock()
+    mock_scan_worker.changed_season_ids = set()
+    mock_scan_worker.changed_movie_ids = set()
+    mock_scan_worker.unavailable_directories = []
+    controller.worker_manager.scan._instance = mock_scan_worker
+
+    mock_module = MagicMock()
+    mock_module.PostScanWorker = mock_worker_class
+
+    scan_completed_emitted = MagicMock()
+    controller.scan_completed.connect(scan_completed_emitted)
+
+    with patch.dict(
+        "sys.modules", {"lan_streamer.backend.post_scan_worker": mock_module}
+    ):
+        controller._on_scan_finished({"test_series": {}}, _skip_scan_completed=True)
+
+    # Extract the done callback from the finished.connect call
+    done_callback = mock_worker_instance.finished.connect.call_args[0][0]
+    # Invoke done callback with sample result containing changed hashes
+    done_callback({"changed_hashes": ["hash1"]})
+
+    # scan_completed must NOT be emitted by the PostScanWorker done path
+    scan_completed_emitted.assert_not_called()
+
+
+def test_post_scan_worker_skip_scan_completed_error_callback() -> None:
+    """BUG-12: _skip_scan_completed=True prevents PostScanWorker error from
+    emitting scan_completed (avoids double-emit on scan-and-update path)."""
+    with patch("lan_streamer.ui_views.controller.QFileSystemWatcher"):
+        controller = Controller()
+    controller.current_library_name = "test_lib"
+
+    mock_worker_instance = MagicMock()
+    mock_worker_instance.start = MagicMock()
+    mock_worker_instance.finished = MagicMock()
+    mock_worker_instance.finished.connect = MagicMock()
+    mock_worker_instance.error = MagicMock()
+    mock_worker_instance.error.connect = MagicMock()
+    mock_worker_class = MagicMock(return_value=mock_worker_instance)
+
+    mock_scan_worker = MagicMock()
+    mock_scan_worker.changed_season_ids = set()
+    mock_scan_worker.changed_movie_ids = set()
+    mock_scan_worker.unavailable_directories = []
+    controller.worker_manager.scan._instance = mock_scan_worker
+
+    mock_module = MagicMock()
+    mock_module.PostScanWorker = mock_worker_class
+
+    scan_completed_emitted = MagicMock()
+    controller.scan_completed.connect(scan_completed_emitted)
+
+    # Simulate _doing_scan_and_update=False to check that the
+    # _skip_scan_completed flag (not the _doing_scan_and_update flag) is
+    # the one preventing emission.
+    controller._doing_scan_and_update = False
+
+    with patch.dict(
+        "sys.modules", {"lan_streamer.backend.post_scan_worker": mock_module}
+    ):
+        controller._on_scan_finished({"test_series": {}}, _skip_scan_completed=True)
+
+    # Extract the error callback from the error.connect call
+    error_callback = mock_worker_instance.error.connect.call_args[0][0]
+    error_callback("Simulated error")
+
+    # scan_completed must NOT be emitted even though _doing_scan_and_update is False
+    scan_completed_emitted.assert_not_called()
+
+
+def test_post_scan_worker_no_skip_scan_completed_emits_on_finished() -> None:
+    """BUG-12: _skip_scan_completed=False (default) allows normal
+    scan_completed emission from PostScanWorker done path."""
+    with patch("lan_streamer.ui_views.controller.QFileSystemWatcher"):
+        controller = Controller()
+    controller.current_library_name = "test_lib"
+    controller._doing_scan_and_update = False
+    controller._running_pass3_after_scan = False
+
+    mock_worker_instance = MagicMock()
+    mock_worker_instance.start = MagicMock()
+    mock_worker_instance.finished = MagicMock()
+    mock_worker_instance.finished.connect = MagicMock()
+    mock_worker_instance.error = MagicMock()
+    mock_worker_instance.error.connect = MagicMock()
+    mock_worker_class = MagicMock(return_value=mock_worker_instance)
+
+    mock_scan_worker = MagicMock()
+    mock_scan_worker.changed_season_ids = set()
+    mock_scan_worker.changed_movie_ids = set()
+    mock_scan_worker.unavailable_directories = []
+    controller.worker_manager.scan._instance = mock_scan_worker
+
+    mock_module = MagicMock()
+    mock_module.PostScanWorker = mock_worker_class
+
+    scan_completed_emitted = MagicMock()
+    controller.scan_completed.connect(scan_completed_emitted)
+
+    with patch.dict(
+        "sys.modules", {"lan_streamer.backend.post_scan_worker": mock_module}
+    ):
+        controller._on_scan_finished({"test_series": {}}, _skip_scan_completed=False)
+
+    # Invoke done callback
+    done_callback = mock_worker_instance.finished.connect.call_args[0][0]
+    done_callback({"changed_hashes": []})
+
+    # scan_completed MUST be emitted (normal path)
+    scan_completed_emitted.assert_called_once()
+
+
 class TestControllerSearchMedia:
     """Tests for Controller.search_media."""
 

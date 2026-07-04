@@ -477,7 +477,10 @@ class Controller(QObject):
                 self.library_loaded.emit()
 
     def _on_scan_finished(
-        self, updated_library: Dict[str, Any]
+        self,
+        updated_library: Dict[str, Any],
+        *,
+        _skip_scan_completed: bool = False,
     ) -> tuple[Optional[Set[str]], Optional[Set[str]]]:
         scan_worker = self.worker_manager.scan.instance
         changed_season_ids = getattr(scan_worker, "changed_season_ids", None)
@@ -528,11 +531,16 @@ class Controller(QObject):
             self._post_scan_workers.append(worker)
 
             def _on_post_scan_done(result: Dict[str, Any]) -> None:
-                self._on_post_scan_finished(
-                    result,
-                    changed_season_ids,
-                    changed_movie_ids,
-                )
+                if _skip_scan_completed:
+                    changed_hashes: list[str] = result.get("changed_hashes", [])
+                    if changed_hashes:
+                        self.smart_rows_updated.emit(changed_hashes)
+                else:
+                    self._on_post_scan_finished(
+                        result,
+                        changed_season_ids,
+                        changed_movie_ids,
+                    )
                 self._post_scan_workers = [
                     w for w in self._post_scan_workers if w is not worker
                 ]
@@ -542,7 +550,7 @@ class Controller(QObject):
                 self._post_scan_workers = [
                     w for w in self._post_scan_workers if w is not worker
                 ]
-                if not self._doing_scan_and_update:
+                if not _skip_scan_completed and not self._doing_scan_and_update:
                     self.scan_completed.emit()
 
             worker.finished.connect(_on_post_scan_done)
@@ -675,7 +683,9 @@ class Controller(QObject):
         self, updated_library: Dict[str, Any]
     ) -> None:
         """Called when the scan phase of scan_and_update completes. Saves results then runs cleanup."""
-        changed_season_ids, changed_movie_ids = self._on_scan_finished(updated_library)
+        changed_season_ids, changed_movie_ids = self._on_scan_finished(
+            updated_library, _skip_scan_completed=True
+        )
 
         # Now chain into cleanup
         if not self.current_library_name:
@@ -887,24 +897,28 @@ class Controller(QObject):
         from lan_streamer.system.async_utils import run_in_executor
 
         async def run_rebuild_and_finalize() -> None:
-            changed_hashes = await run_in_executor(
-                self._smart_row_service.rebuild_for_libraries,
-                affected_libraries,
-            )
-            if changed_hashes:
-                self.smart_rows_updated.emit(changed_hashes)
+            try:
+                changed_hashes = await run_in_executor(
+                    self._smart_row_service.rebuild_for_libraries,
+                    affected_libraries,
+                )
+                if changed_hashes:
+                    self.smart_rows_updated.emit(changed_hashes)
 
-            if running_pass3:
-                self.trigger_runtime_extraction(changed_seasons, changed_movies)
-            elif running_cleanup:
-                if had_unavailable:
-                    logger.warning(
-                        "Skipping global library cleanup because some root directories were unavailable during scan."
-                    )
-                    self.scan_completed.emit()
+                if running_pass3:
+                    self.trigger_runtime_extraction(changed_seasons, changed_movies)
+                elif running_cleanup:
+                    if had_unavailable:
+                        logger.warning(
+                            "Skipping global library cleanup because some root directories were unavailable during scan."
+                        )
+                        self.scan_completed.emit()
+                    else:
+                        self.trigger_global_cleanup()
                 else:
-                    self.trigger_global_cleanup()
-            else:
+                    self.scan_completed.emit()
+            except Exception:
+                logger.exception("Cache rebuild failed after scan-all")
                 self.scan_completed.emit()
 
         task_name = f"global_scan_rebuild_cache_{uuid.uuid4().hex}"
