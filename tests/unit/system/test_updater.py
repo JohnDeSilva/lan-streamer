@@ -521,3 +521,88 @@ def test_install_worker_chmod_raises_os_error(qtbot, tmp_path) -> None:
     success, error_message = blocker.args
     assert success is False
     assert "permission denied" in error_message
+
+
+def test_parse_comparable_version() -> None:
+    from lan_streamer.system.updater import parse_comparable_version
+
+    assert parse_comparable_version("0.42.0rc1") == (0, 42, 0, 1, 1)
+    assert parse_comparable_version("v0.42.0rc0") == (0, 42, 0, 1, 0)
+    assert parse_comparable_version("0.42.0") == (0, 42, 0, 2, 0)
+    assert parse_comparable_version("v0.27.0-rc.1") == (0, 27, 0, 1, 1)
+    assert parse_comparable_version("v0.26.0") == (0, 26, 0, 2, 0)
+
+
+def test_update_check_worker_rc_to_newer_rc(qtbot) -> None:
+    """RC channel should trigger update from v0.42.0rc0 to v0.42.0rc1."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = [
+        {
+            "tag_name": "v0.42.0rc1",
+            "body": "RC1 release notes",
+            "draft": False,
+            "assets": [
+                {
+                    "name": "lan-streamer-windows.exe",
+                    "browser_download_url": "https://example.invalid/download/rc1.exe",
+                }
+            ],
+        }
+    ]
+
+    with (
+        patch("requests.get", return_value=mock_response),
+        patch("lan_streamer.__version__", "0.42.0rc0"),
+        patch("sys.platform", "win32"),
+    ):
+        worker = UpdateCheckWorker(release_channel="rc")
+
+        with qtbot.waitSignal(worker.finished) as blocker:
+            worker.start()
+
+        success, release_info, error_message = blocker.args
+        assert success is True
+        assert release_info["version"] == "v0.42.0rc1"
+        assert (
+            release_info["download_url"] == "https://example.invalid/download/rc1.exe"
+        )
+        assert error_message == ""
+
+
+def test_update_check_worker_rc_to_stable(qtbot) -> None:
+    """RC channel should trigger update from v0.42.0rc1 to stable v0.42.0."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = [
+        {
+            "tag_name": "v0.42.0",
+            "body": "Stable release notes",
+            "draft": False,
+            "assets": [
+                {
+                    "name": "lan-streamer-windows.exe",
+                    "browser_download_url": "https://example.invalid/download/stable.exe",
+                }
+            ],
+        }
+    ]
+
+    with (
+        patch("requests.get", return_value=mock_response),
+        patch("lan_streamer.__version__", "0.42.0rc1"),
+        patch("sys.platform", "win32"),
+    ):
+        worker = UpdateCheckWorker(release_channel="rc")
+
+        with qtbot.waitSignal(worker.finished) as blocker:
+            worker.start()
+
+        success, release_info, error_message = blocker.args
+        assert success is True
+        assert release_info["version"] == "v0.42.0"
+        assert (
+            release_info["download_url"]
+            == "https://example.invalid/download/stable.exe"
+        )
+        assert error_message == ""
