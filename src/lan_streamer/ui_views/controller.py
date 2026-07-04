@@ -1,5 +1,4 @@
 import logging
-import os
 import re
 import uuid
 from pathlib import Path
@@ -360,27 +359,21 @@ class Controller(QObject):
         self._cache_series_metrics()
 
         # Update smart row cache regardless of video playback state
-        if os.environ.get("LAN_STREAMER_TESTING") == "1":
-            changed_hashes = self._smart_row_service.on_episode_watched(absolute_path)
+        async def run_watched_update() -> None:
+            from lan_streamer.system.async_utils import run_in_executor
+
+            changed_hashes = await run_in_executor(
+                self._smart_row_service.on_episode_watched,
+                absolute_path,
+            )
             if changed_hashes:
                 self.smart_rows_updated.emit(changed_hashes)
-        else:
 
-            async def run_watched_update() -> None:
-                from lan_streamer.system.async_utils import run_in_executor
-
-                changed_hashes = await run_in_executor(
-                    self._smart_row_service.on_episode_watched,
-                    absolute_path,
-                )
-                if changed_hashes:
-                    self.smart_rows_updated.emit(changed_hashes)
-
-            task_name = f"watched_update_{uuid.uuid4().hex}"
-            self.async_task_manager.create_task(
-                run_watched_update(),
-                name=task_name,
-            )
+        task_name = f"watched_update_{uuid.uuid4().hex}"
+        self.async_task_manager.create_task(
+            run_watched_update(),
+            name=task_name,
+        )
 
         if not self.is_video_playing:
             self.library_loaded.emit()
@@ -879,64 +872,46 @@ class Controller(QObject):
             else:
                 self.select_library(self.current_library_name, reset_selection=False)
 
+        # Snapshot mutable state before scheduling the async task so the
+        # closure reads a consistent view even if controller flags change
+        # between scheduling and execution.
         affected_libraries = list(
             getattr(scan_all_worker, "changed_libraries", None)
             or self._config.libraries.keys()
         )
+        running_pass3 = self._running_pass3_after_scan
+        running_cleanup = self._running_cleanup_after_scan
+        had_unavailable = self._scan_had_unavailable_directories
+        changed_seasons = getattr(scan_all_worker, "changed_season_ids", None)
+        changed_movies = getattr(scan_all_worker, "changed_movie_ids", None)
         from lan_streamer.system.async_utils import run_in_executor
 
-        is_testing = os.environ.get("LAN_STREAMER_TESTING") == "1"
-
-        if not is_testing:
-
-            async def run_rebuild_and_finalize() -> None:
-                changed_hashes = await run_in_executor(
-                    self._smart_row_service.rebuild_for_libraries,
-                    affected_libraries,
-                )
-                if changed_hashes:
-                    self.smart_rows_updated.emit(changed_hashes)
-
-                if self._running_pass3_after_scan:
-                    changed_seasons = getattr(
-                        scan_all_worker, "changed_season_ids", None
-                    )
-                    changed_movies = getattr(scan_all_worker, "changed_movie_ids", None)
-                    self.trigger_runtime_extraction(changed_seasons, changed_movies)
-                elif self._running_cleanup_after_scan:
-                    if self._scan_had_unavailable_directories:
-                        logger.warning(
-                            "Skipping global library cleanup because some root directories were unavailable during scan."
-                        )
-                        self.scan_completed.emit()
-                    else:
-                        self.trigger_global_cleanup()
-                else:
-                    self.scan_completed.emit()
-
-            task_name = f"global_scan_rebuild_cache_{uuid.uuid4().hex}"
-            self.async_task_manager.create_task(
-                run_rebuild_and_finalize(),
-                name=task_name,
-            )
-        else:
-            changed_hashes = self._smart_row_service.rebuild_for_libraries(
-                affected_libraries
+        async def run_rebuild_and_finalize() -> None:
+            changed_hashes = await run_in_executor(
+                self._smart_row_service.rebuild_for_libraries,
+                affected_libraries,
             )
             if changed_hashes:
                 self.smart_rows_updated.emit(changed_hashes)
 
-            if self._running_pass3_after_scan:
-                changed_seasons = getattr(scan_all_worker, "changed_season_ids", None)
-                changed_movies = getattr(scan_all_worker, "changed_movie_ids", None)
+            if running_pass3:
                 self.trigger_runtime_extraction(changed_seasons, changed_movies)
-            elif self._running_cleanup_after_scan:
-                if self._scan_had_unavailable_directories:
+            elif running_cleanup:
+                if had_unavailable:
+                    logger.warning(
+                        "Skipping global library cleanup because some root directories were unavailable during scan."
+                    )
                     self.scan_completed.emit()
                 else:
                     self.trigger_global_cleanup()
             else:
                 self.scan_completed.emit()
+
+        task_name = f"global_scan_rebuild_cache_{uuid.uuid4().hex}"
+        self.async_task_manager.create_task(
+            run_rebuild_and_finalize(),
+            name=task_name,
+        )
 
     def trigger_runtime_extraction(
         self,

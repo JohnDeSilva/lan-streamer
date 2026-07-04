@@ -232,8 +232,9 @@ def test_create_task_no_event_loop(
     ):
         result = manager.create_task(dummy(), name="no_loop")
 
-    assert result is None
+    assert result is not None
     assert "No running event loop" in caplog.text
+    assert "synchronously" in caplog.text
     assert "no_loop" in caplog.text
 
 
