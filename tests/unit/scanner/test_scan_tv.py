@@ -1,5 +1,6 @@
 """Unit tests for the extracted helper functions in lan_streamer.scanner.scan_tv."""
 
+import concurrent.futures
 import logging
 from pathlib import Path
 from typing import Any, Dict
@@ -1057,3 +1058,91 @@ def test_scan_series_early_return(tmp_path: Path) -> None:
 
     assert series_data["metadata"]["tmdb_name"] == "Fast Show"
     assert series_data["seasons"]["Season 1"]["episodes"][0]["watched"] is True
+
+
+def test_scan_series_skips_episode_prefetch_when_episode_group(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """BUG-09: TMDB episode pre-fetch is skipped when series uses episode groups.
+
+    The standard season endpoint returns incorrect episode ordering for anime
+    series that use TMDB episode groups. The pre-fetch must be bypassed so the
+    episode-group branch in metadata_episode.py can correctly resolve data.
+    """
+    from lan_streamer.scanner.scan_tv import scan_series
+
+    series_directory = tmp_path / "Anime Show"
+    series_directory.mkdir()
+    season_directory = series_directory / "Season 1"
+    season_directory.mkdir()
+    episode_file = season_directory / "S01E01.mkv"
+    episode_file.touch()
+
+    mock_group_details = {
+        "id": "group-id-456",
+        "name": "Absolute Order",
+        "groups": [
+            {
+                "name": "Season 1",
+                "order": 1,
+                "episodes": [
+                    {
+                        "id": "ep-101",
+                        "name": "First Episode",
+                        "order": 0,
+                        "season_number": 1,
+                        "episode_number": 1,
+                        "air_date": "2020-01-01",
+                        "runtime": 24,
+                    }
+                ],
+            }
+        ],
+    }
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.is_configured.return_value = True
+    mock_tmdb.search_series.return_value = {
+        "id": "series456",
+        "tmdb_identifier": "series456",
+        "name": "Anime Show",
+        "overview": "An amazing anime series",
+        "poster_path": "",
+    }
+    mock_tmdb.get_season_based_episode_group.return_value = mock_group_details
+    mock_tmdb.download_image.return_value = ""
+
+    caplog.set_level(logging.INFO)
+
+    prefetch_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    with (
+        patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.scan_tv._tmdb_client", mock_tmdb),
+        patch(
+            "lan_streamer.scanner.scan_tv._fetch_tmdb_episodes_parallel"
+        ) as mock_fetch,
+    ):
+        result = scan_series(
+            series_directory,
+            force_refresh=True,
+            tmdb_prefetch_executor=prefetch_executor,
+        )
+
+    prefetch_executor.shutdown(wait=False)
+
+    # Pre-fetch must NOT be called for series with episode groups
+    mock_fetch.assert_not_called()
+    # The standard get_episodes endpoint must also NOT be called during prefetch
+    mock_tmdb.get_episodes.assert_not_called()
+    # Verify the skip log message is emitted
+    assert "Skipping TMDB episode pre-fetch for series" in caplog.text
+
+    # Episode metadata should still be resolved correctly from episode groups
+    assert "Season 1" in result["seasons"]
+    episodes = result["seasons"]["Season 1"]["episodes"]
+    assert len(episodes) == 1
+    assert episodes[0]["tmdb_name"] == "First Episode"
+    assert episodes[0]["tmdb_number"] == 1
+    assert episodes[0]["tmdb_episode_identifier"] == "ep-101"

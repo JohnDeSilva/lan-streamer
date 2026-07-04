@@ -667,31 +667,41 @@ def scan_series(
         if tmdb_series_id and not series_data.get("metadata", {}).get(
             "locked_metadata", False
         ):
-            season_indices: Dict[str, int] = {}
-            for season_name, is_season_changed, _ in seasons_to_process:
-                if is_season_changed:
-                    season_lower = season_name.lower()
-                    if season_lower == "specials":
-                        season_indices[season_name] = 0
-                    else:
-                        match = re.search(r"\d+", season_name)
-                        if match:
-                            season_indices[season_name] = int(match.group())
-                        else:
-                            logger.warning(
-                                f"Skipping pre-fetch for season '{season_name}': "
-                                f"no recognisable season number."
-                            )
-
-            if season_indices:
+            # Skip pre-fetch for series that use TMDB episode groups (e.g. anime
+            # with alternate episode ordering). The standard season endpoint returns
+            # incorrect episode data for these series, silently overwriting the
+            # correctly-grouped data fetched later in _process_season_metadata.
+            if series_data.get("_tmdb_episode_group_details"):
                 logger.info(
-                    f"Pre-fetching TMDB episode lists for {len(season_indices)} "
-                    f"seasons of series '{series_directory.name}'"
+                    "Skipping TMDB episode pre-fetch for series '%s': series uses episode groups.",
+                    series_directory.name,
                 )
-                if tmdb_prefetch_executor is not None:
-                    prefetched_season_episodes = _fetch_tmdb_episodes_parallel(
-                        tmdb_series_id, season_indices, tmdb_prefetch_executor
+            else:
+                season_indices: Dict[str, int] = {}
+                for season_name, is_season_changed, _ in seasons_to_process:
+                    if is_season_changed:
+                        season_lower = season_name.lower()
+                        if season_lower == "specials":
+                            season_indices[season_name] = 0
+                        else:
+                            match = re.search(r"\d+", season_name)
+                            if match:
+                                season_indices[season_name] = int(match.group())
+                            else:
+                                logger.warning(
+                                    f"Skipping pre-fetch for season '{season_name}': "
+                                    f"no recognisable season number."
+                                )
+
+                if season_indices:
+                    logger.info(
+                        f"Pre-fetching TMDB episode lists for {len(season_indices)} "
+                        f"seasons of series '{series_directory.name}'"
                     )
+                    if tmdb_prefetch_executor is not None:
+                        prefetched_season_episodes = _fetch_tmdb_episodes_parallel(
+                            tmdb_series_id, season_indices, tmdb_prefetch_executor
+                        )
 
     # Phase 4: Per-season loop
     for season_name, is_season_changed, existing_season in seasons_to_process:
