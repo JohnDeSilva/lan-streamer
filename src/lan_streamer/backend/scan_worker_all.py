@@ -105,6 +105,10 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         self.pass1_stats_per_library: Dict[str, Dict[str, int]] = {}
         self.pass2_stats_per_library: Dict[str, Dict[str, int]] = {}
 
+        # Libraries that had any add/update activity during the scan (for
+        # incremental cache rebuild — Proposal H).
+        self.changed_libraries: Set[str] = set()
+
         # Database writer and event loop — created in run_async() for each scan.
         self._database_writer: Optional[AsyncDatabaseWriter] = None
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -887,6 +891,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             self.pass2_stats[key] = 0
         self.pass1_stats_per_library = {}
         self.pass2_stats_per_library = {}
+        self.changed_libraries = set()
         self.changed_season_ids = set()
         self.changed_movie_ids = set()
         self.current_pass = 1
@@ -905,14 +910,15 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         # It is shared across all libraries in both passes to avoid creating and
         # destroying short-lived thread pools on every series scan.
         # Ownership is here: shut down in the finally block below.
-        tmdb_prefetch_executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=4, thread_name_prefix="tmdb_prefetch"
-        )
-        logger.info(
-            "ScanAllLibrariesWorker: created TMDB pre-fetch executor (max_workers=4)."
-        )
+        tmdb_prefetch_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
         try:
+            tmdb_prefetch_executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=4, thread_name_prefix="tmdb_prefetch"
+            )
+            logger.info(
+                "ScanAllLibrariesWorker: created TMDB pre-fetch executor (max_workers=4)."
+            )
             await self._database_writer.start()
             logger.info("ScanAllLibrariesWorker starting global scan run")
             libraries_dictionary: Dict[str, Dict[str, Any]] = config.libraries
@@ -990,6 +996,8 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         pending, return_when=asyncio.FIRST_COMPLETED
                     )
                     for task in done:
+                        if task not in library_task_map:
+                            continue
                         library_name = library_task_map[task]
                         try:
                             result = await task
@@ -1034,6 +1042,14 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         self.pass1_stats_per_library[library_name] = result[
                             "pass_stats"
                         ]
+                        pass_stats = result["pass_stats"]
+                        if (
+                            pass_stats.get("series_added", 0) > 0
+                            or pass_stats.get("movies_added", 0) > 0
+                            or pass_stats.get("series_updated", 0) > 0
+                            or pass_stats.get("movies_updated", 0) > 0
+                        ):
+                            self.changed_libraries.add(library_name)
 
                         self.problems.extend(result["problems"])
                         for root in result["unavailable_directories"]:
@@ -1141,6 +1157,14 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         self.pass2_stats_per_library[library_name] = result[
                             "pass_stats"
                         ]
+                        pass_stats = result["pass_stats"]
+                        if (
+                            pass_stats.get("series_added", 0) > 0
+                            or pass_stats.get("movies_added", 0) > 0
+                            or pass_stats.get("series_updated", 0) > 0
+                            or pass_stats.get("movies_updated", 0) > 0
+                        ):
+                            self.changed_libraries.add(library_name)
 
                         self.problems.extend(result["problems"])
                         for root in result["unavailable_directories"]:
@@ -1184,7 +1208,8 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             # Shut down the TMDB pre-fetch executor.  Use wait=False so that
             # any pending futures (e.g. after an interruption) are not waited
             # for — they will be abandoned but not block the scan teardown.
-            logger.info(
-                "ScanAllLibrariesWorker: shutting down TMDB pre-fetch executor."
-            )
-            tmdb_prefetch_executor.shutdown(wait=False)
+            if tmdb_prefetch_executor is not None:
+                logger.info(
+                    "ScanAllLibrariesWorker: shutting down TMDB pre-fetch executor."
+                )
+                tmdb_prefetch_executor.shutdown(wait=False)

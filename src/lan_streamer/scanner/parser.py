@@ -138,8 +138,21 @@ def has_video_files_shallow(directory: Path) -> bool:
                             or name_lower in ("op", "ed", "nced", "ncop")
                             or re.search(r"\d{4}", name_lower)
                             or re.search(r"\bs\d+\b", name_lower)
+                            or re.search(r"^s\d+", name_lower)
                         ):
                             return True
+                        # Fallback: check immediate children for video files.
+                        # This catches folder names like "S1", "S01E01",
+                        # or "Season One" that the keyword/regex checks miss.
+                        try:
+                            with os.scandir(entry.path) as sub_scanner:
+                                for sub_entry in sub_scanner:
+                                    if sub_entry.is_file(follow_symlinks=True):
+                                        _, ext = os.path.splitext(sub_entry.name)
+                                        if ext.lower() in VIDEO_EXTENSIONS:
+                                            return True
+                        except OSError:
+                            continue
                 except OSError:
                     continue
     except OSError:

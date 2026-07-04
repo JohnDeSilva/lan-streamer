@@ -265,6 +265,103 @@ def test_controller_scan_all_unavailable_directories() -> None:
     ]
 
 
+def test_controller_scan_all_uses_changed_libraries() -> None:
+    """_on_scan_all_finished passes changed_libraries to rebuild_for_libraries."""
+    controller_instance = Controller()
+    controller_instance.current_library_name = "Cosmos"
+
+    mock_scan_all_worker = MagicMock()
+    mock_scan_all_worker.unavailable_directories = []
+    mock_scan_all_worker.changed_libraries = {"Cosmos", "TV Shows"}
+    controller_instance.worker_manager.scan_all._instance = mock_scan_all_worker
+
+    controller_instance._config.libraries = {
+        "Movies": {},
+        "Cosmos": {},
+        "TV Shows": {},
+        "Anime": {},
+    }
+
+    with (
+        patch.object(controller_instance, "select_library"),
+        patch.object(
+            controller_instance._smart_row_service,
+            "rebuild_for_libraries",
+            return_value=[],
+        ) as mock_rebuild,
+    ):
+        controller_instance._on_scan_all_finished()
+
+    # Only changed libraries should be passed, not all 4 config libraries
+    mock_rebuild.assert_called_once()
+    rebuild_arg = mock_rebuild.call_args[0][0]
+    assert set(rebuild_arg) == {"Cosmos", "TV Shows"}
+
+
+def test_controller_scan_all_fallback_to_all_when_no_changed_libraries() -> None:
+    """When changed_libraries is empty, _on_scan_all_finished falls back to all config libraries."""
+    controller_instance = Controller()
+    controller_instance.current_library_name = "Cosmos"
+
+    mock_scan_all_worker = MagicMock()
+    mock_scan_all_worker.unavailable_directories = []
+    mock_scan_all_worker.changed_libraries = set()
+    controller_instance.worker_manager.scan_all._instance = mock_scan_all_worker
+
+    controller_instance._config.libraries = {
+        "Movies": {},
+        "Cosmos": {},
+        "TV Shows": {},
+        "Anime": {},
+    }
+
+    with (
+        patch.object(controller_instance, "select_library"),
+        patch.object(
+            controller_instance._smart_row_service,
+            "rebuild_for_libraries",
+            return_value=[],
+        ) as mock_rebuild,
+    ):
+        controller_instance._on_scan_all_finished()
+
+    mock_rebuild.assert_called_once()
+    rebuild_arg = mock_rebuild.call_args[0][0]
+    assert set(rebuild_arg) == {"Movies", "Cosmos", "TV Shows", "Anime"}
+
+
+def test_controller_scan_all_fallback_to_all_when_worker_missing_attr() -> None:
+    """When worker lacks changed_libraries attr (old worker), fall back to all config libraries."""
+    controller_instance = Controller()
+    controller_instance.current_library_name = "Cosmos"
+
+    # Worker without changed_libraries attribute (simulates old worker code)
+    class MockWorkerWithoutChangedLibraries:
+        unavailable_directories = []
+
+    mock_scan_all_worker = MockWorkerWithoutChangedLibraries()
+    controller_instance.worker_manager.scan_all._instance = mock_scan_all_worker  # type: ignore[assignment]
+
+    controller_instance._config.libraries = {
+        "Movies": {},
+        "Cosmos": {},
+    }
+
+    with (
+        patch.object(controller_instance, "select_library"),
+        patch.object(
+            controller_instance._smart_row_service,
+            "rebuild_for_libraries",
+            return_value=[],
+        ) as mock_rebuild,
+    ):
+        controller_instance._on_scan_all_finished()
+
+    mock_rebuild.assert_called_once()
+    rebuild_arg = mock_rebuild.call_args[0][0]
+    assert set(rebuild_arg) == {"Movies", "Cosmos"}
+
+
 def test_controller_partial_scan_updates() -> None:
     controller_instance = Controller()
     controller_instance.current_library_name = "TestCinematic"

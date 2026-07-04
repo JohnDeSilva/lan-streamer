@@ -1,9 +1,10 @@
-"""Tests for BUG-06: TMDB prefetch executor lifetime management.
+"""Tests for BUG-02/BUG-06: TMDB prefetch executor lifetime management.
 
 Verifies that:
 - _fetch_tmdb_episodes_parallel accepts an executor parameter (no global singleton)
 - scan_series accepts tmdb_prefetch_executor parameter and passes it through
 - The executor is shut down in the scan_worker_all finally block
+- The executor is shut down even when an exception occurs during run_async
 """
 
 import concurrent.futures
@@ -225,6 +226,102 @@ def test_scan_worker_all_shuts_down_tmdb_executor() -> None:
         assert len(shutdown_calls) > 0, (
             "tmdb_prefetch_executor.shutdown() was never called — "
             "executor is leaking threads (BUG-06 fix not applied)"
+        )
+    finally:
+        loop.close()
+
+
+def test_scan_worker_all_shuts_down_tmdb_executor_on_exception() -> None:
+    """ScanAllLibrariesWorker shuts down the tmdb_prefetch_executor even when
+    an exception occurs early in run_async (e.g. database writer start fails).
+
+    Verifies BUG-02 fix: executor created inside try block so finally always runs.
+    """
+    import asyncio
+    from lan_streamer.backend import ScanAllLibrariesWorker
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
+    from PySide6.QtCore import QObject
+
+    shutdown_calls: list = []
+
+    class _TrackingExecutor(concurrent.futures.ThreadPoolExecutor):
+        def shutdown(self, wait: bool = True, **kwargs: Any) -> None:
+            shutdown_calls.append({"wait": wait})
+            super().shutdown(wait=False)
+
+    parent_object = QObject()
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        task_manager = AsyncTaskManager(parent=parent_object)
+
+        with (
+            patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+            patch(
+                "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
+                return_value=False,
+            ),
+            patch(
+                "lan_streamer.backend.scan_worker_all.db.load_library",
+                return_value={},
+            ),
+            patch(
+                "lan_streamer.backend.scan_worker_all.db.load_movie_library",
+                return_value={},
+            ),
+            patch(
+                "lan_streamer.backend.scan_worker_all.AsyncDatabaseWriter"
+            ) as mock_writer_class,
+            patch(
+                "lan_streamer.backend.scan_worker_all.concurrent.futures.ThreadPoolExecutor",
+                side_effect=lambda *args, **kwargs: _TrackingExecutor(max_workers=1),
+            ),
+        ):
+            mock_config.libraries = {}
+
+            # Simulate database writer start failure
+            mock_writer = MagicMock()
+
+            async def _raise_error() -> None:
+                raise RuntimeError("Database connection failed")
+
+            async def _async_noop() -> None:
+                return None
+
+            mock_writer.start = MagicMock(side_effect=_raise_error)
+            mock_writer.stop = MagicMock(side_effect=_async_noop)
+            mock_writer_class.return_value = mock_writer
+
+            worker = ScanAllLibrariesWorker(
+                async_task_manager=task_manager,
+                run_pass1=True,
+                run_pass2=False,
+                parent=parent_object,
+            )
+
+            finished_flag: list = []
+            error_flag: list = []
+            worker.finished.connect(lambda: finished_flag.append(True))
+            worker.error.connect(lambda msg: error_flag.append(msg))
+
+            async def _run() -> None:
+                worker.start()
+                for _ in range(500):
+                    await asyncio.sleep(0.01)
+                    if finished_flag or error_flag:
+                        break
+
+            loop.run_until_complete(_run())
+
+        # The worker should have errored
+        assert len(error_flag) > 0, (
+            "Expected worker to emit error signal when database writer fails"
+        )
+
+        # Verify that shutdown was called even though the scan failed
+        assert len(shutdown_calls) > 0, (
+            "tmdb_prefetch_executor.shutdown() was never called after exception — "
+            "executor is leaking threads (BUG-02 fix not applied)"
         )
     finally:
         loop.close()

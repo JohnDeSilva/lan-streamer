@@ -31,6 +31,11 @@ requests.Session.request = mocked_request
 # Force offscreen rendering so individual tests run seamlessly in GUI-less IDE test explorers
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
+# Signal to the application that we are running in a test environment,
+# so that code paths that require async task manager orchestration can
+# run synchronously instead.
+os.environ["LAN_STREAMER_TESTING"] = "1"
+
 
 class MockVLC:
     __name__ = "vlc"

@@ -1,5 +1,7 @@
 import logging
+import os
 import re
+import uuid
 from pathlib import Path
 from typing import (
     List,
@@ -136,7 +138,7 @@ class Controller(QObject):
         # completes. Without this, CPython's reference-counting GC can destroy the
         # worker (and its QThread) immediately after _on_scan_finished returns because
         # parent=self provides only a Qt object-tree reference, not a Python reference.
-        self._post_scan_worker: Any = None
+        self._post_scan_workers: List[Any] = []
 
         self.file_system_watcher = QFileSystemWatcher(self)
 
@@ -358,9 +360,7 @@ class Controller(QObject):
         self._cache_series_metrics()
 
         # Update smart row cache regardless of video playback state
-        import sys
-
-        if "pytest" in sys.modules:
+        if os.environ.get("LAN_STREAMER_TESTING") == "1":
             changed_hashes = self._smart_row_service.on_episode_watched(absolute_path)
             if changed_hashes:
                 self.smart_rows_updated.emit(changed_hashes)
@@ -376,9 +376,7 @@ class Controller(QObject):
                 if changed_hashes:
                     self.smart_rows_updated.emit(changed_hashes)
 
-            import uuid
-
-            task_name = f"watched_update_{uuid.uuid4().hex[:8]}"
+            task_name = f"watched_update_{uuid.uuid4().hex}"
             self.async_task_manager.create_task(
                 run_watched_update(),
                 name=task_name,
@@ -526,7 +524,7 @@ class Controller(QObject):
                 "Controller: starting PostScanWorker for library '%s'.",
                 scanned_library_name,
             )
-            self._post_scan_worker = PostScanWorker(
+            worker = PostScanWorker(
                 library_name=scanned_library_name,
                 library_data=updated_library,
                 library_type=library_config.get("type", "tv"),
@@ -534,14 +532,29 @@ class Controller(QObject):
                 async_task_manager=self.async_task_manager,
                 parent=self,
             )
-            self._post_scan_worker.finished.connect(
-                lambda result: self._on_post_scan_finished(
+            self._post_scan_workers.append(worker)
+
+            def _on_post_scan_done(result: Dict[str, Any]) -> None:
+                self._on_post_scan_finished(
                     result,
                     changed_season_ids,
                     changed_movie_ids,
                 )
-            )
-            self._post_scan_worker.start()
+                self._post_scan_workers = [
+                    w for w in self._post_scan_workers if w is not worker
+                ]
+
+            def _on_post_scan_error(error_msg: str) -> None:
+                logger.error("PostScanWorker failed: %s", error_msg)
+                self._post_scan_workers = [
+                    w for w in self._post_scan_workers if w is not worker
+                ]
+                if not self._doing_scan_and_update:
+                    self.scan_completed.emit()
+
+            worker.finished.connect(_on_post_scan_done)
+            worker.error.connect(_on_post_scan_error)
+            worker.start()
         else:
             if self._running_pass3_after_scan and not self._doing_scan_and_update:
                 self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
@@ -567,8 +580,9 @@ class Controller(QObject):
             self.scan_completed.emit()
 
         # Release the Python reference so the PostScanWorker can be garbage-collected.
+        # NOTE: This is now handled in the signal callbacks (_on_post_scan_done/_on_post_scan_error).
+        # Leaving this log for traceability.
         logger.info("Controller: PostScanWorker for finished scan released.")
-        self._post_scan_worker = None
 
     def _on_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
         self.select_library(self.current_library_name, reset_selection=False)
@@ -865,12 +879,13 @@ class Controller(QObject):
             else:
                 self.select_library(self.current_library_name, reset_selection=False)
 
-        affected_libraries = list(self._config.libraries.keys())
+        affected_libraries = list(
+            getattr(scan_all_worker, "changed_libraries", None)
+            or self._config.libraries.keys()
+        )
         from lan_streamer.system.async_utils import run_in_executor
 
-        import sys
-
-        is_testing = "pytest" in sys.modules
+        is_testing = os.environ.get("LAN_STREAMER_TESTING") == "1"
 
         if not is_testing:
 
@@ -899,9 +914,7 @@ class Controller(QObject):
                 else:
                     self.scan_completed.emit()
 
-            import uuid
-
-            task_name = f"global_scan_rebuild_cache_{uuid.uuid4().hex[:8]}"
+            task_name = f"global_scan_rebuild_cache_{uuid.uuid4().hex}"
             self.async_task_manager.create_task(
                 run_rebuild_and_finalize(),
                 name=task_name,
