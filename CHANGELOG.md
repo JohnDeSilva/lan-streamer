@@ -1,3 +1,9 @@
+## v0.42.0rc1 (2026-07-04)
+
+### Fix
+
+- **scan**: fix scan report statistics and database writer mismatch
+
 ## v0.42.0rc0 (2026-07-04)
 
 ### Feat
