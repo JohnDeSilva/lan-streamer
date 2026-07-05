@@ -1,3 +1,9 @@
+## v0.42.0rc4 (2026-07-05)
+
+### Fix
+
+- **scan**: add TMDB-only seasons when no matching local directories exist
+
 ## v0.42.0rc3 (2026-07-05)
 
 ### Fix
