@@ -728,12 +728,28 @@ def scan_series(
                 {"folder": series_directory.name, "season": season_name},
             )
 
-        try:
-            current_mtime = season_directory.stat().st_mtime
-        except Exception:
+        if metadata_only:
             current_mtime = None
-        season_metadata["season_directory_path"] = str(season_directory.absolute())
-        season_metadata["last_scanned_mtime"] = current_mtime
+            if existing_season is not None:
+                existing_season_metadata = existing_season.get("metadata", {})
+                season_metadata["season_directory_path"] = existing_season_metadata.get(
+                    "season_directory_path", str(season_directory.absolute())
+                )
+                season_metadata["last_scanned_mtime"] = existing_season_metadata.get(
+                    "last_scanned_mtime"
+                )
+            else:
+                season_metadata["season_directory_path"] = str(
+                    season_directory.absolute()
+                )
+                season_metadata["last_scanned_mtime"] = None
+        else:
+            try:
+                current_mtime = season_directory.stat().st_mtime
+            except Exception:
+                current_mtime = None
+            season_metadata["season_directory_path"] = str(season_directory.absolute())
+            season_metadata["last_scanned_mtime"] = current_mtime
 
         series_data["seasons"][season_name] = {
             "metadata": season_metadata,

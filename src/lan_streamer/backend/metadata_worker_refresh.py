@@ -93,6 +93,7 @@ class RefreshSeriesWorker(AsyncWorkerBase):
                 cleanup=False,
                 single_item_refresh=True,
                 show_future_episodes=show_future,
+                metadata_only=True,
             )
 
         if not item_data:
