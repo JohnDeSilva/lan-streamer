@@ -376,6 +376,7 @@ def test_refresh_series_worker_success(tmp_path, mock_db_save):
             cleanup=False,
             single_item_refresh=True,
             show_future_episodes=True,
+            metadata_only=True,
         )
 
 
@@ -514,3 +515,105 @@ def test_file_property_extraction_worker_cooperative_cancellation() -> None:
 
         # _produce_item_update should not be called at all
         mock_produce.assert_not_called()
+
+
+def test_refresh_series_worker_cross_root_metadata_only(
+    tmp_path: Path, caplog: Any
+) -> None:
+    """BUG-0X: RefreshSeriesWorker uses metadata_only=True, avoiding filesystem access.
+
+    When a series has seasons spread across multiple root directories, the
+    metadata refresh must work purely from DB data and not attempt to access
+    season paths that don't exist under the discovered series directory.
+    """
+    root1 = tmp_path / "root1"
+    (root1 / "Silo" / "Season 3").mkdir(parents=True)
+    (root1 / "Silo" / "Season 3" / "S03E01.mkv").write_text("content")
+
+    root2 = tmp_path / "root2"
+    (root2 / "Silo" / "Season 1").mkdir(parents=True)
+    (root2 / "Silo" / "Season 1" / "S01E01.mkv").write_text("content")
+
+    series1_dir = root1 / "Silo"
+    series2_dir = root2 / "Silo"
+
+    existing = {
+        "Silo": {
+            "metadata": {"tmdb_identifier": "silo_id", "name": "Silo"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {
+                        "season_directory_path": str(series2_dir / "Season 1"),
+                    },
+                    "episodes": [
+                        {
+                            "name": "S01E01.mkv",
+                            "path": str(series2_dir / "Season 1" / "S01E01.mkv"),
+                        }
+                    ],
+                },
+                "Season 3": {
+                    "metadata": {
+                        "season_directory_path": str(series1_dir / "Season 3"),
+                    },
+                    "episodes": [
+                        {
+                            "name": "S03E01.mkv",
+                            "path": str(series1_dir / "Season 3" / "S03E01.mkv"),
+                        }
+                    ],
+                },
+            },
+        }
+    }
+
+    worker = RefreshSeriesWorker(
+        library_name="TV",
+        item_name="Silo",
+        library_type="tv",
+        root_directories=[str(root1), str(root2)],
+        existing_library=existing,
+    )
+
+    with (
+        patch("lan_streamer.backend.metadata_worker_refresh.scan_series") as mock_scan,
+        patch(
+            "lan_streamer.backend.metadata_worker_refresh.clean_series_data",
+            lambda x: x,
+        ),
+        patch("lan_streamer.backend.metadata_worker_refresh.db.save_library"),
+    ):
+        mock_scan.return_value = {
+            "metadata": {"tmdb_identifier": "silo_id", "name": "Silo"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {
+                        "season_directory_path": str(series2_dir / "Season 1")
+                    },
+                    "episodes": [{"name": "S01E01.mkv"}],
+                },
+                "Season 3": {
+                    "metadata": {
+                        "season_directory_path": str(series1_dir / "Season 3")
+                    },
+                    "episodes": [{"name": "S03E01.mkv"}],
+                },
+            },
+        }
+
+        finished_data: dict = {}
+
+        def on_finished(d: dict) -> None:
+            nonlocal finished_data
+            finished_data = d
+
+        worker.finished.connect(on_finished)
+        worker.run()
+
+    assert finished_data
+    # Verify metadata_only=True was passed to scan_series
+    mock_scan.assert_called_once()
+    _call_kwargs = mock_scan.call_args.kwargs
+    assert _call_kwargs.get("metadata_only") is True
+    # Path arg should be root1/Silo since it's the first root that exists
+    assert Path(mock_scan.call_args.args[0]) == series1_dir
