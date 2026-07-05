@@ -1,3 +1,9 @@
+## v0.42.0rc3 (2026-07-05)
+
+### Fix
+
+- **metadata**: make series refresh independent of file locations
+
 ## v0.42.0rc2 (2026-07-05)
 
 ### Fix
