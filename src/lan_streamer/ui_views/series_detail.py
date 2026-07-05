@@ -4,21 +4,22 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable, TYPE_CHECKING
 
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QComboBox,
+    QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
+    QProgressBar,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
-    QHeaderView,
-    QSizePolicy,
-    QComboBox,
-    QScrollArea,
-    QFrame,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Slot, QPoint, Signal
+from PySide6.QtCore import Qt, QPoint, Signal, Slot
 from PySide6.QtGui import QFont, QColor, QAction, QIcon, QPainter, QPolygon
 from lan_streamer.ui_views.proxy import QPixmap
 
@@ -672,9 +673,9 @@ class SeriesDetailView(QWidget):
 
             # Create an explicit QTableWidget layout for absolute robust item targeting under automated tests
             episode_table: QTableWidget = QTableWidget()
-            episode_table.setColumnCount(5)
+            episode_table.setColumnCount(6)
             episode_table.setHorizontalHeaderLabels(
-                ["#", "Episode Title", "Air Date", "Runtime", "Details"]
+                ["#", "Episode Title", "Air Date", "Runtime", "Progress", "Details"]
             )
             episode_table.horizontalHeader().setSectionResizeMode(
                 0, QHeaderView.ResizeMode.ResizeToContents
@@ -689,9 +690,12 @@ class SeriesDetailView(QWidget):
                 3, QHeaderView.ResizeMode.ResizeToContents
             )
             episode_table.horizontalHeader().setSectionResizeMode(
-                4, QHeaderView.ResizeMode.Interactive
+                4, QHeaderView.ResizeMode.ResizeToContents
             )
-            episode_table.setColumnWidth(4, 90)
+            episode_table.horizontalHeader().setSectionResizeMode(
+                5, QHeaderView.ResizeMode.Interactive
+            )
+            episode_table.setColumnWidth(5, 90)
             episode_table.setSelectionBehavior(
                 QTableWidget.SelectionBehavior.SelectRows
             )
@@ -799,7 +803,7 @@ class SeriesDetailView(QWidget):
                 details_layout.setContentsMargins(2, 2, 2, 2)
                 details_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 details_layout.addWidget(details_button)
-                episode_table.setCellWidget(row_index, 4, details_container)
+                episode_table.setCellWidget(row_index, 5, details_container)
 
                 # Render table item entities cleanly
                 number_item: QTableWidgetItem = QTableWidgetItem(number_string)
@@ -821,6 +825,49 @@ class SeriesDetailView(QWidget):
                 runtime_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 runtime_item.setForeground(text_color)
                 episode_table.setItem(row_index, 3, runtime_item)
+
+                # Progress bar column
+                progress_value: int = 0
+                if is_watched:
+                    progress_value = 100
+                elif absolute_path:
+                    position = episode_record.get("last_played_position", 0)
+                    if position and position > 0:
+                        runtime_minutes = episode_record.get("runtime") or 0
+                        file_runtime_minutes = episode_record.get("file_runtime") or 0
+                        total_minutes = file_runtime_minutes or runtime_minutes
+                        if total_minutes > 0:
+                            total_seconds = total_minutes * 60
+                            progress_value = min(
+                                int(position / total_seconds * 100), 99
+                            )
+
+                progress_bar = QProgressBar()
+                progress_bar.setRange(0, 100)
+                progress_bar.setValue(progress_value)
+                progress_bar.setTextVisible(True)
+                progress_bar.setFixedHeight(18)
+                progress_bar.setStyleSheet(
+                    "QProgressBar {"
+                    "  background-color: #1e1e24;"
+                    "  border: 1px solid #3d3d47;"
+                    "  border-radius: 4px;"
+                    "  text-align: center;"
+                    "  color: #E2E8F0;"
+                    "  font-size: 11px;"
+                    "}"
+                    "QProgressBar::chunk {"
+                    "  background-color: #2a82da;"
+                    "  border-radius: 3px;"
+                    "}"
+                )
+                progress_container = QWidget()
+                progress_container.setStyleSheet("background-color: transparent;")
+                progress_layout = QHBoxLayout(progress_container)
+                progress_layout.setContentsMargins(4, 2, 4, 2)
+                progress_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                progress_layout.addWidget(progress_bar)
+                episode_table.setCellWidget(row_index, 4, progress_container)
 
             def make_context_menu_slot(
                 table: QTableWidget, season: str, episode_list: List[Dict[str, Any]]

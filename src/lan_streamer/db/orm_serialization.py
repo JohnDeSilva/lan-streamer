@@ -25,9 +25,11 @@ def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
     # Playback/watch states
     watched = False
     last_played_at = 0
+    last_played_position = 0
     if episode.playback_state:
         watched = bool(episode.playback_state.watched)
         last_played_at = episode.playback_state.last_played_at or 0
+        last_played_position = episode.playback_state.last_played_position or 0
 
     # Technical specs
     video_codec = ""
@@ -99,6 +101,7 @@ def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
         "runtime": episode.runtime or 0,
         "file_runtime": file_runtime,
         "last_played_at": last_played_at,
+        "last_played_position": last_played_position,
         "video_codec": video_codec,
         "resolution": resolution,
         "audio_tracks": audio_tracks,
