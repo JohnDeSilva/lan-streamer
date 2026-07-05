@@ -345,7 +345,7 @@ def test_series_detail_view_rendering(
     assert page_widget is not None
     table_widget: Optional[Any] = page_widget.findChild(QTableWidget)
     assert isinstance(table_widget, QTableWidget)
-    assert table_widget.columnCount() == 5
+    assert table_widget.columnCount() == 6
     assert table_widget.rowCount() == 4
 
     # Unwatched local episode
