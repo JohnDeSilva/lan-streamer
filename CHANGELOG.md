@@ -1,3 +1,9 @@
+## v0.42.0rc2 (2026-07-05)
+
+### Fix
+
+- **updater**: correct version comparison and support subsequent release candidates
+
 ## v0.42.0rc1 (2026-07-04)
 
 ### Fix
