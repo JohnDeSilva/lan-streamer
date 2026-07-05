@@ -1,3 +1,9 @@
+## v0.42.0rc5 (2026-07-05)
+
+### Feat
+
+- **ui**: add progress bar column to episode table in series detail view
+
 ## v0.42.0rc4 (2026-07-05)
 
 ### Fix
