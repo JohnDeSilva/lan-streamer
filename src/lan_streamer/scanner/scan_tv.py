@@ -531,6 +531,144 @@ def _create_tmdb_placeholder_episodes(
     return placeholders
 
 
+def _season_name_from_tmdb(tmdb_season: Dict[str, Any]) -> str:
+    """Derive a local-friendly season name from a TMDB season dict.
+
+    Returns ``"Specials"`` for season 0 and ``"Season N"`` for others.
+    """
+    season_number = tmdb_season.get("season_number", -1)
+    if season_number == 0:
+        return "Specials"
+    existing_name = (tmdb_season.get("name") or "").strip()
+    if existing_name and re.match(
+        r"^(Season|Part|Cour)\s+\d+", existing_name, re.IGNORECASE
+    ):
+        return existing_name
+    return f"Season {season_number}"
+
+
+def _add_tmdb_only_seasons(
+    series_data: Dict[str, Any],
+    offline: bool,
+    force_refresh: bool,
+    single_item_refresh: bool,
+    prefetched_season_episodes: Dict[str, list[Any]],
+    show_future_episodes: bool = True,
+) -> None:
+    """Create season entries for TMDB seasons that have no matching local directory.
+
+    For series where some TMDB seasons aren't represented on disk (e.g. only
+    Season 3 files exist but TMDB has Seasons 1, 2, 3), this function fetches
+    TMDB metadata and episode data for the missing seasons and adds them as
+    placeholder-only entries.
+    """
+    tmdb_seasons: list[Dict[str, Any]] = series_data.get("_tmdb_seasons", [])
+    tmdb_series_id: str = str(series_data.get("_tmdb_series_id") or "")
+    is_locked = bool(series_data.get("metadata", {}).get("locked_metadata", False))
+
+    for tmdb_season in tmdb_seasons:
+        season_name = _season_name_from_tmdb(tmdb_season)
+        if season_name in series_data["seasons"]:
+            continue
+
+        logger.info(
+            f"Adding TMDB-only season '{season_name}' for series '{series_data.get('metadata', {}).get('name', '')}'"
+        )
+
+        season_number = tmdb_season.get("season_number", -1)
+        season_metadata: Dict[str, Any] = {
+            "jellyfin_id": "",
+            "tmdb_identifier": str(tmdb_season.get("id", "")),
+            "season_directory_path": "",
+            "last_scanned_mtime": None,
+        }
+
+        poster_path = tmdb_season.get("poster_path") or ""
+        if poster_path and tmdb_season.get("id") and not offline and not is_locked:
+            cached = _tmdb_client.get_cached_image(f"tmdb_season_{tmdb_season['id']}")
+            if cached and isinstance(cached, str):
+                season_metadata["poster_path"] = cached
+            else:
+                downloaded = _tmdb_client.download_image(
+                    poster_path, f"tmdb_season_{tmdb_season['id']}"
+                )
+                if downloaded:
+                    season_metadata["poster_path"] = downloaded
+                else:
+                    season_metadata["poster_path"] = ""
+        else:
+            season_metadata["poster_path"] = ""
+
+        needs_episodes = (
+            not is_locked
+            and not offline
+            and bool(tmdb_series_id)
+            and (force_refresh or single_item_refresh or True)
+        )
+        tmdb_episodes: list[Dict[str, Any]] = []
+        if needs_episodes:
+            episode_group_details = series_data.get("_tmdb_episode_group_details")
+            if (
+                episode_group_details
+                and isinstance(episode_group_details, dict)
+                and "groups" in episode_group_details
+            ):
+                for group in episode_group_details.get("groups", []):
+                    group_name = group.get("name") or ""
+                    season_num_match = re.search(r"\d+", group_name)
+                    group_season_index = (
+                        int(season_num_match.group())
+                        if season_num_match
+                        else group.get("order", -1)
+                    )
+                    if group_name.lower() == "specials":
+                        group_season_index = 0
+                    if group_season_index == season_number:
+                        for group_ep in group.get("episodes", []):
+                            tmdb_episodes.append(
+                                {
+                                    "id": group_ep.get("id"),
+                                    "name": group_ep.get("name"),
+                                    "episode_number": group_ep.get("order") + 1,
+                                    "air_date": group_ep.get("air_date") or "",
+                                    "runtime": group_ep.get("runtime") or 0,
+                                }
+                            )
+                        break
+            elif season_number >= 0:
+                prefetched = prefetched_season_episodes.get(season_name)
+                if prefetched is not None:
+                    tmdb_episodes = prefetched
+                else:
+                    logger.info(
+                        f"Fetching TMDB episodes for TMDB-only season '{season_name}' "
+                        f"(index {season_number})"
+                    )
+                    tmdb_episodes = _tmdb_client.get_episodes(
+                        tmdb_series_id, season_number
+                    )
+
+        placeholders = _create_tmdb_placeholder_episodes(
+            tmdb_episodes,
+            [],
+            season_name,
+            season_metadata,
+            show_future_episodes=show_future_episodes,
+        )
+
+        series_data["seasons"][season_name] = {
+            "metadata": season_metadata,
+            "episodes": placeholders,
+            "_tmdb_episodes": tmdb_episodes,
+            "_changed": True,
+        }
+
+        logger.info(
+            f"Added {len(placeholders)} TMDB placeholder episodes for "
+            f"season '{season_name}'"
+        )
+
+
 def _preserve_existing_episode_data(
     series_data: Dict[str, Any],
     existing_series_data: Dict[str, Any] | None,
@@ -826,7 +964,17 @@ def scan_series(
                 {"folder": series_directory.name, "season": season_name},
             )
 
-    # Phase 5: Preserve existing data
+    # Phase 5: Process TMDB seasons not represented on disk
+    _add_tmdb_only_seasons(
+        series_data,
+        offline,
+        force_refresh,
+        single_item_refresh,
+        prefetched_season_episodes,
+        show_future_episodes=show_future_episodes,
+    )
+
+    # Phase 6: Preserve existing data
     _preserve_existing_episode_data(
         series_data,
         existing_series_data,
@@ -835,7 +983,7 @@ def scan_series(
         show_future_episodes=show_future_episodes,
     )
 
-    # Phase 6: Persist series directory mtime so subsequent scans can skip
+    # Phase 7: Persist series directory mtime so subsequent scans can skip
     # this series entirely when its directory has not changed.
     if not metadata_only:
         try:

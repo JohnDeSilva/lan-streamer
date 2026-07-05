@@ -1146,3 +1146,109 @@ def test_scan_series_skips_episode_prefetch_when_episode_group(
     assert episodes[0]["tmdb_name"] == "First Episode"
     assert episodes[0]["tmdb_number"] == 1
     assert episodes[0]["tmdb_episode_identifier"] == "ep-101"
+
+
+# ---------------------------------------------------------------------------
+# _add_tmdb_only_seasons — TMDB seasons without local files
+# ---------------------------------------------------------------------------
+
+
+def test_add_tmdb_only_seasons_creates_missing_seasons(tmp_path: Path) -> None:
+    """BUG-0X: TMDB-only seasons without matching local directories are added.
+
+    When a series has only Season 3 on disk but TMDB lists Seasons 1, 2, and 3,
+    the missing Seasons 1 and 2 must be created as placeholder entries with
+    TMDB episode data.
+    """
+    series_dir = tmp_path / "Show"
+    (series_dir / "Season 3").mkdir(parents=True)
+    (series_dir / "Season 3" / "S03E01.mkv").write_text("content")
+
+    with (
+        patch("lan_streamer.services.metadata_series.tmdb_client") as mock_tmdb,
+        patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.scan_tv._tmdb_client", mock_tmdb),
+    ):
+        mock_tmdb.is_configured.return_value = True
+        mock_tmdb.search_series.return_value = {
+            "id": "s123",
+            "name": "Show",
+            "overview": "Test",
+            "seasons": [
+                {"season_number": 1, "name": "Season 1", "id": "s1", "poster_path": ""},
+                {"season_number": 2, "name": "Season 2", "id": "s2", "poster_path": ""},
+                {"season_number": 3, "name": "Season 3", "id": "s3", "poster_path": ""},
+            ],
+        }
+        mock_tmdb.get_episodes.return_value = [
+            {"id": "ep", "episode_number": 1, "name": "Episode 1"},
+        ]
+        mock_tmdb.download_image.return_value = ""
+        mock_tmdb.get_cached_image.return_value = ""
+
+        result = scan_series(series_dir)
+
+    assert "Season 1" in result["seasons"], "TMDB-only Season 1 missing"
+    assert "Season 2" in result["seasons"], "TMDB-only Season 2 missing"
+    assert "Season 3" in result["seasons"], "Disk Season 3 missing"
+    assert len(result["seasons"]) == 3, "All 3 seasons must be present"
+    # Placeholder episodes should exist for the TMDB-only seasons
+    assert len(result["seasons"]["Season 1"]["episodes"]) >= 1
+    assert len(result["seasons"]["Season 2"]["episodes"]) >= 1
+
+
+def test_add_tmdb_only_seasons_with_existing_data(tmp_path: Path) -> None:
+    """BUG-0X: TMDB-only seasons are added even when existing data has partial seasons.
+
+    Refresh with metadata_only=True should still add missing TMDB seasons.
+    """
+    series_dir = tmp_path / "Show"
+    (series_dir / "Season 3").mkdir(parents=True)
+    (series_dir / "Season 3" / "S03E01.mkv").write_text("content")
+
+    existing = {
+        "metadata": {"tmdb_identifier": "s123", "tmdb_name": "Show", "name": "Show"},
+        "seasons": {
+            "Season 3": {
+                "metadata": {"season_directory_path": str(series_dir / "Season 3")},
+                "episodes": [],
+            },
+        },
+    }
+
+    with (
+        patch("lan_streamer.services.metadata_series.tmdb_client") as mock_tmdb,
+        patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.scan_tv._tmdb_client", mock_tmdb),
+    ):
+        mock_tmdb.is_configured.return_value = True
+        mock_tmdb.get_series_by_id.return_value = {
+            "id": "s123",
+            "name": "Show",
+            "overview": "Test",
+            "seasons": [
+                {"season_number": 1, "name": "Season 1", "id": "s1", "poster_path": ""},
+                {"season_number": 2, "name": "Season 2", "id": "s2", "poster_path": ""},
+                {"season_number": 3, "name": "Season 3", "id": "s3", "poster_path": ""},
+            ],
+        }
+        mock_tmdb.get_episodes.return_value = [
+            {"id": "ep", "episode_number": 1, "name": "Episode 1"},
+        ]
+        mock_tmdb.download_image.return_value = ""
+        mock_tmdb.get_cached_image.return_value = ""
+
+        result = scan_series(
+            series_dir,
+            existing_series_data=existing,
+            force_refresh=True,
+            single_item_refresh=True,
+            metadata_only=True,
+        )
+
+    assert "Season 1" in result["seasons"], "TMDB-only Season 1 missing in refresh"
+    assert "Season 2" in result["seasons"], "TMDB-only Season 2 missing in refresh"
+    assert "Season 3" in result["seasons"], "Disk Season 3 missing in refresh"
+    assert len(result["seasons"]) == 3, "All 3 seasons must be present"
+    # Season 1 should have placeholder episodes
+    assert len(result["seasons"]["Season 1"]["episodes"]) >= 1
