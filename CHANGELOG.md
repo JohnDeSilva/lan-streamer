@@ -1,3 +1,9 @@
+## v0.42.0rc5-1 (2026-07-06)
+
+### Fix
+
+- **updater**: Replace Linux frozen executables in place and increase logging
+
 ## v0.42.0rc5 (2026-07-05)
 
 ### Feat
