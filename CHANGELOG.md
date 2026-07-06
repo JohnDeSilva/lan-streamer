@@ -1,3 +1,18 @@
+## v0.42.0 (2026-07-06)
+
+### Feat
+
+- **ui**: add progress bar column to episode table in series detail view
+- **updater**: add InstallWorker for atomic self-replacement of executable
+
+### Fix
+
+- **updater**: replace Linux frozen executables in place and increase logging
+- **scan**: add TMDB-only seasons when no matching local directories exist
+- **metadata**: make series refresh independent of file locations
+- **updater**: correct version comparison and support subsequent release candidates
+- **scan**: fix scan report statistics and database writer mismatch
+
 ## v0.42.0rc5-1 (2026-07-06)
 
 ### Fix
