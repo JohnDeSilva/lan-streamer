@@ -202,8 +202,8 @@ Manages checking for updates on startup or manually, downloading updates in the 
 1. **Download Trigger**: When the user clicks "Download", the dialog layout transitions to a progress display.
 2. **Background Download**: Spawns a `DownloadWorker` thread that fetches the asset from GitHub's CDN in 8KB chunks, updating the `QProgressBar` and labels.
 3. **Execution**:
-   - Once completed, the file is saved to the local updates folder.
-   - On Unix/Linux platforms, it runs `os.chmod(path, 0o755)` to set the executable permission bit.
-   - On macOS, it mounts the DMG via `QProcess.startDetached("open", [path])`.
-   - On Linux/Windows, it spawns the binary directly using `QProcess.startDetached(path)`.
-4. **Termination**: The current host application is immediately closed using `QApplication.quit()` and `sys.exit(0)`, allowing the new version to take over.
+   - On Linux systems running a frozen executable, the update is staged in the same directory as the target executable (as a `.tmp` file). An `InstallWorker` thread is then run to atomically replace the current running executable in-place, set permissions (0o755), launch the new in-place binary, and exit.
+   - On non-frozen Linux systems, or if staging in the executable directory is not writeable, it falls back to saving to the local updates folder, running `os.chmod(path, 0o755)` to set permissions, and executing the binary from there.
+   - On macOS, the downloaded DMG is run via `QProcess.startDetached("open", [path])`.
+   - On Windows, it spawns the downloaded binary directly.
+4. **Termination**: Once the update is installed or launched, the parent application is closed via `QApplication.quit()`.

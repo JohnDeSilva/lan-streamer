@@ -167,11 +167,17 @@ class UpdateCheckWorker(QThread):
         """Check the latest stable (non-prerelease) release."""
         from lan_streamer import __version__
 
+        logger.info(
+            "UpdateCheckWorker: checking stable channel releases from GitHub API"
+        )
         headers = {"User-Agent": "lan-streamer-updater"}
         response = requests.get(
             "https://api.github.com/repos/JohnDeSilva/lan-streamer/releases/latest",
             headers=headers,
             timeout=10,
+        )
+        logger.info(
+            f"UpdateCheckWorker: GitHub API response status code: {response.status_code}"
         )
         if response.status_code != 200:
             self.finished.emit(False, {}, f"HTTP Error {response.status_code}")
@@ -180,19 +186,30 @@ class UpdateCheckWorker(QThread):
         data = response.json()
         tag_name = data.get("tag_name", "")
         if not tag_name:
+            logger.error("UpdateCheckWorker: Invalid release format, missing tag_name")
             self.finished.emit(False, {}, "Invalid release format: missing tag_name")
             return
 
+        logger.info(f"UpdateCheckWorker: found latest stable tag: '{tag_name}'")
         if parse_comparable_version(tag_name) > parse_comparable_version(__version__):
+            logger.info(
+                f"UpdateCheckWorker: stable version '{tag_name}' is newer than current '{__version__}'"
+            )
             release_data = self._extract_release_data(data)
             if release_data and release_data["download_url"]:
+                logger.info(
+                    f"UpdateCheckWorker: stable update is available for download: {release_data['download_url']}"
+                )
                 self.finished.emit(True, release_data, "")
             else:
                 logger.warning(
-                    f"Newer version {tag_name} found, but no matching asset was found."
+                    f"UpdateCheckWorker: newer version {tag_name} found, but no matching asset was found for current platform."
                 )
                 self.finished.emit(True, {}, "")
         else:
+            logger.info(
+                f"UpdateCheckWorker: current version '{__version__}' is up-to-date (latest stable: '{tag_name}')"
+            )
             self.finished.emit(True, {}, "")
 
     def _check_rc(self) -> None:
@@ -203,11 +220,15 @@ class UpdateCheckWorker(QThread):
         """
         from lan_streamer import __version__
 
+        logger.info("UpdateCheckWorker: checking RC/all releases from GitHub API")
         headers = {"User-Agent": "lan-streamer-updater"}
         response = requests.get(
             "https://api.github.com/repos/JohnDeSilva/lan-streamer/releases",
             headers=headers,
             timeout=10,
+        )
+        logger.info(
+            f"UpdateCheckWorker: GitHub API response status code: {response.status_code}"
         )
         if response.status_code != 200:
             self.finished.emit(False, {}, f"HTTP Error {response.status_code}")
@@ -215,9 +236,11 @@ class UpdateCheckWorker(QThread):
 
         releases = response.json()
         if not isinstance(releases, list) or not releases:
+            logger.info("UpdateCheckWorker: no releases found in the repository.")
             self.finished.emit(True, {}, "")
             return
 
+        logger.info(f"UpdateCheckWorker: found {len(releases)} releases in repository")
         # best_release_per_version[base_version] = (is_prerelease, release_data)
         best_release_per_version: dict[tuple[int, ...], tuple[bool, dict]] = {}
 
@@ -256,6 +279,9 @@ class UpdateCheckWorker(QThread):
                         )
 
         if not best_release_per_version:
+            logger.info(
+                "UpdateCheckWorker: no suitable releases with matching assets found."
+            )
             self.finished.emit(True, {}, "")
             return
 
@@ -269,22 +295,36 @@ class UpdateCheckWorker(QThread):
                 best_release_data = release_data
 
         if best_release_data and best_release_value is not None:
+            logger.info(
+                f"UpdateCheckWorker: selected best release: '{best_release_data['version']}'"
+            )
             current_version_value = parse_comparable_version(__version__)
             if best_release_value > current_version_value:
+                logger.info(
+                    f"UpdateCheckWorker: version '{best_release_data['version']}' is newer than current '{__version__}'"
+                )
                 self.finished.emit(True, best_release_data, "")
                 return
+            else:
+                logger.info(
+                    f"UpdateCheckWorker: current version '{__version__}' is up-to-date (best available: "
+                    f"'{best_release_data['version']}')"
+                )
 
         self.finished.emit(True, {}, "")
 
     def run(self) -> None:
+        logger.info(
+            f"UpdateCheckWorker: thread started checking channel: '{self.release_channel}'"
+        )
         try:
             if self.release_channel == "rc":
                 self._check_rc()
             else:
                 self._check_stable()
-        except Exception as e:
-            logger.exception("Error checking for updates")
-            self.finished.emit(False, {}, str(e))
+        except Exception as exception:
+            logger.exception("UpdateCheckWorker: Error checking for updates")
+            self.finished.emit(False, {}, str(exception))
 
 
 class DownloadWorker(QThread):
@@ -303,31 +343,48 @@ class DownloadWorker(QThread):
 
     def run(self) -> None:
         try:
+            logger.info(
+                f"DownloadWorker: thread started downloading '{self.download_url}'"
+            )
+            logger.info(
+                f"DownloadWorker: writing downloaded chunks to '{self.save_path}'"
+            )
             headers = {"User-Agent": "lan-streamer-updater"}
             response = requests.get(
                 self.download_url, headers=headers, stream=True, timeout=25
             )
+            logger.info(
+                f"DownloadWorker: HTTP response status code: {response.status_code}, "
+                f"content-length: {response.headers.get('content-length')}"
+            )
             if response.status_code != 200:
+                logger.error(f"DownloadWorker: HTTP Error {response.status_code}")
                 self.finished.emit(False, f"HTTP Error {response.status_code}")
                 return
 
-            total_size = int(response.headers.get("content-length", 0))
+            total_size_bytes = int(response.headers.get("content-length", 0))
             bytes_downloaded = 0
 
-            with open(self.save_path, "wb") as f:
+            with open(self.save_path, "wb") as file_object:
                 for chunk in response.iter_content(chunk_size=8192):
                     if self._is_cancelled:
+                        logger.info(
+                            "DownloadWorker: download cancelled by user request"
+                        )
                         self.finished.emit(False, "Download cancelled")
                         return
                     if chunk:
-                        f.write(chunk)
+                        file_object.write(chunk)
                         bytes_downloaded += len(chunk)
-                        self.progress.emit(bytes_downloaded, total_size)
+                        self.progress.emit(bytes_downloaded, total_size_bytes)
 
+            logger.info(
+                f"DownloadWorker: download successfully finished, file size: {bytes_downloaded} bytes"
+            )
             self.finished.emit(True, str(self.save_path))
-        except Exception as e:
-            logger.exception("Error downloading update")
-            self.finished.emit(False, str(e))
+        except Exception as exception:
+            logger.exception("DownloadWorker: Error downloading update")
+            self.finished.emit(False, str(exception))
 
     def cancel(self) -> None:
         self._is_cancelled = True
@@ -366,14 +423,14 @@ class InstallWorker(QThread):
 
     def run(self) -> None:
         logger.info(
-            "InstallWorker started: replacing '%s' with '%s'",
+            "InstallWorker: thread started to replace '%s' with '%s'",
             self.install_target_path,
             self.downloaded_path,
         )
         try:
             if not os.path.isfile(self.downloaded_path):
                 error_message = f"Downloaded binary not found: '{self.downloaded_path}'"
-                logger.error(error_message)
+                logger.error(f"InstallWorker: {error_message}")
                 self.finished.emit(False, error_message)
                 return
 
@@ -388,8 +445,15 @@ class InstallWorker(QThread):
                 | stat.S_IROTH
                 | stat.S_IXOTH
             )
+            logger.info(
+                f"InstallWorker: setting permissions to 0o755 (rwxr-xr-x) for '{self.downloaded_path}'"
+            )
             os.chmod(self.downloaded_path, executable_mode)
 
+            logger.info(
+                f"InstallWorker: performing atomic replacement of '{self.install_target_path}' "
+                f"with '{self.downloaded_path}'"
+            )
             os.replace(self.downloaded_path, self.install_target_path)
 
             logger.info(
