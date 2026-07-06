@@ -135,3 +135,103 @@ def test_update_dialog_close_event_downloading_ignore(dialog) -> None:
         mock_worker.cancel.assert_not_called()
         mock_event.ignore.assert_called_once()
         dialog.worker = None
+
+
+def test_update_dialog_start_download_linux_frozen(dialog, qtbot) -> None:
+    mock_download_worker = MagicMock()
+    mock_download_worker.isRunning.return_value = False
+
+    with (
+        patch("sys.platform", "linux"),
+        patch("sys.frozen", True, create=True),
+        patch("sys.executable", "/usr/bin/lan-streamer"),
+        patch("os.access", return_value=True),
+        patch(
+            "lan_streamer.ui_views.dialogs.update_dialog.DownloadWorker",
+            return_value=mock_download_worker,
+        ) as mock_download_worker_class,
+    ):
+        dialog.start_download()
+
+        mock_download_worker_class.assert_called_once_with(
+            "https://example.invalid/releases/download/v0.27.0/lan-streamer-ubuntu",
+            "/usr/bin/lan-streamer.tmp",
+        )
+        assert dialog.use_in_place is True
+        mock_download_worker.start.assert_called_once()
+
+
+def test_update_dialog_start_download_linux_frozen_not_writable(dialog, qtbot) -> None:
+    mock_download_worker = MagicMock()
+    mock_download_worker.isRunning.return_value = False
+
+    with (
+        patch("sys.platform", "linux"),
+        patch("sys.frozen", True, create=True),
+        patch("sys.executable", "/usr/bin/lan-streamer"),
+        patch("os.access", return_value=False),
+        patch(
+            "lan_streamer.ui_views.dialogs.update_dialog.DownloadWorker",
+            return_value=mock_download_worker,
+        ) as mock_download_worker_class,
+    ):
+        dialog.start_download()
+
+        # Should fall back to home updates directory
+        expected_fallback_path = os.path.expanduser(
+            "~/.config/lan-streamer/updates/lan-streamer-ubuntu"
+        )
+        mock_download_worker_class.assert_called_once_with(
+            "https://example.invalid/releases/download/v0.27.0/lan-streamer-ubuntu",
+            expected_fallback_path,
+        )
+        assert dialog.use_in_place is False
+
+
+def test_update_dialog_finished_success_in_place(dialog, qtbot) -> None:
+    dialog.use_in_place = True
+    mock_install_worker = MagicMock()
+
+    with (
+        patch("sys.executable", "/usr/bin/lan-streamer"),
+        patch(
+            "lan_streamer.ui_views.dialogs.update_dialog.InstallWorker",
+            return_value=mock_install_worker,
+        ) as mock_install_worker_class,
+    ):
+        dialog.on_finished(True, "/usr/bin/lan-streamer.tmp")
+
+        mock_install_worker_class.assert_called_once_with(
+            "/usr/bin/lan-streamer.tmp", "/usr/bin/lan-streamer"
+        )
+        mock_install_worker.start.assert_called_once()
+        assert dialog.progress_label.text() == "Installing update in-place..."
+
+
+def test_update_dialog_install_finished_success(dialog, qtbot) -> None:
+    with (
+        patch("sys.executable", "/usr/bin/lan-streamer"),
+        patch("PySide6.QtCore.QProcess.startDetached") as mock_start,
+        patch(
+            "lan_streamer.ui_views.dialogs.update_dialog.QApplication.quit"
+        ) as mock_quit,
+    ):
+        dialog.on_install_finished(True, "")
+        mock_start.assert_called_once_with("/usr/bin/lan-streamer")
+        mock_quit.assert_called_once()
+
+
+def test_update_dialog_install_finished_failure(dialog, qtbot) -> None:
+    with patch(
+        "lan_streamer.ui_views.dialogs.update_dialog.QMessageBox.critical"
+    ) as mock_message_box:
+        dialog.ignore_button.setVisible(False)
+        dialog.download_button.setVisible(False)
+        dialog.progress_container.setVisible(True)
+
+        dialog.on_install_finished(False, "Permission Denied")
+
+        mock_message_box.assert_called_once()
+        assert not dialog.ignore_button.isHidden()
+        assert not dialog.download_button.isHidden()
+        assert dialog.progress_container.isHidden()
