@@ -43,9 +43,11 @@ def get_linux_distro() -> str:
     return "ubuntu"
 
 
-def parse_comparable_version(version_string: str) -> tuple[int, int, int, int, int]:
+def parse_comparable_version(
+    version_string: str,
+) -> tuple[int, int, int, int, int, int]:
     """Parses a version string into a comparable tuple:
-    (major, minor, patch, release_weight, prerelease_number)
+    (major, minor, patch, release_weight, prerelease_number, build_number)
 
     where release_weight is:
         2: stable release
@@ -56,7 +58,7 @@ def parse_comparable_version(version_string: str) -> tuple[int, int, int, int, i
 
     cleaned_version = version_string.strip().lower().lstrip("v")
     regex_match = re.match(
-        r"^(\d+)\.(\d+)\.(\d+)(?:-?(rc|a|b|alpha|beta|dev|post|preview)\.?(\d+))?",
+        r"^(\d+)\.(\d+)\.(\d+)(?:-?(rc|a|b|alpha|beta|dev|post|preview)\.?(\d+))?(?:-(\d+))?$",
         cleaned_version,
     )
     if not regex_match:
@@ -67,13 +69,14 @@ def parse_comparable_version(version_string: str) -> tuple[int, int, int, int, i
             parts.append(int(digits) if digits else 0)
         while len(parts) < 3:
             parts.append(0)
-        return (parts[0], parts[1], parts[2], 2, 0)
+        return (parts[0], parts[1], parts[2], 2, 0, 0)
 
     major_version = int(regex_match.group(1))
     minor_version = int(regex_match.group(2))
     patch_version = int(regex_match.group(3))
     prerelease_type = regex_match.group(4)
     prerelease_number_string = regex_match.group(5)
+    build_number_string = regex_match.group(6)
 
     if not prerelease_type:
         release_weight = 2
@@ -89,12 +92,15 @@ def parse_comparable_version(version_string: str) -> tuple[int, int, int, int, i
             int(prerelease_number_string) if prerelease_number_string else 0
         )
 
+    build_number = int(build_number_string) if build_number_string else 0
+
     return (
         major_version,
         minor_version,
         patch_version,
         release_weight,
         prerelease_number,
+        build_number,
     )
 
 
@@ -103,7 +109,7 @@ def parse_base_version(version_string: str) -> tuple[int, int, int]:
 
     E.g. 'v0.27.0-rc.1' -> (0, 27, 0)
     """
-    major_version, minor_version, patch_version, _, _ = parse_comparable_version(
+    major_version, minor_version, patch_version, _, _, _ = parse_comparable_version(
         version_string
     )
     return (major_version, minor_version, patch_version)
@@ -111,7 +117,7 @@ def parse_base_version(version_string: str) -> tuple[int, int, int]:
 
 def is_prerelease_tag(tag_name: str) -> bool:
     """Return True if the tag name indicates a pre-release version."""
-    _, _, _, release_weight, _ = parse_comparable_version(tag_name)
+    _, _, _, release_weight, _, _ = parse_comparable_version(tag_name)
     return release_weight < 2
 
 
