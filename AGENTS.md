@@ -28,7 +28,6 @@ This document establishes the repository-wide standards, architectural constrain
   - [backend/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend): Background thread workers (`QThread`/`QWorker`) for non-blocking file scanning, Jellyfin sync, and metadata updates.
     - [scan_worker_base.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend/scan_worker_base.py): Shared scan helpers (`create_empty_stats`, `merge_stats_dicts`, `log_stats_breakdown`, `log_issues_report`, `discover_single_library_tree_impl`).
     - [scan_worker_all.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend/scan_worker_all.py): `ScanAllLibrariesWorker` — parallel multi-library scan via `ThreadPoolExecutor`.
-    - [scan_worker_single.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend/scan_worker_single.py): `ScanSingleLibraryWorker` — single-library scan.
   - [scanner/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/scanner): Library crawler, filename parser, and bulk-renamer.
     - [core.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/scanner/core.py): 3-pass dispatcher — `scan_directories()` with `pass_number` parameter (0=all, 1=discovery, 2=metadata, 3=technical).
     - [pass1_file_discovery.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/scanner/pass1_file_discovery.py): Filesystem walk, stub creation (no TMDB).
@@ -102,8 +101,6 @@ The library scanner uses a 3-pass pipeline for clean separation of concerns:
 - `_merge_series_data()` handles series spanning multiple root directories (combines seasons from different roots).
 - Existing library entries not found on disk are preserved (non-destructive).
 
-**Backward Compatibility**: The old `scanner/scan_tv.py` and `scanner/scan_movie.py` files remain intact for backward-compatible imports via `scanner/__init__.py`.
-
 **Pattern for tests**: When testing Pass 2 metadata resolution, three TMDB client paths must be patched:
 ```python
 patch("lan_streamer.services.metadata_series.tmdb_client", mock)
@@ -151,7 +148,7 @@ After **every change**, run:
 2. `make lint` as the **FINAL** step to check style, Ruff format/rules, MyPy typechecking, and pre-commit conformity. Resolving all warnings and errors is mandatory.
 
 ### Step 3: Documentation Synchronicity
-- Instantly update `README.md`, `docs/codebase_guide.md`, and other guides when changing features, database schemas, UI elements, or configuration options.
+- Instantly update `README.md` and other guides when changing features, database schemas, UI elements, or configuration options.
 
 ### Step 4: Commits
 - Commit incrementally with small, focused diffs using the Conventional Commits specification (e.g. `feat(ui): ...`, `fix(db): ...`, `docs: ...`, `test: ...`).

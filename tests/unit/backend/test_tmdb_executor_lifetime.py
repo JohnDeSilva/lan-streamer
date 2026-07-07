@@ -2,7 +2,6 @@
 
 Verifies that:
 - _fetch_tmdb_episodes_parallel accepts an executor parameter (no global singleton)
-- scan_series accepts tmdb_prefetch_executor parameter and passes it through
 - The executor is shut down in the scan_worker_all finally block
 - The executor is shut down even when an exception occurs during run_async
 """
@@ -20,7 +19,7 @@ from unittest.mock import MagicMock, patch
 def test_fetch_tmdb_episodes_parallel_uses_provided_executor() -> None:
     """_fetch_tmdb_episodes_parallel uses the executor passed as a parameter,
     not a module-level global singleton."""
-    from lan_streamer.scanner.scan_tv import _fetch_tmdb_episodes_parallel
+    from lan_streamer.scanner.pass2_metadata import _fetch_tmdb_episodes_parallel
 
     mock_episodes = [{"id": 1, "name": "Episode 1"}]
     mock_future: concurrent.futures.Future = concurrent.futures.Future()
@@ -32,7 +31,7 @@ def test_fetch_tmdb_episodes_parallel_uses_provided_executor() -> None:
     season_indices: Dict[str, int] = {"Season 1": 1}
 
     with patch(
-        "lan_streamer.scanner.scan_tv._tmdb_client.get_episodes",
+        "lan_streamer.scanner.pass2_metadata.tmdb_client.get_episodes",
         return_value=mock_episodes,
     ):
         result = _fetch_tmdb_episodes_parallel(
@@ -46,21 +45,9 @@ def test_fetch_tmdb_episodes_parallel_uses_provided_executor() -> None:
     assert "Season 1" in result
 
 
-def test_fetch_tmdb_episodes_parallel_no_global_executor_access() -> None:
-    """_fetch_tmdb_episodes_parallel does NOT call _get_tmdb_prefetch_executor
-    when an executor is provided as a parameter."""
-    import lan_streamer.scanner.scan_tv as scan_tv_module
-
-    # Ensure the module no longer has _get_tmdb_prefetch_executor
-    assert not hasattr(scan_tv_module, "_get_tmdb_prefetch_executor"), (
-        "_get_tmdb_prefetch_executor should have been removed from scan_tv module "
-        "(BUG-06 fix not applied)"
-    )
-
-
 def test_fetch_tmdb_episodes_parallel_handles_fetch_failure() -> None:
     """Failed futures are caught and the season is skipped gracefully."""
-    from lan_streamer.scanner.scan_tv import _fetch_tmdb_episodes_parallel
+    from lan_streamer.scanner.pass2_metadata import _fetch_tmdb_episodes_parallel
 
     failing_future: concurrent.futures.Future = concurrent.futures.Future()
     failing_future.set_exception(RuntimeError("TMDB unreachable"))
@@ -78,68 +65,6 @@ def test_fetch_tmdb_episodes_parallel_handles_fetch_failure() -> None:
 
     # Should return empty dict, not raise
     assert result == {}
-
-
-def test_scan_series_accepts_tmdb_prefetch_executor_parameter() -> None:
-    """scan_series accepts a tmdb_prefetch_executor keyword argument."""
-    import inspect
-    from lan_streamer.scanner.scan_tv import scan_series
-
-    signature = inspect.signature(scan_series)
-    assert "tmdb_prefetch_executor" in signature.parameters, (
-        "scan_series must have a tmdb_prefetch_executor parameter (BUG-06 fix not applied)"
-    )
-    parameter = signature.parameters["tmdb_prefetch_executor"]
-    # Should default to None so existing callers are unaffected
-    assert parameter.default is None, (
-        "tmdb_prefetch_executor must default to None for backward compatibility"
-    )
-
-
-def test_scan_series_passes_executor_to_prefetch_when_provided() -> None:
-    """When tmdb_prefetch_executor is supplied, scan_series passes it to
-    _fetch_tmdb_episodes_parallel instead of creating a new executor."""
-    from pathlib import Path
-
-    mock_executor = MagicMock(spec=concurrent.futures.ThreadPoolExecutor)
-    # Simulate a future that returns an empty episode list
-    empty_future: concurrent.futures.Future = concurrent.futures.Future()
-    empty_future.set_result([])
-    mock_executor.submit.return_value = empty_future
-
-    # We only want to test that executor is threaded through; abort after prefetch
-    with (
-        patch("lan_streamer.scanner.scan_tv._validate_series_file_layout"),
-        patch(
-            "lan_streamer.scanner.scan_tv._process_series_metadata",
-            return_value=(
-                {
-                    "_tmdb_series_id": "42",
-                    "metadata": {"locked_metadata": False},
-                    "seasons": {},
-                },
-                True,  # is_early_return=True — exits after Phase 2
-                None,
-                {},
-                False,
-            ),
-        ),
-        patch(
-            "lan_streamer.scanner.scan_tv._tmdb_client.is_configured", return_value=True
-        ),
-    ):
-        from lan_streamer.scanner.scan_tv import scan_series
-
-        # is_early_return=True means scan_series returns early before prefetch;
-        # use offline=False but is_early_return handles exit cleanly
-        result = scan_series(
-            series_directory=Path("/fake/series"),
-            offline=False,
-            tmdb_prefetch_executor=mock_executor,
-        )
-
-    # scan_series should complete without error
-    assert result is not None
 
 
 def test_scan_worker_all_shuts_down_tmdb_executor() -> None:

@@ -45,13 +45,112 @@ from .core import (
     get_scan_executor,
     shutdown_scan_executor,
 )
-from .scan_tv import scan_series  # backward compat — used by tests and legacy callers
-from .scan_movie import scan_movie  # backward compat
 from .pass1_file_discovery import scan_series_pass1, scan_movie_pass1
 from .pass2_metadata import scan_series_pass2, scan_movie_pass2
 from .pass3_technical import scan_series_pass3, scan_movie_pass3
 from lan_streamer.providers.tmdb import tmdb_client
 from lan_streamer.scanner.renamer import get_rename_preview, perform_rename
+import concurrent.futures
 import logging
+from pathlib import Path
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def scan_series(
+    series_directory: Path,
+    existing_series_data: dict[str, Any] | None = None,
+    force_refresh: bool = False,
+    skip_metadata_resolution: bool = False,
+    single_item_refresh: bool = False,
+    jellyfin_data: dict[str, dict] | None = None,
+    tmdb_series: dict[str, Any] | None = None,
+    manual_jellyfin_id: str = "",
+    show_future_episodes: bool = True,
+    detail_callback: Callable | None = None,
+    season_callback: Callable | None = None,
+    offline: bool = False,
+    metadata_only: bool = False,
+    tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None = None,
+    is_interrupted: Callable | None = None,
+) -> dict[str, Any] | None:
+    """Scan a single TV series directory through all 3 passes.
+
+    Wraps the new 3-pass pipeline for backward compatibility with callers
+    that previously used the old ``scan_tv.scan_series``.
+    """
+    if manual_jellyfin_id and existing_series_data is None:
+        existing_series_data = {"metadata": {}, "seasons": {}}
+    if manual_jellyfin_id and existing_series_data is not None:
+        existing_series_data.setdefault("metadata", {})["jellyfin_id"] = (
+            manual_jellyfin_id
+        )
+    pass1_result = scan_series_pass1(
+        series_directory,
+        existing_series_data=existing_series_data,
+        force_refresh=force_refresh,
+        detail_callback=detail_callback,
+    )
+    if pass1_result is None:
+        return None
+    pass2_result = scan_series_pass2(
+        series_directory,
+        existing_series_data=pass1_result,
+        tmdb_series=tmdb_series,
+        jellyfin_data=jellyfin_data,
+        force_refresh=force_refresh,
+        single_item_refresh=single_item_refresh,
+        show_future_episodes=show_future_episodes,
+        detail_callback=detail_callback,
+        season_callback=season_callback,
+        tmdb_prefetch_executor=tmdb_prefetch_executor,
+    )
+    if pass2_result is None:
+        return pass1_result
+    pass3_result = scan_series_pass3(
+        series_directory,
+        pass2_result,
+        force_refresh=force_refresh,
+    )
+    return pass3_result or pass2_result
+
+
+def scan_movie(
+    movie_directory: Path,
+    existing_movie_data: dict[str, Any] | None = None,
+    force_refresh: bool = False,
+    detail_callback: Callable | None = None,
+    jellyfin_data: dict[str, dict] | None = None,
+    is_interrupted: Callable | None = None,
+    tmdb_series: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Scan a single movie directory through all 3 passes.
+
+    Wraps the new 3-pass pipeline for backward compatibility with callers
+    that previously used the old ``scan_movie.scan_movie``.
+    """
+    pass1_result = scan_movie_pass1(
+        movie_directory,
+        existing_movie_data=existing_movie_data,
+        force_refresh=force_refresh,
+        detail_callback=detail_callback,
+    )
+    if pass1_result is None:
+        return None
+    pass2_result = scan_movie_pass2(
+        movie_directory,
+        existing_movie_data=pass1_result,
+        jellyfin_data=jellyfin_data,
+        force_refresh=force_refresh,
+        detail_callback=detail_callback,
+    )
+    if pass2_result is None:
+        return pass1_result
+    pass3_result = scan_movie_pass3(
+        movie_directory,
+        pass2_result,
+        force_refresh=force_refresh,
+    )
+    return pass3_result or pass2_result

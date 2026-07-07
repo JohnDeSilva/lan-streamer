@@ -118,3 +118,45 @@ class TestMetadataImagesService:
                 == "https:/" + "/image.tmdb.org/t/p/original/poster2.jpg"
             )
             assert images[0].local_path == "/cached/poster2.jpg"
+
+    def test_lookup_series_id_not_found(self) -> None:
+        from lan_streamer.services.metadata_images import _lookup_series_id
+
+        assert _lookup_series_id("nonexistent_tmdb_id") is None
+
+    def test_lookup_movie_id_not_found(self) -> None:
+        from lan_streamer.services.metadata_images import _lookup_movie_id
+
+        assert _lookup_movie_id("nonexistent_tmdb_id") is None
+
+    @patch("lan_streamer.services.metadata_images.tmdb_client")
+    def test_fetch_and_store_series_images_no_data(self, mock_tmdb: MagicMock) -> None:
+        mock_tmdb.get_series_images.return_value = None
+        fetch_and_store_series_images("some_id", 123)
+
+    @patch("lan_streamer.services.metadata_images.tmdb_client")
+    def test_fetch_and_store_movie_images_no_data(self, mock_tmdb: MagicMock) -> None:
+        mock_tmdb.get_movie_images.return_value = None
+        fetch_and_store_movie_images("some_id", 123)
+
+    @patch("lan_streamer.services.metadata_images.tmdb_client")
+    def test_store_images_from_tmdb_empty_file_path(self, mock_tmdb: MagicMock) -> None:
+        with get_session() as session:
+            series = Series(
+                name="Empty Path Show", library_name="TV", tmdb_identifier="999"
+            )
+            session.add(series)
+            session.commit()
+            series_id = series.id
+
+        mock_tmdb.get_series_images.return_value = {
+            "posters": [{"file_path": ""}],
+            "backdrops": [],
+            "logos": [],
+        }
+        fetch_and_store_series_images(series_id, 999)
+        with get_session() as session:
+            images = session.scalars(
+                select(MediaImage).where(MediaImage.series_id == series_id)
+            ).all()
+            assert len(images) == 0

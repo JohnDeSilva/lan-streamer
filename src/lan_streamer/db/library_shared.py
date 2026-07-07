@@ -128,6 +128,8 @@ def _sync_media_files(
         if incoming_subs is not None and len(incoming_subs) > 0:
             mf.subtitle_tracks = json.dumps(incoming_subs)
 
+    session.flush()
+
 
 def get_directory_mtime(path: str) -> float | None:
     """Retrieve the cached last_scanned_mtime for a directory path."""

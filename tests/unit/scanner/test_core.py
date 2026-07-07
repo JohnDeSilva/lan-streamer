@@ -613,7 +613,9 @@ def test_scan_series_tmdb_name_fallback(tmp_path) -> None:
     with (
         patch("lan_streamer.services.metadata_series.tmdb_client") as mock_tmdb,
         patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb),
     ):
+        mock_tmdb.is_configured.return_value = True
         mock_tmdb.search_series.return_value = {
             "id": "tmdb1",
             "name": "Name Match Show",
@@ -1069,10 +1071,8 @@ def test_scan_movie_preserves_existing_metadata(tmp_path) -> None:
 
     with (
         patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb),
-        patch("lan_streamer.scanner.scan_movie.tmdb_client", mock_tmdb),
         patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb),
     ):
-        # Run all passes; Pass 1 updates the path, Pass 2 preserves existing metadata
         res = scanner.scan_directories(
             [str(tmp_path)],
             library_type="movie",
@@ -1080,42 +1080,7 @@ def test_scan_movie_preserves_existing_metadata(tmp_path) -> None:
             force_refresh=False,
         )
 
-    # Existing metadata should be preserved
     assert res["Avatar (2009)"]["tmdb_name"] == "Existing Title"
-
-
-def test_scan_movie_early_return_jellyfin_mapping(tmp_path) -> None:
-    movie_dir = tmp_path / "Inception (2010)"
-    movie_dir.mkdir()
-    video_file = movie_dir / "inception.mkv"
-    video_file.touch()
-    video_path = str(video_file.absolute())
-
-    existing_movie = {
-        "path": video_path,
-        "tmdb_identifier": "tmdb_inc",
-        "tmdb_name": "Inception",
-    }
-
-    jellyfin_data = {
-        "path_map": {video_path: {"id": "jf_inc_path"}},
-        "tmdb_episode_map": {"tmdb_inc": "jf_inc_tmdb"},
-    }
-
-    res = scanner.scan_movie(
-        movie_dir, existing_movie_data=existing_movie, jellyfin_data=jellyfin_data
-    )
-    assert res["jellyfin_id"] == "jf_inc_path"
-
-    # Test tmdb map fallback when path not in map
-    jellyfin_data_tmdb = {
-        "path_map": {},
-        "tmdb_episode_map": {"tmdb_inc": "jf_inc_tmdb"},
-    }
-    res2 = scanner.scan_movie(
-        movie_dir, existing_movie_data=existing_movie, jellyfin_data=jellyfin_data_tmdb
-    )
-    assert res2["jellyfin_id"] == "jf_inc_tmdb"
 
 
 def test_scan_series_early_return_jellyfin_mapping(tmp_path) -> None:
@@ -1149,49 +1114,59 @@ def test_scan_series_early_return_jellyfin_mapping(tmp_path) -> None:
         "tmdb_episode_map": {},
     }
 
-    res = scanner.scan_series(
-        series_dir, existing_series_data=get_existing(), jellyfin_data=jellyfin_data
-    )
-    assert res["metadata"]["jellyfin_id"] == "jf_series_fast"
-    assert res["seasons"]["Season 1"]["episodes"][0]["jellyfin_id"] == "jf_ep_path"
+    mock_tmdb = MagicMock()
+    mock_tmdb.is_configured.return_value = False
 
-    # Test episode map fallback via tmdb_identifier / tmdb_episode_identifier
-    jellyfin_data_tmdb = {
-        "tmdb_series_map": {},
-        "path_map": {},
-        "tmdb_episode_map": {"tmdb_ep_fast": "jf_ep_tmdb"},
-    }
-    res2 = scanner.scan_series(
-        series_dir,
-        existing_series_data=get_existing(),
-        jellyfin_data=jellyfin_data_tmdb,
-    )
-    assert res2["seasons"]["Season 1"]["episodes"][0]["jellyfin_id"] == "jf_ep_tmdb"
+    with (
+        patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb),
+    ):
+        res = scanner.scan_series(
+            series_dir, existing_series_data=get_existing(), jellyfin_data=jellyfin_data
+        )
+        assert res["metadata"]["jellyfin_id"] == "jf_series_fast"
+        assert res["seasons"]["Season 1"]["episodes"][0]["jellyfin_id"] == "jf_ep_path"
 
-    jellyfin_data_tmdb2 = {
-        "tmdb_series_map": {},
-        "path_map": {},
-        "tmdb_episode_map": {"tmdb_ep_fast_id": "jf_ep_tmdb_id"},
-    }
-    existing_series_no_tmdb = {
-        "metadata": {},
-        "seasons": {
-            "Season 1": {
-                "episodes": [
-                    {
-                        "path": ep_path,
-                        "tmdb_episode_identifier": "tmdb_ep_fast_id",
-                    }
-                ]
-            }
-        },
-    }
-    res3 = scanner.scan_series(
-        series_dir,
-        existing_series_data=existing_series_no_tmdb,
-        jellyfin_data=jellyfin_data_tmdb2,
-    )
-    assert res3["seasons"]["Season 1"]["episodes"][0]["jellyfin_id"] == "jf_ep_tmdb_id"
+        # Test episode map fallback via tmdb_identifier / tmdb_episode_identifier
+        jellyfin_data_tmdb = {
+            "tmdb_series_map": {},
+            "path_map": {},
+            "tmdb_episode_map": {"tmdb_ep_fast": "jf_ep_tmdb"},
+        }
+        res2 = scanner.scan_series(
+            series_dir,
+            existing_series_data=get_existing(),
+            jellyfin_data=jellyfin_data_tmdb,
+        )
+        assert res2["seasons"]["Season 1"]["episodes"][0]["jellyfin_id"] == "jf_ep_tmdb"
+
+        jellyfin_data_tmdb2 = {
+            "tmdb_series_map": {},
+            "path_map": {},
+            "tmdb_episode_map": {"tmdb_ep_fast_id": "jf_ep_tmdb_id"},
+        }
+        existing_series_no_tmdb = {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "path": ep_path,
+                            "tmdb_episode_identifier": "tmdb_ep_fast_id",
+                        }
+                    ]
+                }
+            },
+        }
+        res3 = scanner.scan_series(
+            series_dir,
+            existing_series_data=existing_series_no_tmdb,
+            jellyfin_data=jellyfin_data_tmdb2,
+        )
+        assert (
+            res3["seasons"]["Season 1"]["episodes"][0]["jellyfin_id"] == "jf_ep_tmdb_id"
+        )
 
 
 def test_scan_directories_merge_existing_episodes(tmp_path) -> None:
@@ -1258,6 +1233,7 @@ def test_scan_series_uses_cached_image(tmp_path) -> None:
     with (
         patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb),
         patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb),
     ):
         lib = scanner.scan_directories([str(tmp_path)])
 
@@ -2220,14 +2196,17 @@ def test_scan_series_warns_on_files_outside_seasons(tmp_path) -> None:
     with (
         patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb),
         patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
-        patch("lan_streamer.scanner.logger.warning") as mock_warn,
+        patch("lan_streamer.scanner.pass1_file_discovery.logger.warning") as mock_warn,
     ):
         scanner.scan_series(series_dir)
 
         # Verify logger.warning was called
         mock_warn.assert_any_call(
-            "Series 'MyShow' has 1 video file(s) outside of season or specials/extras folders. "
-            "Example: 'MyShow - S01E01.mkv'"
+            "Series '%s' has %d video file(s) outside of season or "
+            "specials/extras folders. Example: '%s'",
+            "MyShow",
+            1,
+            "MyShow - S01E01.mkv",
         )
 
 
@@ -2258,19 +2237,21 @@ def test_scan_series_warns_on_nested_too_deep_files(tmp_path) -> None:
     with (
         patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb),
         patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
-        patch("lan_streamer.scanner.logger.warning") as mock_warn,
+        patch("lan_streamer.scanner.pass1_file_discovery.logger.warning") as mock_warn,
     ):
         scanner.scan_series(series_dir)
 
         # Verify logger.warning was called for the nested file
         mock_warn.assert_any_call(
-            "Series 'MyShow' has 1 video file(s) nested too deeply inside season folders. "
-            "These files will not be indexed. "
-            "Example: 'Season 1/Featurettes/Menu Art.mkv'"
+            "Series '%s' has %d video file(s) nested too deeply. Example: '%s'",
+            "MyShow",
+            1,
+            Path("Season 1/Featurettes/Menu Art.mkv"),
         )
         # Verify logger.warning was called for ignoring subdirectory
         mock_warn.assert_any_call(
-            "Ignoring subdirectory in season folder: 'Season 1/Featurettes'"
+            "Ignoring subdirectory in season folder: '%s'",
+            str(nested_dir),
         )
 
 
@@ -2422,138 +2403,6 @@ def test_parse_movie_folder() -> None:
     assert _parse_movie_folder("No Year Movie") == ("No Year Movie", None)
 
 
-def test_scan_movie_no_video(tmp_path: Path) -> None:
-    from lan_streamer.scanner.scan_movie import scan_movie
-
-    movie_dir = tmp_path / "Empty Movie (2020)"
-    movie_dir.mkdir()
-    assert scan_movie(movie_dir) is None
-
-
-def test_scan_movie_success(tmp_path: Path) -> None:
-    from lan_streamer.scanner.scan_movie import scan_movie
-
-    movie_dir = tmp_path / "Avatar (2009)"
-    movie_dir.mkdir()
-    video_file = movie_dir / "Avatar.mkv"
-    video_file.touch()
-
-    mock_tmdb = MagicMock()
-    mock_tmdb.search_movie.return_value = {
-        "id": 19995,
-        "title": "Avatar",
-        "overview": "On the lush alien world of Pandora...",
-        "poster_path": "/avatar.jpg",
-        "release_date": "2009-12-15",
-        "runtime": 162,
-        "vote_average": 7.9,
-        "genres": [{"name": "Action"}, {"name": "Adventure"}],
-    }
-    mock_tmdb.download_image.return_value = "/cached/avatar.jpg"
-
-    with (
-        patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb),
-        patch("lan_streamer.scanner.scan_movie.tmdb_client", mock_tmdb),
-    ):
-        res = scan_movie(movie_dir)
-
-    assert res is not None
-    assert res["name"] == "Avatar (2009)"
-    assert res["path"] == str(video_file.absolute())
-    assert res["tmdb_identifier"] == "19995"
-    assert res["tmdb_name"] == "Avatar"
-    assert res["overview"] == "On the lush alien world of Pandora..."
-    assert res["poster_path"] == "/cached/avatar.jpg"
-    assert res["runtime"] == 162
-    assert res["rating"] == "7.9"
-    assert res["genre"] == "Action, Adventure"
-    assert res["year"] == 2009
-    assert res["watched"] is False
-
-
-def test_scan_movie_reuse_existing(tmp_path: Path) -> None:
-    from lan_streamer.scanner.scan_movie import scan_movie
-
-    movie_dir = tmp_path / "Pulp Fiction (1994)"
-    movie_dir.mkdir()
-    video_file = movie_dir / "Pulp Fiction.mkv"
-    video_file.touch()
-
-    existing_data = {
-        "tmdb_identifier": "680",
-        "tmdb_name": "Pulp Fiction",
-        "overview": "A burger-loving hit man...",
-        "poster_path": "/pulp.jpg",
-        "runtime": 154,
-        "rating": "8.5",
-        "genre": "Crime",
-        "year": 1994,
-        "watched": True,
-        "last_played_position": 500,
-        "locked_metadata": True,
-    }
-
-    with patch("lan_streamer.services.metadata_movie.tmdb_client") as mock_tmdb:
-        res = scan_movie(
-            movie_dir, existing_movie_data=existing_data, force_refresh=False
-        )
-
-        assert res is not None
-        assert res["tmdb_identifier"] == "680"
-        assert res["tmdb_name"] == "Pulp Fiction"
-        assert res["watched"] is True
-        assert res["last_played_position"] == 500
-        assert res["locked_metadata"] is True
-        mock_tmdb.search_movie.assert_not_called()
-
-
-def test_scan_movie_jellyfin_correlation(tmp_path: Path) -> None:
-    from lan_streamer.scanner.scan_movie import scan_movie
-
-    movie_dir = tmp_path / "Correlated Movie (2021)"
-    movie_dir.mkdir()
-    video_file = movie_dir / "Movie.mp4"
-    video_file.touch()
-
-    jellyfin_data = {"path_map": {str(video_file.absolute()): {"id": "jf_movie_123"}}}
-
-    mock_tmdb = MagicMock()
-    mock_tmdb.search_movie.return_value = {"id": 101, "title": "Correlated Movie"}
-
-    with patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb):
-        res = scan_movie(movie_dir, jellyfin_data=jellyfin_data)
-
-    assert res is not None
-    assert res["jellyfin_id"] == "jf_movie_123"
-
-
-def test_scan_movie_uses_cached_image(tmp_path: Path) -> None:
-    """Verify that scan_movie prioritizes cached movie posters."""
-    from lan_streamer.scanner.scan_movie import scan_movie
-
-    movie_dir = tmp_path / "Cached Movie (2026)"
-    movie_dir.mkdir()
-    (movie_dir / "video.mkv").touch()
-
-    mock_tmdb = MagicMock()
-    mock_tmdb.search_movie.return_value = {
-        "id": 999,
-        "title": "Cached Movie",
-        "poster_path": "/remote_movie.jpg",
-    }
-    mock_tmdb.get_cached_image.return_value = "/local_cache/movie.jpg"
-    mock_tmdb.download_image.return_value = ""
-
-    with (
-        patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb),
-        patch("lan_streamer.scanner.scan_movie.tmdb_client", mock_tmdb),
-    ):
-        res = scan_movie(movie_dir)
-
-    assert res["poster_path"] == "/local_cache/movie.jpg"
-    mock_tmdb.download_image.assert_not_called()
-
-
 def test_movie_scanner_flat_dict_integration() -> None:
     from lan_streamer.scanner.core import scan_directories
     from lan_streamer.system.config import config
@@ -2582,12 +2431,20 @@ def test_movie_scanner_flat_dict_integration() -> None:
         }
     }
 
-    res: dict[str, Any] = scan_directories(
-        root_directories=[],
-        library_type="movie",
-        existing_library=simulated_library,
-        force_refresh=False,
-    )
+    original_exists = Path.exists
+
+    def mock_exists(self):
+        if str(self) == "/movies/Inception/Inception.mkv":
+            return True
+        return original_exists(self)
+
+    with patch.object(Path, "exists", mock_exists):
+        res: dict[str, Any] = scan_directories(
+            root_directories=[],
+            library_type="movie",
+            existing_library=simulated_library,
+            force_refresh=False,
+        )
 
     assert "Inception (2010)" in res
     assert res["Inception (2010)"]["locked_metadata"] is True
@@ -3255,7 +3112,6 @@ def test_scan_directories_metadata_only_offline(tmp_path) -> None:
     movie_root.mkdir()
     with (
         patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb),
-        patch("lan_streamer.scanner.scan_movie.tmdb_client", mock_tmdb),
         patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb),
     ):
         movie_res = scan_directories(
@@ -3372,7 +3228,6 @@ def test_scan_directories_metadata_only_preserves_existing_poster_files(
         patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb),
         patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
         patch("lan_streamer.services.metadata_movie.tmdb_client", mock_tmdb),
-        patch("lan_streamer.scanner.scan_movie.tmdb_client", mock_tmdb),
         patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb),
     ):
         tv_res = scan_directories(

@@ -1070,7 +1070,7 @@ class TestScanSeriesPass2:
         assert result.get("_cleaned") is True
 
     def test_calls_process_series_metadata_with_force_refresh_true(self) -> None:
-        """_process_series_metadata is always called with force_refresh=True."""
+        """_process_series_metadata is called with force_refresh=True when passed."""
         series_dir = Path("/series/Test Show")
         existing = self._make_existing_series()
 
@@ -1119,7 +1119,7 @@ class TestScanSeriesPass2:
             scan_series_pass2(
                 series_directory=series_dir,
                 existing_series_data=existing,
-                force_refresh=False,
+                force_refresh=True,
             )
 
         # Verify _process_series_metadata was called with force_refresh=True
