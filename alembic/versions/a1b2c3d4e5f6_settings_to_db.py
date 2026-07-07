@@ -91,9 +91,17 @@ def _encode(key: str, value: Any) -> str:
 def _load_config() -> Dict[str, Any]:
     """Return the parsed config.json, or an empty dict if it doesn't exist."""
     try:
-        if CONFIG_FILE.exists():
-            with open(CONFIG_FILE, "r") as f:
-                return json.load(f)
+        from alembic import context
+
+        config_file_path_str = context.config.get_main_option("x-config-file")
+        if config_file_path_str:
+            config_file = Path(config_file_path_str)
+        else:
+            config_file = CONFIG_FILE
+
+        if config_file.exists():
+            with open(config_file, "r") as file_handle:
+                return json.load(file_handle)
     except Exception:
         pass
     return {}

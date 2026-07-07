@@ -1,0 +1,8 @@
+{
+    "database_path": "./dev_run/library.db",
+    "log_directory": "./dev_run/logs",
+    "backup_directory": "./dev_run/backups",
+    "log_level": "DEBUG",
+    "config_backup_frequency": 1,
+    "database_backup_frequency": 0
+}
