@@ -4,7 +4,25 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
-CONFIG_FILE = Path.home() / ".config" / "lan-streamer" / "config.json"
+
+def _parse_config_path() -> Path:
+    import sys
+
+    try:
+        arguments = sys.argv
+        for index, argument in enumerate(arguments):
+            if argument in ("--config", "-c"):
+                if index + 1 < len(arguments):
+                    return Path(arguments[index + 1]).expanduser().absolute()
+            elif argument.startswith("--config="):
+                path_part = argument.split("=", 1)[1]
+                return Path(path_part).expanduser().absolute()
+    except Exception:
+        pass
+    return Path.home() / ".config" / "lan-streamer" / "config.json"
+
+
+CONFIG_FILE = _parse_config_path()
 logger: logging.Logger = logging.getLogger(__name__)
 
 
@@ -37,7 +55,7 @@ class Config:
         "divide_logs_by_service": False,
         "enable_caching": False,
         "watched_threshold": 0.95,
-        "cache_directory": str(Path.home() / ".config" / "lan-streamer" / "cache"),
+        "cache_directory": str(CONFIG_FILE.parent / "cache"),
         "use_embedded_player": True,
         "fullscreen_control_bar_position": "Bottom",
         "enable_hw_accel": True,
@@ -48,7 +66,6 @@ class Config:
         "max_cache_size_gb": 15.0,
         "enable_next_episode_popup": True,
         "max_log_retention_days": 7,
-        "backup_directory": str(Path.home() / ".config" / "lan-streamer" / "backups"),
         "config_backup_retention": 7,
         "database_backup_retention": 7,
         "enable_combined_view": False,
@@ -82,10 +99,9 @@ class Config:
         self._last_loaded_mtime: float = 0.0
 
         # --- Startup-critical (config-file backed) ---
-        self.database_path: str = str(
-            Path.home() / ".config" / "lan-streamer" / "library.db"
-        )
-        self.log_directory: str = str(Path.home() / ".config" / "lan-streamer" / "logs")
+        self.database_path: str = str(CONFIG_FILE.parent / "library.db")
+        self.log_directory: str = str(CONFIG_FILE.parent / "logs")
+        self.backup_directory: str = str(CONFIG_FILE.parent / "backups")
         self.log_level: str = "INFO"
         self.config_backup_frequency: int = 1
         self.database_backup_frequency: int = 1
@@ -93,8 +109,11 @@ class Config:
         # --- DB-backed (seeded from _DB_DEFAULTS so the object is usable
         # before load_from_db() is called after DB initialisation) ---
         self.database_write_timeout: float = 60.0
-        for key, val in copy.deepcopy(self._DB_DEFAULTS).items():
-            setattr(self, key, val)
+        for key, value in copy.deepcopy(self._DB_DEFAULTS).items():
+            setattr(self, key, value)
+
+        # Dynamic override based on current CONFIG_FILE path
+        self.cache_directory = str(CONFIG_FILE.parent / "cache")
 
         # Convenience credential attributes — populated by load_from_db
         self.jellyfin_url: str = ""
@@ -131,14 +150,14 @@ class Config:
                 logger.debug("Config file has not changed on disk. Skipping load.")
                 return
 
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
+            with open(CONFIG_FILE, "r") as file_handle:
+                config_data = json.load(file_handle)
 
             self.database_path = str(
                 Path(
-                    data.get(
+                    config_data.get(
                         "database_path",
-                        str(Path.home() / ".config" / "lan-streamer" / "library.db"),
+                        str(CONFIG_FILE.parent / "library.db"),
                     )
                 )
                 .expanduser()
@@ -146,18 +165,30 @@ class Config:
             )
             self.log_directory = str(
                 Path(
-                    data.get(
+                    config_data.get(
                         "log_directory",
-                        str(Path.home() / ".config" / "lan-streamer" / "logs"),
+                        str(CONFIG_FILE.parent / "logs"),
                     )
                 )
                 .expanduser()
                 .absolute()
             )
-            self.log_level = data.get("log_level", "INFO")
-            self.config_backup_frequency = int(data.get("config_backup_frequency", 0))
+            self.backup_directory = str(
+                Path(
+                    config_data.get(
+                        "backup_directory",
+                        str(CONFIG_FILE.parent / "backups"),
+                    )
+                )
+                .expanduser()
+                .absolute()
+            )
+            self.log_level = config_data.get("log_level", "INFO")
+            self.config_backup_frequency = int(
+                config_data.get("config_backup_frequency", 0)
+            )
             self.database_backup_frequency = int(
-                data.get("database_backup_frequency", 0)
+                config_data.get("database_backup_frequency", 0)
             )
 
             self._last_loaded_mtime = current_mtime
@@ -179,18 +210,18 @@ class Config:
     def save(self) -> None:
         """Persist the startup-critical settings to the config file.
 
-        Only the five startup keys are written; all other settings live in the
+        Only the startup keys are written; all other settings live in the
         database and are never serialised back to the file.
         """
         logger.debug(f"Attempting to save startup config to {CONFIG_FILE}")
         try:
             CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        except Exception as exc:
+        except Exception as exception_instance:
             logger.warning(
-                f"Could not create config directory {CONFIG_FILE.parent}: {exc}"
+                f"Could not create config directory {CONFIG_FILE.parent}: {exception_instance}"
             )
         try:
-            with open(CONFIG_FILE, "w") as f:
+            with open(CONFIG_FILE, "w") as file_handle:
                 json.dump(
                     {
                         "database_path": self.database_path,
@@ -198,8 +229,9 @@ class Config:
                         "log_level": self.log_level,
                         "config_backup_frequency": self.config_backup_frequency,
                         "database_backup_frequency": self.database_backup_frequency,
+                        "backup_directory": self.backup_directory,
                     },
-                    f,
+                    file_handle,
                     indent=4,
                 )
             if CONFIG_FILE.exists():
@@ -233,6 +265,7 @@ class Config:
 
             # 2. Fill in any keys missing from the DB using _DB_DEFAULTS.
             defaults = copy.deepcopy(self._DB_DEFAULTS)
+            defaults["cache_directory"] = str(CONFIG_FILE.parent / "cache")
             for key, default in defaults.items():
                 if key not in config_dict:
                     logger.debug(f"Setting config key '{key}' to default '{default}'")
@@ -264,7 +297,6 @@ class Config:
             self.max_cache_size_gb = config_dict["max_cache_size_gb"]
             self.enable_next_episode_popup = config_dict["enable_next_episode_popup"]
             self.max_log_retention_days = config_dict["max_log_retention_days"]
-            self.backup_directory = config_dict["backup_directory"]
             self.config_backup_retention = config_dict["config_backup_retention"]
             self.database_backup_retention = config_dict["database_backup_retention"]
             self.enable_combined_view = config_dict["enable_combined_view"]
@@ -343,7 +375,6 @@ class Config:
             set_app_config("max_cache_size_gb", self.max_cache_size_gb)
             set_app_config("enable_next_episode_popup", self.enable_next_episode_popup)
             set_app_config("max_log_retention_days", self.max_log_retention_days)
-            set_app_config("backup_directory", self.backup_directory)
             set_app_config("config_backup_retention", self.config_backup_retention)
             set_app_config("database_backup_retention", self.database_backup_retention)
             set_app_config("enable_combined_view", self.enable_combined_view)

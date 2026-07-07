@@ -132,6 +132,11 @@ def init_db() -> bool:
         alembic_config.set_main_option("script_location", str(alembic_directory_path))
         alembic_config.set_main_option("sqlalchemy.url", f"sqlite:///{db_file}")
 
+        # Pass the config file path to the migration environment
+        from lan_streamer.system.config import CONFIG_FILE
+
+        alembic_config.set_main_option("x-config-file", str(CONFIG_FILE))
+
         logger.info("Executing database migration to latest revision (head)...")
         command.upgrade(alembic_config, "head")
         logger.info("Database migration completed successfully.")

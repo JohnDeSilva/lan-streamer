@@ -2,15 +2,20 @@ import os
 import sys
 import logging
 
-if (
-    __name__ == "__main__"
-    and len(sys.argv) > 1
-    and sys.argv[1] in ("--version", "-v", "-V")
-):
-    from lan_streamer import __version__
+if __name__ == "__main__" and len(sys.argv) > 1:
+    if sys.argv[1] in ("--version", "-v", "-V"):
+        from lan_streamer import __version__
 
-    print(f"lan-streamer {__version__}")
-    sys.exit(0)
+        print(f"lan-streamer {__version__}")
+        sys.exit(0)
+    elif any(argument in sys.argv for argument in ("--help", "-h")):
+        print("Usage: lan-streamer [options]")
+        print()
+        print("Options:")
+        print("  -c, --config PATH      Path to custom JSON configuration file.")
+        print("  -v, -V, --version      Show version information and exit.")
+        print("  -h, --help             Show this help message and exit.")
+        sys.exit(0)
 
 
 def setup_vlc_environment() -> None:
