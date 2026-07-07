@@ -1,3 +1,21 @@
+## v0.43.0rc0 (2026-07-07)
+
+### Feat
+
+- **scanner**: split scan_directories into 3-pass dispatcher with pass-specific files
+
+### Fix
+
+- **scanner**: preserve episode versions through metadata processing
+- **scanner**: merge episodes by number across root directories
+- **scanner**: merge duplicate episode/movie files into single record
+- **scanner**: skip detail_callback for placeholder episodes with None path
+
+### Refactor
+
+- **scanner**: clean up scan wrappers, remove dead code, and fix tests
+- **backend**: simplify scan worker stats tracking
+
 ## v0.42.0 (2026-07-06)
 
 ### Feat
