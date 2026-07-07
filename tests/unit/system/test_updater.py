@@ -526,11 +526,16 @@ def test_install_worker_chmod_raises_os_error(qtbot, tmp_path) -> None:
 def test_parse_comparable_version() -> None:
     from lan_streamer.system.updater import parse_comparable_version
 
-    assert parse_comparable_version("0.42.0rc1") == (0, 42, 0, 1, 1)
-    assert parse_comparable_version("v0.42.0rc0") == (0, 42, 0, 1, 0)
-    assert parse_comparable_version("0.42.0") == (0, 42, 0, 2, 0)
-    assert parse_comparable_version("v0.27.0-rc.1") == (0, 27, 0, 1, 1)
-    assert parse_comparable_version("v0.26.0") == (0, 26, 0, 2, 0)
+    assert parse_comparable_version("0.42.0rc1") == (0, 42, 0, 1, 1, 0)
+    assert parse_comparable_version("v0.42.0rc0") == (0, 42, 0, 1, 0, 0)
+    assert parse_comparable_version("0.42.0") == (0, 42, 0, 2, 0, 0)
+    assert parse_comparable_version("v0.27.0-rc.1") == (0, 27, 0, 1, 1, 0)
+    assert parse_comparable_version("v0.26.0") == (0, 26, 0, 2, 0, 0)
+
+    # Sub-release/build number test cases
+    assert parse_comparable_version("v0.44.0rc0-1") == (0, 44, 0, 1, 0, 1)
+    assert parse_comparable_version("v0.44.0rc0-2") == (0, 44, 0, 1, 0, 2)
+    assert parse_comparable_version("v0.44.0-1") == (0, 44, 0, 2, 0, 1)
 
 
 def test_update_check_worker_rc_to_newer_rc(qtbot) -> None:
@@ -604,5 +609,42 @@ def test_update_check_worker_rc_to_stable(qtbot) -> None:
         assert (
             release_info["download_url"]
             == "https://example.invalid/download/stable.exe"
+        )
+        assert error_message == ""
+
+
+def test_update_check_worker_rc_to_sub_release(qtbot) -> None:
+    """RC channel should trigger update from v0.44.0rc0 to v0.44.0rc0-1."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = [
+        {
+            "tag_name": "v0.44.0rc0-1",
+            "body": "Sub-release release notes",
+            "draft": False,
+            "assets": [
+                {
+                    "name": "lan-streamer-windows.exe",
+                    "browser_download_url": "https://example.invalid/download/rc0_1.exe",
+                }
+            ],
+        }
+    ]
+
+    with (
+        patch("requests.get", return_value=mock_response),
+        patch("lan_streamer.__version__", "0.44.0rc0"),
+        patch("sys.platform", "win32"),
+    ):
+        worker = UpdateCheckWorker(release_channel="rc")
+
+        with qtbot.waitSignal(worker.finished) as blocker:
+            worker.start()
+
+        success, release_info, error_message = blocker.args
+        assert success is True
+        assert release_info["version"] == "v0.44.0rc0-1"
+        assert (
+            release_info["download_url"] == "https://example.invalid/download/rc0_1.exe"
         )
         assert error_message == ""
