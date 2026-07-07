@@ -1,3 +1,9 @@
+## v0.44.0rc0 (2026-07-07)
+
+### Feat
+
+- **db**: add readability columns and triggers to playback states and file mappings
+
 ## v0.43.0 (2026-07-07)
 
 ### Feat
