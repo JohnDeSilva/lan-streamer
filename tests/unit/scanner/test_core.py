@@ -3771,3 +3771,45 @@ def test_merge_series_data_different_seasons_both_preserved() -> None:
     merged = _merge_series_data(existing, incoming)
     assert "Season 1" in merged["seasons"]
     assert "Season 2" in merged["seasons"]
+
+
+def test_scan_directories_multi_file_episode_preserves_versions(tmp_path) -> None:
+    """Two files for the same episode produce one episode dict with two versions."""
+    series_dir = tmp_path / "MultiFile Show"
+    series_dir.mkdir()
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir()
+    (season_dir / "S01E01.mkv").touch()
+    (season_dir / "S01E01.mp4").touch()
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.get_series_by_id.return_value = {
+        "id": "multi_id",
+        "name": "MultiFile Show",
+        "overview": "Multi-file test",
+    }
+    mock_tmdb.get_seasons.return_value = [
+        {"season_number": 1, "id": "s1_id", "poster_path": ""},
+    ]
+    mock_tmdb.get_episodes.return_value = [
+        {"episode_number": 1, "name": "Episode 1", "id": "ep1_id"},
+    ]
+    mock_tmdb.download_image.return_value = ""
+
+    with (
+        patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb),
+    ):
+        library = scan_directories(
+            [str(tmp_path)], existing_library=None, force_refresh=True
+        )
+
+    assert "MultiFile Show" in library
+    episodes = library["MultiFile Show"]["seasons"]["Season 1"]["episodes"]
+    assert len(episodes) == 1
+    versions = episodes[0].get("versions", [])
+    assert len(versions) == 2, f"Expected 2 versions, got {len(versions)}: {versions}"
+    version_paths = {v.get("path") for v in versions}
+    assert str(season_dir / "S01E01.mkv") in version_paths
+    assert str(season_dir / "S01E01.mp4") in version_paths
