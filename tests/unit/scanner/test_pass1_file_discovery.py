@@ -400,6 +400,37 @@ class TestScanSeasonFiles:
         assert len(results) == 1
         assert results[0]["date_added"] > 0
 
+    def test_merges_duplicate_episode_files(self, tmp_path: Path) -> None:
+        """Two files for the same episode number are merged into one entry with both versions."""
+        season_dir = tmp_path / "Season 1"
+        season_dir.mkdir()
+        ep1 = season_dir / "S01E01.mkv"
+        ep1.touch()
+        ep2 = season_dir / "S01E01.mp4"
+        ep2.touch()
+
+        results = _scan_season_files(season_dir)
+        assert len(results) == 1, "Should merge into a single episode entry"
+        assert results[0]["season_number"] == 1
+        assert results[0]["episode_number"] == 1
+        assert len(results[0]["versions"]) == 2
+        version_paths = {v["path"] for v in results[0]["versions"]}
+        assert str(ep1.absolute()) in version_paths
+        assert str(ep2.absolute()) in version_paths
+
+    def test_unnumbered_files_not_merged(self, tmp_path: Path) -> None:
+        """Files without a parseable episode number are kept as separate entries."""
+        season_dir = tmp_path / "Season 1"
+        season_dir.mkdir()
+        (season_dir / "Extra 1.mkv").touch()
+        (season_dir / "Extra 2.mkv").touch()
+
+        results = _scan_season_files(season_dir)
+        assert len(results) == 2, "Unnumbered files should remain separate"
+        for r in results:
+            assert r["episode_number"] == 0
+            assert len(r["versions"]) == 1
+
 
 # =========================================================================
 # Tests for _link_existing_episodes
@@ -1058,6 +1089,25 @@ class TestScanMoviePass1:
         assert len(result["versions"]) == 1
         assert result["versions"][0]["video_type"] == "MKV"
         assert "path" in result
+
+    def test_multiple_video_files_all_included(self, tmp_path: Path) -> None:
+        """All video files in a movie directory are included as versions."""
+        movie_dir = tmp_path / "Test Movie (2024)"
+        movie_dir.mkdir()
+        (movie_dir / "movie.mkv").write_bytes(b"\x00")
+        (movie_dir / "movie.mp4").write_bytes(b"\x00")
+
+        with (
+            patch("lan_streamer.db.get_directory_mtime", return_value=None),
+            patch("lan_streamer.db.save_directory_mtime"),
+        ):
+            result = scan_movie_pass1(movie_dir)
+
+        assert result is not None
+        assert len(result["versions"]) == 2
+        version_paths = {v["path"] for v in result["versions"]}
+        assert str((movie_dir / "movie.mkv").absolute()) in version_paths
+        assert str((movie_dir / "movie.mp4").absolute()) in version_paths
 
     def test_no_video_files_returns_none(self, tmp_path: Path) -> None:
         """Returns None when no video files are found."""

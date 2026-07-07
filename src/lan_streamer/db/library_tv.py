@@ -238,12 +238,27 @@ def _save_episode_record(
         if not episode and tmdb_num is not None:
             episode = existing_by_number.get(tmdb_num)
             if episode:
-                # Promote placeholder to local file
-                logger.info(
-                    f"Promoting placeholder episode S{season.name} E{tmdb_num} to local path {path}"
-                )
+                if episode.path:
+                    # Episode already has a path (another version) — merge existing
+                    # MediaFiles into episode_data so _sync_media_files preserves them.
+                    new_versions = list(episode_data.get("versions", []))
+                    incoming_paths = {
+                        v.get("path") for v in new_versions if v.get("path")
+                    }
+                    for media_file in list(episode.media_files):
+                        if media_file.path and media_file.path not in incoming_paths:
+                            new_versions.append({"path": media_file.path})
+                    episode_data["versions"] = new_versions
+                    logger.info(
+                        f"Linking additional file '{path}' to existing episode S{season.name} E{tmdb_num}"
+                    )
+                else:
+                    # Promote placeholder to local file
+                    logger.info(
+                        f"Promoting placeholder episode S{season.name} E{tmdb_num} to local path {path}"
+                    )
+                    episode.path = path
                 old_path = episode.path
-                episode.path = path
                 if old_path and old_path in existing_by_path:
                     existing_by_path.pop(old_path, None)
     elif tmdb_num is not None:
