@@ -128,7 +128,23 @@ def _scan_season_files(season_directory: Path) -> list[dict[str, Any]]:
         )
     except OSError as error:
         logger.error("Error reading season directory '%s': %s", season_directory, error)
-    return stub_episodes
+    # Merge duplicate episodes with the same number into a single entry with combined versions.
+    merged: dict[tuple[int, int], dict[str, Any]] = {}
+    unnumbered: list[dict[str, Any]] = []
+    for episode in stub_episodes:
+        episode_number = episode.get("episode_number", 0)
+        if episode_number > 0:
+            key = (episode["season_number"], episode_number)
+            if key in merged:
+                existing = merged[key]
+                existing["versions"].extend(episode.get("versions", []))
+            else:
+                episode_copy = dict(episode)
+                episode_copy["versions"] = list(episode.get("versions", []))
+                merged[key] = episode_copy
+        else:
+            unnumbered.append(episode)
+    return unnumbered + list(merged.values())
 
 
 def _link_existing_episodes(
@@ -420,6 +436,16 @@ def scan_movie_pass1(
         logger.warning("No video files found in movie directory '%s'.", movie_directory)
         return None
 
+    # Build versions from ALL video files so duplicates are linked to the same movie.
+    versions = [get_stub_file_info(str(f.absolute())) for f in video_files]
+
+    # Carry forward existing versions not found on disk (e.g. manually added).
+    if existing_movie_data:
+        fresh_paths = {v.get("path") for v in versions if v.get("path")}
+        for ev in existing_movie_data.get("versions", []):
+            if ev.get("path") and ev["path"] not in fresh_paths:
+                versions.append(ev)
+
     video_file = video_files[0]
     path_str = str(video_file.absolute())
 
@@ -432,13 +458,6 @@ def scan_movie_pass1(
         ctime = video_file.stat().st_ctime
     except OSError:
         ctime = 0.0
-
-    versions = [get_stub_file_info(path_str)]
-    if existing_movie_data:
-        existing_paths = {v.get("path") for v in versions if v.get("path")}
-        for ev in existing_movie_data.get("versions", []):
-            if ev.get("path") and ev["path"] not in existing_paths:
-                versions.append(ev)
 
     movie_data: dict[str, Any] = {
         "name": movie_directory.name,
