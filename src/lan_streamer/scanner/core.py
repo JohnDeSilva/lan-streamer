@@ -1,23 +1,26 @@
+"""
+Core scanner — dispatches to pass-specific implementations.
+
+The 3-pass architecture:
+
+- **Pass 1** (``pass1_file_discovery``): Walk filesystem, find video files,
+  create stub episode/movie records. No TMDB calls, no ffprobe.
+- **Pass 2** (``pass2_metadata``): Resolve TMDB metadata for series, seasons,
+  episodes, and movies. No filesystem walking.
+- **Pass 3** (``pass3_technical``): Batch ffprobe scan to fill in technical
+  metadata and cleanup missing files.
+"""
+
 import atexit
 import concurrent.futures
 import logging
 import os
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-from lan_streamer.db.utils import natural_sort_key
 from lan_streamer.scanner.parser import has_video_files
-from lan_streamer.services.metadata_common import (
-    _resolve_existing_jellyfin_id,
-    _build_locked_movie_tmdb_stub,
-    _build_locked_tv_tmdb_stub,
-    _merge_season_episodes,
-)
-from lan_streamer.services.metadata_updates import clean_series_data
-from lan_streamer.scanner.scan_movie import scan_movie
-from lan_streamer.scanner.scan_tv import scan_series
 
 logger = logging.getLogger("lan_streamer.scanner")
 
@@ -26,14 +29,7 @@ _global_scan_executor_lock = threading.Lock()
 
 
 def get_scan_executor() -> ThreadPoolExecutor:
-    """Returns the global, shared ThreadPoolExecutor instance for directory scanning.
-
-    The returned executor is a process-lifetime singleton — it is created on
-    first call and automatically shut down (with in-flight futures cancelled)
-    when the interpreter exits via the ``atexit`` handler registered below.
-    Call :func:`shutdown_scan_executor` explicitly to shut it down earlier,
-    e.g. when a scan is cancelled by the user.
-    """
+    """Return the global shared ThreadPoolExecutor instance."""
     global _global_scan_executor
     if _global_scan_executor is None:
         with _global_scan_executor_lock:
@@ -47,19 +43,12 @@ def get_scan_executor() -> ThreadPoolExecutor:
 
 
 def shutdown_scan_executor() -> None:
-    """Shut down the global scan executor, cancelling any queued futures.
-
-    Safe to call multiple times.  After this call a new executor will be
-    created on the next :func:`get_scan_executor` call, so active scans
-    should be stopped before invoking this.
-    """
+    """Shut down the global scan executor, cancelling queued futures."""
     global _global_scan_executor
     with _global_scan_executor_lock:
         executor = _global_scan_executor
         if executor is not None:
-            logger.info(
-                "Shutting down global scan executor (cancelling queued futures)..."
-            )
+            logger.info("Shutting down global scan executor...")
             executor.shutdown(wait=False, cancel_futures=True)
             _global_scan_executor = None
             logger.info("Global scan executor shut down.")
@@ -69,499 +58,234 @@ atexit.register(shutdown_scan_executor)
 
 
 class LibraryDict(dict[str, Any]):
-    """
-    Custom dictionary subclass to hold library contents and track
-    any root directories that were unavailable during scanning.
-    """
+    """Custom dict subclass that tracks unavailable root directories."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.unavailable_directories: List[str] = []
 
+    def __repr__(self) -> str:
+        return f"LibraryDict({len(self)} items, unavailable={self.unavailable_directories})"
+
 
 def scan_directories(
     root_directories: List[str],
     library_type: str = "tv",
-    existing_library: Dict[str, Any] | None = None,
-    jellyfin_data: Dict[str, Any] | None = None,
-    callback: Any = None,
+    existing_library: Optional[Dict[str, Any]] = None,
+    jellyfin_data: Optional[Dict[str, Any]] = None,
     force_refresh: bool = False,
-    cleanup: bool = False,
     single_item_refresh: bool = False,
-    detail_callback: Any = None,
-    root_directory_label: str = "",
+    detail_callback: Optional[Callable] = None,
     show_future_episodes: bool = True,
-    offline: bool = False,
-    season_callback: Any = None,
-    movie_callback: Any = None,
-    metadata_only: bool = False,
-    database_queue: Optional[Any] = None,
-    disregard_mtimes: bool = False,
-    is_interrupted: Optional[Any] = None,
+    season_callback: Optional[Callable] = None,
+    movie_callback: Optional[Callable] = None,
+    is_interrupted: Optional[Callable] = None,
     tmdb_prefetch_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
+    pass_number: int = 0,
 ) -> LibraryDict:
+    """Dispatch to the appropriate pass implementation.
+
+    Args:
+        root_directories: Filesystem roots to scan.
+        library_type: ``"tv"`` (default) or ``"movie"``.
+        existing_library: Previously-persisted library data (from DB).
+        jellyfin_data: Jellyfin correlation data (Pass 2 only).
+        force_refresh: Re-scan even when mtimes match.
+        single_item_refresh: Force-refresh metadata for a single item.
+        detail_callback: Progress callback ``(event, payload)``.
+        show_future_episodes: Include future-dated TMDB placeholders.
+        season_callback: Called for each season scanned (Pass 1/2).
+        movie_callback: Called for each movie scanned (Pass 1/2).
+        is_interrupted: Callable returning True if scan should abort.
+        tmdb_prefetch_executor: Shared executor for TMDB pre-fetch (Pass 2).
+        pass_number: Which pass to execute (0 = all, 1 = discovery, 2 = metadata, 3 = technical).
+
+    Returns:
+        A :class:`LibraryDict` with discovered / resolved series/movie data.
     """
-    Scans root directories and matches with TMDB to pull metadata.
-    Watch history (watched status) is handled separately via Jellyfin sync.
-    """
-    library = LibraryDict()
     existing_library = existing_library or {}
 
-    if metadata_only:
-        items_by_root: Dict[str, List[tuple[str, Any]]] = {}
-        if not root_directories:
-            items_by_root[root_directory_label or "Library"] = list(
-                existing_library.items()
-            )
-        else:
-            resolved_roots = []
-            for r in root_directories:
-                try:
-                    resolved_roots.append(str(Path(r).resolve()))
-                except Exception:
-                    resolved_roots.append(r)
-            for series_name, existing_series in existing_library.items():
-                m_root = None
-                paths = []
-                if library_type == "movie":
-                    if existing_series.get("path"):
-                        paths.append(existing_series["path"])
-                    if existing_series.get("default_path"):
-                        paths.append(existing_series["default_path"])
-                    for version in existing_series.get("versions", []):
-                        if version.get("path"):
-                            paths.append(version["path"])
-                else:
-                    for season in existing_series.get("seasons", {}).values():
-                        for episode in season.get("episodes", []):
-                            if episode.get("path"):
-                                paths.append(episode["path"])
-                for p in paths:
-                    p_path = Path(p)
-                    for root in resolved_roots:
-                        root_path = Path(root)
-                        try:
-                            p_path.resolve().relative_to(root_path)
-                            m_root = root
-                            break
-                        except ValueError:
-                            pass
-                        except Exception:
-                            pass
-                    if m_root:
-                        break
-                if not m_root:
-                    for root in resolved_roots:
-                        root_path = Path(root)
-                        if (root_path / series_name).exists():
-                            m_root = root
-                            break
-                if not m_root:
-                    if resolved_roots:
-                        m_root = resolved_roots[0]
-                    else:
-                        m_root = root_directory_label or "Library"
-                if m_root not in items_by_root:
-                    items_by_root[m_root] = []
-                items_by_root[m_root].append((series_name, existing_series))
+    if pass_number == 0:
+        lib = _scan_pass1(
+            root_directories=root_directories,
+            library_type=library_type,
+            existing_library=existing_library,
+            force_refresh=force_refresh,
+            detail_callback=detail_callback,
+            season_callback=season_callback,
+            movie_callback=movie_callback,
+            is_interrupted=is_interrupted,
+        )
+        unavailable = list(lib.unavailable_directories)
+        lib = _scan_pass2(
+            root_directories=root_directories,
+            library_type=library_type,
+            existing_library=lib,
+            jellyfin_data=jellyfin_data,
+            force_refresh=force_refresh,
+            single_item_refresh=single_item_refresh,
+            detail_callback=detail_callback,
+            show_future_episodes=show_future_episodes,
+            season_callback=season_callback,
+            movie_callback=movie_callback,
+            is_interrupted=is_interrupted,
+            tmdb_prefetch_executor=tmdb_prefetch_executor,
+        )
+        result = _scan_pass3(
+            root_directories=root_directories,
+            library_type=library_type,
+            existing_library=lib,
+            force_refresh=force_refresh,
+            is_interrupted=is_interrupted,
+        )
+        result.unavailable_directories = unavailable
+        return result
+    elif pass_number == 1:
+        return _scan_pass1(
+            root_directories=root_directories,
+            library_type=library_type,
+            existing_library=existing_library,
+            force_refresh=force_refresh,
+            detail_callback=detail_callback,
+            season_callback=season_callback,
+            movie_callback=movie_callback,
+            is_interrupted=is_interrupted,
+        )
+    elif pass_number == 2:
+        return _scan_pass2(
+            root_directories=root_directories,
+            library_type=library_type,
+            existing_library=existing_library,
+            jellyfin_data=jellyfin_data,
+            force_refresh=force_refresh,
+            single_item_refresh=single_item_refresh,
+            detail_callback=detail_callback,
+            show_future_episodes=show_future_episodes,
+            season_callback=season_callback,
+            movie_callback=movie_callback,
+            is_interrupted=is_interrupted,
+            tmdb_prefetch_executor=tmdb_prefetch_executor,
+        )
+    elif pass_number == 3:
+        return _scan_pass3(
+            root_directories=root_directories,
+            library_type=library_type,
+            existing_library=existing_library,
+            force_refresh=force_refresh,
+            is_interrupted=is_interrupted,
+        )
+    else:
+        raise ValueError(
+            f"Invalid pass_number: {pass_number!r} (expected 0, 1, 2, or 3)"
+        )
 
-        for m_root, items in items_by_root.items():
-            if is_interrupted and is_interrupted():
-                logger.info("scan_directories: interruption detected in metadata path.")
-                break
-            if detail_callback:
-                detail_callback(
-                    "root_total",
-                    {"root": m_root, "total": len(items)},
-                )
 
-            scan_results = []
-            executor = get_scan_executor()
-            future_to_item = {}
-            for series_name, existing_series in items:
-                if is_interrupted and is_interrupted():
-                    logger.info(
-                        "scan_directories: interruption detected, skipping further items."
-                    )
-                    break
-                if detail_callback:
-                    detail_callback(
-                        "start_folder",
-                        {"root": m_root, "folder": series_name},
-                    )
+# =============================================================================
+#  Pass 1 — File discovery
+# =============================================================================
 
-                tmdb_series = None
-                is_locked = False
-                existing_jellyfin_id = None
-                has_meta = False
 
-                existing_jellyfin_id = _resolve_existing_jellyfin_id(
-                    existing_series, library_type
-                )
-                if library_type == "movie":
-                    is_locked = bool(existing_series.get("locked_metadata", False))
-                    has_meta = bool(existing_series.get("tmdb_identifier"))
-                    if is_locked:
-                        tmdb_series = _build_locked_movie_tmdb_stub(
-                            existing_series, series_name
-                        )
-                else:
-                    is_locked = bool(
-                        existing_series.get("metadata", {}).get(
-                            "locked_metadata", False
-                        )
-                    )
-                    has_meta = bool(
-                        existing_series.get("metadata", {}).get("tmdb_identifier")
-                    )
-                    if is_locked:
-                        tmdb_series = _build_locked_tv_tmdb_stub(existing_series)
+def _scan_pass1(
+    root_directories: List[str],
+    library_type: str,
+    existing_library: Dict[str, Any],
+    force_refresh: bool,
+    detail_callback: Optional[Callable],
+    season_callback: Optional[Callable],
+    movie_callback: Optional[Callable],
+    is_interrupted: Optional[Callable],
+) -> LibraryDict:
+    """Walk filesystem, discover files, create stub records.
 
-                series_force_refresh = (
-                    (force_refresh or single_item_refresh or not has_meta)
-                    if not is_locked
-                    else False
-                )
-                dummy_path = Path(series_name)
+    Each series/movie directory is scanned in parallel via the global executor.
+    """
+    from lan_streamer.scanner.pass1_file_discovery import (
+        scan_movie_pass1,
+        scan_series_pass1,
+    )
 
-                if library_type == "movie":
-                    future = executor.submit(
-                        scan_movie,
-                        dummy_path,
-                        tmdb_movie=tmdb_series,
-                        jellyfin_data=jellyfin_data,
-                        manual_jellyfin_id=existing_jellyfin_id,
-                        existing_movie_data=existing_series,
-                        force_refresh=series_force_refresh,
-                        cleanup=cleanup,
-                        single_item_refresh=single_item_refresh,
-                        detail_callback=detail_callback,
-                        offline=offline,
-                        metadata_only=True,
-                    )
-                else:
-                    future = executor.submit(
-                        scan_series,
-                        dummy_path,
-                        tmdb_series=tmdb_series,
-                        jellyfin_data=jellyfin_data,
-                        manual_jellyfin_id=existing_jellyfin_id,
-                        existing_series_data=existing_series,
-                        force_refresh=series_force_refresh,
-                        cleanup=cleanup,
-                        single_item_refresh=single_item_refresh,
-                        detail_callback=detail_callback,
-                        show_future_episodes=show_future_episodes,
-                        offline=offline,
-                        season_callback=season_callback,
-                        metadata_only=True,
-                        database_queue=database_queue,
-                        tmdb_prefetch_executor=tmdb_prefetch_executor,
-                    )
-                future_to_item[future] = (series_name, is_locked)
+    library = LibraryDict()
 
-            for future in as_completed(future_to_item):
-                if is_interrupted and is_interrupted():
-                    logger.info(
-                        "scan_directories: interruption detected. Cancelling remaining metadata tasks."
-                    )
-                    for f in future_to_item:
-                        f.cancel()
-                    break
-                series_name, is_locked = future_to_item[future]
-                try:
-                    series_data = future.result()
-                    scan_results.append((series_name, is_locked, series_data))
-                except Exception:
-                    logger.exception(
-                        f"Error during parallel metadata scan of '{series_name}'"
-                    )
-                    if detail_callback:
-                        detail_callback(
-                            "finish_folder",
-                            {
-                                "root": m_root,
-                                "folder": series_name,
-                                "skipped": True,
-                            },
-                        )
-
-            for series_name, is_locked, series_data in scan_results:
-                cleaned = None
-                if library_type == "movie":
-                    if not series_data:
-                        if detail_callback:
-                            detail_callback(
-                                "finish_folder",
-                                {
-                                    "root": m_root,
-                                    "folder": series_name,
-                                    "skipped": True,
-                                },
-                            )
-                        continue
-                    cleaned = series_data
-                    if movie_callback and cleaned:
-                        movie_callback(series_name, cleaned)
-                else:
-                    if not series_data:
-                        if detail_callback:
-                            detail_callback(
-                                "finish_folder",
-                                {
-                                    "root": m_root,
-                                    "folder": series_name,
-                                    "skipped": True,
-                                },
-                            )
-                        continue
-                    if is_locked:
-                        series_data["metadata"]["locked_metadata"] = True
-
-                    cleaned = clean_series_data(series_data)
-                    if not cleaned:
-                        if detail_callback:
-                            detail_callback(
-                                "finish_folder",
-                                {
-                                    "root": m_root,
-                                    "folder": series_name,
-                                    "skipped": True,
-                                },
-                            )
-                        continue
-
-                library[series_name] = cleaned
-
-                if detail_callback:
-                    detail_callback(
-                        "finish_folder",
-                        {
-                            "root": m_root,
-                            "folder": series_name,
-                            "skipped": False,
-                        },
-                    )
-
-                if callback:
-                    callback(library)
-
-        return library
-
-    logger.info(f"Starting directory scan. Root directories: {root_directories}")
+    # For TV libraries, also check directories that have season subdirectories.
+    from lan_streamer.services.file_discovery import (
+        has_season_subdirectories as _has_season_subdirs,
+    )
 
     for root_directory in root_directories:
         if is_interrupted and is_interrupted():
-            logger.info(
-                "scan_directories: interruption detected. Stopping directory scan."
-            )
+            logger.info("Pass 1: interruption detected, stopping.")
             break
-        logger.info(f"Scanning root directory: {root_directory}")
+
         root_path = Path(root_directory)
         if not root_path.exists() or not root_path.is_dir():
-            logger.warning(f"Root directory '{root_directory}' is unavailable")
+            logger.warning("Root directory '%s' is unavailable.", root_directory)
             library.unavailable_directories.append(root_directory)
             if detail_callback:
                 detail_callback("unavailable_root", {"root": root_directory})
             continue
 
         # Sort series directories by mtime (newest first).
-        # Include a directory if it contains video files OR season-style subdirs,
-        # so series with only TMDB placeholder episodes are still indexed.
-        from lan_streamer.services.file_discovery import (
-            has_season_subdirectories as _has_season_subdirs,
-        )
-
-        with os.scandir(root_path) as scan_entries:
-            scanned_directories = [
-                (entry.name, entry)
-                for entry in scan_entries
-                if entry.is_dir() and not entry.name.startswith(".")
-            ]
         series_dirs = sorted(
             [
-                Path(root_path / name)
-                for name, entry in scanned_directories
-                if has_video_files(Path(root_path / name))
-                or _has_season_subdirs(Path(root_path / name))
+                Path(root_path / entry.name)
+                for entry in os.scandir(root_path)
+                if entry.is_dir()
+                and not entry.name.startswith(".")
+                and (
+                    has_video_files(Path(root_path / entry.name))
+                    or _has_season_subdirs(Path(root_path / entry.name))
+                )
             ],
-            key=lambda directory: directory.stat().st_mtime,
+            key=lambda d: d.stat().st_mtime,
             reverse=True,
         )
 
         if detail_callback:
             detail_callback(
-                "root_total",
-                {"root": root_directory, "total": len(series_dirs)},
+                "root_total", {"root": root_directory, "total": len(series_dirs)}
             )
 
-        scan_results = []
+        # Parallel scan via executor.
         executor = get_scan_executor()
-        future_to_series_directory = {}
-        for series_directory in series_dirs:
+        futures = {}
+        for series_dir in series_dirs:
             if is_interrupted and is_interrupted():
-                logger.info(
-                    "scan_directories: interruption detected, skipping further series directories."
-                )
                 break
-            series_name = series_directory.name
-            logger.debug(f"Scanning folder '{series_name}' in root '{root_directory}'")
+            series_name = series_dir.name
             if detail_callback:
                 detail_callback(
-                    "start_folder",
-                    {"root": root_directory, "folder": series_name},
+                    "start_folder", {"root": root_directory, "folder": series_name}
                 )
 
-            # Check if we have an existing manual match for THIS SPECIFIC folder name
-            if disregard_mtimes:
-                existing_series = existing_library.get(series_name)
-                # When disregard_mtimes is True, skip the series-level mtime
-                # early-exit block below by clearing has_meta temporarily.
-                # We still need existing_series for data, so set it first.
-                has_meta = False  # force full re-scan
-            else:
-                existing_series = existing_library.get(series_name)
-            tmdb_series = None
-            is_locked = False
-            existing_jellyfin_id = None
-            has_meta = False
-
-            if existing_series:
-                existing_jellyfin_id = _resolve_existing_jellyfin_id(
-                    existing_series, library_type
-                )
-                if library_type == "movie":
-                    is_locked = bool(existing_series.get("locked_metadata", False))
-                    has_meta = bool(existing_series.get("tmdb_identifier"))
-                    if is_locked:
-                        logger.info(
-                            f"Using locked TMDB metadata for movie '{series_name}' "
-                            f"(ID: {existing_series['tmdb_identifier']})"
-                        )
-                        tmdb_series = _build_locked_movie_tmdb_stub(
-                            existing_series, series_name
-                        )
-                else:
-                    is_locked = bool(
-                        existing_series.get("metadata", {}).get(
-                            "locked_metadata", False
-                        )
-                    )
-                    has_meta = bool(
-                        existing_series.get("metadata", {}).get("tmdb_identifier")
-                    )
-                    if is_locked:
-                        logger.info(
-                            f"Using locked TMDB metadata for '{series_name}' "
-                            f"(ID: {existing_series['metadata']['tmdb_identifier']})"
-                        )
-                        tmdb_series = _build_locked_tv_tmdb_stub(existing_series)
-
-            series_force_refresh = (
-                (force_refresh or single_item_refresh or not has_meta)
-                if not is_locked
-                else False
-            )
-
-            # --- Series-level mtime early-exit (TV only) ---
-            # If the series directory mtime matches what we recorded after the last
-            # successful scan, *and* we have valid existing data with metadata, *and*
-            # no forced refresh is requested, we can skip the entire scan_series /
-            # scan_directories call and reuse the existing data.  This avoids all
-            # season subdirectory I/O on a network share when nothing has changed.
-            #
-            # The `offline` flag is NOT a guard here: mtime equality is a filesystem
-            # fact that holds regardless of whether we are in the offline discovery
-            # pass or the online metadata pass.  The previous `not offline` guard
-            # caused this optimisation to be dead code for Pass 1 (the only path
-            # that reaches this code block in the standard ScanWorker flow).
-            if (
-                library_type != "movie"
-                and not series_force_refresh
-                and existing_series
-                and has_meta
-            ):
-                series_directory_path = str(series_directory.absolute())
-                try:
-                    current_series_mtime = series_directory.stat().st_mtime
-                except OSError:
-                    current_series_mtime = None
-
-                if current_series_mtime is not None and current_series_mtime > 0:
-                    from lan_streamer import db as _db  # Deferred: circular import
-
-                    cached_series_mtime = _db.get_directory_mtime(series_directory_path)
-                    if (
-                        cached_series_mtime is not None
-                        and current_series_mtime == cached_series_mtime
-                    ):
-                        logger.info(
-                            f"Series '{series_name}' directory mtime unchanged "
-                            f"(mtime={current_series_mtime}); skipping full scan."
-                        )
-                        scan_results.append((series_name, is_locked, existing_series))
-                        if detail_callback:
-                            detail_callback(
-                                "finish_folder",
-                                {
-                                    "root": root_directory,
-                                    "folder": series_name,
-                                    "skipped": True,
-                                },
-                            )
-                        continue
-            # --- End series-level mtime early-exit ---
-
+            existing = existing_library.get(series_name)
             if library_type == "movie":
                 future = executor.submit(
-                    scan_movie,
-                    series_directory,
-                    tmdb_movie=tmdb_series,
-                    jellyfin_data=jellyfin_data,
-                    manual_jellyfin_id=existing_jellyfin_id,
-                    existing_movie_data=existing_series,
-                    force_refresh=series_force_refresh,
-                    cleanup=cleanup,
-                    single_item_refresh=single_item_refresh,
+                    scan_movie_pass1,
+                    series_dir,
+                    existing_movie_data=existing,
+                    force_refresh=force_refresh,
                     detail_callback=detail_callback,
-                    offline=offline,
                 )
             else:
                 future = executor.submit(
-                    scan_series,
-                    series_directory,
-                    tmdb_series=tmdb_series,
-                    jellyfin_data=jellyfin_data,
-                    manual_jellyfin_id=existing_jellyfin_id,
-                    existing_series_data=existing_series,
-                    force_refresh=series_force_refresh,
-                    cleanup=cleanup,
-                    single_item_refresh=single_item_refresh,
+                    scan_series_pass1,
+                    series_dir,
+                    existing_series_data=existing,
+                    force_refresh=force_refresh,
                     detail_callback=detail_callback,
-                    show_future_episodes=show_future_episodes,
-                    offline=offline,
-                    season_callback=season_callback,
-                    database_queue=database_queue,
-                    tmdb_prefetch_executor=tmdb_prefetch_executor,
                 )
-            future_to_series_directory[future] = (series_name, is_locked)
+            futures[future] = (series_name, series_dir)
 
-        for future in as_completed(future_to_series_directory):
+        for future in concurrent.futures.as_completed(futures):
             if is_interrupted and is_interrupted():
-                logger.info(
-                    "scan_directories: interruption detected. Cancelling remaining directory scan tasks."
-                )
-                for f in future_to_series_directory:
+                for f in futures:
                     f.cancel()
                 break
-            series_name, is_locked = future_to_series_directory[future]
+            series_name, series_dir = futures[future]
             try:
                 series_data = future.result()
-                scan_results.append((series_name, is_locked, series_data))
             except Exception:
-                logger.exception(
-                    f"Error during parallel directory scan of '{series_name}'"
-                )
+                logger.exception("Pass 1: error scanning '%s'", series_name)
                 if detail_callback:
                     detail_callback(
                         "finish_folder",
@@ -571,77 +295,36 @@ def scan_directories(
                             "skipped": True,
                         },
                     )
+                continue
 
-        for series_name, is_locked, series_data in scan_results:
-            cleaned: Optional[Dict[str, Any]] = None
-            if library_type == "movie":
-                if not series_data:
-                    if detail_callback:
-                        detail_callback(
-                            "finish_folder",
-                            {
-                                "root": root_directory,
-                                "folder": series_name,
-                                "skipped": True,
-                            },
-                        )
-                    continue
-                cleaned = series_data
-                if movie_callback and cleaned:
-                    movie_callback(series_name, cleaned)
-            else:
-                if not series_data:
-                    if detail_callback:
-                        detail_callback(
-                            "finish_folder",
-                            {
-                                "root": root_directory,
-                                "folder": series_name,
-                                "skipped": True,
-                            },
-                        )
-                    continue
-                if is_locked:
-                    series_data["metadata"]["locked_metadata"] = True
+            if series_data is None:
+                if detail_callback:
+                    detail_callback(
+                        "finish_folder",
+                        {
+                            "root": root_directory,
+                            "folder": series_name,
+                            "skipped": True,
+                        },
+                    )
+                continue
 
-                cleaned = clean_series_data(series_data)
-                if not cleaned:
-                    if detail_callback:
-                        detail_callback(
-                            "finish_folder",
-                            {
-                                "root": root_directory,
-                                "folder": series_name,
-                                "skipped": True,
-                            },
-                        )
-                    continue
-
-            # Identify if this series matches something already in our library
-            match_key = None
+            # Merge with existing entry when a series spans multiple root directories
             if series_name in library:
-                match_key = series_name
+                series_data = _merge_series_data(library[series_name], series_data)
+            library[series_name] = series_data
 
-            if match_key:
-                # Merge into existing entry
-                existing = library[match_key]
-                logger.info(
-                    f"Merging '{series_name}' into existing entry '{match_key}'"
-                )
-
-                for season_name, season_data in cleaned.get("seasons", {}).items():
-                    if season_name in existing.get("seasons", {}):
-                        existing_episodes = existing["seasons"][season_name]["episodes"]
-                        _merge_season_episodes(
-                            existing_episodes, season_data["episodes"], season_name
-                        )
-                        existing_episodes.sort(
-                            key=lambda x: natural_sort_key(x["name"])
-                        )
-                    else:
-                        existing.setdefault("seasons", {})[season_name] = season_data
+            if library_type == "movie":
+                if movie_callback and series_data:
+                    movie_callback(series_name, series_data)
             else:
-                library[series_name] = cleaned
+                if season_callback and series_data:
+                    for season_name, season_data in series_data.get(
+                        "seasons", {}
+                    ).items():
+                        season_callback(
+                            series_name, series_data, season_name, season_data
+                        )
 
             if detail_callback:
                 detail_callback(
@@ -649,15 +332,276 @@ def scan_directories(
                     {"root": root_directory, "folder": series_name, "skipped": False},
                 )
 
-            if callback:
-                callback(library)
-
-    if not cleanup and existing_library:
-        for old_series_name, old_series_data in existing_library.items():
-            if old_series_name not in library:
-                logger.info(
-                    f"Preserving missing folder '{old_series_name}' (non-destructive)"
+    # Merge seasons from existing_library for series found on disk
+    # (e.g., when a series spans root directories not all scanned in this pass).
+    if existing_library:
+        for series_name in list(library.keys()):
+            existing_data = existing_library.get(series_name)
+            if existing_data and existing_data.get("seasons"):
+                library[series_name] = _merge_series_data(
+                    existing_data, library[series_name]
                 )
-                library[old_series_name] = old_series_data
+
+    # Non-destructive: preserve entries not found on disk.
+    if existing_library:
+        for old_name, old_data in existing_library.items():
+            if old_name not in library:
+                library[old_name] = old_data
 
     return library
+
+
+# =============================================================================
+#  Pass 2 — Metadata resolution
+# =============================================================================
+
+
+def _scan_pass2(
+    root_directories: List[str],
+    library_type: str,
+    existing_library: Dict[str, Any],
+    jellyfin_data: Optional[Dict[str, Any]],
+    force_refresh: bool,
+    single_item_refresh: bool,
+    detail_callback: Optional[Callable],
+    show_future_episodes: bool,
+    season_callback: Optional[Callable],
+    movie_callback: Optional[Callable],
+    is_interrupted: Optional[Callable],
+    tmdb_prefetch_executor: Optional[concurrent.futures.ThreadPoolExecutor],
+) -> LibraryDict:
+    """Resolve TMDB metadata for all items in *existing_library*.
+
+    No filesystem walking — operates entirely on previously-discovered data.
+    """
+    from lan_streamer.scanner.pass2_metadata import scan_movie_pass2, scan_series_pass2
+
+    library = LibraryDict()
+
+    # Group items by root directory for progress reporting.
+    items_by_root: Dict[str, List[tuple[str, Any]]] = {}
+    resolved_roots = (
+        [str(Path(r).resolve()) for r in root_directories] if root_directories else [""]
+    )
+
+    for series_name, existing_series in existing_library.items():
+        m_root = _resolve_item_root(
+            series_name, existing_series, library_type, resolved_roots
+        )
+        items_by_root.setdefault(m_root, []).append((series_name, existing_series))
+
+    for m_root, items in items_by_root.items():
+        if is_interrupted and is_interrupted():
+            break
+        if detail_callback:
+            detail_callback("root_total", {"root": m_root, "total": len(items)})
+
+        executor = get_scan_executor()
+        futures = {}
+        for series_name, existing in items:
+            if is_interrupted and is_interrupted():
+                break
+            if detail_callback:
+                detail_callback("start_folder", {"root": m_root, "folder": series_name})
+
+            series_dir = Path(series_name)  # dummy path; not used for fs walking
+            if library_type == "movie":
+                future = executor.submit(
+                    scan_movie_pass2,
+                    series_dir,
+                    existing_movie_data=existing,
+                    jellyfin_data=jellyfin_data,
+                    force_refresh=force_refresh,
+                    single_item_refresh=single_item_refresh,
+                    detail_callback=detail_callback,
+                )
+            else:
+                # Find the actual series directory.
+                actual_dir = _find_series_dir(series_name, root_directories)
+                if actual_dir is None:
+                    logger.warning(
+                        "Pass 2: could not find directory for series '%s'", series_name
+                    )
+                    if detail_callback:
+                        detail_callback(
+                            "finish_folder",
+                            {"root": m_root, "folder": series_name, "skipped": True},
+                        )
+                    continue
+                future = executor.submit(
+                    scan_series_pass2,
+                    actual_dir,
+                    existing_series_data=existing,
+                    tmdb_series=None,
+                    jellyfin_data=jellyfin_data,
+                    force_refresh=force_refresh,
+                    single_item_refresh=single_item_refresh,
+                    show_future_episodes=show_future_episodes,
+                    detail_callback=detail_callback,
+                    season_callback=season_callback,
+                    tmdb_prefetch_executor=tmdb_prefetch_executor,
+                )
+            futures[future] = (series_name, m_root)
+
+        for future in concurrent.futures.as_completed(futures):
+            if is_interrupted and is_interrupted():
+                for f in futures:
+                    f.cancel()
+                break
+            series_name, m_root = futures[future]
+            try:
+                result = future.result()
+            except Exception:
+                logger.exception(
+                    "Pass 2: error resolving metadata for '%s'", series_name
+                )
+                if detail_callback:
+                    detail_callback(
+                        "finish_folder",
+                        {"root": m_root, "folder": series_name, "skipped": True},
+                    )
+                continue
+
+            if result is not None:
+                library[series_name] = result
+                if library_type == "movie":
+                    if movie_callback:
+                        movie_callback(series_name, result)
+            if detail_callback:
+                detail_callback(
+                    "finish_folder",
+                    {"root": m_root, "folder": series_name, "skipped": False},
+                )
+
+    # Preserve items that didn't get metadata resolved.
+    for old_name, old_data in existing_library.items():
+        if old_name not in library:
+            library[old_name] = old_data
+
+    return library
+
+
+# =============================================================================
+#  Pass 3 — Technical metadata + cleanup
+# =============================================================================
+
+
+def _scan_pass3(
+    root_directories: List[str],
+    library_type: str,
+    existing_library: Dict[str, Any],
+    force_refresh: bool,
+    is_interrupted: Optional[Callable],
+) -> LibraryDict:
+    """Batch ffprobe scan and cleanup for all items in *existing_library*."""
+    from lan_streamer.scanner.pass3_technical import scan_movie_pass3, scan_series_pass3
+
+    library = LibraryDict()
+
+    resolved_roots = (
+        [str(Path(r).resolve()) for r in root_directories] if root_directories else [""]
+    )
+    items_by_root: Dict[str, List[tuple[str, Any]]] = {}
+    for series_name, existing_series in existing_library.items():
+        m_root = _resolve_item_root(
+            series_name, existing_series, library_type, resolved_roots
+        )
+        items_by_root.setdefault(m_root, []).append((series_name, existing_series))
+
+    for _m_root, items in items_by_root.items():
+        if is_interrupted and is_interrupted():
+            break
+        for series_name, existing in items:
+            if is_interrupted and is_interrupted():
+                break
+            if library_type == "movie":
+                result = scan_movie_pass3(
+                    Path(series_name),
+                    existing,
+                    force_refresh=force_refresh,
+                )
+            else:
+                actual_dir = _find_series_dir(series_name, root_directories) or Path(
+                    series_name
+                )
+                result = scan_series_pass3(
+                    actual_dir,
+                    existing,
+                    force_refresh=force_refresh,
+                )
+            if result is not None:
+                library[series_name] = result
+
+    for old_name, old_data in existing_library.items():
+        if old_name not in library:
+            library[old_name] = old_data
+
+    return library
+
+
+# =============================================================================
+#  Helpers
+# =============================================================================
+
+
+def _resolve_item_root(
+    series_name: str,
+    series_data: Dict[str, Any],
+    library_type: str,
+    resolved_roots: List[str],
+) -> str:
+    """Determine which root directory an item belongs to."""
+    for root in resolved_roots:
+        root_path = Path(root)
+        paths: List[str] = []
+        if library_type == "movie":
+            if series_data.get("path"):
+                paths.append(series_data["path"])
+            if series_data.get("default_path"):
+                paths.append(series_data["default_path"])
+            for version in series_data.get("versions", []):
+                if version.get("path"):
+                    paths.append(version["path"])
+        else:
+            for season in series_data.get("seasons", {}).values():
+                for episode in season.get("episodes", []):
+                    if episode.get("path"):
+                        paths.append(episode["path"])
+
+        for p in paths:
+            try:
+                Path(p).resolve().relative_to(root_path)
+                return root
+            except ValueError:
+                continue
+            except Exception:
+                continue
+        if (root_path / series_name).exists():
+            return root
+    return resolved_roots[0] if resolved_roots else ""
+
+
+def _find_series_dir(series_name: str, root_directories: List[str]) -> Optional[Path]:
+    """Find the actual filesystem directory for a series."""
+    for root in root_directories:
+        candidate = Path(root) / series_name
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+    return None
+
+
+def _merge_series_data(
+    existing: Dict[str, Any], incoming: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Merge two series data dicts, combining seasons from both.
+
+    The *incoming* (freshly scanned) data takes precedence for metadata
+    fields; seasons from both dicts are combined (incoming overwrites
+    existing for same-named seasons). Additional keys from *existing*
+    (e.g. ``metrics``, ``watched``) are preserved.
+    """
+    merged = {**existing, **incoming}
+    existing_seasons = existing.get("seasons", {})
+    incoming_seasons = incoming.get("seasons", {})
+    merged["seasons"] = {**existing_seasons, **incoming_seasons}
+    return merged

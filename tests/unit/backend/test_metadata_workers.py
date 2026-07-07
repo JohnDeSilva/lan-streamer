@@ -342,7 +342,7 @@ def test_refresh_series_worker_success(tmp_path, mock_db_save):
     )
 
     with (
-        patch("lan_streamer.backend.metadata_worker_refresh.scan_series") as mock_scan,
+        patch("lan_streamer.scanner.pass2_metadata.scan_series_pass2") as mock_scan,
         patch(
             "lan_streamer.backend.metadata_worker_refresh.clean_series_data",
             lambda x: x,
@@ -368,15 +368,12 @@ def test_refresh_series_worker_success(tmp_path, mock_db_save):
         mock_save.assert_called_once()
         mock_scan.assert_called_once_with(
             series_dir,
+            existing_series_data=existing["Refresh Show"],
             tmdb_series=None,
             jellyfin_data=None,
-            manual_jellyfin_id=None,
-            existing_series_data=existing["Refresh Show"],
             force_refresh=True,
-            cleanup=False,
             single_item_refresh=True,
             show_future_episodes=True,
-            metadata_only=True,
         )
 
 
@@ -576,7 +573,7 @@ def test_refresh_series_worker_cross_root_metadata_only(
     )
 
     with (
-        patch("lan_streamer.backend.metadata_worker_refresh.scan_series") as mock_scan,
+        patch("lan_streamer.scanner.pass2_metadata.scan_series_pass2") as mock_scan,
         patch(
             "lan_streamer.backend.metadata_worker_refresh.clean_series_data",
             lambda x: x,
@@ -611,9 +608,9 @@ def test_refresh_series_worker_cross_root_metadata_only(
         worker.run()
 
     assert finished_data
-    # Verify metadata_only=True was passed to scan_series
+    # Verify scan_series_pass2 was called (metadata-only is inherent to pass 2)
     mock_scan.assert_called_once()
     _call_kwargs = mock_scan.call_args.kwargs
-    assert _call_kwargs.get("metadata_only") is True
+    assert _call_kwargs.get("force_refresh") is True
     # Path arg should be root1/Silo since it's the first root that exists
     assert Path(mock_scan.call_args.args[0]) == series1_dir

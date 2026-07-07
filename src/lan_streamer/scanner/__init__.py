@@ -42,9 +42,14 @@ from .versioning import get_version_score_key, choose_active_version
 from .core import (
     LibraryDict,
     scan_directories,
-    scan_movie,
-    scan_series,
+    get_scan_executor,
+    shutdown_scan_executor,
 )
+from .scan_tv import scan_series  # backward compat — used by tests and legacy callers
+from .scan_movie import scan_movie  # backward compat
+from .pass1_file_discovery import scan_series_pass1, scan_movie_pass1
+from .pass2_metadata import scan_series_pass2, scan_movie_pass2
+from .pass3_technical import scan_series_pass3, scan_movie_pass3
 from lan_streamer.providers.tmdb import tmdb_client
 from lan_streamer.scanner.renamer import get_rename_preview, perform_rename
 import logging

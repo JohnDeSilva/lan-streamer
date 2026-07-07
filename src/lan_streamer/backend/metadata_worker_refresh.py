@@ -7,7 +7,7 @@ from PySide6.QtCore import QObject, Signal
 from lan_streamer import db
 from lan_streamer.system.config import config
 from lan_streamer.providers.jellyfin import jellyfin_client
-from lan_streamer.scanner import scan_movie, scan_series
+from lan_streamer.scanner.pass2_metadata import scan_movie_pass2, scan_series_pass2
 from lan_streamer.services.metadata_updates import clean_series_data
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.system.async_task_manager import AsyncTaskManager
@@ -69,31 +69,26 @@ class RefreshSeriesWorker(AsyncWorkerBase):
         # We want to refresh this item from TMDB, bypassing lock.
         # So we pass tmdb_series/tmdb_movie = None, and single_item_refresh = True.
         if self.library_type == "movie":
-            item_data = scan_movie(
+            item_data = scan_movie_pass2(
                 target_dir,
+                existing_movie_data=existing_item,
                 tmdb_movie=None,
                 jellyfin_data=jellyfin_data,
-                manual_jellyfin_id=None,
-                existing_movie_data=existing_item,
                 force_refresh=True,
-                cleanup=False,
                 single_item_refresh=True,
             )
         else:
             show_future = config.libraries.get(self.library_name, {}).get(
                 "show_future_episodes", True
             )
-            item_data = scan_series(
+            item_data = scan_series_pass2(
                 target_dir,
+                existing_series_data=existing_item,
                 tmdb_series=None,
                 jellyfin_data=jellyfin_data,
-                manual_jellyfin_id=None,
-                existing_series_data=existing_item,
                 force_refresh=True,
-                cleanup=False,
                 single_item_refresh=True,
                 show_future_episodes=show_future,
-                metadata_only=True,
             )
 
         if not item_data:

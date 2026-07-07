@@ -488,14 +488,16 @@ def test_series_mtime_skip_scanning(tmp_path) -> None:
         }
     }
 
-    # Test with offline=True (Pass 1) — this was the dead code path before the fix.
-    with patch("lan_streamer.scanner.core.scan_series") as mock_scan_series:
+    # Test with pass_number=1 (Pass 1 / file discovery) — the real production path.
+    with patch(
+        "lan_streamer.scanner.pass1_file_discovery.scan_series_pass1"
+    ) as mock_scan_series:
         result = scan_directories(
             [str(tmp_path)],
             library_type="tv",
             existing_library=existing_library,
             force_refresh=False,
-            offline=True,
+            pass_number=1,
         )
         mock_scan_series.assert_not_called()
 
@@ -503,14 +505,16 @@ def test_series_mtime_skip_scanning(tmp_path) -> None:
     assert "My Show" in result
     assert result["My Show"] is existing_library["My Show"]
 
-    # Also verify it still works for offline=False (single-pass online scan).
-    with patch("lan_streamer.scanner.core.scan_series") as mock_scan_series:
+    # Also verify it still works with pass_number=1 (offline=equivalent was removed).
+    with patch(
+        "lan_streamer.scanner.pass1_file_discovery.scan_series_pass1"
+    ) as mock_scan_series:
         result = scan_directories(
             [str(tmp_path)],
             library_type="tv",
             existing_library=existing_library,
             force_refresh=False,
-            offline=False,
+            pass_number=1,
         )
         mock_scan_series.assert_not_called()
 
@@ -551,9 +555,10 @@ def test_series_mtime_changed_triggers_scan(tmp_path) -> None:
         "seasons": {"Season 1": {"metadata": {}, "episodes": []}},
     }
 
-    # Test with offline=True (Pass 1 path) — mtime mismatch must NOT skip.
+    # Test with pass_number=1 (Pass 1 path) — mtime mismatch must NOT skip.
     with patch(
-        "lan_streamer.scanner.core.scan_series", return_value=sentinel_result
+        "lan_streamer.scanner.pass1_file_discovery.scan_series_pass1",
+        return_value=sentinel_result,
     ) as mock_scan_series:
         with patch(
             "lan_streamer.services.metadata_updates.clean_series_data",
@@ -564,7 +569,7 @@ def test_series_mtime_changed_triggers_scan(tmp_path) -> None:
                 library_type="tv",
                 existing_library=existing_library,
                 force_refresh=False,
-                offline=True,
+                pass_number=1,
             )
-        # scan_series must have been called because the mtime changed
+        # scan_series_pass1 must have been called because the mtime changed
         mock_scan_series.assert_called_once()

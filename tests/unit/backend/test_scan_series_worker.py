@@ -31,7 +31,7 @@ def test_scan_single_series_worker_success(tmp_path, mock_db_save):
     )
 
     with (
-        patch("lan_streamer.backend.scan_series_worker.scan_series") as mock_scan,
+        patch("lan_streamer.scanner.pass2_metadata.scan_series_pass2") as mock_scan,
         patch("lan_streamer.backend.scan_series_worker.clean_series_data", lambda x: x),
     ):
         # We will return dummy scanned data
@@ -89,18 +89,15 @@ def test_scan_single_series_worker_success(tmp_path, mock_db_save):
         assert len(episodes) == 2
         assert mock_scan.call_count == 2
         mock_save.assert_called_once()
-        # Verify it passed disregard_mtimes=True
+        # Verify it passed force_refresh=True
         mock_scan.assert_any_call(
             series_dir1,
+            existing_series_data=existing["Test Series"],
             tmdb_series=None,
             jellyfin_data=None,
-            manual_jellyfin_id=None,
-            existing_series_data=existing["Test Series"],
-            force_refresh=False,
-            cleanup=False,
+            force_refresh=True,
             single_item_refresh=True,
             show_future_episodes=True,
-            disregard_mtimes=True,
         )
 
 
@@ -132,7 +129,7 @@ def test_scan_single_series_worker_movie_success(tmp_path, mock_db_save):
         existing_library=existing,
     )
 
-    with patch("lan_streamer.backend.scan_series_worker.scan_movie") as mock_scan:
+    with patch("lan_streamer.scanner.pass2_metadata.scan_movie_pass2") as mock_scan:
         mock_scan.side_effect = [
             # First scan (root1)
             {
@@ -168,17 +165,14 @@ def test_scan_single_series_worker_movie_success(tmp_path, mock_db_save):
         assert len(versions) == 2
         assert mock_scan.call_count == 2
         mock_movie_save.assert_called_once()
-        # Verify it passed disregard_mtimes=True
+        # Verify it passed force_refresh=True
         mock_scan.assert_any_call(
             movie_dir1,
+            existing_movie_data=existing["Test Movie"],
             tmdb_movie=None,
             jellyfin_data=None,
-            manual_jellyfin_id=None,
-            existing_movie_data=existing["Test Movie"],
-            force_refresh=False,
-            cleanup=False,
+            force_refresh=True,
             single_item_refresh=True,
-            disregard_mtimes=True,
         )
 
 
