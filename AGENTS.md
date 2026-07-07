@@ -30,6 +30,10 @@ This document establishes the repository-wide standards, architectural constrain
     - [scan_worker_all.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend/scan_worker_all.py): `ScanAllLibrariesWorker` — parallel multi-library scan via `ThreadPoolExecutor`.
     - [scan_worker_single.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/backend/scan_worker_single.py): `ScanSingleLibraryWorker` — single-library scan.
   - [scanner/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/scanner): Library crawler, filename parser, and bulk-renamer.
+    - [core.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/scanner/core.py): 3-pass dispatcher — `scan_directories()` with `pass_number` parameter (0=all, 1=discovery, 2=metadata, 3=technical).
+    - [pass1_file_discovery.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/scanner/pass1_file_discovery.py): Filesystem walk, stub creation (no TMDB).
+    - [pass2_metadata.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/scanner/pass2_metadata.py): TMDB metadata resolution, TMDB-only season placeholders.
+    - [pass3_technical.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/scanner/pass3_technical.py): Batch ffprobe + missing-file cleanup.
   - [services/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/services): Business-logic services (discovery, TMDB/Jellyfin metadata merging, [smart_row_service.py](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/services/smart_row_service.py) — combined view cache coordination).
   - [playback/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/playback): Video player widget wrapper around `libvlc` and OS wake-lock controller.
   - [providers/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/providers): External client wrappers (TMDB, Jellyfin, OpenSubtitles, MyAnimeList).
@@ -83,7 +87,29 @@ The detail views display cast/crew metadata via a dedicated DB backend:
 - **PosterSelectorDialog** (`ui_views/dialogs/poster_selector.py`): Dialog for selecting posters/backdrops from TMDB images.
 - **Wiring** (`main.py`): Stacked layout indices — 0: grid, 1: series_detail, 2: movie_detail, 3: season_detail, 4: cast_detail, 5: player. Navigation signals wire between views.
 
-### 7. Code Organization
+### 6. Scanner 3-Pass Architecture
+
+The library scanner uses a 3-pass pipeline for clean separation of concerns:
+
+- **Pass 1 — File Discovery** (`scanner/pass1_file_discovery.py`): Walks the filesystem, discovers video files, creates stub episode/movie records. No TMDB calls, no ffprobe. Returns series data with stub metadata and seasons.
+- **Pass 2 — Metadata Resolution** (`scanner/pass2_metadata.py`): Resolves TMDB metadata for series, seasons, episodes, and movies. Operates entirely on data from Pass 1 (no filesystem walking). Adds TMDB-only seasons (placeholder entries for seasons not on disk).
+- **Pass 3 — Technical Metadata** (`scanner/pass3_technical.py`): Batch ffprobe scan for codec/resolution info + cleanup of missing-file entries.
+
+**Dispatcher** (`scanner/core.py`):
+- `scan_directories()` accepts `pass_number` parameter (0 = all 3 passes, 1, 2, or 3 for individual passes).
+- Each pass is implemented in a separate `_scan_pass{N}` function.
+- Results flow sequentially: Pass 1 → Pass 2 → Pass 3.
+- `_merge_series_data()` handles series spanning multiple root directories (combines seasons from different roots).
+- Existing library entries not found on disk are preserved (non-destructive).
+
+**Backward Compatibility**: The old `scanner/scan_tv.py` and `scanner/scan_movie.py` files remain intact for backward-compatible imports via `scanner/__init__.py`.
+
+**Pattern for tests**: When testing Pass 2 metadata resolution, three TMDB client paths must be patched:
+```python
+patch("lan_streamer.services.metadata_series.tmdb_client", mock)
+patch("lan_streamer.services.metadata_episode.tmdb_client", mock)
+patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock)
+```
 - Keep modules small, single-purpose, and grouped under descriptive directories.
 - Avoid generic filenames like `helper.py` or `utils.py` in favor of specific functional terms.
 - **Static Typing**: Enforce 100% strict `mypy` type checking for all production code in `src/lan_streamer/`.

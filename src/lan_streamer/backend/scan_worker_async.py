@@ -231,16 +231,13 @@ class AsyncScanWorker(AsyncWorkerBase):
                 library_type=self.library_type,
                 existing_library=self.existing_library,
                 jellyfin_data=None,
-                callback=None,
                 force_refresh=self.force_refresh,
-                cleanup=self.cleanup,
                 detail_callback=_detail_callback,
                 show_future_episodes=show_future,
-                offline=True,
                 season_callback=_season_callback,
                 movie_callback=_movie_callback,
-                database_queue=None,
                 is_interrupted=lambda: self._cancelled,
+                pass_number=1,
             )
             if self._cancelled:
                 logger.info("AsyncScanWorker cancelled during Pass 1.")
@@ -272,17 +269,13 @@ class AsyncScanWorker(AsyncWorkerBase):
                 library_type=self.library_type,
                 existing_library=library,
                 jellyfin_data=jellyfin_data,
-                callback=self.partial_result.emit,
                 force_refresh=self.force_refresh,
-                cleanup=self.cleanup,
                 detail_callback=_detail_callback,
                 show_future_episodes=show_future,
-                offline=False,
                 season_callback=_season_callback,
                 movie_callback=_movie_callback,
-                metadata_only=True,
-                database_queue=None,
                 is_interrupted=lambda: self._cancelled,
+                pass_number=2,
             )
             if self._cancelled:
                 logger.info("AsyncScanWorker cancelled during Pass 2.")

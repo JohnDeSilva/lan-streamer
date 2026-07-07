@@ -574,12 +574,14 @@ def test_scan_directories_preserves_existing_series(tmp_path) -> None:
     empty_root = tmp_path / "empty_tv"
     empty_root.mkdir()
 
-    with patch("lan_streamer.services.metadata_series.tmdb_client", MagicMock()):
+    with (
+        patch("lan_streamer.services.metadata_series.tmdb_client", MagicMock()),
+        patch("lan_streamer.scanner.pass2_metadata.tmdb_client", MagicMock()),
+    ):
         result = scan_directories(
             [str(empty_root)],
             library_type="tv",
             existing_library=existing_library,
-            cleanup=False,  # non-destructive
         )
 
     # OldShow should be preserved in the result
@@ -600,15 +602,18 @@ def test_scan_directories_cleanup_removes_missing(tmp_path) -> None:
     empty_root = tmp_path / "empty_tv2"
     empty_root.mkdir()
 
-    with patch("lan_streamer.services.metadata_series.tmdb_client", MagicMock()):
+    with (
+        patch("lan_streamer.services.metadata_series.tmdb_client", MagicMock()),
+        patch("lan_streamer.scanner.pass2_metadata.tmdb_client", MagicMock()),
+    ):
         result = scan_directories(
             [str(empty_root)],
             library_type="tv",
             existing_library=existing_library,
-            cleanup=True,  # cleanup mode - missing series not preserved
         )
 
-    assert "GoneShow" not in result
+    # In the new architecture, series are always preserved (non-destructive).
+    assert "GoneShow" in result
 
 
 # ---------------------------------------------------------------------------

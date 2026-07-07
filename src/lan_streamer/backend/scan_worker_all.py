@@ -271,51 +271,24 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         library_configuration: Dict[str, Any],
         existing_library_data: Dict[str, Any],
         jellyfin_data: Optional[Dict[str, Any]],
-        is_pass1: bool,
+        pass_number: int,
         tmdb_prefetch_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
     ) -> Dict[str, Any]:
         """Execute one scan pass for a single library inside a thread-pool worker.
 
         Args:
             library_name: Name of the library to scan.
-            library_configuration: Configuration dict for the library
-                (keys include ``paths``, ``type``, ``show_future_episodes``).
-            existing_library_data: Previously persisted library data loaded
-                from the database.
+            library_configuration: Configuration dict for the library.
+            existing_library_data: Previously persisted library data.
             jellyfin_data: Jellyfin correlation data (``None`` for Pass 1).
-            is_pass1: ``True`` for the offline file-discovery pass,
-                ``False`` for the online metadata-resolution pass.
-
-        .. note::
-
-           ``scan_directories`` is called **synchronously** inside this method.
-           The callback closures close over this stack frame; they are valid
-           because the frame stays alive for the full duration of the call.
-
-        Args:
-            library_name: Name of the library to scan.
-            library_configuration: Configuration dict for the library
-                (keys include ``paths``, ``type``, ``show_future_episodes``).
-            existing_library_data: Previously persisted library data loaded
-                from the database.
-            jellyfin_data: Jellyfin correlation data (``None`` for Pass 1).
-            is_pass1: ``True`` for the offline file-discovery pass,
-                ``False`` for the online metadata-resolution pass.
+            pass_number: Which pass (1, 2, or 3).
             tmdb_prefetch_executor: Shared thread-pool executor for TMDB
-                pre-fetch calls. Owned by ``run_async``; ``None`` disables
-                pre-fetching for this library pass.
+                pre-fetch calls (Pass 2 only).
 
         Returns:
             A dictionary with the following keys:
-
-            - ``library_name`` (str)
-            - ``library_data`` (dict) — updated LibraryDict from
-              :func:`~lan_streamer.scanner.core.scan_directories`
-            - ``pass_stats`` (Dict[str, int]) — per-pass statistics
-            - ``problems`` (List[Dict]) — issues encountered during the pass
-            - ``unavailable_directories`` (List[str]) — missing root directories
-            - ``changed_season_ids`` (Set[str]) — season IDs that changed
-            - ``changed_movie_ids`` (Set[str]) — movie IDs that changed
+            ``library_name``, ``library_data``, ``pass_stats``, ``problems``,
+            ``unavailable_directories``, ``changed_season_ids``, ``changed_movie_ids``.
         """
         root_directories: List[str] = list(library_configuration.get("paths", []))
         library_type: str = library_configuration.get("type", "tv")
@@ -648,25 +621,22 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 [],
                 library_type=library_type,
                 existing_library=existing_library_data,
-                jellyfin_data=jellyfin_data if not is_pass1 else None,
-                callback=None,
+                jellyfin_data=jellyfin_data if pass_number == 2 else None,
                 force_refresh=self.force_refresh,
-                cleanup=False,
                 detail_callback=_make_detail_callback(library_name),
                 show_future_episodes=show_future_episodes,
-                offline=is_pass1,
                 season_callback=_season_callback,
                 movie_callback=_movie_callback,
-                metadata_only=not is_pass1,
                 is_interrupted=self.isInterruptionRequested,
                 tmdb_prefetch_executor=tmdb_prefetch_executor,
+                pass_number=pass_number,
             )
             # Collect unavailable directories from this scan.
             if updated_library_data.unavailable_directories:
                 for root in updated_library_data.unavailable_directories:
                     library_unavailable_directories.append(root)
                     # Only log unavailable directory issues once (in Pass 1)
-                    if is_pass1:
+                    if pass_number == 1:
                         error_message: str = (
                             f"Root directory '{root}' in library "
                             f"'{library_name}' is unavailable on filesystem."
@@ -703,18 +673,15 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                     [root_dir],
                     library_type=library_type,
                     existing_library=current_library_data,
-                    jellyfin_data=jellyfin_data if not is_pass1 else None,
-                    callback=None,
+                    jellyfin_data=jellyfin_data if pass_number == 2 else None,
                     force_refresh=self.force_refresh,
-                    cleanup=False,
                     detail_callback=_make_detail_callback(library_name),
                     show_future_episodes=show_future_episodes,
-                    offline=is_pass1,
                     season_callback=_season_callback,
                     movie_callback=_movie_callback,
-                    metadata_only=not is_pass1,
                     is_interrupted=self.isInterruptionRequested,
                     tmdb_prefetch_executor=tmdb_prefetch_executor,
+                    pass_number=pass_number,
                 )
                 if self.isInterruptionRequested():
                     raise InterruptedError("Scan interrupted.")
@@ -723,7 +690,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                     for root in updated_library_data.unavailable_directories:
                         library_unavailable_directories.append(root)
                         # Only log unavailable directory issues once (in Pass 1)
-                        if is_pass1:
+                        if pass_number == 1:
                             error_message = (
                                 f"Root directory '{root}' in library "
                                 f"'{library_name}' is unavailable on filesystem."
@@ -744,7 +711,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 _save_library_data(updated_library_data)
 
                 # Finish-root is only emitted in Pass 2 (metadata resolution).
-                if not is_pass1:
+                if pass_number == 2:
                     self.emit_detail_progress(
                         "finish_root",
                         {"library": library_name, "root": root_dir},
@@ -981,7 +948,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         library_configuration,
                         library_data_by_name[library_name],
                         None,  # jellyfin_data is None for Pass 1
-                        True,  # is_pass1
+                        1,  # pass_number
                         tmdb_prefetch_executor,
                     )
                     task = asyncio.create_task(coro)
@@ -1098,7 +1065,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         library_configuration,
                         library_data_by_name[library_name],
                         jellyfin_data,
-                        False,  # is_pass1
+                        2,  # pass_number
                         tmdb_prefetch_executor,
                     )
                     task = asyncio.create_task(coro)
