@@ -854,6 +854,56 @@ class TestScanSeriesPass1:
         # Episode lifecycle (2 episodes × 2 calls each)
         assert callback.call_count >= 6
 
+    def test_detail_callback_skips_none_path_episodes(self, tmp_path: Path) -> None:
+        """Episodes carried forward from existing data with path=None are
+        skipped in detail callbacks to prevent TypeError in progress widgets."""
+        series_dir = _create_series_structure(tmp_path)
+        callback = MagicMock()
+
+        existing_series_data: dict[str, Any] = {
+            "name": "Test Series",
+            "metadata": {"tmdb_identifier": "123"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {"tmdb_identifier": "s1"},
+                    "episodes": [
+                        # Real episode on disk
+                        {
+                            "path": str(series_dir / "Season 1" / "S01E01.mkv"),
+                            "name": "S01E01.mkv",
+                            "watched": True,
+                        },
+                        # Placeholder episode with None path (TMDB-only)
+                        {
+                            "path": None,
+                            "name": "S01E03 - Missing Episode",
+                            "watched": False,
+                            "tmdb_identifier": "ep_placeholder",
+                        },
+                    ],
+                }
+            },
+        }
+
+        with (
+            patch("lan_streamer.db.get_directory_mtime", return_value=None),
+            patch("lan_streamer.db.save_directory_mtime"),
+        ):
+            scan_series_pass1(
+                series_dir,
+                existing_series_data=existing_series_data,
+                detail_callback=callback,
+            )
+
+        # Ensure no callback was called with file=None
+        for call_args in callback.call_args_list:
+            event_type = call_args[0][0]
+            event_data = call_args[0][1]
+            if event_type in ("start_file", "finish_file"):
+                assert event_data.get("file") is not None, (
+                    f"detail_callback '{event_type}' called with file=None"
+                )
+
     def test_permission_error_on_series_dir(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
