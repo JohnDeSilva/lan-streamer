@@ -166,3 +166,92 @@ class TestMetadataCastService:
             assert len(credits_list) == 1
             assert credits_list[0].role == "actor"
             assert credits_list[0].character == "Guest"
+
+    def test_lookup_series_id_not_found(self) -> None:
+        from lan_streamer.services.metadata_cast import _lookup_series_id
+
+        assert _lookup_series_id("nonexistent_tmdb_id") is None
+
+    def test_lookup_movie_id_not_found(self) -> None:
+        from lan_streamer.services.metadata_cast import _lookup_movie_id
+
+        assert _lookup_movie_id("nonexistent_tmdb_id") is None
+
+    def test_map_tmdb_role_variations(self) -> None:
+        from lan_streamer.services.metadata_cast import _map_tmdb_role
+
+        assert _map_tmdb_role("Actor", "Acting") == "actor"
+        assert _map_tmdb_role("Director", "Directing") == "director"
+        assert _map_tmdb_role("Screenplay", "Writing") == "writer"
+        assert _map_tmdb_role("Executive Producer", "Production") == "producer"
+        assert _map_tmdb_role("Key Grip", "Camera") == "key grip"
+
+    @patch("lan_streamer.services.metadata_cast.tmdb_client")
+    def test_fetch_and_store_series_credits_no_data(self, mock_tmdb: MagicMock) -> None:
+        mock_tmdb.get_series_credits.return_value = None
+        fetch_and_store_series_credits("00000000-0000-0000-0000-000000000000", 123)
+
+    @patch("lan_streamer.services.metadata_cast.tmdb_client")
+    def test_fetch_and_store_movie_credits_no_data(self, mock_tmdb: MagicMock) -> None:
+        mock_tmdb.get_movie_credits.return_value = None
+        fetch_and_store_movie_credits("00000000-0000-0000-0000-000000000000", 123)
+
+    @patch("lan_streamer.services.metadata_cast.tmdb_client")
+    def test_fetch_and_store_episode_credits_no_data(
+        self, mock_tmdb: MagicMock
+    ) -> None:
+        mock_tmdb.get_episode_credits.return_value = None
+        fetch_and_store_episode_credits(
+            "00000000-0000-0000-0000-000000000000", 123, 1, 1
+        )
+
+    @patch("lan_streamer.services.metadata_cast.tmdb_client")
+    def test_fetch_and_store_credits_missing_ids_and_duplicates(
+        self, mock_tmdb: MagicMock
+    ) -> None:
+        with get_session() as session:
+            series = Series(name="Dup Show", library_name="TV", tmdb_identifier="8888")
+            session.add(series)
+            session.commit()
+            series_id = series.id
+
+        mock_tmdb.get_series_credits.return_value = {
+            "cast": [
+                {"id": None, "name": "No ID Actor"},  # Should be skipped
+                {
+                    "id": 9991,
+                    "name": "Dup Actor",
+                    "character": "Main",
+                    "credit_id": "c1",
+                },
+                {
+                    "id": 9991,
+                    "name": "Dup Actor",
+                    "character": "Main",
+                    "credit_id": "c1",
+                },  # Duplicate, should be filtered
+            ],
+            "crew": [
+                {"id": None, "job": "No ID Crew"},  # Should be skipped
+                {
+                    "id": 9992,
+                    "name": "Dup Crew",
+                    "job": "Director",
+                    "department": "Directing",
+                    "credit_id": "c2",
+                },
+                {
+                    "id": 9992,
+                    "name": "Dup Crew",
+                    "job": "Director",
+                    "department": "Directing",
+                    "credit_id": "c2",
+                },  # Duplicate, should be filtered
+            ],
+        }
+        fetch_and_store_series_credits(series_id, 8888)
+        with get_session() as session:
+            credits_list = session.scalars(
+                select(MediaCast).where(MediaCast.series_id == series_id)
+            ).all()
+            assert len(credits_list) == 2

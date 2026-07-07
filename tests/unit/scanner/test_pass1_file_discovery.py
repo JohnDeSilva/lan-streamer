@@ -606,13 +606,20 @@ class TestSaveDirectoryMtime:
             "lan_streamer.db.save_directory_mtime",
             side_effect=Exception("DB error"),
         ):
-            caplog.set_level(logging.DEBUG)
-            _save_directory_mtime(str(test_dir.absolute()), "Test Dir")
-            # Function should not raise; debug log reflects the failure
-            assert any(
-                "Could not persist directory mtime" in rec.message
-                for rec in caplog.records
-            )
+            from lan_streamer.scanner.pass1_file_discovery import logger as pass1_logger
+
+            old_level = pass1_logger.level
+            pass1_logger.setLevel(logging.DEBUG)
+            try:
+                caplog.set_level(logging.DEBUG)
+                _save_directory_mtime(str(test_dir.absolute()), "Test Dir")
+                # Function should not raise; debug log reflects the failure
+                assert any(
+                    "Could not persist directory mtime" in rec.message
+                    for rec in caplog.records
+                )
+            finally:
+                pass1_logger.setLevel(old_level)
 
 
 # =========================================================================

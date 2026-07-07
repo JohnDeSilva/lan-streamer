@@ -342,7 +342,9 @@ def test_refresh_series_worker_success(tmp_path, mock_db_save):
     )
 
     with (
-        patch("lan_streamer.scanner.pass2_metadata.scan_series_pass2") as mock_scan,
+        patch(
+            "lan_streamer.backend.metadata_worker_refresh.scan_series_pass2"
+        ) as mock_scan,
         patch(
             "lan_streamer.backend.metadata_worker_refresh.clean_series_data",
             lambda x: x,
@@ -573,7 +575,9 @@ def test_refresh_series_worker_cross_root_metadata_only(
     )
 
     with (
-        patch("lan_streamer.scanner.pass2_metadata.scan_series_pass2") as mock_scan,
+        patch(
+            "lan_streamer.backend.metadata_worker_refresh.scan_series_pass2"
+        ) as mock_scan,
         patch(
             "lan_streamer.backend.metadata_worker_refresh.clean_series_data",
             lambda x: x,

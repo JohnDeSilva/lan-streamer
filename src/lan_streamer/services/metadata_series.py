@@ -311,11 +311,11 @@ def _process_series_metadata(
         existing_tmdb_identifier = ext_metadata.get("tmdb_identifier", "")
         existing_episodes_by_path = _build_existing_episodes_index(existing_series_data)
 
-    has_new_files = (
-        _detect_new_series_files(series_directory, existing_episodes_by_path)
-        if (existing_series_data and not metadata_only)
-        else False
-    )
+    has_new_files = False
+    if existing_series_data and not metadata_only:
+        has_new_files = existing_series_data.get(
+            "_has_new_files", False
+        ) or _detect_new_series_files(series_directory, existing_episodes_by_path)
 
     if has_new_files and not is_locked and not offline:
         logger.info(
@@ -343,7 +343,13 @@ def _process_series_metadata(
         if manual_jellyfin_id:
             series_metadata["jellyfin_id"] = manual_jellyfin_id
 
-    if not force_refresh and not has_new_files and not cleanup and existing_series_data:
+    if (
+        not force_refresh
+        and not has_new_files
+        and not cleanup
+        and existing_series_data
+        and existing_series_data.get("metadata", {}).get("tmdb_identifier")
+    ):
         series_data = existing_series_data.copy()
         meta = series_data.get("metadata", {})
         if (

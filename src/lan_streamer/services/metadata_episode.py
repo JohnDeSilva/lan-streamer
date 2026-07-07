@@ -133,15 +133,21 @@ def _process_season_metadata(
 
     is_locked = bool(series_data.get("metadata", {}).get("locked_metadata", False))
     season_already_has_episodes = False
+    has_unresolved_episodes = False
     if existing_series_data and season_name in existing_series_data.get("seasons", {}):
-        season_already_has_episodes = (
-            len(existing_series_data["seasons"][season_name].get("episodes", [])) > 0
-        )
+        eps = existing_series_data["seasons"][season_name].get("episodes", [])
+        season_already_has_episodes = len(eps) > 0
+        has_unresolved_episodes = any(not ep.get("tmdb_identifier") for ep in eps)
 
     needs_episode_search = (
         not is_locked
         and not offline
-        and (force_refresh or single_item_refresh or not season_already_has_episodes)
+        and (
+            force_refresh
+            or single_item_refresh
+            or not season_already_has_episodes
+            or has_unresolved_episodes
+        )
     )
 
     tmdb_episodes = []
@@ -322,6 +328,21 @@ def _process_episode_file(
                                 if not runtime:
                                     runtime = tmdb_ep.get("runtime", 0)
                                 break
+                else:
+                    lookup_name = episode_file.stem.lower()
+                    for tmdb_ep in tmdb_episodes:
+                        tmdb_episode_name = str(tmdb_ep.get("name") or "").lower()
+                        if tmdb_episode_name and tmdb_episode_name in lookup_name:
+                            tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
+                            tmdb_name = tmdb_ep.get("name")
+                            tmdb_number = tmdb_ep.get("episode_number")
+                            air_date = tmdb_ep.get("air_date", "")
+                            runtime = tmdb_ep.get("runtime", 0)
+                            logger.debug(
+                                f"Matched '{episode_name}' by parsed substring: "
+                                f"'{tmdb_episode_name}' -> TMDB Name: '{tmdb_name}'"
+                            )
+                            break
     else:
         # Check if there is an existing placeholder in this season in existing_series_data
         placeholder_episode = None
