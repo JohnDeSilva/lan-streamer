@@ -1,3 +1,9 @@
+## v0.44.0rc0-2 (2026-07-07)
+
+### Fix
+
+- **system**: Support sub-releases in updater version checks
+
 ## v0.44.0rc0-1 (2026-07-07)
 
 ### Fix
