@@ -1,3 +1,9 @@
+## v0.44.0rc2 (2026-07-07)
+
+### Feat
+
+- **system**: Make Config File Configurable Via Command Line Option
+
 ## v0.44.0rc1 (2026-07-07)
 
 ### Fix
