@@ -1,3 +1,11 @@
+## v0.44.0rc1 (2026-07-07)
+
+### Fix
+
+- **ui**: defer global cleanup step transitions using QTimer
+- **system**: support sub-releases in updater version checks
+- **updater**: clean PyInstaller environment variables when spawning detached update processes
+
 ## v0.44.0rc0-2 (2026-07-07)
 
 ### Fix
