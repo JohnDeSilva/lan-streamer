@@ -19,10 +19,8 @@ from typing import Any, Dict
 from lan_streamer.db.utils import natural_sort_key
 from lan_streamer.providers.tmdb import tmdb_client
 from lan_streamer.scanner.file_property_scanner import (
-    get_detailed_file_info,
     get_stub_file_info,
 )
-from lan_streamer.scanner.parser import _parse_episode_number
 from lan_streamer.scanner.versioning import choose_active_version
 from lan_streamer.services.metadata_episode import (
     _process_episode_file,
@@ -268,88 +266,6 @@ def _filter_future_episodes(series_data: Dict[str, Any]) -> None:
             for ep in season_data.get("episodes", [])
             if ep.get("path") is not None or (ep.get("air_date") or "") <= _TODAY_STR
         ]
-
-
-def _group_and_resolve_episode_versions(
-    scanned_episodes: list[Dict[str, Any]],
-    existing_season_episodes: list[Dict[str, Any]],
-    force_refresh: bool,
-) -> list[Dict[str, Any]]:
-    """Group episodes by identity, resolve versions, return finalised records."""
-    grouped: Dict[Any, list] = {}
-    for ep in scanned_episodes:
-        key: Any = ep.get("tmdb_number")
-        if key is None:
-            parsed = _parse_episode_number(ep.get("name", ""))
-            key = parsed if parsed else ep.get("name")
-        grouped.setdefault(key, []).append(ep)
-
-    finalised: list[Dict[str, Any]] = []
-    for episode_list in grouped.values():
-        versions: list[Dict[str, Any]] = []
-        incoming = {ep["path"] for ep in episode_list if ep.get("path")}
-        for ep in episode_list:
-            ev = None
-            for ex in existing_season_episodes:
-                match = (
-                    ep.get("tmdb_number") is not None
-                    and ex.get("tmdb_number") == ep.get("tmdb_number")
-                ) or ep.get("name") == ex.get("name")
-                if match and ex.get("versions"):
-                    for v in ex["versions"]:
-                        if v.get("path") == ep["path"]:
-                            ev = v
-                            break
-                if ev:
-                    break
-            if (
-                ev is not None
-                and not force_refresh
-                and ev.get("video_codec") != "Unknown"
-                and ev.get("resolution") != "Unknown"
-            ):
-                versions.append(ev)
-            else:
-                versions.append(get_detailed_file_info(ep["path"]))
-
-        ref = episode_list[0]
-        for ex in existing_season_episodes:
-            match = (
-                ref.get("tmdb_number") is not None
-                and ex.get("tmdb_number") == ref.get("tmdb_number")
-            ) or ref.get("name") == ex.get("name")
-            if match and ex.get("versions"):
-                for v in ex["versions"]:
-                    if v.get("path") and v["path"] not in incoming:
-                        versions.append(v)
-
-        default_path = next(
-            (
-                ex.get("default_path")
-                for ex in existing_season_episodes
-                if (
-                    ref.get("tmdb_number") is not None
-                    and ex.get("tmdb_number") == ref.get("tmdb_number")
-                )
-                or ref.get("name") == ex.get("name")
-            ),
-            None,
-        )
-        active = choose_active_version(versions, default_path)
-        base = ref.copy()
-        for k in (
-            "path",
-            "video_codec",
-            "resolution",
-            "bit_rate",
-            "audio_tracks",
-            "subtitle_tracks",
-        ):
-            base[k] = active.get(k)
-        base["versions"] = versions
-        base["default_path"] = default_path
-        finalised.append(base)
-    return finalised
 
 
 # =============================================================================
