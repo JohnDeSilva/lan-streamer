@@ -226,7 +226,7 @@ class MetadataApplyWorker(AsyncWorkerBase):
                             )
 
                 if self._show_future_episodes:
-                    from lan_streamer.scanner.scan_tv import (
+                    from lan_streamer.scanner.pass2_metadata import (
                         _create_tmdb_placeholder_episodes,
                     )
 

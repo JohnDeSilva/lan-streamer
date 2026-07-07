@@ -185,8 +185,8 @@ def test_scan_all_libraries_pass2_exception_with_good_pass1() -> None:
 
     def _scan_side_effect(*args, **kwargs):
         call_count[0] += 1
-        offline = kwargs.get("offline", True)
-        if offline:
+        pass_number = kwargs.get("pass_number", 0)
+        if pass_number == 1:
             return pass1_lib
         raise RuntimeError("Pass 2 failure")
 

@@ -42,8 +42,8 @@ def test_scan_all_libraries_pass2_exception_emits_fail_library() -> None:
     pass1_lib.unavailable_directories = []
 
     def _scan_side_effect(*args, **kwargs):
-        offline = kwargs.get("offline", True)
-        if offline:
+        pass_number = kwargs.get("pass_number", 0)
+        if pass_number == 1:
             return pass1_lib
         raise RuntimeError("Pass 2 failure")
 

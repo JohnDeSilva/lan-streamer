@@ -785,7 +785,7 @@ class TestHasSeasonSubdirs:
 
 class TestScanMovieNoVideoFile:
     def test_returns_none_when_no_video_file(self, tmp_path) -> None:
-        from lan_streamer.scanner.core import scan_movie
+        from lan_streamer.scanner.scan_movie import scan_movie
 
         movie_dir = tmp_path / "My Movie (2020)"
         movie_dir.mkdir()
@@ -795,7 +795,7 @@ class TestScanMovieNoVideoFile:
         assert result is None
 
     def test_returns_data_with_detail_callback(self, tmp_path) -> None:
-        from lan_streamer.scanner.core import scan_movie
+        from lan_streamer.scanner.scan_movie import scan_movie
 
         movie_dir = tmp_path / "Test Movie (2023)"
         movie_dir.mkdir()
