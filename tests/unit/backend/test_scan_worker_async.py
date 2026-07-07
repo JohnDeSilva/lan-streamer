@@ -204,6 +204,8 @@ class TestAsyncScanWorker:
         assert worker._detail_progress_buffer == []
 
     def test_merge_season_result(self, task_manager: AsyncTaskManager) -> None:
+        from lan_streamer.backend.scan_worker_base import create_empty_stats
+
         worker = AsyncScanWorker(
             root_directories=[],
             library_type="tv",
@@ -211,6 +213,9 @@ class TestAsyncScanWorker:
             async_task_manager=task_manager,
             library_name="Lib",
         )
+        worker.pass_stats = {1: create_empty_stats(), 2: create_empty_stats()}
+        worker.current_pass = 1
+
         stats = {
             "season_id": "s1",
             "series_scanned": 1,
@@ -221,26 +226,13 @@ class TestAsyncScanWorker:
         season_data = {"episodes": [{"name": "E1"}, {"name": "E2"}], "_changed": True}
 
         worker._merge_season_result(stats, "Series1", series_data, "S1", season_data)
-        assert worker.stats["series_scanned"] == 1
-        assert worker.pass1_stats["seasons_scanned"] == 1
-        assert worker.pass1_stats["episodes_scanned"] == 2
-
-        # Simulate the final statistics calculation at the end of the scan run
-        for key in [
-            "seasons_scanned",
-            "seasons_skipped",
-            "episodes_scanned",
-            "episodes_skipped",
-        ]:
-            worker.stats[key] = max(
-                worker.pass1_stats.get(key, 0), worker.pass2_stats.get(key, 0)
-            )
-
-        assert worker.stats["seasons_scanned"] == 1
-        assert worker.stats["episodes_scanned"] == 2
+        assert worker.pass_stats[1]["seasons_scanned"] == 1
+        assert worker.pass_stats[1]["episodes_scanned"] == 2
         assert "s1" in worker.changed_season_ids
 
     def test_merge_movie_result(self, task_manager: AsyncTaskManager) -> None:
+        from lan_streamer.backend.scan_worker_base import create_empty_stats
+
         worker = AsyncScanWorker(
             root_directories=[],
             library_type="tv",
@@ -248,6 +240,9 @@ class TestAsyncScanWorker:
             async_task_manager=task_manager,
             library_name="Lib",
         )
+        worker.pass_stats = {1: create_empty_stats(), 2: create_empty_stats()}
+        worker.current_pass = 1
+
         stats = {
             "movie_id": "m1",
             "movies_scanned": 1,
@@ -255,7 +250,7 @@ class TestAsyncScanWorker:
         movie_data = {"_changed": True}
 
         worker._merge_movie_result(stats, "Movie1", movie_data)
-        assert worker.stats["movies_scanned"] == 1
+        assert worker.pass_stats[1]["movies_scanned"] == 1
         assert "m1" in worker.changed_movie_ids
 
     def test_log_unavailable_directories(

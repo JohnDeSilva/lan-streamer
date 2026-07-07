@@ -87,23 +87,12 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         self.changed_season_ids: Set[str] = set()
         self.changed_movie_ids: Set[str] = set()
         self.current_pass: int = 1
-        self.pass1_series_scanned: Set[str] = set()
-        self.pass2_series_scanned: Set[str] = set()
-        # Track unique series/movie IDs scanned across BOTH passes to avoid
-        # double-counting in self.stats (which is the union of both passes).
-        self._scanned_series_ids: Set[str] = set()
-        self._scanned_movie_ids: Set[str] = set()
-        # Track unique series/movie IDs skipped across BOTH passes to ensure
-        # skipped counts are not lost.
-        self._skipped_series_ids: Set[str] = set()
-        self._skipped_movie_ids: Set[str] = set()
 
-        self.pass1_stats: Dict[str, int] = create_empty_stats()
-        self.pass2_stats: Dict[str, int] = create_empty_stats()
+        # Per-pass statistics dict: self.pass_stats[1] = Pass 1 stats, [2] = Pass 2 stats.
+        self.pass_stats: Dict[int, Dict[str, int]] = {}
 
-        # Per-library per-pass statistics.
-        self.pass1_stats_per_library: Dict[str, Dict[str, int]] = {}
-        self.pass2_stats_per_library: Dict[str, Dict[str, int]] = {}
+        # Per-library per-pass statistics: self.pass_stats_per_library[name][1] = Pass 1 stats.
+        self.pass_stats_per_library: Dict[str, Dict[int, Dict[str, int]]] = {}
 
         # Libraries that had any add/update activity during the scan (for
         # incremental cache rebuild — Proposal H).
@@ -206,8 +195,9 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         # Per-library reports (accumulated stats merged from both passes)
         for library_name, library_configuration in libraries_dictionary.items():
             paths_str = ", ".join(library_configuration.get("paths", []))
-            pass1_stats = self.pass1_stats_per_library.get(library_name, {})
-            pass2_stats = self.pass2_stats_per_library.get(library_name, {})
+            per_lib = self.pass_stats_per_library.get(library_name, {})
+            pass1_stats = per_lib.get(1, {})
+            pass2_stats = per_lib.get(2, {})
             # Compute accumulated stats correctly: sum non-scanned/skipped keys,
             # use max for scanned/skipped keys (since they track unique entities)
             accumulated_stats = {}
@@ -248,13 +238,13 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         # Combined pass totals
         log_stats_breakdown(
             "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN (PASS 1)",
-            self.pass1_stats,
+            self.pass_stats.get(1, {}),
             logger,
         )
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
         log_stats_breakdown(
             "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN (PASS 2)",
-            self.pass2_stats,
+            self.pass_stats.get(2, {}),
             logger,
         )
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
@@ -361,7 +351,6 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 if stats:
                     series_id = stats.get("series_id") or series_name
                     is_new_series_scan = False
-                    is_new_series_skip = False
 
                     with local_lock:
                         if "issues" in stats:
@@ -382,7 +371,6 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                             )
                             if not any_changed:
                                 local_stats["series_skipped"] += 1
-                                is_new_series_skip = True
 
                         local_stats["seasons_scanned"] += 1
                         episode_count: int = len(season_data.get("episodes", []))
@@ -406,19 +394,6 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
 
                         if season_data.get("_changed", True) and "season_id" in stats:
                             local_changed_season_ids.add(stats["season_id"])
-
-                    # Update global stats outside local_lock to avoid nested locking
-                    if is_new_series_scan:
-                        with self._lock:
-                            if series_id not in self._scanned_series_ids:
-                                self._scanned_series_ids.add(series_id)
-                                self.stats["series_scanned"] += 1
-
-                    if is_new_series_skip:
-                        with self._lock:
-                            if series_id not in self._skipped_series_ids:
-                                self._skipped_series_ids.add(series_id)
-                                self.stats["series_skipped"] += 1
 
                     # Fetch cast/crew and images for newly scanned series
                     if is_new_series_scan and stats.get("series_id"):
@@ -485,21 +460,15 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                     raise task.error
                 stats = task.result
                 if stats:
-                    movie_id = stats.get("movie_id") or movie_name
-                    is_new_movie_scan = False
-                    is_new_movie_skip = False
-
                     with local_lock:
                         if "issues" in stats:
                             for issue in stats["issues"]:
                                 local_problems.append(issue)
 
                         local_stats["movies_scanned"] += 1
-                        is_new_movie_scan = True
 
                         if not movie_data.get("_changed", True):
                             local_stats["movies_skipped"] += 1
-                            is_new_movie_skip = True
 
                         for key in local_stats:
                             if key in stats and not (
@@ -510,21 +479,8 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         if movie_data.get("_changed", True) and "movie_id" in stats:
                             local_changed_movie_ids.add(stats["movie_id"])
 
-                    # Update global stats outside local_lock to avoid nested locking
-                    if is_new_movie_scan:
-                        with self._lock:
-                            if movie_id not in self._scanned_movie_ids:
-                                self._scanned_movie_ids.add(movie_id)
-                                self.stats["movies_scanned"] += 1
-
-                    if is_new_movie_skip:
-                        with self._lock:
-                            if movie_id not in self._skipped_movie_ids:
-                                self._skipped_movie_ids.add(movie_id)
-                                self.stats["movies_skipped"] += 1
-
                     # Fetch cast/crew and images for newly scanned movie
-                    if is_new_movie_scan and stats.get("movie_id"):
+                    if stats.get("movie_id"):
                         tmdb_id = movie_data.get("tmdb_identifier")
                         if not tmdb_id:
                             tmdb_id = movie_data.get("metadata", {}).get(
@@ -532,6 +488,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                             )
                         if tmdb_id:
                             try:
+                                movie_id = stats["movie_id"]
                                 has_cast = len(db.get_cast_for_movie(movie_id)) > 0
                                 if (
                                     self.force_refresh
@@ -858,21 +815,12 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         start_time = time.time()
         self.problems = []
         self.stats = create_empty_stats()
-        for key in self.pass1_stats:
-            self.pass1_stats[key] = 0
-            self.pass2_stats[key] = 0
-        self.pass1_stats_per_library = {}
-        self.pass2_stats_per_library = {}
+        self.pass_stats = {1: create_empty_stats(), 2: create_empty_stats()}
+        self.pass_stats_per_library = {}
         self.changed_libraries = set()
         self.changed_season_ids = set()
         self.changed_movie_ids = set()
         self.current_pass = 1
-        self.pass1_series_scanned.clear()
-        self.pass2_series_scanned.clear()
-        self._scanned_series_ids.clear()
-        self._scanned_movie_ids.clear()
-        self._skipped_series_ids.clear()
-        self._skipped_movie_ids.clear()
 
         # Create the database writer and capture event loop for sync_submit
         self._database_writer = AsyncDatabaseWriter()
@@ -978,9 +926,9 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                                 f"ScanAllLibrariesWorker: scan for library "
                                 f"'{library_name}' was cancelled."
                             )
-                            self.pass1_stats_per_library[library_name] = {
-                                "_skipped": True
-                            }
+                            self.pass_stats_per_library.setdefault(library_name, {})[
+                                1
+                            ] = {"_skipped": True}
                             continue
                         except Exception as error:
                             if isinstance(error, InterruptedError):
@@ -998,22 +946,16 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                                     {"library": library_name},
                                 )
                                 failed_libraries.add(library_name)
-                            self.pass1_stats_per_library[library_name] = {
-                                "_skipped": True
-                            }
+                            self.pass_stats_per_library.setdefault(library_name, {})[
+                                1
+                            ] = {"_skipped": True}
                             continue
 
                         # Merge per-library stats into combined totals.
-                        merge_stats_dicts(self.pass1_stats, result["pass_stats"])
-                        for key, value in result["pass_stats"].items():
-                            if not (
-                                key.endswith("_scanned") or key.endswith("_skipped")
-                            ):
-                                with self._lock:
-                                    self.stats[key] = self.stats.get(key, 0) + value
-                        self.pass1_stats_per_library[library_name] = result[
-                            "pass_stats"
-                        ]
+                        merge_stats_dicts(self.pass_stats[1], result["pass_stats"])
+                        self.pass_stats_per_library.setdefault(library_name, {})[1] = (
+                            result["pass_stats"]
+                        )
                         pass_stats = result["pass_stats"]
                         if (
                             pass_stats.get("series_added", 0) > 0
@@ -1093,9 +1035,9 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                                 f"ScanAllLibrariesWorker: scan for library "
                                 f"'{library_name}' was cancelled."
                             )
-                            self.pass2_stats_per_library[library_name] = {
-                                "_skipped": True
-                            }
+                            self.pass_stats_per_library.setdefault(library_name, {})[
+                                2
+                            ] = {"_skipped": True}
                             continue
                         except Exception as error:
                             if isinstance(error, InterruptedError):
@@ -1112,23 +1054,17 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                                     "fail_library",
                                     {"library": library_name},
                                 )
-                            self.pass2_stats_per_library[library_name] = {
-                                "_skipped": True
-                            }
+                            self.pass_stats_per_library.setdefault(library_name, {})[
+                                2
+                            ] = {"_skipped": True}
                             continue
 
                         completed_count += 1
 
-                        merge_stats_dicts(self.pass2_stats, result["pass_stats"])
-                        for key, value in result["pass_stats"].items():
-                            if not (
-                                key.endswith("_scanned") or key.endswith("_skipped")
-                            ):
-                                with self._lock:
-                                    self.stats[key] = self.stats.get(key, 0) + value
-                        self.pass2_stats_per_library[library_name] = result[
-                            "pass_stats"
-                        ]
+                        merge_stats_dicts(self.pass_stats[2], result["pass_stats"])
+                        self.pass_stats_per_library.setdefault(library_name, {})[2] = (
+                            result["pass_stats"]
+                        )
                         pass_stats = result["pass_stats"]
                         if (
                             pass_stats.get("series_added", 0) > 0
@@ -1160,16 +1096,16 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
 
             self.flush_detail_progress()
 
-            # Calculate final overall statistics for seasons and episodes to avoid double-counting across passes
-            for key in [
-                "seasons_scanned",
-                "seasons_skipped",
-                "episodes_scanned",
-                "episodes_skipped",
-            ]:
-                self.stats[key] = max(
-                    self.pass1_stats.get(key, 0), self.pass2_stats.get(key, 0)
-                )
+            # Compute self.stats as the union of both passes: max for scanned/skipped (unique entities),
+            # sum for added/updated/removed (cumulative actions).
+            self.stats = create_empty_stats()
+            for pass_num in [1, 2]:
+                if pass_num in self.pass_stats:
+                    for key, value in self.pass_stats[pass_num].items():
+                        if key.endswith("_scanned") or key.endswith("_skipped"):
+                            self.stats[key] = max(self.stats.get(key, 0), value)
+                        elif not key.startswith("_"):
+                            self.stats[key] = self.stats.get(key, 0) + value
 
             duration = time.time() - start_time
             self._log_scan_summary(duration, libraries_dictionary)

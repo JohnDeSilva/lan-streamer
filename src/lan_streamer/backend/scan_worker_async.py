@@ -74,12 +74,7 @@ class AsyncScanWorker(AsyncWorkerBase):
 
         # Pass tracking
         self.current_pass: int = 1
-        self.pass1_stats: Dict[str, int] = create_empty_stats()
-        self.pass2_stats: Dict[str, int] = create_empty_stats()
-        self._scanned_series_ids: Set[str] = set()
-        self._scanned_movie_ids: Set[str] = set()
-        self._skipped_series_ids: Set[str] = set()
-        self._skipped_movie_ids: Set[str] = set()
+        self.pass_stats: Dict[int, Dict[str, int]] = {}
 
         # Async database writer — created in run_async
         self.database_writer: Optional[AsyncDatabaseWriter] = None
@@ -98,14 +93,10 @@ class AsyncScanWorker(AsyncWorkerBase):
         start_time = time.time()
         self.problems = []
         self.stats = create_empty_stats()
-        self._reset_pass_stats()
+        self.pass_stats = {1: create_empty_stats(), 2: create_empty_stats()}
         self.changed_season_ids = set()
         self.changed_movie_ids = set()
         self.current_pass = 1
-        self._scanned_series_ids.clear()
-        self._scanned_movie_ids.clear()
-        self._skipped_series_ids.clear()
-        self._skipped_movie_ids.clear()
 
         # Create and start the async database writer
         self.database_writer = AsyncDatabaseWriter()
@@ -286,16 +277,16 @@ class AsyncScanWorker(AsyncWorkerBase):
 
             self._flush_detail_progress()
 
-            # Calculate final overall statistics for seasons and episodes to avoid double-counting across passes
-            for key in [
-                "seasons_scanned",
-                "seasons_skipped",
-                "episodes_scanned",
-                "episodes_skipped",
-            ]:
-                self.stats[key] = max(
-                    self.pass1_stats.get(key, 0), self.pass2_stats.get(key, 0)
-                )
+            # Compute self.stats as the union of both passes: max for scanned/skipped (unique entities),
+            # sum for added/updated/removed (cumulative actions).
+            self.stats = create_empty_stats()
+            for pass_num in [1, 2]:
+                if pass_num in self.pass_stats:
+                    for key, value in self.pass_stats[pass_num].items():
+                        if key.endswith("_scanned") or key.endswith("_skipped"):
+                            self.stats[key] = max(self.stats.get(key, 0), value)
+                        elif not key.startswith("_"):
+                            self.stats[key] = self.stats.get(key, 0) + value
 
             duration = time.time() - start_time
             self._log_scan_summary(duration)
@@ -319,11 +310,6 @@ class AsyncScanWorker(AsyncWorkerBase):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-
-    def _reset_pass_stats(self) -> None:
-        for key in self.pass1_stats:
-            self.pass1_stats[key] = 0
-            self.pass2_stats[key] = 0
 
     def _emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
         flush_needed = False
@@ -356,12 +342,8 @@ class AsyncScanWorker(AsyncWorkerBase):
             for issue in stats["issues"]:
                 self.problems.append(issue)
 
-        target_stats = self.pass1_stats if self.current_pass == 1 else self.pass2_stats
+        target_stats = self.pass_stats[self.current_pass]
 
-        series_id = stats.get("series_id") or series_name
-        if series_id not in self._scanned_series_ids:
-            self._scanned_series_ids.add(series_id)
-            self.stats["series_scanned"] += 1
         target_stats["series_scanned"] += 1
 
         any_changed = any(
@@ -369,9 +351,6 @@ class AsyncScanWorker(AsyncWorkerBase):
         )
         if not any_changed:
             target_stats["series_skipped"] += 1
-            if series_id not in self._skipped_series_ids:
-                self._skipped_series_ids.add(series_id)
-                self.stats["series_skipped"] += 1
 
         target_stats["seasons_scanned"] += 1
 
@@ -388,11 +367,10 @@ class AsyncScanWorker(AsyncWorkerBase):
             skipped = max(0, episode_count - added - updated)
             target_stats["episodes_skipped"] += skipped
 
-        for key in self.stats:
+        for key in target_stats:
             if key in stats and not (
                 key.endswith("_scanned") or key.endswith("_skipped")
             ):
-                self.stats[key] += stats[key]
                 target_stats[key] += stats[key]
 
         if season_data.get("_changed", True) and "season_id" in stats:
@@ -410,25 +388,16 @@ class AsyncScanWorker(AsyncWorkerBase):
             for issue in stats["issues"]:
                 self.problems.append(issue)
 
-        target_stats = self.pass1_stats if self.current_pass == 1 else self.pass2_stats
+        target_stats = self.pass_stats[self.current_pass]
         target_stats["movies_scanned"] += 1
-
-        movie_id = stats.get("movie_id") or movie_name
-        if movie_id not in self._scanned_movie_ids:
-            self._scanned_movie_ids.add(movie_id)
-            self.stats["movies_scanned"] += 1
 
         if not movie_data.get("_changed", True):
             target_stats["movies_skipped"] += 1
-            if movie_id not in self._skipped_movie_ids:
-                self._skipped_movie_ids.add(movie_id)
-                self.stats["movies_skipped"] += 1
 
-        for key in self.stats:
+        for key in target_stats:
             if key in stats and not (
                 key.endswith("_scanned") or key.endswith("_skipped")
             ):
-                self.stats[key] += stats[key]
                 target_stats[key] += stats[key]
 
         if movie_data.get("_changed", True) and "movie_id" in stats:
@@ -465,13 +434,13 @@ class AsyncScanWorker(AsyncWorkerBase):
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
         log_stats_breakdown(
             "PASS 1: OFFLINE FILE DISCOVERY BREAKDOWN",
-            self.pass1_stats,
+            self.pass_stats.get(1, {}),
             logger,
         )
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
         log_stats_breakdown(
             "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN",
-            self.pass2_stats,
+            self.pass_stats.get(2, {}),
             logger,
         )
         logger.info("[SCAN_REPORT] ---------------------------------------------------")
