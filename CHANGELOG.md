@@ -1,3 +1,9 @@
+## v0.44.0rc0-1 (2026-07-07)
+
+### Fix
+
+- **updater**: Clean PyInstaller environment variables when spawning detached update processes
+
 ## v0.44.0rc0 (2026-07-07)
 
 ### Feat
