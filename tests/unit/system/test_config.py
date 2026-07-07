@@ -1,5 +1,6 @@
 import json
 import pytest
+from pathlib import Path
 from unittest.mock import patch
 from lan_streamer.system.config import Config
 
@@ -31,21 +32,23 @@ def test_config_initialization(mock_config_file) -> None:
 
 def test_config_load_existing(mock_config_file) -> None:
     mock_config_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(mock_config_file, "w") as f:
+    with open(mock_config_file, "w") as file_handle:
         json.dump(
             {
                 "database_path": "/path/to/db.db",
                 "log_directory": "/path/to/logs",
+                "backup_directory": "/path/to/backups",
                 "log_level": "DEBUG",
                 "config_backup_frequency": 3,
                 "database_backup_frequency": 5,
             },
-            f,
+            file_handle,
         )
 
     config = Config()
     assert config.database_path == "/path/to/db.db"
     assert config.log_directory == "/path/to/logs"
+    assert config.backup_directory == "/path/to/backups"
     assert config.log_level == "DEBUG"
     assert config.config_backup_frequency == 3
     assert config.database_backup_frequency == 5
@@ -266,3 +269,47 @@ def test_config_generates_and_backups_db_on_startup(tmp_path, mock_config_file) 
         backup_cfg.database_backup_frequency = orig_db_freq
         backup_cfg.config_backup_retention = orig_cfg_ret
         backup_cfg.database_backup_retention = orig_db_ret
+
+
+def test_config_custom_file_from_arguments() -> None:
+    import sys
+    from unittest.mock import patch
+    from pathlib import Path
+    from lan_streamer.system.config import _parse_config_path
+
+    # Test parser when --config is passed
+    with patch.object(sys, "argv", ["lan-streamer", "--config", "/tmp/custom-1.json"]):
+        assert _parse_config_path() == Path("/tmp/custom-1.json")
+
+    # Test parser when -c is passed
+    with patch.object(sys, "argv", ["lan-streamer", "-c", "/tmp/custom-2.json"]):
+        assert _parse_config_path() == Path("/tmp/custom-2.json")
+
+    # Test parser when --config= is passed
+    with patch.object(sys, "argv", ["lan-streamer", "--config=/tmp/custom-3.json"]):
+        assert _parse_config_path() == Path("/tmp/custom-3.json")
+
+    # Test parser fallback
+    with patch.object(sys, "argv", ["lan-streamer"]):
+        assert (
+            _parse_config_path()
+            == Path.home() / ".config" / "lan-streamer" / "config.json"
+        )
+
+
+def test_config_initialization_with_custom_file(tmp_path) -> None:
+    custom_config_path = tmp_path / "my-custom-config.json"
+
+    # We patch CONFIG_FILE dynamically to simulate the parsed config file
+    with patch("lan_streamer.system.config.CONFIG_FILE", custom_config_path):
+        config = Config()
+
+        # Verify defaults are relative to the custom config file directory
+        assert Path(config.database_path) == custom_config_path.parent / "library.db"
+        assert Path(config.log_directory) == custom_config_path.parent / "logs"
+        assert Path(config.cache_directory) == custom_config_path.parent / "cache"
+        assert Path(config.backup_directory) == custom_config_path.parent / "backups"
+
+        # Save config file, verifying it generates the file in the new location
+        config.save()
+        assert custom_config_path.exists()

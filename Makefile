@@ -33,7 +33,7 @@ VERSION := $(shell python3 -c "import re; print(re.search(r'__version__\s*=\s*[\
 DOCKERFILE := $(shell if [ -f docker/Dockerfile.$(TEST_OS)-$(TEST_OS_VERSION) ]; then echo docker/Dockerfile.$(TEST_OS)-$(TEST_OS_VERSION); else echo docker/Dockerfile.$(TEST_OS); fi)
 
 run: migrate
-	PYTHONPATH=src $(QT_PLATFORM) $(PYTHON) -m lan_streamer.main
+	PYTHONPATH=src $(QT_PLATFORM) $(PYTHON) -m lan_streamer.main --config ./dev_run/config.json
 
 typecheck:
 	$(MYPY) src/

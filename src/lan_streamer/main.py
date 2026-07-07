@@ -58,9 +58,18 @@ def setup_dark_theme(application_instance: QApplication) -> None:
 async def main() -> None:
     import os
 
-    if len(sys.argv) > 1 and sys.argv[1] in ("--version", "-v", "-V"):
-        print(f"lan-streamer {__version__}")
-        sys.exit(0)
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ("--version", "-v", "-V"):
+            print(f"lan-streamer {__version__}")
+            sys.exit(0)
+        elif any(argument in sys.argv for argument in ("--help", "-h")):
+            print("Usage: lan-streamer [options]")
+            print()
+            print("Options:")
+            print("  -c, --config PATH      Path to custom JSON configuration file.")
+            print("  -v, -V, --version      Show version information and exit.")
+            print("  -h, --help             Show this help message and exit.")
+            sys.exit(0)
 
     if os.environ.get("LAN_STREAMER_DRY_RUN") == "1":
         if not os.environ.get("QT_QPA_PLATFORM"):
@@ -586,9 +595,18 @@ def run_main() -> None:
     import os
     from PySide6.QtWidgets import QApplication
 
-    if len(sys.argv) > 1 and sys.argv[1] in ("--version", "-v", "-V"):
-        print(f"lan-streamer {__version__}")
-        sys.exit(0)
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ("--version", "-v", "-V"):
+            print(f"lan-streamer {__version__}")
+            sys.exit(0)
+        elif any(argument in sys.argv for argument in ("--help", "-h")):
+            print("Usage: lan-streamer [options]")
+            print()
+            print("Options:")
+            print("  -c, --config PATH      Path to custom JSON configuration file.")
+            print("  -v, -V, --version      Show version information and exit.")
+            print("  -h, --help             Show this help message and exit.")
+            sys.exit(0)
 
     if os.environ.get("LAN_STREAMER_DRY_RUN") == "1":
         if not os.environ.get("QT_QPA_PLATFORM"):
