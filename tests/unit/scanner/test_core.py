@@ -3641,3 +3641,133 @@ def test_scan_directories_cooperative_cancellation() -> None:
     # Since it returned early due to interruption, result should be empty.
     assert len(res) == 0
     is_interrupted_mock.assert_called()
+
+
+# =========================================================================
+# Tests for _merge_episodes_by_number and _merge_series_data
+# =========================================================================
+
+
+def test_merge_episodes_by_number_combines_versions() -> None:
+    """Episodes with the same number across two lists have their versions merged."""
+    from lan_streamer.scanner.core import _merge_episodes_by_number
+
+    existing = [
+        {
+            "name": "E01.mkv",
+            "path": "/r1/Series/Season 1/E01.mkv",
+            "season_number": 1,
+            "episode_number": 1,
+            "versions": [{"path": "/r1/Series/Season 1/E01.mkv"}],
+        },
+    ]
+    incoming = [
+        {
+            "name": "E01.mp4",
+            "path": "/r2/Series/Season 1/E01.mp4",
+            "season_number": 1,
+            "episode_number": 1,
+            "versions": [{"path": "/r2/Series/Season 1/E01.mp4"}],
+        },
+    ]
+
+    merged = _merge_episodes_by_number(existing, incoming)
+    assert len(merged) == 1
+    assert len(merged[0]["versions"]) == 2
+    version_paths = {v["path"] for v in merged[0]["versions"]}
+    assert "/r1/Series/Season 1/E01.mkv" in version_paths
+    assert "/r2/Series/Season 1/E01.mp4" in version_paths
+
+
+def test_merge_episodes_by_number_different_numbers_kept_separate() -> None:
+    """Episodes with different episode numbers remain separate entries."""
+    from lan_streamer.scanner.core import _merge_episodes_by_number
+
+    existing = [
+        {
+            "name": "E01.mkv",
+            "path": "/r1/E01.mkv",
+            "season_number": 1,
+            "episode_number": 1,
+            "versions": [{"path": "/r1/E01.mkv"}],
+        },
+    ]
+    incoming = [
+        {
+            "name": "E02.mp4",
+            "path": "/r2/E02.mp4",
+            "season_number": 1,
+            "episode_number": 2,
+            "versions": [{"path": "/r2/E02.mp4"}],
+        },
+    ]
+
+    merged = _merge_episodes_by_number(existing, incoming)
+    assert len(merged) == 2
+
+
+def test_merge_series_data_combines_seasons_and_episodes() -> None:
+    """_merge_series_data merges episodes within same-named seasons across roots."""
+    from lan_streamer.scanner.core import _merge_series_data
+
+    root1_data: dict[str, Any] = {
+        "name": "Series",
+        "seasons": {
+            "Season 1": {
+                "episodes": [
+                    {
+                        "name": "E01.mkv",
+                        "path": "/r1/Series/Season 1/E01.mkv",
+                        "season_number": 1,
+                        "episode_number": 1,
+                        "versions": [{"path": "/r1/Series/Season 1/E01.mkv"}],
+                    },
+                ],
+            },
+        },
+    }
+    root2_data: dict[str, Any] = {
+        "name": "Series",
+        "seasons": {
+            "Season 1": {
+                "episodes": [
+                    {
+                        "name": "E01.mp4",
+                        "path": "/r2/Series/Season 1/E01.mp4",
+                        "season_number": 1,
+                        "episode_number": 1,
+                        "versions": [{"path": "/r2/Series/Season 1/E01.mp4"}],
+                    },
+                ],
+            },
+        },
+    }
+
+    merged = _merge_series_data(root1_data, root2_data)
+    assert "Season 1" in merged["seasons"]
+    season1 = merged["seasons"]["Season 1"]
+    assert len(season1["episodes"]) == 1
+    assert len(season1["episodes"][0]["versions"]) == 2
+    assert season1.get("_changed") is True
+
+
+def test_merge_series_data_different_seasons_both_preserved() -> None:
+    """Seasons with different names from different roots are all preserved."""
+    from lan_streamer.scanner.core import _merge_series_data
+
+    existing: dict[str, Any] = {
+        "name": "Series",
+        "seasons": {
+            "Season 1": {"episodes": []},
+        },
+    }
+    incoming: dict[str, Any] = {
+        "name": "Series",
+        "seasons": {
+            "Season 2": {"episodes": []},
+        },
+    }
+
+    merged = _merge_series_data(existing, incoming)
+    assert "Season 1" in merged["seasons"]
+    assert "Season 2" in merged["seasons"]

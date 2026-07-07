@@ -590,18 +590,92 @@ def _find_series_dir(series_name: str, root_directories: List[str]) -> Optional[
     return None
 
 
+def _episode_merge_key(episode: Dict[str, Any]) -> tuple:
+    """Return a dedup key for an episode dict.
+
+    Key is scoped to a single season (caller already groups by season name).
+    Priority:
+    1. ``episode_number`` (or fallback ``tmdb_number``) as an int key.
+    2. ``("path", path)`` when a path is set.
+    3. ``("id", name)`` as last resort.
+    """
+    ep_num = episode.get("episode_number", 0) or episode.get("tmdb_number", 0)
+    if ep_num:
+        return (int(ep_num),)
+    ep_path = episode.get("path")
+    if ep_path:
+        return ("path", ep_path)
+    return ("id", episode.get("name", ""))
+
+
+def _merge_episodes_by_number(
+    existing_episodes: List[Dict[str, Any]],
+    incoming_episodes: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Merge two episode lists, combining versions for episodes with the same number.
+
+    Episodes are matched by ``episode_number`` or ``tmdb_number``; unnumbered
+    episodes are deduplicated by path.
+    """
+    by_key: Dict[tuple, Dict[str, Any]] = {}
+
+    for episode in existing_episodes:
+        key = _episode_merge_key(episode)
+        entry = dict(episode)
+        entry["versions"] = list(episode.get("versions", []))
+        by_key[key] = entry
+
+    for episode in incoming_episodes:
+        key = _episode_merge_key(episode)
+        if key in by_key:
+            existing_entry = by_key[key]
+            existing_paths = {
+                v.get("path")
+                for v in existing_entry.get("versions", [])
+                if v.get("path")
+            }
+            for version in episode.get("versions", []):
+                if version.get("path") and version["path"] not in existing_paths:
+                    existing_entry["versions"].append(version)
+            if not existing_entry.get("path") and episode.get("path"):
+                existing_entry["path"] = episode["path"]
+            if not existing_entry.get("name") and episode.get("name"):
+                existing_entry["name"] = episode["name"]
+        else:
+            entry = dict(episode)
+            entry["versions"] = list(episode.get("versions", []))
+            by_key[key] = entry
+
+    return list(by_key.values())
+
+
 def _merge_series_data(
     existing: Dict[str, Any], incoming: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Merge two series data dicts, combining seasons from both.
+    """Merge two series data dicts, combining seasons and episodes from both.
 
-    The *incoming* (freshly scanned) data takes precedence for metadata
-    fields; seasons from both dicts are combined (incoming overwrites
-    existing for same-named seasons). Additional keys from *existing*
-    (e.g. ``metrics``, ``watched``) are preserved.
+    When the same season exists in both inputs, episodes within that season
+    are merged by number (versions combined). The *incoming* data takes
+    precedence for top-level metadata.
     """
     merged = {**existing, **incoming}
     existing_seasons = existing.get("seasons", {})
     incoming_seasons = incoming.get("seasons", {})
-    merged["seasons"] = {**existing_seasons, **incoming_seasons}
+    merged_seasons: Dict[str, Any] = {}
+    for season_name in set(existing_seasons) | set(incoming_seasons):
+        existing_season = existing_seasons.get(season_name)
+        incoming_season = incoming_seasons.get(season_name)
+        if existing_season is not None and incoming_season is not None:
+            merged_season = {**existing_season, **incoming_season}
+            merged_season["episodes"] = _merge_episodes_by_number(
+                existing_season.get("episodes", []),
+                incoming_season.get("episodes", []),
+            )
+            merged_season["_changed"] = True
+            merged_seasons[season_name] = merged_season
+        else:
+            merged_seasons[season_name] = (
+                existing_season if existing_season is not None else incoming_season
+            )
+    merged["seasons"] = merged_seasons
     return merged
