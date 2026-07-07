@@ -64,7 +64,7 @@ def test_update_dialog_progress(dialog) -> None:
 
 def test_update_dialog_finished_success(dialog, qtbot) -> None:
     with (
-        patch("PySide6.QtCore.QProcess.startDetached") as mock_start,
+        patch.object(dialog, "_launch_detached_clean_env") as mock_launch,
         patch("os.chmod") as mock_chmod,
         patch(
             "lan_streamer.ui_views.dialogs.update_dialog.QApplication.quit"
@@ -77,7 +77,7 @@ def test_update_dialog_finished_success(dialog, qtbot) -> None:
             mock_chmod.assert_called_once_with(
                 Path("/path/to/downloaded/update"), 0o755
             )  # chmod called on path
-        mock_start.assert_called_once_with("/path/to/downloaded/update")
+        mock_launch.assert_called_once_with("/path/to/downloaded/update")
         mock_quit.assert_called_once()
 
 
@@ -211,13 +211,13 @@ def test_update_dialog_finished_success_in_place(dialog, qtbot) -> None:
 def test_update_dialog_install_finished_success(dialog, qtbot) -> None:
     with (
         patch("sys.executable", "/usr/bin/lan-streamer"),
-        patch("PySide6.QtCore.QProcess.startDetached") as mock_start,
+        patch.object(dialog, "_launch_detached_clean_env") as mock_launch,
         patch(
             "lan_streamer.ui_views.dialogs.update_dialog.QApplication.quit"
         ) as mock_quit,
     ):
         dialog.on_install_finished(True, "")
-        mock_start.assert_called_once_with("/usr/bin/lan-streamer")
+        mock_launch.assert_called_once_with("/usr/bin/lan-streamer")
         mock_quit.assert_called_once()
 
 
@@ -235,3 +235,24 @@ def test_update_dialog_install_finished_failure(dialog, qtbot) -> None:
         assert not dialog.ignore_button.isHidden()
         assert not dialog.download_button.isHidden()
         assert dialog.progress_container.isHidden()
+
+
+def test_launch_detached_clean_env(dialog) -> None:
+    with (
+        patch("subprocess.Popen") as mock_popen,
+        patch(
+            "os.environ",
+            {
+                "MEIPASS": "old_pass",
+                "LD_LIBRARY_PATH_ORIG": "orig_path",
+                "PATH": "some_path",
+            },
+        ),
+    ):
+        dialog._launch_detached_clean_env("/bin/test-app", ["--arg"])
+        mock_popen.assert_called_once()
+        called_args, called_kwargs = mock_popen.call_args
+        assert called_args[0] == ["/bin/test-app", "--arg"]
+        env = called_kwargs["env"]
+        assert "MEIPASS" not in env
+        assert env["LD_LIBRARY_PATH"] == "orig_path"

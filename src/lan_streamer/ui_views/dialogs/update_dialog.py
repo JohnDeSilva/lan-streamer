@@ -240,10 +240,10 @@ class UpdateDialog(QDialog):
                     logger.info(
                         f"UpdateDialog: launching update on macOS using 'open': {program_path}"
                     )
-                    QProcess.startDetached("open", [str(program_path)])
+                    self._launch_detached_clean_env("open", [str(program_path)])
                 else:
                     logger.info(f"UpdateDialog: launching update: {program_path}")
-                    QProcess.startDetached(str(program_path))
+                    self._launch_detached_clean_env(str(program_path))
 
                 # Close the current running application
                 self.accept()
@@ -275,7 +275,7 @@ class UpdateDialog(QDialog):
             self.progress_bar.setValue(100)
 
             # Start the updated executable
-            QProcess.startDetached(sys.executable)
+            self._launch_detached_clean_env(sys.executable)
 
             self.accept()
             QApplication.quit()
@@ -311,3 +311,62 @@ class UpdateDialog(QDialog):
                 event.ignore()
         else:
             event.accept()
+
+    def _launch_detached_clean_env(
+        self, executable_path: str, arguments: Optional[list[str]] = None
+    ) -> None:
+        """Launches a child process with a clean environment, stripping PyInstaller variables
+        to prevent the child from attempting to use the parent's temporary MEIPASS directory.
+        """
+        import subprocess
+
+        if arguments is None:
+            arguments = []
+
+        # Clean the environment
+        clean_env = dict(os.environ)
+        for var in ["MEIPASS", "_MEIPASS", "_MEIPASS2"]:
+            clean_env.pop(var, None)
+
+        for orig_var, target_var in [
+            ("LD_LIBRARY_PATH_ORIG", "LD_LIBRARY_PATH"),
+            ("DYLD_LIBRARY_PATH_ORIG", "DYLD_LIBRARY_PATH"),
+            ("PATH_ORIG", "PATH"),
+        ]:
+            if orig_var in clean_env:
+                clean_env[target_var] = clean_env[orig_var]
+            else:
+                if target_var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
+                    clean_env.pop(target_var, None)
+
+        # Spawn process using subprocess.Popen with detachment flags
+        command_list = [executable_path] + arguments
+        try:
+            logger.info(
+                f"UpdateDialog: launching detached child process: {command_list}"
+            )
+            if sys.platform == "win32":
+                DETACHED_PROCESS = 0x00000008
+                CREATE_NEW_PROCESS_GROUP = 0x00000200
+                subprocess.Popen(
+                    command_list,
+                    env=clean_env,
+                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                    close_fds=True,
+                )
+            else:
+                subprocess.Popen(
+                    command_list,
+                    env=clean_env,
+                    start_new_session=True,
+                    close_fds=True,
+                )
+        except Exception:
+            logger.exception(
+                "UpdateDialog: failed to launch detached child process using subprocess.Popen"
+            )
+            # Fallback to QProcess.startDetached as a last resort
+            if arguments:
+                QProcess.startDetached(executable_path, arguments)
+            else:
+                QProcess.startDetached(executable_path)
