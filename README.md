@@ -274,6 +274,7 @@ erDiagram
         string jellyfin_id
         string poster_path
         int myanimelist_id
+        string series_name
     }
     EPISODES {
         bytes id PK
@@ -286,6 +287,8 @@ erDiagram
         int myanimelist_episode_number
         string video_codec
         string default_path
+        string series_name
+        string season_name
     }
     MOVIES {
         bytes id PK
@@ -330,6 +333,10 @@ erDiagram
         boolean watched
         int last_played_position
         int last_played_at
+        string series_name
+        string season_name
+        string episode_name
+        string movie_name
     }
     APP_CONFIG {
         string key PK
