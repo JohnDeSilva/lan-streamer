@@ -302,10 +302,13 @@ def scan_series_pass1(
                 )
             if detail_callback:
                 for episode in episodes:
+                    ep_path = episode.get("path")
+                    if ep_path is None:
+                        continue
                     detail_callback(
                         "start_file",
                         {
-                            "file": episode["path"],
+                            "file": ep_path,
                             "folder": series_directory.name,
                             "season": season_name,
                         },
@@ -313,7 +316,7 @@ def scan_series_pass1(
                     detail_callback(
                         "finish_file",
                         {
-                            "file": episode["path"],
+                            "file": ep_path,
                             "folder": series_directory.name,
                             "season": season_name,
                         },
