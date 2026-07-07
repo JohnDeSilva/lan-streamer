@@ -987,6 +987,80 @@ def test_save_library_shared_media_files_no_unique_constraint_failure(
 
 
 # ---------------------------------------------------------------------------
+# _save_episode_record - multi-file versions create MediaFile records
+# ---------------------------------------------------------------------------
+
+
+def test_save_episode_record_creates_media_files_from_versions(
+    mock_db_file,
+) -> None:
+    """Episode_data with multiple versions creates one MediaFile per version."""
+    from lan_streamer.db.library_tv import _save_episode_record
+    from sqlalchemy import select
+    from lan_streamer.db.models import MediaFile
+
+    with get_session() as session:
+        series = Series(name="VersionsShow", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(name="Season 1", series=series)
+        session.add(season)
+        session.flush()
+
+        existing_by_path: Dict[str, Episode] = {}
+        existing_by_number: Dict[int, Episode] = {}
+        existing_by_name: Dict[str, Episode] = {}
+        stats: Dict[str, Any] = {"episodes": 0}
+
+        episode_data: Dict[str, Any] = {
+            "name": "S01E01 - Pilot",
+            "path": "/root1/Season 1/S01E01.mkv",
+            "tmdb_number": 1,
+            "versions": [
+                {
+                    "path": "/root1/Season 1/S01E01.mkv",
+                    "video_codec": "h264",
+                    "resolution": "1080p",
+                    "size_bytes": 500,
+                },
+                {
+                    "path": "/root2/Season 1/S01E01.mp4",
+                    "video_codec": "h265",
+                    "resolution": "4K",
+                    "size_bytes": 800,
+                },
+            ],
+        }
+
+        episode = _save_episode_record(
+            session,
+            season,
+            episode_data,
+            existing_by_path,
+            existing_by_number,
+            existing_by_name,
+            stats,
+        )
+        session.commit()
+
+        assert episode is not None
+        assert len(episode.media_files) == 2
+        mf_paths = {mf.path for mf in episode.media_files}
+        assert "/root1/Season 1/S01E01.mkv" in mf_paths
+        assert "/root2/Season 1/S01E01.mp4" in mf_paths
+
+        # Verify persistence
+        mfs = session.scalars(
+            select(MediaFile).where(
+                MediaFile.path.in_(
+                    ["/root1/Season 1/S01E01.mkv", "/root2/Season 1/S01E01.mp4"]
+                )
+            )
+        ).all()
+        assert len(mfs) == 2
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
