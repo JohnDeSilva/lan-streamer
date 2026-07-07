@@ -16,6 +16,7 @@ from sqlalchemy import (
     LargeBinary,
     TypeDecorator,
     Float,
+    event,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -202,6 +203,7 @@ class Season(Base):
     jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
     poster_path: Mapped[Optional[str]] = mapped_column(String)
     myanimelist_id: Mapped[Optional[int]] = mapped_column(Integer)
+    series_name: Mapped[Optional[str]] = mapped_column(String)
 
     series: Mapped[Optional["Series"]] = relationship(
         "Series", back_populates="seasons"
@@ -428,6 +430,8 @@ class Episode(CompatibilityMixin, Base):
     myanimelist_anime_id: Mapped[Optional[int]] = mapped_column(Integer)
     myanimelist_episode_number: Mapped[Optional[int]] = mapped_column(Integer)
     default_path: Mapped[Optional[str]] = mapped_column(String)
+    series_name: Mapped[Optional[str]] = mapped_column(String)
+    season_name: Mapped[Optional[str]] = mapped_column(String)
 
     season: Mapped[Optional["Season"]] = relationship(
         "Season", back_populates="episodes"
@@ -437,7 +441,7 @@ class Episode(CompatibilityMixin, Base):
         secondary="metadata_file_mappings",
         back_populates="episodes",
         passive_deletes=True,
-        overlaps="media_files,episodes,movies",
+        overlaps="media_files,episodes,movies,file_mappings",
     )
     playback_state: Mapped[Optional["PlaybackState"]] = relationship(
         "PlaybackState",
@@ -451,6 +455,13 @@ class Episode(CompatibilityMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
         foreign_keys="MediaCast.episode_id",
+    )
+    file_mappings: Mapped[List["MetadataFileMapping"]] = relationship(
+        "MetadataFileMapping",
+        back_populates="episode",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        overlaps="media_files",
     )
 
     __table_args__ = (
@@ -487,7 +498,7 @@ class Movie(CompatibilityMixin, Base):
         secondary="metadata_file_mappings",
         back_populates="movies",
         passive_deletes=True,
-        overlaps="media_files,episodes,movies",
+        overlaps="media_files,episodes,movies,file_mappings",
     )
     playback_state: Mapped[Optional["PlaybackState"]] = relationship(
         "PlaybackState",
@@ -508,6 +519,13 @@ class Movie(CompatibilityMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
         foreign_keys="MediaImage.movie_id",
+    )
+    file_mappings: Mapped[List["MetadataFileMapping"]] = relationship(
+        "MetadataFileMapping",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        overlaps="media_files",
     )
 
     __table_args__ = (
@@ -537,14 +555,21 @@ class MediaFile(Base):
         secondary="metadata_file_mappings",
         back_populates="media_files",
         passive_deletes=True,
-        overlaps="media_files,episodes,movies",
+        overlaps="media_files,episodes,movies,file_mappings",
     )
     movies: Mapped[List["Movie"]] = relationship(
         "Movie",
         secondary="metadata_file_mappings",
         back_populates="media_files",
         passive_deletes=True,
-        overlaps="media_files,episodes,movies",
+        overlaps="media_files,episodes,movies,file_mappings",
+    )
+    file_mappings: Mapped[List["MetadataFileMapping"]] = relationship(
+        "MetadataFileMapping",
+        back_populates="media_file",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        overlaps="episodes,movies",
     )
     # playback_state relationship removed, as playback state is now coupled to creative metadata.
 
@@ -553,6 +578,7 @@ class MetadataFileMapping(Base):
     """Many-to-many relationship mapping table between MediaFile and Episode or Movie."""
 
     __tablename__ = "metadata_file_mappings"
+    __mapper_args__ = {"confirm_deleted_rows": False}
 
     id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
     media_file_id: Mapped[str] = mapped_column(
@@ -563,6 +589,27 @@ class MetadataFileMapping(Base):
     )
     movie_id: Mapped[Optional[str]] = mapped_column(
         UUIDBLOB, ForeignKey("movies.id", ondelete="CASCADE"), nullable=True
+    )
+    file_path: Mapped[Optional[str]] = mapped_column(String)
+    series_name: Mapped[Optional[str]] = mapped_column(String)
+    season_name: Mapped[Optional[str]] = mapped_column(String)
+    episode_name: Mapped[Optional[str]] = mapped_column(String)
+    movie_name: Mapped[Optional[str]] = mapped_column(String)
+
+    episode: Mapped[Optional["Episode"]] = relationship(
+        "Episode",
+        back_populates="file_mappings",
+        overlaps="media_files,episodes",
+    )
+    movie: Mapped[Optional["Movie"]] = relationship(
+        "Movie",
+        back_populates="file_mappings",
+        overlaps="media_files,movies",
+    )
+    media_file: Mapped["MediaFile"] = relationship(
+        "MediaFile",
+        back_populates="file_mappings",
+        overlaps="media_files,episodes,movies",
     )
 
     __table_args__ = (
@@ -595,6 +642,10 @@ class PlaybackState(Base):
     watched: Mapped[bool] = mapped_column(Boolean, default=False)
     last_played_position: Mapped[int] = mapped_column(Integer, default=0)
     last_played_at: Mapped[int] = mapped_column(Integer, default=0)
+    series_name: Mapped[Optional[str]] = mapped_column(String)
+    season_name: Mapped[Optional[str]] = mapped_column(String)
+    episode_name: Mapped[Optional[str]] = mapped_column(String)
+    movie_name: Mapped[Optional[str]] = mapped_column(String)
 
     episode: Mapped[Optional["Episode"]] = relationship(
         "Episode", back_populates="playback_state"
@@ -667,3 +718,99 @@ class ScannedDirectory(Base):
 
     path: Mapped[str] = mapped_column(String, primary_key=True)
     last_scanned_mtime: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+@event.listens_for(Season, "before_insert")
+@event.listens_for(Season, "before_update")
+def receive_before_insert_update_season(
+    mapper: Any, connection: Any, target: Season
+) -> None:
+    from sqlalchemy.orm import object_session
+
+    session = object_session(target)
+    if not session:
+        return
+    if target.series_id:
+        series = session.get(Series, target.series_id)
+        if series:
+            target.series_name = series.name
+
+
+@event.listens_for(Episode, "before_insert")
+@event.listens_for(Episode, "before_update")
+def receive_before_insert_update_episode(
+    mapper: Any, connection: Any, target: Episode
+) -> None:
+    from sqlalchemy.orm import object_session
+
+    session = object_session(target)
+    if not session:
+        return
+    if target.season_id:
+        season = session.get(Season, target.season_id)
+        if season:
+            target.season_name = season.name
+            if season.series_id:
+                series = session.get(Series, season.series_id)
+                if series:
+                    target.series_name = series.name
+
+
+@event.listens_for(PlaybackState, "before_insert")
+@event.listens_for(PlaybackState, "before_update")
+def receive_before_insert_update_playback_state(
+    mapper: Any, connection: Any, target: PlaybackState
+) -> None:
+    from sqlalchemy.orm import object_session
+
+    session = object_session(target)
+    if not session:
+        return
+    if target.episode_id:
+        episode = session.get(Episode, target.episode_id)
+        if episode:
+            target.episode_name = episode.name
+            if episode.season_id:
+                season = session.get(Season, episode.season_id)
+                if season:
+                    target.season_name = season.name
+                    if season.series_id:
+                        series = session.get(Series, season.series_id)
+                        if series:
+                            target.series_name = series.name
+    elif target.movie_id:
+        movie = session.get(Movie, target.movie_id)
+        if movie:
+            target.movie_name = movie.name
+
+
+@event.listens_for(MetadataFileMapping, "before_insert")
+@event.listens_for(MetadataFileMapping, "before_update")
+def receive_before_insert_update_file_mapping(
+    mapper: Any, connection: Any, target: MetadataFileMapping
+) -> None:
+    from sqlalchemy.orm import object_session
+
+    session = object_session(target)
+    if not session:
+        return
+    if target.media_file_id:
+        media_file = session.get(MediaFile, target.media_file_id)
+        if media_file:
+            target.file_path = media_file.path
+    if target.episode_id:
+        episode = session.get(Episode, target.episode_id)
+        if episode:
+            target.episode_name = episode.name
+            if episode.season_id:
+                season = session.get(Season, episode.season_id)
+                if season:
+                    target.season_name = season.name
+                    if season.series_id:
+                        series = session.get(Series, season.series_id)
+                        if series:
+                            target.series_name = series.name
+    elif target.movie_id:
+        movie = session.get(Movie, target.movie_id)
+        if movie:
+            target.movie_name = movie.name
