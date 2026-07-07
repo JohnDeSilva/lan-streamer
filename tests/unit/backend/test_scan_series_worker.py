@@ -31,7 +31,7 @@ def test_scan_single_series_worker_success(tmp_path, mock_db_save):
     )
 
     with (
-        patch("lan_streamer.scanner.pass2_metadata.scan_series_pass2") as mock_scan,
+        patch("lan_streamer.backend.scan_series_worker.scan_series_pass2") as mock_scan,
         patch("lan_streamer.backend.scan_series_worker.clean_series_data", lambda x: x),
     ):
         # We will return dummy scanned data
@@ -129,7 +129,7 @@ def test_scan_single_series_worker_movie_success(tmp_path, mock_db_save):
         existing_library=existing,
     )
 
-    with patch("lan_streamer.scanner.pass2_metadata.scan_movie_pass2") as mock_scan:
+    with patch("lan_streamer.backend.scan_series_worker.scan_movie_pass2") as mock_scan:
         mock_scan.side_effect = [
             # First scan (root1)
             {

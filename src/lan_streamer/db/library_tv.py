@@ -183,6 +183,7 @@ def _save_episode_record(
     existing_by_name: Dict[str, Episode],
     stats: Dict[str, Any],
     processed_episodes: set[Episode] | None = None,
+    incoming_paths_in_season: set[str] | None = None,
 ) -> Episode:
     path = episode_data.get("path")
     tmdb_num = episode_data.get("tmdb_number")
@@ -225,6 +226,9 @@ def _save_episode_record(
                     f"Clearing path from the old episode record."
                 )
                 episode.path = None
+                for mf in list(episode.media_files):
+                    if mf.path == path:
+                        episode.media_files.remove(mf)
                 existing_by_path.pop(path, None)
                 if episode.tmdb_number is not None:
                     existing_by_number[episode.tmdb_number] = episode
@@ -241,12 +245,32 @@ def _save_episode_record(
                 if episode.path:
                     # Episode already has a path (another version) — merge existing
                     # MediaFiles into episode_data so _sync_media_files preserves them.
-                    new_versions = list(episode_data.get("versions", []))
+                    versions_val = episode_data.get("versions")
+                    if versions_val is None:
+                        new_versions = [
+                            {
+                                "path": episode_data.get("path"),
+                                "video_codec": episode_data.get("video_codec"),
+                                "resolution": episode_data.get("resolution"),
+                                "bit_rate": episode_data.get("bit_rate"),
+                                "audio_tracks": episode_data.get("audio_tracks"),
+                                "subtitle_tracks": episode_data.get("subtitle_tracks"),
+                            }
+                        ]
+                    else:
+                        new_versions = list(versions_val)
                     incoming_paths = {
                         v.get("path") for v in new_versions if v.get("path")
                     }
                     for media_file in list(episode.media_files):
-                        if media_file.path and media_file.path not in incoming_paths:
+                        if (
+                            media_file.path
+                            and media_file.path not in incoming_paths
+                            and (
+                                incoming_paths_in_season is None
+                                or media_file.path not in incoming_paths_in_season
+                            )
+                        ):
                             new_versions.append({"path": media_file.path})
                     episode_data["versions"] = new_versions
                     logger.info(
@@ -623,6 +647,15 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                         if episode_obj.name is not None:
                             existing_by_name[episode_obj.name] = episode_obj
 
+                    incoming_paths_in_season = set()
+                    for ep_data in season_data.get("episodes", []):
+                        p = ep_data.get("path")
+                        if p:
+                            incoming_paths_in_season.add(p)
+                        for v in ep_data.get("versions", []):
+                            if v.get("path"):
+                                incoming_paths_in_season.add(v.get("path"))
+
                     processed_episodes = set()
                     for episode_data in season_data.get("episodes", []):
                         _save_episode_record(
@@ -634,6 +667,7 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                             existing_by_name,
                             stats,
                             processed_episodes,
+                            incoming_paths_in_season=incoming_paths_in_season,
                         )
 
                     # Delete stale placeholders (which have path=None)
@@ -876,6 +910,15 @@ def save_season_data(
                 if episode_obj.name is not None:
                     existing_by_name[episode_obj.name] = episode_obj
 
+            incoming_paths_in_season = set()
+            for ep_data in season_data.get("episodes", []):
+                p = ep_data.get("path")
+                if p:
+                    incoming_paths_in_season.add(p)
+                for v in ep_data.get("versions", []):
+                    if v.get("path"):
+                        incoming_paths_in_season.add(v.get("path"))
+
             processed_episodes = set()
             for episode_data in season_data.get("episodes", []):
                 _save_episode_record(
@@ -887,6 +930,7 @@ def save_season_data(
                     existing_by_name,
                     stats,
                     processed_episodes,
+                    incoming_paths_in_season=incoming_paths_in_season,
                 )
 
             # Save season directory mtime to scanned_directories table

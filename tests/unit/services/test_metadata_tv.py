@@ -1234,7 +1234,13 @@ class TestProcessSeasonMetadata:
             "seasons": {
                 "Season 1": {
                     "metadata": {},
-                    "episodes": [{"name": "S01E01.mkv", "path": "/ep.mkv"}],
+                    "episodes": [
+                        {
+                            "name": "S01E01.mkv",
+                            "path": "/ep.mkv",
+                            "tmdb_identifier": "ep_123",
+                        }
+                    ],
                 }
             }
         }

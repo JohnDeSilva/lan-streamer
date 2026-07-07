@@ -261,6 +261,7 @@ def scan_series_pass1(
         "metadata": metadata,
         "seasons": {},
         "_pass1_season_mtimes": {},
+        "_has_new_files": False,
     }
     for key in ("tmdb_identifier", "jellyfin_id", "myanimelist_id"):
         if existing_series_data and existing_series_data.get(key):
@@ -313,9 +314,21 @@ def scan_series_pass1(
             episodes = _scan_season_files(season_directory_path)
             is_changed = True
             if existing_season:
-                episodes = _link_existing_episodes(
-                    episodes, existing_season.get("episodes", [])
-                )
+                existing_eps = existing_season.get("episodes", [])
+                existing_paths = set()
+                for ep in existing_eps:
+                    if ep.get("path"):
+                        existing_paths.add(ep["path"])
+                    for v in ep.get("versions", []):
+                        if v.get("path"):
+                            existing_paths.add(v["path"])
+                for ep in episodes:
+                    if ep.get("path") and ep["path"] not in existing_paths:
+                        series_data["_has_new_files"] = True
+                episodes = _link_existing_episodes(episodes, existing_eps)
+            else:
+                if episodes:
+                    series_data["_has_new_files"] = True
             if detail_callback:
                 for episode in episodes:
                     ep_path = episode.get("path")
@@ -349,7 +362,12 @@ def scan_series_pass1(
         }
         if existing_season is not None:
             existing_meta = existing_season.get("metadata", {})
-            for key in ("jellyfin_id", "tmdb_identifier", "poster_path"):
+            for key in (
+                "jellyfin_id",
+                "tmdb_identifier",
+                "poster_path",
+                "myanimelist_id",
+            ):
                 if existing_meta.get(key):
                     season_metadata[key] = existing_meta[key]
 

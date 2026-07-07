@@ -399,7 +399,7 @@ def scan_series_pass2(
             jellyfin_data=jellyfin_data,
             manual_jellyfin_id="",
             existing_series_data=existing_series_data,
-            force_refresh=True,
+            force_refresh=force_refresh,
             cleanup=False,
             single_item_refresh=single_item_refresh,
             offline=False,
