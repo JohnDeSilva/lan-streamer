@@ -12,7 +12,7 @@ from typing import (
     TYPE_CHECKING,
 )
 
-from PySide6.QtCore import QObject, Signal, QFileSystemWatcher
+from PySide6.QtCore import QObject, Signal, QFileSystemWatcher, QTimer
 
 from lan_streamer.services.smart_row_service import SmartRowService
 from lan_streamer.system.async_task_manager import AsyncTaskManager
@@ -630,11 +630,11 @@ class Controller(QObject):
         logger.info(
             f"Cleanup finished for library step: removed {series_removed} series, {seasons_removed} seasons, {episodes_removed} episodes."
         )
-        self._run_next_global_cleanup()
+        QTimer.singleShot(0, self, self._run_next_global_cleanup)
 
     def _on_global_cleanup_step_error(self, error_message: str) -> None:
         logger.error(f"Global cleanup step worker error: {error_message}")
-        self._run_next_global_cleanup()
+        QTimer.singleShot(0, self, self._run_next_global_cleanup)
 
     def trigger_scan_and_update(self, force_refresh: bool = False) -> None:
         """
