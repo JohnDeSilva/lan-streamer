@@ -708,7 +708,7 @@ def test_trigger_global_cleanup_empty_queue(ctrl, mock_db_save) -> None:
     assert any("completed" in s for s in statuses)
 
 
-def test_global_cleanup_step_finished_resumes(ctrl, mock_db_save) -> None:
+def test_global_cleanup_step_finished_resumes(ctrl, mock_db_save, qtbot) -> None:
     """_on_global_cleanup_step_finished chains to next library."""
     config.libraries = {"LibA": {"paths": ["/a"]}, "LibB": {"paths": ["/b"]}}
 
@@ -716,14 +716,14 @@ def test_global_cleanup_step_finished_resumes(ctrl, mock_db_save) -> None:
         ctrl.trigger_global_cleanup()
         # Simulate first step finishing
         ctrl._on_global_cleanup_step_finished({"series": 0, "episodes": 0})
-        # Should have created a worker for the second library
-        assert mock_cls.call_count == 2
+        # Wait for the deferred timer to fire the next step
+        qtbot.waitUntil(lambda: mock_cls.call_count == 2, timeout=1000)
         mock_cls.assert_called_with(
             library_name="LibB", root_directories=["/b"], async_task_manager=ANY
         )
 
 
-def test_global_cleanup_step_error_resumes(ctrl, mock_db_save) -> None:
+def test_global_cleanup_step_error_resumes(ctrl, mock_db_save, qtbot) -> None:
     """_on_global_cleanup_step_error chains to next library."""
     config.libraries = {"LibA": {"paths": ["/a"]}, "LibB": {"paths": ["/b"]}}
 
@@ -731,8 +731,8 @@ def test_global_cleanup_step_error_resumes(ctrl, mock_db_save) -> None:
         ctrl.trigger_global_cleanup()
         # Simulate first step error
         ctrl._on_global_cleanup_step_error("Something went wrong")
-        # Should have created a worker for the second library
-        assert mock_cls.call_count == 2
+        # Wait for the deferred timer to fire the next step
+        qtbot.waitUntil(lambda: mock_cls.call_count == 2, timeout=1000)
 
 
 # ---------------------------------------------------------------------------
