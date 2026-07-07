@@ -1931,3 +1931,59 @@ class TestProcessEpisodeFile:
         # "the beginning" should be found as substring in the filename
         assert result["tmdb_number"] == 1
         assert result["tmdb_name"] == "The Beginning"
+
+    def test_existing_episode_preserves_versions(self, tmp_path: Path) -> None:
+        """Existing episode with a multi-file versions list preserves all versions."""
+        from lan_streamer.services.metadata_episode import _process_episode_file
+
+        ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
+        series_dir = ep.parent.parent
+        ep_path = str(ep.absolute())
+
+        existing_ep = {
+            "path": ep_path,
+            "tmdb_episode_identifier": "ep1",
+            "tmdb_name": "Episode 1",
+            "tmdb_number": 1,
+            "versions": [
+                {"path": ep_path, "video_codec": "h264", "resolution": "1080p"},
+                {
+                    "path": "/other/root/S01E01.mp4",
+                    "video_codec": "h265",
+                    "resolution": "4K",
+                },
+            ],
+        }
+        existing_by_path = {ep_path: existing_ep}
+
+        season_meta: dict[str, Any] = {}
+        series_data: dict[str, Any] = {
+            "metadata": {},
+            "_tmdb_series_id": "",
+        }
+        tmdb_episodes = [
+            {
+                "id": "ep1",
+                "episode_number": 1,
+                "name": "Episode 1",
+                "air_date": "2023-01-01",
+                "runtime": 30,
+            },
+        ]
+
+        result = _process_episode_file(
+            episode_file=ep,
+            season_name="Season 1",
+            series_directory=series_dir,
+            series_data=series_data,
+            season_metadata=season_meta,
+            tmdb_episodes=tmdb_episodes,
+            tmdb_series=None,
+            jellyfin_data=None,
+            existing_episodes_by_path=existing_by_path,
+        )
+        versions = result.get("versions", [])
+        assert len(versions) == 2, f"Expected 2 versions, got {len(versions)}"
+        version_paths = {v["path"] for v in versions}
+        assert ep_path in version_paths
+        assert "/other/root/S01E01.mp4" in version_paths

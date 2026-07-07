@@ -451,6 +451,8 @@ def _process_episode_file(
         res["resolution"] = existing_episode.get("resolution")
         res["audio_tracks"] = existing_episode.get("audio_tracks")
         res["subtitle_tracks"] = existing_episode.get("subtitle_tracks")
+        if existing_episode.get("versions"):
+            res["versions"] = list(existing_episode["versions"])
 
     # Preserve existing MyAnimeList mapping if it exists
     if existing_episode:
