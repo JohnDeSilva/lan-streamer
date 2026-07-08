@@ -171,7 +171,10 @@ def update_season_watched_status(
                 )
             ).first()
             if season:
-                for ep in season.episodes:
+                local_episodes = [
+                    ep for ep in season.episodes if ep.default_path is not None
+                ]
+                for ep in local_episodes:
                     if not ep.playback_state:
                         ep.playback_state = PlaybackState(episode_id=ep.id)
                     ep.playback_state.watched = watched
@@ -179,7 +182,7 @@ def update_season_watched_status(
                         ep.playback_state.last_played_at = int(time.time())
                 if watched:
                     mal_updates = {}
-                    for ep in season.episodes:
+                    for ep in local_episodes:
                         if ep.myanimelist_anime_id and ep.myanimelist_episode_number:
                             mal_updates[ep.myanimelist_anime_id] = max(
                                 mal_updates.get(ep.myanimelist_anime_id, 0),
@@ -226,7 +229,10 @@ def update_series_watched_status(
             ).first()
             if series:
                 for season in series.seasons:
-                    for ep in season.episodes:
+                    local_episodes = [
+                        ep for ep in season.episodes if ep.default_path is not None
+                    ]
+                    for ep in local_episodes:
                         if not ep.playback_state:
                             ep.playback_state = PlaybackState(episode_id=ep.id)
                         ep.playback_state.watched = watched
@@ -237,14 +243,16 @@ def update_series_watched_status(
                 for season in series.seasons:
                     for episode in season.episodes:
                         if (
-                            watched
-                            and episode.myanimelist_anime_id
-                            and episode.myanimelist_episode_number
+                            not watched
+                            or not episode.default_path
+                            or not episode.myanimelist_anime_id
+                            or not episode.myanimelist_episode_number
                         ):
-                            mal_updates[episode.myanimelist_anime_id] = max(
-                                mal_updates.get(episode.myanimelist_anime_id, 0),
-                                episode.myanimelist_episode_number,
-                            )
+                            continue
+                        mal_updates[episode.myanimelist_anime_id] = max(
+                            mal_updates.get(episode.myanimelist_anime_id, 0),
+                            episode.myanimelist_episode_number,
+                        )
                 for anime_id, max_ep in mal_updates.items():
                     _trigger_mal_push_async(anime_id, max_ep)
                 logger.debug(

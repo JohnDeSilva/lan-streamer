@@ -247,6 +247,91 @@ def test_update_season_watched_status_nonexistent(mock_db_file) -> None:
     db.update_season_watched_status("Nonexistent", "NoShow", "S1", True)
 
 
+def test_update_season_watched_status_skips_placeholder_episodes(
+    mock_db_file,
+) -> None:
+    """Placeholder episodes (no path) should not be marked watched when the season is marked."""
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        series = Series(name="Show", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        on_disk = Episode(
+            season_id=season.id,
+            name="ep1.mkv",
+            path="/disk/ep1.mkv",
+            watched=False,
+        )
+        placeholder = Episode(
+            season_id=season.id,
+            name="ep2.mkv",
+            path=None,
+            watched=False,
+        )
+        session.add_all([on_disk, placeholder])
+        session.commit()
+
+    db.update_season_watched_status("Lib", "Show", "Season 1", True)
+
+    with get_session() as session:
+        from sqlalchemy import select
+
+        refreshed_on_disk = session.scalars(
+            select(Episode).where(Episode.name == "ep1.mkv")
+        ).first()
+        refreshed_placeholder = session.scalars(
+            select(Episode).where(Episode.name == "ep2.mkv")
+        ).first()
+
+        assert refreshed_on_disk is not None
+        assert refreshed_on_disk.playback_state is not None
+        assert refreshed_on_disk.playback_state.watched is True
+
+        assert refreshed_placeholder is not None
+        if refreshed_placeholder.playback_state is not None:
+            assert refreshed_placeholder.playback_state.watched is False
+
+
+def test_update_season_watched_status_skip_placeholder_mal(mock_db_file) -> None:
+    """Placeholder episodes should not influence the MAL push max episode."""
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        series = Series(name="MAL Show", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        on_disk = Episode(
+            season_id=season.id,
+            name="ep1.mkv",
+            path="/mal_d/e1.mkv",
+            watched=False,
+            myanimelist_anime_id=999,
+            myanimelist_episode_number=1,
+        )
+        placeholder = Episode(
+            season_id=season.id,
+            name="ep_future.mkv",
+            path=None,
+            watched=False,
+            myanimelist_anime_id=999,
+            myanimelist_episode_number=10,
+        )
+        session.add_all([on_disk, placeholder])
+        session.commit()
+
+    with patch("lan_streamer.db.queries_playback._trigger_mal_push_async") as mock_push:
+        db.update_season_watched_status("Lib", "MAL Show", "Season 1", True)
+        # Should push max from on-disk episodes only (1), not the placeholder (10)
+        mock_push.assert_called_once_with(999, 1)
+
+
 # ---------------------------------------------------------------------------
 # update_series_watched_status – MAL branch
 # ---------------------------------------------------------------------------
@@ -290,6 +375,91 @@ def test_update_series_watched_status_with_mal(mock_db_file) -> None:
 def test_update_series_watched_status_nonexistent(mock_db_file) -> None:
     """Should not crash when series doesn't exist."""
     db.update_series_watched_status("Nonexistent", "NoShow", True)
+
+
+def test_update_series_watched_status_skips_placeholder_episodes(
+    mock_db_file,
+) -> None:
+    """Placeholder episodes (no path) should not be marked watched when the series is marked."""
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        series = Series(name="Show2", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        on_disk = Episode(
+            season_id=season.id,
+            name="ep1.mkv",
+            path="/disk/ep1.mkv",
+            watched=False,
+        )
+        placeholder = Episode(
+            season_id=season.id,
+            name="ep2.mkv",
+            path=None,
+            watched=False,
+        )
+        session.add_all([on_disk, placeholder])
+        session.commit()
+
+    db.update_series_watched_status("Lib", "Show2", True)
+
+    with get_session() as session:
+        from sqlalchemy import select
+
+        refreshed_on_disk = session.scalars(
+            select(Episode).where(Episode.name == "ep1.mkv")
+        ).first()
+        refreshed_placeholder = session.scalars(
+            select(Episode).where(Episode.name == "ep2.mkv")
+        ).first()
+
+        assert refreshed_on_disk is not None
+        assert refreshed_on_disk.playback_state is not None
+        assert refreshed_on_disk.playback_state.watched is True
+
+        assert refreshed_placeholder is not None
+        if refreshed_placeholder.playback_state is not None:
+            assert refreshed_placeholder.playback_state.watched is False
+
+
+def test_update_series_watched_status_skip_placeholder_mal(mock_db_file) -> None:
+    """Placeholder episodes should not influence the MAL push when marking series watched."""
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        series = Series(name="MAL Ser", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        on_disk = Episode(
+            season_id=season.id,
+            name="ep1.mkv",
+            path="/mal_s/e1.mkv",
+            watched=False,
+            myanimelist_anime_id=1000,
+            myanimelist_episode_number=2,
+        )
+        placeholder = Episode(
+            season_id=season.id,
+            name="ep_future.mkv",
+            path=None,
+            watched=False,
+            myanimelist_anime_id=1000,
+            myanimelist_episode_number=20,
+        )
+        session.add_all([on_disk, placeholder])
+        session.commit()
+
+    with patch("lan_streamer.db.queries_playback._trigger_mal_push_async") as mock_push:
+        db.update_series_watched_status("Lib", "MAL Ser", True)
+        # Should push max from on-disk episodes only (2), not the placeholder (20)
+        mock_push.assert_called_once_with(1000, 2)
 
 
 # ---------------------------------------------------------------------------

@@ -259,6 +259,33 @@ def test_mark_season_watched_suppressed_during_playback(ctrl) -> None:
     assert len(signals) == 0
 
 
+def test_mark_season_watched_skips_placeholder_episodes(ctrl) -> None:
+    """Placeholder episodes (path=None) in cache should not be marked watched."""
+    ctrl.cached_library_data["ShowA"]["seasons"]["Season 1"]["episodes"] = [
+        {
+            "name": "S01E01.mkv",
+            "path": "/tv/ShowA/S01E01.mkv",
+            "watched": False,
+            "tmdb_number": 1,
+            "date_added": 1000,
+            "air_date": "2021-01-01",
+            "runtime": 45,
+        },
+        {
+            "name": "S01E02 - Future",
+            "path": None,
+            "watched": False,
+            "tmdb_number": 2,
+        },
+    ]
+    with patch("lan_streamer.db.update_season_watched_status"):
+        ctrl.mark_season_watched("ShowA", "Season 1")
+
+    episodes = ctrl.cached_library_data["ShowA"]["seasons"]["Season 1"]["episodes"]
+    assert episodes[0]["watched"] is True
+    assert episodes[1]["watched"] is False
+
+
 def test_mark_series_watched(ctrl) -> None:
     with patch("lan_streamer.db.update_series_watched_status"):
         ctrl.mark_series_watched("ShowA")
@@ -274,6 +301,33 @@ def test_mark_series_watched_suppressed_during_playback(ctrl) -> None:
     with patch("lan_streamer.db.update_series_watched_status"):
         ctrl.mark_series_watched("ShowA")
     assert len(signals) == 0
+
+
+def test_mark_series_watched_skips_placeholder_episodes(ctrl) -> None:
+    """Placeholder episodes (path=None) across all seasons should not be marked watched."""
+    ctrl.cached_library_data["ShowA"]["seasons"]["Season 1"]["episodes"] = [
+        {
+            "name": "S01E01.mkv",
+            "path": "/tv/ShowA/S01E01.mkv",
+            "watched": False,
+            "tmdb_number": 1,
+            "date_added": 1000,
+            "air_date": "2021-01-01",
+            "runtime": 45,
+        },
+        {
+            "name": "S01E02 - Future",
+            "path": None,
+            "watched": False,
+            "tmdb_number": 2,
+        },
+    ]
+    with patch("lan_streamer.db.update_series_watched_status"):
+        ctrl.mark_series_watched("ShowA")
+
+    episodes = ctrl.cached_library_data["ShowA"]["seasons"]["Season 1"]["episodes"]
+    assert episodes[0]["watched"] is True
+    assert episodes[1]["watched"] is False
 
 
 # ---------------------------------------------------------------------------
