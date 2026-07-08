@@ -79,11 +79,13 @@ class SeasonDetailView(QWidget):
         top_row.setSpacing(20)
 
         # Left column: poster, title, overview
-        left_column = QVBoxLayout()
+        left_container = QWidget()
+        left_container.setMaximumWidth(200)
+        left_column = QVBoxLayout(left_container)
         left_column.setSpacing(12)
         left_column.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._setup_left_column(left_column)
-        top_row.addLayout(left_column)
+        top_row.addWidget(left_container)
 
         # Right column: episode table
         right_column = QVBoxLayout()
@@ -157,6 +159,7 @@ class SeasonDetailView(QWidget):
         title_font.setBold(True)
         self._title_label.setFont(title_font)
         self._title_label.setWordWrap(True)
+        self._title_label.setMaximumWidth(200)
         layout.addWidget(self._title_label)
 
         self._overview_label = QLabel()
@@ -164,6 +167,7 @@ class SeasonDetailView(QWidget):
         overview_font.setPointSize(12)
         self._overview_label.setFont(overview_font)
         self._overview_label.setWordWrap(True)
+        self._overview_label.setMaximumWidth(200)
         self._overview_label.setStyleSheet("color: #94A3B8;")
         layout.addWidget(self._overview_label)
         layout.addStretch()
