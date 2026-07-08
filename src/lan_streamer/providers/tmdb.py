@@ -406,6 +406,41 @@ class TMDBClient:
             return []
         return data.get("seasons", [])
 
+    def get_season_details(
+        self, tmdb_identifier: str | int, season_num: int
+    ) -> dict | None:
+        """Returns full season details including overview, poster, and episodes."""
+        logger.info(
+            f"Requesting TMDB season details for series ID '{tmdb_identifier}', Season {season_num}"
+        )
+        try:
+            resp = self._make_request(
+                "GET",
+                f"{TMDB_BASE_URL}/tv/{tmdb_identifier}/season/{season_num}",
+                params=self._params(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.HTTPError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            if status_code == 404:
+                logger.warning(
+                    f"TMDB get_season_details({tmdb_identifier}, S{season_num}) failed: "
+                    f"season {season_num} not found on TMDB (404)."
+                )
+            else:
+                logger.exception(
+                    f"TMDB get_season_details({tmdb_identifier}, S{season_num}) failed "
+                    f"with HTTP {status_code}"
+                )
+            return None
+        except Exception:
+            logger.exception(
+                f"TMDB get_season_details({tmdb_identifier}, S{season_num}) failed"
+            )
+            return None
+
     def get_episodes(self, tmdb_identifier: str | int, season_num: int) -> list:
         """Returns episodes for a given season number."""
         logger.info(
