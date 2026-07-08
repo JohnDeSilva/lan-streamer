@@ -325,19 +325,29 @@ class UpdateDialog(QDialog):
 
         # Clean the environment
         clean_env = dict(os.environ)
-        for var in ["MEIPASS", "_MEIPASS", "_MEIPASS2"]:
-            clean_env.pop(var, None)
+        for environment_variable in ["MEIPASS", "_MEIPASS", "_MEIPASS2"]:
+            clean_env.pop(environment_variable, None)
 
-        for orig_var, target_var in [
+        # Clear all PyInstaller-specific environment variables to prevent issues with child process
+        for environment_key in list(clean_env.keys()):
+            if environment_key.startswith("_PYI_") or environment_key.startswith(
+                "PYI_"
+            ):
+                clean_env.pop(environment_key, None)
+
+        # Force PyInstaller bootloader to reset the environment for the new executable
+        clean_env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+
+        for original_variable, target_variable in [
             ("LD_LIBRARY_PATH_ORIG", "LD_LIBRARY_PATH"),
             ("DYLD_LIBRARY_PATH_ORIG", "DYLD_LIBRARY_PATH"),
             ("PATH_ORIG", "PATH"),
         ]:
-            if orig_var in clean_env:
-                clean_env[target_var] = clean_env[orig_var]
+            if original_variable in clean_env:
+                clean_env[target_variable] = clean_env[original_variable]
             else:
-                if target_var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
-                    clean_env.pop(target_var, None)
+                if target_variable in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
+                    clean_env.pop(target_variable, None)
 
         # Spawn process using subprocess.Popen with detachment flags
         command_list = [executable_path] + arguments
