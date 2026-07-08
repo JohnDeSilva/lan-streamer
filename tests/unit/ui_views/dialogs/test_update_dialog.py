@@ -244,6 +244,8 @@ def test_launch_detached_clean_env(dialog) -> None:
             "os.environ",
             {
                 "MEIPASS": "old_pass",
+                "_PYI_ARCHIVE_FILE": "old_archive",
+                "PYI_LOG_LEVEL": "DEBUG",
                 "LD_LIBRARY_PATH_ORIG": "orig_path",
                 "PATH": "some_path",
             },
@@ -255,4 +257,7 @@ def test_launch_detached_clean_env(dialog) -> None:
         assert called_args[0] == ["/bin/test-app", "--arg"]
         env = called_kwargs["env"]
         assert "MEIPASS" not in env
+        assert "_PYI_ARCHIVE_FILE" not in env
+        assert "PYI_LOG_LEVEL" not in env
+        assert env["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
         assert env["LD_LIBRARY_PATH"] == "orig_path"
