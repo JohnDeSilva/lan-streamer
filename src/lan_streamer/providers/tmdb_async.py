@@ -353,6 +353,45 @@ class AsyncTMDBClient:
             return []
         return list(data.get("seasons", []))
 
+    async def get_season_details(
+        self, tmdb_identifier: str | int, season_num: int
+    ) -> dict[str, Any] | None:
+        """Return full season details including overview, poster, and episodes."""
+        logger.info(
+            "Requesting TMDB (async) season details for ID '%s', Season %s",
+            tmdb_identifier,
+            season_num,
+        )
+        try:
+            from aiohttp import ClientResponseError
+
+            data = await self._make_get(
+                f"{TMDB_BASE_URL}/tv/{tmdb_identifier}/season/{season_num}"
+            )
+            return dict(data)
+        except ClientResponseError as exc:
+            if exc.status == 404:
+                logger.warning(
+                    "Async TMDB get_season_details(%s, S%s) failed: season not found (404).",
+                    tmdb_identifier,
+                    season_num,
+                )
+            else:
+                logger.exception(
+                    "Async TMDB get_season_details(%s, S%s) failed with HTTP %s",
+                    tmdb_identifier,
+                    season_num,
+                    exc.status,
+                )
+            return None
+        except Exception:
+            logger.exception(
+                "Async TMDB get_season_details(%s, S%s) failed",
+                tmdb_identifier,
+                season_num,
+            )
+            return None
+
     async def get_episodes(
         self, tmdb_identifier: str | int, season_num: int
     ) -> list[dict[str, Any]]:

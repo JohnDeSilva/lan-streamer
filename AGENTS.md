@@ -81,7 +81,7 @@ The detail views display cast/crew metadata via a dedicated DB backend:
 - **Service layer** (`services/metadata_cast.py`, `services/metadata_images.py`): Coordinates TMDB API calls, role mapping (actor/director/writer/producer), dedup, and batch DB storage.
 - **Scan pipeline**: Cast/image fetch integrated into scan worker callbacks (`_season_callback`, `_movie_callback` in `scan_worker_all.py`).
 - **Cast cards in detail views**: `SeriesDetailView._display_cast_section()` and `MovieDetailView._display_cast_section()` render horizontal scrollable cast grids; clicking a card emits `controller.cast_member_selected`.
-- **SeasonDetailView** (`ui_views/season_detail.py`): Full-page view with poster, cast grid, episode table. Signals: `back_requested`, `cast_member_clicked`.
+- **SeasonDetailView** (`ui_views/season_detail.py`): Full-page view with poster, season overview, and a 6-column episode table (matching SeriesDetailView). Receives a `Controller` instance. Reads data from `controller.cached_library_data`. Supports TMDB display group re-ordering. Episodes have progress bars, details buttons, and watched/unwatched/missing/future color coding. Signals: `back_requested`, `episode_details_requested`. No cast section.
 - **CastDetailView** (`ui_views/cast_detail.py`): Full-page view with photo, biography, birth/death info, filmography. Signals: `back_requested`, `media_item_clicked`.
 - **PosterSelectorDialog** (`ui_views/dialogs/poster_selector.py`): Dialog for selecting posters/backdrops from TMDB images.
 - **Wiring** (`main.py`): Stacked layout indices — 0: grid, 1: series_detail, 2: movie_detail, 3: season_detail, 4: cast_detail, 5: player. Navigation signals wire between views.

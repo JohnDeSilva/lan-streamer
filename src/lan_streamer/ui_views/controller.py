@@ -71,6 +71,9 @@ class TMDBClientProtocol(Protocol):
         self, tmdb_identifier: str | int
     ) -> dict | None: ...
     def get_episodes(self, tmdb_identifier: str | int, season_num: int) -> list: ...
+    def get_season_details(
+        self, tmdb_identifier: str | int, season_num: int
+    ) -> dict | None: ...
 
 
 # Backward-compatible aliases for tests that patch module-level names
