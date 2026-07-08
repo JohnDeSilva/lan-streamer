@@ -2793,7 +2793,6 @@ def test_save_library_prunes_placeholders() -> None:
         patch(
             "lan_streamer.db.library_tv._save_season_record", return_value=mock_season
         ),
-        patch("lan_streamer.db.library_tv._save_episode_record") as mock_save_ep_rec,
         patch("lan_streamer.db.library_tv.inspect") as mock_inspect,
     ):
         mock_get_session.return_value.__enter__.return_value = mock_session
@@ -2802,8 +2801,6 @@ def test_save_library_prunes_placeholders() -> None:
 
         save_library("TestLib", library_data)
 
-        # Verify mock_save_ep_rec was called for ep1
-        assert mock_save_ep_rec.called
         # Verify mock_session.delete was called for the leftover placeholder (ep2_db)
         mock_session.delete.assert_called_once_with(ep2_db)
 

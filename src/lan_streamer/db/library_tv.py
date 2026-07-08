@@ -670,19 +670,19 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
                             incoming_paths_in_season=incoming_paths_in_season,
                         )
 
-                    # Delete stale placeholders (which have path=None)
-                    stale_placeholders = {
-                        ep_obj
-                        for ep_obj in (
-                            *existing_by_number.values(),
-                            *existing_by_name.values(),
-                        )
-                        if ep_obj.path is None
-                    }
+                    # Delete stale episode records (not present in incoming data).
+                    # These are old episodes from a previously matched series that
+                    # do not correspond to any episode in the newly matched TMDB structure.
+                    stale_episodes = (
+                        set(existing_by_path.values())
+                        | set(existing_by_number.values())
+                        | set(existing_by_name.values())
+                    ) - processed_episodes
 
-                    for ep_obj in stale_placeholders:
+                    for ep_obj in stale_episodes:
                         logger.info(
-                            f"Removing stale placeholder episode S{season.name} E{ep_obj.tmdb_number} from database"
+                            f"Removing stale episode S{season.name} "
+                            f"E{ep_obj.tmdb_number or '?'} ('{ep_obj.name}') from database"
                         )
                         if ep_obj in season.episodes:
                             season.episodes.remove(ep_obj)
@@ -932,6 +932,29 @@ def save_season_data(
                     processed_episodes,
                     incoming_paths_in_season=incoming_paths_in_season,
                 )
+
+            # Delete stale episode records (not present in incoming data)
+            stale_episodes = (
+                set(existing_by_path.values())
+                | set(existing_by_number.values())
+                | set(existing_by_name.values())
+            ) - processed_episodes
+
+            for ep_obj in stale_episodes:
+                logger.info(
+                    f"Removing stale episode S{season.name} "
+                    f"E{ep_obj.tmdb_number or '?'} ('{ep_obj.name}') from database"
+                )
+                if ep_obj in season.episodes:
+                    season.episodes.remove(ep_obj)
+                state = inspect(ep_obj)
+                if state.key is None:
+                    if ep_obj in session:
+                        session.expunge(ep_obj)
+                else:
+                    session.delete(ep_obj)
+                stats["deleted"] += 1
+                stats["episodes_removed"] += 1
 
             # Save season directory mtime to scanned_directories table
             season_metadata = season_data.get("metadata", {})
