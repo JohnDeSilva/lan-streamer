@@ -235,6 +235,118 @@ def test_apply_metadata_match_clears_old_placeholders_and_metadata(
     assert ep2["tmdb_number"] == 2
 
 
+def test_apply_metadata_match_keeps_unmatched_stubs_in_fallback(
+    ctrl_tv, mock_db_save
+) -> None:
+    """When re-matching via the in-memory fallback (no series directory),
+    old episodes that have file paths but do NOT correspond to any episode
+    in the new TMDB structure are kept as stubs (cleaned from DB on save)."""
+    mock_save, _ = mock_db_save
+
+    # Pre-populate episodes — S01E03 has NO corresponding TMDB entry in the new series
+    ctrl_tv.cached_library_data["ShowA"]["seasons"] = {
+        "Season 1": {
+            "metadata": {},
+            "episodes": [
+                {
+                    "name": "S01E01.mkv",
+                    "path": "/tv/S01E01.mkv",
+                    "tmdb_name": "Old Ep 1",
+                    "tmdb_identifier": "old_ep_1",
+                    "tmdb_episode_identifier": "old_ep_1",
+                    "tmdb_number": 1,
+                    "air_date": "2020-01-01",
+                    "runtime": 30,
+                },
+                {
+                    "name": "S01E02.mkv",
+                    "path": "/tv/S01E02.mkv",
+                    "tmdb_name": "Old Ep 2",
+                    "tmdb_identifier": "old_ep_2",
+                    "tmdb_episode_identifier": "old_ep_2",
+                    "tmdb_number": 2,
+                    "air_date": "2020-01-08",
+                    "runtime": 30,
+                },
+                {
+                    "name": "S01E03.mkv",
+                    "path": "/tv/S01E03.mkv",
+                    "tmdb_name": "Old Ep 3",
+                    "tmdb_identifier": "old_ep_3",
+                    "tmdb_episode_identifier": "old_ep_3",
+                    "tmdb_number": 3,
+                    "air_date": "2020-01-15",
+                    "runtime": 30,
+                },
+            ],
+        }
+    }
+
+    match = {
+        "id": "333",
+        "name": "Correct Show",
+        "overview": "The correct match",
+        "first_air_date": "2022-06-01",
+    }
+
+    # New TMDB series only has 2 episodes (no episode 3)
+    mock_new_episodes = [
+        {
+            "id": "new_ep_1",
+            "episode_number": 1,
+            "name": "Correct Ep 1",
+            "air_date": "2022-06-01",
+            "runtime": 40,
+        },
+        {
+            "id": "new_ep_2",
+            "episode_number": 2,
+            "name": "Correct Ep 2",
+            "air_date": "2022-06-08",
+            "runtime": 40,
+        },
+    ]
+
+    ctrl_tv._tmdb_client.get_season_based_episode_group.return_value = None
+    ctrl_tv._tmdb_client.get_episodes.return_value = mock_new_episodes
+
+    ctrl_tv._config.libraries = {
+        "TVLib": {"type": "tv", "paths": ["/tv"], "show_future_episodes": True}
+    }
+
+    with patch.object(MetadataApplyWorker_real, "start", lambda self: self.run()):
+        ctrl_tv.apply_metadata_match("ShowA", match)
+
+    episodes = ctrl_tv.cached_library_data["ShowA"]["seasons"]["Season 1"]["episodes"]
+
+    # In fallback mode, matched episodes get new TMDB data; unmatched ones
+    # survive as stubs (their TMDB data was cleared by the controller).
+    ep_by_num: dict = {}
+    for ep in episodes:
+        num = ep.get("tmdb_number")
+        if num is not None:
+            ep_by_num[num] = ep
+
+    # Episodes 1 and 2 were matched
+    assert 1 in ep_by_num
+    assert ep_by_num[1]["tmdb_name"] == "Correct Ep 1"
+    assert ep_by_num[1]["tmdb_identifier"] == "new_ep_1"
+    assert ep_by_num[1]["path"] == "/tv/S01E01.mkv"
+
+    assert 2 in ep_by_num
+    assert ep_by_num[2]["tmdb_name"] == "Correct Ep 2"
+    assert ep_by_num[2]["tmdb_identifier"] == "new_ep_2"
+    assert ep_by_num[2]["path"] == "/tv/S01E02.mkv"
+
+    # Episode 3 was unmatched — it survives as a stub (no TMDB data)
+    stub = [ep for ep in episodes if ep.get("path") == "/tv/S01E03.mkv"]
+    assert len(stub) == 1, "Unmatched episode 3 should survive as a stub"
+    assert stub[0].get("tmdb_name") is None
+    assert stub[0].get("tmdb_identifier") is None
+    # The stub will be cleaned from DB by save_library's stale-episode cleanup
+    mock_save.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # _on_subtitle_merge_finished and _on_metadata_embed_finished
 # ---------------------------------------------------------------------------
