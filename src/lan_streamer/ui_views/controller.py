@@ -393,7 +393,8 @@ class Controller(QObject):
             season_name, {}
         )
         for episode_record in season_data.get("episodes", []):
-            episode_record["watched"] = watched
+            if episode_record.get("path"):
+                episode_record["watched"] = watched
 
         self._cache_series_metrics()
 
@@ -416,7 +417,8 @@ class Controller(QObject):
         series_data: Dict[str, Any] = self.cached_library_data.get(series_name, {})
         for season_data in series_data.get("seasons", {}).values():
             for episode_record in season_data.get("episodes", []):
-                episode_record["watched"] = True
+                if episode_record.get("path"):
+                    episode_record["watched"] = True
 
         self._cache_series_metrics()
 
