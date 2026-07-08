@@ -1,3 +1,9 @@
+## v0.44.1rc1-1 (2026-07-08)
+
+### Fix
+
+- **update_dialog**: Clean up environment variables for child processes and ensure reset for new executable
+
 ## v0.44.1rc1 (2026-07-08)
 
 ### Fix
