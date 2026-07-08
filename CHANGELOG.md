@@ -1,3 +1,9 @@
+## v0.44.1rc0 (2026-07-08)
+
+### Fix
+
+- **main**: handle RuntimeError during application shutdown and task completion
+
 ## v0.44.0 (2026-07-08)
 
 ### Feat
