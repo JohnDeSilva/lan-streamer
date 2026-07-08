@@ -195,6 +195,90 @@ class SeasonDetailView(QWidget):
 
         metadata_dict: Dict[str, Any] = series_record.get("metadata", {})
         seasons_dict: Dict[str, Any] = series_record.get("seasons", {})
+        library_name = self.controller.current_library_name
+        saved_group_id = config.get_series_preference(
+            library_name, series_name, "display_group_id", "default"
+        )
+
+        # When a display group is configured, regroup seasons_dict so that
+        # season_name (which may be a group name like "Arc 1") can be found
+        # and episodes appear in the group-defined order.
+        if saved_group_id != "default":
+            tmdb_id = metadata_dict.get("tmdb_identifier")
+            if tmdb_id:
+                group_details = tmdb_client.get_episode_group_details(saved_group_id)
+                if group_details and "groups" in group_details:
+                    # Build episode lookup maps from original seasons
+                    db_episodes_by_id: Dict[str, Dict[str, Any]] = {}
+                    db_episodes_by_number: Dict[tuple, Dict[str, Any]] = {}
+                    for s_name, s_data in seasons_dict.items():
+                        s_num_match = re.search(r"\d+", s_name)
+                        s_num = int(s_num_match.group()) if s_num_match else 0
+                        for ep in s_data.get("episodes", []):
+                            ep_id = ep.get("tmdb_episode_identifier") or ep.get(
+                                "tmdb_identifier"
+                            )
+                            if ep_id:
+                                db_episodes_by_id[str(ep_id)] = ep
+                            ep_num = ep.get("tmdb_number")
+                            if ep_num is not None:
+                                db_episodes_by_number[(s_num, ep_num)] = ep
+
+                    # Re-group using the configured display group
+                    regrouped_seasons: Dict[str, Dict[str, Any]] = {}
+                    for group in group_details["groups"]:
+                        group_name = (
+                            group.get("name") or f"Group {group.get('order', '')}"
+                        )
+                        episodes_list: List[Dict[str, Any]] = []
+                        for group_ep in group.get("episodes", []):
+                            ep_id = str(group_ep.get("id", ""))
+                            db_ep = db_episodes_by_id.get(ep_id)
+                            if not db_ep:
+                                db_ep = db_episodes_by_number.get(
+                                    (
+                                        group_ep.get("season_number"),
+                                        group_ep.get("episode_number"),
+                                    )
+                                )
+
+                            if db_ep:
+                                new_ep = db_ep.copy()
+                                new_ep["tmdb_number"] = group_ep.get("order") + 1
+                                if group_ep.get("name"):
+                                    new_ep["tmdb_name"] = group_ep.get("name")
+                                episodes_list.append(new_ep)
+                            else:
+                                group_order = group_ep.get("order") + 1
+                                ep_name = group_ep.get("name") or "TBA"
+                                formatted_name = (
+                                    f"{group_name} E{group_order:02d} - {ep_name}"
+                                )
+                                episodes_list.append(
+                                    {
+                                        "name": formatted_name,
+                                        "path": None,
+                                        "tmdb_episode_identifier": ep_id,
+                                        "tmdb_identifier": ep_id,
+                                        "tmdb_name": ep_name,
+                                        "tmdb_number": group_order,
+                                        "air_date": group_ep.get("air_date") or "",
+                                        "runtime": group_ep.get("runtime") or 0,
+                                        "jellyfin_id": "",
+                                        "watched": False,
+                                        "date_added": 0,
+                                    }
+                                )
+                        if episodes_list:
+                            regrouped_seasons[group_name] = {
+                                "metadata": {
+                                    "jellyfin_id": "",
+                                    "poster_path": "",
+                                },
+                                "episodes": episodes_list,
+                            }
+                    seasons_dict = regrouped_seasons
+
         season_data: Dict[str, Any] = seasons_dict.get(season_name, {})
         if not season_data:
             logger.warning(
@@ -243,23 +327,8 @@ class SeasonDetailView(QWidget):
             season_overview = metadata_dict.get("overview", "")
         self._overview_label.setText(season_overview or "No overview available.")
 
-        # Episodes with optional display-group re-ordering
+        # Episodes — already in display group order when a group was applied above
         episodes: List[Dict[str, Any]] = list(season_data.get("episodes", []))
-        library_name = self.controller.current_library_name
-        saved_group_id = config.get_series_preference(
-            library_name, series_name, "display_group_id", "default"
-        )
-
-        if saved_group_id != "default":
-            tmdb_id = metadata_dict.get("tmdb_identifier")
-            if tmdb_id:
-                group_details = tmdb_client.get_episode_group_details(saved_group_id)
-                if group_details and "groups" in group_details:
-                    order_map = self._build_order_map(episodes, group_details)
-                    if order_map:
-                        episodes.sort(
-                            key=lambda ep: order_map.get(episodes.index(ep), 999999)
-                        )
 
         if saved_group_id == "default":
 
@@ -499,28 +568,6 @@ class SeasonDetailView(QWidget):
         if match:
             return int(match.group(1))
         return None
-
-    @staticmethod
-    def _build_order_map(
-        episodes: List[Dict[str, Any]], group_details: Dict[str, Any]
-    ) -> Dict[int, int]:
-        """Map episode index to display group order, matching by TMDB identifier or number."""
-        order_map: Dict[int, int] = {}
-        for group in group_details.get("groups", []):
-            for gep in group.get("episodes", []):
-                gid = str(gep.get("id", ""))
-                gorder = gep.get("order", 0)
-                gnum = gep.get("episode_number")
-                for ep_index, ep in enumerate(episodes):
-                    eid = str(ep.get("tmdb_episode_identifier") or "")
-                    if eid and eid == gid:
-                        order_map[ep_index] = gorder
-                        break
-                    en = ep.get("tmdb_number")
-                    if en is not None and en == gnum:
-                        order_map[ep_index] = gorder
-                        break
-        return order_map
 
     # ------------------------------------------------------------------
     # Mark season watched
