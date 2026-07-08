@@ -564,8 +564,14 @@ async def main() -> None:
         # Under qasync, the event loop is already running. We just wait until the app exits.
         app_close_event = asyncio.Event()
         application_instance.aboutToQuit.connect(app_close_event.set)
-        while main_window.isVisible() and not app_close_event.is_set():
-            await asyncio.sleep(0.1)
+        try:
+            while main_window.isVisible() and not app_close_event.is_set():
+                await asyncio.sleep(0.1)
+        except RuntimeError:
+            logger.warning(
+                "Event loop was stopped while waiting for application close signal "
+                "(expected during update-triggered shutdown)."
+            )
 
         # Await any pending background tasks to ensure they shut down cleanly before loop closes
         pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
@@ -577,6 +583,11 @@ async def main() -> None:
                 )
             except asyncio.TimeoutError:
                 logger.warning("Timeout waiting for pending tasks to shut down.")
+            except RuntimeError:
+                logger.warning(
+                    "Event loop was stopped while awaiting pending tasks "
+                    "(likely due to update-triggered shutdown)."
+                )
             logger.info("All pending tasks shut down.")
         logger.info("Application teardown complete. Exiting process.")
         os._exit(0)
@@ -624,6 +635,12 @@ def run_main() -> None:
 
         logger.info("Using qasync for asyncio-Qt event loop integration.")
         qasync.run(main())
+    except RuntimeError:
+        logger.warning(
+            "qasync event loop terminated with RuntimeError "
+            "(expected during update-triggered shutdown). Exiting."
+        )
+        os._exit(0)
     except ImportError:
         logger.warning("qasync not available; falling back to :func:`asyncio.run`.")
         asyncio.run(main())
