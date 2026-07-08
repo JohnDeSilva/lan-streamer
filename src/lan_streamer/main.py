@@ -222,7 +222,7 @@ async def main() -> None:
     library_grid_view = LibraryGridView(controller)
     series_detail_view = SeriesDetailView(controller)
     movie_detail_view = MovieDetailView(controller)
-    season_detail_view = SeasonDetailView()
+    season_detail_view = SeasonDetailView(controller)
     cast_detail_view = CastDetailView()
     player_view = VideoPlayerWidget()
 
@@ -482,8 +482,7 @@ async def main() -> None:
 
     cast_detail_view.media_item_clicked.connect(on_filmography_item_clicked)
 
-    # Wire season detail cast member click to cast detail
-    season_detail_view.cast_member_clicked.connect(controller.select_cast_member)
+    # Season detail now handles its own navigation without cast section
 
     controller.status_changed.connect(main_window.statusBar().showMessage)
 

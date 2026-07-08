@@ -556,9 +556,11 @@ def test_movie_poster_label_has_context_menu_policy(qtbot):
 
 def test_season_poster_label_has_context_menu_policy(qtbot):
     """SeasonDetailView _poster_label should have CustomContextMenu policy."""
+    from unittest.mock import MagicMock
     from lan_streamer.ui_views.season_detail import SeasonDetailView
 
-    view = SeasonDetailView()
+    controller = MagicMock()
+    view = SeasonDetailView(controller)
     qtbot.addWidget(view)
 
     assert (
@@ -593,9 +595,11 @@ def test_movie_open_poster_selector_no_op_when_no_movie(qtbot):
 
 def test_season_open_poster_selector_no_op_when_no_season(qtbot):
     """_open_poster_selector should do nothing if no season is set."""
+    from unittest.mock import MagicMock
     from lan_streamer.ui_views.season_detail import SeasonDetailView
 
-    view = SeasonDetailView()
+    controller = MagicMock()
+    view = SeasonDetailView(controller)
     qtbot.addWidget(view)
 
     view._open_poster_selector()
