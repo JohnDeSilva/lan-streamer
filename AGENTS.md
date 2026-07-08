@@ -107,6 +107,11 @@ patch("lan_streamer.services.metadata_series.tmdb_client", mock)
 patch("lan_streamer.services.metadata_episode.tmdb_client", mock)
 patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock)
 ```
+
+**Critical locked_metadata invariant (manual-match-flow only):** Pass 2 of the scanner pipeline (`scan_series_pass2` in `pass2_metadata.py`) checks `locked_metadata` in the series metadata at line ~294 and **returns early without fetching any TMDB episode data** when it is `True`. This gate exists to preserve manually matched metadata during normal library scans — normal scans never clear the flag, so the lock is effective in production.
+
+The only flow that temporarily sets `locked_metadata = False` is the **manual metadata match flow** (`apply_metadata_match()` → MetadataApplyWorker), because Pass 2 needs to fetch TMDB episodes for the freshly matched series. Any code path in that flow **must** ensure `locked_metadata` is `False` on the dict passed to the worker. It is re-set to `True` after the worker completes (in `_on_metadata_apply_finished`). The most common mistake is passing a reference to an old metadata dict that still has `locked_metadata: True` from a prior match — this causes all episode names to remain as raw filenames.
+
 - Keep modules small, single-purpose, and grouped under descriptive directories.
 - Avoid generic filenames like `helper.py` or `utils.py` in favor of specific functional terms.
 - **Static Typing**: Enforce 100% strict `mypy` type checking for all production code in `src/lan_streamer/`.
