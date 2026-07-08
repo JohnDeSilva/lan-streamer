@@ -1,3 +1,10 @@
+## v0.44.1rc1 (2026-07-08)
+
+### Fix
+
+- **ci**: increase timeout for Windows executable validation to 20 seconds
+- **db**: skip marking placeholder episodes as watched in season and series updates
+
 ## v0.44.1rc0 (2026-07-08)
 
 ### Fix
