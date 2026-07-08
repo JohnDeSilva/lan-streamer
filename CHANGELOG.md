@@ -1,3 +1,9 @@
+## v0.44.0rc3 (2026-07-08)
+
+### Fix
+
+- **controller**: unlock metadata before scanner pass2 so TMDB episodes are fetched
+
 ## v0.44.0rc2 (2026-07-07)
 
 ### Feat
