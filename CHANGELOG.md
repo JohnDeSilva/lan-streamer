@@ -1,3 +1,12 @@
+## v0.44.1 (2026-07-08)
+
+### Fix
+
+- **update_dialog**: clean up environment variables for child processes and ensure reset for new executable
+- **ci**: increase timeout for Windows executable validation to 20 seconds
+- **db**: skip marking placeholder episodes as watched in season and series updates
+- **main**: handle RuntimeError during application shutdown and task completion
+
 ## v0.44.1rc1-1 (2026-07-08)
 
 ### Fix
