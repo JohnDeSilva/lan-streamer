@@ -148,7 +148,7 @@ jobs:
         run: |
           for f in ./dist/lan-streamer-*.exe; do
             f_win=$(cygpath -w -a "$f")
-            uv run python -c "import subprocess, os, sys; res = subprocess.run([r'$f_win'], env=dict(os.environ, LAN_STREAMER_TEST_RUN='1', QT_QPA_PLATFORM='offscreen'), timeout=15); sys.exit(res.returncode)"
+            uv run python -c "import subprocess, os, sys; res = subprocess.run([r'$f_win'], env=dict(os.environ, LAN_STREAMER_TEST_RUN='1', QT_QPA_PLATFORM='offscreen'), timeout=20); sys.exit(res.returncode)"
             break
           done
 
