@@ -1,3 +1,17 @@
+## v0.44.0 (2026-07-08)
+
+### Feat
+
+- **system**: Make Config File Configurable Via Command Line Option
+- **db**: add readability columns and triggers to playback states and file mappings
+
+### Fix
+
+- **controller**: unlock metadata before scanner pass2 so TMDB episodes are fetched
+- **ui**: defer global cleanup step transitions using QTimer
+- **system**: support sub-releases in updater version checks
+- **updater**: clean PyInstaller environment variables when spawning detached update processes
+
 ## v0.44.0rc3 (2026-07-08)
 
 ### Fix
