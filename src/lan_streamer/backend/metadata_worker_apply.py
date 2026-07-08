@@ -7,6 +7,9 @@ import asyncio
 from PySide6.QtCore import QObject, Signal
 
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
+from lan_streamer.scanner.pass1_file_discovery import scan_series_pass1
+from lan_streamer.scanner.pass2_metadata import scan_series_pass2
+from lan_streamer.services.metadata_updates import clean_series_data
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.providers.tmdb import tmdb_client as _tmdb_default
 
@@ -16,9 +19,10 @@ logger = logging.getLogger("lan_streamer.backend")
 class MetadataApplyWorker(AsyncWorkerBase):
     """Downloads provider artwork and syncs TMDB episodes for a metadata match.
 
-    Runs the blocking TMDB API calls in a background thread. The caller
-    should apply the result (in-memory dict modifications + DB save) on
-    the main thread after receiving the finished signal.
+    Uses the scanner pipeline (pass 1 + pass 2) to re-discover files on disk
+    and match them against the newly selected TMDB series. This ensures all
+    files are properly remapped even when the series structure or numbering
+    differs from the previously matched series.
 
     Signals:
         finished: Emitted with (updated_series_record, poster_path) on success.
@@ -33,6 +37,7 @@ class MetadataApplyWorker(AsyncWorkerBase):
         series_record: Dict[str, Any],
         tmdb_identifier: str,
         saved_group_id: Optional[str],
+        series_directory: Optional[Path] = None,
         async_task_manager: Optional[AsyncTaskManager] = None,
         poster_path: Optional[str] = None,
         is_movie: bool = False,
@@ -44,6 +49,7 @@ class MetadataApplyWorker(AsyncWorkerBase):
         self._series_record: Dict[str, Any] = series_record
         self._tmdb_identifier: str = tmdb_identifier
         self._saved_group_id: Optional[str] = saved_group_id
+        self._series_directory: Optional[Path] = series_directory
         self._poster_path: Optional[str] = poster_path
         self._is_movie: bool = is_movie
         self._show_future_episodes: bool = show_future_episodes
@@ -99,10 +105,83 @@ class MetadataApplyWorker(AsyncWorkerBase):
         tmdb_identifier: str,
         saved_group_id: Optional[str],
     ) -> Dict[str, Any]:
-        """Fetch TMDB episode data and populate episode records.
+        """Re-scan the series directory against the new TMDB series.
 
-        This method performs blocking TMDB API calls and returns an
-        updated copy of the series_record dict.
+        Uses the 2-pass scanner pipeline:
+          1. Pass 1: walk the filesystem, discover all video files (creates stubs)
+          2. Pass 2: match stubs against the new TMDB metadata
+
+        If the series directory cannot be resolved, falls back to the old
+        in-memory matching approach.
+        """
+        # Use the series directory resolved by the controller, if available.
+        # This is the authoritative path and avoids unsafe filesystem inference.
+        series_directory: Optional[Path] = self._series_directory
+
+        # Fetch the full TMDB series data for the new identifier
+        try:
+            tmdb_series_data: Optional[Dict[str, Any]] = self._tmdb.get_series_by_id(
+                tmdb_identifier
+            )
+        except Exception as exc:
+            logger.exception(
+                f"Failed to fetch TMDB series data for ID {tmdb_identifier}: {exc}"
+            )
+            tmdb_series_data = None
+
+        if series_directory is not None and tmdb_series_data is not None:
+            logger.info(
+                f"Using scanner pipeline for series directory: {series_directory}"
+            )
+            # Pass 1: discover files on disk
+            pass1_result = scan_series_pass1(
+                series_directory,
+                existing_series_data=series_record,
+                force_refresh=True,
+            )
+            if pass1_result is None:
+                logger.warning("Pass 1 returned None, falling back to in-memory sync")
+                return self._fallback_sync(
+                    series_record, tmdb_identifier, saved_group_id
+                )
+
+            # Pass 2: match against the new TMDB series
+            pass2_result = scan_series_pass2(
+                series_directory,
+                existing_series_data=pass1_result,
+                tmdb_series=tmdb_series_data,
+                force_refresh=True,
+                single_item_refresh=True,
+                show_future_episodes=self._show_future_episodes,
+            )
+            if pass2_result is None:
+                logger.warning("Pass 2 returned None, falling back to in-memory sync")
+                return self._fallback_sync(
+                    series_record, tmdb_identifier, saved_group_id
+                )
+
+            result = clean_series_data(pass2_result) or pass2_result
+            # Preserve the locked_metadata flag set by the controller
+            if series_record.get("metadata", {}).get("locked_metadata"):
+                result.setdefault("metadata", {})["locked_metadata"] = True
+            # Preserve the poster path from the match
+            if self._poster_path:
+                result.setdefault("metadata", {})["poster_path"] = self._poster_path
+            return result
+
+        logger.info("Series directory or TMDB data unavailable, using in-memory sync")
+        return self._fallback_sync(series_record, tmdb_identifier, saved_group_id)
+
+    def _fallback_sync(
+        self,
+        series_record: Dict[str, Any],
+        tmdb_identifier: str,
+        saved_group_id: Optional[str],
+    ) -> Dict[str, Any]:
+        """Legacy fallback: match existing episode dicts against new TMDB episodes.
+
+        Used when the series directory cannot be resolved or the scanner
+        pipeline is unavailable.
         """
         import copy
 

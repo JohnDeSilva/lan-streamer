@@ -1057,10 +1057,9 @@ class Controller(QObject):
                 except ValueError:
                     pass
 
-        target_dict["locked_metadata"] = True
-
         # For movies, save immediately (no episode sync needed).
         if is_movie:
+            target_dict["locked_metadata"] = True
             self._download_provider_artwork(target_dict, match_dictionary, is_movie)
             self._finish_metadata_match(series_name)
             return
@@ -1073,8 +1072,11 @@ class Controller(QObject):
             self._finish_metadata_match(series_name)
             return
 
-        # Clear old TMDB fields from remaining episodes
+        # Clear old TMDB fields from series/season metadata and episodes
+        target_dict["locked_metadata"] = False
+        target_dict.pop("tmdb_episode_group_id", None)
         for season_name, season_data in list(series_record.get("seasons", {}).items()):
+            season_data.get("metadata", {}).pop("tmdb_identifier", None)
             filtered_episodes = []
             for ep in season_data.get("episodes", []):
                 if ep.get("path"):
@@ -1090,8 +1092,17 @@ class Controller(QObject):
                     filtered_episodes.append(ep)
             season_data["episodes"] = filtered_episodes
 
-        saved_group_id = series_record.get("metadata", {}).get("tmdb_episode_group_id")
+        saved_group_id = None
         poster_path = match_dictionary.get("poster_path")
+
+        # Resolve the series directory from the library root paths
+        root_paths: List[str] = library_config.get("paths", [])
+        series_directory: Optional[Path] = None
+        for root_path in root_paths:
+            potential_dir = Path(root_path) / series_name
+            if potential_dir.is_dir():
+                series_directory = potential_dir
+                break
 
         if self.worker_manager.metadata_apply.is_running:
             logger.info("MetadataApplyWorker is already running. Skipping.")
@@ -1102,6 +1113,7 @@ class Controller(QObject):
                 series_record=series_record,
                 tmdb_identifier=new_tmdb_identifier,
                 saved_group_id=saved_group_id,
+                series_directory=series_directory,
                 async_task_manager=self.async_task_manager,
                 poster_path=poster_path,
                 is_movie=False,
@@ -1124,8 +1136,10 @@ class Controller(QObject):
             f"Metadata apply finished for '{series_name}', saving to database..."
         )
         self.cached_library_data[series_name] = synced_data
+        # Lock metadata to prevent auto-discovery from overwriting the manual match
+        target_dict = synced_data.get("metadata", synced_data)
+        target_dict["locked_metadata"] = True
         if poster_path:
-            target_dict = synced_data.get("metadata", synced_data)
             target_dict["poster_path"] = poster_path
 
         self._finish_metadata_match(series_name)
