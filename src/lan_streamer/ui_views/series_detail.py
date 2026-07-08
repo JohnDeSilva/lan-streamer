@@ -79,6 +79,7 @@ class SeriesDetailView(QWidget):
         top_row.setSpacing(20)
 
         left_container: QWidget = QWidget()
+        left_container.setMaximumWidth(240)
         left_layout: QVBoxLayout = QVBoxLayout(left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(15)
@@ -103,24 +104,28 @@ class SeriesDetailView(QWidget):
         self.trailers_button: QPushButton = QPushButton("Trailers")
         self.trailers_button.setObjectName("trailersButton")
         self.trailers_button.setIcon(self._create_youtube_icon())
+        self.trailers_button.setMaximumWidth(240)
         self.trailers_button.clicked.connect(self._on_trailers_clicked)
         left_layout.addWidget(self.trailers_button)
 
         self.play_next_button.setObjectName("playEpisodeButton")
+        self.play_next_button.setMaximumWidth(240)
         self.play_next_button.clicked.connect(self._on_play_next_clicked)
         left_layout.addWidget(self.play_next_button)
 
         self.title_label.setFont(QFont("Inter", 24, QFont.Weight.Bold))
         self.title_label.setWordWrap(True)
+        self.title_label.setMaximumWidth(240)
         left_layout.addWidget(self.title_label)
 
         self.overview_label.setFont(QFont("Inter", 13))
         self.overview_label.setWordWrap(True)
+        self.overview_label.setMaximumWidth(240)
         self.overview_label.setStyleSheet("color: #94A3B8;")
         left_layout.addWidget(self.overview_label)
 
-        actions_layout = QHBoxLayout()
-        actions_layout.setSpacing(10)
+        actions_layout = QVBoxLayout()
+        actions_layout.setSpacing(8)
 
         series_details_button: QPushButton = QPushButton("Series Details")
         series_details_button.setObjectName("seriesDetailsButton")
@@ -131,13 +136,15 @@ class SeriesDetailView(QWidget):
         )
         actions_layout.addWidget(series_details_button)
 
-        actions_layout.addWidget(QLabel("Display Group:"))
+        display_group_row = QHBoxLayout()
+        display_group_row.setSpacing(6)
+        display_group_row.addWidget(QLabel("Display Group:"))
         self.order_combo = QComboBox()
         self.order_combo.setObjectName("orderComboBox")
         self.order_combo.currentIndexChanged.connect(self._on_order_changed)
-        actions_layout.addWidget(self.order_combo)
+        display_group_row.addWidget(self.order_combo, 1)
+        actions_layout.addLayout(display_group_row)
 
-        actions_layout.addStretch()
         left_layout.addLayout(actions_layout)
 
         top_row.addWidget(left_container)
