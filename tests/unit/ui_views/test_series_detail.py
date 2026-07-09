@@ -1,6 +1,5 @@
 from unittest.mock import patch
 from typing import Any
-from PySide6.QtTest import QTest
 from lan_streamer.ui_views import SeriesDetailView, Controller
 from lan_streamer.ui_views.dialogs.series_details import SeriesDetailsDialog
 from lan_streamer.system.config import config
@@ -269,7 +268,48 @@ def test_series_detail_view_alternate_display_groups(qtbot: Any) -> None:
         assert table_alpha.item(0, 0).text() == "1"  # Relative number (order + 1)
 
 
-def test_series_details_dialog_manual_mapper(qtbot: Any) -> None:
+def test_series_details_dialog_lock_toggle(qtbot: Any) -> None:
+    controller = Controller()
+    controller.current_library_name = "TV"
+    controller.cached_library_data = {
+        "Breaking Bad": {
+            "metadata": {
+                "tmdb_identifier": "1396",
+                "tmdb_name": "Breaking Bad",
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "01 - Pilot",
+                            "path": "/tv/Breaking Bad/S01E01.mkv",
+                            "watched": True,
+                            "air_date": "2008-01-20",
+                            "runtime": 58,
+                            "tmdb_episode_identifier": "62085",
+                            "tmdb_number": 1,
+                        },
+                    ]
+                }
+            },
+        }
+    }
+
+    with patch("lan_streamer.ui_views.dialogs.series_details.db.save_library"):
+        dialog = SeriesDetailsDialog("Breaking Bad", controller)
+    qtbot.addWidget(dialog)
+
+    assert dialog.tab_widget.count() == 2
+    assert dialog.tab_widget.tabText(0) == "Series Info"
+    assert dialog.tab_widget.tabText(1) == "Series Metadata"
+
+    dialog.locked_checkbox.setChecked(True)
+    with patch.object(controller, "toggle_series_lock") as mock_lock:
+        dialog._on_save_clicked()
+        mock_lock.assert_called_once_with("Breaking Bad", True)
+
+
+def test_series_details_dialog_refresh_series(qtbot: Any) -> None:
     from lan_streamer.ui_views.proxy import QMessageBox
 
     controller = Controller()
@@ -292,273 +332,19 @@ def test_series_details_dialog_manual_mapper(qtbot: Any) -> None:
                             "tmdb_episode_identifier": "62085",
                             "tmdb_number": 1,
                         },
-                        {
-                            "name": "02 - Cat's in the Bag...",
-                            "path": "/tv/Breaking Bad/S01E02.mkv",
-                            "watched": False,
-                            "air_date": "2008-01-27",
-                            "runtime": 48,
-                            "tmdb_episode_identifier": "62086",
-                            "tmdb_number": 2,
-                        },
                     ]
                 }
             },
         }
     }
 
-    mock_groups = [
-        {
-            "id": "group-123",
-            "name": "Story Arcs",
-            "type": 1,
-        }
-    ]
-    mock_group_details = {
-        "id": "group-123",
-        "name": "Story Arcs",
-        "type": 1,
-        "groups": [
-            {
-                "name": "Arc 1",
-                "order": 1,
-                "episodes": [
-                    {
-                        "id": "new-ep-id-1",
-                        "name": "Pilot (Arc Name)",
-                        "order": 0,
-                        "season_number": 1,
-                        "episode_number": 1,
-                        "air_date": "2008-01-20",
-                        "runtime": 58,
-                    },
-                    {
-                        "id": "new-ep-id-2",
-                        "name": "Cat's in the Bag... (Arc Name)",
-                        "order": 1,
-                        "season_number": 1,
-                        "episode_number": 2,
-                        "air_date": "2008-01-27",
-                        "runtime": 48,
-                    },
-                ],
-            }
-        ],
-    }
-
-    with (
-        patch("lan_streamer.ui_views.dialogs.series_details.tmdb_client") as mock_tmdb,
-        patch(
-            "lan_streamer.ui_views.dialogs.series_details.db.save_library"
-        ) as mock_save,
-        patch(
-            "lan_streamer.ui_views.dialogs.series_details.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ),
-        patch(
-            "lan_streamer.ui_views.dialogs.series_details.QMessageBox.information"
-        ) as mock_info,
-    ):
-        mock_tmdb.get_episode_groups.return_value = mock_groups
-        mock_tmdb.get_episode_group_details.return_value = mock_group_details
-
+    with patch("lan_streamer.ui_views.dialogs.series_details.db.save_library"):
         dialog = SeriesDetailsDialog("Breaking Bad", controller)
-        qtbot.addWidget(dialog)
-        QTest.qWait(20)
+    qtbot.addWidget(dialog)
 
-        # Tab widget should have 3 tabs: "Series Info", "Series Metadata", "Manual Metadata Mapper"
-        assert dialog.tab_widget.count() == 3
-        assert dialog.tab_widget.tabText(0) == "Series Info"
-        assert dialog.tab_widget.tabText(1) == "Series Metadata"
-        assert dialog.tab_widget.tabText(2) == "Manual Metadata Mapper"
-
-        # Check groups combo
-        assert dialog.group_combo.count() == 3
-        assert dialog.group_combo.itemText(2) == "Story Arcs"
-
-        # Checkbox should be unchecked initially
-        assert dialog.set_default_group_checkbox.isChecked() is False
-
-        # Select Group
-        dialog.group_combo.setCurrentIndex(2)
-
-        # Checkbox should be enabled and unchecked
-        assert dialog.set_default_group_checkbox.isEnabled() is True
-        dialog.set_default_group_checkbox.setChecked(True)
-
-        # Check subgroups combo
-        assert dialog.subgroup_combo.count() == 2
-        assert dialog.subgroup_combo.itemText(1) == "Arc 1"
-
-        # Select Subgroup
-        dialog.subgroup_combo.setCurrentIndex(1)
-
-        # Table should be populated with 2 rows
-        assert dialog.mapper_table.rowCount() == 2
-        assert dialog.mapper_table.item(0, 0).text() == "E01 - Pilot (Arc Name)"
-        assert (
-            dialog.mapper_table.item(1, 0).text()
-            == "E02 - Cat's in the Bag... (Arc Name)"
-        )
-
-        # Set combobox value for E01 to first file (/tv/Breaking Bad/S01E01.mkv)
-        # "Unmapped / None" (index 0), S01E01.mkv (index 1), S01E02.mkv (index 2)
-        combo_row_0 = dialog.mapper_table.cellWidget(0, 2)
-        assert combo_row_0.count() == 3
-        assert combo_row_0.itemText(1) == "S01E01.mkv"
-        assert combo_row_0.itemText(2) == "S01E02.mkv"
-
-        # Map row 0 to S01E01.mkv
-        combo_row_0.setCurrentIndex(1)
-
-        # Map row 1 to S01E02.mkv
-        combo_row_1 = dialog.mapper_table.cellWidget(1, 2)
-        combo_row_1.setCurrentIndex(2)
-
-        # Click apply manual mappings
-        dialog.apply_mapping_btn.click()
-
-        # Check updates are applied in cache
-        ep_0 = controller.cached_library_data["Breaking Bad"]["seasons"]["Season 1"][
-            "episodes"
-        ][0]
-        assert ep_0["tmdb_episode_identifier"] == "new-ep-id-1"
-        assert ep_0["tmdb_name"] == "Pilot (Arc Name)"
-
-        ep_1 = controller.cached_library_data["Breaking Bad"]["seasons"]["Season 1"][
-            "episodes"
-        ][1]
-        assert ep_1["tmdb_episode_identifier"] == "new-ep-id-2"
-        assert ep_1["tmdb_name"] == "Cat's in the Bag... (Arc Name)"
-
-        # Check default group ID is saved
-        metadata = controller.cached_library_data["Breaking Bad"]["metadata"]
-        assert metadata["tmdb_episode_group_id"] == "group-123"
-
-        mock_save.assert_called_once()
-        mock_info.assert_called_once()
-
-
-def test_series_details_dialog_anime_mal_status(qtbot: Any) -> None:
-    from lan_streamer.ui_views.proxy import QMessageBox
-
-    controller = Controller()
-    controller.current_library_name = "Anime"
-    controller.cached_library_data = {
-        "Frieren": {
-            "metadata": {
-                "tmdb_identifier": "209867",
-                "tmdb_name": "Frieren",
-            },
-            "seasons": {
-                "Season 1": {
-                    "metadata": {
-                        "myanimelist_id": 52991,
-                    },
-                    "episodes": [
-                        {
-                            "name": "01 - Journey's End",
-                            "path": "/anime/Frieren/S01E01.mkv",
-                            "watched": True,
-                            "air_date": "2023-09-29",
-                            "runtime": 24,
-                            "tmdb_episode_identifier": "123",
-                            "tmdb_number": 1,
-                        }
-                    ],
-                },
-                "Season 2": {
-                    "metadata": {},
-                    "episodes": [
-                        {
-                            "name": "01 - Season 2 Episode 1",
-                            "path": "/anime/Frieren/S02E01.mkv",
-                            "watched": False,
-                            "air_date": "2025-01-01",
-                            "runtime": 24,
-                            "tmdb_episode_identifier": "456",
-                            "tmdb_number": 1,
-                        }
-                    ],
-                },
-            },
-        }
-    }
-
-    # Setup the library config as anime type
-    config.libraries = {"Anime": {"type": "anime", "paths": ["/anime"]}}
-
-    with (
-        patch(
-            "lan_streamer.ui_views.dialogs.series_details.tmdb_client.get_episode_groups",
-            return_value=[],
-        ),
-        patch(
-            "lan_streamer.ui_views.dialogs.series_details.myanimelist_client"
-        ) as mock_mal_client,
-        patch(
-            "lan_streamer.ui_views.dialogs.series_details.db.save_library"
-        ) as mock_save,
-        patch(
-            "lan_streamer.ui_views.dialogs.series_details.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ),
-        patch(
-            "lan_streamer.ui_views.dialogs.series_details.QMessageBox.information"
-        ) as mock_info,
-    ):
-        mock_mal_client.is_configured.return_value = True
-        mock_mal_client.get_anime_details.return_value = {
-            "id": 52991,
-            "title": "Sousou no Frieren",
-            "num_episodes": 28,
-        }
-
-        dialog = SeriesDetailsDialog("Frieren", controller)
-        qtbot.addWidget(dialog)
-        QTest.qWait(20)
-
-        # 1. Verify that the MAL status labels are created in the Series Info tab
-        assert hasattr(dialog, "mal_status_labels")
-        assert "Season 1" in dialog.mal_status_labels
-        assert "Season 2" in dialog.mal_status_labels
-
-        assert "Mapped (MAL ID: 52991)" in dialog.mal_status_labels["Season 1"].text()
-        assert dialog.mal_status_labels["Season 2"].text() == "Not Mapped"
-
-        # 2. Simulate mapping Season 2 via the MyAnimeList mapper
-        # First, set the combo box to Season 2
-        season_idx = dialog.mal_season_combo.findText("Season 2")
-        dialog.mal_season_combo.setCurrentIndex(season_idx)
-
-        # Mock search results for mapping
-        mock_mal_client.search_anime.return_value = [
-            {"id": 99999, "title": "Frieren Season 2", "start_date": "2025-01-01"}
-        ]
-        dialog.mal_search_input.setText("Frieren Season 2")
-        dialog._on_mal_search_clicked()
-
-        # Check results are populated in combo
-        assert dialog.mal_search_results_combo.count() == 2
-        # Set to the searched result (index 1)
-        mock_mal_client.get_anime_details.return_value = {
-            "id": 99999,
-            "title": "Frieren Season 2",
-            "num_episodes": 12,
-        }
-        dialog.mal_search_results_combo.setCurrentIndex(1)
-
-        # Apply mapping
-        dialog.mal_apply_btn.click()
-
-        # Check that it updated the season 2 status label in Series Info tab
-        assert "Mapped (MAL ID: 99999)" in dialog.mal_status_labels["Season 2"].text()
-
-        # Check cache updates
-        season_2_meta = controller.cached_library_data["Frieren"]["seasons"][
-            "Season 2"
-        ]["metadata"]
-        assert season_2_meta.get("myanimelist_id") == 99999
-
-        mock_save.assert_called_once()
-        mock_info.assert_called_once()
+    with patch.object(controller, "trigger_series_refresh") as mock_refresh:
+        with patch.object(
+            QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
+        ):
+            dialog._on_refresh_clicked()
+            mock_refresh.assert_called_once_with("Breaking Bad")
