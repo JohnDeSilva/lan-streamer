@@ -563,13 +563,11 @@ class LibraryGridView(QWidget):
             if is_movie:
                 status_string: str = "Watched" if watched_count > 0 else "Unwatched"
                 display_label: str = f"{series_title}\n({status_string})"
-                tooltip_text: str = f"{series_title}\nStatus: {status_string}"
+                tooltip_text: str = f"Status: {status_string}"
             else:
                 unwatched: int = total_count - watched_count
                 display_label: str = f"{series_title}\n({watched_count}/{total_count})"
-                tooltip_text: str = (
-                    f"{series_title}\nUnwatched: {unwatched}/{total_count}"
-                )
+                tooltip_text: str = f"Unwatched: {unwatched}/{total_count}"
 
             list_item: Optional[QListWidgetItem] = None
             if row_index < current_item_count:
@@ -767,18 +765,15 @@ class LibraryGridView(QWidget):
             if item_type == "season":
                 season_name = media_item.get("season_name") or ""
                 display_label = f"{name}\n{season_name} ({watched_count}/{total_count})"
-                tooltip_text = (
-                    f"{name} - {season_name}\n"
-                    f"Episodes: {watched_count}/{total_count} watched"
-                )
+                tooltip_text = f"Episodes: {watched_count}/{total_count} watched"
             elif item_type == "series":
                 display_label = f"{name}\n({watched_count}/{total_count})"
                 unwatched: int = total_count - watched_count
-                tooltip_text = f"{name}\nUnwatched: {unwatched}/{total_count}"
+                tooltip_text = f"Unwatched: {unwatched}/{total_count}"
             else:
                 status_string = "Watched" if watched_count > 0 else "Unwatched"
                 display_label = f"{name}\n({status_string})"
-                tooltip_text = f"{name}\nStatus: {status_string}"
+                tooltip_text = f"Status: {status_string}"
 
             list_item = QListWidgetItem(display_label)
             list_item.setData(Qt.ItemDataRole.UserRole, media_item)
