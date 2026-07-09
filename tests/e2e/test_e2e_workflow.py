@@ -1478,6 +1478,14 @@ def test_library_grid_view_additional_coverage(qtbot: Any, tmp_path: Any) -> Non
         ] = 0
         grid_view.populate_grid()
         assert "Unwatched" in grid_view.series_list_widget.item(0).text()
+        # Verify tooltip also reflects unwatched status
+        avatar_tooltip = grid_view.series_list_widget.item(0).toolTip()
+        assert "Unwatched" in avatar_tooltip, (
+            f"Expected 'Unwatched' in tooltip but got: {avatar_tooltip}"
+        )
+        assert "Status:" in avatar_tooltip, (
+            f"Expected 'Status:' in movie tooltip but got: {avatar_tooltip}"
+        )
 
         # 8. takeItem when count decreases
         controller_instance.cached_library_data.pop("Inception")
