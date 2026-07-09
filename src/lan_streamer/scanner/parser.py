@@ -14,6 +14,8 @@ SUBTITLE_EXTENSIONS = {".srt", ".ass", ".vtt", ".sub", ".idx"}
 
 # Regex to extract S01E02 style episode numbers from filenames
 _EPISODE_REGEX = re.compile(r"[Ss](\d+)[Ee](\d+)")
+# Regex to capture additional E## groups after the first match (for multi-episode files)
+_EXTRA_EPISODE_REGEX = re.compile(r"[Ee](\d+)")
 # Regex to extract season number from folder names (e.g. "Season 1")
 _SEASON_REGEX = re.compile(r"[Ss]eason\s*(\d+)", re.IGNORECASE)
 
@@ -27,6 +29,30 @@ def _parse_episode_number(filename: str) -> tuple[int, int] | None:
         )
         return int(match.group(1)), int(match.group(2))
     return None
+
+
+def _parse_multi_episode_numbers(filename: str) -> list[tuple[int, int]]:
+    """Return all (season_num, episode_num) pairs from a multi-episode filename.
+
+    Handles patterns like ``S01E01E02``, ``S01E01E02E03`` and ``S01E01-E02``
+    by first extracting the initial season+episode match and then finding
+    all subsequent ``E##`` groups.
+    """
+    match = _EPISODE_REGEX.search(filename)
+    if not match:
+        return []
+    season = int(match.group(1))
+    first_episode = int(match.group(2))
+    results: list[tuple[int, int]] = [(season, first_episode)]
+    remaining = filename[match.end() :]
+    for extra_match in _EXTRA_EPISODE_REGEX.finditer(remaining):
+        results.append((season, int(extra_match.group(1))))
+    logger.debug(
+        "Parsed multi-episode %s from '%s'",
+        ", ".join(f"S{s}E{e}" for s, e in results),
+        filename,
+    )
+    return results
 
 
 def _parse_season_number(season_name: str) -> int | None:

@@ -232,6 +232,7 @@ def _process_episode_file(
     existing_series_data: Dict[str, Any] | None = None,
     offline: bool = False,
     metadata_only: bool = False,
+    hint_episode_number: int | None = None,
 ) -> Dict[str, Any]:
     """Per-episode metadata matching against the TMDB episode list.
 
@@ -312,22 +313,25 @@ def _process_episode_file(
                             runtime = tmdb_ep.get("runtime", 0)
                         break
             if tmdb_number is None:
-                parsed = _parse_episode_number(episode_name)
-                if parsed:
-                    _, parsed_num = parsed
-                    tmdb_number = parsed_num
-                    if tmdb_episodes:
-                        for tmdb_ep in tmdb_episodes:
-                            if tmdb_ep.get("episode_number") == tmdb_number:
-                                if not tmdb_episode_identifier:
-                                    tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
-                                if not tmdb_name:
-                                    tmdb_name = tmdb_ep.get("name")
-                                if not air_date:
-                                    air_date = tmdb_ep.get("air_date", "")
-                                if not runtime:
-                                    runtime = tmdb_ep.get("runtime", 0)
-                                break
+                if hint_episode_number is not None and hint_episode_number > 0:
+                    tmdb_number = hint_episode_number
+                else:
+                    parsed = _parse_episode_number(episode_name)
+                    if parsed:
+                        _, parsed_num = parsed
+                        tmdb_number = parsed_num
+                if tmdb_number is not None and tmdb_episodes:
+                    for tmdb_ep in tmdb_episodes:
+                        if tmdb_ep.get("episode_number") == tmdb_number:
+                            if not tmdb_episode_identifier:
+                                tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
+                            if not tmdb_name:
+                                tmdb_name = tmdb_ep.get("name")
+                            if not air_date:
+                                air_date = tmdb_ep.get("air_date", "")
+                            if not runtime:
+                                runtime = tmdb_ep.get("runtime", 0)
+                            break
                 else:
                     lookup_name = episode_file.stem.lower()
                     for tmdb_ep in tmdb_episodes:
@@ -346,7 +350,10 @@ def _process_episode_file(
     else:
         # Check if there is an existing placeholder in this season in existing_series_data
         placeholder_episode = None
-        parsed = _parse_episode_number(episode_name)
+        if hint_episode_number is not None and hint_episode_number > 0:
+            parsed = (0, hint_episode_number)
+        else:
+            parsed = _parse_episode_number(episode_name)
         if (
             parsed
             and existing_series_data
