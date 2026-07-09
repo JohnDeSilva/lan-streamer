@@ -23,6 +23,7 @@ from lan_streamer.ui_views.proxy import (
     QMessageBox,
 )
 from lan_streamer.ui_views.dialogs.subtitle_search import SubtitleSearchDialog
+from lan_streamer.ui_views.dialogs.metadata_match import MetadataMatchDialog
 
 logger = logging.getLogger(__name__)
 
@@ -447,10 +448,11 @@ class MovieDetailsDialog(QDialog):
 
     @Slot()
     def _on_search_tmdb_clicked(self) -> None:
-        # Trigger the existing EpisodeMatchDialog (which handles movies too)
-        self.controller.episode_metadata_dialog_requested.emit(
-            self.movie_name, self.movie_path
+        logger.info(
+            f"MovieDetailsDialog opening MetadataMatchDialog for movie: '{self.movie_name}'"
         )
+        dialog = MetadataMatchDialog(self.movie_name, self.controller, parent=self)
+        dialog.exec()
         self.reject()
 
     @Slot()
