@@ -429,8 +429,18 @@ class SeasonDetailView(QWidget):
         table.setRowCount(len(episodes))
         today_str = datetime.date.today().isoformat()
 
+        # Compute which file paths are shared by multiple episodes
+        path_counts: Dict[str, int] = {}
+        for ep in episodes:
+            p = ep.get("path")
+            if p:
+                path_counts[p] = path_counts.get(p, 0) + 1
+        shared_paths: set[str] = {p for p, c in path_counts.items() if c > 1}
+
         for row_index, episode in enumerate(episodes):
-            self._fill_episode_row(table, row_index, episode, series_name, today_str)
+            self._fill_episode_row(
+                table, row_index, episode, series_name, today_str, shared_paths
+            )
 
         # Context menu
         def make_context_menu(
@@ -493,6 +503,7 @@ class SeasonDetailView(QWidget):
         episode: Dict[str, Any],
         series_name: str,
         today_str: str,
+        shared_paths: Optional[set[str]] = None,
     ) -> None:
         """Render a single episode row with icon, color, progress bar, and details button."""
         number = str(episode.get("tmdb_number") or (row + 1))
@@ -502,9 +513,13 @@ class SeasonDetailView(QWidget):
         air_date = episode.get("air_date") or ""
         runtime = episode.get("file_runtime") or episode.get("runtime") or 0
         runtime_str = f"{runtime} min" if runtime else ""
+        is_shared = bool(path and shared_paths and path in shared_paths)
 
         # Icon and color
-        if path:
+        if is_shared:
+            color = QColor("#d97706")  # amber — shared file
+            icon = "\u29c9  "
+        elif path:
             if watched:
                 color = QColor("#888888")
                 icon = "\u2713  "
@@ -537,8 +552,17 @@ class SeasonDetailView(QWidget):
         table.setItem(row, 0, num_item)
 
         # Column 1: Title
+        tooltip = "Click to play" if path else ""
+        if is_shared and self._current_season_episodes:
+            shared_numbers = [
+                str(i + 1)
+                for i, e in enumerate(self._current_season_episodes)
+                if e.get("path") == path and e is not episode
+            ]
+            if shared_numbers:
+                tooltip = f"Shared file with episode(s): {', '.join(shared_numbers)}"
         title_item = QTableWidgetItem(display_title)
-        title_item.setToolTip("Click to play" if path else "")
+        title_item.setToolTip(tooltip)
         title_item.setForeground(color)
         table.setItem(row, 1, title_item)
 

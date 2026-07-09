@@ -400,6 +400,7 @@ def scan_series_pass2(
                     existing_series_data=existing_series_data,
                     offline=False,
                     metadata_only=True,
+                    hint_episode_number=ed.get("episode_number"),
                 )
             )
         series_data["seasons"][season_name]["episodes"] = matched
