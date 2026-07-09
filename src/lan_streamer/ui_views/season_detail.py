@@ -758,7 +758,12 @@ class SeasonDetailView(QWidget):
             for ep in season_data.get("episodes", []):
                 if ep.get("path"):
                     self._tmdb_local_episodes.append(ep)
-        self._tmdb_local_episodes.sort(key=lambda x: x.get("tmdb_number") or 0)
+        self._tmdb_local_episodes.sort(
+            key=lambda x: (
+                x.get("season_number") or 0,
+                x.get("episode_number") or 0,
+            )
+        )
 
         tmdb_id = self._current_series_data.get("metadata", {}).get("tmdb_identifier")
         if not tmdb_id:
@@ -986,7 +991,12 @@ class SeasonDetailView(QWidget):
         for ep in season_data.get("episodes", []):
             if ep.get("path"):
                 self._mal_local_episodes.append(ep)
-        self._mal_local_episodes.sort(key=lambda x: x.get("tmdb_number") or 0)
+        self._mal_local_episodes.sort(
+            key=lambda x: (
+                x.get("season_number") or 0,
+                x.get("episode_number") or 0,
+            )
+        )
 
         saved_mal_id = season_data.get("metadata", {}).get("myanimelist_id")
 
