@@ -1,3 +1,22 @@
+## v0.45.0 (2026-07-09)
+
+### Feat
+
+- **season-detail**: redesign season detail page with aligned episode table and display group support
+
+### Fix
+
+- **tests**: update tests after removing mapper tabs from series details dialog
+- **ui**: wire season detail details button to controller like series detail
+- **scanner**: resolve multi-episode file metadata matching for S02E10-E11 patterns
+- **season-detail**: regroup episodes by display group before looking up season
+- **ui**: constrain left column width to poster width and stack display group controls
+
+### Refactor
+
+- **ui**: remove Manual Metadata Mapper and MyAnimeList Mapper tabs from series details dialog
+- **season-detail**: auto-configure TMDB/MAL mapper tabs from page context
+
 ## v0.45.0rc0 (2026-07-09)
 
 ### Feat
