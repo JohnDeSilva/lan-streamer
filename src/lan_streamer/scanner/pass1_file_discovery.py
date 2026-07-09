@@ -16,6 +16,7 @@ from lan_streamer.scanner.file_property_scanner import get_stub_file_info
 from lan_streamer.scanner.parser import (
     VIDEO_EXTENSIONS,
     _parse_episode_number,
+    _parse_multi_episode_numbers,
     find_video_files,
 )
 
@@ -107,21 +108,35 @@ def _scan_season_files(season_directory: Path) -> list[dict[str, Any]]:
                     continue
                 file_path = Path(entry.path)
                 path_str = str(file_path.absolute())
-                parsed = _parse_episode_number(entry.name)
                 try:
                     ctime = file_path.stat().st_ctime
                 except OSError:
                     ctime = 0.0
-                stub_episodes.append(
-                    {
-                        "path": path_str,
-                        "name": entry.name,
-                        "season_number": parsed[0] if parsed else 0,
-                        "episode_number": parsed[1] if parsed else 0,
-                        "date_added": ctime,
-                        "versions": [get_stub_file_info(path_str)],
-                    }
-                )
+                parsed_list = _parse_multi_episode_numbers(entry.name)
+                if parsed_list:
+                    for season_num, ep_num in parsed_list:
+                        stub_episodes.append(
+                            {
+                                "path": path_str,
+                                "name": entry.name,
+                                "season_number": season_num,
+                                "episode_number": ep_num,
+                                "date_added": ctime,
+                                "versions": [get_stub_file_info(path_str)],
+                            }
+                        )
+                else:
+                    parsed = _parse_episode_number(entry.name)
+                    stub_episodes.append(
+                        {
+                            "path": path_str,
+                            "name": entry.name,
+                            "season_number": parsed[0] if parsed else 0,
+                            "episode_number": parsed[1] if parsed else 0,
+                            "date_added": ctime,
+                            "versions": [get_stub_file_info(path_str)],
+                        }
+                    )
     except PermissionError:
         logger.warning(
             "Permission denied reading season directory: '%s'", season_directory
@@ -157,32 +172,62 @@ def _link_existing_episodes(
     metadata is preserved (watched, TMDB identifiers, etc.) while updating
     the technical stub info from the fresh file scan.
     """
-    existing_by_path: dict[str, dict[str, Any]] = {}
+    # Index existing episodes by (path, episode_number) for exact matching
+    # and by path alone for backward-compat fallback.
+    existing_by_path: dict[str, list[dict[str, Any]]] = {}
     for ep in existing_episodes:
-        path = ep.get("path")
-        if path:
-            existing_by_path[path] = ep
+        ep_path = ep.get("path")
+        if ep_path:
+            existing_by_path.setdefault(ep_path, []).append(ep)
         for version in ep.get("versions", []):
             vpath = version.get("path")
             if vpath:
-                existing_by_path.setdefault(vpath, ep)
+                existing_by_path.setdefault(vpath, []).append(ep)
+    existing_by_key: dict[tuple[str, int], dict[str, Any]] = {}
+    for ep in existing_episodes:
+        ep_path = ep.get("path")
+        ep_num = ep.get("episode_number") or 0
+        if ep_path:
+            existing_by_key[(ep_path, ep_num)] = ep
+        for version in ep.get("versions", []):
+            vpath = version.get("path")
+            if vpath and (vpath, ep_num) not in existing_by_key:
+                existing_by_key[(vpath, ep_num)] = ep
 
+    matched_existing: set[int] = set()  # id() of matched dict objects
     linked: list[dict[str, Any]] = []
     for scanned in scanned_episodes:
         scan_path = scanned.get("path")
-        if scan_path and scan_path in existing_by_path:
-            matched = existing_by_path[scan_path]
+        scan_ep_num = scanned.get("episode_number") or 0
+        matched = None
+        key = (scan_path, scan_ep_num)
+        if scan_path and key in existing_by_key:
+            candidate = existing_by_key[key]
+            if id(candidate) not in matched_existing:
+                matched = candidate
+        if matched is None and scan_path and scan_path in existing_by_path:
+            for candidate in existing_by_path[scan_path]:
+                if id(candidate) not in matched_existing:
+                    matched = candidate
+                    break
+        if matched is not None:
             merged = {**matched, **scanned}
             merged["versions"] = scanned.get("versions", matched.get("versions", []))
             linked.append(merged)
+            matched_existing.add(id(matched))
         else:
             linked.append(scanned)
 
-    # Carry forward existing episodes whose files are no longer on disk
-    # (placeholder records for TMDB-only episodes).
-    scanned_paths = {ep.get("path") for ep in linked if ep.get("path")}
+    # Carry forward existing episodes not matched in the current scan.
+    # Use main-path matching to preserve backward compat: an existing
+    # episode matched via a version path is still carried forward under
+    # its own main path so the old file record isn't silently dropped.
+    linked_main_paths = {ep.get("path") for ep in linked if ep.get("path")}
     for ep in existing_episodes:
-        if ep.get("path") not in scanned_paths:
+        ep_path = ep.get("path")
+        if id(ep) not in matched_existing or (
+            ep_path and ep_path not in linked_main_paths
+        ):
             linked.append(ep)
 
     return linked
