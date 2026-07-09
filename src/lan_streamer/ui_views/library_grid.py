@@ -563,8 +563,13 @@ class LibraryGridView(QWidget):
             if is_movie:
                 status_string: str = "Watched" if watched_count > 0 else "Unwatched"
                 display_label: str = f"{series_title}\n({status_string})"
+                tooltip_text: str = f"{series_title}\nStatus: {status_string}"
             else:
+                unwatched: int = total_count - watched_count
                 display_label: str = f"{series_title}\n({watched_count}/{total_count})"
+                tooltip_text: str = (
+                    f"{series_title}\nUnwatched: {unwatched}/{total_count}"
+                )
 
             list_item: Optional[QListWidgetItem] = None
             if row_index < current_item_count:
@@ -573,9 +578,9 @@ class LibraryGridView(QWidget):
             if list_item is not None:
                 if list_item.text() != display_label:
                     list_item.setText(display_label)
+                list_item.setToolTip(tooltip_text)
                 if list_item.data(Qt.ItemDataRole.UserRole) != series_title:
                     list_item.setData(Qt.ItemDataRole.UserRole, series_title)
-                    list_item.setToolTip(series_title)
 
                 stored_poster: Any = list_item.data(poster_role)
                 if stored_poster != poster_path_value:
@@ -586,7 +591,7 @@ class LibraryGridView(QWidget):
                 new_item.setData(Qt.ItemDataRole.UserRole, series_title)
                 new_item.setData(poster_role, poster_path_value)
                 new_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                new_item.setToolTip(series_title)
+                new_item.setToolTip(tooltip_text)
                 self._assign_item_icon(new_item, poster_path_value)
                 self.series_list_widget.addItem(new_item)
 
@@ -762,16 +767,23 @@ class LibraryGridView(QWidget):
             if item_type == "season":
                 season_name = media_item.get("season_name") or ""
                 display_label = f"{name}\n{season_name} ({watched_count}/{total_count})"
+                tooltip_text = (
+                    f"{name} - {season_name}\n"
+                    f"Episodes: {watched_count}/{total_count} watched"
+                )
             elif item_type == "series":
                 display_label = f"{name}\n({watched_count}/{total_count})"
+                unwatched: int = total_count - watched_count
+                tooltip_text = f"{name}\nUnwatched: {unwatched}/{total_count}"
             else:
                 status_string = "Watched" if watched_count > 0 else "Unwatched"
                 display_label = f"{name}\n({status_string})"
+                tooltip_text = f"{name}\nStatus: {status_string}"
 
             list_item = QListWidgetItem(display_label)
             list_item.setData(Qt.ItemDataRole.UserRole, media_item)
             list_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            list_item.setToolTip(display_label)
+            list_item.setToolTip(tooltip_text)
 
             self._assign_item_icon_with_size(list_item, poster_path, 120, 165)
             h_list.addItem(list_item)
