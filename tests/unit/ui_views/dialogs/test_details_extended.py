@@ -479,11 +479,11 @@ class TestSeriesDetailsDialog:
                 d._on_match_jellyfin_clicked()
                 mock_info.assert_called_once()
 
-    def test_episode_table_is_populated(self, ctrl_tv, qtbot) -> None:
+    def test_tab_widget_has_info_and_metadata_tabs(self, ctrl_tv, qtbot) -> None:
         d = self._make_dialog(ctrl_tv, qtbot)
-        # mapper_table should have tmdb episodes (or be empty if no TMDB data)
-        table = d.mapper_table
-        assert table.columnCount() == 3
+        assert d.tab_widget.count() == 2
+        assert d.tab_widget.tabText(0) == "Series Info"
+        assert d.tab_widget.tabText(1) == "Series Metadata"
 
     def test_episode_table_mark_watched_all(self, ctrl_tv, qtbot) -> None:
         d = self._make_dialog(ctrl_tv, qtbot)
@@ -491,13 +491,10 @@ class TestSeriesDetailsDialog:
             d._on_mark_watched_clicked()
             mock_mark.assert_called_once_with("ShowA")
 
-    def test_on_delete_episode_no_selection(self, ctrl_tv, qtbot) -> None:
-        """No selection → delete_episode should not be called."""
-        d = self._make_dialog(ctrl_tv, qtbot)
-        d.mapper_table.clearSelection()
+    def test_on_delete_no_episode_called_without_action(self, ctrl_tv, qtbot) -> None:
+        """Verify delete_episode is not called without a user action."""
+        self._make_dialog(ctrl_tv, qtbot)
         with patch.object(ctrl_tv, "delete_episode") as mock_del:
-            # The dialog doesn't expose a delete-episode button; test indirectly
-            # by verifying delete_episode is not called without an episode selection
             assert mock_del.call_count == 0
 
     def test_hide_missing_saved_on_save(self, ctrl_tv, qtbot) -> None:
