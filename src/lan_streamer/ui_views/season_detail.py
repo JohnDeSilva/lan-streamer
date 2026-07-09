@@ -49,7 +49,6 @@ class SeasonDetailView(QWidget):
     """
 
     back_requested = Signal()
-    episode_details_requested = Signal(str, str)  # series_name, episode_path
 
     def __init__(
         self, controller_instance: Controller, parent: Optional[QWidget] = None
@@ -622,10 +621,14 @@ class SeasonDetailView(QWidget):
         details.setStyleSheet("padding: 2px 8px; font-weight: bold;")
         if path:
 
-            def make_ds(ts: str, tp: str) -> Callable[[], None]:
-                return lambda: self.episode_details_requested.emit(ts, tp)
+            def make_details_slot(
+                target_series: str, target_path: str
+            ) -> Callable[[], None]:
+                return lambda: self.controller.episode_details_requested.emit(
+                    target_series, target_path
+                )
 
-            details.clicked.connect(make_ds(series_name, path))
+            details.clicked.connect(make_details_slot(series_name, path))
         else:
             details.setEnabled(False)
         dc = QWidget()
