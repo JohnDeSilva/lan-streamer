@@ -1,3 +1,11 @@
+## v0.45.1rc0 (2026-07-09)
+
+### Fix
+
+- **ui**: sort file dropdowns by filename, not full path
+- **ui**: sort file dropdowns by natural path order
+- **ui**: sort file dropdowns in TMDB/MAL mapper by season then episode order
+
 ## v0.45.0 (2026-07-09)
 
 ### Feat
