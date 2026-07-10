@@ -1,5 +1,6 @@
 """Tests for the redesigned SeasonDetailView."""
 
+from pathlib import Path
 from typing import Any, Dict
 
 from unittest.mock import patch, MagicMock
@@ -811,3 +812,95 @@ def test_season_detail_mal_apply(qtbot: Any) -> None:
             "Season 1"
         ].get("metadata", {})
         assert season_meta["myanimelist_id"] == 52991
+
+
+def test_tmdb_mapper_files_sorted_by_filename(qtbot: Any) -> None:
+    """TMDB mapper file dropdowns are sorted by filename across seasons."""
+    episodes_season1 = [
+        {
+            "name": "S01E05.mkv",
+            "path": "/disk1/Show/Season 1/S01E05.mkv",
+            "tmdb_number": None,
+            "watched": False,
+        },
+        {
+            "name": "S01E03.mkv",
+            "path": "/disk1/Show/Season 1/S01E03.mkv",
+            "tmdb_number": None,
+            "watched": False,
+        },
+    ]
+    episodes_season2 = [
+        {
+            "name": "S02E12.mkv",
+            "path": "/disk2/Show/S02E12.mkv",
+            "tmdb_number": None,
+            "watched": False,
+        },
+        {
+            "name": "S02E07.mkv",
+            "path": "/disk2/Show/S02E07.mkv",
+            "tmdb_number": None,
+            "watched": False,
+        },
+    ]
+    controller = MagicMock(spec=Controller)
+    controller.current_library_name = "TV"
+    controller.cached_library_data = {
+        "Test Series": {
+            "metadata": {"tmdb_name": "Test"},
+            "seasons": {
+                "Season 1": {"metadata": {}, "episodes": episodes_season1},
+                "Season 2": {"metadata": {}, "episodes": episodes_season2},
+            },
+        }
+    }
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+    view.display_season("Test Series", "Season 1")
+
+    filenames = [Path(ep["path"]).name for ep in view._tmdb_local_episodes]
+    assert filenames == ["S01E03.mkv", "S01E05.mkv", "S02E07.mkv", "S02E12.mkv"]
+
+
+def test_mal_mapper_files_sorted_by_filename(qtbot: Any) -> None:
+    """MAL mapper file dropdowns are sorted by filename within a season."""
+    episodes = [
+        {
+            "name": "S01E12.mkv",
+            "path": "/anime/Show/Season 1/S01E12.mkv",
+            "tmdb_number": None,
+            "watched": False,
+        },
+        {
+            "name": "S01E03.mkv",
+            "path": "/anime/Show/Season 1/S01E03.mkv",
+            "tmdb_number": None,
+            "watched": False,
+        },
+        {
+            "name": "S01E07.mkv",
+            "path": "/anime/Show/Season 1/S01E07.mkv",
+            "tmdb_number": None,
+            "watched": False,
+        },
+    ]
+    controller = MagicMock(spec=Controller)
+    controller.current_library_name = "anime"
+    controller.cached_library_data = {
+        "Test Series": {
+            "metadata": {"tmdb_name": "Test"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {"myanimelist_id": None},
+                    "episodes": episodes,
+                }
+            },
+        }
+    }
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+    view.display_season("Test Series", "Season 1")
+
+    filenames = [Path(ep["path"]).name for ep in view._mal_local_episodes]
+    assert filenames == ["S01E03.mkv", "S01E07.mkv", "S01E12.mkv"]

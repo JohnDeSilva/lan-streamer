@@ -220,4 +220,15 @@ def get_application_stylesheet() -> str:
         background-color: #2a82da;
         border-radius: 5px;
     }
+
+    /* Tooltips - dark theme with no transparency (opacity:255 is critical for macOS) */
+    QToolTip {
+        background-color: #1a1a1f;
+        color: #E2E8F0;
+        border: 1px solid #2d2d35;
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 12px;
+        opacity: 255;
+    }
     """

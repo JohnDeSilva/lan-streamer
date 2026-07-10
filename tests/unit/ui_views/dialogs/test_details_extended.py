@@ -181,13 +181,12 @@ class TestMovieDetailsDialog:
             mock_warn.assert_called_once()
 
     def test_on_search_tmdb_clicked(self, ctrl_movie, qtbot) -> None:
+        from lan_streamer.ui_views.dialogs.metadata_match import MetadataMatchDialog
+
         d = self._make_dialog(ctrl_movie, qtbot)
-        emitted: List[str] = []
-        ctrl_movie.episode_metadata_dialog_requested.connect(
-            lambda a, b: emitted.append(a)
-        )
-        d._on_search_tmdb_clicked()
-        assert "Inception" in emitted
+        with patch.object(MetadataMatchDialog, "exec", return_value=None) as mock_exec:
+            d._on_search_tmdb_clicked()
+            mock_exec.assert_called_once()
 
     def test_on_refresh_clicked_yes(self, ctrl_movie, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
@@ -343,7 +342,7 @@ class TestEpisodeDetailsDialogExtended:
 
     def test_on_search_tmdb_clicked(self, ctrl_tv, qtbot) -> None:
         d = self._make_dialog(ctrl_tv, qtbot)
-        emitted = []
+        emitted: List[str] = []
         ctrl_tv.episode_metadata_dialog_requested.connect(
             lambda a, b: emitted.append(a)
         )

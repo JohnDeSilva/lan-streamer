@@ -1472,12 +1472,23 @@ def test_library_grid_view_additional_coverage(qtbot: Any, tmp_path: Any) -> Non
         assert "Inception" in grid_view.series_list_widget.item(1).text()
 
         # 7. Updating existing item (text, tooltips, poster path) in populate_grid
+        # Verify watched movie tooltip shows "Watched"
+        avatar_watched_tooltip = grid_view.series_list_widget.item(0).toolTip()
+        assert avatar_watched_tooltip == "Watched", (
+            f"Expected 'Watched' tooltip for watched movie but got: {avatar_watched_tooltip}"
+        )
+
         controller_instance.cached_library_data["Avatar"]["watched"] = False
         controller_instance.cached_library_data["Avatar"]["metrics"][
             "watched_episodes"
         ] = 0
         grid_view.populate_grid()
         assert "Unwatched" in grid_view.series_list_widget.item(0).text()
+        # Verify tooltip reflects unwatched status
+        avatar_tooltip = grid_view.series_list_widget.item(0).toolTip()
+        assert avatar_tooltip == "Unwatched", (
+            f"Expected 'Unwatched' tooltip for unwatched movie but got: {avatar_tooltip}"
+        )
 
         # 8. takeItem when count decreases
         controller_instance.cached_library_data.pop("Inception")

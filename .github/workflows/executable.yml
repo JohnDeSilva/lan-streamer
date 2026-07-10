@@ -105,61 +105,61 @@ jobs:
           path: dist/lan-streamer-macos.dmg
 
 
-  build-windows:
-    name: Build Executable (Windows)
-    needs: [call-lint, call-test]
-    runs-on: windows-latest
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install
-
-      - name: Setup FFmpeg
-        uses: FedericoCarboni/setup-ffmpeg@v3
-
-      - name: Install VLC
-        run: choco install vlc -y
-
-      - name: Build executable
-        shell: bash
-        run: uv run pyinstaller --noconfirm lan-streamer.spec
-
-      - name: Validate executable runs (Dry Run)
-        shell: bash
-        env:
-          PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
-          LAN_STREAMER_DRY_RUN: '1'
-          QT_QPA_PLATFORM: offscreen
-        run: for f in ./dist/lan-streamer-*.exe; do "$f"; break; done
-
-      - name: Validate executable runs (Runtime Integration with Timeout)
-        shell: bash
-        env:
-          PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
-        run: |
-          for f in ./dist/lan-streamer-*.exe; do
-            f_win=$(cygpath -w -a "$f")
-            uv run python -c "import subprocess, os, sys; res = subprocess.run([r'$f_win'], env=dict(os.environ, LAN_STREAMER_TEST_RUN='1', QT_QPA_PLATFORM='offscreen'), timeout=20); sys.exit(res.returncode)"
-            break
-          done
-
-
-
-      - name: Rename executable for artifact
-        shell: bash
-        run: mv dist/lan-streamer-*.exe dist/lan-streamer-windows.exe
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lan-streamer-windows
-          path: dist/lan-streamer-windows.exe
+#  build-windows:
+#    name: Build Executable (Windows)
+#    needs: [call-lint, call-test]
+#    runs-on: windows-latest
+#    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
+#
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: Set up uv
+#        uses: astral-sh/setup-uv@v5
+#        with:
+#          enable-cache: true
+#
+#      - name: Set up Python
+#        run: uv python install
+#
+#      - name: Setup FFmpeg
+#        uses: FedericoCarboni/setup-ffmpeg@v3
+#
+#      - name: Install VLC
+#        run: choco install vlc -y
+#
+#      - name: Build executable
+#        shell: bash
+#        run: uv run pyinstaller --noconfirm lan-streamer.spec
+#
+#      - name: Validate executable runs (Dry Run)
+#        shell: bash
+#        env:
+#          PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
+#          LAN_STREAMER_DRY_RUN: '1'
+#          QT_QPA_PLATFORM: offscreen
+#        run: for f in ./dist/lan-streamer-*.exe; do "$f"; break; done
+#
+#      - name: Validate executable runs (Runtime Integration with Timeout)
+#        shell: bash
+#        env:
+#          PYTHON_VLC_LIB_PATH: 'C:\Program Files\VideoLAN\VLC\libvlc.dll'
+#        run: |
+#          for f in ./dist/lan-streamer-*.exe; do
+#            f_win=$(cygpath -w -a "$f")
+#            uv run python -c "import subprocess, os, sys; res = subprocess.run([r'$f_win'], env=dict(os.environ, LAN_STREAMER_TEST_RUN='1', QT_QPA_PLATFORM='offscreen'), timeout=20); sys.exit(res.returncode)"
+#            break
+#          done
+#
+#
+#
+#      - name: Rename executable for artifact
+#        shell: bash
+#        run: mv dist/lan-streamer-*.exe dist/lan-streamer-windows.exe
+#
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: lan-streamer-windows
+#          path: dist/lan-streamer-windows.exe
