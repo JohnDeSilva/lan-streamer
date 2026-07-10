@@ -109,7 +109,7 @@ make run
 > **MacOS Gatekeeper**: The downloaded macOS artifact contains an unsigned `.app` bundle. You may see a "cannot be verified" or "malware" warning. To open it, either **Right-Click -> Open** the `LanStreamer.app` to bypass the warning, or clear the quarantine attribute by running `xattr -cr /path/to/LanStreamer.app` in your terminal.
 
 > [!TIP]
-> **Standalone Executables**: The pre-compiled Linux, macOS, and Windows executables feature **smart VLC plugin discovery**. They will automatically scan your system for native VLC plugins upon startup, allowing advanced rendering flags (like `--swscale-mode=2`) to function natively without any manual `VLC_PLUGIN_PATH` configuration. If plugins are completely missing, the player gracefully falls back to default settings to prevent crashes.
+> **Standalone Executables**: The pre-compiled Linux and macOS executables feature **smart VLC plugin discovery**. They will automatically scan your system for native VLC plugins upon startup, allowing advanced rendering flags (like `--swscale-mode=2`) to function natively without any manual `VLC_PLUGIN_PATH` configuration. If plugins are completely missing, the player gracefully falls back to default settings to prevent crashes. *(Note: Windows builds are not officially tested or supported as the developer does not use Windows).*
 
 ### Setup Guide
 1.  **Configure TMDB**: Click **Settings...** in the main window toolbar, go to the **Remote API's** tab, and enter your TMDB API Key.
@@ -434,10 +434,10 @@ All code pushed or submitted via Pull Request is automatically validated through
     -   Runs a multi-operating system matrix validating all code paths:
         -   **Linux (Ubuntu/Fedora)**: Leverages Docker containers via `TEST_OS` in the `Makefile` to securely build, test, and validate binaries without requiring system-level dependencies on the GitHub runner.
         -   **macOS**: Configures macOS-latest with brew-installed VLC, runs tests, and compiles/validates the executable with target-specific VLC library pathing.
-        -   **Windows**: Deploys Windows-latest, installs VLC/FFmpeg, applies schema migrations, runs tests, and compiles/verifies the executable.
+        -   *(Note: Windows is not tested as the developer does not use Windows).*
 3.  **RC Executables (`executable.yml`)**:
     -   Triggered on pull requests targeting `rc` and `main` branches.
-    -   Compiles and packages standalone applications for **Ubuntu**, **Fedora**, **macOS** (as a `.app` bundle), and **Windows** to verify that release candidate binaries build and run correctly prior to merge.
+    -   Compiles and packages standalone applications for **Ubuntu**, **Fedora**, and **macOS** (as a `.app` bundle) to verify that release candidate binaries build and run correctly prior to merge. *(Note: Windows executable builds are currently commented out as the developer does not use Windows).*
 4.  **Release Bump and Tag (`release.yml`)**:
     -   Triggered on pushes to `main` and `rc` branches.
     -   Performs pre-release checks (lint, typecheck, and multi-OS/distro tests).
@@ -472,8 +472,6 @@ These status badges show the build status of the pre-compiled, standalone execut
 [![RC Fedora](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=RC%20Executable%20Fedora)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
 
 [![RC macOS](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=RC%20Executable%20macOS)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
-
-[![RC Windows](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=RC%20Executable%20Windows)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
 
 ## 📜 License
 MIT License. See [LICENSE](LICENSE) for details.
