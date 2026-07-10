@@ -1,3 +1,15 @@
+## v0.46.0rc0 (2026-07-10)
+
+### Feat
+
+- **ui**: enhance poster tooltips with unwatched episode count
+- **ui**: add dark-themed QToolTip styling for consistent appearance and macOS compatibility
+
+### Refactor
+
+- **ui**: simplify tooltip to show Watched/Unwatched without prefix
+- **ui**: remove title from poster tooltips
+
 ## v0.45.1rc0 (2026-07-09)
 
 ### Fix
