@@ -1,3 +1,9 @@
+## v0.46.0 (2026-07-10)
+
+### Perf
+
+- **ci**: prevent duplicate test image builds by checking image existence and repo clean status
+
 ## v0.46.0rc1-1 (2026-07-10)
 
 ### Perf
