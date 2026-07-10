@@ -8,7 +8,8 @@ from unittest.mock import patch, MagicMock
 from lan_streamer.ui_views import SeasonDetailView
 from lan_streamer.ui_views.controller import Controller
 from lan_streamer.system.config import config
-from PySide6.QtWidgets import QTableWidgetItem, QMessageBox
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QDialog, QTableWidgetItem, QMessageBox
 
 
 def _make_controller_with_data(
@@ -647,7 +648,7 @@ def test_season_detail_tmdb_mapper_apply(qtbot: Any) -> None:
 
 
 def test_season_detail_mal_search(qtbot: Any) -> None:
-    """Searching MyAnimeList populates the results combo."""
+    """Searching MyAnimeList opens a dialog with results."""
     episodes = [
         {
             "name": "Journey's End",
@@ -669,7 +670,12 @@ def test_season_detail_mal_search(qtbot: Any) -> None:
         mock_pixmap.return_value.isNull.return_value = False
         view.display_season("Test Series", "Season 1")
 
-    with patch("lan_streamer.ui_views.season_detail.myanimelist_client") as mock_mal:
+    with (
+        patch("lan_streamer.ui_views.season_detail.myanimelist_client") as mock_mal,
+        patch(
+            "lan_streamer.ui_views.dialogs.mal_search_results.MalSearchResultsDialog",
+        ) as mock_dialog_cls,
+    ):
         mock_mal.is_configured.return_value = True
         mock_mal.search_anime.return_value = [
             {
@@ -678,11 +684,22 @@ def test_season_detail_mal_search(qtbot: Any) -> None:
                 "start_date": "2023-09-29",
             },
         ]
+        mock_dialog_instance = mock_dialog_cls.return_value
+        mock_dialog_instance.exec.return_value = QDialog.DialogCode.Accepted
+        mock_dialog_instance.selected_id.return_value = 52991
+        mock_dialog_instance.selected_title.return_value = "Sousou no Frieren"
+        mock_mal.get_anime_details.return_value = {
+            "id": 52991,
+            "title": "Sousou no Frieren",
+            "num_episodes": 28,
+        }
         view._mal_search_input.setText("Frieren")
         view._on_search_mal()
 
-        assert view._mal_results_combo.count() == 2  # placeholder + result
-        assert view._mal_results_combo.currentData() is None
+        assert view._mal_selected_anime_id == 52991
+        assert (
+            view._mal_selected_label.text() == "1 MAL entry loaded (Sousou no Frieren)"
+        )
 
 
 def test_season_detail_mal_apply(qtbot: Any) -> None:
@@ -751,6 +768,9 @@ def test_season_detail_mal_apply(qtbot: Any) -> None:
         ),
         patch("PySide6.QtWidgets.QMessageBox.information"),
         patch("PySide6.QtWidgets.QMessageBox.warning"),
+        patch(
+            "lan_streamer.ui_views.dialogs.mal_search_results.MalSearchResultsDialog",
+        ) as mock_dialog_cls,
     ):
         # --- Step 1: Search MAL ---
         mock_mal.is_configured.return_value = True
@@ -761,11 +781,12 @@ def test_season_detail_mal_apply(qtbot: Any) -> None:
                 "start_date": "2023-09-29",
             },
         ]
-        view._mal_search_input.setText("Frieren")
-        view._on_search_mal()
-        assert view._mal_results_combo.count() == 2
+        mock_dialog_instance = mock_dialog_cls.return_value
+        mock_dialog_instance.exec.return_value = QDialog.DialogCode.Accepted
+        mock_dialog_instance.selected_id.return_value = 52991
+        mock_dialog_instance.selected_title.return_value = "Sousou no Frieren"
 
-        # --- Step 2: Select MAL entry (triggers _on_mal_entry_selected) ---
+        # --- Step 2: Select MAL entry ---
         mock_mal.get_anime_details.return_value = {
             "id": 52991,
             "title": "Sousou no Frieren",
@@ -774,21 +795,20 @@ def test_season_detail_mal_apply(qtbot: Any) -> None:
             "synopsis": "",
         }
 
-        # Changing the combo index emits currentIndexChanged which calls
-        # _on_mal_entry_selected synchronously.
-        view._mal_results_combo.setCurrentIndex(1)
+        view._mal_search_input.setText("Frieren")
+        view._on_search_mal()
 
         assert view._mal_selected_anime_id == 52991
         assert view._mal_mapper_table.rowCount() == 2
         assert view._mal_row_episodes == [1, 2]
 
         # Auto-matched: row 0 maps to first local episode
-        combo_0 = view._mal_mapper_table.cellWidget(0, 1)
+        combo_0 = view._mal_mapper_table.cellWidget(0, 2)
         assert combo_0 is not None
         assert combo_0.currentData() == "/anime/Frieren/S01E01.mkv"
 
         # Row 1 maps to second local episode
-        combo_1 = view._mal_mapper_table.cellWidget(1, 1)
+        combo_1 = view._mal_mapper_table.cellWidget(1, 2)
         assert combo_1 is not None
         assert combo_1.currentData() == "/anime/Frieren/S01E02.mkv"
 
@@ -904,3 +924,299 @@ def test_mal_mapper_files_sorted_by_filename(qtbot: Any) -> None:
 
     filenames = [Path(ep["path"]).name for ep in view._mal_local_episodes]
     assert filenames == ["S01E03.mkv", "S01E07.mkv", "S01E12.mkv"]
+
+
+def test_season_detail_mal_load_multiple_entries(qtbot: Any) -> None:
+    """Episodes with per-episode myanimelist_anime_id load multiple entries."""
+    episodes = [
+        {
+            "name": "S00E01.mkv",
+            "path": "/anime/Specials/S00E01.mkv",
+            "myanimelist_anime_id": 111,
+            "myanimelist_episode_number": 1,
+            "watched": False,
+        },
+        {
+            "name": "S00E02.mkv",
+            "path": "/anime/Specials/S00E02.mkv",
+            "myanimelist_anime_id": 222,
+            "myanimelist_episode_number": 1,
+            "watched": False,
+        },
+    ]
+    controller = _make_controller_with_data("Test Series", "Season 1", episodes)
+    controller.current_library_name = "Anime"
+    config.libraries = {"Anime": {"type": "anime", "paths": ["/anime"]}}
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.QPixmap") as mock_pixmap,
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client",
+        ) as mock_mal,
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        mock_mal.is_configured.return_value = True
+
+        def mock_get_anime_details(anime_id: int) -> Dict[str, Any]:
+            data = {
+                111: {
+                    "id": 111,
+                    "title": "Movie A",
+                    "num_episodes": 1,
+                },
+                222: {
+                    "id": 222,
+                    "title": "Movie B",
+                    "num_episodes": 1,
+                },
+            }
+            return data.get(anime_id)
+
+        mock_mal.get_anime_details.side_effect = mock_get_anime_details
+        view.display_season("Test Series", "Season 1")
+
+    assert len(view._mal_entries) == 2
+    assert view._mal_entries[0]["id"] == 111
+    assert view._mal_entries[1]["id"] == 222
+    assert view._mal_mapper_table.rowCount() == 2
+
+    # Column 0 shows the correct anime title for each row
+    assert view._mal_mapper_table.item(0, 0).text() == "Movie A"
+    assert view._mal_mapper_table.item(1, 0).text() == "Movie B"
+
+    # Each row's item has the correct anime_id stored
+    assert view._mal_mapper_table.item(0, 0).data(Qt.ItemDataRole.UserRole) == 111
+    assert view._mal_mapper_table.item(1, 0).data(Qt.ItemDataRole.UserRole) == 222
+
+    # Episode # column
+    assert view._mal_mapper_table.item(0, 1).text() == "Episode 1"
+    assert view._mal_mapper_table.item(1, 1).text() == "Episode 1"
+
+    # Combos pre-selected from saved myanimelist_episode_number
+    combo_0 = view._mal_mapper_table.cellWidget(0, 2)
+    assert combo_0 is not None
+    assert combo_0.currentData() == "/anime/Specials/S00E01.mkv"
+
+    combo_1 = view._mal_mapper_table.cellWidget(1, 2)
+    assert combo_1 is not None
+    assert combo_1.currentData() == "/anime/Specials/S00E02.mkv"
+
+    # Label shows count
+    assert "2 MAL entries loaded" in view._mal_selected_label.text()
+
+
+def test_season_detail_mal_append_entry(qtbot: Any) -> None:
+    """Appending a second MAL entry adds rows without clearing the first."""
+    episodes = [
+        {
+            "name": "S01E01.mkv",
+            "path": "/anime/Show/S01E01.mkv",
+            "tmdb_number": 1,
+            "watched": False,
+        },
+        {
+            "name": "S01E02.mkv",
+            "path": "/anime/Show/S01E02.mkv",
+            "tmdb_number": 2,
+            "watched": False,
+        },
+        {
+            "name": "Specials/S00E01.mkv",
+            "path": "/anime/Show/Specials/S00E01.mkv",
+            "tmdb_number": 3,
+            "watched": False,
+        },
+    ]
+    controller = _make_controller_with_data("Test Series", "Season 1", episodes)
+    controller.current_library_name = "Anime"
+    config.libraries = {"Anime": {"type": "anime", "paths": ["/anime"]}}
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.QPixmap") as mock_pixmap,
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client",
+        ) as mock_mal,
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        mock_mal.is_configured.return_value = True
+        mock_mal.search_anime.return_value = [
+            {"id": 52991, "title": "TV Series MAL", "start_date": "2023-01-01"},
+        ]
+        mock_mal.get_anime_details.return_value = {
+            "id": 52991,
+            "title": "TV Series MAL",
+            "num_episodes": 2,
+        }
+        view.display_season("Test Series", "Season 1")
+
+    # First search populates with 2 episodes
+    assert view._mal_mapper_table.rowCount() == 2
+
+    # --- Append a second MAL entry ---
+    view._mal_search_input.setText("Movie A")
+    with (
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client",
+        ) as mock_mal2,
+        patch(
+            "lan_streamer.ui_views.dialogs.mal_search_results.MalSearchResultsDialog",
+        ) as mock_dialog_cls,
+    ):
+        mock_mal2.is_configured.return_value = True
+        mock_mal2.search_anime.return_value = [
+            {"id": 333, "title": "Movie Special", "start_date": "2023-06-01"},
+        ]
+        mock_mal2.get_anime_details.return_value = {
+            "id": 333,
+            "title": "Movie Special",
+            "num_episodes": 1,
+        }
+        mock_dialog_instance = mock_dialog_cls.return_value
+        mock_dialog_instance.exec.return_value = QDialog.DialogCode.Accepted
+        mock_dialog_instance.selected_id.return_value = 333
+        mock_dialog_instance.selected_title.return_value = "Movie Special"
+
+        view._on_add_mal_entry()
+
+    # Total rows = 2 (first entry) + 1 (appended entry) = 3
+    assert view._mal_mapper_table.rowCount() == 3
+    assert view._mal_row_episodes == [1, 2, 1]
+
+    # First two rows are from first entry
+    assert view._mal_mapper_table.item(0, 0).text() == "TV Series MAL"
+    assert view._mal_mapper_table.item(1, 0).text() == "TV Series MAL"
+    # Third row is from appended entry
+    assert view._mal_mapper_table.item(2, 0).text() == "Movie Special"
+
+    # Episode numbers
+    assert view._mal_mapper_table.item(0, 1).text() == "Episode 1"
+    assert view._mal_mapper_table.item(1, 1).text() == "Episode 2"
+    assert view._mal_mapper_table.item(2, 1).text() == "Episode 1"
+
+    # _mal_entries has both entries tracked
+    assert len(view._mal_entries) == 2
+    assert view._mal_entries[0]["id"] == 52991
+    assert view._mal_entries[1]["id"] == 333
+
+
+def test_season_detail_mal_apply_multiple_entries(qtbot: Any) -> None:
+    """Applying mappings with multiple MAL entries sets correct per-episode anime_id.
+
+    Season-level myanimelist_id should be None when more than one entry is used.
+    """
+    episodes = [
+        {
+            "name": "S01E01.mkv",
+            "path": "/anime/Show/S01E01.mkv",
+            "watched": False,
+        },
+        {
+            "name": "S00E01.mkv",
+            "path": "/anime/Show/Specials/S00E01.mkv",
+            "watched": False,
+        },
+    ]
+    controller = _make_controller_with_data("Test Series", "Season 1", episodes)
+    controller.current_library_name = "Anime"
+    config.libraries = {"Anime": {"type": "anime", "paths": ["/anime"]}}
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.QPixmap") as mock_pixmap,
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client",
+        ) as mock_mal,
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        mock_mal.is_configured.return_value = True
+        mock_mal.search_anime.return_value = [
+            {"id": 52991, "title": "TV Series", "start_date": "2023-01-01"},
+        ]
+        mock_mal.get_anime_details.return_value = {
+            "id": 52991,
+            "title": "TV Series",
+            "num_episodes": 1,
+        }
+        view.display_season("Test Series", "Season 1")
+
+    # Set up first entry's mapping manually: pick first local file
+    combo_0 = view._mal_mapper_table.cellWidget(0, 2)
+    assert combo_0 is not None
+    # Select S01E01.mkv
+    for idx in range(1, combo_0.count()):
+        if combo_0.itemData(idx) == "/anime/Show/S01E01.mkv":
+            combo_0.setCurrentIndex(idx)
+            break
+
+    # --- Append a second MAL entry for the special ---
+    view._mal_search_input.setText("Movie Special")
+    with (
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client",
+        ) as mock_mal2,
+        patch(
+            "lan_streamer.ui_views.dialogs.mal_search_results.MalSearchResultsDialog",
+        ) as mock_dialog_cls,
+    ):
+        mock_mal2.is_configured.return_value = True
+        mock_mal2.search_anime.return_value = [
+            {"id": 333, "title": "Movie Special", "start_date": "2023-06-01"},
+        ]
+        mock_mal2.get_anime_details.return_value = {
+            "id": 333,
+            "title": "Movie Special",
+            "num_episodes": 1,
+        }
+        mock_dialog_instance = mock_dialog_cls.return_value
+        mock_dialog_instance.exec.return_value = QDialog.DialogCode.Accepted
+        mock_dialog_instance.selected_id.return_value = 333
+        mock_dialog_instance.selected_title.return_value = "Movie Special"
+
+        view._on_add_mal_entry()
+
+    # Set up second entry's mapping: pick the special file
+    combo_1 = view._mal_mapper_table.cellWidget(1, 2)
+    assert combo_1 is not None
+    for idx in range(1, combo_1.count()):
+        if combo_1.itemData(idx) == "/anime/Show/Specials/S00E01.mkv":
+            combo_1.setCurrentIndex(idx)
+            break
+
+    # --- Apply ---
+    with (
+        patch("lan_streamer.ui_views.season_detail.db.save_library") as mock_save,
+        patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch("PySide6.QtWidgets.QMessageBox.information"),
+    ):
+        view._on_apply_mal_mappings()
+
+    mock_save.assert_called_once()
+
+    cached_episodes = controller.cached_library_data["Test Series"]["seasons"][
+        "Season 1"
+    ]["episodes"]
+
+    # First episode mapped to first MAL entry (52991)
+    assert cached_episodes[0]["myanimelist_anime_id"] == 52991
+    assert cached_episodes[0]["myanimelist_episode_number"] == 1
+
+    # Second episode mapped to second MAL entry (333)
+    assert cached_episodes[1]["myanimelist_anime_id"] == 333
+    assert cached_episodes[1]["myanimelist_episode_number"] == 1
+
+    # Season-level myanimelist_id should be None with multiple entries
+    season_meta = controller.cached_library_data["Test Series"]["seasons"][
+        "Season 1"
+    ].get("metadata", {})
+    assert season_meta.get("myanimelist_id") is None

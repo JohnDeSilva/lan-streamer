@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, Signal, QPoint
 from PySide6.QtGui import QFont, QPixmap, QColor, QAction
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -73,10 +74,12 @@ class SeasonDetailView(QWidget):
         self._tmdb_mapper_episodes: List[Dict[str, Any]] = []
 
         # MAL mapper state
-        self._mal_search_results: List[Dict[str, Any]] = []
-        self._mal_selected_anime_id: Optional[str] = None
+        self._mal_selected_anime_id: Optional[int] = None
         self._mal_local_episodes: List[Dict[str, Any]] = []
         self._mal_row_episodes: List[int] = []
+        self._mal_entries: List[
+            Dict[str, Any]
+        ] = []  # list of {id, title} for tracked entries
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(15, 15, 15, 15)
@@ -949,25 +952,37 @@ class SeasonDetailView(QWidget):
         search_layout.addWidget(self._mal_search_button)
         layout.addLayout(search_layout)
 
-        results_layout = QHBoxLayout()
-        results_layout.addWidget(QLabel("MAL Entry:"))
-        self._mal_results_combo = QComboBox()
-        self._mal_results_combo.addItem("Select MAL Entry...", userData=None)
-        self._mal_results_combo.currentIndexChanged.connect(self._on_mal_entry_selected)
-        results_layout.addWidget(self._mal_results_combo)
-        layout.addLayout(results_layout)
+        # macOS QComboBox popup rendering issues — use a label + dialog instead
+        self._mal_selected_label = QLabel("No MAL entries loaded")
+        self._mal_selected_label.setStyleSheet(
+            "padding: 6px 10px; background-color: #1e1e24; "
+            "border: 1px solid #3d3d47; border-radius: 4px; color: #E2E8F0;"
+        )
+        layout.addWidget(self._mal_selected_label)
+
+        add_another_layout = QHBoxLayout()
+        self._mal_add_entry_button = QPushButton("Add Another MAL Entry")
+        self._mal_add_entry_button.setObjectName("accentButton")
+        self._mal_add_entry_button.clicked.connect(self._on_add_mal_entry)
+        add_another_layout.addWidget(self._mal_add_entry_button)
+        add_another_layout.addStretch()
+        layout.addLayout(add_another_layout)
 
         self._mal_mapper_table = QTableWidget()
-        self._mal_mapper_table.setColumnCount(2)
+        self._mal_mapper_table.setColumnCount(3)
         self._mal_mapper_table.setHorizontalHeaderLabels(
-            ["MAL Episode", "Mapped Local File"]
+            ["MAL Entry", "Episode #", "Mapped Local File"]
         )
         self._mal_mapper_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
         )
         self._mal_mapper_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
+            1, QHeaderView.ResizeMode.ResizeToContents
         )
+        self._mal_mapper_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch
+        )
+        self._mal_mapper_table.setColumnWidth(1, 100)
         self._mal_mapper_table.verticalHeader().setDefaultSectionSize(40)
         self._mal_mapper_table.verticalHeader().setVisible(False)
         layout.addWidget(self._mal_mapper_table)
@@ -980,6 +995,7 @@ class SeasonDetailView(QWidget):
     def _load_mal_mapper_data(self) -> None:
         season_name = self._current_season_name or ""
         self._mal_local_episodes = []
+        self._mal_entries = []
         logger.info("Loading MAL mapper data for season: '%s'", season_name)
         if not season_name:
             return
@@ -992,37 +1008,72 @@ class SeasonDetailView(QWidget):
             key=lambda x: db.natural_sort_key(Path(x["path"]).name)
         )
 
-        saved_mal_id = season_data.get("metadata", {}).get("myanimelist_id")
-
-        self._mal_results_combo.blockSignals(True)
-        self._mal_results_combo.clear()
-        self._mal_results_combo.addItem("Select MAL Entry...", userData=None)
         self._mal_mapper_table.setRowCount(0)
+        self._mal_selected_anime_id = None
+        self._mal_row_episodes = []
+        self._mal_selected_label.setText("No MAL entries loaded")
 
         if not myanimelist_client.is_configured():
-            self._mal_results_combo.addItem(
-                "MyAnimeList API Client ID not configured in settings",
-                userData=None,
+            self._mal_selected_label.setText(
+                "MyAnimeList API Client ID not configured in settings"
             )
-            self._mal_results_combo.blockSignals(False)
             return
 
-        search_text = self._current_series_name or ""
+        # Collect unique MAL anime IDs from per-episode saved data
+        episode_mal_ids: Dict[int, list[str]] = {}
+        for ep in self._mal_local_episodes:
+            aid = ep.get("myanimelist_anime_id")
+            if aid is not None:
+                episode_mal_ids.setdefault(aid, []).append(ep.get("path", ""))
+
+        if episode_mal_ids:
+            loaded_count = 0
+            for aid in episode_mal_ids:
+                details = myanimelist_client.get_anime_details(aid)
+                if details:
+                    title = details.get("title") or f"ID: {aid}"
+                    self._mal_entries.append({"id": aid, "title": title})
+                    self._populate_mal_episodes(details, append=loaded_count > 0)
+                    loaded_count += 1
+            if loaded_count > 0:
+                if loaded_count == 1:
+                    self._mal_selected_label.setText(
+                        f"1 MAL entry loaded ({self._mal_entries[0]['title']})"
+                    )
+                else:
+                    self._mal_selected_label.setText(
+                        f"{loaded_count} MAL entries loaded"
+                    )
+                return
+
+        # Fall back to season-level myanimelist_id
+        saved_mal_id = season_data.get("metadata", {}).get("myanimelist_id")
         if saved_mal_id:
             details = myanimelist_client.get_anime_details(saved_mal_id)
             if details:
                 title = details.get("title") or f"ID: {saved_mal_id}"
-                self._mal_results_combo.addItem(title, userData=saved_mal_id)
-                self._mal_results_combo.setCurrentIndex(1)
-                self._mal_results_combo.blockSignals(False)
-                self._populate_mal_episodes(details)
+                self._mal_selected_anime_id = saved_mal_id
+                self._mal_entries.append({"id": saved_mal_id, "title": title})
+                self._mal_selected_label.setText(f"1 MAL entry loaded ({title})")
+                self._populate_mal_episodes(details, append=False)
                 return
 
-        self._mal_results_combo.blockSignals(False)
+        # Auto-search when no saved MAL entry exists
+        search_text = self._current_series_name or ""
+        if search_text:
+            try:
+                results = myanimelist_client.search_anime(search_text)
+            except Exception:
+                results = []
+            if results:
+                anime_id = results[0].get("id")
+                if anime_id:
+                    self._on_mal_entry_selected(anime_id)
+                    return
         self._mal_search_input.setText(search_text)
-        self._on_search_mal()
 
     def _on_search_mal(self) -> None:
+        """Search MAL and replace the mapper table with the chosen entry."""
         query = self._mal_search_input.text().strip()
         logger.info("Search MyAnimeList: '%s'", query)
         if not query:
@@ -1037,24 +1088,71 @@ class SeasonDetailView(QWidget):
                 "Search Failed",
                 f"Could not search MyAnimeList: {exc}",
             )
-            results = []
+            return
 
-        self._mal_results_combo.blockSignals(True)
-        self._mal_results_combo.clear()
-        self._mal_results_combo.addItem("Select MAL Entry...", userData=None)
-        for item in results:
-            label = (
-                f"{item.get('title')} "
-                f"({item.get('start_date', 'Unknown')}) "
-                f"- ID: {item.get('id')}"
+        if not results:
+            QMessageBox.information(
+                self,
+                "No Results",
+                "No MyAnimeList entries found for your query.",
             )
-            self._mal_results_combo.addItem(label, userData=item.get("id"))
-        self._mal_results_combo.blockSignals(False)
+            return
 
-    def _on_mal_entry_selected(self) -> None:
-        anime_id = self._mal_results_combo.currentData()
+        from lan_streamer.ui_views.dialogs.mal_search_results import (
+            MalSearchResultsDialog,
+        )
+
+        dialog = MalSearchResultsDialog(results, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            anime_id = dialog.selected_id()
+            if anime_id:
+                self._on_mal_entry_selected(anime_id)
+
+    def _on_add_mal_entry(self) -> None:
+        """Open MAL search and append the chosen entry to the existing table."""
+        query = self._mal_search_input.text().strip()
+        if not query:
+            QMessageBox.information(
+                self,
+                "Search Required",
+                "Enter a search term first, then click Add Another MAL Entry.",
+            )
+            return
+
+        try:
+            results = myanimelist_client.search_anime(query)
+        except Exception as exc:
+            logger.exception("Failed to search MyAnimeList: %s", exc)
+            QMessageBox.warning(
+                self, "Search Failed", f"Could not search MyAnimeList: {exc}"
+            )
+            return
+
+        if not results:
+            QMessageBox.information(
+                self,
+                "No Results",
+                "No MyAnimeList entries found for your query.",
+            )
+            return
+
+        from lan_streamer.ui_views.dialogs.mal_search_results import (
+            MalSearchResultsDialog,
+        )
+
+        dialog = MalSearchResultsDialog(results, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            anime_id = dialog.selected_id()
+            title = dialog.selected_title()
+            if anime_id:
+                self._append_mal_entry(anime_id, title or f"ID: {anime_id}")
+
+    def _on_mal_entry_selected(self, anime_id: int) -> None:
+        """Replace the entire mapper table with a single MAL entry."""
         self._mal_selected_anime_id = anime_id
+        self._mal_entries = []
         self._mal_mapper_table.setRowCount(0)
+        self._mal_row_episodes = []
         logger.info("MAL entry selected ID: %s", anime_id)
         if not anime_id:
             return
@@ -1068,83 +1166,161 @@ class SeasonDetailView(QWidget):
             )
             return
         if details:
-            self._populate_mal_episodes(details)
+            title = details.get("title") or f"ID: {anime_id}"
+            self._mal_entries.append({"id": anime_id, "title": title})
+            self._mal_selected_label.setText(f"1 MAL entry loaded ({title})")
+            self._populate_mal_episodes(details, append=False)
 
-    def _populate_mal_episodes(self, details: Dict[str, Any]) -> None:
+    def _append_mal_entry(self, anime_id: int, title: str) -> None:
+        """Append a new MAL entry's episodes to the existing mapper table."""
+        logger.info("Appending MAL entry ID: %s (%s)", anime_id, title)
+        try:
+            details = myanimelist_client.get_anime_details(anime_id)
+        except Exception as exc:
+            logger.exception("Failed to fetch MAL details for ID %s: %s", anime_id, exc)
+            QMessageBox.warning(
+                self, "Fetch Failed", f"Could not fetch MyAnimeList details: {exc}"
+            )
+            return
+        if details:
+            self._mal_entries.append({"id": anime_id, "title": title})
+            self._mal_selected_label.setText(
+                f"{len(self._mal_entries)} MAL entries loaded"
+            )
+            self._populate_mal_episodes(details, append=True, filter_used_paths=True)
+
+    def _populate_mal_episodes(
+        self,
+        details: Dict[str, Any],
+        append: bool = False,
+        filter_used_paths: bool = False,
+    ) -> None:
         num_episodes = details.get("num_episodes") or 0
         if num_episodes == 0:
             num_episodes = max(12, len(self._mal_local_episodes) + 5)
 
-        self._mal_mapper_table.setRowCount(num_episodes)
-        self._mal_row_episodes = list(range(1, num_episodes + 1))
-        anime_id = details.get("id")
+        anime_id: Optional[int] = details.get("id")
+        anime_title: str = details.get("title") or f"ID: {anime_id}"
 
-        for row_idx, mal_ep_num in enumerate(self._mal_row_episodes):
+        start_row = self._mal_mapper_table.rowCount() if append else 0
+        if not append:
+            self._mal_mapper_table.setRowCount(0)
+            self._mal_row_episodes = []
+
+        new_ep_numbers = list(range(1, num_episodes + 1))
+        total_rows = start_row + num_episodes
+        self._mal_mapper_table.setRowCount(total_rows)
+        self._mal_row_episodes.extend(new_ep_numbers)
+
+        # Determine whether this is the first entry — for auto-matching
+        is_first_entry = start_row == 0 and not any(
+            ep.get("myanimelist_anime_id") for ep in self._mal_local_episodes
+        )
+
+        # Collect local file paths already used in existing rows
+        used_paths: set[str] = set()
+        for check_row in range(start_row):
+            combo = self._mal_mapper_table.cellWidget(check_row, 2)
+            if isinstance(combo, QComboBox) and combo.currentData():
+                used_paths.add(combo.currentData())
+
+        for offset, mal_ep_num in enumerate(new_ep_numbers):
+            row_idx = start_row + offset
+
+            # Column 0: MAL Entry (anime title)
+            entry_item = QTableWidgetItem(anime_title)
+            entry_item.setData(Qt.ItemDataRole.UserRole, anime_id)
+            entry_item.setFlags(entry_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self._mal_mapper_table.setItem(row_idx, 0, entry_item)
+
+            # Column 1: Episode #
             ep_item = QTableWidgetItem(f"Episode {mal_ep_num}")
             ep_item.setFlags(ep_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self._mal_mapper_table.setItem(row_idx, 0, ep_item)
+            self._mal_mapper_table.setItem(row_idx, 1, ep_item)
 
+            # Column 2: Mapped Local File
             combo = QComboBox()
             combo.addItem("Unmapped / None", userData=None)
             selected_idx = 0
             for idx, local_ep in enumerate(self._mal_local_episodes):
-                filename = Path(local_ep["path"]).name
-                combo.addItem(filename, userData=local_ep["path"])
+                local_path = local_ep["path"]
+                if filter_used_paths and local_path in used_paths:
+                    continue
+                filename = Path(local_path).name
+                combo.addItem(filename, userData=local_path)
                 cur_anime_id = local_ep.get("myanimelist_anime_id")
                 cur_ep_num = local_ep.get("myanimelist_episode_number")
                 if cur_anime_id == anime_id and cur_ep_num == mal_ep_num:
-                    selected_idx = idx + 1
+                    selected_idx = combo.count() - 1
 
-            if selected_idx == 0 and row_idx < len(self._mal_local_episodes):
-                has_any_mapping = any(
-                    ep.get("myanimelist_anime_id") == anime_id
-                    for ep in self._mal_local_episodes
-                )
-                if not has_any_mapping:
-                    selected_idx = row_idx + 1
+            # Auto-match sequentially only for the first entry
+            if (
+                selected_idx == 0
+                and is_first_entry
+                and offset < len(self._mal_local_episodes)
+            ):
+                candidate_path = self._mal_local_episodes[offset]["path"]
+                for combo_idx in range(1, combo.count()):
+                    if combo.itemData(combo_idx) == candidate_path:
+                        selected_idx = combo_idx
+                        break
 
             combo.setCurrentIndex(selected_idx)
-            self._mal_mapper_table.setCellWidget(row_idx, 1, combo)
+            self._mal_mapper_table.setCellWidget(row_idx, 2, combo)
 
     def _on_apply_mal_mappings(self) -> None:
-        anime_id = self._mal_results_combo.currentData()
         season_name = self._current_season_name
         if not season_name:
             return
-        if not anime_id:
+
+        if not self._mal_entries:
             QMessageBox.warning(
                 self,
                 "No MAL Entry Selected",
-                "Please select a MyAnimeList entry first.",
+                "Please select at least one MyAnimeList entry first.",
             )
             return
 
         confirm = QMessageBox.question(
             self,
             "Confirm Mapping",
-            "Are you sure you want to apply these MyAnimeList mappings? "
-            "This will link this season's episodes to this MAL entry.",
+            "Are you sure you want to apply these MyAnimeList mappings?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
+        # Collect active anime IDs from the table rows
+        active_ids: set[int] = set()
         updates = {}
         for row_idx in range(self._mal_mapper_table.rowCount()):
-            combo = self._mal_mapper_table.cellWidget(row_idx, 1)
+            entry_item = self._mal_mapper_table.item(row_idx, 0)
+            if entry_item is None:
+                continue
+            row_anime_id: Optional[int] = entry_item.data(Qt.ItemDataRole.UserRole)
+            if row_anime_id is None:
+                continue
+            active_ids.add(row_anime_id)
+
+            combo = self._mal_mapper_table.cellWidget(row_idx, 2)
             if isinstance(combo, QComboBox):
                 selected_path = combo.currentData()
                 if selected_path:
                     mal_ep_num = self._mal_row_episodes[row_idx]
                     updates[selected_path] = {
-                        "myanimelist_anime_id": anime_id,
+                        "myanimelist_anime_id": row_anime_id,
                         "myanimelist_episode_number": mal_ep_num,
                     }
 
         season_data = self._current_series_data.get("seasons", {}).get(season_name, {})
         if "metadata" not in season_data:
             season_data["metadata"] = {}
-        season_data["metadata"]["myanimelist_id"] = anime_id
+
+        # Set season-level MAL ID only when there's exactly one entry
+        if len(self._mal_entries) == 1:
+            season_data["metadata"]["myanimelist_id"] = self._mal_entries[0]["id"]
+        else:
+            season_data["metadata"]["myanimelist_id"] = None
 
         modified_count = 0
         for ep in season_data.get("episodes", []):
@@ -1156,11 +1332,10 @@ class SeasonDetailView(QWidget):
                         "myanimelist_episode_number"
                     ]
                     modified_count += 1
-                else:
-                    if ep.get("myanimelist_anime_id") == anime_id:
-                        ep["myanimelist_anime_id"] = None
-                        ep["myanimelist_episode_number"] = None
-                        modified_count += 1
+                elif ep.get("myanimelist_anime_id") in active_ids:
+                    ep["myanimelist_anime_id"] = None
+                    ep["myanimelist_episode_number"] = None
+                    modified_count += 1
 
         logger.info(
             "Applied MAL mappings to %d episode(s) in season '%s'",

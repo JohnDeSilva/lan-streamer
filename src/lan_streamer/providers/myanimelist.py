@@ -173,7 +173,10 @@ class MyAnimeListClient:
         params: Dict[str, Any] = {
             "q": query,
             "limit": 50,
-            "fields": "id,title,main_picture,num_episodes,alternative_titles,start_date",
+            "fields": (
+                "id,title,main_picture,num_episodes,alternative_titles,"
+                "start_date,end_date,synopsis,mean,media_type,status,genres"
+            ),
         }
 
         try:
@@ -186,6 +189,10 @@ class MyAnimeListClient:
             for node in data.get("data", []):
                 anime = node.get("node", {})
                 pic_dict = anime.get("main_picture") or {}
+                alt_titles = anime.get("alternative_titles") or {}
+                alt_list = alt_titles.get("synonyms") or []
+                en_title = alt_titles.get("en") or ""
+                genre_list = anime.get("genres") or []
                 results.append(
                     {
                         "id": anime.get("id"),
@@ -195,6 +202,14 @@ class MyAnimeListClient:
                         or pic_dict.get("large")
                         or "",
                         "start_date": anime.get("start_date") or "",
+                        "end_date": anime.get("end_date") or "",
+                        "synopsis": anime.get("synopsis") or "",
+                        "score": anime.get("mean"),
+                        "media_type": anime.get("media_type") or "",
+                        "status": anime.get("status") or "",
+                        "alternative_titles": alt_list,
+                        "english_title": en_title,
+                        "genres": [g.get("name", "") for g in genre_list],
                     }
                 )
             return results
@@ -211,7 +226,10 @@ class MyAnimeListClient:
 
         url = f"https://api.myanimelist.net/v2/anime/{anime_id}"
         params = {
-            "fields": "id,title,main_picture,num_episodes,alternative_titles,start_date",
+            "fields": (
+                "id,title,main_picture,num_episodes,alternative_titles,"
+                "start_date,end_date,synopsis,mean,media_type,status,genres"
+            ),
         }
 
         try:
