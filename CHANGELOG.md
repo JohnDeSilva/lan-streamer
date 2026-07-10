@@ -1,3 +1,20 @@
+## v0.46.0rc1 (2026-07-10)
+
+### Feat
+
+- **ui**: enhance poster tooltips with unwatched episode count
+- **ui**: add dark-themed QToolTip styling for consistent appearance and macOS compatibility
+
+### Fix
+
+- **metadata**: fixed movie metadata match bug
+- **ui**: open MetadataMatchDialog for movie TMDB search instead of EpisodeMatchDialog
+
+### Refactor
+
+- **ui**: simplify tooltip to show Watched/Unwatched without prefix
+- **ui**: remove title from poster tooltips
+
 ## v0.46.0rc0 (2026-07-10)
 
 ### Feat
