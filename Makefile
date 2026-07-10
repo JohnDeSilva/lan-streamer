@@ -61,7 +61,11 @@ test-local:
 	rm -f ./test_library.db ./test_library.db-wal ./test_library.db-shm
 
 build-test-image:
-	$(CONTAINER_ENGINE) build --build-arg TEST_OS_VERSION=$(TEST_OS_VERSION) -t lan-streamer-test-$(TEST_OS):$(GIT_HASH) -f $(DOCKERFILE) .
+	@if [ -z "$$($(CONTAINER_ENGINE) images -q lan-streamer-test-$(TEST_OS):$(GIT_HASH) 2>/dev/null)" ] || [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
+		$(CONTAINER_ENGINE) build --build-arg TEST_OS_VERSION=$(TEST_OS_VERSION) -t lan-streamer-test-$(TEST_OS):$(GIT_HASH) -f $(DOCKERFILE) . ; \
+	else \
+		echo "Image lan-streamer-test-$(TEST_OS):$(GIT_HASH) already exists and workspace is clean. Skipping build."; \
+	fi
 
 ifeq ($(UNAME_S),Linux)
 test: build-test-image
