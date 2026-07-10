@@ -72,6 +72,8 @@ class SeasonDetailView(QWidget):
 
         # TMDB mapper state
         self._tmdb_mapper_episodes: List[Dict[str, Any]] = []
+        self._tmdb_entries: List[Dict[str, Any]] = []
+        self._tmdb_row_episodes: List[int] = []
 
         # MAL mapper state
         self._mal_selected_anime_id: Optional[int] = None
@@ -725,16 +727,40 @@ class SeasonDetailView(QWidget):
         layout.setSpacing(10)
 
         info_label = QLabel(
-            "Manual metadata mapper — matches TMDB episodes to local files.\n"
-            "Uses the series display group and current season automatically."
+            "Manual metadata mapper — search for a TMDB series and map "
+            "its episodes to local files."
         )
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
 
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("Search TMDB:"))
+        self._tmdb_search_input = QLineEdit()
+        search_layout.addWidget(self._tmdb_search_input)
+        self._tmdb_search_button = QPushButton("Search")
+        self._tmdb_search_button.clicked.connect(self._on_search_tmdb)
+        search_layout.addWidget(self._tmdb_search_button)
+        layout.addLayout(search_layout)
+
+        self._tmdb_selected_label = QLabel("No TMDB entries loaded")
+        self._tmdb_selected_label.setStyleSheet(
+            "padding: 6px 10px; background-color: #1e1e24; "
+            "border: 1px solid #3d3d47; border-radius: 4px; color: #E2E8F0;"
+        )
+        layout.addWidget(self._tmdb_selected_label)
+
+        add_another_layout = QHBoxLayout()
+        self._tmdb_add_entry_button = QPushButton("Add Another TMDB Entry")
+        self._tmdb_add_entry_button.setObjectName("accentButton")
+        self._tmdb_add_entry_button.clicked.connect(self._on_add_tmdb_entry)
+        add_another_layout.addWidget(self._tmdb_add_entry_button)
+        add_another_layout.addStretch()
+        layout.addLayout(add_another_layout)
+
         self._tmdb_mapper_table = QTableWidget()
         self._tmdb_mapper_table.setColumnCount(3)
         self._tmdb_mapper_table.setHorizontalHeaderLabels(
-            ["TMDB Episode", "Air Date", "Mapped Local File"]
+            ["TMDB Entry", "Episode #", "Mapped Local File"]
         )
         self._tmdb_mapper_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
@@ -745,6 +771,7 @@ class SeasonDetailView(QWidget):
         self._tmdb_mapper_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch
         )
+        self._tmdb_mapper_table.setColumnWidth(1, 100)
         self._tmdb_mapper_table.verticalHeader().setDefaultSectionSize(40)
         self._tmdb_mapper_table.verticalHeader().setVisible(False)
         layout.addWidget(self._tmdb_mapper_table)
@@ -755,71 +782,149 @@ class SeasonDetailView(QWidget):
         layout.addWidget(self._tmdb_apply_button)
 
     def _load_tmdb_mapper_data(self) -> None:
+        season_name = self._current_season_name or ""
         seasons_dict = self._current_series_data.get("seasons", {})
         self._tmdb_local_episodes = []
-        for season_data in seasons_dict.values():
-            for ep in season_data.get("episodes", []):
-                if ep.get("path"):
-                    self._tmdb_local_episodes.append(ep)
+        current_season = seasons_dict.get(season_name, {})
+        for ep in current_season.get("episodes", []):
+            if ep.get("path"):
+                self._tmdb_local_episodes.append(ep)
         self._tmdb_local_episodes.sort(
             key=lambda x: db.natural_sort_key(Path(x["path"]).name)
         )
 
-        tmdb_id = self._current_series_data.get("metadata", {}).get("tmdb_identifier")
-        if not tmdb_id:
-            self._tmdb_mapper_table.setRowCount(0)
+        self._tmdb_mapper_episodes = []
+        self._tmdb_entries = []
+        self._tmdb_row_episodes = []
+        self._tmdb_mapper_table.setRowCount(0)
+        self._tmdb_selected_label.setText("No TMDB entries loaded")
+
+        if not tmdb_client.is_configured():
+            logger.info("TMDB mapper: client not configured, skipping")
+            self._tmdb_selected_label.setText("TMDB API Key not configured in settings")
             return
 
-        saved_group_id = self._current_series_data.get("metadata", {}).get(
-            "tmdb_episode_group_id"
+        tmdb_id = self._current_series_data.get("metadata", {}).get("tmdb_identifier")
+        season_number: Optional[int] = None
+        should_restore = tmdb_id is not None
+        season_has_no_number = False
+
+        logger.info(
+            "TMDB mapper: season='%s', series tmdb_id=%s, should_restore=%s, local_ep_count=%d",
+            season_name,
+            tmdb_id,
+            should_restore,
+            len(self._tmdb_local_episodes),
         )
 
-        episodes: List[Dict[str, Any]] = []
-        current_season = self._current_season_name or ""
-        if saved_group_id and saved_group_id != "default":
-            group_details = tmdb_client.get_episode_group_details(saved_group_id)
-            if group_details and "groups" in group_details:
-                season_number = self._parse_season_number(current_season)
-                matched_subgroup = None
-                for subgroup in group_details.get("groups", []):
-                    sg_episodes = subgroup.get("episodes", [])
-                    sg_season_numbers = {
-                        e.get("season_number")
-                        for e in sg_episodes
-                        if e.get("season_number")
-                    }
-                    if season_number is not None and season_number in sg_season_numbers:
-                        matched_subgroup = subgroup
-                        break
-                if not matched_subgroup:
+        if should_restore:
+            series_title = (
+                self._current_series_data.get("metadata", {}).get("tmdb_name")
+                or f"ID: {tmdb_id}"
+            )
+            season_number = self._parse_season_number(season_name)
+            logger.info(
+                "TMDB mapper: parsed season_number=%s from season_name='%s'",
+                season_number,
+                season_name,
+            )
+
+            # When the season name has no number (e.g. "Specials"),
+            # skip auto-restore — we cannot determine which TMDB season to fetch.
+            # Also skip auto-search dialog — just show an empty table so the
+            # user can manually search if desired.
+            if season_number is None:
+                should_restore = False
+                season_has_no_number = True
+                logger.info(
+                    "TMDB mapper: no numeric season name, skip restore and auto-search",
+                )
+
+        if season_number is None:
+            season_number = 1
+            logger.info(
+                "TMDB mapper: season_number defaulted to 1 for season='%s'",
+                season_name,
+            )
+
+        logger.info(
+            "TMDB mapper: should_restore=%s, season_number=%d, series_title='%s'",
+            should_restore,
+            season_number,
+            self._current_series_data.get("metadata", {}).get("tmdb_name", "N/A"),
+        )
+
+        if should_restore:
+            saved_group_id = self._current_series_data.get("metadata", {}).get(
+                "tmdb_episode_group_id"
+            )
+            logger.info(
+                "TMDB mapper: restoring with saved_group_id=%s",
+                saved_group_id,
+            )
+
+            episodes: List[Dict[str, Any]] = []
+            if saved_group_id and saved_group_id != "default":
+                group_details = tmdb_client.get_episode_group_details(saved_group_id)
+                if group_details and "groups" in group_details:
+                    matched_subgroup = None
                     for subgroup in group_details.get("groups", []):
-                        sg_name = (subgroup.get("name") or "").lower()
+                        sg_episodes = subgroup.get("episodes", [])
+                        sg_season_numbers = {
+                            e.get("season_number")
+                            for e in sg_episodes
+                            if e.get("season_number")
+                        }
                         if (
-                            current_season.lower() in sg_name
-                            or sg_name in current_season.lower()
+                            season_number is not None
+                            and season_number in sg_season_numbers
                         ):
                             matched_subgroup = subgroup
                             break
-                if matched_subgroup:
-                    raw = matched_subgroup.get("episodes", [])
-                    for ep in raw:
-                        episodes.append(
-                            {
-                                "id": ep.get("id"),
-                                "name": ep.get("name"),
-                                "episode_number": ep.get("episode_number"),
-                                "order": ep.get(
-                                    "order", (ep.get("episode_number") or 1) - 1
-                                ),
-                                "air_date": ep.get("air_date"),
-                                "runtime": ep.get("runtime"),
-                            }
+                    if not matched_subgroup:
+                        for subgroup in group_details.get("groups", []):
+                            sg_name = (subgroup.get("name") or "").lower()
+                            if (
+                                season_name.lower() in sg_name
+                                or sg_name in season_name.lower()
+                            ):
+                                matched_subgroup = subgroup
+                                break
+                    if matched_subgroup:
+                        raw = matched_subgroup.get("episodes", [])
+                        logger.info(
+                            "TMDB mapper: matched subgroup '%s' with %d episodes",
+                            matched_subgroup.get("name", "?"),
+                            len(raw),
                         )
-        else:
-            season_number = self._parse_season_number(current_season)
-            if season_number is not None:
+                        for ep in raw:
+                            episodes.append(
+                                {
+                                    "id": ep.get("id"),
+                                    "name": ep.get("name"),
+                                    "episode_number": ep.get("episode_number"),
+                                    "order": ep.get(
+                                        "order", (ep.get("episode_number") or 1) - 1
+                                    ),
+                                    "air_date": ep.get("air_date"),
+                                    "runtime": ep.get("runtime"),
+                                }
+                            )
+                    else:
+                        logger.warning(
+                            "TMDB mapper: no subgroup matched for season '%s' "
+                            "in display group %s",
+                            season_name,
+                            saved_group_id,
+                        )
+            else:
                 try:
-                    raw = tmdb_client.get_episodes(tmdb_id, season_number)
+                    logger.info(
+                        "TMDB mapper: fetching episodes for ID %s, season %d",
+                        tmdb_id,
+                        season_number,
+                    )
+                    raw = tmdb_client.get_episodes(int(tmdb_id), season_number)
                     for ep in raw:
                         episodes.append(
                             {
@@ -831,36 +936,371 @@ class SeasonDetailView(QWidget):
                                 "runtime": ep.get("runtime"),
                             }
                         )
+                    logger.info(
+                        "TMDB mapper: fetched %d episodes for ID %s, season %d",
+                        len(episodes),
+                        tmdb_id,
+                        season_number,
+                    )
                 except Exception as exc:
-                    logger.exception("Failed to fetch season episodes: %s", exc)
+                    logger.exception(
+                        "Failed to fetch TMDB episodes for ID %s: %s",
+                        tmdb_id,
+                        exc,
+                    )
 
-        self._tmdb_mapper_episodes = episodes
-        self._tmdb_mapper_table.setRowCount(len(episodes))
+            if episodes:
+                self._tmdb_entries.append(
+                    {
+                        "id": int(tmdb_id),
+                        "title": series_title,
+                        "season_number": season_number,
+                    }
+                )
+                self._tmdb_selected_label.setText(
+                    f"1 TMDB entry loaded ({series_title}) (S{season_number})"
+                )
+                self._populate_tmdb_episodes(
+                    episodes,
+                    int(tmdb_id),
+                    series_title,
+                    season_number=season_number,
+                    append=False,
+                )
+                logger.info(
+                    "TMDB mapper: restored %d episodes from series ID %s, season %d",
+                    len(episodes),
+                    tmdb_id,
+                    season_number,
+                )
+                return
 
-        for row_idx, group_ep in enumerate(episodes):
-            ep_order = group_ep.get("order", 0) + 1
-            ep_title = group_ep.get("name") or "TBA"
-            air_date = group_ep.get("air_date") or "Unknown"
+        # Auto-search when no saved TMDB entry exists.
+        # Skip for non-numeric season names — we cannot determine which TMDB
+        # season to use, so show an empty table for manual search.
+        search_text = self._current_series_name or ""
+        logger.info(
+            "TMDB mapper: no restore, auto-search for '%s' (has %d local eps, "
+            "season_has_no_number=%s)",
+            search_text,
+            len(self._tmdb_local_episodes),
+            season_has_no_number,
+        )
+        if search_text and not season_has_no_number:
+            try:
+                results = tmdb_client.search_series_full(search_text)
+            except Exception:
+                results = []
+            if results:
+                from lan_streamer.ui_views.dialogs.tmdb_search_results import (
+                    TmdbSearchResultsDialog,
+                )
 
-            name_item = QTableWidgetItem(f"E{ep_order:02d} - {ep_title}")
-            name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self._tmdb_mapper_table.setItem(row_idx, 0, name_item)
+                dialog = TmdbSearchResultsDialog(results, season_name, self)
+                if dialog.exec() == QDialog.DialogCode.Accepted:
+                    series_id = dialog.selected_id()
+                    title = dialog.selected_title()
+                    selected_season_number = dialog.selected_season_number()
+                    if series_id:
+                        self._on_tmdb_entry_selected(
+                            series_id,
+                            selected_season_number,
+                            title or f"ID: {series_id}",
+                        )
+                        return
 
-            date_item = QTableWidgetItem(air_date)
-            date_item.setFlags(date_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self._tmdb_mapper_table.setItem(row_idx, 1, date_item)
+        self._tmdb_search_input.setText(search_text)
 
+    def _on_search_tmdb(self) -> None:
+        """Search TMDB and replace the mapper table with the chosen entry."""
+        query = self._tmdb_search_input.text().strip()
+        logger.info("Search TMDB: '%s'", query)
+        if not query:
+            return
+
+        try:
+            results = tmdb_client.search_series_full(query)
+        except Exception as exc:
+            logger.exception("Failed to search TMDB: %s", exc)
+            QMessageBox.warning(
+                self,
+                "Search Failed",
+                f"Could not search TMDB: {exc}",
+            )
+            return
+
+        if not results:
+            QMessageBox.information(
+                self,
+                "No Results",
+                "No TMDB entries found for your query.",
+            )
+            return
+
+        from lan_streamer.ui_views.dialogs.tmdb_search_results import (
+            TmdbSearchResultsDialog,
+        )
+
+        dialog = TmdbSearchResultsDialog(results, self._current_season_name or "", self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            series_id = dialog.selected_id()
+            title = dialog.selected_title()
+            season_number = dialog.selected_season_number()
+            if series_id and title:
+                self._on_tmdb_entry_selected(series_id, season_number, title)
+
+    def _on_add_tmdb_entry(self) -> None:
+        """Open TMDB search and append the chosen entry to the existing table."""
+        query = self._tmdb_search_input.text().strip()
+        if not query:
+            QMessageBox.information(
+                self,
+                "Search Required",
+                "Enter a search term first, then click Add Another TMDB Entry.",
+            )
+            return
+
+        try:
+            results = tmdb_client.search_series_full(query)
+        except Exception as exc:
+            logger.exception("Failed to search TMDB: %s", exc)
+            QMessageBox.warning(self, "Search Failed", f"Could not search TMDB: {exc}")
+            return
+
+        if not results:
+            QMessageBox.information(
+                self,
+                "No Results",
+                "No TMDB entries found for your query.",
+            )
+            return
+
+        from lan_streamer.ui_views.dialogs.tmdb_search_results import (
+            TmdbSearchResultsDialog,
+        )
+
+        dialog = TmdbSearchResultsDialog(results, self._current_season_name or "", self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            series_id = dialog.selected_id()
+            title = dialog.selected_title()
+            season_number = dialog.selected_season_number()
+            if series_id and title:
+                self._append_tmdb_entry(series_id, title, season_number)
+
+    def _on_tmdb_entry_selected(
+        self, series_id: int, season_number: int, title: str
+    ) -> None:
+        """Replace the entire mapper table with a single TMDB entry."""
+        self._tmdb_entries = []
+        self._tmdb_mapper_episodes = []
+        self._tmdb_row_episodes = []
+        self._tmdb_mapper_table.setRowCount(0)
+        logger.info(
+            "TMDB entry selected ID: %s, Season: %s (%s)",
+            series_id,
+            season_number,
+            title,
+        )
+        if not series_id:
+            return
+
+        try:
+            raw_episodes = tmdb_client.get_episodes(series_id, season_number)
+        except Exception as exc:
+            logger.exception(
+                "Failed to fetch TMDB episodes for ID %s: %s", series_id, exc
+            )
+            QMessageBox.warning(
+                self,
+                "Fetch Failed",
+                f"Could not fetch TMDB episodes: {exc}",
+            )
+            return
+        if raw_episodes:
+            self._tmdb_entries.append(
+                {"id": series_id, "title": title, "season_number": season_number}
+            )
+            self._tmdb_selected_label.setText(
+                f"1 TMDB entry loaded ({title}) (S{season_number})"
+            )
+            self._populate_tmdb_episodes(
+                raw_episodes, series_id, title, season_number, append=False
+            )
+        self._tmdb_search_input.clear()
+
+    def _append_tmdb_entry(
+        self, series_id: int, title: str, season_number: int
+    ) -> None:
+        """Append a new TMDB entry's episodes to the existing mapper table."""
+        logger.info(
+            "Appending TMDB entry ID: %s, Season: %s (%s)",
+            series_id,
+            season_number,
+            title,
+        )
+        try:
+            raw_episodes = tmdb_client.get_episodes(series_id, season_number)
+        except Exception as exc:
+            logger.exception(
+                "Failed to fetch TMDB episodes for ID %s: %s", series_id, exc
+            )
+            QMessageBox.warning(
+                self,
+                "Fetch Failed",
+                f"Could not fetch TMDB episodes: {exc}",
+            )
+            return
+        if raw_episodes:
+            self._tmdb_entries.append(
+                {"id": series_id, "title": title, "season_number": season_number}
+            )
+            self._tmdb_selected_label.setText(
+                f"{len(self._tmdb_entries)} TMDB entries loaded"
+            )
+            self._populate_tmdb_episodes(
+                raw_episodes,
+                series_id,
+                title,
+                season_number,
+                append=True,
+                filter_used_paths=True,
+            )
+        self._tmdb_search_input.clear()
+
+    def _populate_tmdb_episodes(
+        self,
+        raw_episodes: List[Dict[str, Any]],
+        series_id: int,
+        series_title: str,
+        season_number: int = 1,
+        append: bool = False,
+        filter_used_paths: bool = False,
+    ) -> None:
+        """Populate the TMDB mapper table with episode rows."""
+        episodes = []
+        for ep in raw_episodes:
+            episodes.append(
+                {
+                    "id": ep.get("id"),
+                    "name": ep.get("name"),
+                    "episode_number": ep.get("episode_number"),
+                    "order": ep.get("order") or ep.get("episode_number", 1) - 1,
+                    "air_date": ep.get("air_date"),
+                    "runtime": ep.get("runtime"),
+                }
+            )
+
+        start_row = self._tmdb_mapper_table.rowCount() if append else 0
+        if not append:
+            self._tmdb_mapper_table.setRowCount(0)
+            self._tmdb_mapper_episodes = []
+            self._tmdb_row_episodes = []
+
+        num_episodes = len(episodes)
+        new_ep_numbers = list(range(1, num_episodes + 1))
+        total_rows = start_row + num_episodes
+        self._tmdb_mapper_table.setRowCount(total_rows)
+        self._tmdb_mapper_episodes.extend(episodes)
+        self._tmdb_row_episodes.extend(new_ep_numbers)
+
+        is_first_entry = start_row == 0 and not any(
+            ep.get("tmdb_episode_identifier") for ep in self._tmdb_local_episodes
+        )
+        logger.info(
+            "TMDB populate: %d episodes, %d local eps, start_row=%d, "
+            "is_first_entry=%s, filter_used_paths=%s, append=%s",
+            len(episodes),
+            len(self._tmdb_local_episodes),
+            start_row,
+            is_first_entry,
+            filter_used_paths,
+            append,
+        )
+
+        used_paths: set[str] = set()
+        for check_row in range(start_row):
+            combo = self._tmdb_mapper_table.cellWidget(check_row, 2)
+            if isinstance(combo, QComboBox) and combo.currentData():
+                used_paths.add(combo.currentData())
+        if used_paths:
+            logger.info(
+                "TMDB populate: %d paths already used in existing rows",
+                len(used_paths),
+            )
+
+        for offset, tmdb_ep in enumerate(episodes):
+            row_idx = start_row + offset
+            ep_id = tmdb_ep.get("id")
+            ep_name = tmdb_ep.get("name") or "TBA"
+            ep_number = tmdb_ep.get("episode_number") or (tmdb_ep.get("order", 0) + 1)
+            ep_air_date = tmdb_ep.get("air_date") or ""
+
+            # Column 0: TMDB Entry (series title + season)
+            display_label = f"{series_title} (S{season_number})"
+            entry_item = QTableWidgetItem(display_label)
+            entry_item.setData(Qt.ItemDataRole.UserRole, series_id)
+            entry_item.setData(Qt.ItemDataRole.UserRole + 1, ep_id)
+            entry_item.setData(Qt.ItemDataRole.UserRole + 2, ep_name)
+            entry_item.setData(Qt.ItemDataRole.UserRole + 3, ep_number)
+            entry_item.setData(Qt.ItemDataRole.UserRole + 4, ep_air_date)
+            entry_item.setData(Qt.ItemDataRole.UserRole + 5, season_number)
+            entry_item.setFlags(entry_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self._tmdb_mapper_table.setItem(row_idx, 0, entry_item)
+
+            # Column 1: Episode # with name
+            ep_num_item = QTableWidgetItem(
+                f"S{season_number} E{ep_number:02d} - {ep_name}"
+            )
+            ep_num_item.setFlags(ep_num_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self._tmdb_mapper_table.setItem(row_idx, 1, ep_num_item)
+
+            # Column 2: Mapped Local File
             combo = QComboBox()
             combo.addItem("Unmapped / None", userData=None)
             selected_idx = 0
             for idx, local_ep in enumerate(self._tmdb_local_episodes):
-                filename = Path(local_ep["path"]).name
-                combo.addItem(filename, userData=local_ep["path"])
+                local_path = local_ep["path"]
+                if filter_used_paths and local_path in used_paths:
+                    continue
+                filename = Path(local_path).name
+                combo.addItem(filename, userData=local_path)
                 cur_id = local_ep.get("tmdb_episode_identifier") or local_ep.get(
                     "tmdb_identifier"
                 )
-                if cur_id and str(cur_id) == str(group_ep.get("id")):
-                    selected_idx = idx + 1
+                if cur_id and str(cur_id) == str(ep_id):
+                    selected_idx = combo.count() - 1
+
+            # Auto-match sequentially only for the first entry
+            if (
+                selected_idx == 0
+                and is_first_entry
+                and offset < len(self._tmdb_local_episodes)
+            ):
+                candidate_path = self._tmdb_local_episodes[offset]["path"]
+                for combo_idx in range(1, combo.count()):
+                    if combo.itemData(combo_idx) == candidate_path:
+                        selected_idx = combo_idx
+                        break
+
+            if selected_idx == 0:
+                logger.debug(
+                    "TMDB populate row %d: ep '%s' (#%d) -> Unmapped "
+                    "(combo has %d choices)",
+                    row_idx,
+                    ep_name,
+                    ep_number,
+                    combo.count() - 1,
+                )
+            else:
+                matched = combo.itemData(selected_idx)
+                logger.info(
+                    "TMDB populate row %d: ep '%s' (#%d) matched to '%s'",
+                    row_idx,
+                    ep_name,
+                    ep_number,
+                    matched,
+                )
+
             combo.setCurrentIndex(selected_idx)
             self._tmdb_mapper_table.setCellWidget(row_idx, 2, combo)
 
@@ -887,39 +1327,47 @@ class SeasonDetailView(QWidget):
             self._current_season_name,
         )
 
-        updates = {}
+        updates: Dict[str, Dict[str, Any]] = {}
         for row_idx in range(self._tmdb_mapper_table.rowCount()):
             combo = self._tmdb_mapper_table.cellWidget(row_idx, 2)
             if isinstance(combo, QComboBox):
                 selected_path = combo.currentData()
                 if selected_path:
-                    group_ep = self._tmdb_mapper_episodes[row_idx]
-                    updates[selected_path] = {
-                        "tmdb_identifier": str(group_ep["id"]),
-                        "tmdb_episode_identifier": str(group_ep["id"]),
-                        "tmdb_name": group_ep.get("name", ""),
-                        "tmdb_number": group_ep.get("episode_number")
-                        or (group_ep.get("order", 0) + 1),
-                        "air_date": group_ep.get("air_date") or "",
-                        "runtime": group_ep.get("runtime") or 0,
-                    }
+                    entry_item = self._tmdb_mapper_table.item(row_idx, 0)
+                    if entry_item:
+                        series_id = entry_item.data(Qt.ItemDataRole.UserRole)
+                        ep_id = entry_item.data(Qt.ItemDataRole.UserRole + 1)
+                        ep_name = entry_item.data(Qt.ItemDataRole.UserRole + 2)
+                        ep_number = entry_item.data(Qt.ItemDataRole.UserRole + 3)
+                        ep_air_date = entry_item.data(Qt.ItemDataRole.UserRole + 4)
+                        updates[selected_path] = {
+                            "tmdb_identifier": str(series_id) if series_id else "",
+                            "tmdb_episode_identifier": str(ep_id) if ep_id else "",
+                            "tmdb_name": ep_name or "",
+                            "tmdb_number": ep_number,
+                            "air_date": ep_air_date or "",
+                        }
+                        logger.debug(
+                            "TMDB apply: mapping '%s' -> series=%s ep=%s '%s'",
+                            selected_path,
+                            series_id,
+                            ep_id,
+                            ep_name,
+                        )
 
-        subgroup_ep_ids = {str(ep["id"]) for ep in self._tmdb_mapper_episodes}
         modified_count = 0
+        logger.info(
+            "TMDB apply: %d updates from table rows, searching %d seasons",
+            len(updates),
+            len(self._current_series_data.get("seasons", {})),
+        )
         for season_data in self._current_series_data.get("seasons", {}).values():
             for ep in season_data.get("episodes", []):
                 p = ep.get("path")
-                if p:
-                    if p in updates:
-                        for k, v in updates[p].items():
-                            ep[k] = v
-                        modified_count += 1
-                    elif str(ep.get("tmdb_episode_identifier")) in subgroup_ep_ids:
-                        ep["tmdb_identifier"] = ""
-                        ep["tmdb_episode_identifier"] = ""
-                        ep["tmdb_name"] = ""
-                        ep["tmdb_number"] = None
-                        modified_count += 1
+                if p and p in updates:
+                    for k, v in updates[p].items():
+                        ep[k] = v
+                    modified_count += 1
 
         library_name = self.controller.current_library_name
         db.save_library(library_name, self.controller.cached_library_data)
@@ -998,6 +1446,7 @@ class SeasonDetailView(QWidget):
         self._mal_entries = []
         logger.info("Loading MAL mapper data for season: '%s'", season_name)
         if not season_name:
+            logger.warning("MAL mapper: no season name, skipping")
             return
 
         season_data = self._current_series_data.get("seasons", {}).get(season_name, {})
@@ -1007,6 +1456,11 @@ class SeasonDetailView(QWidget):
         self._mal_local_episodes.sort(
             key=lambda x: db.natural_sort_key(Path(x["path"]).name)
         )
+        logger.info(
+            "MAL mapper: found %d local episodes for season '%s'",
+            len(self._mal_local_episodes),
+            season_name,
+        )
 
         self._mal_mapper_table.setRowCount(0)
         self._mal_selected_anime_id = None
@@ -1014,6 +1468,10 @@ class SeasonDetailView(QWidget):
         self._mal_selected_label.setText("No MAL entries loaded")
 
         if not myanimelist_client.is_configured():
+            logger.info(
+                "MAL mapper: client not configured for season '%s', skipping",
+                season_name,
+            )
             self._mal_selected_label.setText(
                 "MyAnimeList API Client ID not configured in settings"
             )
@@ -1027,14 +1485,27 @@ class SeasonDetailView(QWidget):
                 episode_mal_ids.setdefault(aid, []).append(ep.get("path", ""))
 
         if episode_mal_ids:
+            logger.info(
+                "MAL mapper: found per-episode MAL IDs: %s",
+                {k: len(v) for k, v in episode_mal_ids.items()},
+            )
             loaded_count = 0
             for aid in episode_mal_ids:
+                logger.info(
+                    "MAL mapper: fetching details for anime ID %s (%d paths)",
+                    aid,
+                    len(episode_mal_ids[aid]),
+                )
                 details = myanimelist_client.get_anime_details(aid)
                 if details:
                     title = details.get("title") or f"ID: {aid}"
                     self._mal_entries.append({"id": aid, "title": title})
                     self._populate_mal_episodes(details, append=loaded_count > 0)
                     loaded_count += 1
+                else:
+                    logger.warning(
+                        "MAL mapper: no details returned for anime ID %s", aid
+                    )
             if loaded_count > 0:
                 if loaded_count == 1:
                     self._mal_selected_label.setText(
@@ -1044,10 +1515,19 @@ class SeasonDetailView(QWidget):
                     self._mal_selected_label.setText(
                         f"{loaded_count} MAL entries loaded"
                     )
+                logger.info(
+                    "MAL mapper: restored %d entries from per-episode IDs",
+                    loaded_count,
+                )
                 return
+            logger.info("MAL mapper: per-episode IDs exist but no details loaded")
 
         # Fall back to season-level myanimelist_id
         saved_mal_id = season_data.get("metadata", {}).get("myanimelist_id")
+        logger.info(
+            "MAL mapper: no per-episode IDs, fallback season-level myanimelist_id=%s",
+            saved_mal_id,
+        )
         if saved_mal_id:
             details = myanimelist_client.get_anime_details(saved_mal_id)
             if details:
@@ -1056,16 +1536,34 @@ class SeasonDetailView(QWidget):
                 self._mal_entries.append({"id": saved_mal_id, "title": title})
                 self._mal_selected_label.setText(f"1 MAL entry loaded ({title})")
                 self._populate_mal_episodes(details, append=False)
+                logger.info(
+                    "MAL mapper: restored from season-level myanimelist_id=%s ('%s')",
+                    saved_mal_id,
+                    title,
+                )
                 return
 
-        # Auto-search when no saved MAL entry exists
+        # Auto-search when no saved MAL entry exists.
+        # Skip for non-numeric season names — we cannot determine which MAL
+        # entry matches, so show an empty table for manual search.
         search_text = self._current_series_name or ""
-        if search_text:
+        season_has_no_number = self._parse_season_number(season_name) is None
+        logger.info(
+            "MAL mapper: no saved data, auto-search for '%s' (season_has_no_number=%s)",
+            search_text,
+            season_has_no_number,
+        )
+        if search_text and not season_has_no_number:
             try:
                 results = myanimelist_client.search_anime(search_text)
-            except Exception:
+            except Exception as exc:
+                logger.exception("MAL mapper: auto-search failed: %s", exc)
                 results = []
             if results:
+                logger.info(
+                    "MAL mapper: auto-search found %d results, using first",
+                    len(results),
+                )
                 anime_id = results[0].get("id")
                 if anime_id:
                     self._on_mal_entry_selected(anime_id)
@@ -1216,6 +1714,16 @@ class SeasonDetailView(QWidget):
         is_first_entry = start_row == 0 and not any(
             ep.get("myanimelist_anime_id") for ep in self._mal_local_episodes
         )
+        logger.info(
+            "MAL populate: %d episodes, %d local eps, start_row=%d, "
+            "is_first_entry=%s, filter_used_paths=%s, append=%s",
+            num_episodes,
+            len(self._mal_local_episodes),
+            start_row,
+            is_first_entry,
+            filter_used_paths,
+            append,
+        )
 
         # Collect local file paths already used in existing rows
         used_paths: set[str] = set()
@@ -1223,6 +1731,11 @@ class SeasonDetailView(QWidget):
             combo = self._mal_mapper_table.cellWidget(check_row, 2)
             if isinstance(combo, QComboBox) and combo.currentData():
                 used_paths.add(combo.currentData())
+        if used_paths:
+            logger.info(
+                "MAL populate: %d paths already used in existing rows",
+                len(used_paths),
+            )
 
         for offset, mal_ep_num in enumerate(new_ep_numbers):
             row_idx = start_row + offset
@@ -1264,6 +1777,28 @@ class SeasonDetailView(QWidget):
                     if combo.itemData(combo_idx) == candidate_path:
                         selected_idx = combo_idx
                         break
+                if selected_idx > 0:
+                    logger.info(
+                        "MAL populate row %d: auto-matched to '%s' (#%d)",
+                        row_idx,
+                        candidate_path,
+                        mal_ep_num,
+                    )
+
+            if selected_idx == 0:
+                logger.debug(
+                    "MAL populate row %d: ep #%d -> Unmapped (combo has %d choices)",
+                    row_idx,
+                    mal_ep_num,
+                    combo.count() - 1,
+                )
+            else:
+                logger.info(
+                    "MAL populate row %d: ep #%d matched to '%s'",
+                    row_idx,
+                    mal_ep_num,
+                    combo.itemData(selected_idx),
+                )
 
             combo.setCurrentIndex(selected_idx)
             self._mal_mapper_table.setCellWidget(row_idx, 2, combo)
@@ -1292,7 +1827,7 @@ class SeasonDetailView(QWidget):
 
         # Collect active anime IDs from the table rows
         active_ids: set[int] = set()
-        updates = {}
+        updates: Dict[str, Dict[str, Any]] = {}
         for row_idx in range(self._mal_mapper_table.rowCount()):
             entry_item = self._mal_mapper_table.item(row_idx, 0)
             if entry_item is None:
@@ -1306,6 +1841,12 @@ class SeasonDetailView(QWidget):
             if isinstance(combo, QComboBox):
                 selected_path = combo.currentData()
                 if selected_path:
+                    logger.debug(
+                        "MAL apply: mapping '%s' -> anime_id=%s ep=%d",
+                        selected_path,
+                        row_anime_id,
+                        self._mal_row_episodes[row_idx],
+                    )
                     mal_ep_num = self._mal_row_episodes[row_idx]
                     updates[selected_path] = {
                         "myanimelist_anime_id": row_anime_id,
