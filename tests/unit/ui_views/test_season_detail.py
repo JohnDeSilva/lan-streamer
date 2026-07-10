@@ -475,6 +475,10 @@ def test_season_detail_tmdb_search(qtbot: Any) -> None:
             "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured",
             return_value=False,
         ),
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=True,
+        ),
     ):
         mock_pixmap.return_value.isNull.return_value = False
         mock_get_groups.return_value = []
@@ -495,8 +499,8 @@ def test_season_detail_tmdb_search(qtbot: Any) -> None:
 
     # Mapper table should be auto-populated with the current season's episodes
     assert view._tmdb_mapper_table.rowCount() == 1
-    assert view._tmdb_mapper_table.item(0, 0).text() == "E01 - Pilot"
-    assert view._tmdb_mapper_table.item(0, 1).text() == "2020-01-01"
+    assert "Pilot" in view._tmdb_mapper_table.item(0, 1).text()
+    assert "S1" in view._tmdb_mapper_table.item(0, 1).text()
     combo = view._tmdb_mapper_table.cellWidget(0, 2)
     assert combo is not None
     assert combo.currentData() == "/media/Pilot.mkv"
@@ -572,6 +576,10 @@ def test_season_detail_tmdb_mapper_apply(qtbot: Any) -> None:
             "lan_streamer.ui_views.season_detail.myanimelist_client.search_anime",
             return_value=[],
         ),
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=True,
+        ),
     ):
         mock_pixmap.return_value.isNull.return_value = False
         mock_get_groups.return_value = []
@@ -601,13 +609,13 @@ def test_season_detail_tmdb_mapper_apply(qtbot: Any) -> None:
         # --- Verify mapper table auto-populated from current season ---
         assert view._tmdb_mapper_table.rowCount() == 2
 
-        # TMDB Episode column
-        assert view._tmdb_mapper_table.item(0, 0).text() == "E01 - Pilot"
-        assert view._tmdb_mapper_table.item(1, 0).text() == "E02 - Episode 2"
+        # TMDB Entry column shows series title with season
+        assert "Test Series" in view._tmdb_mapper_table.item(0, 0).text()
+        assert "S1" in view._tmdb_mapper_table.item(0, 0).text()
 
-        # Air Date column
-        assert view._tmdb_mapper_table.item(0, 1).text() == "2020-01-01"
-        assert view._tmdb_mapper_table.item(1, 1).text() == "2020-01-08"
+        # Episode # column shows season, episode, and name
+        assert "S1 E01 - Pilot" in view._tmdb_mapper_table.item(0, 1).text()
+        assert "S1 E02 - Episode 2" in view._tmdb_mapper_table.item(1, 1).text()
 
         # Mapped Local File column contains combos with local files
         combo_0 = view._tmdb_mapper_table.cellWidget(0, 2)
@@ -630,14 +638,16 @@ def test_season_detail_tmdb_mapper_apply(qtbot: Any) -> None:
         ep0 = controller.cached_library_data["Test Series"]["seasons"]["Season 1"][
             "episodes"
         ][0]
-        assert ep0["tmdb_identifier"] == "1001"
+        assert ep0["tmdb_identifier"] == "12345"
+        assert ep0["tmdb_episode_identifier"] == "1001"
         assert ep0["tmdb_name"] == "Pilot"
         assert ep0["tmdb_number"] == 1
 
         ep1 = controller.cached_library_data["Test Series"]["seasons"]["Season 1"][
             "episodes"
         ][1]
-        assert ep1["tmdb_identifier"] == "1002"
+        assert ep1["tmdb_identifier"] == "12345"
+        assert ep1["tmdb_episode_identifier"] == "1002"
         assert ep1["tmdb_name"] == "Episode 2"
         assert ep1["tmdb_number"] == 2
 
@@ -880,7 +890,7 @@ def test_tmdb_mapper_files_sorted_by_filename(qtbot: Any) -> None:
     view.display_season("Test Series", "Season 1")
 
     filenames = [Path(ep["path"]).name for ep in view._tmdb_local_episodes]
-    assert filenames == ["S01E03.mkv", "S01E05.mkv", "S02E07.mkv", "S02E12.mkv"]
+    assert filenames == ["S01E03.mkv", "S01E05.mkv"]
 
 
 def test_mal_mapper_files_sorted_by_filename(qtbot: Any) -> None:
@@ -1220,3 +1230,211 @@ def test_season_detail_mal_apply_multiple_entries(qtbot: Any) -> None:
         "Season 1"
     ].get("metadata", {})
     assert season_meta.get("myanimelist_id") is None
+
+
+# ---------------------------------------------------------------------------
+# Non-numeric season name (Specials) tests
+# ---------------------------------------------------------------------------
+
+
+def test_tmdb_specials_skips_restore_and_auto_search(qtbot: Any) -> None:
+    """Specials season with no parseable number skips TMDB restore and auto-search."""
+    episodes = [
+        {
+            "name": "S00E01.mkv",
+            "path": "/media/Specials/S00E01.mkv",
+            "watched": False,
+            "last_played_position": 0,
+        },
+    ]
+    controller = _make_controller_with_data("Test Series", "Specials", episodes)
+    controller.cached_library_data["Test Series"]["metadata"]["tmdb_identifier"] = (
+        "12345"
+    )
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.QPixmap") as mock_pixmap,
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=True,
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.get_episodes"
+        ) as mock_get_episodes,
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.search_series_full"
+        ) as mock_search,
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured",
+            return_value=False,
+        ),
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        view.display_season("Test Series", "Specials")
+
+    # Restore and auto-search should be skipped
+    mock_get_episodes.assert_not_called()
+    mock_search.assert_not_called()
+
+    # Table should be empty
+    assert view._tmdb_mapper_table.rowCount() == 0
+    assert view._tmdb_entries == []
+
+    # Search input should be pre-filled
+    assert view._tmdb_search_input.text() == "Test Series"
+
+
+def test_tmdb_specials_with_episode_ids(qtbot: Any) -> None:
+    """Specials with tmdb_episode_identifier still skips restore but
+    preserves per-episode data in the local episode list."""
+    episodes = [
+        {
+            "name": "S00E01.mkv",
+            "path": "/media/Specials/S00E01.mkv",
+            "watched": False,
+            "last_played_position": 0,
+            "tmdb_episode_identifier": "2001",
+        },
+    ]
+    controller = _make_controller_with_data("Test Series", "Specials", episodes)
+    controller.cached_library_data["Test Series"]["metadata"]["tmdb_identifier"] = (
+        "12345"
+    )
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.QPixmap") as mock_pixmap,
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=True,
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.get_episodes"
+        ) as mock_get_episodes,
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.search_series_full"
+        ) as mock_search,
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured",
+            return_value=False,
+        ),
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        view.display_season("Test Series", "Specials")
+
+    # Restore and auto-search should be skipped even with existing episode IDs
+    mock_get_episodes.assert_not_called()
+    mock_search.assert_not_called()
+
+    # Table should be empty (no TMDB episodes loaded)
+    assert view._tmdb_mapper_table.rowCount() == 0
+    assert view._tmdb_entries == []
+
+    # Per-episode data is preserved in local episodes
+    assert view._tmdb_local_episodes[0]["tmdb_episode_identifier"] == "2001"
+
+
+def test_mal_specials_skips_auto_search(qtbot: Any) -> None:
+    """Specials season with no parseable number skips MAL auto-search."""
+    episodes = [
+        {
+            "name": "S00E01.mkv",
+            "path": "/anime/Specials/S00E01.mkv",
+            "watched": False,
+            "last_played_position": 0,
+        },
+    ]
+    controller = _make_controller_with_data("Test Series", "Specials", episodes)
+    controller.current_library_name = "Anime"
+    config.libraries = {"Anime": {"type": "anime", "paths": ["/anime"]}}
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.QPixmap") as mock_pixmap,
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured",
+            return_value=True,
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.search_anime"
+        ) as mock_search,
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=False,
+        ),
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        view.display_season("Test Series", "Specials")
+
+    # Auto-search should be skipped for non-numeric season names
+    mock_search.assert_not_called()
+
+    # Table should be empty
+    assert view._mal_mapper_table.rowCount() == 0
+    assert view._mal_entries == []
+
+    # Search input should be pre-filled
+    assert view._mal_search_input.text() == "Test Series"
+
+
+def test_mal_specials_with_episode_ids(qtbot: Any) -> None:
+    """Specials with per-episode MAL IDs loads that data without auto-search."""
+    episodes = [
+        {
+            "name": "S00E06.mkv",
+            "path": "/anime/Specials/S00E06.mkv",
+            "watched": False,
+            "last_played_position": 0,
+            "myanimelist_anime_id": 23385,
+            "myanimelist_episode_number": 1,
+        },
+    ]
+    controller = _make_controller_with_data("Test Series", "Specials", episodes)
+    controller.current_library_name = "Anime"
+    config.libraries = {"Anime": {"type": "anime", "paths": ["/anime"]}}
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.QPixmap") as mock_pixmap,
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured",
+            return_value=True,
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.get_anime_details"
+        ) as mock_get_details,
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.search_anime"
+        ) as mock_search,
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=False,
+        ),
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        mock_get_details.return_value = {
+            "id": 23385,
+            "title": "Beyond the Boundary: Daybreak",
+            "num_episodes": 1,
+            "main_picture": {"medium": "", "large": ""},
+        }
+        view.display_season("Test Series", "Specials")
+
+    # Auto-search should NOT be called (per-episode IDs loaded)
+    mock_search.assert_not_called()
+    mock_get_details.assert_called_once_with(23385)
+
+    # Per-episode data loaded (search input not set since load returns early)
+    assert len(view._mal_entries) == 1
+    assert view._mal_entries[0]["id"] == 23385
+    assert view._mal_entries[0]["title"] == "Beyond the Boundary: Daybreak"
+    assert view._mal_mapper_table.rowCount() <= 1
