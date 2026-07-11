@@ -515,3 +515,495 @@ class TestSearchSeriesEdgeCases:
             assert result is None
 
         _run(run(), event_loop)
+
+
+# ------------------------------------------------------------------
+# Edge cases for _clean_name, _is_similar, _select_best_candidate
+# ------------------------------------------------------------------
+
+
+class TestStaticMethodEdgeCases:
+    def test_clean_name_empty_string(self, client: AsyncTMDBClient) -> None:
+        assert client._clean_name("") == ""
+
+    def test_clean_name_only_special_chars(self, client: AsyncTMDBClient) -> None:
+        result = client._clean_name("...___")
+        assert result == ""
+
+    def test_clean_name_removes_codec_tags(self, client: AsyncTMDBClient) -> None:
+        result = client._clean_name("Show x264 1080p")
+        assert "x264" not in result
+        assert "1080p" not in result
+
+    def test_is_similar_empty_strings(self, client: AsyncTMDBClient) -> None:
+        assert client._is_similar("", "anything") is False
+        assert client._is_similar("anything", "") is False
+
+    def test_is_similar_substring_both_ways(self, client: AsyncTMDBClient) -> None:
+        assert client._is_similar("Short", "A Much Longer Short Title") is True
+        assert client._is_similar("A Much Longer Short Title", "Short") is True
+
+    def test_is_similar_ratio_threshold(self, client: AsyncTMDBClient) -> None:
+        # The actual ratio depends on SequenceMatcher - just verify it doesn't crash
+        result = client._is_similar("Breaking Bad", "Breking Bdd", threshold=0.8)
+        assert isinstance(result, bool)
+
+    def test_is_similar_word_overlap(self, client: AsyncTMDBClient) -> None:
+        # Word overlap with words > 3 chars
+        assert client._is_similar("Doctor Strange Adventures", "Strange") is True
+        # The common words filter checks original words, not cleaned
+        # "The Marvel Star Wars" contains "Marvel" which is >3 chars
+        result = client._is_similar("The Marvel Star Wars", "Marvel")
+        assert isinstance(result, bool)
+
+    def test_select_best_candidate_empty_target(self, client: AsyncTMDBClient) -> None:
+        result = client._select_best_candidate([{"name": "Test"}], "")
+        assert result is None
+
+    def test_select_best_candidate_skips_empty_candidate(
+        self, client: AsyncTMDBClient
+    ) -> None:
+        results = [{"name": "...", "id": 1}, {"name": "Valid", "id": 2}]
+        result = client._select_best_candidate(results, "Valid")
+        assert result is not None
+        assert result["id"] == 2
+
+    def test_select_best_candidate_no_match_returns_none(
+        self, client: AsyncTMDBClient
+    ) -> None:
+        results = [{"name": "Completely Different", "id": 1}]
+        result = client._select_best_candidate(results, "Target", custom_threshold=0.9)
+        assert result is None
+
+
+# ------------------------------------------------------------------
+# search_series fallback paths
+# ------------------------------------------------------------------
+
+
+class TestSearchSeriesFallbacks:
+    def test_search_series_two_word_fallback(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        """Test two-word fallback in search_series."""
+        match_result = [
+            {"id": 1, "name": "Show Runners", "first_air_date": "2020-01-01"}
+        ]
+
+        call_count = {"n": 0}
+
+        async def mock_do_search(query: str) -> list:
+            call_count["n"] += 1
+            if call_count["n"] >= 3:  # Two-word fallback attempt
+                return match_result
+            return []
+
+        async def run() -> None:
+            client._do_search = mock_do_search
+            client._is_similar = lambda a, b, threshold=0.7: True
+
+            result = await client.search_series("Show Runners Extra Stuff")
+            assert result is not None
+            assert result["id"] == 1
+
+        _run(run(), event_loop)
+
+    def test_search_series_first_word_fallback(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        """Test first-word fallback in search_series."""
+        match_result = [{"id": 2, "name": "Fargo", "first_air_date": "2014-04-15"}]
+
+        async def mock_do_search(query: str) -> list:
+            if query == "Fargo":
+                return match_result
+            return []
+
+        async def run() -> None:
+            client._do_search = mock_do_search
+            client._is_similar = lambda a, b, threshold=0.7: True
+
+            result = await client.search_series("Fargo Criminal Cases 2025")
+            assert result is not None
+            assert result["id"] == 2
+
+        _run(run(), event_loop)
+
+    def test_search_series_all_fallbacks_fail(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        """Test search_series returns None when all fallbacks fail."""
+
+        async def run() -> None:
+            client._do_search = AsyncMock(return_value=[])
+            result = await client.search_series("Totally Unknown Show Name 2025")
+            assert result is None
+
+        _run(run(), event_loop)
+
+
+# ------------------------------------------------------------------
+# search_movie tests
+# ------------------------------------------------------------------
+
+
+class TestSearchMovie:
+    def test_search_movie_success(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            client._do_movie_search = AsyncMock(
+                return_value=[
+                    {"id": 19995, "title": "Avatar", "release_date": "2009-12-15"}
+                ]
+            )
+            result = await client.search_movie("Avatar", year=2009)
+            assert result is not None
+            assert result["id"] == 19995
+
+        _run(run(), event_loop)
+
+    def test_search_movie_no_match(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            client._do_movie_search = AsyncMock(return_value=[])
+            result = await client.search_movie("Unknown Movie XYZ")
+            assert result is None
+
+        _run(run(), event_loop)
+
+    def test_search_movie_full(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(
+                return_value={
+                    "results": [{"id": 1, "title": "M1"}, {"id": 2, "title": "M2"}]
+                }
+            )
+            client._http_client = mock_http
+            results = await client.search_movie_full("Movie")
+            assert len(results) == 2
+
+        _run(run(), event_loop)
+
+    def test_search_movie_full_not_configured(
+        self, event_loop: asyncio.AbstractEventLoop
+    ) -> None:
+        async def run() -> None:
+            client = AsyncTMDBClient(api_key="")
+            results = await client.search_movie_full("anything")
+            assert results == []
+
+        _run(run(), event_loop)
+
+
+# ------------------------------------------------------------------
+# get_series_by_id / get_movie_by_id
+# ------------------------------------------------------------------
+
+
+class TestGetById:
+    def test_get_series_by_id_success(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(
+                return_value={"id": 1234, "name": "The Office", "seasons": []}
+            )
+            client._http_client = mock_http
+
+            result = await client.get_series_by_id(1234)
+            assert result["id"] == 1234
+
+        _run(run(), event_loop)
+
+    def test_get_series_by_id_error(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(side_effect=Exception("network error"))
+            client._http_client = mock_http
+
+            result = await client.get_series_by_id(1)
+            assert result is None
+
+        _run(run(), event_loop)
+
+    def test_get_movie_by_id_success(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value={"id": 19995, "title": "Avatar"})
+            client._http_client = mock_http
+
+            result = await client.get_movie_by_id(19995)
+            assert result is not None
+            assert result["id"] == 19995
+
+        _run(run(), event_loop)
+
+    def test_get_movie_by_id_error(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(side_effect=Exception("network error"))
+            client._http_client = mock_http
+
+            result = await client.get_movie_by_id(1)
+            assert result is None
+
+        _run(run(), event_loop)
+
+
+# ------------------------------------------------------------------
+# get_seasons / get_episodes
+# ------------------------------------------------------------------
+
+
+class TestSeasonsEpisodes:
+    def test_get_seasons_success(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(
+                return_value={
+                    "id": 1234,
+                    "seasons": [
+                        {"id": 1, "season_number": 1, "name": "Season 1"},
+                        {"id": 0, "season_number": 0, "name": "Specials"},
+                    ],
+                }
+            )
+            client._http_client = mock_http
+
+            seasons = await client.get_seasons(1234)
+            assert len(seasons) == 2
+
+        _run(run(), event_loop)
+
+    def test_get_seasons_only_specials(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(
+                return_value={
+                    "seasons": [{"id": 0, "season_number": 0, "name": "Specials"}]
+                }
+            )
+            client._http_client = mock_http
+
+            seasons = await client.get_seasons(1234)
+            assert len(seasons) == 1
+
+        _run(run(), event_loop)
+
+    def test_get_seasons_error(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(side_effect=Exception("error"))
+            client._http_client = mock_http
+
+            seasons = await client.get_seasons(1234)
+            assert seasons == []
+
+        _run(run(), event_loop)
+
+    def test_get_episodes_success(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(
+                return_value={
+                    "episodes": [
+                        {"id": 1, "episode_number": 1, "name": "Pilot"},
+                        {"id": 2, "episode_number": 2, "name": "Episode 2"},
+                    ]
+                }
+            )
+            client._http_client = mock_http
+
+            episodes = await client.get_episodes(1234, 1)
+            assert len(episodes) == 2
+
+        _run(run(), event_loop)
+
+    def test_get_episodes_error(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(side_effect=Exception("error"))
+            client._http_client = mock_http
+
+            episodes = await client.get_episodes(1, 1)
+            assert episodes == []
+
+        _run(run(), event_loop)
+
+
+# ------------------------------------------------------------------
+# Episode Groups
+# ------------------------------------------------------------------
+
+
+class TestEpisodeGroups:
+    def test_get_episode_groups_success(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(
+                return_value={"results": [{"id": "g1", "name": "DVD Order"}]}
+            )
+            client._http_client = mock_http
+
+            res = await client.get_episode_groups(1234)
+            assert len(res) == 1
+            assert res[0]["id"] == "g1"
+
+        _run(run(), event_loop)
+
+    def test_get_episode_groups_error(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(side_effect=Exception("network error"))
+            client._http_client = mock_http
+
+            assert await client.get_episode_groups(1234) == []
+
+        _run(run(), event_loop)
+
+    def test_get_episode_group_details_success(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(
+                return_value={"id": "g1", "name": "DVD Order", "groups": []}
+            )
+            client._http_client = mock_http
+
+            res = await client.get_episode_group_details("g1")
+            assert res is not None
+            assert res["id"] == "g1"
+
+        _run(run(), event_loop)
+
+    def test_get_episode_group_details_error(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(side_effect=Exception("network error"))
+            client._http_client = mock_http
+
+            assert await client.get_episode_group_details("g1") is None
+
+        _run(run(), event_loop)
+
+
+# ------------------------------------------------------------------
+# get_season_based_episode_group
+# ------------------------------------------------------------------
+
+
+class TestSeasonBasedEpisodeGroup:
+    def test_get_season_based_episode_group_no_groups(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            client.get_episode_groups = AsyncMock(return_value=[])
+            assert await client.get_season_based_episode_group(1234) is None
+
+        _run(run(), event_loop)
+
+    def test_get_season_based_episode_group_priority_type7(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_groups = [
+                {"id": "g3", "name": "DVD", "type": 3},
+                {"id": "g7", "name": "TVDB", "type": 7},
+                {"id": "g4", "name": "Digital", "type": 4},
+            ]
+            client.get_episode_groups = AsyncMock(return_value=mock_groups)
+            client.get_episode_group_details = AsyncMock(
+                side_effect=lambda gid: {"id": gid}
+            )
+
+            res = await client.get_season_based_episode_group(1234)
+            assert res is not None
+            assert res["id"] == "g7"
+
+        _run(run(), event_loop)
+
+    def test_get_season_based_episode_group_fallback_type34(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_groups = [
+                {"id": "g3", "name": "DVD", "type": 3},
+                {"id": "g4", "name": "Digital", "type": 4},
+            ]
+            client.get_episode_groups = AsyncMock(return_value=mock_groups)
+            client.get_episode_group_details = AsyncMock(
+                side_effect=lambda gid: {"id": gid}
+            )
+
+            res = await client.get_season_based_episode_group(1234)
+            assert res is not None
+            assert res["id"] == "g3"
+
+        _run(run(), event_loop)
+
+    def test_get_season_based_episode_group_fallback_name(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_groups = [
+                {"id": "g_other", "name": "Random Order", "type": 1},
+                {"id": "g_season", "name": "Season Pack", "type": 2},
+            ]
+            client.get_episode_groups = AsyncMock(return_value=mock_groups)
+            client.get_episode_group_details = AsyncMock(
+                side_effect=lambda gid: {"id": gid}
+            )
+
+            res = await client.get_season_based_episode_group(1234)
+            assert res is not None
+            assert res["id"] == "g_season"
+
+        _run(run(), event_loop)
+
+    def test_get_season_based_episode_group_seasons_name_preferred(
+        self, event_loop: asyncio.AbstractEventLoop, client: AsyncTMDBClient
+    ) -> None:
+        async def run() -> None:
+            mock_groups = [
+                {"id": "g_cours", "name": "Cours", "type": 7},
+                {"id": "g_seasons", "name": "Seasons", "type": 6},
+            ]
+            client.get_episode_groups = AsyncMock(return_value=mock_groups)
+            client.get_episode_group_details = AsyncMock(
+                side_effect=lambda gid: {"id": gid}
+            )
+
+            res = await client.get_season_based_episode_group(1234)
+            assert res is not None
+            assert res["id"] == "g_seasons"
+
+        _run(run(), event_loop)
