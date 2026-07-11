@@ -3,10 +3,12 @@
 from sqlalchemy import select
 
 from lan_streamer.db import get_session
-from lan_streamer.db.models import Series, Movie
+from lan_streamer.db.models import Series, Movie, Season, Episode
 from lan_streamer.db.models_cast import Person, MediaCast, MediaImage
 from lan_streamer.db.queries_cast import (
     get_cast_for_series,
+    get_cast_for_season,
+    get_cast_for_episode,
     get_cast_for_movie,
     get_person_by_id,
     get_person_by_tmdb_id,
@@ -65,6 +67,85 @@ class TestCastQueries:
         assert result[0].person.name == "Actor One"
         assert result[1].role == "director"
         assert result[1].person.name == "Director One"
+
+    def test_get_cast_for_season_empty(self) -> None:
+        """Test getting cast for a season with no cast returns empty list."""
+        with get_session() as session:
+            series = Series(name="Season Cast Series", library_name="TV")
+            season = Season(series_id=series.id, name="Season 1")
+            session.add_all([series, season])
+            session.commit()
+            season_id = season.id
+
+        result = get_cast_for_season(season_id)
+        assert result == []
+
+    def test_get_cast_for_season_with_data(self) -> None:
+        """Test getting cast for a season."""
+        with get_session() as session:
+            series = Series(name="Season Cast Series", library_name="TV")
+            season = Season(series_id=series.id, name="Season 1")
+            actor = Person(tmdb_identifier=3001, name="Season Actor")
+            session.add_all([series, season, actor])
+            session.flush()
+
+            cast_entry = MediaCast(
+                person_id=actor.id,
+                series_id=series.id,
+                season_id=season.id,
+                role="actor",
+                character="Season Regular",
+                sort_order=0,
+            )
+            session.add(cast_entry)
+            session.commit()
+            season_id = season.id
+
+        result = get_cast_for_season(season_id)
+        assert len(result) == 1
+        assert result[0].character == "Season Regular"
+        assert result[0].person.name == "Season Actor"
+
+    def test_get_cast_for_episode_empty(self) -> None:
+        """Test that getting cast for an episode with no cast returns empty list."""
+        with get_session() as session:
+            series = Series(name="Ep Cast Series", library_name="TV")
+            season = Season(series_id=series.id, name="Season 1")
+            episode = Episode(season_id=season.id, name="Ep 1", tmdb_number=1)
+            session.add_all([series, season, episode])
+            session.commit()
+            episode_id = episode.id
+
+        result = get_cast_for_episode(episode_id)
+        assert result == []
+
+    def test_get_cast_for_episode_with_data(self) -> None:
+        """Test getting cast for an episode."""
+        with get_session() as session:
+            series = Series(name="Ep Cast Series", library_name="TV")
+            season = Season(series_id=series.id, name="Season 1")
+            episode = Episode(season_id=season.id, name="Ep 1", tmdb_number=1)
+            actor = Person(tmdb_identifier=4001, name="Episode Actor")
+            session.add_all([series, season, episode, actor])
+            session.flush()
+
+            cast_entry = MediaCast(
+                person_id=actor.id,
+                series_id=series.id,
+                season_id=season.id,
+                episode_id=episode.id,
+                role="actor",
+                character="Guest Star",
+                sort_order=0,
+            )
+            session.add(cast_entry)
+            session.commit()
+            episode_id = episode.id
+
+        result = get_cast_for_episode(episode_id)
+        assert len(result) == 1
+        assert result[0].character == "Guest Star"
+        assert result[0].person.name == "Episode Actor"
 
     def test_get_cast_for_movie_empty(self) -> None:
         """Test that getting cast for a movie with no cast returns empty list."""

@@ -460,6 +460,107 @@ def test_do_movie_search_error(tmdb) -> None:
     assert tmdb._do_movie_search("query") == []
 
 
+def test_do_movie_search_with_year(tmdb) -> None:
+    """Test _do_movie_search includes year param when provided."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"results": [{"id": 1, "title": "Test"}]}
+    tmdb.session.request = MagicMock(return_value=mock_resp)
+
+    results = tmdb._do_movie_search("query", year=2020)
+    assert len(results) == 1
+    # Verify the call included the year parameter
+    call_args = tmdb.session.request.call_args
+    assert call_args[1]["params"]["year"] == 2020
+
+
+# ------------------------------------------------------------------
+# _select_best_candidate edge cases
+# ------------------------------------------------------------------
+
+
+def test_select_best_candidate_empty_target(tmdb) -> None:
+    """_select_best_candidate returns None when target cleans to empty."""
+    # _clean_name of "" returns ""
+    result = tmdb._select_best_candidate([{"id": 1, "name": "Test"}], "")
+    assert result is None
+
+
+def test_select_best_candidate_empty_candidate(tmdb) -> None:
+    """_select_best_candidate skips candidates that clean to empty."""
+    # Candidate with name that cleans to empty (e.g., only special chars)
+    result = tmdb._select_best_candidate([{"id": 1, "name": "..."}], "Valid Name")
+    assert result is None
+
+
+def test_select_best_candidate_no_match(tmdb) -> None:
+    """_select_best_candidate returns None when no candidate meets threshold."""
+    # High threshold that won't be met
+    result = tmdb._select_best_candidate(
+        [{"id": 1, "name": "Completely Different"}],
+        "Target Show",
+        custom_threshold=0.9,
+    )
+    assert result is None
+
+
+# ------------------------------------------------------------------
+# get_season_details error handling
+# ------------------------------------------------------------------
+
+
+def test_get_season_details_404(tmdb) -> None:
+    """get_season_details handles 404 gracefully."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 404
+    tmdb.session.request = MagicMock(
+        side_effect=requests.exceptions.HTTPError(response=mock_resp)
+    )
+
+    result = tmdb.get_season_details(123, 1)
+    assert result is None
+
+
+def test_get_season_details_http_error(tmdb) -> None:
+    """get_season_details handles non-404 HTTP errors."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 500
+    tmdb.session.request = MagicMock(
+        side_effect=requests.exceptions.HTTPError(response=mock_resp)
+    )
+
+    result = tmdb.get_season_details(123, 1)
+    assert result is None
+
+
+# ------------------------------------------------------------------
+# get_episodes error handling
+# ------------------------------------------------------------------
+
+
+def test_get_episodes_404(tmdb) -> None:
+    """get_episodes handles 404 gracefully."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 404
+    tmdb.session.request = MagicMock(
+        side_effect=requests.exceptions.HTTPError(response=mock_resp)
+    )
+
+    result = tmdb.get_episodes(123, 1)
+    assert result == []
+
+
+def test_get_episodes_http_error(tmdb) -> None:
+    """get_episodes handles non-404 HTTP errors."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 500
+    tmdb.session.request = MagicMock(
+        side_effect=requests.exceptions.HTTPError(response=mock_resp)
+    )
+
+    result = tmdb.get_episodes(123, 1)
+    assert result == []
+
+
 # ------------------------------------------------------------------
 # Episode Groups
 # ------------------------------------------------------------------
@@ -775,6 +876,159 @@ def test_concurrent_requests_are_serialised_by_throttle(
         )
 
 
+def test_get_season_details_success(tmdb) -> None:
+    """get_season_details returns data on successful request."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"id": 1, "name": "Season 1", "overview": "Desc"}
+    tmdb.session.request = MagicMock(return_value=mock_resp)
+
+    result = tmdb.get_season_details(123, 1)
+    assert result is not None
+    assert result["id"] == 1
+    assert result["name"] == "Season 1"
+
+
+def test_get_episodes_success(tmdb) -> None:
+    """get_episodes returns episodes list on successful request."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"episodes": [{"id": 1, "name": "Ep 1"}]}
+    tmdb.session.request = MagicMock(return_value=mock_resp)
+
+    result = tmdb.get_episodes(123, 1)
+    assert len(result) == 1
+    assert result[0]["name"] == "Ep 1"
+
+
+def test_get_series_credits_success(tmdb) -> None:
+    """get_series_credits returns credits data on success."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"cast": [{"id": 1, "name": "Actor"}]}
+    tmdb.session.request = MagicMock(return_value=mock_resp)
+
+    result = tmdb.get_series_credits(123)
+    assert "cast" in result
+    assert result["cast"][0]["name"] == "Actor"
+
+
+def test_get_movie_credits_success(tmdb) -> None:
+    """get_movie_credits returns credits data on success."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"cast": [{"id": 2, "name": "Star"}]}
+    tmdb.session.request = MagicMock(return_value=mock_resp)
+
+    result = tmdb.get_movie_credits(456)
+    assert "cast" in result
+    assert result["cast"][0]["name"] == "Star"
+
+
+def test_get_episode_credits_success(tmdb) -> None:
+    """get_episode_credits returns episode credits on success."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"guest_stars": [{"id": 3, "name": "Guest"}]}
+    tmdb.session.request = MagicMock(return_value=mock_resp)
+
+    result = tmdb.get_episode_credits(123, 1, 1)
+    assert "guest_stars" in result
+    assert result["guest_stars"][0]["name"] == "Guest"
+
+
+def test_get_series_images_success(tmdb) -> None:
+    """get_series_images returns images data on success."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"posters": [{"file_path": "/poster.jpg"}]}
+    tmdb.session.request = MagicMock(return_value=mock_resp)
+
+    result = tmdb.get_series_images(123)
+    assert "posters" in result
+    assert result["posters"][0]["file_path"] == "/poster.jpg"
+
+
+def test_get_movie_images_success(tmdb) -> None:
+    """get_movie_images returns images data on success."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"backdrops": [{"file_path": "/backdrop.jpg"}]}
+    tmdb.session.request = MagicMock(return_value=mock_resp)
+
+    result = tmdb.get_movie_images(456)
+    assert "backdrops" in result
+    assert result["backdrops"][0]["file_path"] == "/backdrop.jpg"
+
+
+def test_get_person_details_success(tmdb) -> None:
+    """get_person_details returns person data on success."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"id": 1, "name": "Actor Name", "biography": "Bio"}
+    tmdb.session.request = MagicMock(return_value=mock_resp)
+
+    result = tmdb.get_person_details(1)
+    assert result is not None
+    assert result["name"] == "Actor Name"
+
+
+def test_download_and_cache_profile_success(tmdb, tmp_path) -> None:
+    """download_and_cache_profile downloads and caches profile image."""
+    import os
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = b"profile-image-data"
+    tmdb.session.request = MagicMock(return_value=mock_resp)
+
+    path = tmdb.download_and_cache_profile("/abc.jpg", 123)
+    assert path != ""
+    assert os.path.exists(path)
+    assert path.endswith("tmdb_person_123.jpg")
+
+    # Second call should return cached path without re-downloading
+    tmdb.session.request.reset_mock()
+    path2 = tmdb.download_and_cache_profile("/abc.jpg", 123)
+    assert path2 == path
+    tmdb.session.request.assert_not_called()
+
+
+def test_download_and_cache_image_success(tmdb, tmp_path) -> None:
+    """download_and_cache_image downloads and caches image."""
+    import os
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = b"image-data"
+    tmdb.session.request = MagicMock(return_value=mock_resp)
+
+    path = tmdb.download_and_cache_image("/poster.jpg", "w500")
+    assert path != ""
+    assert os.path.exists(path)
+
+    # Second call uses cache
+    tmdb.session.request.reset_mock()
+    path2 = tmdb.download_and_cache_image("/poster.jpg", "w500")
+    assert path2 == path
+    tmdb.session.request.assert_not_called()
+
+
+def test_get_cached_image_found(tmdb, tmp_path) -> None:
+    """get_cached_image returns path when file exists in cache."""
+    cache_dir = tmdb._effective_cache_dir
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    test_file = cache_dir / "test_image.jpg"
+    test_file.write_bytes(b"test")
+
+    path = tmdb.get_cached_image("test_image")
+    assert path == str(test_file)
+
+
+def test_get_cached_image_not_found(tmdb) -> None:
+    """get_cached_image returns empty string when not in cache."""
+    path = tmdb.get_cached_image("nonexistent")
+    assert path == ""
+
+
+def test_get_cached_image_empty_key(tmdb) -> None:
+    """get_cached_image returns empty string for empty key."""
+    assert tmdb.get_cached_image("") == ""
+    assert tmdb.get_cached_image(None) == ""
+
+
 def test_rate_limit_lock_not_held_during_sleep(tmp_path: "Path") -> None:
     """Regression test for sleep-inside-lock bug.
 
@@ -782,10 +1036,6 @@ def test_rate_limit_lock_not_held_during_sleep(tmp_path: "Path") -> None:
     throttle sleep duration, serializing ALL parallel TMDB calls.  After the fix
     the lock is only held for the timestamp read/write; other threads must be
     able to acquire it immediately while the first thread is sleeping.
-
-    Strategy: force a 100ms throttle delay on thread-1 by resetting
-    ``_class_last_request_time`` to ``now``.  While thread-1 is sleeping,
-    thread-2 must be able to acquire the lock within 10ms (not after 100ms).
     """
     import concurrent.futures
     import time as time_module
@@ -829,3 +1079,55 @@ def test_rate_limit_lock_not_held_during_sleep(tmp_path: "Path") -> None:
         f"Lock acquisition took {acquisition_duration * 1000:.1f}ms — "
         "the lock is likely still being held during the throttle sleep."
     )
+
+
+# ------------------------------------------------------------------
+# Credits API
+# ------------------------------------------------------------------
+
+
+def test_get_series_credits_error(tmdb) -> None:
+    """get_series_credits returns empty dict on error."""
+    tmdb.session.request = MagicMock(side_effect=Exception("network error"))
+    result = tmdb.get_series_credits(123)
+    assert result == {}
+
+
+def test_get_movie_credits_error(tmdb) -> None:
+    """get_movie_credits returns empty dict on error."""
+    tmdb.session.request = MagicMock(side_effect=Exception("network error"))
+    result = tmdb.get_movie_credits(456)
+    assert result == {}
+
+
+# ------------------------------------------------------------------
+# download_and_cache_profile
+# ------------------------------------------------------------------
+
+
+def test_download_and_cache_profile_empty_path(tmdb) -> None:
+    """download_and_cache_profile returns empty string for empty path."""
+    assert tmdb.download_and_cache_profile("", 123) == ""
+
+
+def test_download_and_cache_profile_cached(tmdb, tmp_path) -> None:
+    """download_and_cache_profile returns cached file if exists."""
+    from lan_streamer.providers.tmdb import PERSON_CACHE_DIR
+
+    cache_dir = PERSON_CACHE_DIR
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    existing = cache_dir / "tmdb_person_123.jpg"
+    existing.write_bytes(b"cached")
+
+    result = tmdb.download_and_cache_profile("/profile.jpg", 123)
+    assert result == str(existing)
+
+
+# ------------------------------------------------------------------
+# download_and_cache_image
+# ------------------------------------------------------------------
+
+
+def test_download_and_cache_image_empty_path(tmdb) -> None:
+    """download_and_cache_image returns empty string for empty path."""
+    assert tmdb.download_and_cache_image("", "w500") == ""

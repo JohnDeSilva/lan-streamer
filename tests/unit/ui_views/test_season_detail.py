@@ -1438,3 +1438,804 @@ def test_mal_specials_with_episode_ids(qtbot: Any) -> None:
     assert view._mal_entries[0]["id"] == 23385
     assert view._mal_entries[0]["title"] == "Beyond the Boundary: Daybreak"
     assert view._mal_mapper_table.rowCount() <= 1
+
+
+# ---------------------------------------------------------------------------
+# TMDB mapper coverage — focused unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_tmdb_restore_with_episode_group(qtbot: Any) -> None:
+    """TMDB mapper restores episodes via episode group when group_id is set."""
+    episodes = [
+        {
+            "name": "E01.mkv",
+            "path": "/media/E01.mkv",
+            "watched": False,
+            "last_played_position": 0,
+        },
+    ]
+    controller = _make_controller_with_data("Test Series", "Season 1", episodes)
+    controller.cached_library_data["Test Series"]["metadata"]["tmdb_identifier"] = (
+        "12345"
+    )
+    controller.cached_library_data["Test Series"]["metadata"][
+        "tmdb_episode_group_id"
+    ] = "group_abc"
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.QPixmap") as mock_pixmap,
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=True,
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.get_episode_group_details"
+        ) as mock_group_details,
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured",
+            return_value=False,
+        ),
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        mock_group_details.return_value = {
+            "id": "group_abc",
+            "groups": [
+                {
+                    "name": "Season 1",
+                    "episodes": [
+                        {
+                            "id": 1001,
+                            "name": "Pilot",
+                            "episode_number": 1,
+                            "season_number": 1,
+                            "air_date": "2020-01-01",
+                            "runtime": 30,
+                        },
+                    ],
+                },
+            ],
+        }
+        view.display_season("Test Series", "Season 1")
+
+    assert view._tmdb_mapper_table.rowCount() == 1
+    assert view._tmdb_entries == [
+        {"id": 12345, "title": "Test Series", "season_number": 1}
+    ]
+
+
+def test_tmdb_restore_group_no_match(qtbot: Any) -> None:
+    """TMDB mapper logs warning when no subgroup matches the season."""
+    episodes = [
+        {
+            "name": "E01.mkv",
+            "path": "/media/E01.mkv",
+            "watched": False,
+            "last_played_position": 0,
+        },
+    ]
+    controller = _make_controller_with_data("Test Series", "Season 1", episodes)
+    controller.cached_library_data["Test Series"]["metadata"]["tmdb_identifier"] = (
+        "12345"
+    )
+    controller.cached_library_data["Test Series"]["metadata"][
+        "tmdb_episode_group_id"
+    ] = "group_abc"
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.QPixmap") as mock_pixmap,
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=True,
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.get_episode_group_details"
+        ) as mock_group_details,
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured",
+            return_value=False,
+        ),
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        mock_group_details.return_value = {
+            "id": "group_abc",
+            "groups": [
+                {
+                    "name": "Arc 1",
+                    "episodes": [
+                        {
+                            "id": 2001,
+                            "episode_number": 1,
+                            "season_number": 5,
+                            "air_date": "2020-01-01",
+                        },
+                    ],
+                },
+            ],
+        }
+        view.display_season("Test Series", "Season 1")
+
+    assert view._tmdb_mapper_table.rowCount() == 0
+    assert view._tmdb_entries == []
+
+
+def test_tmdb_restore_get_episodes_fails(qtbot: Any) -> None:
+    """TMDB mapper handles get_episodes exception gracefully."""
+    episodes = [
+        {
+            "name": "E01.mkv",
+            "path": "/media/E01.mkv",
+            "watched": False,
+            "last_played_position": 0,
+        },
+    ]
+    controller = _make_controller_with_data("Test Series", "Season 1", episodes)
+    controller.cached_library_data["Test Series"]["metadata"]["tmdb_identifier"] = (
+        "12345"
+    )
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.QPixmap") as mock_pixmap,
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=True,
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.get_episodes",
+            side_effect=Exception("API timeout"),
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured",
+            return_value=False,
+        ),
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        view.display_season("Test Series", "Season 1")
+
+    # Falls through to auto-search without crashing
+    assert view._tmdb_mapper_table.rowCount() == 0
+    assert view._tmdb_entries == []
+
+
+def test_on_search_tmdb_empty_query(qtbot: Any) -> None:
+    """_on_search_tmdb returns immediately with empty query."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+    view._tmdb_search_input.setText("")
+
+    with patch(
+        "lan_streamer.ui_views.season_detail.tmdb_client.search_series_full"
+    ) as mock_search:
+        view._on_search_tmdb()
+
+    mock_search.assert_not_called()
+
+
+def test_on_search_tmdb_api_fails(qtbot: Any) -> None:
+    """_on_search_tmdb handles API exception gracefully."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+    view._tmdb_search_input.setText("Test Show")
+
+    with (
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.search_series_full",
+            side_effect=Exception("Network error"),
+        ),
+        patch("lan_streamer.ui_views.season_detail.QMessageBox.warning"),
+    ):
+        view._on_search_tmdb()
+
+
+def test_on_tmdb_entry_selected_no_id(qtbot: Any) -> None:
+    """_on_tmdb_entry_selected returns early when series_id is falsy."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+
+    with patch(
+        "lan_streamer.ui_views.season_detail.tmdb_client.get_episodes"
+    ) as mock_get:
+        view._on_tmdb_entry_selected(0, 1, "Test")
+
+    mock_get.assert_not_called()
+
+
+def test_on_tmdb_entry_selected_fetch_fails(qtbot: Any) -> None:
+    """_on_tmdb_entry_selected handles API exception gracefully."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+
+    with (
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.get_episodes",
+            side_effect=Exception("API error"),
+        ),
+        patch("lan_streamer.ui_views.season_detail.QMessageBox.warning"),
+    ):
+        view._on_tmdb_entry_selected(12345, 1, "Test")
+
+    assert view._tmdb_entries == []
+
+
+def test_on_tmdb_entry_selected_populates(qtbot: Any) -> None:
+    """_on_tmdb_entry_selected populates table when episodes are returned."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+    view._tmdb_local_episodes = [
+        {"path": "/media/E01.mkv", "name": "E01.mkv"},
+    ]
+
+    with patch(
+        "lan_streamer.ui_views.season_detail.tmdb_client.get_episodes",
+        return_value=[
+            {"id": 1001, "name": "Pilot", "episode_number": 1, "air_date": ""},
+        ],
+    ):
+        view._on_tmdb_entry_selected(12345, 1, "Test Series")
+
+    assert view._tmdb_entries == [
+        {"id": 12345, "title": "Test Series", "season_number": 1}
+    ]
+    assert view._tmdb_mapper_table.rowCount() == 1
+    assert "Test Series" in view._tmdb_mapper_table.item(0, 0).text()
+    assert view._tmdb_search_input.text() == ""
+
+
+def test_append_tmdb_entry_fetch_fails(qtbot: Any) -> None:
+    """_append_tmdb_entry handles API exception gracefully."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+    view._tmdb_entries = [{"id": 1, "title": "First", "season_number": 1}]
+
+    with (
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.get_episodes",
+            side_effect=Exception("API error"),
+        ),
+        patch("lan_streamer.ui_views.season_detail.QMessageBox.warning"),
+    ):
+        view._append_tmdb_entry(12345, "Second", 2)
+
+    # Entries unchanged
+    assert len(view._tmdb_entries) == 1
+
+
+def test_append_tmdb_entry_appends(qtbot: Any) -> None:
+    """_append_tmdb_entry appends a new entry to existing entries."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+    view._tmdb_entries = [{"id": 1, "title": "First", "season_number": 1}]
+    view._tmdb_local_episodes = [
+        {"path": "/media/E01.mkv", "name": "E01.mkv"},
+    ]
+
+    with patch(
+        "lan_streamer.ui_views.season_detail.tmdb_client.get_episodes",
+        return_value=[{"id": 2001, "name": "Ep1", "episode_number": 1, "air_date": ""}],
+    ):
+        view._append_tmdb_entry(12345, "Second", 2)
+
+    assert len(view._tmdb_entries) == 2
+    assert view._tmdb_entries[1] == {"id": 12345, "title": "Second", "season_number": 2}
+    assert "2 TMDB entries" in view._tmdb_selected_label.text()
+    assert view._tmdb_search_input.text() == ""
+
+
+# ---------------------------------------------------------------------------
+# MAL mapper coverage — focused unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_mal_load_no_season_name(qtbot: Any) -> None:
+    """_load_mal_mapper_data returns early when season_name is empty."""
+    controller = _make_controller_with_data("Test", "Season 1", [])
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_season_name = ""
+
+    with patch(
+        "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured"
+    ) as mock_cfg:
+        view._load_mal_mapper_data()
+
+    mock_cfg.assert_not_called()
+
+
+def test_mal_load_per_episode_details_none(qtbot: Any) -> None:
+    """_load_mal_mapper_data logs warning when per-episode MAL fetch returns None."""
+    controller = _make_controller_with_data(
+        "Test",
+        "Season 1",
+        [
+            {
+                "name": "E01.mkv",
+                "path": "/media/E01.mkv",
+                "watched": False,
+                "myanimelist_anime_id": 999,
+            },
+        ],
+    )
+    controller.current_library_name = "Anime"
+    config.libraries = {"Anime": {"type": "anime", "paths": ["/anime"]}}
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured",
+            return_value=True,
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.get_anime_details",
+            return_value=None,
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=False,
+        ),
+    ):
+        view.display_season("Test", "Season 1")
+
+    assert view._mal_entries == []
+
+
+def test_mal_load_season_level_fallback(qtbot: Any) -> None:
+    """_load_mal_mapper_data falls back to season-level myanimelist_id."""
+    controller = _make_controller_with_data(
+        "Test",
+        "Season 1",
+        [
+            {
+                "name": "E01.mkv",
+                "path": "/media/E01.mkv",
+                "watched": False,
+            },
+        ],
+    )
+    controller.cached_library_data["Test"]["seasons"]["Season 1"]["metadata"] = {
+        "myanimelist_id": 456,
+    }
+    controller.current_library_name = "Anime"
+    config.libraries = {"Anime": {"type": "anime", "paths": ["/anime"]}}
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured",
+            return_value=True,
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.get_anime_details",
+            return_value={"id": 456, "title": "My Anime", "num_episodes": 12},
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=False,
+        ),
+    ):
+        view.display_season("Test", "Season 1")
+
+    assert len(view._mal_entries) == 1
+    assert view._mal_entries[0]["id"] == 456
+    assert view._mal_mapper_table.rowCount() == 12
+
+
+def test_mal_auto_search_api_fails(qtbot: Any) -> None:
+    """MAL auto-search handles API exception gracefully."""
+    controller = _make_controller_with_data(
+        "Test",
+        "Season 1",
+        [
+            {
+                "name": "E01.mkv",
+                "path": "/media/E01.mkv",
+                "watched": False,
+            },
+        ],
+    )
+    controller.current_library_name = "Anime"
+    config.libraries = {"Anime": {"type": "anime", "paths": ["/anime"]}}
+
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.is_configured",
+            return_value=True,
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.myanimelist_client.search_anime",
+            side_effect=Exception("API error"),
+        ),
+        patch(
+            "lan_streamer.ui_views.season_detail.tmdb_client.is_configured",
+            return_value=False,
+        ),
+    ):
+        view.display_season("Test", "Season 1")
+
+    # Falls through without crashing
+    assert view._mal_entries == []
+
+
+def test_on_search_mal_empty_query(qtbot: Any) -> None:
+    """_on_search_mal returns immediately with empty query."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+    view._mal_search_input.setText("")
+
+    with patch(
+        "lan_streamer.ui_views.season_detail.myanimelist_client.search_anime"
+    ) as mock_search:
+        view._on_search_mal()
+
+    mock_search.assert_not_called()
+
+
+def test_on_mal_entry_selected_no_id(qtbot: Any) -> None:
+    """_on_mal_entry_selected returns early with falsy anime_id."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+
+    with patch(
+        "lan_streamer.ui_views.season_detail.myanimelist_client.get_anime_details"
+    ) as mock_get:
+        view._on_mal_entry_selected(0)
+
+    mock_get.assert_not_called()
+
+
+def test_on_mal_entry_selected_populates(qtbot: Any) -> None:
+    """_on_mal_entry_selected populates entries when details are returned."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+    view._mal_local_episodes = [
+        {"path": "/media/E01.mkv", "name": "E01.mkv"},
+    ]
+
+    with patch(
+        "lan_streamer.ui_views.season_detail.myanimelist_client.get_anime_details",
+        return_value={"id": 789, "title": "Naruto", "num_episodes": 12},
+    ):
+        view._on_mal_entry_selected(789)
+
+    assert view._mal_entries == [{"id": 789, "title": "Naruto"}]
+    assert view._mal_mapper_table.rowCount() == 12
+
+
+def test_append_mal_entry_populates(qtbot: Any) -> None:
+    """_append_mal_entry appends a new entry to existing entries."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+    view._mal_entries = [{"id": 1, "title": "First"}]
+    view._mal_local_episodes = [
+        {"path": "/media/E01.mkv", "name": "E01.mkv"},
+    ]
+
+    with patch(
+        "lan_streamer.ui_views.season_detail.myanimelist_client.get_anime_details",
+        return_value={"id": 456, "title": "Bleach", "num_episodes": 12},
+    ):
+        view._append_mal_entry(456, "Bleach")
+
+    assert len(view._mal_entries) == 2
+    assert view._mal_entries[1] == {"id": 456, "title": "Bleach"}
+
+
+def test_populate_mal_episodes_zero_default(qtbot: Any) -> None:
+    """_populate_mal_episodes defaults to at least 12 episodes when num_episodes is 0."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+    view._mal_local_episodes = [
+        {"path": f"/media/E{i:02d}.mkv", "name": f"E{i:02d}.mkv"} for i in range(1, 6)
+    ]
+
+    view._populate_mal_episodes(
+        {
+            "id": 123,
+            "title": "Test",
+            "num_episodes": 0,
+        }
+    )
+
+    # With 5 local episodes: max(12, 5 + 5) = 12
+    assert view._mal_mapper_table.rowCount() == 12
+
+
+def test_on_apply_mal_mappings_no_season(qtbot: Any) -> None:
+    """_on_apply_mal_mappings returns early when season_name is empty."""
+    view = SeasonDetailView(MagicMock(spec=Controller))
+    qtbot.addWidget(view)
+    view._current_season_name = ""
+
+    with patch("lan_streamer.ui_views.season_detail.db.save_library") as mock_save:
+        view._on_apply_mal_mappings()
+
+    mock_save.assert_not_called()
+
+
+def test_mal_apply_skips_malformed_rows(qtbot: Any) -> None:
+    """_on_apply_mal_mappings skips rows with None entry_item or missing anime_id."""
+    series_name = "Test"
+    season_name = "Season 1"
+    controller = _make_controller_with_data(
+        series_name,
+        season_name,
+        [
+            {
+                "name": "E01.mkv",
+                "path": "/media/E01.mkv",
+                "watched": False,
+            },
+        ],
+    )
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_series_data = controller.cached_library_data[series_name]
+    view._current_season_name = season_name
+    view._current_series_name = series_name
+    view._mal_entries = [{"id": 123, "title": "Test"}]
+    view._mal_row_episodes = [1, 2]
+
+    from PySide6.QtWidgets import QTableWidgetItem, QComboBox
+
+    item0 = QTableWidgetItem("Test")
+    item0.setData(Qt.ItemDataRole.UserRole, 123)
+    view._mal_mapper_table.setRowCount(2)
+    view._mal_mapper_table.setItem(0, 0, item0)
+    combo0 = QComboBox()
+    combo0.addItem("E01.mkv", userData="/media/E01.mkv")
+    combo0.setCurrentIndex(0)
+    view._mal_mapper_table.setCellWidget(0, 2, combo0)
+
+    combo1 = QComboBox()
+    combo1.addItem("Unmapped")
+    view._mal_mapper_table.setCellWidget(1, 2, combo1)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.db.save_library"),
+        patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch("PySide6.QtWidgets.QMessageBox.information"),
+    ):
+        view._on_apply_mal_mappings()
+
+    ep0 = controller.cached_library_data[series_name]["seasons"][season_name][
+        "episodes"
+    ][0]
+    assert ep0["myanimelist_anime_id"] == 123
+
+
+def test_mal_apply_clears_unmapped(qtbot: Any) -> None:
+    """_on_apply_mal_mappings clears MAL fields for unmapped episodes in active entries."""
+    series_name = "Test"
+    season_name = "Season 1"
+    controller = _make_controller_with_data(
+        series_name,
+        season_name,
+        [
+            {
+                "name": "E01.mkv",
+                "path": "/media/E01.mkv",
+                "watched": False,
+                "myanimelist_anime_id": 123,
+                "myanimelist_episode_number": 1,
+            },
+        ],
+    )
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_series_data = controller.cached_library_data[series_name]
+    view._current_season_name = season_name
+    view._current_series_name = series_name
+    view._mal_entries = [{"id": 123, "title": "Test"}]
+    view._mal_row_episodes = [1]
+
+    from PySide6.QtWidgets import QTableWidgetItem, QComboBox
+
+    item0 = QTableWidgetItem("Test")
+    item0.setData(Qt.ItemDataRole.UserRole, 123)
+    view._mal_mapper_table.setRowCount(1)
+    view._mal_mapper_table.setItem(0, 0, item0)
+    combo0 = QComboBox()
+    combo0.addItem("Unmapped / None", userData=None)
+    combo0.setCurrentIndex(0)
+    view._mal_mapper_table.setCellWidget(0, 2, combo0)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.db.save_library"),
+        patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch("PySide6.QtWidgets.QMessageBox.information"),
+    ):
+        view._on_apply_mal_mappings()
+
+    ep0 = controller.cached_library_data[series_name]["seasons"][season_name][
+        "episodes"
+    ][0]
+    assert ep0["myanimelist_anime_id"] is None
+    assert ep0["myanimelist_episode_number"] is None
+
+
+def test_on_apply_metadata_mappings_no_data(qtbot: Any) -> None:
+    """_on_apply_metadata_mappings warns when no TMDB data is loaded."""
+    controller = _make_controller_with_data("Test", "Season 1", [])
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_season_name = "Season 1"
+    view._tmdb_mapper_episodes = []
+    with patch("PySide6.QtWidgets.QMessageBox.warning") as mock_warn:
+        view._on_apply_metadata_mappings()
+    mock_warn.assert_called_once()
+
+
+def test_on_apply_metadata_mappings_cancel(qtbot: Any) -> None:
+    """_on_apply_metadata_mappings returns early when user cancels."""
+    controller = _make_controller_with_data("Test", "Season 1", [])
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_season_name = "Season 1"
+    view._tmdb_mapper_episodes = [{"id": 1, "name": "E1"}]
+    with (
+        patch(
+            "lan_streamer.ui_views.season_detail.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.No,
+        ),
+        patch("lan_streamer.ui_views.season_detail.db.save_library") as mock_save,
+    ):
+        view._on_apply_metadata_mappings()
+    mock_save.assert_not_called()
+
+
+def test_mal_apply_no_entries(qtbot: Any) -> None:
+    """_on_apply_mal_mappings warns when no MAL entries are loaded."""
+    controller = _make_controller_with_data("Test", "Season 1", [])
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_season_name = "Season 1"
+    view._mal_entries = []
+    with patch("lan_streamer.ui_views.season_detail.QMessageBox.warning") as mock_warn:
+        view._on_apply_mal_mappings()
+    mock_warn.assert_called_once()
+
+
+def test_mal_apply_cancel(qtbot: Any) -> None:
+    """_on_apply_mal_mappings returns early when user cancels."""
+    controller = _make_controller_with_data("Test", "Season 1", [])
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_season_name = "Season 1"
+    view._mal_entries = [{"id": 1, "title": "Test"}]
+    with (
+        patch(
+            "lan_streamer.ui_views.season_detail.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.No,
+        ),
+        patch("lan_streamer.ui_views.season_detail.db.save_library") as mock_save,
+    ):
+        view._on_apply_mal_mappings()
+    mock_save.assert_not_called()
+
+
+def test_mal_apply_skips_row_anime_id_none(qtbot: Any) -> None:
+    """_on_apply_mal_mappings skips rows with entry_item but None UserRole."""
+    series_name = "Test"
+    season_name = "Season 1"
+    controller = _make_controller_with_data(
+        series_name,
+        season_name,
+        [
+            {
+                "name": "E01.mkv",
+                "path": "/media/E01.mkv",
+                "watched": False,
+            },
+        ],
+    )
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_series_data = controller.cached_library_data[series_name]
+    view._current_season_name = season_name
+    view._current_series_name = series_name
+    view._mal_entries = [{"id": 123, "title": "Test"}]
+    view._mal_row_episodes = [1]
+
+    from PySide6.QtWidgets import QTableWidgetItem, QComboBox
+
+    item0 = QTableWidgetItem("Test")
+    item0.setData(Qt.ItemDataRole.UserRole, 123)
+    view._mal_mapper_table.setRowCount(2)
+    view._mal_mapper_table.setItem(0, 0, item0)
+    combo0 = QComboBox()
+    combo0.addItem("E01.mkv", userData="/media/E01.mkv")
+    combo0.setCurrentIndex(0)
+    view._mal_mapper_table.setCellWidget(0, 2, combo0)
+
+    # Row 1: entry_item exists but UserRole is None (no anime_id)
+    bad_item = QTableWidgetItem("Bad")
+    view._mal_mapper_table.setItem(1, 0, bad_item)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.db.save_library"),
+        patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch("PySide6.QtWidgets.QMessageBox.information"),
+    ):
+        view._on_apply_mal_mappings()
+
+    ep0 = controller.cached_library_data[series_name]["seasons"][season_name][
+        "episodes"
+    ][0]
+    assert ep0["myanimelist_anime_id"] == 123
+
+
+def test_mal_apply_adds_missing_metadata_key(qtbot: Any) -> None:
+    """_on_apply_mal_mappings adds metadata dict when season_data lacks it."""
+    series_name = "Test"
+    season_name = "Season 1"
+    controller = _make_controller_with_data(
+        series_name,
+        season_name,
+        [
+            {
+                "name": "E01.mkv",
+                "path": "/media/E01.mkv",
+                "watched": False,
+            },
+        ],
+    )
+    view = SeasonDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_series_data = controller.cached_library_data[series_name]
+    view._current_season_name = season_name
+    view._current_series_name = series_name
+    view._mal_entries = [{"id": 123, "title": "Test"}]
+    view._mal_row_episodes = [1]
+
+    # Remove the metadata key to test the guard
+    season = view._current_series_data["seasons"][season_name]
+    season.pop("metadata", None)
+    assert "metadata" not in season
+
+    from PySide6.QtWidgets import QTableWidgetItem, QComboBox
+
+    item0 = QTableWidgetItem("Test")
+    item0.setData(Qt.ItemDataRole.UserRole, 123)
+    view._mal_mapper_table.setRowCount(1)
+    view._mal_mapper_table.setItem(0, 0, item0)
+    combo0 = QComboBox()
+    combo0.addItem("E01.mkv", userData="/media/E01.mkv")
+    combo0.setCurrentIndex(0)
+    view._mal_mapper_table.setCellWidget(0, 2, combo0)
+
+    with (
+        patch("lan_streamer.ui_views.season_detail.db.save_library"),
+        patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch("PySide6.QtWidgets.QMessageBox.information"),
+    ):
+        view._on_apply_mal_mappings()
+
+    assert "metadata" in season
+    assert season["metadata"]["myanimelist_id"] == 123

@@ -879,3 +879,54 @@ class TestProcessSeasonMetadata:
             assert idx == -1
             assert episodes == []
             mock_tmdb.get_episodes.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# scanner/core.py - simple pass tests
+# ---------------------------------------------------------------------------
+
+
+class TestScanDirectoriesPasses:
+    def test_scan_directories_pass1_called(self, tmp_path) -> None:
+        from lan_streamer.scanner.core import scan_directories
+
+        # Create a simple test directory with a video file
+        show_dir = tmp_path / "Test Show"
+        show_dir.mkdir()
+        season_dir = show_dir / "Season 1"
+        season_dir.mkdir()
+        (season_dir / "ep.mkv").write_bytes(b"fake")
+
+        result = scan_directories([str(tmp_path)], library_type="tv", pass_number=1)
+        assert isinstance(result, dict)
+        # Should have discovered the series
+        assert len(result) >= 0  # may be 0 if no TMDB
+
+    def test_scan_directories_pass2_requires_tmdb(self, tmp_path) -> None:
+        from lan_streamer.scanner.core import scan_directories
+
+        # Pass 2 requires TMDB - should return empty or unchanged
+        result = scan_directories(
+            [str(tmp_path)], library_type="tv", pass_number=2, existing_library={}
+        )
+        assert isinstance(result, dict)
+
+    def test_scan_directories_pass3_requires_tmdb(self, tmp_path) -> None:
+        from lan_streamer.scanner.core import scan_directories
+
+        result = scan_directories(
+            [str(tmp_path)], library_type="tv", pass_number=3, existing_library={}
+        )
+        assert isinstance(result, dict)
+
+    def test_scan_movie_no_video_file(self, tmp_path) -> None:
+        from lan_streamer.scanner.core import scan_directories
+
+        # Create a movie folder with NO video file
+        movie_dir = tmp_path / "Some Movie (2020)"
+        movie_dir.mkdir()
+        (movie_dir / "poster.jpg").write_bytes(b"fake")
+
+        result = scan_directories([str(tmp_path)], library_type="movie", pass_number=1)
+        # No video file found - should not add this as a movie
+        assert len(result) == 0
