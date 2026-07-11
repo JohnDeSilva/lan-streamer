@@ -1,3 +1,14 @@
+## v0.47.0rc0 (2026-07-11)
+
+### Feat
+
+- **ui**: replace TMDB QComboBox with dialog, skip auto-restore for non-numeric seasons
+- **ui**: replace MAL QComboBox with dialog, support multiple entries per season
+
+### Fix
+
+- handle os.getlogin OSError in containers and fix backup freq test
+
 ## v0.46.0 (2026-07-10)
 
 ### Perf
