@@ -29,7 +29,6 @@ from sqlalchemy import select
 from lan_streamer import db
 from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Series
-from lan_streamer.db.queries_cast import get_cast_for_series
 from lan_streamer.system.config import config
 
 if TYPE_CHECKING:
@@ -243,30 +242,35 @@ class SeriesDetailView(QWidget):
         self, series_name: str
     ) -> tuple[Optional[str], list[dict[str, Any]]]:
         """Fetch series DB ID and cast list (to be run in a background thread)."""
+        from sqlalchemy.orm import joinedload
+        from lan_streamer.db.models_cast import MediaCast
+
         series_database_identifier = None
+        serialized_cast = []
         with get_session() as session:
-            statement = select(Series).where(
-                Series.library_name == self.controller.current_library_name,
-                Series.name == series_name,
+            statement = (
+                select(Series)
+                .where(
+                    Series.library_name == self.controller.current_library_name,
+                    Series.name == series_name,
+                )
+                .options(joinedload(Series.media_cast).joinedload(MediaCast.person))
             )
             series = session.execute(statement).unique().scalar_one_or_none()
             if series is not None:
                 series_database_identifier = series.id
-
-        serialized_cast = []
-        if series_database_identifier:
-            cast_entries = get_cast_for_series(series_database_identifier)
-            for cast_entry in cast_entries[:20]:
-                person = cast_entry.person
-                if person:
-                    serialized_cast.append(
-                        {
-                            "person_id": person.id,
-                            "name": person.name,
-                            "profile_path": person.profile_path,
-                            "character": cast_entry.character,
-                        }
-                    )
+                sorted_cast = sorted(series.media_cast, key=lambda c: c.sort_order or 0)
+                for cast_entry in sorted_cast[:20]:
+                    person = cast_entry.person
+                    if person:
+                        serialized_cast.append(
+                            {
+                                "person_id": person.id,
+                                "name": person.name,
+                                "profile_path": person.profile_path,
+                                "character": cast_entry.character,
+                            }
+                        )
         return series_database_identifier, serialized_cast
 
     def _make_person_click_handler(self, person_id: str) -> Any:
@@ -566,8 +570,12 @@ class SeriesDetailView(QWidget):
             )
 
     async def _load_details_async(self, series_name: str) -> None:
-        # 1. Fetch DB ID and Cast Entries (serialized) in a background thread
+        # Debounce: wait for 50ms to see if user keeps scrolling/clicking.
+        # If cancelled during this sleep, the thread pool task will never be spawned!
 
+        await asyncio.sleep(0.05)
+
+        # 1. Fetch DB ID and Cast Entries (serialized) in a background thread
         series_database_identifier, cast_entries = await asyncio.to_thread(
             self._fetch_series_db_and_cast, series_name
         )
