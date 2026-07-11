@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from pathlib import Path
@@ -65,6 +66,8 @@ class SeriesDetailView(QWidget):
         self._season_tables: Dict[str, QTableWidget] = {}
         self.episode_groups_cache: Dict[str, List[Dict[str, Any]]] = {}
         self.episode_group_details_cache: Dict[str, Dict[str, Any]] = {}
+        self._cached_series_data_copy: Optional[Dict[str, Any]] = None
+        self._loading_task_name: Optional[str] = None
 
         self._setup_ui()
         self.controller.series_selected.connect(self.populate_series_details)
@@ -236,7 +239,50 @@ class SeriesDetailView(QWidget):
         logger.info("Cast member clicked in series detail: %s", person_id)
         self.controller.select_cast_member(person_id)
 
-    def _display_cast_section(self) -> None:
+    def _fetch_series_db_and_cast(
+        self, series_name: str
+    ) -> tuple[Optional[str], list[dict[str, Any]]]:
+        """Fetch series DB ID and cast list (to be run in a background thread)."""
+        series_database_identifier = None
+        with get_session() as session:
+            statement = select(Series).where(
+                Series.library_name == self.controller.current_library_name,
+                Series.name == series_name,
+            )
+            series = session.execute(statement).unique().scalar_one_or_none()
+            if series is not None:
+                series_database_identifier = series.id
+
+        serialized_cast = []
+        if series_database_identifier:
+            cast_entries = get_cast_for_series(series_database_identifier)
+            for cast_entry in cast_entries[:20]:
+                person = cast_entry.person
+                if person:
+                    serialized_cast.append(
+                        {
+                            "person_id": person.id,
+                            "name": person.name,
+                            "profile_path": person.profile_path,
+                            "character": cast_entry.character,
+                        }
+                    )
+        return series_database_identifier, serialized_cast
+
+    def _make_person_click_handler(self, person_id: str) -> Any:
+        """Create a mouse press event handler for a cast member card."""
+
+        def handler(event: object) -> None:
+            self._on_cast_member_clicked(person_id)
+
+        return handler
+
+    def _on_cast_member_clicked(self, person_id: str) -> None:
+        """Handle cast member card click."""
+        logger.info("Cast member clicked in series detail: %s", person_id)
+        self.controller.select_cast_member(person_id)
+
+    def _display_cast_section(self, cast_entries: list[dict[str, Any]]) -> None:
         """Populate the cast grid for the current series."""
         # Clear existing cast cards
         while self._cast_grid.count():
@@ -246,18 +292,14 @@ class SeriesDetailView(QWidget):
                 if widget is not None:
                     widget.deleteLater()
 
-        series_id = self._lookup_series_id()
-        if not series_id:
-            return
-
-        cast_entries = get_cast_for_series(series_id)
         if not cast_entries:
             return
 
-        for cast_entry in cast_entries[:20]:  # max 20 cast cards
-            person = cast_entry.person
-            if not person:
-                continue
+        for cast_entry in cast_entries:
+            person_database_identifier = cast_entry["person_id"]
+            person_name = cast_entry["name"]
+            profile_path = cast_entry["profile_path"]
+            character = cast_entry["character"]
 
             card = QFrame()
             card.setFrameShape(QFrame.Shape.StyledPanel)
@@ -273,8 +315,8 @@ class SeriesDetailView(QWidget):
             photo = QLabel()
             photo.setFixedSize(60, 60)
             photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            if person.profile_path:
-                pixmap = QPixmap(person.profile_path)
+            if profile_path:
+                pixmap = QPixmap(profile_path)
                 if not pixmap.isNull():
                     scaled_pixmap = pixmap.scaled(
                         60,
@@ -290,7 +332,7 @@ class SeriesDetailView(QWidget):
             photo.setStyleSheet("background-color: #0f3460; border-radius: 4px;")
             card_layout.addWidget(photo, 0, Qt.AlignmentFlag.AlignCenter)
 
-            name_label = QLabel(person.name or "Unknown")
+            name_label = QLabel(person_name or "Unknown")
             name_label.setWordWrap(True)
             name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             name_label.setStyleSheet(
@@ -298,14 +340,16 @@ class SeriesDetailView(QWidget):
             )
             card_layout.addWidget(name_label)
 
-            if cast_entry.character:
-                character_label = QLabel(cast_entry.character)
+            if character:
+                character_label = QLabel(character)
                 character_label.setWordWrap(True)
                 character_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 character_label.setStyleSheet("color: #aaa; font-size: 9px;")
                 card_layout.addWidget(character_label)
 
-            card.mousePressEvent = self._make_person_click_handler(person.id)
+            card.mousePressEvent = self._make_person_click_handler(
+                person_database_identifier
+            )
             card.setCursor(Qt.CursorShape.PointingHandCursor)
             self._cast_grid.addWidget(card)
 
@@ -315,6 +359,26 @@ class SeriesDetailView(QWidget):
             self._current_series_name
             and self._current_series_name in self.controller.cached_library_data
         ):
+            new_data = self.controller.cached_library_data.get(
+                self._current_series_name
+            )
+            is_scanning = False
+            if hasattr(self.controller, "worker_manager") and hasattr(
+                self.controller.worker_manager, "scan"
+            ):
+                is_scanning = self.controller.worker_manager.scan.is_running
+
+            if is_scanning:
+                if (
+                    hasattr(self, "_cached_series_data_copy")
+                    and self._cached_series_data_copy == new_data
+                ):
+                    return
+            import copy
+
+            self._cached_series_data_copy = (
+                copy.deepcopy(new_data) if new_data else None
+            )
             self.populate_series_details(self._current_series_name)
 
     @Slot(int)
@@ -392,23 +456,6 @@ class SeriesDetailView(QWidget):
 
         logger.info(f"Populating series details for: '{series_name}'")
 
-        import datetime
-
-        today_str = datetime.date.today().isoformat()
-        library_config = config.libraries.get(self.controller.current_library_name, {})
-        show_future_episodes = library_config.get("show_future_episodes", True)
-
-        hide_missing_future = config.get_series_preference(
-            self.controller.current_library_name,
-            series_name,
-            "hide_missing_future",
-            False,
-        )
-        is_opening: bool = self._current_series_name != series_name
-        self._current_series_name = series_name
-        self._current_series_db_id = None
-        self._season_tables = {}
-
         series_record: Dict[str, Any] = self.controller.cached_library_data.get(
             series_name, {}
         )
@@ -442,6 +489,167 @@ class SeriesDetailView(QWidget):
             self.poster_label.clear()
             self.poster_label.setText("No Poster")
 
+        # Track the active series data copy to prevent redundant updates
+        import copy
+
+        self._cached_series_data_copy = (
+            copy.deepcopy(series_record) if series_record else None
+        )
+
+        # Check if an asyncio event loop is running
+        try:
+            import asyncio
+
+            asyncio.get_running_loop()
+            has_event_loop = True
+        except RuntimeError:
+            has_event_loop = False
+
+        if has_event_loop:
+            # Start loading TMDB and database details asynchronously
+            if hasattr(self, "_loading_task_name") and self._loading_task_name:
+                self.controller.async_task_manager.cancel_task(self._loading_task_name)
+            self._loading_task_name = f"load_series_details_{series_name}"
+            self.controller.async_task_manager.create_task(
+                self._load_details_async(series_name), name=self._loading_task_name
+            )
+        else:
+            # Run synchronously (e.g. during synchronous unit tests)
+            logger.debug("No running event loop. Loading series details synchronously.")
+            series_database_identifier, cast_entries = self._fetch_series_db_and_cast(
+                series_name
+            )
+            available_groups = [{"id": "default", "name": "TV Order (Default)"}]
+            tmdb_identifier = metadata_dictionary.get("tmdb_identifier")
+            if tmdb_identifier:
+                if tmdb_identifier not in self.episode_groups_cache:
+                    self.episode_groups_cache[tmdb_identifier] = (
+                        tmdb_client.get_episode_groups(tmdb_identifier)
+                    )
+                groups_list = self.episode_groups_cache[tmdb_identifier]
+                for group in groups_list:
+                    available_groups.append(
+                        {
+                            "id": str(group.get("id") or ""),
+                            "name": str(group.get("name") or "Unknown Order"),
+                        }
+                    )
+            saved_group_identifier = config.get_series_preference(
+                self.controller.current_library_name,
+                series_name,
+                "display_group_id",
+                "default",
+            )
+            if not any(
+                group["id"] == saved_group_identifier for group in available_groups
+            ):
+                saved_group_identifier = "default"
+
+            group_details = None
+            if saved_group_identifier != "default":
+                if saved_group_identifier not in self.episode_group_details_cache:
+                    self.episode_group_details_cache[saved_group_identifier] = (
+                        tmdb_client.get_episode_group_details(saved_group_identifier)
+                        or {}
+                    )
+                group_details = self.episode_group_details_cache.get(
+                    saved_group_identifier
+                )
+
+            self._update_series_ui(
+                series_name=series_name,
+                series_database_identifier=series_database_identifier,
+                cast_entries=cast_entries,
+                available_groups=available_groups,
+                group_details=group_details,
+                saved_group_identifier=saved_group_identifier,
+            )
+
+    async def _load_details_async(self, series_name: str) -> None:
+        # 1. Fetch DB ID and Cast Entries (serialized) in a background thread
+
+        series_database_identifier, cast_entries = await asyncio.to_thread(
+            self._fetch_series_db_and_cast, series_name
+        )
+
+        # 2. Get metadata dictionary
+        series_record: Dict[str, Any] = self.controller.cached_library_data.get(
+            series_name, {}
+        )
+        metadata_dictionary: Dict[str, Any] = series_record.get("metadata", {})
+
+        # 3. Fetch TMDB episode groups
+        available_groups: List[Dict[str, str]] = [
+            {"id": "default", "name": "TV Order (Default)"}
+        ]
+        tmdb_identifier = metadata_dictionary.get("tmdb_identifier")
+        if tmdb_identifier:
+            if tmdb_identifier not in self.episode_groups_cache:
+                fetched_groups = await asyncio.to_thread(
+                    tmdb_client.get_episode_groups, tmdb_identifier
+                )
+                self.episode_groups_cache[tmdb_identifier] = fetched_groups
+            groups_list = self.episode_groups_cache[tmdb_identifier]
+            for group in groups_list:
+                available_groups.append(
+                    {
+                        "id": str(group.get("id") or ""),
+                        "name": str(group.get("name") or "Unknown Order"),
+                    }
+                )
+
+        # 4. Get the saved group ID
+        saved_group_identifier = config.get_series_preference(
+            self.controller.current_library_name,
+            series_name,
+            "display_group_id",
+            "default",
+        )
+        if not any(group["id"] == saved_group_identifier for group in available_groups):
+            saved_group_identifier = "default"
+
+        # 5. Fetch group details
+        group_details = None
+        if saved_group_identifier != "default":
+            if saved_group_identifier not in self.episode_group_details_cache:
+                fetched_details = await asyncio.to_thread(
+                    tmdb_client.get_episode_group_details, saved_group_identifier
+                )
+                self.episode_group_details_cache[saved_group_identifier] = (
+                    fetched_details or {}
+                )
+            group_details = self.episode_group_details_cache.get(saved_group_identifier)
+
+        # 6. Update UI on the main thread
+        self._update_series_ui(
+            series_name=series_name,
+            series_database_identifier=series_database_identifier,
+            cast_entries=cast_entries,
+            available_groups=available_groups,
+            group_details=group_details,
+            saved_group_identifier=saved_group_identifier,
+        )
+
+    def _update_series_ui(
+        self,
+        series_name: str,
+        series_database_identifier: Optional[str],
+        cast_entries: List[Dict[str, Any]],
+        available_groups: List[Dict[str, str]],
+        group_details: Optional[Dict[str, Any]],
+        saved_group_identifier: str,
+    ) -> None:
+        if getattr(self.controller, "is_video_playing", False):
+            return
+
+        self._current_series_db_id = series_database_identifier
+        series_record: Dict[str, Any] = self.controller.cached_library_data.get(
+            series_name, {}
+        )
+        is_opening: bool = self._current_series_name != series_name
+        self._current_series_name = series_name
+        self._season_tables = {}
+
         # Save active tab text to restore it later and prevent tab jumping
         current_tab_name: Optional[str] = None
         if self.seasons_tab_widget.count() > 0:
@@ -452,41 +660,18 @@ class SeriesDetailView(QWidget):
         # Clear and repopulate Season Tabs
         self.seasons_tab_widget.clear()
 
-        # Get the selected group ID from configuration preference
-        saved_group_id = config.get_series_preference(
+        import datetime
+
+        today_str = datetime.date.today().isoformat()
+        library_config = config.libraries.get(self.controller.current_library_name, {})
+        show_future_episodes = library_config.get("show_future_episodes", True)
+
+        hide_missing_future = config.get_series_preference(
             self.controller.current_library_name,
             series_name,
-            "display_group_id",
-            "default",
+            "hide_missing_future",
+            False,
         )
-
-        available_groups: List[Dict[str, str]] = [
-            {"id": "default", "name": "TV Order (Default)"}
-        ]
-        tmdb_id = metadata_dictionary.get("tmdb_identifier")
-        if tmdb_id:
-            if tmdb_id not in self.episode_groups_cache:
-                self.episode_groups_cache[tmdb_id] = tmdb_client.get_episode_groups(
-                    tmdb_id
-                )
-            groups_list = self.episode_groups_cache[tmdb_id]
-            for g in groups_list:
-                available_groups.append(
-                    {
-                        "id": str(g.get("id") or ""),
-                        "name": str(g.get("name") or "Unknown Order"),
-                    }
-                )
-
-        if not any(g["id"] == saved_group_id for g in available_groups):
-            saved_group_id = "default"
-
-        group_details = None
-        if saved_group_id != "default":
-            if saved_group_id not in self.episode_group_details_cache:
-                details = tmdb_client.get_episode_group_details(saved_group_id)
-                self.episode_group_details_cache[saved_group_id] = details or {}
-            group_details = self.episode_group_details_cache.get(saved_group_id)
 
         group_order_map = {}
         seasons_dictionary: Dict[str, Any] = series_record.get("seasons", {})
@@ -494,56 +679,60 @@ class SeriesDetailView(QWidget):
             # Re-group episodes from database seasons by matching on tmdb_episode_identifier
             db_episodes_by_id = {}
             db_episodes_by_number = {}
-            for s_name, s_data in seasons_dictionary.items():
-                s_num_match = re.search(r"\d+", s_name)
-                s_num = int(s_num_match.group()) if s_num_match else 0
-                for ep in s_data.get("episodes", []):
-                    ep_id = ep.get("tmdb_episode_identifier") or ep.get(
-                        "tmdb_identifier"
-                    )
-                    if ep_id:
-                        db_episodes_by_id[str(ep_id)] = ep
-                    ep_num = ep.get("tmdb_number")
-                    if ep_num is not None:
-                        db_episodes_by_number[(s_num, ep_num)] = ep
+            for season_name, season_data in seasons_dictionary.items():
+                season_number_match = re.search(r"\d+", season_name)
+                season_number = (
+                    int(season_number_match.group()) if season_number_match else 0
+                )
+                for episode in season_data.get("episodes", []):
+                    episode_identifier = episode.get(
+                        "tmdb_episode_identifier"
+                    ) or episode.get("tmdb_identifier")
+                    if episode_identifier:
+                        db_episodes_by_id[str(episode_identifier)] = episode
+                    episode_number = episode.get("tmdb_number")
+                    if episode_number is not None:
+                        db_episodes_by_number[(season_number, episode_number)] = episode
 
             regrouped_seasons = {}
-            for idx, group in enumerate(group_details["groups"]):
+            for index, group in enumerate(group_details["groups"]):
                 group_name = group.get("name") or f"Group {group.get('order', '')}"
-                group_order_map[group_name] = idx
+                group_order_map[group_name] = index
                 episodes_list = []
-                for group_ep in group.get("episodes", []):
-                    ep_id = str(group_ep.get("id", ""))
-                    db_ep = db_episodes_by_id.get(ep_id)
-                    if not db_ep:
+                for group_episode in group.get("episodes", []):
+                    episode_identifier = str(group_episode.get("id", ""))
+                    db_episode = db_episodes_by_id.get(episode_identifier)
+                    if not db_episode:
                         # Try matching by standard season/episode number
-                        db_ep = db_episodes_by_number.get(
+                        db_episode = db_episodes_by_number.get(
                             (
-                                group_ep.get("season_number"),
-                                group_ep.get("episode_number"),
+                                group_episode.get("season_number"),
+                                group_episode.get("episode_number"),
                             )
                         )
 
-                    if db_ep:
-                        new_ep = db_ep.copy()
-                        new_ep["tmdb_number"] = group_ep.get("order") + 1
-                        if group_ep.get("name"):
-                            new_ep["tmdb_name"] = group_ep.get("name")
-                        episodes_list.append(new_ep)
+                    if db_episode:
+                        new_episode = db_episode.copy()
+                        new_episode["tmdb_number"] = group_episode.get("order") + 1
+                        if group_episode.get("name"):
+                            new_episode["tmdb_name"] = group_episode.get("name")
+                        episodes_list.append(new_episode)
                     else:
-                        ep_name = group_ep.get("name") or "TBA"
-                        group_order = group_ep.get("order") + 1
-                        formatted_name = f"{group_name} E{group_order:02d} - {ep_name}"
+                        episode_name = group_episode.get("name") or "TBA"
+                        group_order = group_episode.get("order") + 1
+                        formatted_name = (
+                            f"{group_name} E{group_order:02d} - {episode_name}"
+                        )
                         episodes_list.append(
                             {
                                 "name": formatted_name,
                                 "path": None,
-                                "tmdb_identifier": ep_id,
-                                "tmdb_episode_identifier": ep_id,
-                                "tmdb_name": ep_name,
+                                "tmdb_identifier": episode_identifier,
+                                "tmdb_episode_identifier": episode_identifier,
+                                "tmdb_name": episode_name,
                                 "tmdb_number": group_order,
-                                "air_date": group_ep.get("air_date") or "",
-                                "runtime": group_ep.get("runtime") or 0,
+                                "air_date": group_episode.get("air_date") or "",
+                                "runtime": group_episode.get("runtime") or 0,
                                 "jellyfin_id": "",
                                 "watched": False,
                                 "date_added": 0,
@@ -562,10 +751,10 @@ class SeriesDetailView(QWidget):
         # Populate order combobox
         self.order_combo.blockSignals(True)
         self.order_combo.clear()
-        for idx, g in enumerate(available_groups):
-            self.order_combo.addItem(g["name"], userData=g["id"])
-            if g["id"] == saved_group_id:
-                self.order_combo.setCurrentIndex(idx)
+        for index, group in enumerate(available_groups):
+            self.order_combo.addItem(group["name"], userData=group["id"])
+            if group["id"] == saved_group_identifier:
+                self.order_combo.setCurrentIndex(index)
         self.order_combo.blockSignals(False)
 
         if group_order_map:
@@ -574,10 +763,10 @@ class SeriesDetailView(QWidget):
             )
         else:
             try:
-                sorted_season_names: List[str] = sorted(
+                sorted_season_names = sorted(
                     seasons_dictionary.keys(), key=db.natural_sort_key
                 )
-            except AttributeError:
+            except AttributeError, NameError:
                 sorted_season_names = sorted(seasons_dictionary.keys())
 
         # Filter seasons to only those having 1 or more episodes (at least one local episode)
@@ -585,23 +774,23 @@ class SeriesDetailView(QWidget):
         for season_name in sorted_season_names:
             season_data = seasons_dictionary.get(season_name, {})
             episodes_list = season_data.get("episodes", [])
-            if any(ep.get("path") for ep in episodes_list):
+            if any(episode.get("path") for episode in episodes_list):
                 filtered_season_names.append(season_name)
         sorted_season_names = filtered_season_names
 
         # Determine next unwatched episode in natural order
         next_episode_path: Optional[str] = None
-        next_episode_season_num: Optional[str] = None
-        next_episode_num: Optional[str] = None
+        next_episode_season_text: Optional[str] = None
+        next_episode_number_text: Optional[str] = None
 
-        def episode_sort_key(ep: Dict[str, Any]) -> tuple:
-            num = ep.get("tmdb_number")
+        def episode_sort_key(episode_item: Dict[str, Any]) -> tuple:
+            num = episode_item.get("tmdb_number")
             if num is not None:
                 try:
-                    return (int(num), ep.get("name", ""))
+                    return (int(num), episode_item.get("name", ""))
                 except ValueError, TypeError:
                     pass
-            name_str = ep.get("name", "")
+            name_str = episode_item.get("name", "")
             parsed = re.search(r"[Ee](\d+)", name_str)
             if parsed:
                 return (int(parsed.group(1)), name_str)
@@ -611,16 +800,24 @@ class SeriesDetailView(QWidget):
             season_data = seasons_dictionary.get(season_name, {})
             episodes_list = season_data.get("episodes", [])
             if hide_missing_future:
-                episodes_list = [ep for ep in episodes_list if ep.get("path")]
+                episodes_list = [
+                    episode_item
+                    for episode_item in episodes_list
+                    if episode_item.get("path")
+                ]
             elif not show_future_episodes:
                 episodes_list = [
-                    ep
-                    for ep in episodes_list
+                    episode_item
+                    for episode_item in episodes_list
                     if not (
-                        ep.get("path") is None
-                        and (not ep.get("air_date") or ep.get("air_date") > today_str)
+                        episode_item.get("path") is None
+                        and (
+                            not episode_item.get("air_date")
+                            or episode_item.get("air_date") > today_str
+                        )
                     )
                 ]
+
             try:
                 sorted_episodes = sorted(episodes_list, key=episode_sort_key)
             except Exception:
@@ -634,12 +831,12 @@ class SeriesDetailView(QWidget):
 
                     season_num_match = re.search(r"\d+", season_name)
                     if season_num_match:
-                        next_episode_season_num = f"S{int(season_num_match.group())}"
+                        next_episode_season_text = f"S{int(season_num_match.group())}"
                     else:
-                        next_episode_season_num = season_name
+                        next_episode_season_text = season_name
 
                     tmdb_number_value = episode_record.get("tmdb_number")
-                    next_episode_num = (
+                    next_episode_number_text = (
                         str(tmdb_number_value)
                         if tmdb_number_value is not None
                         else str(index + 1)
@@ -651,35 +848,45 @@ class SeriesDetailView(QWidget):
         if next_episode_path:
             self._next_episode_path = next_episode_path
             self.play_next_button.setText(
-                f"▶ PLAY {next_episode_season_num}:E{next_episode_num}"
+                f"▶ PLAY {next_episode_season_text}:E{next_episode_number_text}"
             )
             self.play_next_button.setVisible(True)
         else:
             self._next_episode_path = ""
             self.play_next_button.setVisible(False)
 
+        # Repopulate Season Tabs
         for season_name in sorted_season_names:
-            season_data: Dict[str, Any] = seasons_dictionary.get(season_name, {})
-            episodes_list: List[Dict[str, Any]] = season_data.get("episodes", [])
+            season_data = seasons_dictionary.get(season_name, {})
+            episodes_list = season_data.get("episodes", [])
             if hide_missing_future:
-                episodes_list = [ep for ep in episodes_list if ep.get("path")]
+                episodes_list = [
+                    episode for episode in episodes_list if episode.get("path")
+                ]
             elif not show_future_episodes:
                 episodes_list = [
-                    ep
-                    for ep in episodes_list
+                    episode
+                    for episode in episodes_list
                     if not (
-                        ep.get("path") is None
-                        and (not ep.get("air_date") or ep.get("air_date") > today_str)
+                        episode.get("path") is None
+                        and (
+                            not episode.get("air_date")
+                            or episode.get("air_date") > today_str
+                        )
                     )
                 ]
 
-            try:
-                sorted_episodes = sorted(episodes_list, key=episode_sort_key)
-            except Exception:
-                sorted_episodes = episodes_list
+            season_page = QWidget()
+            season_layout = QVBoxLayout(season_page)
+            season_layout.setContentsMargins(0, 5, 0, 0)
+            season_layout.setSpacing(10)
 
-            # Create an explicit QTableWidget layout for absolute robust item targeting under automated tests
-            episode_table: QTableWidget = QTableWidget()
+            # Build episode table
+            episode_table = QTableWidget()
+            self._season_tables[season_name] = episode_table
+            season_layout.addWidget(episode_table)
+
+            # Configure table
             episode_table.setColumnCount(6)
             episode_table.setHorizontalHeaderLabels(
                 ["#", "Episode Title", "Air Date", "Runtime", "Progress", "Details"]
@@ -710,6 +917,11 @@ class SeriesDetailView(QWidget):
             episode_table.verticalHeader().setVisible(False)
             episode_table.verticalHeader().setDefaultSectionSize(32)
             episode_table.setShowGrid(False)
+
+            try:
+                sorted_episodes = sorted(episodes_list, key=episode_sort_key)
+            except Exception:
+                sorted_episodes = episodes_list
 
             episode_table.setRowCount(len(sorted_episodes))
 
@@ -944,12 +1156,6 @@ class SeriesDetailView(QWidget):
                 make_context_menu_slot(episode_table, season_name, sorted_episodes)
             )
 
-            # Create season_page container to house the table and mark season watched button cleanly
-            season_page: QWidget = QWidget()
-            season_layout: QVBoxLayout = QVBoxLayout(season_page)
-            season_layout.setContentsMargins(0, 5, 0, 0)
-            season_layout.setSpacing(10)
-
             season_actions_layout: QHBoxLayout = QHBoxLayout()
             local_episodes = [ep for ep in sorted_episodes if ep.get("path")]
             is_season_watched = len(local_episodes) > 0 and all(
@@ -1009,8 +1215,8 @@ class SeriesDetailView(QWidget):
                     restored_tab = True
                     break
 
-        # Display cast section
-        self._display_cast_section()
+        # Display cast section with preloaded data
+        self._display_cast_section(cast_entries)
 
         if not restored_tab and sorted_season_names:
             target_tab_index: int = 0

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -47,6 +48,8 @@ class MovieDetailView(QWidget):
         self._current_movie_name: str = ""
         self._current_movie_path: str = ""
         self._current_movie_db_id: Optional[str] = None
+        self._cached_movie_data_copy: Optional[Dict[str, Any]] = None
+        self._loading_task_name: Optional[str] = None
 
         self._setup_ui()
         self.controller.movie_selected.connect(self.populate_movie_details)
@@ -216,7 +219,83 @@ class MovieDetailView(QWidget):
             self.poster_label.clear()
             self.poster_label.setText("No Poster")
 
-        self._display_cast_section()
+        # Track the active movie data copy to prevent redundant updates
+        import copy
+
+        self._cached_movie_data_copy = (
+            copy.deepcopy(movie_record) if movie_record else None
+        )
+
+        # Check if an asyncio event loop is running
+        try:
+            import asyncio
+
+            asyncio.get_running_loop()
+            has_event_loop = True
+        except RuntimeError:
+            has_event_loop = False
+
+        if has_event_loop:
+            if hasattr(self, "_loading_task_name") and self._loading_task_name:
+                self.controller.async_task_manager.cancel_task(self._loading_task_name)
+            self._loading_task_name = f"load_movie_details_{movie_name}"
+            self.controller.async_task_manager.create_task(
+                self._load_movie_details_async(movie_name), name=self._loading_task_name
+            )
+        else:
+            logger.debug("No running event loop. Loading movie details synchronously.")
+            movie_database_identifier, cast_entries = self._fetch_movie_db_and_cast(
+                movie_name
+            )
+            self._update_movie_ui(movie_name, movie_database_identifier, cast_entries)
+
+    async def _load_movie_details_async(self, movie_name: str) -> None:
+
+        movie_database_identifier, cast_entries = await asyncio.to_thread(
+            self._fetch_movie_db_and_cast, movie_name
+        )
+        self._update_movie_ui(movie_name, movie_database_identifier, cast_entries)
+
+    def _update_movie_ui(
+        self,
+        movie_name: str,
+        movie_database_identifier: Optional[str],
+        cast_entries: list[dict[str, Any]],
+    ) -> None:
+        if getattr(self.controller, "is_video_playing", False):
+            return
+        self._current_movie_db_id = movie_database_identifier
+        self._display_cast_section(cast_entries)
+
+    def _fetch_movie_db_and_cast(
+        self, movie_name: str
+    ) -> tuple[Optional[str], list[dict[str, Any]]]:
+        """Fetch movie DB ID and cast list (to be run in a background thread)."""
+        movie_database_identifier = None
+        with get_session() as session:
+            statement = select(Movie).where(
+                Movie.library_name == self.controller.current_library_name,
+                Movie.name == movie_name,
+            )
+            movie = session.execute(statement).unique().scalar_one_or_none()
+            if movie is not None:
+                movie_database_identifier = movie.id
+
+        serialized_cast = []
+        if movie_database_identifier:
+            cast_entries = get_cast_for_movie(movie_database_identifier)
+            for cast_entry in cast_entries[:20]:
+                person = cast_entry.person
+                if person:
+                    serialized_cast.append(
+                        {
+                            "person_id": person.id,
+                            "name": person.name,
+                            "profile_path": person.profile_path,
+                            "character": cast_entry.character,
+                        }
+                    )
+        return movie_database_identifier, serialized_cast
 
     def _on_poster_context_menu(self, position: QPoint) -> None:
         """Show context menu when the user right-clicks the movie poster."""
@@ -276,7 +355,7 @@ class MovieDetailView(QWidget):
         logger.info("Cast member clicked in movie detail: %s", person_id)
         self.controller.select_cast_member(person_id)
 
-    def _display_cast_section(self) -> None:
+    def _display_cast_section(self, cast_entries: list[dict[str, Any]]) -> None:
         """Populate the cast grid for the current movie."""
         while self._cast_grid.count():
             item = self._cast_grid.takeAt(0)
@@ -285,18 +364,14 @@ class MovieDetailView(QWidget):
                 if widget is not None:
                     widget.deleteLater()
 
-        movie_id = self._lookup_movie_id()
-        if not movie_id:
-            return
-
-        cast_entries = get_cast_for_movie(movie_id)
         if not cast_entries:
             return
 
-        for cast_entry in cast_entries[:20]:
-            person = cast_entry.person
-            if not person:
-                continue
+        for cast_entry in cast_entries:
+            person_database_identifier = cast_entry["person_id"]
+            person_name = cast_entry["name"]
+            profile_path = cast_entry["profile_path"]
+            character = cast_entry["character"]
 
             card = QFrame()
             card.setFrameShape(QFrame.Shape.StyledPanel)
@@ -312,8 +387,8 @@ class MovieDetailView(QWidget):
             photo = QLabel()
             photo.setFixedSize(60, 60)
             photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            if person.profile_path:
-                pixmap = QPixmap(person.profile_path)
+            if profile_path:
+                pixmap = QPixmap(profile_path)
                 if not pixmap.isNull():
                     scaled_pixmap = pixmap.scaled(
                         60,
@@ -329,7 +404,7 @@ class MovieDetailView(QWidget):
             photo.setStyleSheet("background-color: #0f3460; border-radius: 4px;")
             card_layout.addWidget(photo, 0, Qt.AlignmentFlag.AlignCenter)
 
-            name_label = QLabel(person.name or "Unknown")
+            name_label = QLabel(person_name or "Unknown")
             name_label.setWordWrap(True)
             name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             name_label.setStyleSheet(
@@ -337,14 +412,16 @@ class MovieDetailView(QWidget):
             )
             card_layout.addWidget(name_label)
 
-            if cast_entry.character:
-                character_label = QLabel(cast_entry.character)
+            if character:
+                character_label = QLabel(character)
                 character_label.setWordWrap(True)
                 character_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 character_label.setStyleSheet("color: #aaa; font-size: 9px;")
                 card_layout.addWidget(character_label)
 
-            card.mousePressEvent = self._make_person_click_handler(person.id)
+            card.mousePressEvent = self._make_person_click_handler(
+                person_database_identifier
+            )
             card.setCursor(Qt.CursorShape.PointingHandCursor)
             self._cast_grid.addWidget(card)
 
@@ -396,6 +473,24 @@ class MovieDetailView(QWidget):
             and self.controller.selected_series_name
             in self.controller.cached_library_data
         ):
+            new_data = self.controller.cached_library_data.get(
+                self.controller.selected_series_name
+            )
+            is_scanning = False
+            if hasattr(self.controller, "worker_manager") and hasattr(
+                self.controller.worker_manager, "scan"
+            ):
+                is_scanning = self.controller.worker_manager.scan.is_running
+
+            if is_scanning:
+                if (
+                    hasattr(self, "_cached_movie_data_copy")
+                    and self._cached_movie_data_copy == new_data
+                ):
+                    return
+            import copy
+
+            self._cached_movie_data_copy = copy.deepcopy(new_data) if new_data else None
             self.populate_movie_details(self.controller.selected_series_name)
 
     @Slot()
