@@ -21,7 +21,6 @@ from PySide6.QtGui import QFont, QIcon, QPainter, QPolygon, QColor, QAction
 from lan_streamer.ui_views.proxy import QPixmap
 from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Movie
-from lan_streamer.db.queries_cast import get_cast_for_movie
 from lan_streamer.system.config import config
 from lan_streamer.ui_views.controller import Controller
 
@@ -250,6 +249,9 @@ class MovieDetailView(QWidget):
             self._update_movie_ui(movie_name, movie_database_identifier, cast_entries)
 
     async def _load_movie_details_async(self, movie_name: str) -> None:
+        # Debounce to prevent thread-pool accumulation
+
+        await asyncio.sleep(0.05)
 
         movie_database_identifier, cast_entries = await asyncio.to_thread(
             self._fetch_movie_db_and_cast, movie_name
@@ -271,30 +273,35 @@ class MovieDetailView(QWidget):
         self, movie_name: str
     ) -> tuple[Optional[str], list[dict[str, Any]]]:
         """Fetch movie DB ID and cast list (to be run in a background thread)."""
+        from sqlalchemy.orm import joinedload
+        from lan_streamer.db.models_cast import MediaCast
+
         movie_database_identifier = None
+        serialized_cast = []
         with get_session() as session:
-            statement = select(Movie).where(
-                Movie.library_name == self.controller.current_library_name,
-                Movie.name == movie_name,
+            statement = (
+                select(Movie)
+                .where(
+                    Movie.library_name == self.controller.current_library_name,
+                    Movie.name == movie_name,
+                )
+                .options(joinedload(Movie.media_cast).joinedload(MediaCast.person))
             )
             movie = session.execute(statement).unique().scalar_one_or_none()
             if movie is not None:
                 movie_database_identifier = movie.id
-
-        serialized_cast = []
-        if movie_database_identifier:
-            cast_entries = get_cast_for_movie(movie_database_identifier)
-            for cast_entry in cast_entries[:20]:
-                person = cast_entry.person
-                if person:
-                    serialized_cast.append(
-                        {
-                            "person_id": person.id,
-                            "name": person.name,
-                            "profile_path": person.profile_path,
-                            "character": cast_entry.character,
-                        }
-                    )
+                sorted_cast = sorted(movie.media_cast, key=lambda c: c.sort_order or 0)
+                for cast_entry in sorted_cast[:20]:
+                    person = cast_entry.person
+                    if person:
+                        serialized_cast.append(
+                            {
+                                "person_id": person.id,
+                                "name": person.name,
+                                "profile_path": person.profile_path,
+                                "character": cast_entry.character,
+                            }
+                        )
         return movie_database_identifier, serialized_cast
 
     def _on_poster_context_menu(self, position: QPoint) -> None:
