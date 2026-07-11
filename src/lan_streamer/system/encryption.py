@@ -71,9 +71,11 @@ def get_encryption_key() -> bytes:
             f"Failed to generate and save encryption key to {key_file_path}: {error}"
         )
         # Return a fallback derived key based on machine/user details so we don't crash
-        fallback_source = (
-            f"{os.getlogin() if hasattr(os, 'getlogin') else 'default'}-{Path.home()}"
-        )
+        try:
+            login_name = os.getlogin()
+        except OSError:
+            login_name = "default"
+        fallback_source = f"{login_name}-{Path.home()}"
         return _derive_fernet_key(fallback_source)
 
 

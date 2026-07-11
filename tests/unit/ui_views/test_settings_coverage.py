@@ -185,11 +185,12 @@ def _save_config_no_warning(dialog: SettingsDialog) -> None:
 
 
 class TestSaveConfigParsing:
-    def test_backup_freq_value_error_keeps_zero(
+    def test_backup_freq_value_error_keeps_original(
         self, make_dialog: SettingsDialog
     ) -> None:
-        """Lines 1387-1388: non-integer db backup freq defaults to 0."""
+        """Lines 1506-1510: non-integer db backup freq preserves existing value."""
         dialog = make_dialog
+        original_frequency = config.database_backup_frequency
         dialog.database_backup_frequency_input.setText("not_a_number")
         dialog.database_backup_retention_input.setText("0")
         dialog.config_backup_frequency_input.setText("0")
@@ -200,7 +201,7 @@ class TestSaveConfigParsing:
             patch("lan_streamer.system.logging_handler.set_application_log_level"),
         ):
             dialog.save_config()
-        assert config.database_backup_frequency == 0
+        assert config.database_backup_frequency == original_frequency
 
     def test_backup_retention_value_error_keeps_zero(
         self, make_dialog: SettingsDialog
