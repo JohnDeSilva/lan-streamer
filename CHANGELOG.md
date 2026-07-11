@@ -1,3 +1,10 @@
+## v0.47.0rc1 (2026-07-11)
+
+### Perf
+
+- **ui**: eager load cast and debounce details loading on rapid scrolling
+- **ui**: optimize details view loading and cache checks on macOS
+
 ## v0.47.0rc0 (2026-07-11)
 
 ### Feat
