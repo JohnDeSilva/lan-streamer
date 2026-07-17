@@ -320,6 +320,110 @@ def test_metadata_match_dialog_search_special_characters(mock_match_controller, 
         assert dialog.results_table.item(0, 1).text() == "Love, Death & Robots"
 
 
+def test_metadata_match_dialog_mapping_indicator_tv(mock_match_controller, qtbot):
+    """Mapped TV series result should show ● with green foreground."""
+    config.libraries = {"TV": {"type": "tv"}}
+    mock_match_controller.current_library_name = "TV"
+    mock_match_controller.cached_library_data = {
+        "Cosmos": {
+            "metadata": {
+                "tmdb_identifier": "12345",
+            },
+        },
+    }
+
+    mock_search_results = [
+        {
+            "id": 12345,
+            "name": "Cosmos",
+            "first_air_date": "1980-09-28",
+            "overview": "Overview of Cosmos",
+            "poster_path": "/poster.jpg",
+        }
+    ]
+
+    with patch(
+        "lan_streamer.ui_views.dialogs.metadata_match.tmdb_client.search_series_full",
+        return_value=mock_search_results,
+    ):
+        dialog = MetadataMatchDialog("Cosmos", mock_match_controller)
+        qtbot.addWidget(dialog)
+        dialog.execute_search()
+
+        assert dialog.results_table.rowCount() == 1
+        mapped_name = dialog.results_table.item(0, 1).text()
+        assert mapped_name == "\u25cf Cosmos"
+        foreground = dialog.results_table.item(0, 1).foreground()
+        assert foreground.color().name() == "#4caf50"
+
+
+def test_metadata_match_dialog_mapping_indicator_movie(mock_match_controller, qtbot):
+    """Mapped movie result should show ● with green foreground."""
+    config.libraries = {"Movies": {"type": "movie"}}
+    mock_match_controller.current_library_name = "Movies"
+    mock_match_controller.cached_library_data = {
+        "Interstellar": {
+            "tmdb_identifier": "54321",
+        },
+    }
+
+    mock_search_results = [
+        {
+            "id": 54321,
+            "title": "Interstellar",
+            "release_date": "2014-11-07",
+            "overview": "Overview of Interstellar",
+            "poster_path": "/interstellar_poster.jpg",
+        }
+    ]
+
+    with patch(
+        "lan_streamer.ui_views.dialogs.metadata_match.tmdb_client.search_movie_full",
+        return_value=mock_search_results,
+    ):
+        dialog = MetadataMatchDialog("Interstellar", mock_match_controller)
+        qtbot.addWidget(dialog)
+        dialog.execute_search()
+
+        assert dialog.results_table.rowCount() == 1
+        mapped_name = dialog.results_table.item(0, 1).text()
+        assert mapped_name == "\u25cf Interstellar"
+        foreground = dialog.results_table.item(0, 1).foreground()
+        assert foreground.color().name() == "#4caf50"
+
+
+def test_metadata_match_dialog_no_indicator_when_unmapped(mock_match_controller, qtbot):
+    """Unmapped series should show plain title without symbol."""
+    config.libraries = {"TV": {"type": "tv"}}
+    mock_match_controller.current_library_name = "TV"
+    mock_match_controller.cached_library_data = {
+        "Cosmos": {
+            "metadata": {"tmdb_identifier": ""},
+        },
+    }
+
+    mock_search_results = [
+        {
+            "id": 12345,
+            "name": "Cosmos",
+            "first_air_date": "1980-09-28",
+            "overview": "Overview of Cosmos",
+            "poster_path": "/poster.jpg",
+        }
+    ]
+
+    with patch(
+        "lan_streamer.ui_views.dialogs.metadata_match.tmdb_client.search_series_full",
+        return_value=mock_search_results,
+    ):
+        dialog = MetadataMatchDialog("Cosmos", mock_match_controller)
+        qtbot.addWidget(dialog)
+        dialog.execute_search()
+
+        assert dialog.results_table.rowCount() == 1
+        assert dialog.results_table.item(0, 1).text() == "Cosmos"
+
+
 def test_metadata_match_dialog_search_null_api_fields(mock_match_controller, qtbot):
     config.libraries = {"TV": {"type": "tv"}}
     mock_match_controller.current_library_name = "TV"
