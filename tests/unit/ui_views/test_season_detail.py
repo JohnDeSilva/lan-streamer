@@ -499,9 +499,9 @@ def test_season_detail_tmdb_search(qtbot: Any) -> None:
 
     # Mapper table should be auto-populated with the current season's episodes
     assert view._tmdb_mapper_table.rowCount() == 1
-    assert "Pilot" in view._tmdb_mapper_table.item(0, 1).text()
+    assert "Pilot" in view._tmdb_mapper_table.item(0, 2).text()
     assert "S1" in view._tmdb_mapper_table.item(0, 1).text()
-    combo = view._tmdb_mapper_table.cellWidget(0, 2)
+    combo = view._tmdb_mapper_table.cellWidget(0, 3)
     assert combo is not None
     assert combo.currentData() == "/media/Pilot.mkv"
 
@@ -610,22 +610,22 @@ def test_season_detail_tmdb_mapper_apply(qtbot: Any) -> None:
         assert view._tmdb_mapper_table.rowCount() == 2
 
         # TMDB Entry column shows series title with season
-        assert "Test Series" in view._tmdb_mapper_table.item(0, 0).text()
-        assert "S1" in view._tmdb_mapper_table.item(0, 0).text()
+        assert "Test Series" in view._tmdb_mapper_table.item(0, 1).text()
+        assert "S1" in view._tmdb_mapper_table.item(0, 1).text()
 
         # Episode # column shows season, episode, and name
-        assert "S1 E01 - Pilot" in view._tmdb_mapper_table.item(0, 1).text()
-        assert "S1 E02 - Episode 2" in view._tmdb_mapper_table.item(1, 1).text()
+        assert "S1 E01 - Pilot" in view._tmdb_mapper_table.item(0, 2).text()
+        assert "S1 E02 - Episode 2" in view._tmdb_mapper_table.item(1, 2).text()
 
         # Mapped Local File column contains combos with local files
-        combo_0 = view._tmdb_mapper_table.cellWidget(0, 2)
+        combo_0 = view._tmdb_mapper_table.cellWidget(0, 3)
         assert combo_0 is not None
         assert combo_0.count() == 3  # "Unmapped / None" + 2 local files
         assert (
             combo_0.currentData() == "/media/Pilot.mkv"
         )  # auto-matched by tmdb_episode_identifier
 
-        combo_1 = view._tmdb_mapper_table.cellWidget(1, 2)
+        combo_1 = view._tmdb_mapper_table.cellWidget(1, 3)
         assert combo_1 is not None
         assert combo_1.currentData() == "/media/Ep2.mkv"  # auto-matched
 
@@ -813,12 +813,12 @@ def test_season_detail_mal_apply(qtbot: Any) -> None:
         assert view._mal_row_episodes == [1, 2]
 
         # Auto-matched: row 0 maps to first local episode
-        combo_0 = view._mal_mapper_table.cellWidget(0, 2)
+        combo_0 = view._mal_mapper_table.cellWidget(0, 3)
         assert combo_0 is not None
         assert combo_0.currentData() == "/anime/Frieren/S01E01.mkv"
 
         # Row 1 maps to second local episode
-        combo_1 = view._mal_mapper_table.cellWidget(1, 2)
+        combo_1 = view._mal_mapper_table.cellWidget(1, 3)
         assert combo_1 is not None
         assert combo_1.currentData() == "/anime/Frieren/S01E02.mkv"
 
@@ -994,23 +994,23 @@ def test_season_detail_mal_load_multiple_entries(qtbot: Any) -> None:
     assert view._mal_mapper_table.rowCount() == 2
 
     # Column 0 shows the correct anime title for each row
-    assert view._mal_mapper_table.item(0, 0).text() == "Movie A"
-    assert view._mal_mapper_table.item(1, 0).text() == "Movie B"
+    assert view._mal_mapper_table.item(0, 1).text() == "Movie A"
+    assert view._mal_mapper_table.item(1, 1).text() == "Movie B"
 
     # Each row's item has the correct anime_id stored
-    assert view._mal_mapper_table.item(0, 0).data(Qt.ItemDataRole.UserRole) == 111
-    assert view._mal_mapper_table.item(1, 0).data(Qt.ItemDataRole.UserRole) == 222
+    assert view._mal_mapper_table.item(0, 1).data(Qt.ItemDataRole.UserRole) == 111
+    assert view._mal_mapper_table.item(1, 1).data(Qt.ItemDataRole.UserRole) == 222
 
     # Episode # column
-    assert view._mal_mapper_table.item(0, 1).text() == "Episode 1"
-    assert view._mal_mapper_table.item(1, 1).text() == "Episode 1"
+    assert view._mal_mapper_table.item(0, 2).text() == "Episode 1"
+    assert view._mal_mapper_table.item(1, 2).text() == "Episode 1"
 
     # Combos pre-selected from saved myanimelist_episode_number
-    combo_0 = view._mal_mapper_table.cellWidget(0, 2)
+    combo_0 = view._mal_mapper_table.cellWidget(0, 3)
     assert combo_0 is not None
     assert combo_0.currentData() == "/anime/Specials/S00E01.mkv"
 
-    combo_1 = view._mal_mapper_table.cellWidget(1, 2)
+    combo_1 = view._mal_mapper_table.cellWidget(1, 3)
     assert combo_1 is not None
     assert combo_1.currentData() == "/anime/Specials/S00E02.mkv"
 
@@ -1099,15 +1099,15 @@ def test_season_detail_mal_append_entry(qtbot: Any) -> None:
     assert view._mal_row_episodes == [1, 2, 1]
 
     # First two rows are from first entry
-    assert view._mal_mapper_table.item(0, 0).text() == "TV Series MAL"
-    assert view._mal_mapper_table.item(1, 0).text() == "TV Series MAL"
+    assert view._mal_mapper_table.item(0, 1).text() == "TV Series MAL"
+    assert view._mal_mapper_table.item(1, 1).text() == "TV Series MAL"
     # Third row is from appended entry
-    assert view._mal_mapper_table.item(2, 0).text() == "Movie Special"
+    assert view._mal_mapper_table.item(2, 1).text() == "Movie Special"
 
     # Episode numbers
-    assert view._mal_mapper_table.item(0, 1).text() == "Episode 1"
-    assert view._mal_mapper_table.item(1, 1).text() == "Episode 2"
-    assert view._mal_mapper_table.item(2, 1).text() == "Episode 1"
+    assert view._mal_mapper_table.item(0, 2).text() == "Episode 1"
+    assert view._mal_mapper_table.item(1, 2).text() == "Episode 2"
+    assert view._mal_mapper_table.item(2, 2).text() == "Episode 1"
 
     # _mal_entries has both entries tracked
     assert len(view._mal_entries) == 2
@@ -1158,7 +1158,7 @@ def test_season_detail_mal_apply_multiple_entries(qtbot: Any) -> None:
         view.display_season("Test Series", "Season 1")
 
     # Set up first entry's mapping manually: pick first local file
-    combo_0 = view._mal_mapper_table.cellWidget(0, 2)
+    combo_0 = view._mal_mapper_table.cellWidget(0, 3)
     assert combo_0 is not None
     # Select S01E01.mkv
     for idx in range(1, combo_0.count()):
@@ -1193,7 +1193,7 @@ def test_season_detail_mal_apply_multiple_entries(qtbot: Any) -> None:
         view._on_add_mal_entry()
 
     # Set up second entry's mapping: pick the special file
-    combo_1 = view._mal_mapper_table.cellWidget(1, 2)
+    combo_1 = view._mal_mapper_table.cellWidget(1, 3)
     assert combo_1 is not None
     for idx in range(1, combo_1.count()):
         if combo_1.itemData(idx) == "/anime/Show/Specials/S00E01.mkv":
@@ -1686,7 +1686,7 @@ def test_on_tmdb_entry_selected_populates(qtbot: Any) -> None:
         {"id": 12345, "title": "Test Series", "season_number": 1}
     ]
     assert view._tmdb_mapper_table.rowCount() == 1
-    assert "Test Series" in view._tmdb_mapper_table.item(0, 0).text()
+    assert "Test Series" in view._tmdb_mapper_table.item(0, 1).text()
     assert view._tmdb_search_input.text() == ""
 
 
@@ -1995,15 +1995,15 @@ def test_mal_apply_skips_malformed_rows(qtbot: Any) -> None:
     item0 = QTableWidgetItem("Test")
     item0.setData(Qt.ItemDataRole.UserRole, 123)
     view._mal_mapper_table.setRowCount(2)
-    view._mal_mapper_table.setItem(0, 0, item0)
+    view._mal_mapper_table.setItem(0, 1, item0)
     combo0 = QComboBox()
     combo0.addItem("E01.mkv", userData="/media/E01.mkv")
     combo0.setCurrentIndex(0)
-    view._mal_mapper_table.setCellWidget(0, 2, combo0)
+    view._mal_mapper_table.setCellWidget(0, 3, combo0)
 
     combo1 = QComboBox()
     combo1.addItem("Unmapped")
-    view._mal_mapper_table.setCellWidget(1, 2, combo1)
+    view._mal_mapper_table.setCellWidget(1, 3, combo1)
 
     with (
         patch("lan_streamer.ui_views.season_detail.db.save_library"),
@@ -2051,11 +2051,11 @@ def test_mal_apply_clears_unmapped(qtbot: Any) -> None:
     item0 = QTableWidgetItem("Test")
     item0.setData(Qt.ItemDataRole.UserRole, 123)
     view._mal_mapper_table.setRowCount(1)
-    view._mal_mapper_table.setItem(0, 0, item0)
+    view._mal_mapper_table.setItem(0, 1, item0)
     combo0 = QComboBox()
     combo0.addItem("Unmapped / None", userData=None)
     combo0.setCurrentIndex(0)
-    view._mal_mapper_table.setCellWidget(0, 2, combo0)
+    view._mal_mapper_table.setCellWidget(0, 3, combo0)
 
     with (
         patch("lan_streamer.ui_views.season_detail.db.save_library"),
@@ -2162,15 +2162,15 @@ def test_mal_apply_skips_row_anime_id_none(qtbot: Any) -> None:
     item0 = QTableWidgetItem("Test")
     item0.setData(Qt.ItemDataRole.UserRole, 123)
     view._mal_mapper_table.setRowCount(2)
-    view._mal_mapper_table.setItem(0, 0, item0)
+    view._mal_mapper_table.setItem(0, 1, item0)
     combo0 = QComboBox()
     combo0.addItem("E01.mkv", userData="/media/E01.mkv")
     combo0.setCurrentIndex(0)
-    view._mal_mapper_table.setCellWidget(0, 2, combo0)
+    view._mal_mapper_table.setCellWidget(0, 3, combo0)
 
     # Row 1: entry_item exists but UserRole is None (no anime_id)
     bad_item = QTableWidgetItem("Bad")
-    view._mal_mapper_table.setItem(1, 0, bad_item)
+    view._mal_mapper_table.setItem(1, 1, bad_item)
 
     with (
         patch("lan_streamer.ui_views.season_detail.db.save_library"),
@@ -2221,11 +2221,11 @@ def test_mal_apply_adds_missing_metadata_key(qtbot: Any) -> None:
     item0 = QTableWidgetItem("Test")
     item0.setData(Qt.ItemDataRole.UserRole, 123)
     view._mal_mapper_table.setRowCount(1)
-    view._mal_mapper_table.setItem(0, 0, item0)
+    view._mal_mapper_table.setItem(0, 1, item0)
     combo0 = QComboBox()
     combo0.addItem("E01.mkv", userData="/media/E01.mkv")
     combo0.setCurrentIndex(0)
-    view._mal_mapper_table.setCellWidget(0, 2, combo0)
+    view._mal_mapper_table.setCellWidget(0, 3, combo0)
 
     with (
         patch("lan_streamer.ui_views.season_detail.db.save_library"),

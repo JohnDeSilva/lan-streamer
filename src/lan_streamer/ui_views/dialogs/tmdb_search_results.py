@@ -2,10 +2,10 @@
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QBrush, QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -45,6 +45,7 @@ class TmdbSearchResultsDialog(QDialog):
         results: List[Dict[str, Any]],
         current_season_name: str = "",
         parent: Optional[QWidget] = None,
+        existing_mapped_ids: Optional[Set[int]] = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("TMDB Series Search Results")
@@ -56,6 +57,7 @@ class TmdbSearchResultsDialog(QDialog):
         self._current_season_name = current_season_name
         self._cached_thumbnails: Dict[str, QIcon] = {}
         self._pending_thumbnails: List[tuple[int, str]] = []
+        self._existing_mapped_ids: Set[int] = existing_mapped_ids or set()
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
@@ -145,7 +147,11 @@ class TmdbSearchResultsDialog(QDialog):
                 self._pending_thumbnails.append((row_index, poster_url))
             self._results_table.setItem(row_index, 0, thumb_item)
 
-            title_item = QTableWidgetItem(title)
+            is_mapped = series_id is not None and series_id in self._existing_mapped_ids
+            title_text = f"● {title}" if is_mapped else title
+            title_item = QTableWidgetItem(title_text)
+            if is_mapped:
+                title_item.setForeground(QBrush(QColor("#4caf50")))
             self._results_table.setItem(row_index, 1, title_item)
 
             seasons_item = QTableWidgetItem(str(season_count) if season_count else "?")

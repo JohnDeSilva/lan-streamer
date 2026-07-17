@@ -96,6 +96,42 @@ class TestDialogConstruction:
 # ===================================================================
 
 
+class TestExistingMappedIds:
+    """Tests for the existing_mapped_ids parameter that shows ● on mapped entries."""
+
+    def test_mapped_entry_shows_symbol(self, qtbot) -> None:
+        results = [_make_result(42, "Mapped Series")]
+        dialog = TmdbSearchResultsDialog(results=results, existing_mapped_ids={42})
+        qtbot.addWidget(dialog)
+        title_text = dialog._results_table.item(0, 1).text()
+        assert title_text == "\u25cf Mapped Series"
+
+    def test_mapped_entry_has_green_foreground(self, qtbot) -> None:
+        results = [_make_result(42, "Green Title")]
+        dialog = TmdbSearchResultsDialog(results=results, existing_mapped_ids={42})
+        qtbot.addWidget(dialog)
+        foreground = dialog._results_table.item(0, 1).foreground()
+        assert foreground.color().name() == "#4caf50"
+
+    def test_unmapped_entry_no_symbol(self, qtbot) -> None:
+        results = [_make_result(42, "Plain Title")]
+        dialog = TmdbSearchResultsDialog(results=results, existing_mapped_ids={99})
+        qtbot.addWidget(dialog)
+        assert dialog._results_table.item(0, 1).text() == "Plain Title"
+
+    def test_no_existing_ids_no_symbol(self, qtbot) -> None:
+        results = [_make_result(42, "No Indicator")]
+        dialog = TmdbSearchResultsDialog(results=results)
+        qtbot.addWidget(dialog)
+        assert dialog._results_table.item(0, 1).text() == "No Indicator"
+
+    def test_empty_existing_ids_no_symbol(self, qtbot) -> None:
+        results = [_make_result(42, "Empty Set")]
+        dialog = TmdbSearchResultsDialog(results=results, existing_mapped_ids=set())
+        qtbot.addWidget(dialog)
+        assert dialog._results_table.item(0, 1).text() == "Empty Set"
+
+
 class TestPopulateTable:
     def test_user_role_data(self, qtbot) -> None:
         results = [_make_result(42, "My Title")]
