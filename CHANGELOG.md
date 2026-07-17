@@ -1,3 +1,9 @@
+## v0.48.0 (2026-07-17)
+
+### Feat
+
+- **ui**: add mapping status indicators to TMDB and MAL mapper tabs
+
 ## v0.48.0rc0 (2026-07-17)
 
 ### Feat
