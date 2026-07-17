@@ -1,6 +1,7 @@
 import logging
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
+from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import (
     QDialog,
     QWidget,
@@ -102,6 +103,30 @@ class MetadataMatchDialog(QDialog):
 
         main_layout.addLayout(bottom_buttons_layout)
 
+    def _resolve_mapped_identifiers(self) -> Set[str]:
+        """Return the set of TMDB IDs currently mapped to this series or movie."""
+        mapped: Set[str] = set()
+        library_config = config.libraries.get(self.controller.current_library_name, {})
+        is_movie = library_config.get("type", "tv") == "movie"
+        record = self.controller.cached_library_data.get(self.series_name, {})
+        if not record:
+            logger.info(
+                "Series '%s' not found in cached library data", self.series_name
+            )
+            return mapped
+        if is_movie:
+            tid = record.get("tmdb_identifier", "") or ""
+            if tid:
+                mapped.add(tid)
+        else:
+            meta = record.get("metadata", {})
+            tid = meta.get("tmdb_identifier", "") or ""
+            if tid:
+                mapped.add(tid)
+        if mapped:
+            logger.info("Found existing TMDB mapping IDs: %s", mapped)
+        return mapped
+
     @Slot()
     def execute_search(self) -> None:
         query_string: str = self.search_input.text().strip()
@@ -112,6 +137,8 @@ class MetadataMatchDialog(QDialog):
         self.results_table.clearContents()
         self.results_table.setRowCount(0)
         self.search_results_list = []
+
+        mapped_ids = self._resolve_mapped_identifiers()
 
         library_config = config.libraries.get(self.controller.current_library_name, {})
         is_movie = library_config.get("type", "tv") == "movie"
@@ -148,12 +175,21 @@ class MetadataMatchDialog(QDialog):
         logger.info(
             f"MetadataMatchDialog search found {len(self.search_results_list)} results for '{query_string}'"
         )
+        green_brush = QBrush(QColor("#4caf50"))
         self.results_table.setRowCount(len(self.search_results_list))
         for row_index, result_dictionary in enumerate(self.search_results_list):
             id_item: QTableWidgetItem = QTableWidgetItem(result_dictionary["id"])
             self.results_table.setItem(row_index, 0, id_item)
 
-            name_item: QTableWidgetItem = QTableWidgetItem(result_dictionary["name"])
+            is_mapped = result_dictionary["id"] in mapped_ids
+            name_text = (
+                f"● {result_dictionary['name']}"
+                if is_mapped
+                else result_dictionary["name"]
+            )
+            name_item: QTableWidgetItem = QTableWidgetItem(name_text)
+            if is_mapped:
+                name_item.setForeground(green_brush)
             self.results_table.setItem(row_index, 1, name_item)
 
             date_item: QTableWidgetItem = QTableWidgetItem(

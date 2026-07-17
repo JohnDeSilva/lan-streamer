@@ -1,10 +1,10 @@
 """Dialog for selecting a MyAnimeList entry from search results."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QBrush, QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -59,6 +59,7 @@ class MalSearchResultsDialog(QDialog):
         self,
         results: List[Dict[str, Any]],
         parent: Optional[QWidget] = None,
+        existing_mapped_ids: Optional[Set[int]] = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("MyAnimeList Search Results")
@@ -68,6 +69,7 @@ class MalSearchResultsDialog(QDialog):
         self._selected_title: Optional[str] = None
         self._cached_thumbnails: Dict[str, QIcon] = {}
         self._pending_thumbnails: List[tuple[int, str]] = []
+        self._existing_mapped_ids: Set[int] = existing_mapped_ids or set()
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
@@ -173,7 +175,11 @@ class MalSearchResultsDialog(QDialog):
             self._results_table.setItem(row_index, 0, thumb_item)
 
             # Column 1: Title
-            title_item = QTableWidgetItem(title)
+            is_mapped = anime_id is not None and anime_id in self._existing_mapped_ids
+            title_text = f"● {title}" if is_mapped else title
+            title_item = QTableWidgetItem(title_text)
+            if is_mapped:
+                title_item.setForeground(QBrush(QColor("#4caf50")))
             if alternate_titles_text:
                 title_item.setToolTip(alternate_titles_text)
             self._results_table.setItem(row_index, 1, title_item)

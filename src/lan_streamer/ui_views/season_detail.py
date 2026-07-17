@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal, QPoint
-from PySide6.QtGui import QFont, QPixmap, QColor, QAction
+from PySide6.QtGui import QBrush, QFont, QPixmap, QColor, QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -758,9 +758,9 @@ class SeasonDetailView(QWidget):
         layout.addLayout(add_another_layout)
 
         self._tmdb_mapper_table = QTableWidget()
-        self._tmdb_mapper_table.setColumnCount(3)
+        self._tmdb_mapper_table.setColumnCount(4)
         self._tmdb_mapper_table.setHorizontalHeaderLabels(
-            ["TMDB Entry", "Episode #", "Mapped Local File"]
+            ["Status", "TMDB Entry", "Episode #", "Mapped Local File"]
         )
         self._tmdb_mapper_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
@@ -769,9 +769,12 @@ class SeasonDetailView(QWidget):
             1, QHeaderView.ResizeMode.ResizeToContents
         )
         self._tmdb_mapper_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.Stretch
+            2, QHeaderView.ResizeMode.ResizeToContents
         )
-        self._tmdb_mapper_table.setColumnWidth(1, 100)
+        self._tmdb_mapper_table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.Stretch
+        )
+        self._tmdb_mapper_table.setColumnWidth(2, 100)
         self._tmdb_mapper_table.verticalHeader().setDefaultSectionSize(40)
         self._tmdb_mapper_table.verticalHeader().setVisible(False)
         layout.addWidget(self._tmdb_mapper_table)
@@ -996,7 +999,14 @@ class SeasonDetailView(QWidget):
                     TmdbSearchResultsDialog,
                 )
 
-                dialog = TmdbSearchResultsDialog(results, season_name, self)
+                existing_ids = (
+                    {entry["id"] for entry in self._tmdb_entries}
+                    if self._tmdb_entries
+                    else None
+                )
+                dialog = TmdbSearchResultsDialog(
+                    results, season_name, self, existing_mapped_ids=existing_ids
+                )
                 if dialog.exec() == QDialog.DialogCode.Accepted:
                     series_id = dialog.selected_id()
                     title = dialog.selected_title()
@@ -1041,7 +1051,17 @@ class SeasonDetailView(QWidget):
             TmdbSearchResultsDialog,
         )
 
-        dialog = TmdbSearchResultsDialog(results, self._current_season_name or "", self)
+        existing_ids = (
+            {entry["id"] for entry in self._tmdb_entries}
+            if self._tmdb_entries
+            else None
+        )
+        dialog = TmdbSearchResultsDialog(
+            results,
+            self._current_season_name or "",
+            self,
+            existing_mapped_ids=existing_ids,
+        )
         if dialog.exec() == QDialog.DialogCode.Accepted:
             series_id = dialog.selected_id()
             title = dialog.selected_title()
@@ -1079,7 +1099,17 @@ class SeasonDetailView(QWidget):
             TmdbSearchResultsDialog,
         )
 
-        dialog = TmdbSearchResultsDialog(results, self._current_season_name or "", self)
+        existing_ids = (
+            {entry["id"] for entry in self._tmdb_entries}
+            if self._tmdb_entries
+            else None
+        )
+        dialog = TmdbSearchResultsDialog(
+            results,
+            self._current_season_name or "",
+            self,
+            existing_mapped_ids=existing_ids,
+        )
         if dialog.exec() == QDialog.DialogCode.Accepted:
             series_id = dialog.selected_id()
             title = dialog.selected_title()
@@ -1219,7 +1249,7 @@ class SeasonDetailView(QWidget):
 
         used_paths: set[str] = set()
         for check_row in range(start_row):
-            combo = self._tmdb_mapper_table.cellWidget(check_row, 2)
+            combo = self._tmdb_mapper_table.cellWidget(check_row, 3)
             if isinstance(combo, QComboBox) and combo.currentData():
                 used_paths.add(combo.currentData())
         if used_paths:
@@ -1235,7 +1265,14 @@ class SeasonDetailView(QWidget):
             ep_number = tmdb_ep.get("episode_number") or (tmdb_ep.get("order", 0) + 1)
             ep_air_date = tmdb_ep.get("air_date") or ""
 
-            # Column 0: TMDB Entry (series title + season)
+            # Column 0: Status
+            status_item = QTableWidgetItem("○")
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            status_item.setForeground(QBrush(QColor("#6b7280")))
+            status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self._tmdb_mapper_table.setItem(row_idx, 0, status_item)
+
+            # Column 1: TMDB Entry (series title + season)
             display_label = f"{series_title} (S{season_number})"
             entry_item = QTableWidgetItem(display_label)
             entry_item.setData(Qt.ItemDataRole.UserRole, series_id)
@@ -1245,16 +1282,16 @@ class SeasonDetailView(QWidget):
             entry_item.setData(Qt.ItemDataRole.UserRole + 4, ep_air_date)
             entry_item.setData(Qt.ItemDataRole.UserRole + 5, season_number)
             entry_item.setFlags(entry_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self._tmdb_mapper_table.setItem(row_idx, 0, entry_item)
+            self._tmdb_mapper_table.setItem(row_idx, 1, entry_item)
 
-            # Column 1: Episode # with name
+            # Column 2: Episode # with name
             ep_num_item = QTableWidgetItem(
                 f"S{season_number} E{ep_number:02d} - {ep_name}"
             )
             ep_num_item.setFlags(ep_num_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self._tmdb_mapper_table.setItem(row_idx, 1, ep_num_item)
+            self._tmdb_mapper_table.setItem(row_idx, 2, ep_num_item)
 
-            # Column 2: Mapped Local File
+            # Column 3: Mapped Local File
             combo = QComboBox()
             combo.addItem("Unmapped / None", userData=None)
             selected_idx = 0
@@ -1282,7 +1319,11 @@ class SeasonDetailView(QWidget):
                         selected_idx = combo_idx
                         break
 
-            if selected_idx == 0:
+            is_mapped = selected_idx > 0
+            if is_mapped:
+                status_item.setText("●")
+                status_item.setForeground(QBrush(QColor("#4caf50")))
+            if not is_mapped:
                 logger.debug(
                     "TMDB populate row %d: ep '%s' (#%d) -> Unmapped "
                     "(combo has %d choices)",
@@ -1302,7 +1343,7 @@ class SeasonDetailView(QWidget):
                 )
 
             combo.setCurrentIndex(selected_idx)
-            self._tmdb_mapper_table.setCellWidget(row_idx, 2, combo)
+            self._tmdb_mapper_table.setCellWidget(row_idx, 3, combo)
 
     def _on_apply_metadata_mappings(self) -> None:
         if not self._tmdb_mapper_episodes:
@@ -1329,11 +1370,11 @@ class SeasonDetailView(QWidget):
 
         updates: Dict[str, Dict[str, Any]] = {}
         for row_idx in range(self._tmdb_mapper_table.rowCount()):
-            combo = self._tmdb_mapper_table.cellWidget(row_idx, 2)
+            combo = self._tmdb_mapper_table.cellWidget(row_idx, 3)
             if isinstance(combo, QComboBox):
                 selected_path = combo.currentData()
                 if selected_path:
-                    entry_item = self._tmdb_mapper_table.item(row_idx, 0)
+                    entry_item = self._tmdb_mapper_table.item(row_idx, 1)
                     if entry_item:
                         series_id = entry_item.data(Qt.ItemDataRole.UserRole)
                         ep_id = entry_item.data(Qt.ItemDataRole.UserRole + 1)
@@ -1417,9 +1458,9 @@ class SeasonDetailView(QWidget):
         layout.addLayout(add_another_layout)
 
         self._mal_mapper_table = QTableWidget()
-        self._mal_mapper_table.setColumnCount(3)
+        self._mal_mapper_table.setColumnCount(4)
         self._mal_mapper_table.setHorizontalHeaderLabels(
-            ["MAL Entry", "Episode #", "Mapped Local File"]
+            ["Status", "MAL Entry", "Episode #", "Mapped Local File"]
         )
         self._mal_mapper_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
@@ -1428,9 +1469,12 @@ class SeasonDetailView(QWidget):
             1, QHeaderView.ResizeMode.ResizeToContents
         )
         self._mal_mapper_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.Stretch
+            2, QHeaderView.ResizeMode.ResizeToContents
         )
-        self._mal_mapper_table.setColumnWidth(1, 100)
+        self._mal_mapper_table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.Stretch
+        )
+        self._mal_mapper_table.setColumnWidth(2, 100)
         self._mal_mapper_table.verticalHeader().setDefaultSectionSize(40)
         self._mal_mapper_table.verticalHeader().setVisible(False)
         layout.addWidget(self._mal_mapper_table)
@@ -1600,7 +1644,10 @@ class SeasonDetailView(QWidget):
             MalSearchResultsDialog,
         )
 
-        dialog = MalSearchResultsDialog(results, self)
+        existing_ids = (
+            {entry["id"] for entry in self._mal_entries} if self._mal_entries else None
+        )
+        dialog = MalSearchResultsDialog(results, self, existing_mapped_ids=existing_ids)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             anime_id = dialog.selected_id()
             if anime_id:
@@ -1638,7 +1685,10 @@ class SeasonDetailView(QWidget):
             MalSearchResultsDialog,
         )
 
-        dialog = MalSearchResultsDialog(results, self)
+        existing_ids = (
+            {entry["id"] for entry in self._mal_entries} if self._mal_entries else None
+        )
+        dialog = MalSearchResultsDialog(results, self, existing_mapped_ids=existing_ids)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             anime_id = dialog.selected_id()
             title = dialog.selected_title()
@@ -1728,7 +1778,7 @@ class SeasonDetailView(QWidget):
         # Collect local file paths already used in existing rows
         used_paths: set[str] = set()
         for check_row in range(start_row):
-            combo = self._mal_mapper_table.cellWidget(check_row, 2)
+            combo = self._mal_mapper_table.cellWidget(check_row, 3)
             if isinstance(combo, QComboBox) and combo.currentData():
                 used_paths.add(combo.currentData())
         if used_paths:
@@ -1740,18 +1790,25 @@ class SeasonDetailView(QWidget):
         for offset, mal_ep_num in enumerate(new_ep_numbers):
             row_idx = start_row + offset
 
-            # Column 0: MAL Entry (anime title)
+            # Column 0: Status
+            status_item = QTableWidgetItem("○")
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            status_item.setForeground(QBrush(QColor("#6b7280")))
+            status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self._mal_mapper_table.setItem(row_idx, 0, status_item)
+
+            # Column 1: MAL Entry (anime title)
             entry_item = QTableWidgetItem(anime_title)
             entry_item.setData(Qt.ItemDataRole.UserRole, anime_id)
             entry_item.setFlags(entry_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self._mal_mapper_table.setItem(row_idx, 0, entry_item)
+            self._mal_mapper_table.setItem(row_idx, 1, entry_item)
 
-            # Column 1: Episode #
+            # Column 2: Episode #
             ep_item = QTableWidgetItem(f"Episode {mal_ep_num}")
             ep_item.setFlags(ep_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self._mal_mapper_table.setItem(row_idx, 1, ep_item)
+            self._mal_mapper_table.setItem(row_idx, 2, ep_item)
 
-            # Column 2: Mapped Local File
+            # Column 3: Mapped Local File
             combo = QComboBox()
             combo.addItem("Unmapped / None", userData=None)
             selected_idx = 0
@@ -1785,7 +1842,11 @@ class SeasonDetailView(QWidget):
                         mal_ep_num,
                     )
 
-            if selected_idx == 0:
+            is_mapped = selected_idx > 0
+            if is_mapped:
+                status_item.setText("●")
+                status_item.setForeground(QBrush(QColor("#4caf50")))
+            if not is_mapped:
                 logger.debug(
                     "MAL populate row %d: ep #%d -> Unmapped (combo has %d choices)",
                     row_idx,
@@ -1801,7 +1862,7 @@ class SeasonDetailView(QWidget):
                 )
 
             combo.setCurrentIndex(selected_idx)
-            self._mal_mapper_table.setCellWidget(row_idx, 2, combo)
+            self._mal_mapper_table.setCellWidget(row_idx, 3, combo)
 
     def _on_apply_mal_mappings(self) -> None:
         season_name = self._current_season_name
@@ -1829,7 +1890,7 @@ class SeasonDetailView(QWidget):
         active_ids: set[int] = set()
         updates: Dict[str, Dict[str, Any]] = {}
         for row_idx in range(self._mal_mapper_table.rowCount()):
-            entry_item = self._mal_mapper_table.item(row_idx, 0)
+            entry_item = self._mal_mapper_table.item(row_idx, 1)
             if entry_item is None:
                 continue
             row_anime_id: Optional[int] = entry_item.data(Qt.ItemDataRole.UserRole)
@@ -1837,7 +1898,7 @@ class SeasonDetailView(QWidget):
                 continue
             active_ids.add(row_anime_id)
 
-            combo = self._mal_mapper_table.cellWidget(row_idx, 2)
+            combo = self._mal_mapper_table.cellWidget(row_idx, 3)
             if isinstance(combo, QComboBox):
                 selected_path = combo.currentData()
                 if selected_path:
