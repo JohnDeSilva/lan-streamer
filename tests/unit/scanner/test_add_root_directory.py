@@ -365,3 +365,28 @@ def test_file_moved_between_roots_preserves_episode_and_watched(tmp_path: Path) 
     assert len(versions) == 1, (
         f"Expected exactly 1 version after cleanup; got {len(versions)}"
     )
+
+    # ------------------------------------------------------------------
+    #  Verify default_path directly in the DB (not just via load_library)
+    # ------------------------------------------------------------------
+    from lan_streamer.db.connection import get_session as _get_session
+    from lan_streamer.db.models import Episode as _Episode
+    from sqlalchemy import select as _select
+
+    with _get_session() as _session:
+        _ep_db = _session.scalars(
+            _select(_Episode).where(_Episode.name == "Episode 1")
+        ).first()
+        assert _ep_db is not None, "Episode must exist in DB"
+        assert _ep_db.default_path is not None, (
+            f"default_path must not be None; got {_ep_db.default_path!r}"
+        )
+        assert str(ep_b.absolute()) in (_ep_db.default_path or ""), (
+            f"default_path must point to new location; "
+            f"expected '{ep_b.absolute()}', got '{_ep_db.default_path}'"
+        )
+        _mfs = _ep_db.media_files
+        assert len(_mfs) >= 1, "Must have at least 1 media_file"
+        assert any(_mf.path and str(ep_b.absolute()) in _mf.path for _mf in _mfs), (
+            f"New path must be in media_files: {[m.path for m in _mfs]}"
+        )
