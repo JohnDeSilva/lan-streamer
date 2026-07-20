@@ -1,3 +1,9 @@
+## v0.48.1rc0 (2026-07-20)
+
+### Fix
+
+- **db**: preserve valid media_files in cleanup when default_path file is missing
+
 ## v0.48.0 (2026-07-17)
 
 ### Feat
