@@ -814,11 +814,25 @@ def _cleanup_tv_library(
                     session.delete(episode)
                     stats["episodes_removed"] = stats.get("episodes_removed", 0) + 1
                 elif path and not Path(path).exists():
-                    logger.info(
-                        f"Cleanup: Setting path=None for missing episode "
-                        f"'{episode.name}' (was '{path}')"
-                    )
-                    episode.path = None
+                    # Check if any media file still exists at a valid path.
+                    valid_paths = [
+                        mf.path
+                        for mf in episode.media_files
+                        if mf.path and Path(mf.path).exists()
+                    ]
+                    if valid_paths:
+                        logger.info(
+                            f"Cleanup: Updating default_path for episode "
+                            f"'{episode.name}' from '{path}' to '{valid_paths[0]}' "
+                            f"(valid media_files still exist)"
+                        )
+                        episode.default_path = valid_paths[0]
+                    else:
+                        logger.info(
+                            f"Cleanup: Setting path=None for missing episode "
+                            f"'{episode.name}' (was '{path}')"
+                        )
+                        episode.path = None
                     stats["episodes"] += 1
 
 
