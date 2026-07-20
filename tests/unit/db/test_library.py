@@ -410,6 +410,67 @@ def test_cleanup_tv_library_removes_missing_episode_without_metadata(
         assert stats["series"] == 0
 
 
+def test_cleanup_tv_library_preserves_valid_media_files(mock_db_file, tmp_path) -> None:
+    """When default_path points to a missing file but other media_files are
+    valid, _cleanup_tv_library must update default_path rather than nuking
+    everything via episode.path = None."""
+    from lan_streamer.db.library_tv import _cleanup_tv_library
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import Series, Season, Episode, MediaFile
+
+    series_dir = tmp_path / "ShowWithValidFiles"
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir(parents=True)
+
+    valid_file = season_dir / "S01E01.mkv"
+    valid_file.touch()
+
+    with get_session() as session:
+        series = Series(name="ShowWithValidFiles", library_name="L")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+
+        # Create an episode whose default_path points to a missing file,
+        # but which also has a valid media_file at a different path.
+        ep = Episode(
+            season_id=season.id,
+            name="E1",
+            path="/nonexistent/old.mkv",
+            tmdb_number=1,
+        )
+        ep.media_files.append(MediaFile(path=str(valid_file)))
+        session.add(ep)
+        session.flush()
+        session.commit()
+
+    # Open a fresh session — _cleanup_tv_library loads data via its own query.
+    with get_session() as session:
+        stats = {"series": 0, "seasons": 0, "episodes": 0, "movies": 0}
+        _cleanup_tv_library(session, "L", [str(tmp_path)], stats)
+        session.flush()
+
+    # Verify the episode was preserved with its valid media_file.
+    with get_session() as session:
+        ep_db = session.get(Episode, ep.id)
+        assert ep_db is not None, "Episode must not be deleted"
+        assert ep_db.default_path is not None, (
+            f"default_path must not be None after cleanup; "
+            f"expected update to '{valid_file}', got None"
+        )
+        assert ep_db.default_path == str(valid_file), (
+            f"default_path should be updated to the first valid path; "
+            f"expected '{valid_file}', got '{ep_db.default_path}'"
+        )
+        assert ep_db.media_files, "media_files must not be cleared"
+        file_paths = {mf.path for mf in ep_db.media_files if mf.path}
+        assert str(valid_file) in file_paths, (
+            f"Valid media_file path '{valid_file}' not found in {file_paths}"
+        )
+
+
 def test_load_library_correctness_complex() -> None:
     db.init_db()
 

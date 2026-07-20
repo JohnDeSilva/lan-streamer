@@ -1,5 +1,7 @@
+import shutil
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+
 from lan_streamer.scanner import scan_directories
 
 
@@ -204,3 +206,162 @@ def test_add_root_directory_one_by_one(tmp_path: Path) -> None:
     assert "Show A" in lib_phase_2
     assert "Season 1" in lib_phase_2["Show A"]["seasons"]
     assert "Season 2" in lib_phase_2["Show A"]["seasons"]
+
+
+def test_file_moved_between_roots_preserves_episode_and_watched(tmp_path: Path) -> None:
+    """Given a series with a watched episode in root_a, copy the series folder
+    to root_b, delete the season from root_a, and run a full scan: the episode
+    must survive with watched state intact, and only the media-file records
+    should change to reflect the new location.
+
+    This is a regression test for the scanner pipeline's cross-root file-move
+    handling.
+    """
+    from lan_streamer import db as _db
+
+    # ------------------------------------------------------------------
+    #  Setup: two library root directories
+    # ------------------------------------------------------------------
+    root_a = tmp_path / "RootA"
+    root_b = tmp_path / "RootB"
+    root_a.mkdir()
+    root_b.mkdir()
+
+    series_a = root_a / "Test Show"
+    series_a.mkdir()
+    season_a = series_a / "Season 1"
+    season_a.mkdir()
+    ep_a = season_a / "Test Show S01E01.mkv"
+    ep_a.write_text("video data")
+
+    # ------------------------------------------------------------------
+    #  TMDB mock
+    # ------------------------------------------------------------------
+    mock_tmdb = MagicMock()
+    mock_tmdb.is_configured.return_value = True
+    mock_tmdb.search_series.return_value = {
+        "id": "series_1",
+        "name": "Test Show",
+        "overview": "A test",
+        "poster_path": "",
+        "first_air_date": "2020-01-01",
+        "seasons": [{"season_number": 1}],
+    }
+    mock_tmdb.get_series_by_id.return_value = {
+        "id": "series_1",
+        "name": "Test Show",
+        "overview": "A test",
+        "poster_path": "",
+        "first_air_date": "2020-01-01",
+        "seasons": [{"season_number": 1}],
+    }
+    mock_tmdb.get_seasons.return_value = [
+        {"season_number": 1, "id": "s1", "name": "Season 1"},
+    ]
+    mock_tmdb.get_episodes.return_value = [
+        {"id": "ep1", "episode_number": 1, "name": "Episode 1"},
+    ]
+    mock_tmdb.download_image.return_value = ""
+
+    tmdb_patch_paths = (
+        "lan_streamer.services.metadata_series.tmdb_client",
+        "lan_streamer.services.metadata_episode.tmdb_client",
+        "lan_streamer.scanner.pass2_metadata.tmdb_client",
+    )
+
+    # ------------------------------------------------------------------
+    #  Phase 1 — initial scan of root_a only
+    # ------------------------------------------------------------------
+    with (
+        patch(tmdb_patch_paths[0], mock_tmdb),
+        patch(tmdb_patch_paths[1], mock_tmdb),
+        patch(tmdb_patch_paths[2], mock_tmdb),
+    ):
+        lib = scan_directories([str(root_a)])
+
+    assert "Test Show" in lib
+    season = lib["Test Show"]["seasons"]["Season 1"]
+    assert len(season["episodes"]) == 1
+
+    # Save to DB and mark watched
+    _db.save_library("TestLib", lib)
+    _db.update_episode_watched_status(str(ep_a.absolute()), True)
+
+    # Load the existing state that the app would pass to the next scan
+    existing_library = _db.load_library("TestLib")
+    existing_eps = existing_library["Test Show"]["seasons"]["Season 1"]["episodes"]
+    assert len(existing_eps) == 1
+    assert existing_eps[0]["watched"] is True
+    old_path = existing_eps[0]["path"]
+    assert old_path is not None and "RootA" in old_path
+
+    # ------------------------------------------------------------------
+    #  Phase 2 — copy series to root_b, delete season from root_a
+    # ------------------------------------------------------------------
+    series_b = root_b / "Test Show"
+    shutil.copytree(str(series_a), str(series_b))
+    shutil.rmtree(str(season_a))  # Season 1 folder gone from root_a
+    ep_b = series_b / "Season 1" / "Test Show S01E01.mkv"
+    assert ep_b.exists()
+
+    # ------------------------------------------------------------------
+    #  Phase 3 — re-scan both roots with existing library data
+    # ------------------------------------------------------------------
+    with (
+        patch(tmdb_patch_paths[0], mock_tmdb),
+        patch(tmdb_patch_paths[1], mock_tmdb),
+        patch(tmdb_patch_paths[2], mock_tmdb),
+    ):
+        lib = scan_directories(
+            [str(root_a), str(root_b)],
+            existing_library=existing_library,
+        )
+
+    _db.save_library("TestLib", lib)
+
+    # Run cleanup pass (as the production flow does after every scan).
+    _db.cleanup_library("TestLib", [str(root_a), str(root_b)])
+
+    # ------------------------------------------------------------------
+    #  Verify final DB state
+    # ------------------------------------------------------------------
+    final = _db.load_library("TestLib")
+
+    assert "Test Show" in final, "Series must survive"
+    assert "Season 1" in final["Test Show"]["seasons"], "Season must survive"
+
+    eps = final["Test Show"]["seasons"]["Season 1"]["episodes"]
+    # Must have exactly one episode (no duplicates)
+    assert len(eps) == 1, f"Expected 1 episode, got {len(eps)}"
+
+    ep = eps[0]
+    # Watched flag must be preserved
+    assert ep["watched"] is True, "Watched flag must survive the move"
+
+    # The episode should have a valid default_path (not nulled by cleanup)
+    assert ep.get("path") is not None, (
+        f"Episode path must not be None after cleanup; got {ep.get('path')!r}"
+    )
+
+    # The episode's media-file records should point to the new location
+    versions = ep.get("versions", [])
+    version_paths = {v["path"] for v in versions if v.get("path")}
+
+    new_path_str = str(ep_b.absolute())
+    assert any(new_path_str in vp for vp in version_paths), (
+        f"New path ({new_path_str}) must be in versions; got {version_paths}"
+    )
+
+    # The old path must NOT be in versions (cleaned up)
+    old_path_str = str(ep_a.absolute())
+    assert not any(old_path_str in vp for vp in version_paths), (
+        f"Old path ({old_path_str}) must be removed from versions; got {version_paths}"
+    )
+
+    # ------------------------------------------------------------------
+    #  The episode was loaded with watched state intact and has exactly
+    #  one version — the new file.  No stale references remain.
+    # ------------------------------------------------------------------
+    assert len(versions) == 1, (
+        f"Expected exactly 1 version after cleanup; got {len(versions)}"
+    )
