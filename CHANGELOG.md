@@ -1,3 +1,9 @@
+## v0.48.1rc4 (2026-07-21)
+
+### Fix
+
+- **dev-dependency**: bump types-requests
+
 ## v0.48.1rc3 (2026-07-21)
 
 ### Fix
