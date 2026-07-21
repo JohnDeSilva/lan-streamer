@@ -1,3 +1,9 @@
+## v0.48.1rc3 (2026-07-21)
+
+### Fix
+
+- **dev-dependency**: bump mypy from 2.1.0 to 2.3.0
+
 ## v0.48.1rc2 (2026-07-21)
 
 ### Fix
