@@ -1,3 +1,15 @@
+## v0.48.1 (2026-07-21)
+
+### Fix
+
+- **dev-dependency**: bump ruff from 0.15.20 to 0.15.22
+- **dev-dependency**: bump types-requests
+- **dev-dependency**: bump mypy from 2.1.0 to 2.3.0
+- **dev-dependency**: bump commitizen from 4.16.4 to 4.16.5
+- **db**: stop stale MediaFile records from surviving scan and cleanup
+- **cleanup**: remove stale ScannedDirectory entries and preserve valid media files
+- **db**: preserve valid media_files in cleanup when default_path file is missing
+
 ## v0.48.1rc5 (2026-07-21)
 
 ### Fix
