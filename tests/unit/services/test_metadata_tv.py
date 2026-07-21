@@ -1939,12 +1939,19 @@ class TestProcessEpisodeFile:
         assert result["tmdb_name"] == "The Beginning"
 
     def test_existing_episode_preserves_versions(self, tmp_path: Path) -> None:
-        """Existing episode with a multi-file versions list preserves all versions."""
+        """Existing episode with a multi-file versions list preserves all versions
+        that still exist on disk; stale paths are filtered out."""
         from lan_streamer.services.metadata_episode import _process_episode_file
 
         ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
         series_dir = ep.parent.parent
         ep_path = str(ep.absolute())
+
+        # Second version file must exist on disk to be preserved.
+        other_root = tmp_path / "other_root"
+        other_root.mkdir()
+        second_ep = other_root / "S01E01.mp4"
+        second_ep.write_text("other")
 
         existing_ep = {
             "path": ep_path,
@@ -1954,7 +1961,7 @@ class TestProcessEpisodeFile:
             "versions": [
                 {"path": ep_path, "video_codec": "h264", "resolution": "1080p"},
                 {
-                    "path": "/other/root/S01E01.mp4",
+                    "path": str(second_ep.absolute()),
                     "video_codec": "h265",
                     "resolution": "4K",
                 },
@@ -1992,4 +1999,65 @@ class TestProcessEpisodeFile:
         assert len(versions) == 2, f"Expected 2 versions, got {len(versions)}"
         version_paths = {v["path"] for v in versions}
         assert ep_path in version_paths
-        assert "/other/root/S01E01.mp4" in version_paths
+        assert str(second_ep.absolute()) in version_paths
+
+    def test_existing_episode_filters_stale_versions(self, tmp_path: Path) -> None:
+        """Existing episode with a stale version path (file no longer on disk)
+        must have that version filtered out instead of carried forward."""
+        from lan_streamer.services.metadata_episode import _process_episode_file
+
+        ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
+        series_dir = ep.parent.parent
+        ep_path = str(ep.absolute())
+
+        # One version path exists, the other does not exist on disk.
+        existing_ep = {
+            "path": ep_path,
+            "tmdb_episode_identifier": "ep1",
+            "tmdb_name": "Episode 1",
+            "tmdb_number": 1,
+            "versions": [
+                {"path": ep_path, "video_codec": "h264", "resolution": "1080p"},
+                {
+                    "path": "/nonexistent/stale.mp4",
+                    "video_codec": "h265",
+                    "resolution": "4K",
+                },
+            ],
+        }
+        existing_by_path = {ep_path: existing_ep}
+
+        season_meta: dict[str, Any] = {}
+        series_data: dict[str, Any] = {
+            "metadata": {},
+            "_tmdb_series_id": "",
+        }
+        tmdb_episodes = [
+            {
+                "id": "ep1",
+                "episode_number": 1,
+                "name": "Episode 1",
+                "air_date": "2023-01-01",
+                "runtime": 30,
+            },
+        ]
+
+        result = _process_episode_file(
+            episode_file=ep,
+            season_name="Season 1",
+            series_directory=series_dir,
+            series_data=series_data,
+            season_metadata=season_meta,
+            tmdb_episodes=tmdb_episodes,
+            tmdb_series=None,
+            jellyfin_data=None,
+            existing_episodes_by_path=existing_by_path,
+        )
+        versions = result.get("versions", [])
+        version_paths = {v["path"] for v in versions}
+        assert ep_path in version_paths, (
+            f"Existing valid path must survive; got {version_paths}"
+        )
+        assert "/nonexistent/stale.mp4" not in version_paths, (
+            "Stale version path must be filtered out"
+        )
