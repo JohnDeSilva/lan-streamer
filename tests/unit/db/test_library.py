@@ -471,6 +471,156 @@ def test_cleanup_tv_library_preserves_valid_media_files(mock_db_file, tmp_path) 
         )
 
 
+def test_cleanup_tv_library_removes_stale_mediafiles(mock_db_file, tmp_path) -> None:
+    """When an episode has MediaFile records whose files no longer exist on
+    disk, _cleanup_tv_library must remove them while preserving valid ones.
+    The default_path must be updated if it pointed to the stale file."""
+    from lan_streamer.db.library_tv import _cleanup_tv_library
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import Series, Season, Episode, MediaFile
+
+    series_dir = tmp_path / "ShowWithStaleFiles"
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir(parents=True)
+
+    valid_file = season_dir / "S01E01.mkv"
+    valid_file.touch()
+
+    with get_session() as session:
+        series = Series(name="ShowWithStaleFiles", library_name="L")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+
+        ep = Episode(
+            season_id=season.id,
+            name="E1",
+            path=str(valid_file),
+            tmdb_number=1,
+        )
+        # Add one stale MediaFile (path doesn't exist).
+        # The valid MediaFile is already created by the path setter.
+        ep.media_files.append(MediaFile(path="/nonexistent/stale.mkv"))
+        session.add(ep)
+        session.flush()
+        session.commit()
+
+    with get_session() as session:
+        stats = {"series": 0, "seasons": 0, "episodes": 0, "movies": 0}
+        _cleanup_tv_library(session, "L", [str(tmp_path)], stats)
+        session.flush()
+
+    with get_session() as session:
+        ep_db = session.get(Episode, ep.id)
+        assert ep_db is not None, "Episode must not be deleted"
+        assert ep_db.default_path == str(valid_file), (
+            f"default_path should remain at the valid file; "
+            f"expected '{valid_file}', got '{ep_db.default_path}'"
+        )
+        # stale MediaFile must be removed
+        stale_paths = {mf.path for mf in ep_db.media_files if mf.path}
+        assert "/nonexistent/stale.mkv" not in stale_paths, (
+            "Stale MediaFile path must be removed during cleanup"
+        )
+        # valid MediaFile must be preserved
+        assert str(valid_file) in stale_paths, (
+            f"Valid MediaFile path '{valid_file}' not found after cleanup"
+        )
+
+
+def test_save_episode_does_not_carry_forward_stale_mediafile(tmp_path) -> None:
+    """When an existing episode is matched by tmdb_number during save, stale
+    MediaFile records (whose file no longer exists on disk) must not be carried
+    forward into the episode's versions list and recreated in the database.
+
+    Regression test for the TMDB-number-match carry-forward path in
+    _save_episode_record.
+    """
+    library_name = "SaveStaleMFLib"
+
+    valid_dir = tmp_path / "valid_location"
+    valid_dir.mkdir()
+    valid_file = valid_dir / "S01E01.mkv"
+    valid_file.write_text("video data")
+
+    stale_dir = tmp_path / "stale_location"
+    stale_dir.mkdir()
+    stale_file = stale_dir / "S01E01.mkv"
+    # Intentionally do NOT create stale_file on disk.
+
+    # Phase 1: Save an episode with a MediaFile that will become stale.
+    initial_lib = {
+        "Test Show": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": str(stale_file.absolute()),
+                            "tmdb_number": 1,
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library(library_name, initial_lib)
+
+    # Verify the stale file path is in the DB.
+    loaded = db.load_library(library_name)
+    initial_eps = loaded["Test Show"]["seasons"]["Season 1"]["episodes"]
+    assert len(initial_eps) == 1
+    assert initial_eps[0]["path"] == str(stale_file.absolute())
+
+    # Phase 2: Re-save with a new valid path and tmdb_number match.
+    # Simulates what happens after a file move: the incoming episode_data
+    # has the new path, but the existing DB episode still has the stale path.
+    updated_lib = {
+        "Test Show": {
+            "metadata": {},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": str(valid_file.absolute()),
+                            "tmdb_number": 1,
+                            "versions": [
+                                {
+                                    "path": str(valid_file.absolute()),
+                                    "video_codec": "h264",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library(library_name, updated_lib)
+
+    # The stale file path must not be in the episode's media_files after save.
+    from lan_streamer.db.connection import get_session as _gs
+    from lan_streamer.db.models import Episode as _Ep
+    from sqlalchemy import select as _sel
+
+    with _gs() as s:
+        ep_db = s.scalars(_sel(_Ep).where(_Ep.tmdb_number == 1)).first()
+        assert ep_db is not None
+        mf_paths = {mf.path for mf in ep_db.media_files if mf.path}
+        assert str(valid_file.absolute()) in mf_paths, (
+            f"Valid path must be in media_files; got {mf_paths}"
+        )
+        assert str(stale_file.absolute()) not in mf_paths, (
+            "Stale path must not be carried forward into media_files"
+        )
+
+
 def test_load_library_correctness_complex() -> None:
     db.init_db()
 
