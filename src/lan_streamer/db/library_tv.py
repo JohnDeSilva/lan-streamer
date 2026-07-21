@@ -266,6 +266,7 @@ def _save_episode_record(
                         if (
                             media_file.path
                             and media_file.path not in incoming_paths
+                            and Path(media_file.path).exists()
                             and (
                                 incoming_paths_in_season is None
                                 or media_file.path not in incoming_paths_in_season
@@ -803,37 +804,72 @@ def _cleanup_tv_library(
         # Series folder still exists — null out paths for files that are gone
         for season in series.seasons:
             for episode in season.episodes:
-                path = episode.default_path or (
+                default_path = episode.default_path or (
                     episode.media_files[0].path if episode.media_files else None
                 )
+
+                # Remove unmatched episodes (no media files, no TMDB metadata)
                 if episode.media_files == [] and episode.tmdb_number is None:
                     logger.info(
-                        f"Cleanup: Removing unmatched episode S{season.name} E{episode.name} "
-                        f"('{episode.name}') at '{path}'"
+                        f"Cleanup: Removing unmatched episode "
+                        f"S{season.name} E{episode.name} "
+                        f"('{episode.name}') at '{default_path}'"
                     )
                     session.delete(episode)
                     stats["episodes_removed"] = stats.get("episodes_removed", 0) + 1
-                elif path and not Path(path).exists():
-                    # Check if any media file still exists at a valid path.
-                    valid_paths = [
-                        mf.path
-                        for mf in episode.media_files
-                        if mf.path and Path(mf.path).exists()
-                    ]
-                    if valid_paths:
-                        logger.info(
-                            f"Cleanup: Updating default_path for episode "
-                            f"'{episode.name}' from '{path}' to '{valid_paths[0]}' "
-                            f"(valid media_files still exist)"
-                        )
-                        episode.default_path = valid_paths[0]
+                    continue
+
+                # Remove stale MediaFile records whose files no longer exist on disk.
+                stale_mfs = [
+                    mf
+                    for mf in list(episode.media_files)
+                    if mf.path and not Path(mf.path).exists()
+                ]
+                for stale_mf in stale_mfs:
+                    logger.info(
+                        "Cleanup: Removing stale MediaFile '%s' for episode '%s'.",
+                        stale_mf.path,
+                        episode.name,
+                    )
+                    has_other_refs = any(
+                        ep != episode for ep in stale_mf.episodes
+                    ) or any(mv != episode for mv in stale_mf.movies)
+                    episode.media_files.remove(stale_mf)
+                    if not has_other_refs and stale_mf in session:
+                        session.delete(stale_mf)
+                        stats["episodes_removed"] = stats.get("episodes_removed", 0) + 1
+
+                changed = bool(stale_mfs)
+
+                if stale_mfs:
+                    session.flush()
+
+                # Update default_path if it points to a missing file.
+                if default_path and not Path(default_path).exists():
+                    changed = True
+                    if episode.media_files:
+                        valid_first = episode.media_files[0].path
+                        if valid_first:
+                            logger.info(
+                                "Cleanup: Updating default_path for episode "
+                                "'%s' from '%s' to '%s' "
+                                "(valid media_files still exist)",
+                                episode.name,
+                                default_path,
+                                valid_first,
+                            )
+                            episode.default_path = valid_first
                     else:
                         logger.info(
-                            f"Cleanup: Setting path=None for missing episode "
-                            f"'{episode.name}' (was '{path}')"
+                            "Cleanup: Setting path=None for missing episode "
+                            "'%s' (was '%s')",
+                            episode.name,
+                            default_path,
                         )
                         episode.path = None
-                    stats["episodes"] += 1
+
+                if changed:
+                    stats["episodes"] = stats.get("episodes", 0) + 1
 
 
 def save_season_data(

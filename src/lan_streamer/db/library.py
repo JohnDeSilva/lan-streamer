@@ -110,7 +110,29 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
                 _cleanup_movie_library(session, library_name, stats)
             else:
                 _cleanup_tv_library(session, library_name, root_directories, stats)
-            # Clean up stale ScannedDirectory entries for removed series
+            # Clean up stale ScannedDirectory entries for paths that no longer
+            # exist on the filesystem (e.g. series moved between roots, or
+            # directories that were deleted after a scan).
+            from lan_streamer.db.models import ScannedDirectory
+
+            for root in root_directories:
+                root_path = Path(root).resolve()
+                root_prefix = str(root_path) + "/"
+                stale_entries = session.scalars(
+                    select(ScannedDirectory).where(
+                        ScannedDirectory.path.startswith(root_prefix)
+                    )
+                ).all()
+                for stale_entry in stale_entries:
+                    if not Path(stale_entry.path).exists():
+                        session.delete(stale_entry)
+                        logger.debug(
+                            "Cleanup: Removing stale ScannedDirectory entry for '%s'",
+                            stale_entry.path,
+                        )
+
+            # Clean up ScannedDirectory entries for directories on disk that
+            # no longer have a corresponding DB record.
             from sqlalchemy import delete as sa_delete
             from lan_streamer.db.models import (
                 ScannedDirectory,
