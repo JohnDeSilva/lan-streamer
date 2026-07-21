@@ -1,3 +1,10 @@
+## v0.48.1rc1 (2026-07-21)
+
+### Fix
+
+- **db**: stop stale MediaFile records from surviving scan and cleanup
+- **cleanup**: remove stale ScannedDirectory entries and preserve valid media files
+
 ## v0.48.1rc0 (2026-07-20)
 
 ### Fix
