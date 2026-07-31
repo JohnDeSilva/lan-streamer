@@ -431,6 +431,38 @@ class TestScanSeasonFiles:
             assert r["episode_number"] == 0
             assert len(r["versions"]) == 1
 
+    def test_unicode_filenames_handled(self, tmp_path: Path) -> None:
+        """Non-English characters (e.g. umlauts) in filenames are preserved."""
+        season_dir = tmp_path / "Staffel 1"
+        season_dir.mkdir()
+        episode_file = season_dir / "S01E01 - Die schöne Lüge.mkv"
+        episode_file.touch()
+
+        results = _scan_season_files(season_dir)
+        assert len(results) == 1
+        assert results[0]["name"] == "S01E01 - Die schöne Lüge.mkv"
+        assert results[0]["season_number"] == 1
+        assert results[0]["episode_number"] == 1
+        assert str(episode_file.absolute()) == results[0]["path"]
+
+    def test_unicode_series_directory_name_preserved(self, tmp_path: Path) -> None:
+        """Series folder names containing umlauts survive Pass 1 discovery."""
+        series_dir = tmp_path / "Schöne neue Welt"
+        season_dir = series_dir / "Staffel 1"
+        season_dir.mkdir(parents=True)
+        (season_dir / "S01E01.mkv").touch()
+
+        series_data = scan_series_pass1(series_dir)
+        assert series_data["name"] == "Schöne neue Welt"
+        assert series_data["metadata"]["name"] == "Schöne neue Welt"
+        assert "Staffel 1" in series_data["seasons"]
+        assert len(series_data["seasons"]["Staffel 1"]["episodes"]) == 1
+        assert series_data["seasons"]["Staffel 1"]["episodes"][0]["season_number"] == 1
+        assert series_data["seasons"]["Staffel 1"]["episodes"][0]["episode_number"] == 1
+        assert series_data["seasons"]["Staffel 1"]["episodes"][0]["path"] == str(
+            (season_dir / "S01E01.mkv").absolute()
+        )
+
 
 # =========================================================================
 # Tests for _link_existing_episodes

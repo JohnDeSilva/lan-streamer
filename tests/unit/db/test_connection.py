@@ -37,3 +37,13 @@ def test_wal_mode_enabled() -> None:
     with db.get_session() as session:
         result = session.execute(text("PRAGMA journal_mode")).fetchone()
         assert result[0].lower() == "wal"
+
+
+def test_unicode_aware_lower_function_registered() -> None:
+    """SQLite's lower() must be unicode-aware so ilike/func.lower match non-ASCII."""
+    db.init_db()
+    with db.get_session() as session:
+        result = session.execute(text("SELECT lower('Schön')")).fetchone()
+        assert result[0] == "schön"
+        result = session.execute(text("SELECT lower('DIE ÄRZTE')")).fetchone()
+        assert result[0] == "die ärzte"
