@@ -1,3 +1,9 @@
+## v0.48.2rc2 (2026-07-31)
+
+### Fix
+
+- **dev-dependency**: bump pre-commit from 4.6.0 to 4.6.1
+
 ## v0.48.2rc1 (2026-07-31)
 
 ### Fix
