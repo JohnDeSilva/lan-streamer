@@ -1,3 +1,9 @@
+## v0.48.2rc0 (2026-07-31)
+
+### Fix
+
+- **db**: add unicode-aware case-insensitive search and name matching
+
 ## v0.48.1 (2026-07-21)
 
 ### Fix
