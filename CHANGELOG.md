@@ -1,3 +1,9 @@
+## v0.48.2rc3-1 (2026-07-31)
+
+### Fix
+
+- **lint**: Add select rules for ruff linter
+
 ## v0.48.2rc3 (2026-07-31)
 
 ## v0.48.2rc2 (2026-07-31)
