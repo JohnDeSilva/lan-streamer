@@ -1,3 +1,4 @@
+import contextlib
 import html
 import logging
 import zipfile
@@ -1189,7 +1190,7 @@ class SettingsDialog(QDialog):
         self.library_order_list_widget.blockSignals(True)
         current_idx = self.library_order_list_widget.currentRow()
         self.library_order_list_widget.clear()
-        for lib_name in self.staged_libraries.keys():
+        for lib_name in self.staged_libraries:
             self.library_order_list_widget.addItem(lib_name)
         if current_idx >= 0 and current_idx < len(self.staged_libraries):
             self.library_order_list_widget.setCurrentRow(current_idx)
@@ -1380,25 +1381,17 @@ class SettingsDialog(QDialog):
         )
         db_freq = 0
         db_ret = 0
-        try:
+        with contextlib.suppress(ValueError):
             db_freq = int(self.database_backup_frequency_input.text().strip())
-        except ValueError:
-            pass
-        try:
+        with contextlib.suppress(ValueError):
             db_ret = int(self.database_backup_retention_input.text().strip())
-        except ValueError:
-            pass
 
         cfg_freq = 0
         cfg_ret = 0
-        try:
+        with contextlib.suppress(ValueError):
             cfg_freq = int(self.config_backup_frequency_input.text().strip())
-        except ValueError:
-            pass
-        try:
+        with contextlib.suppress(ValueError):
             cfg_ret = int(self.config_backup_retention_input.text().strip())
-        except ValueError:
-            pass
 
         warnings: list[str] = []
         if db_freq > 0 and db_ret < db_freq:
@@ -1462,15 +1455,11 @@ class SettingsDialog(QDialog):
         except ValueError:
             pass
 
-        try:
+        with contextlib.suppress(ValueError):
             config.max_cache_size_gb = float(self.max_cache_size_input.text().strip())
-        except ValueError:
-            pass
 
-        try:
+        with contextlib.suppress(ValueError):
             config.vlc_buffer_ms = int(self.vlc_buffer_input.text().strip())
-        except ValueError:
-            pass
         config.fullscreen_control_bar_position = (
             self.fullscreen_control_bar_position_selector.currentText()
         )
@@ -1481,10 +1470,8 @@ class SettingsDialog(QDialog):
             config.log_directory = self.log_dir_input.text().strip()
 
         config.log_level = self.log_level_selector.currentText()
-        try:
+        with contextlib.suppress(ValueError):
             config.max_log_retention_days = int(self.log_retention_input.text().strip())
-        except ValueError:
-            pass
 
         config.divide_logs_by_service = (
             self.log_saving_mode_selector.currentText() == "Divided Service Logs"
@@ -1493,33 +1480,25 @@ class SettingsDialog(QDialog):
         if self.backup_directory_input.text().strip():
             config.backup_directory = self.backup_directory_input.text().strip()
 
-        try:
+        with contextlib.suppress(ValueError):
             config.config_backup_frequency = int(
                 self.config_backup_frequency_input.text().strip()
             )
-        except ValueError:
-            pass
 
-        try:
+        with contextlib.suppress(ValueError):
             config.database_backup_frequency = int(
                 self.database_backup_frequency_input.text().strip()
             )
-        except ValueError:
-            pass
 
-        try:
+        with contextlib.suppress(ValueError):
             config.config_backup_retention = int(
                 self.config_backup_retention_input.text().strip()
             )
-        except ValueError:
-            pass
 
-        try:
+        with contextlib.suppress(ValueError):
             config.database_backup_retention = int(
                 self.database_backup_retention_input.text().strip()
             )
-        except ValueError:
-            pass
 
         config.auto_scan_enabled = self.auto_scan_checkbox.isChecked()
         config.scan_interval_hours = self.scan_interval_spinbox.value()
@@ -2095,12 +2074,13 @@ class SettingsDialog(QDialog):
         selected_level: str = self.log_level_filter.currentText()
         level_threshold: int = self._get_level_value(selected_level)
         record_level_val: int = self._get_level_value(level_name)
-        if record_level_val >= level_threshold:
-            if not search_term or search_term in formatted_message.lower():
-                html_line: str = self._format_log_to_html(formatted_message, level_name)
-                self.log_display.appendHtml(html_line)
-                if self.log_autoscroll_checkbox.isChecked():
-                    self._scroll_to_bottom()
+        if record_level_val >= level_threshold and (
+            not search_term or search_term in formatted_message.lower()
+        ):
+            html_line: str = self._format_log_to_html(formatted_message, level_name)
+            self.log_display.appendHtml(html_line)
+            if self.log_autoscroll_checkbox.isChecked():
+                self._scroll_to_bottom()
 
     def _scroll_to_bottom(self) -> None:
         self.log_display.moveCursor(QTextCursor.MoveOperation.End)
@@ -2108,22 +2088,16 @@ class SettingsDialog(QDialog):
     def _disconnect_signals(self) -> None:
         """Disconnect all controller and log signals to prevent use-after-free."""
         if self.controller is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.controller.global_progress_updated.disconnect(
                     self._on_global_progress
                 )
-            except Exception:
-                pass
-            try:
+            with contextlib.suppress(Exception):
                 self.controller.detail_progress_updated.disconnect(
                     self._on_detail_progress
                 )
-            except Exception:
-                pass
-            try:
+            with contextlib.suppress(Exception):
                 self.controller.scan_completed.disconnect(self._on_scan_completed)
-            except Exception:
-                pass
         if getattr(self, "_logging_connected", False):
             try:
                 from lan_streamer.system.logging_handler import qt_log_handler

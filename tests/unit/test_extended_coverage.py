@@ -205,14 +205,16 @@ class TestConfigSaveLoadEdgeCases:
         )
 
         config_file = tmp_path / "subdir" / "config.json"
-        with patch("lan_streamer.system.config.CONFIG_FILE", config_file):
-            with patch.object(
+        with (
+            patch("lan_streamer.system.config.CONFIG_FILE", config_file),
+            patch.object(
                 config_file.parent.__class__,
                 "mkdir",
                 side_effect=PermissionError("cannot mkdir"),
-            ):
-                # Should not raise even if mkdir fails
-                cfg.save()
+            ),
+        ):
+            # Should not raise even if mkdir fails
+            cfg.save()
 
     def test_load_config_startup_paths_expansion(self, tmp_path) -> None:
         """Test that database_path and log_directory tildes are expanded correctly."""

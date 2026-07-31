@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sys
 from pathlib import Path
@@ -145,10 +146,8 @@ async def main() -> None:
         cutoff = time.time() - (config.max_log_retention_days * 86400)
         for path_item in log_directory.glob("*.log*"):
             if path_item.is_file() and path_item.stat().st_mtime < cutoff:
-                try:
+                with contextlib.suppress(Exception):
                     path_item.unlink()
-                except Exception:
-                    pass
     except Exception as exc:
         logging.debug(f"Error cleaning old logs: {exc}")
 
@@ -295,10 +294,7 @@ async def main() -> None:
         index = previous_layout_index[0]
         if not isinstance(index, int):
             library_config = config.libraries.get(controller.current_library_name, {})
-            if library_config.get("type") == "movie":
-                index = 2
-            else:
-                index = 1
+            index = 2 if library_config.get("type") == "movie" else 1
         stacked_layout.setCurrentIndex(index)
 
     player_view.back_requested.connect(on_player_back_requested)

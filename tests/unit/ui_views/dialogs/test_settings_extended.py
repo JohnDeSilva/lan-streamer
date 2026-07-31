@@ -457,12 +457,14 @@ def test_unlink_mal_account_clears_credentials(dialog) -> None:
 
     config.myanimelist_access_token = "fake-token"
     config.myanimelist_refresh_token = "fake-refresh"
-    with patch.object(config, "save"):
-        with patch(
+    with (
+        patch.object(config, "save"),
+        patch(
             "lan_streamer.ui_views.proxy.QMessageBox.question",
             return_value=QMessageBox.StandardButton.Yes,
-        ):
-            dialog.unlink_myanimelist_account()
+        ),
+    ):
+        dialog.unlink_myanimelist_account()
     assert not config.myanimelist_access_token
     assert not config.myanimelist_refresh_token
 

@@ -218,9 +218,11 @@ class TestThumbnailDownloader:
             lambda content, lbl: received.append((content, lbl))
         )
 
-        with patch("requests.get", return_value=mock_response):
-            with qtbot.waitSignal(downloader.downloaded, timeout=5000):
-                downloader.start_download()
+        with (
+            patch("requests.get", return_value=mock_response),
+            qtbot.waitSignal(downloader.downloaded, timeout=5000),
+        ):
+            downloader.start_download()
 
         assert len(received) == 1
         assert received[0][0] == fake_bytes

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import threading
 from collections.abc import Callable
@@ -72,10 +73,8 @@ class AsyncDatabaseWriter:
                 await asyncio.wait_for(self._task, timeout=30.0)
             except TimeoutError:
                 self._task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await self._task
-                except asyncio.CancelledError:
-                    pass
 
     async def submit(self, action: str, payload: dict[str, Any]) -> DatabaseWriteTask:
         """Enqueue a write task and return it immediately.

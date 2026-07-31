@@ -9,6 +9,7 @@ Stage 0 of the migration toward qasync-based asyncio integration.
 
 import asyncio
 import atexit
+import contextlib
 import functools
 import logging
 import subprocess
@@ -279,10 +280,8 @@ async def async_run_subprocess(
                 logger.warning(
                     "Exception during subprocess execution: %s", exception_instance
                 )
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 process.kill()
-            except ProcessLookupError:
-                pass
             await process.wait()
             raise
 

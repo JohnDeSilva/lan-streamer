@@ -116,10 +116,9 @@ def test_extract_changelog_section_logic() -> None:
                 sec_version_match = re.search(
                     r"^(?:v|rc-)?([0-9]+\.[0-9]+\.[0-9]+)", sec_tag
                 )
-                if sec_version_match:
-                    if sec_tag.lstrip("v") == tag_name.lstrip("v"):
-                        notes.append(section)
-                        break
+                if sec_version_match and sec_tag.lstrip("v") == tag_name.lstrip("v"):
+                    notes.append(section)
+                    break
 
         if not notes and sections:
             notes.append(sections[0])

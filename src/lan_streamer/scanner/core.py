@@ -465,9 +465,8 @@ def _scan_pass2(
 
             if result is not None:
                 library[series_name] = result
-                if library_type == "movie":
-                    if movie_callback:
-                        movie_callback(series_name, result)
+                if library_type == "movie" and movie_callback:
+                    movie_callback(series_name, result)
             if detail_callback:
                 detail_callback(
                     "finish_folder",

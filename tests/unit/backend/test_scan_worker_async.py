@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import Any
 from unittest.mock import patch
@@ -129,10 +130,8 @@ class TestAsyncScanWorker:
             # Yield briefly so run_async can start executing
             await asyncio.sleep(0.01)
             worker.stop()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await asyncio.wait_for(scan_task, timeout=2.0)
-            except asyncio.CancelledError:
-                pass
 
         with patch(
             "lan_streamer.backend.scan_worker_async.scan_directories"

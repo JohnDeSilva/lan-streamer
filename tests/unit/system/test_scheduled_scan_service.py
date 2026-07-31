@@ -8,6 +8,7 @@ locking, cancellation, and signal propagation.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -136,10 +137,8 @@ class TestStartStop:
             service.stop()
             # The task may still be in the dict in 'cancelling' state;
             # verify it is eventually marked cancelled.
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await asyncio.wait_for(task, timeout=1.0)
-            except asyncio.CancelledError:
-                pass
             assert task.cancelled()
 
         _run(run(), event_loop)

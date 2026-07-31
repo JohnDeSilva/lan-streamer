@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import re
 import uuid
@@ -1056,10 +1057,8 @@ class Controller(QObject):
         elif is_movie and match_dictionary.get("first_air_date"):
             air_date_str = match_dictionary.get("first_air_date", "")
             if air_date_str:
-                try:
+                with contextlib.suppress(ValueError):
                     target_dict["year"] = int(air_date_str.split("-")[0])
-                except ValueError:
-                    pass
 
         # For movies, save immediately (no episode sync needed).
         if is_movie:

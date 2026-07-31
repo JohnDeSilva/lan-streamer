@@ -152,9 +152,10 @@ def perform_scheduled_backups() -> None:
                 parsed_time: datetime | None = get_backup_time_from_filename(
                     file_item.name
                 )
-                if parsed_time is not None:
-                    if latest_backup_time is None or parsed_time > latest_backup_time:
-                        latest_backup_time = parsed_time
+                if parsed_time is not None and (
+                    latest_backup_time is None or parsed_time > latest_backup_time
+                ):
+                    latest_backup_time = parsed_time
 
         if latest_backup_time is None:
             logger.info(
@@ -186,9 +187,10 @@ def perform_scheduled_backups() -> None:
         for file_item in backup_directory.iterdir():
             if file_item.is_file() and file_item.name.endswith(database_suffix):
                 parsed_time = get_backup_time_from_filename(file_item.name)
-                if parsed_time is not None:
-                    if latest_backup_time is None or parsed_time > latest_backup_time:
-                        latest_backup_time = parsed_time
+                if parsed_time is not None and (
+                    latest_backup_time is None or parsed_time > latest_backup_time
+                ):
+                    latest_backup_time = parsed_time
 
         if latest_backup_time is None:
             logger.info("No existing database backup found; generating initial copy.")

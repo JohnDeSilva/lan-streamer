@@ -185,10 +185,7 @@ class TMDBClient:
             if len(w) > 3 and w not in ["marvel", "star", "the", "wars"]
         ]
         b_words = b.split()
-        for w in a_words:
-            if w in b_words:
-                return True
-        return False
+        return any(w in b_words for w in a_words)
 
     def _do_search(self, query: str) -> list:
         """Raw TMDB TV search. Returns list of result dicts."""

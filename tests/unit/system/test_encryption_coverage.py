@@ -52,12 +52,14 @@ class TestEncryptException:
     """Lines 89-91: encrypt_secret exception handling."""
 
     def test_encrypt_failure_raises(self) -> None:
-        with patch(
-            "lan_streamer.system.encryption.get_encryption_key",
-            side_effect=Exception("key error"),
+        with (
+            patch(
+                "lan_streamer.system.encryption.get_encryption_key",
+                side_effect=Exception("key error"),
+            ),
+            pytest.raises(Exception, match="key error"),
         ):
-            with pytest.raises(Exception, match="key error"):
-                encrypt_secret("secret data")
+            encrypt_secret("secret data")
 
 
 class TestDecryptException:

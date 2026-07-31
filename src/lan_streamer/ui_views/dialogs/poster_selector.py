@@ -7,6 +7,7 @@ Supports three sources:
 - Local Upload: Browse the filesystem to pick any local image file.
 """
 
+import contextlib
 import logging
 import shutil
 import webbrowser
@@ -208,10 +209,8 @@ class PosterSelectorDialog(QDialog):
                     self._series_db_id = series_record.id
                     raw_tmdb_id = series_record.tmdb_identifier
                     if raw_tmdb_id is not None:
-                        try:
+                        with contextlib.suppress(ValueError, TypeError):
                             self._tmdb_numeric_id = int(raw_tmdb_id)
-                        except ValueError, TypeError:
-                            pass
                     # Resolve season
                     season_record = session.scalars(
                         select(Season).where(
@@ -230,10 +229,8 @@ class PosterSelectorDialog(QDialog):
                     self._series_db_id = series_record.id
                     raw_tmdb_id = series_record.tmdb_identifier
                     if raw_tmdb_id is not None:
-                        try:
+                        with contextlib.suppress(ValueError, TypeError):
                             self._tmdb_numeric_id = int(raw_tmdb_id)
-                        except ValueError, TypeError:
-                            pass
 
         logger.info(
             "PosterSelectorDialog resolved IDs: series=%s movie=%s season=%s tmdb=%s",

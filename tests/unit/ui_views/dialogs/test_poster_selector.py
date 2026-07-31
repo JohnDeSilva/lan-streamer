@@ -636,27 +636,27 @@ def test_thumbnail_downloader_callback_on_gui_thread(qtbot, series_record) -> No
     with (
         patch.object(label, "setPixmap", side_effect=mock_setPixmap),
         patch.object(label, "setText", side_effect=mock_setText),
+        patch("requests.get") as mock_get,
     ):
-        with patch("requests.get") as mock_get:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.content = fake_bytes
-            mock_get.return_value = mock_response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = fake_bytes
+        mock_get.return_value = mock_response
 
-            from lan_streamer.ui_views.dialogs.poster_selector import (
-                _ThumbnailDownloader,
-            )
+        from lan_streamer.ui_views.dialogs.poster_selector import (
+            _ThumbnailDownloader,
+        )
 
-            downloader = _ThumbnailDownloader(
-                "https://example.invalid/thumb.jpg", label, parent=dialog
-            )
-            label.setProperty("_downloader", downloader)
-            downloader.downloaded.connect(dialog._on_thumbnail_downloaded)
+        downloader = _ThumbnailDownloader(
+            "https://example.invalid/thumb.jpg", label, parent=dialog
+        )
+        label.setProperty("_downloader", downloader)
+        downloader.downloaded.connect(dialog._on_thumbnail_downloaded)
 
-            with qtbot.waitSignal(downloader.downloaded, timeout=2000):
-                downloader.start_download()
+        with qtbot.waitSignal(downloader.downloaded, timeout=2000):
+            downloader.start_download()
 
-            # Yield control to the Qt event loop to process any queued connection slots
-            QApplication.processEvents()
+        # Yield control to the Qt event loop to process any queued connection slots
+        QApplication.processEvents()
 
     assert callback_thread == QApplication.instance().thread()

@@ -119,16 +119,18 @@ def test_episode_details_merge_subtitles_trigger(mock_episode_controller, qtbot)
 
         dialog._ext_subs = ["/media/Test Series/S01E01.en.srt"]
 
-        with patch(
-            "PySide6.QtWidgets.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
+        with (
+            patch(
+                "PySide6.QtWidgets.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch.object(mock_episode_controller, "merge_subtitles") as mock_merge,
         ):
-            with patch.object(mock_episode_controller, "merge_subtitles") as mock_merge:
-                dialog._on_merge_clicked()
-                mock_merge.assert_called_once_with(
-                    "/media/Test Series/S01E01.mkv",
-                    ["/media/Test Series/S01E01.en.srt"],
-                )
+            dialog._on_merge_clicked()
+            mock_merge.assert_called_once_with(
+                "/media/Test Series/S01E01.mkv",
+                ["/media/Test Series/S01E01.en.srt"],
+            )
 
 
 def test_episode_details_remove_episode_yes(mock_episode_controller, qtbot):
@@ -146,13 +148,15 @@ def test_episode_details_remove_episode_yes(mock_episode_controller, qtbot):
         )
         qtbot.addWidget(dialog)
 
-        with patch(
-            "PySide6.QtWidgets.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
+        with (
+            patch(
+                "PySide6.QtWidgets.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch.object(mock_episode_controller, "delete_episode") as mock_delete,
         ):
-            with patch.object(mock_episode_controller, "delete_episode") as mock_delete:
-                dialog._on_remove_episode_clicked()
-                mock_delete.assert_called_once_with("/media/Test Series/S01E01.mkv")
+            dialog._on_remove_episode_clicked()
+            mock_delete.assert_called_once_with("/media/Test Series/S01E01.mkv")
 
 
 def test_episode_details_remove_episode_no(mock_episode_controller, qtbot):
@@ -170,13 +174,15 @@ def test_episode_details_remove_episode_no(mock_episode_controller, qtbot):
         )
         qtbot.addWidget(dialog)
 
-        with patch(
-            "PySide6.QtWidgets.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.No,
+        with (
+            patch(
+                "PySide6.QtWidgets.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.No,
+            ),
+            patch.object(mock_episode_controller, "delete_episode") as mock_delete,
         ):
-            with patch.object(mock_episode_controller, "delete_episode") as mock_delete:
-                dialog._on_remove_episode_clicked()
-                mock_delete.assert_not_called()
+            dialog._on_remove_episode_clicked()
+            mock_delete.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -349,16 +355,18 @@ def test_movie_details_embed_metadata_trigger(mock_movie_controller, qtbot):
         )
         qtbot.addWidget(dialog)
 
-        with patch(
-            "PySide6.QtWidgets.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
+        with (
+            patch(
+                "PySide6.QtWidgets.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch.object(mock_movie_controller, "embed_metadata") as mock_embed,
         ):
-            with patch.object(mock_movie_controller, "embed_metadata") as mock_embed:
-                dialog._on_embed_clicked()
-                mock_embed.assert_called_once()
-                args = mock_embed.call_args[0]
-                assert args[0] == "/media/Movies/Test Movie.mkv"
-                assert "title" in args[1]
+            dialog._on_embed_clicked()
+            mock_embed.assert_called_once()
+            args = mock_embed.call_args[0]
+            assert args[0] == "/media/Movies/Test Movie.mkv"
+            assert "title" in args[1]
 
 
 def test_movie_details_merge_subtitles_trigger(mock_movie_controller, qtbot):
@@ -378,15 +386,17 @@ def test_movie_details_merge_subtitles_trigger(mock_movie_controller, qtbot):
 
         dialog._ext_subs = ["/media/Movies/Test Movie.en.srt"]
 
-        with patch(
-            "PySide6.QtWidgets.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
+        with (
+            patch(
+                "PySide6.QtWidgets.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch.object(mock_movie_controller, "merge_subtitles") as mock_merge,
         ):
-            with patch.object(mock_movie_controller, "merge_subtitles") as mock_merge:
-                dialog._on_merge_clicked()
-                mock_merge.assert_called_once_with(
-                    "/media/Movies/Test Movie.mkv", ["/media/Movies/Test Movie.en.srt"]
-                )
+            dialog._on_merge_clicked()
+            mock_merge.assert_called_once_with(
+                "/media/Movies/Test Movie.mkv", ["/media/Movies/Test Movie.en.srt"]
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -455,14 +465,16 @@ def test_series_details_match_buttons(mock_series_controller, qtbot):
 
     dialog = SeriesDetailsDialog("Cosmos", mock_series_controller)
     qtbot.addWidget(dialog)
-    with patch(
-        "lan_streamer.ui_views.proxy.jellyfin_client.is_configured",
-        return_value=True,
-    ):
-        with qtbot.waitSignal(
+    with (
+        patch(
+            "lan_streamer.ui_views.proxy.jellyfin_client.is_configured",
+            return_value=True,
+        ),
+        qtbot.waitSignal(
             mock_series_controller.jellyfin_dialog_requested, timeout=1000
-        ):
-            dialog._on_match_jellyfin_clicked()
+        ),
+    ):
+        dialog._on_match_jellyfin_clicked()
 
     dialog = SeriesDetailsDialog("Cosmos", mock_series_controller)
     qtbot.addWidget(dialog)
@@ -474,15 +486,15 @@ def test_series_details_embed_bulk_trigger(mock_series_controller, qtbot):
     dialog = SeriesDetailsDialog("Cosmos", mock_series_controller)
     qtbot.addWidget(dialog)
 
-    with patch(
-        "PySide6.QtWidgets.QMessageBox.question",
-        return_value=QMessageBox.StandardButton.Yes,
+    with (
+        patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch.object(mock_series_controller, "embed_metadata_series") as mock_embed,
     ):
-        with patch.object(
-            mock_series_controller, "embed_metadata_series"
-        ) as mock_embed:
-            dialog._on_embed_clicked()
-            mock_embed.assert_called_once_with("Cosmos")
+        dialog._on_embed_clicked()
+        mock_embed.assert_called_once_with("Cosmos")
 
 
 def test_series_details_mark_watched_trigger(mock_series_controller, qtbot):
@@ -553,32 +565,32 @@ def test_episode_details_dialog_refresh(mock_opt_controller, qtbot):
     )
     qtbot.addWidget(dialog)
 
-    with patch(
-        "PySide6.QtWidgets.QMessageBox.question",
-        return_value=QMessageBox.StandardButton.Yes,
+    with (
+        patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch.object(mock_opt_controller, "refresh_episode_metadata") as mock_refresh,
     ):
-        with patch.object(
-            mock_opt_controller, "refresh_episode_metadata"
-        ) as mock_refresh:
-            dialog._on_refresh_clicked()
-            mock_refresh.assert_called_once_with(
-                "Test Show", "/media/tv/Test Show/Season 1/S01E01.mkv"
-            )
+        dialog._on_refresh_clicked()
+        mock_refresh.assert_called_once_with(
+            "Test Show", "/media/tv/Test Show/Season 1/S01E01.mkv"
+        )
 
 
 def test_series_details_dialog_refresh(mock_opt_controller, qtbot):
     dialog = SeriesDetailsDialog("Test Show", mock_opt_controller)
     qtbot.addWidget(dialog)
 
-    with patch(
-        "PySide6.QtWidgets.QMessageBox.question",
-        return_value=QMessageBox.StandardButton.Yes,
+    with (
+        patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch.object(mock_opt_controller, "trigger_series_refresh") as mock_refresh,
     ):
-        with patch.object(
-            mock_opt_controller, "trigger_series_refresh"
-        ) as mock_refresh:
-            dialog._on_refresh_clicked()
-            mock_refresh.assert_called_once_with("Test Show")
+        dialog._on_refresh_clicked()
+        mock_refresh.assert_called_once_with("Test Show")
 
 
 def test_movie_details_dialog_refresh(mock_opt_controller, qtbot):
@@ -587,15 +599,15 @@ def test_movie_details_dialog_refresh(mock_opt_controller, qtbot):
     )
     qtbot.addWidget(dialog)
 
-    with patch(
-        "PySide6.QtWidgets.QMessageBox.question",
-        return_value=QMessageBox.StandardButton.Yes,
+    with (
+        patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch.object(mock_opt_controller, "trigger_series_refresh") as mock_refresh,
     ):
-        with patch.object(
-            mock_opt_controller, "trigger_series_refresh"
-        ) as mock_refresh:
-            dialog._on_refresh_clicked()
-            mock_refresh.assert_called_once_with("Test Movie")
+        dialog._on_refresh_clicked()
+        mock_refresh.assert_called_once_with("Test Movie")
 
 
 def test_series_details_dialog_save_checkbox_persistence(mock_series_controller, qtbot):

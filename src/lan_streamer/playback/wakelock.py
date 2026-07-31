@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import subprocess
@@ -112,10 +113,8 @@ class WakeLock:
                 self._cookie = None
 
         # Always try to resume xdg-screensaver just in case
-        try:
+        with contextlib.suppress(Exception):
             subprocess.run(["xdg-screensaver", "resume", "0x0"], capture_output=True)
-        except Exception:
-            pass
 
     def _inhibit_windows(self) -> None:
         import ctypes
@@ -163,8 +162,6 @@ class WakeLock:
                 self._process.terminate()
                 self._process.wait(timeout=1)
             except Exception:
-                try:
+                with contextlib.suppress(Exception):
                     self._process.kill()
-                except Exception:
-                    pass
             self._process = None

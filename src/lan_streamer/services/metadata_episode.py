@@ -5,6 +5,7 @@ files, matching local video files against TMDB episode lists, and resolving
 Jellyfin IDs.
 """
 
+import contextlib
 import logging
 import os
 import re
@@ -208,10 +209,8 @@ def _process_season_metadata(
 
     current_mtime = None
     if not metadata_only and season_directory.exists():
-        try:
+        with contextlib.suppress(Exception):
             current_mtime = season_directory.stat().st_mtime
-        except Exception:
-            pass
     season_metadata["last_scanned_mtime"] = (
         current_mtime if current_mtime is not None else existing_last_scanned_mtime
     )

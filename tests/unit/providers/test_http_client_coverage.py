@@ -55,10 +55,12 @@ class TestRetryAfterHeader:
             session = MagicMock()
             session.request = AsyncMock(side_effect=[mock_429, mock_200])
 
-            with patch.object(client, "_get_session", AsyncMock(return_value=session)):
-                with patch("asyncio.sleep", new_callable=AsyncMock):
-                    result = await client.get("http://example.invalid")
-                    assert result == {"ok": True}
+            with (
+                patch.object(client, "_get_session", AsyncMock(return_value=session)),
+                patch("asyncio.sleep", new_callable=AsyncMock),
+            ):
+                result = await client.get("http://example.invalid")
+                assert result == {"ok": True}
 
         _run(run(), event_loop)
 
@@ -75,9 +77,11 @@ class TestClientErrorRetry:
                 side_effect=aiohttp.ClientError("connection failed")
             )
 
-            with patch.object(client, "_get_session", AsyncMock(return_value=session)):
-                with pytest.raises(aiohttp.ClientError):
-                    await client.get("http://example.invalid")
+            with (
+                patch.object(client, "_get_session", AsyncMock(return_value=session)),
+                pytest.raises(aiohttp.ClientError),
+            ):
+                await client.get("http://example.invalid")
 
         _run(run(), event_loop)
 
@@ -88,9 +92,11 @@ class TestClientErrorRetry:
             session = MagicMock()
             session.request = AsyncMock(side_effect=TimeoutError("timeout"))
 
-            with patch.object(client, "_get_session", AsyncMock(return_value=session)):
-                with pytest.raises(asyncio.TimeoutError):
-                    await client.get("http://example.invalid")
+            with (
+                patch.object(client, "_get_session", AsyncMock(return_value=session)),
+                pytest.raises(asyncio.TimeoutError),
+            ):
+                await client.get("http://example.invalid")
 
         _run(run(), event_loop)
 
@@ -107,10 +113,12 @@ class TestClientErrorRetry:
                 side_effect=[aiohttp.ClientError("transient"), mock_200]
             )
 
-            with patch.object(client, "_get_session", AsyncMock(return_value=session)):
-                with patch("asyncio.sleep", new_callable=AsyncMock):
-                    result = await client.get("http://example.invalid")
-                    assert result == {"recovered": True}
+            with (
+                patch.object(client, "_get_session", AsyncMock(return_value=session)),
+                patch("asyncio.sleep", new_callable=AsyncMock),
+            ):
+                result = await client.get("http://example.invalid")
+                assert result == {"recovered": True}
 
         _run(run(), event_loop)
 
@@ -263,10 +271,12 @@ class TestRetryAfterNonDigit:
             session = MagicMock()
             session.request = AsyncMock(side_effect=[mock_429, mock_200])
 
-            with patch.object(client, "_get_session", AsyncMock(return_value=session)):
-                with patch("asyncio.sleep", new_callable=AsyncMock):
-                    result = await client.get("http://example.invalid")
-                    assert result == {"ok": True}
+            with (
+                patch.object(client, "_get_session", AsyncMock(return_value=session)),
+                patch("asyncio.sleep", new_callable=AsyncMock),
+            ):
+                result = await client.get("http://example.invalid")
+                assert result == {"ok": True}
 
         _run(run(), event_loop)
 
@@ -339,9 +349,11 @@ class TestRuntimeErrorAfterRetries:
             mock_session = MagicMock()
             mock_session.request = AsyncMock(return_value=mock_429)
 
-            with patch.object(c, "_get_session", AsyncMock(return_value=mock_session)):
-                with patch("asyncio.sleep", new_callable=AsyncMock):
-                    with pytest.raises(RuntimeError, match="failed after 2 retries"):
-                        await c.get("http://example.invalid")
+            with (
+                patch.object(c, "_get_session", AsyncMock(return_value=mock_session)),
+                patch("asyncio.sleep", new_callable=AsyncMock),
+                pytest.raises(RuntimeError, match="failed after 2 retries"),
+            ):
+                await c.get("http://example.invalid")
 
         _run(run(), event_loop)

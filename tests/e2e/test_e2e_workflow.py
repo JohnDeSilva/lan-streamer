@@ -2169,8 +2169,10 @@ def test_combined_view_scan_button(qtbot: Any) -> None:
 
         # 4. Simulate _on_scan_all_finished when in Combined View
         controller_instance.current_library_name = "Combined View"
-        with patch.object(controller_instance, "select_library") as mock_select:
-            with patch.object(grid_view, "populate_combined_view") as mock_populate:
-                controller_instance._on_scan_all_finished()
-                mock_select.assert_not_called()
-                mock_populate.assert_called_once()
+        with (
+            patch.object(controller_instance, "select_library") as mock_select,
+            patch.object(grid_view, "populate_combined_view") as mock_populate,
+        ):
+            controller_instance._on_scan_all_finished()
+            mock_select.assert_not_called()
+            mock_populate.assert_called_once()
