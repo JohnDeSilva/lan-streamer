@@ -1,8 +1,8 @@
 import os
 import sys
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 from PySide6.QtWidgets import QMessageBox
 
 from lan_streamer.ui_views.dialogs.update_dialog import UpdateDialog

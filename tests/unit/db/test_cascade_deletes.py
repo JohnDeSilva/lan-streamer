@@ -1,15 +1,17 @@
 import uuid
+
 from sqlalchemy import select, text
+
 from lan_streamer.db import get_session
 from lan_streamer.db.models import (
-    Series,
-    Season,
     Episode,
-    PlaybackState,
     MediaFile,
     MetadataFileMapping,
+    PlaybackState,
+    Season,
+    Series,
 )
-from lan_streamer.db.models_cast import Person, MediaCast, MediaImage
+from lan_streamer.db.models_cast import MediaCast, MediaImage, Person
 
 
 def test_cascade_delete_series() -> None:

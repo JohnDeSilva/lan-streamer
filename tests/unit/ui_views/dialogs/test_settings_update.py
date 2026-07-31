@@ -1,8 +1,9 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from lan_streamer.ui_views.dialogs.settings import SettingsDialog
+import pytest
+
 from lan_streamer.system.config import config
+from lan_streamer.ui_views.dialogs.settings import SettingsDialog
 
 
 @pytest.fixture

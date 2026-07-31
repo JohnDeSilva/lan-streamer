@@ -22,7 +22,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # scanner/__init__.py — lines 97, 111
 # ---------------------------------------------------------------------------
@@ -327,8 +326,8 @@ class TestLibraryCleanupEdgeCases:
 
     def test_orphaned_media_file_path_exception(self, tmp_path: Path) -> None:
         """Lines 69-70: mf.path triggers an exception during path resolution."""
-        from lan_streamer.db.library import _cleanup_orphaned_media_files
         from lan_streamer.db.connection import get_session
+        from lan_streamer.db.library import _cleanup_orphaned_media_files
         from lan_streamer.db.models import MediaFile
 
         with get_session() as session:
@@ -347,8 +346,8 @@ class TestLibraryCleanupEdgeCases:
         self, tmp_path: Path
     ) -> None:
         """Lines 82-83: Path(mf.path).exists() raises an exception."""
-        from lan_streamer.db.library import _cleanup_orphaned_media_files
         from lan_streamer.db.connection import get_session
+        from lan_streamer.db.library import _cleanup_orphaned_media_files
         from lan_streamer.db.models import MediaFile
 
         # Use a path under root that triggers an exception on .exists()
@@ -375,8 +374,8 @@ class TestLibraryCleanupEdgeCases:
 
 def test_cleanup_library_movie_scanned_directory(tmp_path: Path) -> None:
     """Lines 128-133: movie library ScannedDirectory cleanup."""
-    from lan_streamer.db.library import cleanup_library
     from lan_streamer.db.connection import get_session
+    from lan_streamer.db.library import cleanup_library
     from lan_streamer.db.models import ScannedDirectory
     from lan_streamer.system.config import config
 
@@ -409,8 +408,8 @@ def test_cleanup_library_movie_scanned_directory(tmp_path: Path) -> None:
 
 def test_cleanup_library_tv_scanned_directory_delete(tmp_path: Path) -> None:
     """Line 142: delete ScannedDirectory for series not in DB."""
-    from lan_streamer.db.library import cleanup_library
     from lan_streamer.db.connection import get_session
+    from lan_streamer.db.library import cleanup_library
     from lan_streamer.db.models import ScannedDirectory, Series
     from lan_streamer.system.config import config
 
@@ -447,8 +446,8 @@ def test_cleanup_library_tv_scanned_directory_delete(tmp_path: Path) -> None:
 
 def test_cleanup_library_tv_scanned_directory_no_series(tmp_path: Path) -> None:
     """Line 142: series folder exists but no DB entry -> delete ScannedDirectory."""
-    from lan_streamer.db.library import cleanup_library
     from lan_streamer.db.connection import get_session
+    from lan_streamer.db.library import cleanup_library
     from lan_streamer.db.models import ScannedDirectory
     from lan_streamer.system.config import config
 

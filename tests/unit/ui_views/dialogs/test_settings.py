@@ -1,6 +1,7 @@
 from unittest.mock import patch
-from lan_streamer.ui_views import SettingsDialog
+
 from lan_streamer.system.config import config
+from lan_streamer.ui_views import SettingsDialog
 
 
 def test_settings_dialog_library_scan_order(qtbot) -> None:
@@ -80,8 +81,8 @@ def test_settings_dialog_combined_view_comboboxes(qtbot) -> None:
 
 
 def test_settings_dialog_vlc_buffer(qtbot) -> None:
-    from lan_streamer.ui_views.dialogs.settings import SettingsDialog
     from lan_streamer.system.config import config
+    from lan_streamer.ui_views.dialogs.settings import SettingsDialog
 
     config.vlc_buffer_ms = 4000
     dialog = SettingsDialog()
@@ -103,8 +104,8 @@ def test_settings_dialog_vlc_buffer(qtbot) -> None:
 
 
 def test_settings_dialog_sync_history_on_start(qtbot) -> None:
-    from lan_streamer.ui_views.dialogs.settings import SettingsDialog
     from lan_streamer.system.config import config
+    from lan_streamer.ui_views.dialogs.settings import SettingsDialog
 
     config.sync_history_on_start = True
     dialog = SettingsDialog()
@@ -126,8 +127,8 @@ def test_settings_dialog_sync_history_on_start(qtbot) -> None:
 
 
 def test_settings_dialog_anime_library_toggle(qtbot) -> None:
-    from lan_streamer.ui_views.dialogs.settings import SettingsDialog
     from lan_streamer.system.config import config
+    from lan_streamer.ui_views.dialogs.settings import SettingsDialog
 
     initial_libraries = {
         "TV Shows": {"type": "tv", "paths": ["/tv"]},

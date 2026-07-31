@@ -1,4 +1,5 @@
 from unittest.mock import patch
+
 from lan_streamer.backend.scan_series_worker import ScanSingleSeriesWorker
 
 

@@ -1,10 +1,11 @@
-import logging
 import json
-from typing import Dict, Any
+import logging
+from typing import Any, Dict
+
 from sqlalchemy import select
 
 from lan_streamer.db.connection import get_session
-from lan_streamer.db.models import Series, Season, Episode, Movie
+from lan_streamer.db.models import Episode, Movie, Season, Series
 from lan_streamer.db.utils import natural_sort_key
 
 logger = logging.getLogger("lan_streamer.db.orm_serialization")

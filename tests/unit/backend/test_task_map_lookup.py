@@ -89,10 +89,11 @@ def test_task_map_lookup_does_not_use_next_generator() -> None:
 def test_scan_all_libraries_worker_uses_inverted_task_map() -> None:
     """Integration-level smoke test: ScanAllLibrariesWorker runs without
     KeyError on task lookup, confirming inverted map is in place."""
-    from lan_streamer.scanner import LibraryDict
-    from lan_streamer.backend import ScanAllLibrariesWorker
-    from lan_streamer.system.async_task_manager import AsyncTaskManager
     from PySide6.QtCore import QObject
+
+    from lan_streamer.backend import ScanAllLibrariesWorker
+    from lan_streamer.scanner import LibraryDict
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
 
     def _scan_side_effect(*args: Any, **kwargs: Any) -> LibraryDict:
         return LibraryDict()

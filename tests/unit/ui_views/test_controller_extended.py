@@ -5,14 +5,14 @@ Targeting lines: 97, 105, 148, 160, 171-173, 176-178, 189-196, 218-222, 230-246,
 505-526, 538, 543, 549-561, 564, 569-573, 587-596, and more.
 """
 
-import pytest
-from unittest.mock import patch, MagicMock, ANY
 from typing import List
+from unittest.mock import ANY, MagicMock, patch
 
-from lan_streamer.ui_views import Controller
+import pytest
+
 from lan_streamer.backend import MetadataApplyWorker as MetadataApplyWorker_real
 from lan_streamer.system.config import config
-
+from lan_streamer.ui_views import Controller
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -8,6 +8,7 @@ own fresh session — ensuring data was actually committed to the database.
 """
 
 import asyncio
+
 from lan_streamer.db.library_shared import get_directory_mtime, save_directory_mtime
 
 

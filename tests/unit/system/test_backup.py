@@ -1,15 +1,15 @@
-import os
 import json
-import pytest
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Generator
 from unittest.mock import patch
 
+import pytest
 from sqlalchemy import create_engine, text
 
-from lan_streamer.system.config import config
 from lan_streamer.system import backup
+from lan_streamer.system.config import config
 
 
 @pytest.fixture

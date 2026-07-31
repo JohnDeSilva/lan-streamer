@@ -8,17 +8,16 @@ Covers: __init__, _setup_ui, _wire_signals, populate_libraries, on_library_chang
         _open_search_dialog, _on_search_result_selected, search button integration.
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
 from typing import Any, Dict
+from unittest.mock import MagicMock, patch
 
+import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QListWidgetItem, QPushButton, QDialog
+from PySide6.QtWidgets import QDialog, QListWidgetItem, QPushButton
 
+from lan_streamer.system.config import config
 from lan_streamer.ui_views import Controller
 from lan_streamer.ui_views.library_grid import LibraryGridView
-from lan_streamer.system.config import config
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

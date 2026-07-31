@@ -30,7 +30,6 @@ And scanner/core.py:
 from pathlib import Path
 from unittest.mock import patch
 
-
 # ---------------------------------------------------------------------------
 # scanner/parser.py
 # ---------------------------------------------------------------------------
@@ -812,8 +811,9 @@ class TestScanDirectoriesUnavailableRoot:
 
 class TestProcessSeasonMetadata:
     def test_process_season_metadata_specials(self) -> None:
-        from lan_streamer.services.metadata_episode import _process_season_metadata
         from pathlib import Path
+
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/some/path/Specials")
         series_data = {
@@ -837,8 +837,9 @@ class TestProcessSeasonMetadata:
             mock_tmdb.get_episodes.assert_called_once_with("123", 0)
 
     def test_process_season_metadata_valid_season(self) -> None:
-        from lan_streamer.services.metadata_episode import _process_season_metadata
         from pathlib import Path
+
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/some/path/Season 5")
         series_data = {
@@ -859,8 +860,9 @@ class TestProcessSeasonMetadata:
             mock_tmdb.get_episodes.assert_called_once_with("123", 5)
 
     def test_process_season_metadata_invalid_season_skips_fetch(self) -> None:
-        from lan_streamer.services.metadata_episode import _process_season_metadata
         from pathlib import Path
+
+        from lan_streamer.services.metadata_episode import _process_season_metadata
 
         season_dir = Path("/some/path/Season X")
         series_data = {

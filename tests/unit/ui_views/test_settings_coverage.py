@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PySide6.QtWidgets import QMessageBox
 
-from lan_streamer.ui_views.dialogs.settings import SettingsDialog
 from lan_streamer.system.config import config
+from lan_streamer.ui_views.dialogs.settings import SettingsDialog
 
 
 @pytest.fixture

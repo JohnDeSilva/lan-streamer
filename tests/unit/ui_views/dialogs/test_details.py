@@ -1,13 +1,14 @@
-import pytest
 from unittest.mock import patch
-from PySide6.QtWidgets import QMessageBox, QLabel
+
+import pytest
+from PySide6.QtWidgets import QLabel, QMessageBox
+
 from lan_streamer.ui_views import (
     Controller,
     EpisodeDetailsDialog,
     MovieDetailsDialog,
     SeriesDetailsDialog,
 )
-
 
 # ---------------------------------------------------------------------------
 # Episode Details Dialog Tests
@@ -669,8 +670,8 @@ def test_series_details_dialog_name_and_save(mock_series_controller, qtbot):
 
 
 def test_manual_mapping_remapping_and_unmapping_db(mock_series_controller):
-    from lan_streamer.db.library import save_library, load_library
     from lan_streamer.db import get_session
+    from lan_streamer.db.library import load_library, save_library
     from lan_streamer.db.models import Episode
 
     # 1. Setup initial library state in memory

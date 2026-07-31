@@ -1,4 +1,5 @@
 import logging
+
 from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
@@ -112,7 +113,9 @@ def test_settings_dialog_filters_and_actions(qtbot: QtBot) -> None:
 def test_settings_dialog_export_logs(qtbot: QtBot, tmp_path, monkeypatch) -> None:
     import zipfile
     from pathlib import Path
+
     from PySide6.QtWidgets import QMessageBox
+
     from lan_streamer.system.config import config
 
     # 1. Setup temporary directories for logs and home
@@ -196,6 +199,7 @@ def test_settings_dialog_export_logs(qtbot: QtBot, tmp_path, monkeypatch) -> Non
 def test_config_path_expansion(tmp_path, monkeypatch) -> None:
     import json
     from pathlib import Path
+
     from lan_streamer.system.config import Config
 
     fake_home = tmp_path / "fake_home"
@@ -237,11 +241,12 @@ def test_config_path_expansion(tmp_path, monkeypatch) -> None:
 
 def test_divided_service_logging_realtime_flow(tmp_path) -> None:
     import logging
+
     from lan_streamer.system.config import config
     from lan_streamer.system.logging_handler import (
-        setup_qt_logging,
-        qt_log_handler,
         SERVICE_LOGGERS,
+        qt_log_handler,
+        setup_qt_logging,
     )
 
     # Use temporary directory for logs
@@ -368,9 +373,10 @@ def test_divided_service_logging_realtime_flow(tmp_path) -> None:
 
 def test_set_application_log_level() -> None:
     import logging
+
     from lan_streamer.system.logging_handler import (
-        set_application_log_level,
         SERVICE_LOGGERS,
+        set_application_log_level,
     )
 
     root_logger = logging.getLogger()
@@ -396,8 +402,9 @@ def test_set_application_log_level() -> None:
 
 
 def test_settings_dialog_tab_order(qtbot) -> None:
-    from lan_streamer.ui_views import SettingsDialog
     from PySide6.QtWidgets import QTabWidget
+
+    from lan_streamer.ui_views import SettingsDialog
 
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)

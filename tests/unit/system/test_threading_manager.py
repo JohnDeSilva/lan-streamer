@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 from PySide6.QtCore import QObject
 
-from lan_streamer.system.threading_manager import WorkerSlot, WorkerManager
+from lan_streamer.system.threading_manager import WorkerManager, WorkerSlot
 
 
 class _StubQObject(QObject):

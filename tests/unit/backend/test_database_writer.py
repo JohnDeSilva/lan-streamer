@@ -1,7 +1,9 @@
 import asyncio
 from typing import Any
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from lan_streamer.backend.database_writer import (
     AsyncDatabaseWriter,
     DatabaseWriteTask,

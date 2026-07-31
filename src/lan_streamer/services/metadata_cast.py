@@ -1,14 +1,16 @@
 """Service layer for fetching and storing cast/crew metadata from TMDB."""
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from sqlalchemy import select
+
 from lan_streamer.db.connection import get_session
-from lan_streamer.db.models import Series, Movie
+from lan_streamer.db.models import Movie, Series
 from lan_streamer.db.models_cast import MediaCast
 from lan_streamer.db.queries_cast import (
-    get_or_create_person,
     delete_cast_for_media,
+    get_or_create_person,
 )
 from lan_streamer.providers.tmdb import tmdb_client
 

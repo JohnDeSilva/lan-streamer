@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from lan_streamer.providers.jellyfin_async import AsyncJellyfinClient
 from lan_streamer.providers.http_client import AsyncHTTPClient
+from lan_streamer.providers.jellyfin_async import AsyncJellyfinClient
 
 
 @pytest.fixture

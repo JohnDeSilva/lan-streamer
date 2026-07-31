@@ -2,7 +2,8 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from PySide6.QtCore import QObject, Signal
 
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase

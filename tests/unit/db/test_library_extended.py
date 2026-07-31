@@ -12,16 +12,16 @@ Missing lines to hit: 46, 53, 55, 58, 64, 218, 243-246, 258, 293, 295, 297, 299,
   369-370, 373, 402-403, 488-496, 512, 563, 569
 """
 
-import pytest
 import json
 from typing import Any, Dict
 from unittest.mock import patch
 
+import pytest
+
 import lan_streamer.db as db
 from lan_streamer.db import get_session
-from lan_streamer.db.models import Series, Season, Episode, Movie
+from lan_streamer.db.models import Episode, Movie, Season, Series
 from lan_streamer.system.config import config
-
 
 # ---------------------------------------------------------------------------
 # _apply_movie_fields - audio/subtitle json fields and remaining branches
@@ -917,8 +917,9 @@ def test_save_library_shared_media_files_no_unique_constraint_failure(
     when multiple episodes or movies reference the exact same media file path,
     and both records should successfully map to the same MediaFile record.
     """
-    from lan_streamer.db.models import MediaFile
     from sqlalchemy import select
+
+    from lan_streamer.db.models import MediaFile
 
     # Mock TV library structure
     shared_path = "/storage/nas/tv/SharedShow/Season 1/SharedFile_S01E01_S01E02.mkv"
@@ -995,8 +996,9 @@ def test_save_episode_record_creates_media_files_from_versions(
     mock_db_file,
 ) -> None:
     """Episode_data with multiple versions creates one MediaFile per version."""
-    from lan_streamer.db.library_tv import _save_episode_record
     from sqlalchemy import select
+
+    from lan_streamer.db.library_tv import _save_episode_record
     from lan_streamer.db.models import MediaFile
 
     with get_session() as session:

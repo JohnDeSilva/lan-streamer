@@ -283,8 +283,8 @@ def test_cleanup_library(tmp_path) -> None:
 
 
 def test_cleanup_movie_library_removes_missing(mock_db_file, tmp_path) -> None:
-    from lan_streamer.db.library_movie import _cleanup_movie_library
     from lan_streamer.db.connection import get_session
+    from lan_streamer.db.library_movie import _cleanup_movie_library
     from lan_streamer.db.models import Movie
 
     real_file = tmp_path / "present.mkv"
@@ -311,9 +311,9 @@ def test_cleanup_movie_library_removes_missing(mock_db_file, tmp_path) -> None:
 
 
 def test_cleanup_tv_library_removes_missing_series(mock_db_file, tmp_path) -> None:
-    from lan_streamer.db.library_tv import _cleanup_tv_library
     from lan_streamer.db.connection import get_session
-    from lan_streamer.db.models import Series, Season, Episode
+    from lan_streamer.db.library_tv import _cleanup_tv_library
+    from lan_streamer.db.models import Episode, Season, Series
 
     real_series_dir = tmp_path / "ActiveShow"
     season_dir = real_series_dir / "Season 1"
@@ -340,9 +340,9 @@ def test_cleanup_tv_library_removes_missing_series(mock_db_file, tmp_path) -> No
 
 
 def test_cleanup_tv_library_removes_missing_episode(mock_db_file, tmp_path) -> None:
-    from lan_streamer.db.library_tv import _cleanup_tv_library
     from lan_streamer.db.connection import get_session
-    from lan_streamer.db.models import Series, Season, Episode
+    from lan_streamer.db.library_tv import _cleanup_tv_library
+    from lan_streamer.db.models import Episode, Season, Series
 
     series_dir = tmp_path / "ShowWithMissingEp"
     season_dir = series_dir / "Season 1"
@@ -374,9 +374,9 @@ def test_cleanup_tv_library_removes_missing_episode(mock_db_file, tmp_path) -> N
 def test_cleanup_tv_library_removes_missing_episode_without_metadata(
     mock_db_file, tmp_path
 ) -> None:
-    from lan_streamer.db.library_tv import _cleanup_tv_library
     from lan_streamer.db.connection import get_session
-    from lan_streamer.db.models import Series, Season, Episode
+    from lan_streamer.db.library_tv import _cleanup_tv_library
+    from lan_streamer.db.models import Episode, Season, Series
 
     series_dir = tmp_path / "ShowWithMissingEp"
     season_dir = series_dir / "Season 1"
@@ -414,9 +414,9 @@ def test_cleanup_tv_library_preserves_valid_media_files(mock_db_file, tmp_path) 
     """When default_path points to a missing file but other media_files are
     valid, _cleanup_tv_library must update default_path rather than nuking
     everything via episode.path = None."""
-    from lan_streamer.db.library_tv import _cleanup_tv_library
     from lan_streamer.db.connection import get_session
-    from lan_streamer.db.models import Series, Season, Episode, MediaFile
+    from lan_streamer.db.library_tv import _cleanup_tv_library
+    from lan_streamer.db.models import Episode, MediaFile, Season, Series
 
     series_dir = tmp_path / "ShowWithValidFiles"
     season_dir = series_dir / "Season 1"
@@ -475,9 +475,9 @@ def test_cleanup_tv_library_removes_stale_mediafiles(mock_db_file, tmp_path) -> 
     """When an episode has MediaFile records whose files no longer exist on
     disk, _cleanup_tv_library must remove them while preserving valid ones.
     The default_path must be updated if it pointed to the stale file."""
-    from lan_streamer.db.library_tv import _cleanup_tv_library
     from lan_streamer.db.connection import get_session
-    from lan_streamer.db.models import Series, Season, Episode, MediaFile
+    from lan_streamer.db.library_tv import _cleanup_tv_library
+    from lan_streamer.db.models import Episode, MediaFile, Season, Series
 
     series_dir = tmp_path / "ShowWithStaleFiles"
     season_dir = series_dir / "Season 1"
@@ -605,9 +605,10 @@ def test_save_episode_does_not_carry_forward_stale_mediafile(tmp_path) -> None:
     db.save_library(library_name, updated_lib)
 
     # The stale file path must not be in the episode's media_files after save.
+    from sqlalchemy import select as _sel
+
     from lan_streamer.db.connection import get_session as _gs
     from lan_streamer.db.models import Episode as _Ep
-    from sqlalchemy import select as _sel
 
     with _gs() as s:
         ep_db = s.scalars(_sel(_Ep).where(_Ep.tmdb_number == 1)).first()
@@ -703,8 +704,8 @@ def test_load_library_correctness_complex() -> None:
 
 
 def test_apply_movie_fields_sets_all_values(mock_db_file) -> None:
-    from lan_streamer.db.library_movie import _apply_movie_fields
     from lan_streamer.db.connection import get_session
+    from lan_streamer.db.library_movie import _apply_movie_fields
     from lan_streamer.db.models import Movie
 
     with get_session() as session:
@@ -738,8 +739,8 @@ def test_apply_movie_fields_sets_all_values(mock_db_file) -> None:
 
 
 def test_apply_movie_fields_does_not_overwrite_with_falsy(mock_db_file) -> None:
-    from lan_streamer.db.library_movie import _apply_movie_fields
     from lan_streamer.db.connection import get_session
+    from lan_streamer.db.library_movie import _apply_movie_fields
     from lan_streamer.db.models import Movie
 
     with get_session() as session:
@@ -1828,8 +1829,9 @@ def test_save_season_and_movie_data_progressive_and_safe_update() -> None:
 
 def test_sync_media_files_flushing_and_deduplication(mock_db_file) -> None:
     from sqlalchemy import select
+
     from lan_streamer.db import get_session
-    from lan_streamer.db.models import Series, Season, Episode, MediaFile
+    from lan_streamer.db.models import Episode, MediaFile, Season, Series
 
     # 1. Create a series with an episode and a media file
     with get_session() as session:

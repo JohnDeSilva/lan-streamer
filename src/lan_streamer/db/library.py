@@ -13,34 +13,34 @@ cleanup_library is defined here as it bridges both TV and Movie cleanup.
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 from sqlalchemy import select
 
-from lan_streamer.system.config import config
+from lan_streamer.db.library_movie import (  # noqa: F401
+    _apply_movie_fields,
+    _cleanup_movie_library,
+    load_movie_library,
+    save_movie_data,
+    save_movie_library,
+)
 from lan_streamer.db.library_shared import (  # noqa: F401
-    get_session,
-    _update_field_safely,
     _sync_media_files,
+    _update_field_safely,
     get_directory_mtime,
+    get_session,
     save_directory_mtime,
 )
 from lan_streamer.db.library_tv import (  # noqa: F401
+    _cleanup_tv_library,
+    _save_episode_record,
+    _save_season_record,
+    _save_series_record,
     load_library,
     save_library,
     save_season_data,
-    _save_series_record,
-    _save_season_record,
-    _save_episode_record,
-    _cleanup_tv_library,
 )
-from lan_streamer.db.library_movie import (  # noqa: F401
-    load_movie_library,
-    save_movie_library,
-    save_movie_data,
-    _apply_movie_fields,
-    _cleanup_movie_library,
-)
+from lan_streamer.system.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,9 @@ def _cleanup_orphaned_media_files(
 ) -> None:
     """Removes MediaFile records under root_directories whose physical file no longer exists on disk."""
     from pathlib import Path
+
     from sqlalchemy import select
+
     from lan_streamer.db.models import MediaFile
 
     media_files = session.scalars(select(MediaFile)).all()
@@ -134,10 +136,15 @@ def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str,
             # Clean up ScannedDirectory entries for directories on disk that
             # no longer have a corresponding DB record.
             from sqlalchemy import delete as sa_delete
+
+            from lan_streamer.db.models import (
+                Movie as MovieModel,
+            )
             from lan_streamer.db.models import (
                 ScannedDirectory,
+            )
+            from lan_streamer.db.models import (
                 Series as SeriesModel,
-                Movie as MovieModel,
             )
 
             for root in root_directories:

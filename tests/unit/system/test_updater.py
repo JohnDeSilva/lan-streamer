@@ -1,14 +1,15 @@
 import stat
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import MagicMock, mock_open, patch
+
 import requests
 
 from lan_streamer.system.updater import (
-    parse_version,
-    get_linux_distro,
-    get_target_asset_name,
-    UpdateCheckWorker,
     DownloadWorker,
     InstallWorker,
+    UpdateCheckWorker,
+    get_linux_distro,
+    get_target_asset_name,
+    parse_version,
 )
 
 

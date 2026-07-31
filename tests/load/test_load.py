@@ -1,6 +1,8 @@
-import pytest
-import time
 import random
+import time
+
+import pytest
+
 from lan_streamer import db
 
 

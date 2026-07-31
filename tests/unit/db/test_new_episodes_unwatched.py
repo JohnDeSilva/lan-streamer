@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from lan_streamer import db
 
@@ -96,7 +97,7 @@ def test_placeholder_promotion_resets_watched_status(_isolated_db) -> None:
 
 
 def test_movie_new_file_resets_watched_status(_isolated_db) -> None:
-    from lan_streamer.db.library_movie import save_movie_library, load_movie_library
+    from lan_streamer.db.library_movie import load_movie_library, save_movie_library
 
     library_name = "Test Movie Library"
 

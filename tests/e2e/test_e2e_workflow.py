@@ -1,26 +1,27 @@
-import pytest
-from unittest.mock import patch, MagicMock, ANY
 from typing import Any, Dict, List, Optional
+from unittest.mock import ANY, MagicMock, patch
+
+import pytest
 from PySide6.QtWidgets import (
-    QPushButton,
-    QTableWidget,
+    QCheckBox,
     QListWidgetItem,
     QMessageBox,
-    QCheckBox,
+    QPushButton,
+    QTableWidget,
 )
 
+from lan_streamer.backend import MetadataApplyWorker as MetadataApplyWorker_real
+from lan_streamer.system.config import config
 from lan_streamer.ui_views import (
     Controller,
-    LibraryGridView,
-    SeriesDetailView,
-    MetadataMatchDialog,
-    JellyfinMatchDialog,
     EpisodeMatchDialog,
+    JellyfinMatchDialog,
+    LibraryGridView,
+    MetadataMatchDialog,
     RenamePreviewDialog,
+    SeriesDetailView,
     SettingsDialog,
 )
-from lan_streamer.system.config import config
-from lan_streamer.backend import MetadataApplyWorker as MetadataApplyWorker_real
 
 
 @pytest.fixture
@@ -111,6 +112,7 @@ def test_library_grid_view_rendering(
 
 def test_library_grid_view_combined_view(qtbot: Any) -> None:
     from PySide6.QtWidgets import QLabel, QListWidget
+
     from lan_streamer.system.config import config
 
     controller_instance = Controller()

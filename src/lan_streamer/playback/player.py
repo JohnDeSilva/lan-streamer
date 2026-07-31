@@ -1,7 +1,7 @@
-import subprocess
-from pathlib import Path
-import sys
 import logging
+import subprocess
+import sys
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

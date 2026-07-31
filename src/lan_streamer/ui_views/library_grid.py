@@ -1,31 +1,31 @@
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
+from PySide6.QtCore import QSize, Qt, Slot
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QListWidget,
     QListWidgetItem,
-    QComboBox,
-    QCheckBox,
+    QPushButton,
     QScrollArea,
-    QFrame,
     QTabBar,
-    QDialog,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Slot, QSize
-from PySide6.QtGui import QIcon, QColor
-from lan_streamer.ui_views.proxy import QPixmap
 
-from lan_streamer.system.config import config
 from lan_streamer import db
-from lan_streamer.ui_views.progress_widgets import LibraryScanProgressBar
-from lan_streamer.ui_views.dialogs import SettingsDialog, SearchDialog
+from lan_streamer.system.config import config
 from lan_streamer.ui_views.controller import Controller
+from lan_streamer.ui_views.dialogs import SearchDialog, SettingsDialog
+from lan_streamer.ui_views.progress_widgets import LibraryScanProgressBar
+from lan_streamer.ui_views.proxy import QPixmap
 
 logger = logging.getLogger(__name__)
 

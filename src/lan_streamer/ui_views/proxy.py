@@ -1,25 +1,41 @@
 import logging
 import sys
 from typing import Any, Callable
+
+from PySide6.QtGui import QPixmap as QPixmap_real
 from PySide6.QtWidgets import (
-    QMessageBox as QMessageBox_real,
     QFileDialog as QFileDialog_real,
+)
+from PySide6.QtWidgets import (
     QMenu as QMenu_real,
 )
-from PySide6.QtGui import QPixmap as QPixmap_real
+from PySide6.QtWidgets import (
+    QMessageBox as QMessageBox_real,
+)
+
 from lan_streamer.backend import (
     CleanupWorker as CleanupWorker_real,
-    JellyfinPullWorker as JellyfinPullWorker_real,
-    JellyfinPushWorker as JellyfinPushWorker_real,
-    ScanAllLibrariesWorker as ScanAllLibrariesWorker_real,
+)
+from lan_streamer.backend import (
     FilePropertyExtractionWorker as FilePropertyExtractionWorker_real,
+)
+from lan_streamer.backend import (
+    JellyfinPullWorker as JellyfinPullWorker_real,
+)
+from lan_streamer.backend import (
+    JellyfinPushWorker as JellyfinPushWorker_real,
+)
+from lan_streamer.backend import (
     MetadataApplyWorker as MetadataApplyWorker_real,
 )
+from lan_streamer.backend import (
+    ScanAllLibrariesWorker as ScanAllLibrariesWorker_real,
+)
 from lan_streamer.providers.jellyfin import jellyfin_client as jellyfin_client_real
-from lan_streamer.providers.tmdb import tmdb_client as tmdb_client_real
 from lan_streamer.providers.myanimelist import (
     myanimelist_client as myanimelist_client_real,
 )
+from lan_streamer.providers.tmdb import tmdb_client as tmdb_client_real
 
 logger = logging.getLogger(__name__)
 

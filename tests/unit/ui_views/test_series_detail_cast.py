@@ -1,10 +1,12 @@
-from unittest.mock import patch
 from typing import Any
+from unittest.mock import patch
+
 from sqlalchemy import text
-from lan_streamer.ui_views import SeriesDetailView, Controller
+
 from lan_streamer.db.connection import get_session
-from lan_streamer.db.models import Series, Season, Episode
-from lan_streamer.db.models_cast import Person, MediaCast
+from lan_streamer.db.models import Episode, Season, Series
+from lan_streamer.db.models_cast import MediaCast, Person
+from lan_streamer.ui_views import Controller, SeriesDetailView
 
 
 def test_series_detail_cast_section(qtbot: Any) -> None:

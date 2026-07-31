@@ -1,16 +1,14 @@
 import sys
 from pathlib import Path
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
 # Add src to sys.path to import our models
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from lan_streamer.db.models import Base
 from lan_streamer.db import DB_FILE
+from lan_streamer.db.models import Base
 
 # Ensure the database directory exists before Alembic attempts to connect
 try:

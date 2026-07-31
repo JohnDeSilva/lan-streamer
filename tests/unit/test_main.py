@@ -1,7 +1,9 @@
 import asyncio
-import pytest
+from typing import Any, Callable
 from unittest.mock import MagicMock, patch
-from typing import Callable, Any
+
+import pytest
+
 from lan_streamer import main
 
 
@@ -180,6 +182,7 @@ def test_main_logging_failure() -> None:
 
 def test_main_proactive_log_cleanup(tmp_path: Any) -> None:
     import time
+
     from lan_streamer.system.config import config
 
     config.log_directory = str(tmp_path / "logs")

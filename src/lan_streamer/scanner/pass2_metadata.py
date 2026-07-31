@@ -12,8 +12,8 @@ import concurrent.futures
 import datetime
 import logging
 import re
-from pathlib import Path
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Dict
 
 from lan_streamer.db.utils import natural_sort_key

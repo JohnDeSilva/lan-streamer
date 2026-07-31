@@ -1,23 +1,23 @@
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
-    QWidget,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
     QLineEdit,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QHeaderView,
-    QComboBox,
     QTreeWidget,
     QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Slot, Qt
 
 from lan_streamer.ui_views.proxy import QMessageBox, tmdb_client
 
@@ -356,8 +356,8 @@ class RenamePreviewDialog(QDialog):
             self.series_name
         ]
 
-        from lan_streamer.scanner.renamer import get_rename_preview
         from lan_streamer.db import natural_sort_key
+        from lan_streamer.scanner.renamer import get_rename_preview
 
         self.all_previews_list = get_rename_preview(series_dictionary, template_string)
 

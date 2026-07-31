@@ -1,8 +1,9 @@
-import pytest
 from unittest.mock import patch
 
-from lan_streamer import db
+import pytest
 from sqlalchemy import text
+
+from lan_streamer import db
 
 
 @pytest.fixture

@@ -1,4 +1,5 @@
 from unittest.mock import patch
+
 from lan_streamer.backend import ScanAllLibrariesWorker
 from lan_streamer.scanner.core import LibraryDict
 

@@ -1,8 +1,10 @@
-import pytest
-import requests
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from lan_streamer.providers.tmdb import TMDBClient, TMDB_IMAGE_BASE
+
+import pytest
+import requests
+
+from lan_streamer.providers.tmdb import TMDB_IMAGE_BASE, TMDBClient
 
 
 @pytest.fixture

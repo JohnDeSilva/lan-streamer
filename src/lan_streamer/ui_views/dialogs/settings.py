@@ -1,43 +1,43 @@
+import html
 import logging
 import zipfile
-import html
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
+from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtGui import QCloseEvent, QFont, QTextCursor
 from PySide6.QtWidgets import (
-    QDialog,
-    QWidget,
-    QLineEdit,
     QCheckBox,
+    QComboBox,
+    QDialog,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QComboBox,
-    QGroupBox,
-    QSpinBox,
-    QScrollArea,
-    QFrame,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QHBoxLayout,
-    QGridLayout,
     QPlainTextEdit,
-    QTextEdit,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
     QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Slot, QTimer
-from PySide6.QtGui import QCloseEvent, QTextCursor, QFont
 
+from lan_streamer import __version__
 from lan_streamer.system.config import config
-from lan_streamer.ui_views.proxy import QMessageBox, QFileDialog
 from lan_streamer.system.updater import UpdateCheckWorker
 from lan_streamer.ui_views.dialogs.update_dialog import UpdateDialog
-from lan_streamer import __version__
 from lan_streamer.ui_views.progress_widgets import (
-    SegmentedProgressBar,
     ScanProgressTree,
+    SegmentedProgressBar,
 )
+from lan_streamer.ui_views.proxy import QFileDialog, QMessageBox
 
 if TYPE_CHECKING:
     from lan_streamer.ui_views.controller import Controller
@@ -1548,8 +1548,9 @@ class SettingsDialog(QDialog):
 
     @Slot()
     def link_myanimelist_account(self) -> None:
-        from lan_streamer.ui_views.proxy import myanimelist_client
         from PySide6.QtWidgets import QInputDialog
+
+        from lan_streamer.ui_views.proxy import myanimelist_client
 
         client_id = self.myanimelist_client_id_input.text().strip()
         client_secret = self.myanimelist_client_secret_input.text().strip()
@@ -1588,7 +1589,7 @@ class SettingsDialog(QDialog):
         if not ok or not text.strip():
             return
 
-        from urllib.parse import urlparse, parse_qs
+        from urllib.parse import parse_qs, urlparse
 
         if (
             "myanimelist.net/v1/oauth2/authorize" in text

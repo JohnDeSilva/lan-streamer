@@ -1,11 +1,13 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
+
+from lan_streamer.system.config import config
 from lan_streamer.ui_views import Controller
 from lan_streamer.ui_views.dialogs.metadata_match import (
-    MetadataMatchDialog,
     JellyfinMatchDialog,
+    MetadataMatchDialog,
 )
-from lan_streamer.system.config import config
 
 
 @pytest.fixture

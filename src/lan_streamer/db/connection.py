@@ -1,13 +1,13 @@
 import logging
 import os
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator
-from contextlib import contextmanager
 
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from lan_streamer.system.config import config
 
@@ -132,8 +132,8 @@ def init_db() -> bool:
             logger.warning(f"Failed to create pre-migration database backup: {exc}")
 
     try:
-        from alembic.config import Config
         from alembic import command
+        from alembic.config import Config
 
         if getattr(sys, "frozen", False):
             base_path: Path = Path(getattr(sys, "_MEIPASS"))

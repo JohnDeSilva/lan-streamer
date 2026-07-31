@@ -8,11 +8,10 @@ Comprehensive tests for ui_views/progress_widgets.py covering:
 """
 
 from lan_streamer.ui_views.progress_widgets import (
-    SegmentedProgressBar,
-    ScanProgressTree,
     LibraryScanProgressBar,
+    ScanProgressTree,
+    SegmentedProgressBar,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers / shared fixtures

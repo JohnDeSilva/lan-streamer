@@ -1,7 +1,8 @@
-import re
 import logging
+import re
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
 from lan_streamer.scanner.parser import SUBTITLE_EXTENSIONS
 
 logger = logging.getLogger(__name__)

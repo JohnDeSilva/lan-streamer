@@ -3,8 +3,8 @@
 from sqlalchemy import select
 
 from lan_streamer.db import get_session
-from lan_streamer.db.models import Series, Movie
-from lan_streamer.db.models_cast import Person, MediaCast, MediaImage
+from lan_streamer.db.models import Movie, Series
+from lan_streamer.db.models_cast import MediaCast, MediaImage, Person
 
 
 def test_create_person() -> None:

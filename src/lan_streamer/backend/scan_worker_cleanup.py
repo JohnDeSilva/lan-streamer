@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import List, Optional
+
 from PySide6.QtCore import QObject, Signal
 
 from lan_streamer import db

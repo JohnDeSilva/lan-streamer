@@ -1,10 +1,12 @@
 """Service layer for fetching and managing media images from TMDB."""
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from sqlalchemy import select
+
 from lan_streamer.db.connection import get_session
-from lan_streamer.db.models import Series, Movie
+from lan_streamer.db.models import Movie, Series
 from lan_streamer.db.queries_cast import (
     add_media_image,
 )

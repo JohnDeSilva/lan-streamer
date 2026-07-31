@@ -16,12 +16,11 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
-from typing import Sequence, Union, Any, Dict
+from typing import Any, Dict, Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy import text
-
 
 # revision identifiers, used by Alembic.
 revision: str = "a1b2c3d4e5f6"

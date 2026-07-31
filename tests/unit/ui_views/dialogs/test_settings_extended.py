@@ -14,13 +14,13 @@ Targeting uncovered methods:
 - _load_config for libraries
 """
 
-import pytest
 from unittest.mock import patch
 
-from lan_streamer.ui_views.dialogs.settings import SettingsDialog
-from lan_streamer.ui_views import Controller
-from lan_streamer.system.config import config
+import pytest
 
+from lan_streamer.system.config import config
+from lan_streamer.ui_views import Controller
+from lan_streamer.ui_views.dialogs.settings import SettingsDialog
 
 # ---------------------------------------------------------------------------
 # Fixtures

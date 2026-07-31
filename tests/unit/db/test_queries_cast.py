@@ -3,21 +3,21 @@
 from sqlalchemy import select
 
 from lan_streamer.db import get_session
-from lan_streamer.db.models import Series, Movie, Season, Episode
-from lan_streamer.db.models_cast import Person, MediaCast, MediaImage
+from lan_streamer.db.models import Episode, Movie, Season, Series
+from lan_streamer.db.models_cast import MediaCast, MediaImage, Person
 from lan_streamer.db.queries_cast import (
-    get_cast_for_series,
-    get_cast_for_season,
+    add_media_image,
+    delete_cast_for_media,
     get_cast_for_episode,
     get_cast_for_movie,
+    get_cast_for_season,
+    get_cast_for_series,
+    get_filmography,
+    get_images_for_media,
+    get_or_create_person,
     get_person_by_id,
     get_person_by_tmdb_id,
-    get_or_create_person,
-    get_filmography,
-    delete_cast_for_media,
-    get_images_for_media,
     set_selected_image,
-    add_media_image,
 )
 
 

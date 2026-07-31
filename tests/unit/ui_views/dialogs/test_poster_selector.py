@@ -18,7 +18,6 @@ from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Movie, Season, Series
 from lan_streamer.ui_views.dialogs.poster_selector import PosterSelectorDialog
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -557,6 +556,7 @@ def test_movie_poster_label_has_context_menu_policy(qtbot):
 def test_season_poster_label_has_context_menu_policy(qtbot):
     """SeasonDetailView _poster_label should have CustomContextMenu policy."""
     from unittest.mock import MagicMock
+
     from lan_streamer.ui_views.season_detail import SeasonDetailView
 
     controller = MagicMock()
@@ -596,6 +596,7 @@ def test_movie_open_poster_selector_no_op_when_no_movie(qtbot):
 def test_season_open_poster_selector_no_op_when_no_season(qtbot):
     """_open_poster_selector should do nothing if no season is set."""
     from unittest.mock import MagicMock
+
     from lan_streamer.ui_views.season_detail import SeasonDetailView
 
     controller = MagicMock()
@@ -607,9 +608,10 @@ def test_season_open_poster_selector_no_op_when_no_season(qtbot):
 
 def test_thumbnail_downloader_callback_on_gui_thread(qtbot, series_record) -> None:
     """Thumbnail downloader callbacks must always run on the main GUI thread."""
+    from unittest.mock import MagicMock, patch
+
     from PySide6.QtCore import QThread
     from PySide6.QtWidgets import QApplication, QLabel
-    from unittest.mock import MagicMock, patch
 
     dialog = PosterSelectorDialog(
         media_name=series_record,

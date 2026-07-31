@@ -7,15 +7,15 @@ from typing import TYPE_CHECKING, Any, List, Optional
 if TYPE_CHECKING:
     from lan_streamer.db.models_cast import MediaCast, MediaImage
 from sqlalchemy import (
-    Integer,
-    String,
     Boolean,
-    ForeignKey,
-    UniqueConstraint,
-    Index,
-    LargeBinary,
-    TypeDecorator,
     Float,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    TypeDecorator,
+    UniqueConstraint,
     event,
 )
 from sqlalchemy.orm import (

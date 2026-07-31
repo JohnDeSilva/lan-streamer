@@ -1,13 +1,13 @@
 """Tests for the OpenSubtitles client module utilizing dependency injection."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
-from lan_streamer.providers.opensubtitles import (
-    OpenSubtitlesClient,
-    OPENSUBTITLES_API_BASE,
-)
+import pytest
 
+from lan_streamer.providers.opensubtitles import (
+    OPENSUBTITLES_API_BASE,
+    OpenSubtitlesClient,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures

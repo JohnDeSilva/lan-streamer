@@ -9,14 +9,13 @@ unit-test coverage.
 
 # Pre-import scanner to resolve circular import chain:
 # metadata_tv → scanner.parser → scanner.__init__ → metadata_resolution → metadata_tv
-import lan_streamer.scanner  # noqa: F401
-
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import lan_streamer.scanner  # noqa: F401
 
 # ============================================================================
 # _build_existing_episodes_index

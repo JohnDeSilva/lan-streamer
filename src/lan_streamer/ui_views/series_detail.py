@@ -2,8 +2,10 @@ import asyncio
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
+from PySide6.QtCore import QPoint, Qt, Signal, Slot
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPolygon
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -14,25 +16,23 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import Qt, QPoint, Signal, Slot
-from PySide6.QtGui import QFont, QColor, QAction, QIcon, QPainter, QPolygon
-from lan_streamer.ui_views.proxy import QPixmap
-
 from sqlalchemy import select
 
 from lan_streamer import db
 from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Series
 from lan_streamer.system.config import config
+from lan_streamer.ui_views.proxy import QPixmap
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QMenu
+
     from lan_streamer.providers.tmdb import tmdb_client
 else:
     from lan_streamer.ui_views.proxy import QMenu, tmdb_client
@@ -243,6 +243,7 @@ class SeriesDetailView(QWidget):
     ) -> tuple[Optional[str], list[dict[str, Any]]]:
         """Fetch series DB ID and cast list (to be run in a background thread)."""
         from sqlalchemy.orm import joinedload
+
         from lan_streamer.db.models_cast import MediaCast
 
         series_database_identifier = None

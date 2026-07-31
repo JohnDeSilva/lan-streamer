@@ -1,6 +1,8 @@
 import logging
+from typing import Any, Dict, List, Optional
+
 import requests
-from typing import List, Dict, Any, Optional
+
 from lan_streamer.system.config import config
 
 logger = logging.getLogger(__name__)

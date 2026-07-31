@@ -11,11 +11,11 @@ import pytest
 
 from lan_streamer.backend.scan_worker_base import (
     create_empty_stats,
-    merge_stats_dicts,
-    log_stats_breakdown,
-    log_issues_report,
-    log_db_write_error,
     discover_single_library_tree_impl,
+    log_db_write_error,
+    log_issues_report,
+    log_stats_breakdown,
+    merge_stats_dicts,
     series_belongs_to_root,
 )
 

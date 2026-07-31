@@ -1,8 +1,9 @@
 from PySide6.QtCore import QRect
 from PySide6.QtGui import QPaintEvent
+
 from lan_streamer.ui_views.progress_widgets import (
-    SegmentedProgressBar,
     ScanProgressTree,
+    SegmentedProgressBar,
 )
 
 

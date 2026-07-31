@@ -1,9 +1,10 @@
-import pytest
-from unittest.mock import patch, MagicMock, ANY
 from typing import Any, Dict, List
+from unittest.mock import ANY, MagicMock, patch
 
-from lan_streamer.ui_views import Controller
+import pytest
+
 from lan_streamer.backend import MetadataApplyWorker as MetadataApplyWorker_real
+from lan_streamer.ui_views import Controller
 
 
 @pytest.fixture

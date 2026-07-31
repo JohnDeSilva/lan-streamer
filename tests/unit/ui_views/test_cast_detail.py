@@ -1,12 +1,14 @@
 import os
-from unittest.mock import patch
 from typing import Any
-from sqlalchemy import text
+from unittest.mock import patch
+
 from PySide6.QtWidgets import QLabel, QLayout
-from lan_streamer.ui_views import CastDetailView
+from sqlalchemy import text
+
 from lan_streamer.db.connection import get_session
-from lan_streamer.db.models import Series, Episode, Season, Movie
-from lan_streamer.db.models_cast import Person, MediaCast
+from lan_streamer.db.models import Episode, Movie, Season, Series
+from lan_streamer.db.models_cast import MediaCast, Person
+from lan_streamer.ui_views import CastDetailView
 
 
 def test_cast_detail_display(qtbot: Any) -> None:
@@ -345,7 +347,8 @@ def test_cast_detail_media_click_emits_signal(qtbot: Any) -> None:
     assert card is not None
 
     import warnings
-    from PySide6.QtCore import QEvent, Qt, QPointF
+
+    from PySide6.QtCore import QEvent, QPointF, Qt
     from PySide6.QtGui import QMouseEvent
 
     with warnings.catch_warnings():

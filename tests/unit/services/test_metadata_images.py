@@ -1,14 +1,15 @@
 """Tests for the metadata_images service layer."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from sqlalchemy import select
 
 from lan_streamer.db import get_session
-from lan_streamer.db.models import Series, Movie
+from lan_streamer.db.models import Movie, Series
 from lan_streamer.db.models_cast import MediaImage
 from lan_streamer.services.metadata_images import (
-    fetch_and_store_series_images,
     fetch_and_store_movie_images,
+    fetch_and_store_series_images,
 )
 
 

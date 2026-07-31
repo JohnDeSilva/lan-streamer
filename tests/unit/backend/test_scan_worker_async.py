@@ -14,7 +14,6 @@ from lan_streamer.backend.scan_worker_async import AsyncScanWorker
 from lan_streamer.scanner import LibraryDict
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 
-
 # ---------------------------------------------------------------------------
 # Wait helper
 # ---------------------------------------------------------------------------

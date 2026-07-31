@@ -1,8 +1,9 @@
-import pytest
 from unittest.mock import patch
 
+import pytest
+
 from lan_streamer import db
-from lan_streamer.db.models import Series, Season, Episode
+from lan_streamer.db.models import Episode, Season, Series
 
 
 @pytest.fixture
@@ -432,7 +433,7 @@ def test_build_movie_dict(mock_db_file) -> None:
 
 
 def test_is_movie(mock_db_file) -> None:
-    from lan_streamer.db import is_movie, get_session
+    from lan_streamer.db import get_session, is_movie
     from lan_streamer.db.models import Movie
 
     # Initially, it should return False
@@ -469,7 +470,7 @@ def test_db_more_error_paths() -> None:
 
 
 def test_get_next_episode(mock_db_file) -> None:
-    from lan_streamer.db import get_session, get_next_episode
+    from lan_streamer.db import get_next_episode, get_session
 
     with get_session() as session:
         series = Series(name="Show", library_name="Lib", poster_path="/sp.jpg")
@@ -514,7 +515,7 @@ def test_get_next_episode(mock_db_file) -> None:
 
 
 def test_get_next_episode_skips_placeholder(mock_db_file) -> None:
-    from lan_streamer.db import get_session, get_next_episode
+    from lan_streamer.db import get_next_episode, get_session
 
     with get_session() as session:
         series = Series(
@@ -566,7 +567,7 @@ def test_get_next_episode_skips_placeholder(mock_db_file) -> None:
 
 
 def test_get_next_episode_placeholder_is_last(mock_db_file) -> None:
-    from lan_streamer.db import get_session, get_next_episode
+    from lan_streamer.db import get_next_episode, get_session
 
     with get_session() as session:
         series = Series(
@@ -603,7 +604,7 @@ def test_get_next_episode_placeholder_is_last(mock_db_file) -> None:
 
 
 def test_get_combined_next_up_ignores_placeholders(mock_db_file) -> None:
-    from lan_streamer.db import get_session, get_combined_next_up
+    from lan_streamer.db import get_combined_next_up, get_session
 
     with get_session() as session:
         # Create Series 1 (partially watched, has a season with 1 watched local episode and 1 placeholder episode)
@@ -684,7 +685,7 @@ def test_get_combined_next_up_ignores_placeholders(mock_db_file) -> None:
 
 
 def test_get_combined_next_up_plex_style(mock_db_file) -> None:
-    from lan_streamer.db import get_session, get_combined_next_up
+    from lan_streamer.db import get_combined_next_up, get_session
 
     with get_session() as session:
         # 1. Show 3: S01E01 (watched), S01E02 (unwatched) -> IN PROGRESS (points to Season 1)
@@ -839,7 +840,7 @@ def test_get_combined_next_up_plex_style(mock_db_file) -> None:
 def test_get_combined_next_up_ignores_specials_and_uses_default_grouping(
     mock_db_file,
 ) -> None:
-    from lan_streamer.db import get_session, get_combined_next_up
+    from lan_streamer.db import get_combined_next_up, get_session
 
     with get_session() as session:
         # Create a series with a Specials season and Season 1
@@ -894,7 +895,7 @@ def test_get_combined_next_up_ignores_specials_and_uses_default_grouping(
 
 
 def test_get_combined_smart_row_next_up(mock_db_file) -> None:
-    from lan_streamer.db import get_session, get_combined_smart_row
+    from lan_streamer.db import get_combined_smart_row, get_session
 
     with get_session() as session:
         # Create Series A

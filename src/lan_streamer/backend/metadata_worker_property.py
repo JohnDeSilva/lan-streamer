@@ -1,12 +1,13 @@
 import asyncio
 import logging
-from typing import Dict, Any, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
+
 from PySide6.QtCore import QObject, Signal
 
 from lan_streamer import db
-from lan_streamer.scanner.file_property_scanner import get_detailed_file_info
-from lan_streamer.backend.database_writer import AsyncDatabaseWriter
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
+from lan_streamer.backend.database_writer import AsyncDatabaseWriter
+from lan_streamer.scanner.file_property_scanner import get_detailed_file_info
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.async_utils import get_subprocess_semaphore
 

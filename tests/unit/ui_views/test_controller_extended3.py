@@ -12,13 +12,13 @@ Controller extended tests part 3:
 - MAL sync in controller
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from lan_streamer.ui_views import Controller
+import pytest
+
 from lan_streamer.backend import MetadataApplyWorker as MetadataApplyWorker_real
 from lan_streamer.system.config import config
-
+from lan_streamer.ui_views import Controller
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -11,11 +11,11 @@ Additional targeted tests for:
  - scanner/core.py – scan_directories existing_library merge/preserve paths
 """
 
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from PySide6.QtCore import Qt
 
+import pytest
+from PySide6.QtCore import Qt
 
 # ---------------------------------------------------------------------------
 # backend/scan_workers.py – ScanAllLibrariesWorker with root_dirs loop
@@ -158,6 +158,7 @@ def test_scan_all_libraries_worker_with_jellyfin(tmp_path) -> None:
 def test_scan_all_libraries_worker_error() -> None:
     """ScanAllLibrariesWorker emits library_error on per-library failure."""
     from PySide6.QtCore import Qt
+
     from lan_streamer.backend import ScanAllLibrariesWorker
 
     with patch("lan_streamer.backend.scan_worker_all.config") as mock_config:
@@ -182,9 +183,11 @@ def test_scan_all_libraries_worker_error() -> None:
 def test_async_scan_worker_with_jellyfin() -> None:
     """AsyncScanWorker fetches Jellyfin data when configured."""
     import asyncio
+
+    from PySide6.QtCore import QObject
+
     from lan_streamer.backend import AsyncScanWorker
     from lan_streamer.system.async_task_manager import AsyncTaskManager
-    from PySide6.QtCore import QObject
 
     loop = asyncio.new_event_loop()
     try:
@@ -242,9 +245,11 @@ def test_async_scan_worker_with_jellyfin() -> None:
 def test_cleanup_worker_success() -> None:
     """CleanupWorker emits finished with cleanup results."""
     import asyncio
+
+    from PySide6.QtCore import QObject
+
     from lan_streamer.backend.scan_worker_cleanup import CleanupWorker
     from lan_streamer.system.async_task_manager import AsyncTaskManager
-    from PySide6.QtCore import QObject
 
     loop = asyncio.new_event_loop()
     try:
@@ -278,9 +283,11 @@ def test_cleanup_worker_success() -> None:
 def test_cleanup_worker_error() -> None:
     """CleanupWorker emits error on exception."""
     import asyncio
+
+    from PySide6.QtCore import QObject
+
     from lan_streamer.backend.scan_worker_cleanup import CleanupWorker
     from lan_streamer.system.async_task_manager import AsyncTaskManager
-    from PySide6.QtCore import QObject
 
     loop = asyncio.new_event_loop()
     try:
@@ -393,6 +400,7 @@ def test_init_db_alembic_failure(tmp_path) -> None:
 def test_init_db_frozen_path() -> None:
     """When sys.frozen is set, init_db uses _MEIPASS as base path."""
     import sys
+
     import lan_streamer.db as db_module
     from lan_streamer.db.connection import init_db
 
@@ -438,8 +446,8 @@ def test_init_db_creates_backup_if_db_exists(tmp_path) -> None:
 def test_build_episode_dict_corrupt_json(mock_db_file) -> None:
     """Episode with corrupt JSON in audio_tracks falls back to empty list."""
     from lan_streamer.db import get_session
-    from lan_streamer.db.orm_serialization import _build_episode_dict
     from lan_streamer.db.models import Episode, Season, Series
+    from lan_streamer.db.orm_serialization import _build_episode_dict
 
     with get_session() as session:
         series = Series(name="JSONShow", library_name="Lib")
@@ -466,8 +474,8 @@ def test_build_episode_dict_corrupt_json(mock_db_file) -> None:
 def test_build_movie_dict_corrupt_json(mock_db_file) -> None:
     """Movie with corrupt JSON in audio_tracks falls back to empty list."""
     from lan_streamer.db import get_session
-    from lan_streamer.db.orm_serialization import _build_movie_dict
     from lan_streamer.db.models import Movie
+    from lan_streamer.db.orm_serialization import _build_movie_dict
 
     with get_session() as session:
         movie = Movie(
@@ -492,9 +500,9 @@ def test_build_movie_dict_corrupt_json(mock_db_file) -> None:
 
 def test_get_next_episode_is_last_in_series(mock_db_file) -> None:
     """get_next_episode returns None when episode is last in series."""
-    from lan_streamer.db import get_session
-    from lan_streamer.db.models import Series, Season, Episode
     import lan_streamer.db as db
+    from lan_streamer.db import get_session
+    from lan_streamer.db.models import Episode, Season, Series
 
     with get_session() as session:
         series = Series(name="LastShow", library_name="Lib")
@@ -518,9 +526,9 @@ def test_get_next_episode_is_last_in_series(mock_db_file) -> None:
 
 def test_get_next_episode_next_has_no_path(mock_db_file) -> None:
     """get_next_episode returns None when next episode is a placeholder (no path)."""
-    from lan_streamer.db import get_session
-    from lan_streamer.db.models import Series, Season, Episode
     import lan_streamer.db as db
+    from lan_streamer.db import get_session
+    from lan_streamer.db.models import Episode, Season, Series
 
     with get_session() as session:
         series = Series(name="PlaceholderShow", library_name="Lib")

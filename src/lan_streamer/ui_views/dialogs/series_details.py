@@ -1,20 +1,20 @@
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from PySide6.QtWidgets import (
-    QDialog,
-    QWidget,
-    QLineEdit,
-    QCheckBox,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QHBoxLayout,
-    QFormLayout,
-    QTabWidget,
-)
 from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from lan_streamer import db
 from lan_streamer.system.config import config

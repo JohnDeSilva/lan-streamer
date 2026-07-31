@@ -1,25 +1,25 @@
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
 from typing import Optional
 
+from PySide6.QtCore import QProcess, Slot
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
-    QWidget,
-    QVBoxLayout,
     QHBoxLayout,
     QLabel,
+    QProgressBar,
     QPushButton,
     QTextBrowser,
-    QProgressBar,
-    QApplication,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Slot, QProcess
-from PySide6.QtGui import QCloseEvent
 
-from lan_streamer.ui_views.proxy import QMessageBox
 from lan_streamer.system.updater import DownloadWorker, InstallWorker
+from lan_streamer.ui_views.proxy import QMessageBox
 
 logger: logging.Logger = logging.getLogger(__name__)
 

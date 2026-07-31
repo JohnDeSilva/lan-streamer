@@ -1,7 +1,8 @@
+import logging
 import os
 import stat
 import sys
-import logging
+
 import requests
 from PySide6.QtCore import QThread, Signal
 

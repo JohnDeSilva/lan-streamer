@@ -5,8 +5,8 @@ Tests for db/queries_ui.py – search_media_names (series + movies)
 import pytest
 
 from lan_streamer.db import get_session
+from lan_streamer.db.models import Movie, Series
 from lan_streamer.db.queries_ui import search_media_names
-from lan_streamer.db.models import Series, Movie
 
 
 @pytest.fixture

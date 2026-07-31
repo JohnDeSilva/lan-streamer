@@ -1,22 +1,22 @@
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (
     QDialog,
-    QWidget,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
     QLineEdit,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QHeaderView,
+    QWidget,
 )
 
-from lan_streamer.ui_views.proxy import QMessageBox
 from lan_streamer.providers.opensubtitles import opensubtitles_client
+from lan_streamer.ui_views.proxy import QMessageBox
 
 if TYPE_CHECKING:
     from lan_streamer.ui_views.controller import Controller

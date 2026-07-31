@@ -4,9 +4,8 @@ Tests for queries_technical_extraction.py
 
 from unittest.mock import MagicMock, patch
 
-
-from lan_streamer.db.queries_technical_extraction import get_all_media_items
 from lan_streamer.db.models import Episode, MediaFile, Movie, Season, Series
+from lan_streamer.db.queries_technical_extraction import get_all_media_items
 
 
 class TestGetAllMediaItems:

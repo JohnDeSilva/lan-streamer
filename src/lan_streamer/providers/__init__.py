@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from lan_streamer.providers.jellyfin import JellyfinClient
-from lan_streamer.providers.tmdb import TMDBClient
-from lan_streamer.providers.opensubtitles import OpenSubtitlesClient
-from lan_streamer.providers.myanimelist import MyAnimeListClient
 from lan_streamer.providers.http_client import AsyncHTTPClient
-from lan_streamer.providers.tmdb_async import AsyncTMDBClient
+from lan_streamer.providers.jellyfin import JellyfinClient
 from lan_streamer.providers.jellyfin_async import AsyncJellyfinClient
-from lan_streamer.providers.opensubtitles_async import AsyncOpenSubtitlesClient
+from lan_streamer.providers.myanimelist import MyAnimeListClient
 from lan_streamer.providers.myanimelist_async import AsyncMyAnimeListClient
+from lan_streamer.providers.opensubtitles import OpenSubtitlesClient
+from lan_streamer.providers.opensubtitles_async import AsyncOpenSubtitlesClient
+from lan_streamer.providers.tmdb import TMDBClient
+from lan_streamer.providers.tmdb_async import AsyncTMDBClient

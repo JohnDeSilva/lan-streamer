@@ -1,17 +1,17 @@
+import asyncio
 import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import asyncio
 from PySide6.QtCore import QObject, Signal
 
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
+from lan_streamer.providers.tmdb import tmdb_client as _tmdb_default
 from lan_streamer.scanner.pass1_file_discovery import scan_series_pass1
 from lan_streamer.scanner.pass2_metadata import scan_series_pass2
 from lan_streamer.services.metadata_updates import clean_series_data
 from lan_streamer.system.async_task_manager import AsyncTaskManager
-from lan_streamer.providers.tmdb import tmdb_client as _tmdb_default
 
 logger = logging.getLogger("lan_streamer.backend")
 

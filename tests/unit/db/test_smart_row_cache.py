@@ -3,22 +3,22 @@ from unittest.mock import patch
 from sqlalchemy import select
 
 from lan_streamer.db import get_session
-from lan_streamer.db.smart_row_cache import (
-    compute_config_hash,
-    get_cached_smart_rows,
-    rebuild_cache_for_config,
-    rebuild_all_cache,
-    get_affected_config_hashes_for_libraries,
-    _row_to_dict,
-    _resolve_series_ids,
-    _resolve_movie_ids,
-    _lookup_series_id,
-    _lookup_movie_id,
-)
 from lan_streamer.db.models import (
-    SmartRowCache,
-    Series,
     Movie,
+    Series,
+    SmartRowCache,
+)
+from lan_streamer.db.smart_row_cache import (
+    _lookup_movie_id,
+    _lookup_series_id,
+    _resolve_movie_ids,
+    _resolve_series_ids,
+    _row_to_dict,
+    compute_config_hash,
+    get_affected_config_hashes_for_libraries,
+    get_cached_smart_rows,
+    rebuild_all_cache,
+    rebuild_cache_for_config,
 )
 
 
@@ -301,8 +301,8 @@ def test_row_to_dict_series() -> None:
         session.commit()
 
         # Re-fetch with joinedload to match production behavior
-        from sqlalchemy.orm import joinedload
         from sqlalchemy import select
+        from sqlalchemy.orm import joinedload
 
         fetched = (
             session.scalars(
@@ -353,8 +353,8 @@ def test_row_to_dict_movie() -> None:
         session.add(row)
         session.commit()
 
-        from sqlalchemy.orm import joinedload
         from sqlalchemy import select
+        from sqlalchemy.orm import joinedload
 
         fetched = (
             session.scalars(
@@ -396,8 +396,8 @@ def test_row_to_dict_season() -> None:
         session.add(row)
         session.commit()
 
-        from sqlalchemy.orm import joinedload
         from sqlalchemy import select
+        from sqlalchemy.orm import joinedload
 
         fetched = (
             session.scalars(
