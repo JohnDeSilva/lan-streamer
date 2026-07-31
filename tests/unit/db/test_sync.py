@@ -249,3 +249,30 @@ def test_sync_watched_by_names_empty(mock_db_file) -> None:
 
     with get_session() as session:
         assert _sync_watched_by_names(session, set()) == 0
+
+
+def test_sync_watched_by_names_unicode(mock_db_file) -> None:
+    """Name-based sync should match non-English characters case-insensitively."""
+    from lan_streamer.db.sync import _sync_watched_by_names, get_session
+
+    with get_session() as session:
+        series = Series(name="Schöne neue Welt", library_name="L")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="S1")
+        session.add(season)
+        session.flush()
+        ep = Episode(
+            season_id=season.id,
+            name="Die Ärzte",
+            path="/p",
+            watched=False,
+        )
+        session.add(ep)
+        session.flush()
+
+        count = _sync_watched_by_names(session, {("SCHÖNE NEUE WELT", "DIE ÄRZTE")})
+        assert count == 1
+
+        ep = session.get(Episode, ep.id)
+        assert ep is not None and ep.watched is True

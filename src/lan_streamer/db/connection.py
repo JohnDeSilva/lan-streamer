@@ -24,6 +24,16 @@ def _get_runtime_db_file() -> Path:
     return _DEFAULT_DB_FILE
 
 
+def _sqlite_unicode_lower(value: Any) -> Any:
+    """Unicode-aware replacement for SQLite's ASCII-only lower() function."""
+    return value.lower() if isinstance(value, str) else value
+
+
+def _sqlite_unicode_upper(value: Any) -> Any:
+    """Unicode-aware replacement for SQLite's ASCII-only upper() function."""
+    return value.upper() if isinstance(value, str) else value
+
+
 def get_engine() -> Engine:
     db_module = sys.modules.get("lan_streamer.db")
     _engine = getattr(db_module, "_engine", None) if db_module else None
@@ -42,6 +52,14 @@ def get_engine() -> Engine:
             cursor.execute("PRAGMA busy_timeout = 5000")
             cursor.execute("PRAGMA foreign_keys = ON")
             cursor.close()
+
+            # SQLite's built-in lower()/upper() and LIKE are case-insensitive
+            # for ASCII only, so searches and name comparisons fail for
+            # non-English characters (e.g. umlauts). Replace them with
+            # unicode-aware Python implementations so ilike()/func.lower()
+            # work correctly for titles like "Schön" vs "SCHÖN".
+            dbapi_connection.create_function("lower", 1, _sqlite_unicode_lower)
+            dbapi_connection.create_function("upper", 1, _sqlite_unicode_upper)
 
         if db_module:
             setattr(db_module, "_engine", _engine)

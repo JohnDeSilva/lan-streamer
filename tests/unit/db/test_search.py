@@ -207,3 +207,37 @@ class TestSearchMediaNames:
 
         results = search_media_names("The Matrix", ["Movies"])
         assert results[0]["poster_path"] == "/posters/matrix.jpg"
+
+    def test_unicode_case_insensitive_series(self, mock_db_file) -> None:
+        """Search should be case-insensitive for non-English characters (e.g. umlauts)."""
+        with get_session() as session:
+            _create_series(session, "Schöne neue Welt", "TV Shows")
+            _create_series(session, "Die Ärzte Story", "TV Shows")
+            session.commit()
+
+        results_lower = search_media_names("schöne neue welt", ["TV Shows"])
+        assert [r["name"] for r in results_lower] == ["Schöne neue Welt"]
+
+        results_upper = search_media_names("SCHÖNE NEUE WELT", ["TV Shows"])
+        assert [r["name"] for r in results_upper] == ["Schöne neue Welt"]
+
+        results_umlaut = search_media_names("die ärzte", ["TV Shows"])
+        assert [r["name"] for r in results_umlaut] == ["Die Ärzte Story"]
+
+    def test_unicode_case_insensitive_movie(self, mock_db_file) -> None:
+        """Movie search should be case-insensitive for non-English characters."""
+        with get_session() as session:
+            _create_movie(session, "München", "Movies")
+            session.commit()
+
+        results_upper = search_media_names("MÜNCHEN", ["Movies"])
+        assert [r["name"] for r in results_upper] == ["München"]
+
+    def test_unicode_partial_match(self, mock_db_file) -> None:
+        """Partial unicode queries should match substrings case-insensitively."""
+        with get_session() as session:
+            _create_series(session, "Strängöwe Experiment", "TV")
+            session.commit()
+
+        results = search_media_names("strängöwe", ["TV"])
+        assert [r["name"] for r in results] == ["Strängöwe Experiment"]
