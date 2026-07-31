@@ -110,7 +110,7 @@ class SegmentedProgressBar(QWidget):
             for path in config_paths:
                 if path in raw_roots:
                     roots.append(path)
-            for path in raw_roots.keys():
+            for path in raw_roots:
                 if path not in roots:
                     roots.append(path)
 
@@ -400,7 +400,7 @@ class ScanProgressTree(QWidget):
             for path in config_paths:
                 if path in raw_roots:
                     roots.append(path)
-            for path in raw_roots.keys():
+            for path in raw_roots:
                 if path not in roots:
                     roots.append(path)
 

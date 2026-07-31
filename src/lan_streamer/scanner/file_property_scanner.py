@@ -1,3 +1,4 @@
+import contextlib
 import functools
 import json
 import logging
@@ -161,10 +162,8 @@ def get_detailed_file_info(file_path: str) -> dict[str, Any]:
 
             bit_rate_str = format_data.get("bit_rate")
             if bit_rate_str:
-                try:
+                with contextlib.suppress(ValueError):
                     info["bit_rate"] = int(bit_rate_str)
-                except ValueError:
-                    pass
             if not info.get("bit_rate") and duration_str:
                 try:
                     dur = float(duration_str)

@@ -457,14 +457,14 @@ class TestSaveLibraryExceptionHandling:
     """Lines 739-748: exception handling in save_library."""
 
     def test_exception_records_issue(self, library_name: str) -> None:
-        with pytest.raises(Exception):
-            with patch(
+        with (
+            pytest.raises(Exception),
+            patch(
                 "lan_streamer.db.library_tv.get_session",
                 side_effect=Exception("db failure"),
-            ):
-                save_library(
-                    library_name, {"SomeSeries": {"metadata": {}, "seasons": {}}}
-                )
+            ),
+        ):
+            save_library(library_name, {"SomeSeries": {"metadata": {}, "seasons": {}}})
 
 
 class TestSaveSeasonData:
@@ -575,18 +575,20 @@ class TestSaveSeasonData:
             assert updated.last_scanned_mtime == 999
 
     def test_save_season_data_exception(self, library_name: str) -> None:
-        with pytest.raises(Exception):
-            with patch(
+        with (
+            pytest.raises(Exception),
+            patch(
                 "lan_streamer.db.library_tv.get_session",
                 side_effect=Exception("db failure"),
-            ):
-                save_season_data(
-                    library_name,
-                    "FailShow",
-                    {"metadata": {}, "seasons": {}},
-                    "Season 1",
-                    {"metadata": {}, "episodes": []},
-                )
+            ),
+        ):
+            save_season_data(
+                library_name,
+                "FailShow",
+                {"metadata": {}, "seasons": {}},
+                "Season 1",
+                {"metadata": {}, "episodes": []},
+            )
 
 
 class TestSaveEpisodeMalFields:

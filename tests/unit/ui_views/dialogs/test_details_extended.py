@@ -190,45 +190,53 @@ class TestMovieDetailsDialog:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_movie, qtbot)
-        with patch.object(ctrl_movie, "trigger_series_refresh") as mock_refresh:
-            with patch.object(
+        with (
+            patch.object(ctrl_movie, "trigger_series_refresh") as mock_refresh,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
-            ):
-                d._on_refresh_clicked()
-                mock_refresh.assert_called_once_with("Inception")
+            ),
+        ):
+            d._on_refresh_clicked()
+            mock_refresh.assert_called_once_with("Inception")
 
     def test_on_refresh_clicked_no(self, ctrl_movie, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_movie, qtbot)
-        with patch.object(ctrl_movie, "trigger_series_refresh") as mock_refresh:
-            with patch.object(
+        with (
+            patch.object(ctrl_movie, "trigger_series_refresh") as mock_refresh,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.No
-            ):
-                d._on_refresh_clicked()
-                mock_refresh.assert_not_called()
+            ),
+        ):
+            d._on_refresh_clicked()
+            mock_refresh.assert_not_called()
 
     def test_on_embed_clicked_yes(self, ctrl_movie, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_movie, qtbot)
-        with patch.object(ctrl_movie, "embed_metadata") as mock_embed:
-            with patch.object(
+        with (
+            patch.object(ctrl_movie, "embed_metadata") as mock_embed,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
-            ):
-                d._on_embed_clicked()
-                mock_embed.assert_called_once()
+            ),
+        ):
+            d._on_embed_clicked()
+            mock_embed.assert_called_once()
 
     def test_on_embed_clicked_no(self, ctrl_movie, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_movie, qtbot)
-        with patch.object(ctrl_movie, "embed_metadata") as mock_embed:
-            with patch.object(
+        with (
+            patch.object(ctrl_movie, "embed_metadata") as mock_embed,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.No
-            ):
-                d._on_embed_clicked()
-                mock_embed.assert_not_called()
+            ),
+        ):
+            d._on_embed_clicked()
+            mock_embed.assert_not_called()
 
     def test_on_merge_clicked_no_subs(self, ctrl_movie, qtbot) -> None:
         d = self._make_dialog(ctrl_movie, qtbot)
@@ -242,14 +250,16 @@ class TestMovieDetailsDialog:
 
         d = self._make_dialog(ctrl_movie, qtbot)
         d._ext_subs = ["/fake/sub.srt"]
-        with patch.object(ctrl_movie, "merge_subtitles") as mock_merge:
-            with patch.object(
+        with (
+            patch.object(ctrl_movie, "merge_subtitles") as mock_merge,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
-            ):
-                d._on_merge_clicked()
-                mock_merge.assert_called_once_with(
-                    "/movies/Inception.mkv", ["/fake/sub.srt"]
-                )
+            ),
+        ):
+            d._on_merge_clicked()
+            mock_merge.assert_called_once_with(
+                "/movies/Inception.mkv", ["/fake/sub.srt"]
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -279,45 +289,53 @@ class TestEpisodeDetailsDialogExtended:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_tv, qtbot)
-        with patch.object(ctrl_tv, "refresh_episode_metadata") as mock_refresh:
-            with patch.object(
+        with (
+            patch.object(ctrl_tv, "refresh_episode_metadata") as mock_refresh,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
-            ):
-                d._on_refresh_clicked()
-                mock_refresh.assert_called_once_with("ShowA", "/tv/S01E01.mkv")
+            ),
+        ):
+            d._on_refresh_clicked()
+            mock_refresh.assert_called_once_with("ShowA", "/tv/S01E01.mkv")
 
     def test_on_refresh_clicked_no(self, ctrl_tv, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_tv, qtbot)
-        with patch.object(ctrl_tv, "refresh_episode_metadata") as mock_refresh:
-            with patch.object(
+        with (
+            patch.object(ctrl_tv, "refresh_episode_metadata") as mock_refresh,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.No
-            ):
-                d._on_refresh_clicked()
-                mock_refresh.assert_not_called()
+            ),
+        ):
+            d._on_refresh_clicked()
+            mock_refresh.assert_not_called()
 
     def test_on_embed_clicked_yes(self, ctrl_tv, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_tv, qtbot)
-        with patch.object(ctrl_tv, "embed_metadata") as mock_embed:
-            with patch.object(
+        with (
+            patch.object(ctrl_tv, "embed_metadata") as mock_embed,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
-            ):
-                d._on_embed_clicked()
-                mock_embed.assert_called_once()
+            ),
+        ):
+            d._on_embed_clicked()
+            mock_embed.assert_called_once()
 
     def test_on_embed_clicked_no(self, ctrl_tv, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_tv, qtbot)
-        with patch.object(ctrl_tv, "embed_metadata") as mock_embed:
-            with patch.object(
+        with (
+            patch.object(ctrl_tv, "embed_metadata") as mock_embed,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.No
-            ):
-                d._on_embed_clicked()
-                mock_embed.assert_not_called()
+            ),
+        ):
+            d._on_embed_clicked()
+            mock_embed.assert_not_called()
 
     def test_on_merge_clicked_no_subs(self, ctrl_tv, qtbot) -> None:
         d = self._make_dialog(ctrl_tv, qtbot)
@@ -331,12 +349,14 @@ class TestEpisodeDetailsDialogExtended:
 
         d = self._make_dialog(ctrl_tv, qtbot)
         d._ext_subs = ["/fake.srt"]
-        with patch.object(ctrl_tv, "merge_subtitles") as mock_merge:
-            with patch.object(
+        with (
+            patch.object(ctrl_tv, "merge_subtitles") as mock_merge,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
-            ):
-                d._on_merge_clicked()
-                mock_merge.assert_called_once_with("/tv/S01E01.mkv", ["/fake.srt"])
+            ),
+        ):
+            d._on_merge_clicked()
+            mock_merge.assert_called_once_with("/tv/S01E01.mkv", ["/fake.srt"])
 
     def test_on_search_tmdb_clicked(self, ctrl_tv, qtbot) -> None:
         d = self._make_dialog(ctrl_tv, qtbot)
@@ -396,22 +416,26 @@ class TestSeriesDetailsDialog:
         d.name_edit.setText("ShowA Renamed")
         d.locked_checkbox.setChecked(True)
 
-        with patch.object(ctrl_tv, "toggle_series_lock") as mock_lock:
-            with patch.object(ctrl_tv, "update_series_name") as mock_rename:
-                with patch("lan_streamer.db.save_library"):
-                    d._on_save_clicked()
-                    mock_lock.assert_called_once()
-                    mock_rename.assert_called_once_with("ShowA", "ShowA Renamed")
+        with (
+            patch.object(ctrl_tv, "toggle_series_lock") as mock_lock,
+            patch.object(ctrl_tv, "update_series_name") as mock_rename,
+            patch("lan_streamer.db.save_library"),
+        ):
+            d._on_save_clicked()
+            mock_lock.assert_called_once()
+            mock_rename.assert_called_once_with("ShowA", "ShowA Renamed")
 
     def test_on_save_same_name_no_rename(self, ctrl_tv, qtbot) -> None:
         d = self._make_dialog(ctrl_tv, qtbot)
         d.name_edit.setText("ShowA")  # Same name
 
-        with patch.object(ctrl_tv, "update_series_name") as mock_rename:
-            with patch.object(ctrl_tv, "toggle_series_lock"):
-                with patch("lan_streamer.db.save_library"):
-                    d._on_save_clicked()
-                    mock_rename.assert_not_called()
+        with (
+            patch.object(ctrl_tv, "update_series_name") as mock_rename,
+            patch.object(ctrl_tv, "toggle_series_lock"),
+            patch("lan_streamer.db.save_library"),
+        ):
+            d._on_save_clicked()
+            mock_rename.assert_not_called()
 
     def test_on_match_meta_clicked(self, ctrl_tv, qtbot) -> None:
         d = self._make_dialog(ctrl_tv, qtbot)
@@ -424,57 +448,65 @@ class TestSeriesDetailsDialog:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_tv, qtbot)
-        with patch.object(ctrl_tv, "trigger_series_refresh") as mock_refresh:
-            with patch.object(
+        with (
+            patch.object(ctrl_tv, "trigger_series_refresh") as mock_refresh,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
-            ):
-                d._on_refresh_clicked()
-                mock_refresh.assert_called_once_with("ShowA")
+            ),
+        ):
+            d._on_refresh_clicked()
+            mock_refresh.assert_called_once_with("ShowA")
 
     def test_on_embed_series_clicked(self, ctrl_tv, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_tv, qtbot)
-        with patch.object(ctrl_tv, "embed_metadata_series") as mock_embed:
-            with patch.object(
+        with (
+            patch.object(ctrl_tv, "embed_metadata_series") as mock_embed,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
-            ):
-                d._on_embed_clicked()
-                mock_embed.assert_called_once_with("ShowA")
+            ),
+        ):
+            d._on_embed_clicked()
+            mock_embed.assert_called_once_with("ShowA")
 
     def test_on_remove_clicked_yes(self, ctrl_tv, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_tv, qtbot)
-        with patch.object(ctrl_tv, "delete_series") as mock_delete:
-            with patch.object(
+        with (
+            patch.object(ctrl_tv, "delete_series") as mock_delete,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
-            ):
-                d._on_remove_series_clicked()
-                mock_delete.assert_called_once_with("ShowA")
+            ),
+        ):
+            d._on_remove_series_clicked()
+            mock_delete.assert_called_once_with("ShowA")
 
     def test_on_remove_clicked_no(self, ctrl_tv, qtbot) -> None:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_tv, qtbot)
-        with patch.object(ctrl_tv, "delete_series") as mock_delete:
-            with patch.object(
+        with (
+            patch.object(ctrl_tv, "delete_series") as mock_delete,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.No
-            ):
-                d._on_remove_series_clicked()
-                mock_delete.assert_not_called()
+            ),
+        ):
+            d._on_remove_series_clicked()
+            mock_delete.assert_not_called()
 
     def test_on_match_jellyfin_clicked_not_configured(self, ctrl_tv, qtbot) -> None:
         d = self._make_dialog(ctrl_tv, qtbot)
-        with patch(
-            "lan_streamer.ui_views.proxy.jellyfin_client.is_configured",
-            return_value=False,
+        with (
+            patch(
+                "lan_streamer.ui_views.proxy.jellyfin_client.is_configured",
+                return_value=False,
+            ),
+            patch("lan_streamer.ui_views.proxy.QMessageBox.information") as mock_info,
         ):
-            with patch(
-                "lan_streamer.ui_views.proxy.QMessageBox.information"
-            ) as mock_info:
-                d._on_match_jellyfin_clicked()
-                mock_info.assert_called_once()
+            d._on_match_jellyfin_clicked()
+            mock_info.assert_called_once()
 
     def test_tab_widget_has_info_and_metadata_tabs(self, ctrl_tv, qtbot) -> None:
         d = self._make_dialog(ctrl_tv, qtbot)
@@ -513,9 +545,11 @@ class TestSeriesDetailsDialog:
         from PySide6.QtWidgets import QMessageBox
 
         d = self._make_dialog(ctrl_tv, qtbot)
-        with patch.object(ctrl_tv, "trigger_series_scan") as mock_scan:
-            with patch.object(
+        with (
+            patch.object(ctrl_tv, "trigger_series_scan") as mock_scan,
+            patch.object(
                 QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
-            ):
-                d._on_scan_series_clicked()
-                mock_scan.assert_called_once_with("ShowA")
+            ),
+        ):
+            d._on_scan_series_clicked()
+            mock_scan.assert_called_once_with("ShowA")

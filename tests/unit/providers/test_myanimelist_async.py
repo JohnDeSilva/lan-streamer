@@ -113,11 +113,13 @@ class TestGetAuthHeaders:
 
     def test_unauthenticated(self, event_loop: asyncio.AbstractEventLoop) -> None:
         async def run() -> None:
-            with patch.object(config, "myanimelist_client_id", "test-client-id"):
-                with patch.object(config, "myanimelist_access_token", ""):
-                    c = AsyncMyAnimeListClient()
-                    headers = await c._get_auth_headers()
-                    assert headers["X-MAL-CLIENT-ID"] == "test-client-id"
+            with (
+                patch.object(config, "myanimelist_client_id", "test-client-id"),
+                patch.object(config, "myanimelist_access_token", ""),
+            ):
+                c = AsyncMyAnimeListClient()
+                headers = await c._get_auth_headers()
+                assert headers["X-MAL-CLIENT-ID"] == "test-client-id"
 
         _run(run(), event_loop)
 

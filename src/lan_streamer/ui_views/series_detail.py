@@ -374,12 +374,11 @@ class SeriesDetailView(QWidget):
             ):
                 is_scanning = self.controller.worker_manager.scan.is_running
 
-            if is_scanning:
-                if (
-                    hasattr(self, "_cached_series_data_copy")
-                    and self._cached_series_data_copy == new_data
-                ):
-                    return
+            if is_scanning and (
+                hasattr(self, "_cached_series_data_copy")
+                and self._cached_series_data_copy == new_data
+            ):
+                return
             import copy
 
             self._cached_series_data_copy = (

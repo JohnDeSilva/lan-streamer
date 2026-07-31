@@ -193,12 +193,14 @@ class TestLogDbWriteError:
 
         problems: list = []
         mock_target = logging.getLogger("test_logger")
-        with patch.object(mock_target, "info") as mock_info:
-            with patch.object(mock_target, "warning") as mock_warning:
-                with patch.object(mock_target, "debug") as mock_debug:
-                    log_db_write_error(
-                        problems, "Item X", Exception("Simple error"), mock_target
-                    )
+        with (
+            patch.object(mock_target, "info") as mock_info,
+            patch.object(mock_target, "warning") as mock_warning,
+            patch.object(mock_target, "debug") as mock_debug,
+        ):
+            log_db_write_error(
+                problems, "Item X", Exception("Simple error"), mock_target
+            )
 
         mock_debug.assert_not_called()
         mock_warning.assert_called_once()
@@ -214,14 +216,16 @@ class TestLogDbWriteError:
 
         problems: list = []
         mock_target = logging.getLogger("test_logger")
-        with patch.object(mock_target, "debug") as mock_debug:
-            with patch.object(mock_target, "warning") as mock_warning:
-                log_db_write_error(
-                    problems,
-                    "Item Y",
-                    RuntimeError("First line\nSecond line\nThird line"),
-                    mock_target,
-                )
+        with (
+            patch.object(mock_target, "debug") as mock_debug,
+            patch.object(mock_target, "warning") as mock_warning,
+        ):
+            log_db_write_error(
+                problems,
+                "Item Y",
+                RuntimeError("First line\nSecond line\nThird line"),
+                mock_target,
+            )
 
         mock_debug.assert_called_once()
         assert "detailed error" in mock_debug.call_args[0][0]

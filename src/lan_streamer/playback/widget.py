@@ -1106,9 +1106,11 @@ class VideoPlayerWidget(QWidget):
             self.setCursor(Qt.CursorShape.BlankCursor)
 
     def keyPressEvent(self, event: Any) -> None:
-        if event.key() == Qt.Key.Key_Escape and self.window().isFullScreen():
-            self.toggle_fullscreen()
-        elif event.key() == Qt.Key.Key_F:
+        if (
+            event.key() == Qt.Key.Key_Escape
+            and self.window().isFullScreen()
+            or event.key() == Qt.Key.Key_F
+        ):
             self.toggle_fullscreen()
         elif event.key() == Qt.Key.Key_Space:
             self.play_pause()

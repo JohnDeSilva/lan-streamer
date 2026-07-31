@@ -181,14 +181,16 @@ def test_on_mark_season_watched_calls_controller(ctrl_with_show, qtbot) -> None:
     v = make_view(ctrl_with_show, qtbot)
     populate(v, ctrl_with_show)
 
-    with patch.object(ctrl_with_show, "mark_season_watched") as mock_mark:
-        with patch.object(v, "populate_series_details"):
-            v._on_mark_season_watched("Season 1")
-            mock_mark.assert_called_once_with("ShowA", "Season 1", True)
+    with (
+        patch.object(ctrl_with_show, "mark_season_watched") as mock_mark,
+        patch.object(v, "populate_series_details"),
+    ):
+        v._on_mark_season_watched("Season 1")
+        mock_mark.assert_called_once_with("ShowA", "Season 1", True)
 
-            mock_mark.reset_mock()
-            v._on_mark_season_watched("Season 1", watched=False)
-            mock_mark.assert_called_once_with("ShowA", "Season 1", False)
+        mock_mark.reset_mock()
+        v._on_mark_season_watched("Season 1", watched=False)
+        mock_mark.assert_called_once_with("ShowA", "Season 1", False)
 
 
 # ---------------------------------------------------------------------------

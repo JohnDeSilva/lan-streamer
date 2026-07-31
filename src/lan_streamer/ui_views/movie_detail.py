@@ -490,12 +490,11 @@ class MovieDetailView(QWidget):
             ):
                 is_scanning = self.controller.worker_manager.scan.is_running
 
-            if is_scanning:
-                if (
-                    hasattr(self, "_cached_movie_data_copy")
-                    and self._cached_movie_data_copy == new_data
-                ):
-                    return
+            if is_scanning and (
+                hasattr(self, "_cached_movie_data_copy")
+                and self._cached_movie_data_copy == new_data
+            ):
+                return
             import copy
 
             self._cached_movie_data_copy = copy.deepcopy(new_data) if new_data else None

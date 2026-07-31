@@ -1,3 +1,4 @@
+import contextlib
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -254,10 +255,8 @@ class EpisodeDetailsDialog(QDialog):
 
         self.default_file_combo.setCurrentIndex(active_idx)
         self.default_file_combo.blockSignals(False)
-        try:
+        with contextlib.suppress(Exception):
             self.default_file_combo.currentIndexChanged.disconnect()
-        except Exception:
-            pass
         self.default_file_combo.currentIndexChanged.connect(
             self._on_default_file_changed
         )

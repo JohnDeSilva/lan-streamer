@@ -70,10 +70,9 @@ def _sync_media_files(
             has_other_refs = any(ep != owner for ep in mf.episodes) or any(
                 mv != owner for mv in mf.movies
             )
-            if not has_other_refs:
-                if mf in session:
-                    session.delete(mf)
-                    deleted_any = True
+            if not has_other_refs and mf in session:
+                session.delete(mf)
+                deleted_any = True
 
     # Flush deletes immediately so the database unique constraint is freed
     if deleted_any:

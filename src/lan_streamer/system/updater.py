@@ -275,15 +275,14 @@ class UpdateCheckWorker(QThread):
                         is_prerelease,
                         release_data,
                     )
-                elif existing_prerelease == is_prerelease:
+                elif existing_prerelease == is_prerelease and parse_comparable_version(
+                    tag_name
+                ) > parse_comparable_version(existing_data["version"]):
                     # If both are stable or both are pre-releases, keep the newer one
-                    if parse_comparable_version(tag_name) > parse_comparable_version(
-                        existing_data["version"]
-                    ):
-                        best_release_per_version[base_version] = (
-                            is_prerelease,
-                            release_data,
-                        )
+                    best_release_per_version[base_version] = (
+                        is_prerelease,
+                        release_data,
+                    )
 
         if not best_release_per_version:
             logger.info(

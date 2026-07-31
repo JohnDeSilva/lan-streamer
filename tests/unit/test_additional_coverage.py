@@ -360,11 +360,13 @@ def test_init_db_mkdir_failure(tmp_path) -> None:
 
     db_path = tmp_path / "some_subdir" / "library.db"
 
-    with patch("lan_streamer.db.DB_FILE", db_path):
-        with patch.object(Path, "mkdir", side_effect=PermissionError("no perms")):
-            db_module._db_initialized = False
-            result = init_db()
-            assert result is False
+    with (
+        patch("lan_streamer.db.DB_FILE", db_path),
+        patch.object(Path, "mkdir", side_effect=PermissionError("no perms")),
+    ):
+        db_module._db_initialized = False
+        result = init_db()
+        assert result is False
 
 
 def test_init_db_already_initialized(tmp_path) -> None:

@@ -343,9 +343,11 @@ def test_series_details_dialog_refresh_series(qtbot: Any) -> None:
         dialog = SeriesDetailsDialog("Breaking Bad", controller)
     qtbot.addWidget(dialog)
 
-    with patch.object(controller, "trigger_series_refresh") as mock_refresh:
-        with patch.object(
+    with (
+        patch.object(controller, "trigger_series_refresh") as mock_refresh,
+        patch.object(
             QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
-        ):
-            dialog._on_refresh_clicked()
-            mock_refresh.assert_called_once_with("Breaking Bad")
+        ),
+    ):
+        dialog._on_refresh_clicked()
+        mock_refresh.assert_called_once_with("Breaking Bad")

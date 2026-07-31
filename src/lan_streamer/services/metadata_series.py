@@ -383,11 +383,15 @@ def _process_series_metadata(
     episode_group_details = None
 
     if not offline:
-        if tmdb_series and "name" not in tmdb_series and "id" in tmdb_series:
-            if single_item_refresh or not series_metadata.get("tmdb_name"):
-                full = tmdb_client.get_series_by_id(tmdb_series["id"])
-                if full:
-                    tmdb_series = full
+        if (
+            tmdb_series
+            and "name" not in tmdb_series
+            and "id" in tmdb_series
+            and (single_item_refresh or not series_metadata.get("tmdb_name"))
+        ):
+            full = tmdb_client.get_series_by_id(tmdb_series["id"])
+            if full:
+                tmdb_series = full
 
         if not tmdb_series:
             if series_metadata["tmdb_identifier"]:
@@ -427,65 +431,68 @@ def _process_series_metadata(
                 if not series_metadata.get("poster_path"):
                     series_metadata["poster_path"] = ""
 
-            if tmdb_identifier and not is_locked:
-                if force_refresh or single_item_refresh or not existing_series_data:
-                    episode_group_details = None
-                    existing_metadata = (
-                        existing_series_data.get("metadata", {})
-                        if existing_series_data
-                        else {}
-                    )
-                    saved_group_id = existing_metadata.get("tmdb_episode_group_id")
-                    if saved_group_id and saved_group_id != "default":
-                        try:
-                            episode_group_details = (
-                                tmdb_client.get_episode_group_details(saved_group_id)
-                            )
-                            logger.info(
-                                f"Using saved default group ID {saved_group_id} for series '{series_name}' metadata scan"
-                            )
-                        except Exception as e:
-                            logger.exception(
-                                f"Failed to fetch saved group details {saved_group_id}: {e}"
-                            )
-                    if saved_group_id == "default":
-                        episode_group_details = None
-                    elif not episode_group_details:
-                        episode_group_details = (
-                            tmdb_client.get_season_based_episode_group(tmdb_identifier)
+            if (
+                tmdb_identifier
+                and not is_locked
+                and (force_refresh or single_item_refresh or not existing_series_data)
+            ):
+                episode_group_details = None
+                existing_metadata = (
+                    existing_series_data.get("metadata", {})
+                    if existing_series_data
+                    else {}
+                )
+                saved_group_id = existing_metadata.get("tmdb_episode_group_id")
+                if saved_group_id and saved_group_id != "default":
+                    try:
+                        episode_group_details = tmdb_client.get_episode_group_details(
+                            saved_group_id
                         )
-                    if (
-                        episode_group_details
-                        and isinstance(episode_group_details, dict)
-                        and "groups" in episode_group_details
-                    ):
-                        tmdb_seasons = []
-                        for group in episode_group_details.get("groups", []):
-                            group_name = group.get("name") or ""
-                            season_num_match = re.search(r"\d+", group_name)
-                            season_num = (
-                                int(season_num_match.group())
-                                if season_num_match
-                                else group.get("order", -1)
+                        logger.info(
+                            f"Using saved default group ID {saved_group_id} for series '{series_name}' metadata scan"
+                        )
+                    except Exception as e:
+                        logger.exception(
+                            f"Failed to fetch saved group details {saved_group_id}: {e}"
+                        )
+                if saved_group_id == "default":
+                    episode_group_details = None
+                elif not episode_group_details:
+                    episode_group_details = tmdb_client.get_season_based_episode_group(
+                        tmdb_identifier
+                    )
+                if (
+                    episode_group_details
+                    and isinstance(episode_group_details, dict)
+                    and "groups" in episode_group_details
+                ):
+                    tmdb_seasons = []
+                    for group in episode_group_details.get("groups", []):
+                        group_name = group.get("name") or ""
+                        season_num_match = re.search(r"\d+", group_name)
+                        season_num = (
+                            int(season_num_match.group())
+                            if season_num_match
+                            else group.get("order", -1)
+                        )
+                        if group_name.lower() == "specials":
+                            season_num = 0
+                        if season_num >= 0:
+                            tmdb_seasons.append(
+                                {
+                                    "season_number": season_num,
+                                    "name": group_name,
+                                    "id": group.get("id"),
+                                    "episode_count": len(group.get("episodes", [])),
+                                    "poster_path": "",
+                                }
                             )
-                            if group_name.lower() == "specials":
-                                season_num = 0
-                            if season_num >= 0:
-                                tmdb_seasons.append(
-                                    {
-                                        "season_number": season_num,
-                                        "name": group_name,
-                                        "id": group.get("id"),
-                                        "episode_count": len(group.get("episodes", [])),
-                                        "poster_path": "",
-                                    }
-                                )
+                else:
+                    episode_group_details = None
+                    if tmdb_series and "seasons" in tmdb_series:
+                        tmdb_seasons = tmdb_series["seasons"]
                     else:
-                        episode_group_details = None
-                        if tmdb_series and "seasons" in tmdb_series:
-                            tmdb_seasons = tmdb_series["seasons"]
-                        else:
-                            tmdb_seasons = tmdb_client.get_seasons(tmdb_identifier)
+                        tmdb_seasons = tmdb_client.get_seasons(tmdb_identifier)
 
     if (
         not series_metadata["jellyfin_id"]

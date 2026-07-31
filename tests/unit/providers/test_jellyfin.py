@@ -420,13 +420,13 @@ def test_jellyfin_fetch_watched_episodes_edge_cases(jf_client) -> None:
 
 def test_jellyfin_fallback_to_config_url() -> None:
     """When jellyfin_url is None, _effective_url reads from config."""
-    with patch(
-        "lan_streamer.providers.jellyfin.config.jellyfin_url", "http://fallback"
-    ):
-        with patch(
+    with (
+        patch("lan_streamer.providers.jellyfin.config.jellyfin_url", "http://fallback"),
+        patch(
             "lan_streamer.providers.jellyfin.config.jellyfin_api_key", "fallback-key"
-        ):
-            client = JellyfinClient(jellyfin_url=None, jellyfin_api_key=None)
-            assert client._effective_url == "http://fallback"
-            assert client._effective_api_key == "fallback-key"
-            assert client.is_configured() is True
+        ),
+    ):
+        client = JellyfinClient(jellyfin_url=None, jellyfin_api_key=None)
+        assert client._effective_url == "http://fallback"
+        assert client._effective_api_key == "fallback-key"
+        assert client.is_configured() is True

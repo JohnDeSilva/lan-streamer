@@ -232,8 +232,10 @@ class TestRequest:
             session = MagicMock()
             session.request = AsyncMock(return_value=mock_429)
 
-            with patch.object(client, "_get_session", AsyncMock(return_value=session)):
-                with pytest.raises(RuntimeError, match="failed after 3 retries"):
-                    await client.get("http://example.invalid")
+            with (
+                patch.object(client, "_get_session", AsyncMock(return_value=session)),
+                pytest.raises(RuntimeError, match="failed after 3 retries"),
+            ):
+                await client.get("http://example.invalid")
 
         _run(run(), event_loop)

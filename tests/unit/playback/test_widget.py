@@ -124,11 +124,13 @@ def test_play_video_already_cached(player_widget, tmp_path) -> None:
     dest_file = cache_directory / "video.mp4"
     dest_file.write_text("content")
 
-    with patch.object(player_widget, "_load_and_play") as mock_load:
-        with patch("lan_streamer.playback.cache.CacheWorker") as mock_worker:
-            player_widget.play_video(str(src_file))
-            mock_worker.assert_not_called()
-            mock_load.assert_called_once_with(str(dest_file))
+    with (
+        patch.object(player_widget, "_load_and_play") as mock_load,
+        patch("lan_streamer.playback.cache.CacheWorker") as mock_worker,
+    ):
+        player_widget.play_video(str(src_file))
+        mock_worker.assert_not_called()
+        mock_load.assert_called_once_with(str(dest_file))
 
 
 def test_on_back_clicked(player_widget, qtbot) -> None:
@@ -429,37 +431,39 @@ def test_key_press_events(player_widget) -> None:
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QKeyEvent
 
-    with patch.object(player_widget, "toggle_fullscreen") as mock_toggle:
-        with patch.object(player_widget, "play_pause") as mock_play:
-            # F key
-            event_f = QKeyEvent(
-                QKeyEvent.Type.KeyPress, Qt.Key.Key_F, Qt.KeyboardModifier.NoModifier
+    with (
+        patch.object(player_widget, "toggle_fullscreen") as mock_toggle,
+        patch.object(player_widget, "play_pause") as mock_play,
+    ):
+        # F key
+        event_f = QKeyEvent(
+            QKeyEvent.Type.KeyPress, Qt.Key.Key_F, Qt.KeyboardModifier.NoModifier
+        )
+        player_widget.keyPressEvent(event_f)
+        mock_toggle.assert_called_once()
+        mock_toggle.reset_mock()
+
+        # Esc key when fullscreen
+        main_win = MagicMock()
+        main_win.isFullScreen.return_value = True
+        with patch.object(player_widget, "window", return_value=main_win):
+            event_esc = QKeyEvent(
+                QKeyEvent.Type.KeyPress,
+                Qt.Key.Key_Escape,
+                Qt.KeyboardModifier.NoModifier,
             )
-            player_widget.keyPressEvent(event_f)
+            player_widget.keyPressEvent(event_esc)
             mock_toggle.assert_called_once()
             mock_toggle.reset_mock()
 
-            # Esc key when fullscreen
-            main_win = MagicMock()
-            main_win.isFullScreen.return_value = True
-            with patch.object(player_widget, "window", return_value=main_win):
-                event_esc = QKeyEvent(
-                    QKeyEvent.Type.KeyPress,
-                    Qt.Key.Key_Escape,
-                    Qt.KeyboardModifier.NoModifier,
-                )
-                player_widget.keyPressEvent(event_esc)
-                mock_toggle.assert_called_once()
-                mock_toggle.reset_mock()
-
-            # Space key
-            event_space = QKeyEvent(
-                QKeyEvent.Type.KeyPress,
-                Qt.Key.Key_Space,
-                Qt.KeyboardModifier.NoModifier,
-            )
-            player_widget.keyPressEvent(event_space)
-            mock_play.assert_called_once()
+        # Space key
+        event_space = QKeyEvent(
+            QKeyEvent.Type.KeyPress,
+            Qt.Key.Key_Space,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        player_widget.keyPressEvent(event_space)
+        mock_play.assert_called_once()
 
     # Volume shortcuts
     player_widget.mediaplayer = MagicMock()
@@ -492,10 +496,12 @@ def test_stop_exits_fullscreen(player_widget) -> None:
     main_win.isFullScreen.return_value = True
     player_widget.mediaplayer = MagicMock()
 
-    with patch.object(player_widget, "window", return_value=main_win):
-        with patch.object(player_widget, "toggle_fullscreen") as mock_toggle:
-            player_widget.stop()
-            mock_toggle.assert_called_once()
+    with (
+        patch.object(player_widget, "window", return_value=main_win),
+        patch.object(player_widget, "toggle_fullscreen") as mock_toggle,
+    ):
+        player_widget.stop()
+        mock_toggle.assert_called_once()
 
 
 def test_event_filter_double_click(player_widget) -> None:
@@ -609,14 +615,16 @@ def test_stop_resets_playback_position_complete(player_widget) -> None:
 
 def test_play_video_prompts_resume(player_widget) -> None:
     with patch("lan_streamer.db.get_episode_playback_position", return_value=300):
-        with patch.object(
-            player_widget, "_ask_resume_playback", return_value=True
-        ) as mock_ask:
-            with patch.object(player_widget, "_load_and_play"):
-                config.enable_caching = False
-                player_widget.play_video("/path/to/resume.mkv")
-                mock_ask.assert_called_once_with("05:00")
-                assert player_widget.pending_resume_position == 300
+        with (
+            patch.object(
+                player_widget, "_ask_resume_playback", return_value=True
+            ) as mock_ask,
+            patch.object(player_widget, "_load_and_play"),
+        ):
+            config.enable_caching = False
+            player_widget.play_video("/path/to/resume.mkv")
+            mock_ask.assert_called_once_with("05:00")
+            assert player_widget.pending_resume_position == 300
 
         # Simulate applying resume
         player_widget.mediaplayer = MagicMock()
@@ -626,53 +634,55 @@ def test_play_video_prompts_resume(player_widget) -> None:
         assert player_widget.pending_resume_position == 0
 
         # Simulate clicking start from beginning
-        with patch.object(player_widget, "_ask_resume_playback", return_value=False):
-            with patch(
-                "lan_streamer.db.update_episode_playback_position"
-            ) as mock_update:
-                with patch.object(player_widget, "_load_and_play"):
-                    player_widget.play_video("/path/to/resume.mkv")
-                    mock_update.assert_called_once_with("/path/to/resume.mkv", 0)
-                    assert player_widget.pending_resume_position == 0
+        with (
+            patch.object(player_widget, "_ask_resume_playback", return_value=False),
+            patch("lan_streamer.db.update_episode_playback_position") as mock_update,
+            patch.object(player_widget, "_load_and_play"),
+        ):
+            player_widget.play_video("/path/to/resume.mkv")
+            mock_update.assert_called_once_with("/path/to/resume.mkv", 0)
+            assert player_widget.pending_resume_position == 0
 
 
 def test_play_video_no_prompt_under_one_minute(player_widget) -> None:
-    with patch("lan_streamer.db.get_episode_playback_position", return_value=45):
-        with patch.object(player_widget, "_ask_resume_playback") as mock_ask:
-            with patch(
-                "lan_streamer.db.update_episode_playback_position"
-            ) as mock_update:
-                with patch.object(player_widget, "_load_and_play"):
-                    player_widget.play_video("/path/to/short.mkv")
-                    mock_ask.assert_not_called()
-                    mock_update.assert_called_once_with("/path/to/short.mkv", 0)
-                    assert player_widget.pending_resume_position == 0
+    with (
+        patch("lan_streamer.db.get_episode_playback_position", return_value=45),
+        patch.object(player_widget, "_ask_resume_playback") as mock_ask,
+        patch("lan_streamer.db.update_episode_playback_position") as mock_update,
+        patch.object(player_widget, "_load_and_play"),
+    ):
+        player_widget.play_video("/path/to/short.mkv")
+        mock_ask.assert_not_called()
+        mock_update.assert_called_once_with("/path/to/short.mkv", 0)
+        assert player_widget.pending_resume_position == 0
 
 
 def test_ask_resume_playback(player_widget) -> None:
     from PySide6.QtWidgets import QMessageBox
 
-    with patch.object(QMessageBox, "exec") as mock_exec:
-        with patch.object(QMessageBox, "clickedButton") as mock_clicked:
-            added_buttons = []
+    with (
+        patch.object(QMessageBox, "exec") as mock_exec,
+        patch.object(QMessageBox, "clickedButton") as mock_clicked,
+    ):
+        added_buttons = []
 
-            def side_effect_add(*args, **kwargs):
-                text = args[0] if args else kwargs.get("text", "")
-                btn = MagicMock()
-                btn.text.return_value = text
-                added_buttons.append(btn)
-                return btn
+        def side_effect_add(*args, **kwargs):
+            text = args[0] if args else kwargs.get("text", "")
+            btn = MagicMock()
+            btn.text.return_value = text
+            added_buttons.append(btn)
+            return btn
 
-            with patch.object(QMessageBox, "addButton", side_effect=side_effect_add):
-                mock_clicked.side_effect = lambda: (
-                    added_buttons[0] if added_buttons else None
-                )
-                res = player_widget._ask_resume_playback("05:00")
-                assert res is True
-                mock_exec.assert_called_once()
-                assert len(added_buttons) == 2
-                assert added_buttons[0].text() == "Resume Playback"
-                assert added_buttons[1].text() == "Start from Beginning"
+        with patch.object(QMessageBox, "addButton", side_effect=side_effect_add):
+            mock_clicked.side_effect = lambda: (
+                added_buttons[0] if added_buttons else None
+            )
+            res = player_widget._ask_resume_playback("05:00")
+            assert res is True
+            mock_exec.assert_called_once()
+            assert len(added_buttons) == 2
+            assert added_buttons[0].text() == "Resume Playback"
+            assert added_buttons[1].text() == "Start from Beginning"
 
 
 def test_audio_selection_single_english(player_widget) -> None:
@@ -1239,20 +1249,18 @@ def test_volume_buttons(player_widget) -> None:
 
 def test_vlc_instance_args_linux(qtbot) -> None:
     """Test that --aout=pulse is added on Linux platforms."""
-    with patch("sys.platform", "linux"):
-        with patch("vlc.Instance") as mock_vlc:
-            VideoPlayerWidget()
-            args = mock_vlc.call_args[0][0]
-            assert "--aout=pulse" in args
+    with patch("sys.platform", "linux"), patch("vlc.Instance") as mock_vlc:
+        VideoPlayerWidget()
+        args = mock_vlc.call_args[0][0]
+        assert "--aout=pulse" in args
 
 
 def test_vlc_instance_args_non_linux(qtbot) -> None:
     """Test that --aout=pulse is NOT added on non-Linux platforms."""
-    with patch("sys.platform", "win32"):
-        with patch("vlc.Instance") as mock_vlc:
-            VideoPlayerWidget()
-            args = mock_vlc.call_args[0][0]
-            assert "--aout=pulse" not in args
+    with patch("sys.platform", "win32"), patch("vlc.Instance") as mock_vlc:
+        VideoPlayerWidget()
+        args = mock_vlc.call_args[0][0]
+        assert "--aout=pulse" not in args
 
 
 def test_show_subtitles_audio_menu_with_devices(player_widget) -> None:

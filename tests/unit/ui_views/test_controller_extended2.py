@@ -449,21 +449,25 @@ def test_set_video_playing_false_no_selected(ctrl_tv) -> None:
 
 
 def test_delete_series_handles_exception(ctrl_tv) -> None:
-    with patch(
-        "lan_streamer.db.delete_series_record", side_effect=RuntimeError("DB fail")
+    with (
+        patch(
+            "lan_streamer.db.delete_series_record", side_effect=RuntimeError("DB fail")
+        ),
+        patch.object(ctrl_tv, "select_library") as mock_select,
     ):
-        with patch.object(ctrl_tv, "select_library") as mock_select:
-            ctrl_tv.delete_series("ShowA")  # Should not raise
-            mock_select.assert_called_once_with("TVLib", reset_selection=True)
+        ctrl_tv.delete_series("ShowA")  # Should not raise
+        mock_select.assert_called_once_with("TVLib", reset_selection=True)
 
 
 def test_delete_episode_handles_exception(ctrl_tv) -> None:
-    with patch(
-        "lan_streamer.db.delete_episode_record", side_effect=RuntimeError("DB fail")
+    with (
+        patch(
+            "lan_streamer.db.delete_episode_record", side_effect=RuntimeError("DB fail")
+        ),
+        patch.object(ctrl_tv, "select_library") as mock_select,
     ):
-        with patch.object(ctrl_tv, "select_library") as mock_select:
-            ctrl_tv.delete_episode("/tv/S01E01.mkv")  # Should not raise
-            mock_select.assert_called_once_with("TVLib", reset_selection=False)
+        ctrl_tv.delete_episode("/tv/S01E01.mkv")  # Should not raise
+        mock_select.assert_called_once_with("TVLib", reset_selection=False)
 
 
 def test_delete_series_no_library() -> None:

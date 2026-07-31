@@ -281,13 +281,15 @@ class TestFetchTmdbEpisodesParallel:
         mock_tmdb.get_episodes.side_effect = lambda tid, sidx: (
             [{"episode_number": 1}] if sidx == 1 else [{"episode_number": 2}]
         )
-        with patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb):
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                result = _fetch_tmdb_episodes_parallel(
-                    "series_1",
-                    {"Season 1": 1, "Season 2": 2},
-                    executor,
-                )
+        with (
+            patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb),
+            concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor,
+        ):
+            result = _fetch_tmdb_episodes_parallel(
+                "series_1",
+                {"Season 1": 1, "Season 2": 2},
+                executor,
+            )
         assert "Season 1" in result
         assert "Season 2" in result
 
@@ -295,13 +297,15 @@ class TestFetchTmdbEpisodesParallel:
         """Failed fetches should be logged and not crash."""
         mock_tmdb = MagicMock()
         mock_tmdb.get_episodes.side_effect = RuntimeError("API Error")
-        with patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb):
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                result = _fetch_tmdb_episodes_parallel(
-                    "series_1",
-                    {"Season 1": 1},
-                    executor,
-                )
+        with (
+            patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb),
+            concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor,
+        ):
+            result = _fetch_tmdb_episodes_parallel(
+                "series_1",
+                {"Season 1": 1},
+                executor,
+            )
         # Failed season key is not added to the prefetched dict
         assert result == {}
 

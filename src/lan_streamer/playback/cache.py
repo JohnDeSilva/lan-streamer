@@ -45,18 +45,20 @@ class CacheWorker(AsyncWorkerBase):
                 fdst.write(buf)
             return buf
 
-        with open(self.src_path, "rb") as fsrc:
-            with open(self.dest_path, "wb") as fdst:
-                while True:
-                    if self._cancelled:
-                        logger.info("CacheWorker cancelled.")
-                        break
-                    buf = await asyncio.to_thread(copy_chunk, fsrc, fdst)
-                    if not buf:
-                        break
-                    copied += len(buf)
-                    if total_size > 0:
-                        self.progress.emit(int((copied / total_size) * 100))
+        with (
+            open(self.src_path, "rb") as fsrc,
+            open(self.dest_path, "wb") as fdst,
+        ):
+            while True:
+                if self._cancelled:
+                    logger.info("CacheWorker cancelled.")
+                    break
+                buf = await asyncio.to_thread(copy_chunk, fsrc, fdst)
+                if not buf:
+                    break
+                copied += len(buf)
+                if total_size > 0:
+                    self.progress.emit(int((copied / total_size) * 100))
 
         logger.info(f"Caching finished: {self.dest_path}")
         return str(self.dest_path)

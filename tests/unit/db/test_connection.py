@@ -20,9 +20,8 @@ def test_init_db(mock_db_file) -> None:
 def test_get_session_rollback() -> None:
     from lan_streamer.db import get_session
 
-    with pytest.raises(ValueError):
-        with get_session():
-            raise ValueError("Test rollback trigger")
+    with pytest.raises(ValueError), get_session():
+        raise ValueError("Test rollback trigger")
 
 
 def test_db_edge_cases() -> None:

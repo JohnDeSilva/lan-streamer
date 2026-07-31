@@ -405,14 +405,16 @@ def test_subtitle_merge_worker_direct():
     worker = SubtitleMergeWorker(
         "/media/tv/Cosmos/S01E01.mkv", ["/media/tv/Cosmos/S01E01.en.srt"]
     )
-    with patch(
-        "lan_streamer.backend.metadata_worker_subtitle.async_run_subprocess",
-        return_value=_mock_completed_process(0),
-    ) as mock_run:
-        with patch("os.replace"):
-            with patch("os.remove"):
-                worker.run()
-                assert mock_run.call_count == 1
+    with (
+        patch(
+            "lan_streamer.backend.metadata_worker_subtitle.async_run_subprocess",
+            return_value=_mock_completed_process(0),
+        ) as mock_run,
+        patch("os.replace"),
+        patch("os.remove"),
+    ):
+        worker.run()
+        assert mock_run.call_count == 1
 
 
 def test_file_property_extraction_worker_skips_and_batches() -> None:

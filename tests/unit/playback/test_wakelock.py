@@ -10,18 +10,20 @@ from lan_streamer.playback.wakelock import WakeLock  # noqa: E402
 
 def test_wakelock_linux_gdbus() -> None:
     wakelock = WakeLock()
-    with patch("sys.platform", "linux"):
-        with patch("subprocess.check_output") as mock_check:
-            mock_check.return_value = "(uint32 12345,)"
-            wakelock.inhibit("test")
-            assert wakelock.active is True
-            assert wakelock._cookie == "12345"
+    with (
+        patch("sys.platform", "linux"),
+        patch("subprocess.check_output") as mock_check,
+    ):
+        mock_check.return_value = "(uint32 12345,)"
+        wakelock.inhibit("test")
+        assert wakelock.active is True
+        assert wakelock._cookie == "12345"
 
-            with patch("subprocess.run") as mock_run:
-                wakelock.uninhibit()
-                assert wakelock.active is False
-                assert wakelock._cookie is None
-                mock_run.assert_called()
+        with patch("subprocess.run") as mock_run:
+            wakelock.uninhibit()
+            assert wakelock.active is False
+            assert wakelock._cookie is None
+            mock_run.assert_called()
 
 
 def test_wakelock_windows() -> None:
@@ -45,32 +47,33 @@ def test_wakelock_windows() -> None:
 
 def test_wakelock_macos() -> None:
     wakelock = WakeLock()
-    with patch("sys.platform", "darwin"):
-        with patch("subprocess.Popen") as mock_popen:
-            mock_process = MagicMock()
-            mock_popen.return_value = mock_process
+    with patch("sys.platform", "darwin"), patch("subprocess.Popen") as mock_popen:
+        mock_process = MagicMock()
+        mock_popen.return_value = mock_process
 
-            wakelock.inhibit()
-            assert wakelock.active is True
-            mock_popen.assert_called()
+        wakelock.inhibit()
+        assert wakelock.active is True
+        mock_popen.assert_called()
 
-            wakelock.uninhibit()
-            assert wakelock.active is False
-            mock_process.terminate.assert_called()
+        wakelock.uninhibit()
+        assert wakelock.active is False
+        mock_process.terminate.assert_called()
 
 
 def test_wakelock_inhibit_already_active_is_a_noop() -> None:
     """Calling inhibit twice must not re-enter the underlying platform call."""
     wakelock = WakeLock()
-    with patch("sys.platform", "linux"):
-        with patch("subprocess.check_output", return_value="(uint32 1,)") as mock_check:
-            wakelock.inhibit("first")
-            assert wakelock.active is True
-            call_count_after_first = mock_check.call_count
+    with (
+        patch("sys.platform", "linux"),
+        patch("subprocess.check_output", return_value="(uint32 1,)") as mock_check,
+    ):
+        wakelock.inhibit("first")
+        assert wakelock.active is True
+        call_count_after_first = mock_check.call_count
 
-            # Second inhibit — should be a no-op
-            wakelock.inhibit("second")
-            assert mock_check.call_count == call_count_after_first
+        # Second inhibit — should be a no-op
+        wakelock.inhibit("second")
+        assert mock_check.call_count == call_count_after_first
 
 
 def test_wakelock_uninhibit_when_not_active_is_a_noop() -> None:
@@ -85,14 +88,14 @@ def test_wakelock_uninhibit_when_not_active_is_a_noop() -> None:
 def test_wakelock_linux_xdg_fallback() -> None:
     """When gdbus fails, _inhibit_linux must fall back to xdg-screensaver."""
     wakelock = WakeLock()
-    with patch("sys.platform", "linux"):
-        with (
-            patch("subprocess.check_output", side_effect=FileNotFoundError("no gdbus")),
-            patch("subprocess.Popen") as mock_popen,
-        ):
-            wakelock.inhibit("test fallback")
-            mock_popen.assert_called_once()
-            assert "xdg-screensaver" in mock_popen.call_args[0][0]
+    with (
+        patch("sys.platform", "linux"),
+        patch("subprocess.check_output", side_effect=FileNotFoundError("no gdbus")),
+        patch("subprocess.Popen") as mock_popen,
+    ):
+        wakelock.inhibit("test fallback")
+        mock_popen.assert_called_once()
+        assert "xdg-screensaver" in mock_popen.call_args[0][0]
 
 
 def test_wakelock_linux_uninhibit_no_cookie() -> None:
@@ -101,18 +104,17 @@ def test_wakelock_linux_uninhibit_no_cookie() -> None:
     wakelock.active = True
     wakelock._cookie = None  # No cookie was stored
 
-    with patch("sys.platform", "linux"):
-        with patch("subprocess.run") as mock_run:
-            wakelock.uninhibit()
-            # gdbus UnInhibit must NOT have been called (no cookie)
-            for call_args in mock_run.call_args_list:
-                cmd = call_args[0][0] if call_args[0] else []
-                assert "UnInhibit" not in " ".join(cmd)
-            # xdg-screensaver resume must have been called
-            assert any(
-                "xdg-screensaver" in " ".join(c[0][0] if c[0] else [])
-                for c in mock_run.call_args_list
-            )
+    with patch("sys.platform", "linux"), patch("subprocess.run") as mock_run:
+        wakelock.uninhibit()
+        # gdbus UnInhibit must NOT have been called (no cookie)
+        for call_args in mock_run.call_args_list:
+            cmd = call_args[0][0] if call_args[0] else []
+            assert "UnInhibit" not in " ".join(cmd)
+        # xdg-screensaver resume must have been called
+        assert any(
+            "xdg-screensaver" in " ".join(c[0][0] if c[0] else [])
+            for c in mock_run.call_args_list
+        )
     assert wakelock.active is False
 
 
@@ -135,43 +137,47 @@ def test_wakelock_macos_kill_on_terminate_timeout() -> None:
 
 def test_wakelock_inhibit_exception_catch() -> None:
     wakelock = WakeLock()
-    with patch("sys.platform", "linux"):
-        with patch.object(
-            wakelock, "_inhibit_linux", side_effect=Exception("mock error")
-        ):
-            wakelock.inhibit()
-            assert wakelock.active is False
+    with (
+        patch("sys.platform", "linux"),
+        patch.object(wakelock, "_inhibit_linux", side_effect=Exception("mock error")),
+    ):
+        wakelock.inhibit()
+        assert wakelock.active is False
 
 
 def test_wakelock_uninhibit_exception_catch() -> None:
     wakelock = WakeLock()
     wakelock.active = True
-    with patch("sys.platform", "linux"):
-        with patch.object(
-            wakelock, "_uninhibit_linux", side_effect=Exception("mock error")
-        ):
-            wakelock.uninhibit()
-            # It logs and catches, active is not unset if it completely failed before setting active=False
-            assert wakelock.active is True
+    with (
+        patch("sys.platform", "linux"),
+        patch.object(wakelock, "_uninhibit_linux", side_effect=Exception("mock error")),
+    ):
+        wakelock.uninhibit()
+        # It logs and catches, active is not unset if it completely failed before setting active=False
+        assert wakelock.active is True
 
 
 def test_wakelock_linux_xdg_exception() -> None:
     wakelock = WakeLock()
-    with patch("sys.platform", "linux"):
-        with patch("subprocess.check_output", side_effect=FileNotFoundError()):
-            with patch("subprocess.Popen", side_effect=Exception("xdg failed")):
-                wakelock.inhibit()
-                assert wakelock.active is True
+    with (
+        patch("sys.platform", "linux"),
+        patch("subprocess.check_output", side_effect=FileNotFoundError()),
+        patch("subprocess.Popen", side_effect=Exception("xdg failed")),
+    ):
+        wakelock.inhibit()
+        assert wakelock.active is True
 
 
 def test_wakelock_linux_uninhibit_exceptions() -> None:
     wakelock = WakeLock()
     wakelock._cookie = "123"
-    with patch("sys.platform", "linux"):
+    with (
+        patch("sys.platform", "linux"),
+        patch("subprocess.run", side_effect=Exception("fail")),
+    ):
         # both gdbus and xdg-screensaver fail
-        with patch("subprocess.run", side_effect=Exception("fail")):
-            wakelock._uninhibit_linux()
-            assert wakelock._cookie is None
+        wakelock._uninhibit_linux()
+        assert wakelock._cookie is None
 
 
 def test_wakelock_windows_exceptions() -> None:

@@ -210,31 +210,33 @@ def get_rename_preview(
                             sibling.is_file()
                             and sibling.stem.startswith(old_stem)
                             and sibling != old_path
-                        ):
-                            if sibling.suffix.lower() in SUBTITLE_EXTENSIONS or any(
+                        ) and (
+                            sibling.suffix.lower() in SUBTITLE_EXTENSIONS
+                            or any(
                                 ext in sibling.name.lower()
                                 for ext in SUBTITLE_EXTENSIONS
-                            ):
-                                extra_suffix = sibling.name[len(old_stem) :]
-                                sibling_new_name = new_stem + extra_suffix
-                                sibling_new_path = sibling.parent / sibling_new_name
+                            )
+                        ):
+                            extra_suffix = sibling.name[len(old_stem) :]
+                            sibling_new_name = new_stem + extra_suffix
+                            sibling_new_path = sibling.parent / sibling_new_name
 
-                                s_safe, s_error = is_safe_filename(sibling_new_name)
+                            s_safe, s_error = is_safe_filename(sibling_new_name)
 
-                                previews.append(
-                                    {
-                                        "old_name": sibling.name,
-                                        "old_path": str(sibling),
-                                        "new_name": sibling_new_name,
-                                        "new_path": str(sibling_new_path),
-                                        "series": series_title,
-                                        "season": season_name,
-                                        "episode": f"{episode.get('name')} (Subtitle)",
-                                        "safe": s_safe,
-                                        "error": s_error,
-                                        "is_subtitle": True,
-                                    }
-                                )
+                            previews.append(
+                                {
+                                    "old_name": sibling.name,
+                                    "old_path": str(sibling),
+                                    "new_name": sibling_new_name,
+                                    "new_path": str(sibling_new_path),
+                                    "series": series_title,
+                                    "season": season_name,
+                                    "episode": f"{episode.get('name')} (Subtitle)",
+                                    "safe": s_safe,
+                                    "error": s_error,
+                                    "is_subtitle": True,
+                                }
+                            )
 
     return previews
 

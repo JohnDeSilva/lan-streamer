@@ -7,14 +7,14 @@ from sqlalchemy import engine_from_config, pool
 # Add src to sys.path to import our models
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+import contextlib
+
 from lan_streamer.db import DB_FILE
 from lan_streamer.db.models import Base
 
 # Ensure the database directory exists before Alembic attempts to connect
-try:
+with contextlib.suppress(Exception):
     DB_FILE.parent.mkdir(parents=True, exist_ok=True)
-except Exception:
-    pass
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

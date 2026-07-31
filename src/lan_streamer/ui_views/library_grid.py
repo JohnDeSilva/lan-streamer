@@ -229,7 +229,7 @@ class LibraryGridView(QWidget):
                     for path in config_paths:
                         if path in raw_roots:
                             ordered_roots.append(path)
-                    for path in raw_roots.keys():
+                    for path in raw_roots:
                         if path not in ordered_roots:
                             ordered_roots.append(path)
 
@@ -491,9 +491,12 @@ class LibraryGridView(QWidget):
 
             last_played_at = metrics_dictionary.get("last_played_at", 0)
             is_next_up_candidate = False
-            if total_episodes > 0 and not is_fully_watched:
-                if watched_episodes > 0 or last_played_at > 0:
-                    is_next_up_candidate = True
+            if (
+                total_episodes > 0
+                and not is_fully_watched
+                and (watched_episodes > 0 or last_played_at > 0)
+            ):
+                is_next_up_candidate = True
 
             series_entries.append(
                 {

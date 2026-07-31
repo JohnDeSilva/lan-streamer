@@ -89,10 +89,13 @@ def test_cast_detail_display(qtbot: Any) -> None:
             if item is None:
                 continue
             widget = item.widget()
-            if widget is not None and isinstance(widget, QLabel):
-                if "Test Series" in widget.text():
-                    title_label = widget
-                    return
+            if (
+                widget is not None
+                and isinstance(widget, QLabel)
+                and "Test Series" in widget.text()
+            ):
+                title_label = widget
+                return
             sub_layout = item.layout()
             if sub_layout is not None:
                 _find_label(sub_layout)
@@ -174,10 +177,13 @@ def test_cast_detail_movie_filmography(qtbot: Any, tmp_path: Any) -> None:
                 if item is None:
                     continue
                 widget = item.widget()
-                if widget is not None and isinstance(widget, QLabel):
-                    if "Test Movie" in widget.text():
-                        title_label = widget
-                        return
+                if (
+                    widget is not None
+                    and isinstance(widget, QLabel)
+                    and "Test Movie" in widget.text()
+                ):
+                    title_label = widget
+                    return
                 sub_layout = item.layout()
                 if sub_layout is not None:
                     _find_label(sub_layout)
