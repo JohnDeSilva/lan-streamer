@@ -1,3 +1,10 @@
+## v0.48.2rc1 (2026-07-31)
+
+### Fix
+
+- **dependency**: bump aiohttp from 3.14.1 to 3.14.3
+- **dev-dependency**: bump ruff from 0.15.22 to 0.16.0
+
 ## v0.48.2rc0 (2026-07-31)
 
 ### Fix
