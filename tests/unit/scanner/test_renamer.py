@@ -21,6 +21,82 @@ def test_sanitize_filename() -> None:
     assert sanitize_filename("Control\x00Chars") == "ControlChars"
 
 
+def test_sanitize_filename_unicode_preserved() -> None:
+    """Non-English characters must be preserved when sanitizing filenames."""
+    assert sanitize_filename("Schöne neue Welt") == "Schöne neue Welt"
+    assert sanitize_filename("Die Ärzte - Live") == "Die Ärzte - Live"
+    assert sanitize_filename("München: Stadt?") == "München Stadt"
+    assert sanitize_filename("Überraschung*") == "Überraschung"
+
+
+def test_is_safe_filename_unicode() -> None:
+    """Unicode filenames should be considered safe."""
+    assert is_safe_filename("Schöne neue Welt - S01E01.mkv")[0] is True
+    assert is_safe_filename("Die Ärzte (2024).mkv")[0] is True
+    assert is_safe_filename("Überraschung" * 100)[0] is False  # too long in bytes
+
+
+def test_format_name_unicode() -> None:
+    """Titles with non-English characters survive template formatting."""
+    data = {
+        "SeriesTitle": "Schöne neue Welt",
+        "SeasonNumber": 1,
+        "EpisodeNumber": 5,
+        "EpisodeTitle": "Die Ärzte",
+        "OriginalTitle": "schöne.neue.welt.s01e05",
+    }
+
+    template = "{SeriesTitle} - S{SeasonNumber:02}E{EpisodeNumber:02} - {EpisodeTitle}"
+    assert format_name(template, data) == "Schöne neue Welt - S01E05 - Die Ärzte"
+
+
+def test_get_rename_preview_unicode() -> None:
+    """Rename previews preserve unicode in series/episode titles."""
+    series_data = {
+        "metadata": {"tmdb_name": "Schöne neue Welt"},
+        "seasons": {
+            "Staffel 1": {
+                "episodes": [
+                    {
+                        "name": "Die schöne Lüge.mkv",
+                        "path": "/data/Schöne neue Welt/Staffel 1/die schöne lüge.mkv",
+                        "tmdb_number": 1,
+                        "tmdb_name": "Die schöne Lüge",
+                    }
+                ]
+            }
+        },
+    }
+
+    template = "{SeriesTitle} - S{SeasonNumber:02}E{EpisodeNumber:02} - {EpisodeTitle}"
+    previews = get_rename_preview(series_data, template)
+
+    assert len(previews) == 1
+    assert previews[0]["new_name"] == "Schöne neue Welt - S01E01 - Die schöne Lüge.mkv"
+    assert previews[0]["safe"] is True
+
+
+def test_perform_rename_unicode(tmp_path) -> None:
+    """Renaming to a unicode filename succeeds on disk."""
+    video_file = tmp_path / "old.mkv"
+    video_file.touch()
+    new_name = "Schöne neue Welt - S01E01 - Die schöne Lüge.mkv"
+
+    previews = [
+        {
+            "old_path": str(video_file),
+            "new_name": new_name,
+            "new_path": str(tmp_path / new_name),
+        }
+    ]
+
+    results = perform_rename(previews)
+
+    assert results[0]["success"]
+    assert not video_file.exists()
+    assert (tmp_path / new_name).exists()
+
+
 def test_is_safe_filename() -> None:
     # Safe names
     assert is_safe_filename("Simple Name.mkv")[0] is True
