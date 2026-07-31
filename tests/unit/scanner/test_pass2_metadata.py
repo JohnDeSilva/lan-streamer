@@ -10,7 +10,7 @@ from __future__ import annotations
 import concurrent.futures
 import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from lan_streamer.scanner.pass2_metadata import (
@@ -39,47 +39,47 @@ class TestSeasonNameFromTmdb:
 
     def test_specials_season_zero(self) -> None:
         """Season number 0 should always return 'Specials'."""
-        tmdb_season: Dict[str, Any] = {"season_number": 0, "name": "Specials"}
+        tmdb_season: dict[str, Any] = {"season_number": 0, "name": "Specials"}
         assert _season_name_from_tmdb(tmdb_season) == "Specials"
 
     def test_specials_with_different_name(self) -> None:
         """Season number 0 returns 'Specials' even if name differs."""
-        tmdb_season: Dict[str, Any] = {"season_number": 0, "name": "Extras"}
+        tmdb_season: dict[str, Any] = {"season_number": 0, "name": "Extras"}
         assert _season_name_from_tmdb(tmdb_season) == "Specials"
 
     def test_standard_season(self) -> None:
         """Standard numbering season returns 'Season N'."""
-        tmdb_season: Dict[str, Any] = {"season_number": 2, "name": "Season 2"}
+        tmdb_season: dict[str, Any] = {"season_number": 2, "name": "Season 2"}
         assert _season_name_from_tmdb(tmdb_season) == "Season 2"
 
     def test_custom_season_name_preserved(self) -> None:
         """Custom names like 'Part 1' should be preserved as-is."""
-        tmdb_season: Dict[str, Any] = {"season_number": 1, "name": "Part 1"}
+        tmdb_season: dict[str, Any] = {"season_number": 1, "name": "Part 1"}
         assert _season_name_from_tmdb(tmdb_season) == "Part 1"
 
     def test_cour_name_preserved(self) -> None:
         """'Cour 2' style names should be preserved."""
-        tmdb_season: Dict[str, Any] = {"season_number": 2, "name": "Cour 2"}
+        tmdb_season: dict[str, Any] = {"season_number": 2, "name": "Cour 2"}
         assert _season_name_from_tmdb(tmdb_season) == "Cour 2"
 
     def test_generic_name_falls_back(self) -> None:
         """Names that don't match Season/Part/Cour should generate 'Season N'."""
-        tmdb_season: Dict[str, Any] = {"season_number": 3, "name": "Third Chapter"}
+        tmdb_season: dict[str, Any] = {"season_number": 3, "name": "Third Chapter"}
         assert _season_name_from_tmdb(tmdb_season) == "Season 3"
 
     def test_missing_season_number(self) -> None:
         """Missing season_number defaults to 1."""
-        tmdb_season: Dict[str, Any] = {"name": "Season 1"}
+        tmdb_season: dict[str, Any] = {"name": "Season 1"}
         assert _season_name_from_tmdb(tmdb_season) == "Season 1"
 
     def test_empty_name(self) -> None:
         """Empty name should generate 'Season N'."""
-        tmdb_season: Dict[str, Any] = {"season_number": 5, "name": ""}
+        tmdb_season: dict[str, Any] = {"season_number": 5, "name": ""}
         assert _season_name_from_tmdb(tmdb_season) == "Season 5"
 
     def test_whitespace_name(self) -> None:
         """Whitespace-only name should generate 'Season N'."""
-        tmdb_season: Dict[str, Any] = {"season_number": 1, "name": "   "}
+        tmdb_season: dict[str, Any] = {"season_number": 1, "name": "   "}
         assert _season_name_from_tmdb(tmdb_season) == "Season 1"
 
 
@@ -91,12 +91,12 @@ class TestSeasonNameFromTmdb:
 class TestFilterFutureEpisodes:
     """Tests for _filter_future_episodes."""
 
-    def _make_episode(self, path: str | None, air_date: str) -> Dict[str, Any]:
+    def _make_episode(self, path: str | None, air_date: str) -> dict[str, Any]:
         return {"path": path, "air_date": air_date, "name": "Test Episode"}
 
     def test_filters_future_placeholder(self) -> None:
         """Future-dated placeholder (no path) should be removed."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -111,7 +111,7 @@ class TestFilterFutureEpisodes:
 
     def test_keeps_past_placeholder(self) -> None:
         """Past-dated placeholder (no path) should be kept."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -125,7 +125,7 @@ class TestFilterFutureEpisodes:
 
     def test_keeps_file_without_air_date(self) -> None:
         """Episode with a path but no air_date is kept."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -139,7 +139,7 @@ class TestFilterFutureEpisodes:
 
     def test_today_episode_kept(self) -> None:
         """Episode with air_date equal to today should be kept."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -175,7 +175,7 @@ class TestCreateTmdbPlaceholderEpisodes:
         air_date: str = "2020-01-01",
         runtime: int = 30,
         ep_id: int = 100,
-    ) -> Dict[str, Any]:  # type: ignore[return]
+    ) -> dict[str, Any]:  # type: ignore[return]
         return {
             "episode_number": number,
             "name": name,
@@ -187,7 +187,7 @@ class TestCreateTmdbPlaceholderEpisodes:
     def test_creates_placeholder_for_missing_episode(self) -> None:
         """TMDB episodes not in local list produce placeholders."""
         tmdb_eps = [self._tmdb_ep(1), self._tmdb_ep(2)]
-        local_eps: list[Dict[str, Any]] = [
+        local_eps: list[dict[str, Any]] = [
             {"tmdb_number": 1, "name": "S01E01 - Existing"}
         ]
         result = _create_tmdb_placeholder_episodes(tmdb_eps, local_eps, "Season 1", {})
@@ -198,7 +198,7 @@ class TestCreateTmdbPlaceholderEpisodes:
     def test_skips_existing_numbers(self) -> None:
         """Episodes that already exist locally should not be created."""
         tmdb_eps = [self._tmdb_ep(1), self._tmdb_ep(2)]
-        local_eps: list[Dict[str, Any]] = [
+        local_eps: list[dict[str, Any]] = [
             {"tmdb_number": 1},
             {"tmdb_number": 2},
         ]
@@ -207,7 +207,7 @@ class TestCreateTmdbPlaceholderEpisodes:
 
     def test_skips_episodes_without_number(self) -> None:
         """TMDB episodes without episode_number should be skipped."""
-        tmdb_eps: list[Dict[str, Any]] = [
+        tmdb_eps: list[dict[str, Any]] = [
             {"name": "No Number", "air_date": "2020-01-01", "runtime": 30}
         ]
         result = _create_tmdb_placeholder_episodes(tmdb_eps, [], "Season 1", {})
@@ -253,7 +253,7 @@ class TestCreateTmdbPlaceholderEpisodes:
 
     def test_name_fallback(self) -> None:
         """Episode without a name gets 'TBA' as placeholder name."""
-        tmdb_eps: list[Dict[str, Any]] = [
+        tmdb_eps: list[dict[str, Any]] = [
             {
                 "episode_number": 10,
                 "name": "",
@@ -322,8 +322,8 @@ class TestPreserveExistingEpisodeData:
 
     def test_preserves_missing_season_folder(self) -> None:
         """A season present in existing data but not in new data is preserved."""
-        series_data: Dict[str, Any] = {"seasons": {}}
-        existing: Dict[str, Any] = {
+        series_data: dict[str, Any] = {"seasons": {}}
+        existing: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "metadata": {},
@@ -336,7 +336,7 @@ class TestPreserveExistingEpisodeData:
 
     def test_preserves_missing_episode_by_path(self) -> None:
         """An episode present on disk but not in new data is preserved."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -345,7 +345,7 @@ class TestPreserveExistingEpisodeData:
                 }
             }
         }
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -362,7 +362,7 @@ class TestPreserveExistingEpisodeData:
 
     def test_skips_missing_path_not_on_disk(self) -> None:
         """An episode with path not on disk should NOT be preserved."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -371,7 +371,7 @@ class TestPreserveExistingEpisodeData:
                 }
             }
         }
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -388,7 +388,7 @@ class TestPreserveExistingEpisodeData:
 
     def test_preserves_placeholder_with_new_number(self) -> None:
         """Placeholder (no path) with a new tmdb_number is preserved."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -397,7 +397,7 @@ class TestPreserveExistingEpisodeData:
                 }
             }
         }
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -413,7 +413,7 @@ class TestPreserveExistingEpisodeData:
 
     def test_filters_future_placeholder_when_disabled(self) -> None:
         """Future-dated placeholders should be omitted when show_future_episodes=False."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -422,7 +422,7 @@ class TestPreserveExistingEpisodeData:
                 }
             }
         }
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "seasons": {
                 "Season 1": {
                     "episodes": [
@@ -458,7 +458,7 @@ class TestAddTmdbOnlySeasons:
 
     def test_adds_missing_tmdb_season(self) -> None:
         """TMDB seasons not present in series_data are added."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "_tmdb_seasons": [
                 {"season_number": 2, "name": "Season 2", "id": 202},
             ],
@@ -485,7 +485,7 @@ class TestAddTmdbOnlySeasons:
 
     def test_skips_existing_seasons(self) -> None:
         """Seasons already in series_data are skipped."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "_tmdb_seasons": [
                 {"season_number": 1, "name": "Season 1", "id": 101},
             ],
@@ -511,7 +511,7 @@ class TestAddTmdbOnlySeasons:
 
     def test_no_tmdb_seasons_noop(self) -> None:
         """No _tmdb_seasons key results in no added seasons."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "seasons": {},
             "metadata": {"locked_metadata": False},
         }
@@ -520,7 +520,7 @@ class TestAddTmdbOnlySeasons:
 
     def test_uses_episode_group_details(self) -> None:
         """TMDB episode group details should be used when available."""
-        series_data: Dict[str, Any] = {
+        series_data: dict[str, Any] = {
             "_tmdb_seasons": [
                 {"season_number": 1, "name": "Season 1", "id": 101},
             ],
@@ -564,7 +564,7 @@ class TestResolveTmdbMovieData:
 
     def test_locked_returns_early(self) -> None:
         """Locked movies skip all TMDB resolution."""
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "tmdb_identifier": "",
             "tmdb_name": "",
             "poster_path": "",
@@ -576,7 +576,7 @@ class TestResolveTmdbMovieData:
 
     def test_fetches_full_movie_when_stub_provided(self) -> None:
         """When only id is provided, fetches the full record."""
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "tmdb_identifier": "",
             "tmdb_name": "",
             "overview": "",
@@ -624,7 +624,7 @@ class TestResolveTmdbMovieData:
 
     def test_searches_by_title_when_no_tmdb_id(self) -> None:
         """With no existing tmdb_identifier, searches by title."""
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "tmdb_identifier": "",
             "tmdb_name": "",
             "overview": "",
@@ -667,7 +667,7 @@ class TestResolveTmdbMovieData:
 
     def test_reuses_existing_tmdb_metadata(self) -> None:
         """When existing_metadata has an ID but no new tmdb_movie, builds from existing."""
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "tmdb_identifier": "existing_id",
             "tmdb_name": "Existing Movie",
             "overview": "Existing overview",
@@ -707,7 +707,7 @@ class TestBuildMovieData:
 
     def test_basic_build(self) -> None:
         """Basic movie data assembly from component parts."""
-        active: Dict[str, Any] = {
+        active: dict[str, Any] = {
             "path": "/movies/test.mkv",
             "video_codec": "h264",
             "resolution": "1080p",
@@ -715,7 +715,7 @@ class TestBuildMovieData:
             "audio_tracks": [{"language": "en"}],
             "subtitle_tracks": [{"language": "en"}],
         }
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "jellyfin_id": "jf_1",
             "tmdb_identifier": "tmdb_1",
             "poster_path": "/poster.jpg",
@@ -851,7 +851,7 @@ class TestScanSeriesPass2:
         series_name: str = "Test Show",
         locked: bool = False,
         season_names: list[str] | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if season_names is None:
             season_names = ["Season 1"]
         return {
@@ -942,7 +942,7 @@ class TestScanSeriesPass2:
         series_dir = Path("/series/Test Show")
         existing = self._make_existing_series()
 
-        mock_series_data: Dict[str, Any] = {
+        mock_series_data: dict[str, Any] = {
             "metadata": {
                 "name": "Test Show",
                 "tmdb_identifier": "tmdb_series_1",
@@ -1002,7 +1002,7 @@ class TestScanSeriesPass2:
         series_dir = Path("/series/Test Show")
         existing = self._make_existing_series()
 
-        mock_series_data: Dict[str, Any] = {
+        mock_series_data: dict[str, Any] = {
             "metadata": {"name": "Test Show"},
             "seasons": {},
         }
@@ -1043,7 +1043,7 @@ class TestScanSeriesPass2:
         series_dir = Path("/series/Test Show")
         existing = self._make_existing_series()
 
-        mock_series_data: Dict[str, Any] = {
+        mock_series_data: dict[str, Any] = {
             "metadata": {"name": "Test Show"},
             "seasons": {
                 "Season 1": {
@@ -1095,7 +1095,7 @@ class TestScanSeriesPass2:
         episode_file.touch()
         ep_path = str(episode_file.absolute())
 
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "metadata": {
                 "name": "Test Show",
                 "tmdb_identifier": "tmdb_1",
@@ -1143,7 +1143,7 @@ class TestScanSeriesPass2:
         mock_tmdb = MagicMock()
         mock_tmdb.is_configured.return_value = False
 
-        mock_series_data: Dict[str, Any] = {
+        mock_series_data: dict[str, Any] = {
             "metadata": {
                 "name": "Test Show",
                 "tmdb_identifier": "tmdb_1",
@@ -1208,7 +1208,7 @@ class TestScanSeriesPass2:
         ep_file = season_dir / "S01E01.mkv"
         ep_file.touch()
 
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "metadata": {
                 "name": "TMDB Show",
                 "tmdb_identifier": "tmdb_1",
@@ -1251,7 +1251,7 @@ class TestScanSeriesPass2:
         mock_tmdb.is_configured.return_value = True
         mock_tmdb.get_episodes.return_value = []
 
-        mock_series_data: Dict[str, Any] = {
+        mock_series_data: dict[str, Any] = {
             "metadata": {"name": "TMDB Show", "tmdb_identifier": "tmdb_1"},
             "seasons": {},
             "_tmdb_series_id": "tmdb_1",
@@ -1310,7 +1310,7 @@ class TestScanSeriesPass2:
         ep_file = season_dir / "S01E01.mkv"
         ep_file.touch()
 
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "metadata": {
                 "name": "Future Show",
                 "tmdb_identifier": "tmdb_1",
@@ -1325,7 +1325,7 @@ class TestScanSeriesPass2:
             },
         }
 
-        mock_series_data: Dict[str, Any] = {
+        mock_series_data: dict[str, Any] = {
             "metadata": {"name": "Future Show"},
             "seasons": {},
             "_tmdb_series_id": None,
@@ -1386,7 +1386,7 @@ class TestScanSeriesPass2:
         season_dir = series_dir / "Season 1"
         season_dir.mkdir(parents=True)
 
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "metadata": {
                 "name": "Callback Show",
                 "tmdb_identifier": "tmdb_1",
@@ -1401,7 +1401,7 @@ class TestScanSeriesPass2:
             },
         }
 
-        mock_series_data: Dict[str, Any] = {
+        mock_series_data: dict[str, Any] = {
             "metadata": {"name": "Callback Show"},
             "seasons": {},
             "_tmdb_series_id": None,
@@ -1474,7 +1474,7 @@ class TestScanMoviePass2:
 
     def test_returns_none_without_video_path(self) -> None:
         """When no video path is found in versions, returns None."""
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "path": "",
             "versions": [],
             "locked_metadata": False,
@@ -1497,7 +1497,7 @@ class TestScanMoviePass2:
         video_file.touch()
         video_path = str(video_file.absolute())
 
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "path": video_path,
             "default_path": video_path,
             "versions": [
@@ -1594,7 +1594,7 @@ class TestScanMoviePass2:
         video_file.touch()
         video_path = str(video_file.absolute())
 
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "path": video_path,
             "default_path": video_path,
             "versions": [{"path": video_path}],
@@ -1674,7 +1674,7 @@ class TestScanMoviePass2:
         new_video.touch()
         new_path = str(new_video.absolute())
 
-        existing: Dict[str, Any] = {
+        existing: dict[str, Any] = {
             "path": "/old/path/old.mkv",
             "default_path": new_path,
             "versions": [

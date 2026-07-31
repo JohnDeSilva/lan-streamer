@@ -7,7 +7,7 @@ Verifies that:
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 if TYPE_CHECKING:
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _make_controller() -> "Controller":
+def _make_controller() -> Controller:
     from lan_streamer.ui_views import Controller
 
     mock_config = MagicMock()
@@ -96,7 +96,7 @@ def test_post_scan_worker_cleared_after_finished_signal() -> None:
 
     # The callback that gets connected to finished signal in _on_scan_finished
     # We simulate what the callback does
-    def finished_callback(result: Dict[str, Any]) -> None:
+    def finished_callback(result: dict[str, Any]) -> None:
         controller._on_post_scan_finished(result, None, None)
         controller._post_scan_workers = [
             w for w in controller._post_scan_workers if w is not mock_worker
@@ -149,7 +149,7 @@ def test_post_scan_worker_concurrent_workers_independent() -> None:
     controller._running_pass3_after_scan = False
 
     # Simulate worker_b finishing — only it should be removed
-    def finished_callback_b(result: Dict[str, Any]) -> None:
+    def finished_callback_b(result: dict[str, Any]) -> None:
         controller._on_post_scan_finished(result, None, None)
         controller._post_scan_workers = [
             w for w in controller._post_scan_workers if w is not mock_worker_b
@@ -175,7 +175,7 @@ def test_post_scan_worker_concurrent_workers_independent() -> None:
     assert controller._post_scan_workers == [mock_worker_c]
 
     # Simulate worker_c finishing — list becomes empty
-    def finished_callback_c(result: Dict[str, Any]) -> None:
+    def finished_callback_c(result: dict[str, Any]) -> None:
         controller._on_post_scan_finished(result, None, None)
         controller._post_scan_workers = [
             w for w in controller._post_scan_workers if w is not mock_worker_c

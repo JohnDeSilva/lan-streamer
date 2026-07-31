@@ -122,7 +122,7 @@ class TestGetLinuxDistro:
     def test_read_exception(self):
         with (
             patch("lan_streamer.system.updater.os.path.exists", return_value=True),
-            patch("lan_streamer.system.updater.open", side_effect=IOError("denied")),
+            patch("lan_streamer.system.updater.open", side_effect=OSError("denied")),
         ):
             assert get_linux_distro() == "ubuntu"
 

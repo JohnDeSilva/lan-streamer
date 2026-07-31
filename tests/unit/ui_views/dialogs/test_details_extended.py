@@ -7,7 +7,6 @@ Extended tests for details dialogs:
   episode table (load/interactions), MAL tab
 """
 
-from typing import List
 from unittest.mock import patch
 
 import pytest
@@ -341,7 +340,7 @@ class TestEpisodeDetailsDialogExtended:
 
     def test_on_search_tmdb_clicked(self, ctrl_tv, qtbot) -> None:
         d = self._make_dialog(ctrl_tv, qtbot)
-        emitted: List[str] = []
+        emitted: list[str] = []
         ctrl_tv.episode_metadata_dialog_requested.connect(
             lambda a, b: emitted.append(a)
         )

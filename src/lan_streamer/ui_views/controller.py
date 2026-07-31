@@ -5,11 +5,7 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    List,
-    Optional,
     Protocol,
-    Set,
 )
 
 from PySide6.QtCore import QFileSystemWatcher, QObject, QTimer, Signal
@@ -114,11 +110,11 @@ class Controller(QObject):
 
     def __init__(
         self,
-        parent: Optional[QObject] = None,
+        parent: QObject | None = None,
         config: Any = None,
         db: Any = None,
-        jellyfin_client: Optional[JellyfinClientProtocol] = None,
-        tmdb_client: Optional[TMDBClientProtocol] = None,
+        jellyfin_client: JellyfinClientProtocol | None = None,
+        tmdb_client: TMDBClientProtocol | None = None,
     ) -> None:
         super().__init__(parent)
         self._config = config if config is not None else _config_default
@@ -128,7 +124,7 @@ class Controller(QObject):
         )
         self._tmdb_client = tmdb_client if tmdb_client is not None else _tmdb_default
         self.current_library_name: str = ""
-        self.cached_library_data: Dict[str, Any] = {}
+        self.cached_library_data: dict[str, Any] = {}
         self.selected_series_name: str = ""
         self.sort_mode: str = self._config.sort_mode
         self.sort_descending: bool = self._config.sort_descending
@@ -137,13 +133,13 @@ class Controller(QObject):
         self._running_pass3_after_scan: bool = False
         self._running_cleanup_after_scan: bool = False
         self._doing_scan_and_update: bool = False
-        self._cleanup_queue: List[str] = []
+        self._cleanup_queue: list[str] = []
         self._scan_had_unavailable_directories: bool = False
         # Strong reference to keep PostScanWorker alive until _on_post_scan_finished
         # completes. Without this, CPython's reference-counting GC can destroy the
         # worker (and its QThread) immediately after _on_scan_finished returns because
         # parent=self provides only a Qt object-tree reference, not a Python reference.
-        self._post_scan_workers: List[Any] = []
+        self._post_scan_workers: list[Any] = []
 
         self.file_system_watcher = QFileSystemWatcher(self)
 
@@ -184,7 +180,7 @@ class Controller(QObject):
         if existing_directories:
             self.file_system_watcher.removePaths(existing_directories)
 
-        root_directories: List[str] = library_config.get("paths", [])
+        root_directories: list[str] = library_config.get("paths", [])
         for directory_path in root_directories:
             if Path(directory_path).is_dir():
                 self.file_system_watcher.addPath(directory_path)
@@ -288,8 +284,8 @@ class Controller(QObject):
     def search_media(
         self,
         query_text: str,
-        library_names: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
+        library_names: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Search series and movies by name.
 
         Delegates to ``db.search_media_names``.
@@ -394,8 +390,8 @@ class Controller(QObject):
             self.current_library_name, series_name, season_name, watched
         )
 
-        series_data: Dict[str, Any] = self.cached_library_data.get(series_name, {})
-        season_data: Dict[str, Any] = series_data.get("seasons", {}).get(
+        series_data: dict[str, Any] = self.cached_library_data.get(series_name, {})
+        season_data: dict[str, Any] = series_data.get("seasons", {}).get(
             season_name, {}
         )
         for episode_record in season_data.get("episodes", []):
@@ -420,7 +416,7 @@ class Controller(QObject):
             self.current_library_name, series_name, True
         )
 
-        series_data: Dict[str, Any] = self.cached_library_data.get(series_name, {})
+        series_data: dict[str, Any] = self.cached_library_data.get(series_name, {})
         for season_data in series_data.get("seasons", {}).values():
             for episode_record in season_data.get("episodes", []):
                 if episode_record.get("path"):
@@ -451,7 +447,7 @@ class Controller(QObject):
 
         self._config.load()
         library_config = self._config.libraries.get(self.current_library_name, {})
-        root_directories: List[str] = library_config.get("paths", [])
+        root_directories: list[str] = library_config.get("paths", [])
         library_type: str = library_config.get("type", "tv")
         self.status_changed.emit(
             f"Scanning library '{self.current_library_name}' (force={force_refresh})...."
@@ -476,7 +472,7 @@ class Controller(QObject):
             detail_progress_batch=self._on_detail_progress_batch,
         )
 
-    def _on_scan_partial(self, partial_library: Dict[str, Any]) -> None:
+    def _on_scan_partial(self, partial_library: dict[str, Any]) -> None:
         if self.current_library_name:
             # We create a shallow copy/update of cached data to not lose references while UI re-renders
             self.cached_library_data = partial_library
@@ -486,10 +482,10 @@ class Controller(QObject):
 
     def _on_scan_finished(
         self,
-        updated_library: Dict[str, Any],
+        updated_library: dict[str, Any],
         *,
         _skip_scan_completed: bool = False,
-    ) -> tuple[Optional[Set[str]], Optional[Set[str]]]:
+    ) -> tuple[set[str] | None, set[str] | None]:
         scan_worker = self.worker_manager.scan.instance
         changed_season_ids = getattr(scan_worker, "changed_season_ids", None)
         changed_movie_ids = getattr(scan_worker, "changed_movie_ids", None)
@@ -538,7 +534,7 @@ class Controller(QObject):
             )
             self._post_scan_workers.append(worker)
 
-            def _on_post_scan_done(result: Dict[str, Any]) -> None:
+            def _on_post_scan_done(result: dict[str, Any]) -> None:
                 if _skip_scan_completed:
                     changed_hashes: list[str] = result.get("changed_hashes", [])
                     if changed_hashes:
@@ -574,12 +570,12 @@ class Controller(QObject):
 
     def _on_post_scan_finished(
         self,
-        result: Dict[str, Any],
-        changed_season_ids: Optional[Set[str]],
-        changed_movie_ids: Optional[Set[str]],
+        result: dict[str, Any],
+        changed_season_ids: set[str] | None,
+        changed_movie_ids: set[str] | None,
     ) -> None:
         """Handle completion of post-scan DB save and cache rebuild."""
-        changed_hashes: List[str] = result.get("changed_hashes", [])
+        changed_hashes: list[str] = result.get("changed_hashes", [])
         if changed_hashes:
             self.smart_rows_updated.emit(changed_hashes)
 
@@ -593,7 +589,7 @@ class Controller(QObject):
         # Leaving this log for traceability.
         logger.info("Controller: PostScanWorker for finished scan released.")
 
-    def _on_cleanup_finished(self, statistics: Dict[str, Any]) -> None:
+    def _on_cleanup_finished(self, statistics: dict[str, Any]) -> None:
         self.select_library(self.current_library_name, reset_selection=False)
         series_removed: int = statistics.get("series", 0)
         seasons_removed: int = statistics.get("seasons", 0)
@@ -616,7 +612,7 @@ class Controller(QObject):
 
         lib_name = self._cleanup_queue.pop(0)
         library_config = self._config.libraries.get(lib_name, {})
-        root_directories: List[str] = library_config.get("paths", [])
+        root_directories: list[str] = library_config.get("paths", [])
         self.status_changed.emit(f"Cleaning up missing files in '{lib_name}'...")
 
         self.worker_manager.cleanup_global.start(
@@ -629,7 +625,7 @@ class Controller(QObject):
             error=self._on_global_cleanup_step_error,
         )
 
-    def _on_global_cleanup_step_finished(self, statistics: Dict[str, Any]) -> None:
+    def _on_global_cleanup_step_finished(self, statistics: dict[str, Any]) -> None:
         if self.current_library_name:
             self.select_library(self.current_library_name, reset_selection=False)
         series_removed: int = statistics.get("series", 0)
@@ -662,7 +658,7 @@ class Controller(QObject):
 
         self._config.load()
         library_config = self._config.libraries.get(self.current_library_name, {})
-        root_directories: List[str] = library_config.get("paths", [])
+        root_directories: list[str] = library_config.get("paths", [])
         library_type: str = library_config.get("type", "tv")
         self.status_changed.emit(
             f"Scanning & updating library '{self.current_library_name}'..."
@@ -688,7 +684,7 @@ class Controller(QObject):
         )
 
     def _on_scan_and_update_scan_finished(
-        self, updated_library: Dict[str, Any]
+        self, updated_library: dict[str, Any]
     ) -> None:
         """Called when the scan phase of scan_and_update completes. Saves results then runs cleanup."""
         changed_season_ids, changed_movie_ids = self._on_scan_finished(
@@ -720,7 +716,7 @@ class Controller(QObject):
             return
 
         library_config = self._config.libraries.get(self.current_library_name, {})
-        root_directories: List[str] = library_config.get("paths", [])
+        root_directories: list[str] = library_config.get("paths", [])
         self.status_changed.emit(
             f"Scan complete. Updating paths in '{self.current_library_name}'..."
         )
@@ -738,9 +734,9 @@ class Controller(QObject):
 
     def _on_scan_and_update_cleanup_finished(
         self,
-        statistics: Dict[str, Any],
-        changed_season_ids: Optional[Set[str]] = None,
-        changed_movie_ids: Optional[Set[str]] = None,
+        statistics: dict[str, Any],
+        changed_season_ids: set[str] | None = None,
+        changed_movie_ids: set[str] | None = None,
     ) -> None:
         """Called when the cleanup phase of scan_and_update completes."""
         self.select_library(self.current_library_name, reset_selection=False)
@@ -834,13 +830,13 @@ class Controller(QObject):
             error=self._on_worker_error,
         )
 
-    def _on_detail_progress_batch(self, events: List[Dict[str, Any]]) -> None:
+    def _on_detail_progress_batch(self, events: list[dict[str, Any]]) -> None:
         for event_dict in events:
             self.detail_progress_updated.emit(
                 event_dict.get("event", ""), event_dict.get("payload", {})
             )
 
-    def _on_scan_all_detail_progress_batch(self, events: List[Dict[str, Any]]) -> None:
+    def _on_scan_all_detail_progress_batch(self, events: list[dict[str, Any]]) -> None:
         for event_dict in events:
             event = event_dict.get("event", "")
             payload = event_dict.get("payload", {})
@@ -937,8 +933,8 @@ class Controller(QObject):
 
     def trigger_runtime_extraction(
         self,
-        changed_season_ids: Optional[Set[str]] = None,
-        changed_movie_ids: Optional[Set[str]] = None,
+        changed_season_ids: set[str] | None = None,
+        changed_movie_ids: set[str] | None = None,
         force_refresh: bool = False,
     ) -> None:
         if self.worker_manager.file_property.is_running:
@@ -1006,8 +1002,8 @@ class Controller(QObject):
 
     def _download_provider_artwork(
         self,
-        target_dict: Dict[str, Any],
-        match_dictionary: Dict[str, Any],
+        target_dict: dict[str, Any],
+        match_dictionary: dict[str, Any],
         is_movie: bool,
     ) -> None:
         if match_dictionary.get("poster_path"):
@@ -1015,7 +1011,7 @@ class Controller(QObject):
             tmdb_identifier_value: str = target_dict.get("tmdb_identifier", "")
             if raw_poster_path and tmdb_identifier_value:
                 prefix = "tmdb_movie_" if is_movie else "tmdb_series_"
-                cached_image_path: Optional[str] = self._tmdb_client.download_image(
+                cached_image_path: str | None = self._tmdb_client.download_image(
                     raw_poster_path, f"{prefix}{tmdb_identifier_value}"
                 )
                 target_dict["poster_path"] = cached_image_path or raw_poster_path
@@ -1023,7 +1019,7 @@ class Controller(QObject):
                 target_dict["poster_path"] = raw_poster_path
 
     def apply_metadata_match(
-        self, series_name: str, match_dictionary: Dict[str, Any]
+        self, series_name: str, match_dictionary: dict[str, Any]
     ) -> None:
         logger.info(
             f"Controller applying metadata match for '{series_name}': {match_dictionary}"
@@ -1034,8 +1030,8 @@ class Controller(QObject):
         library_config = self._config.libraries.get(self.current_library_name, {})
         is_movie = library_config.get("type", "tv") == "movie"
 
-        series_record: Dict[str, Any] = self.cached_library_data[series_name]
-        target_dict: Dict[str, Any] = (
+        series_record: dict[str, Any] = self.cached_library_data[series_name]
+        target_dict: dict[str, Any] = (
             series_record if is_movie else series_record.get("metadata", {})
         )
 
@@ -1104,8 +1100,8 @@ class Controller(QObject):
         poster_path = match_dictionary.get("poster_path")
 
         # Resolve the series directory from the library root paths
-        root_paths: List[str] = library_config.get("paths", [])
-        series_directory: Optional[Path] = None
+        root_paths: list[str] = library_config.get("paths", [])
+        series_directory: Path | None = None
         for root_path in root_paths:
             potential_dir = Path(root_path) / series_name
             if potential_dir.is_dir():
@@ -1137,7 +1133,7 @@ class Controller(QObject):
         )
 
     def _on_metadata_apply_finished(
-        self, series_name: str, synced_data: Dict[str, Any], poster_path: str
+        self, series_name: str, synced_data: dict[str, Any], poster_path: str
     ) -> None:
         """Handle successful metadata apply — apply synced data and save."""
         logger.info(
@@ -1183,7 +1179,7 @@ class Controller(QObject):
                 self.series_selected.emit(series_name)
 
     def apply_jellyfin_watch_match(
-        self, series_name: str, match_dictionary: Dict[str, Any]
+        self, series_name: str, match_dictionary: dict[str, Any]
     ) -> None:
         logger.info(
             f"Controller applying Jellyfin watch history match for '{series_name}': {match_dictionary}"
@@ -1194,8 +1190,8 @@ class Controller(QObject):
         library_config = self._config.libraries.get(self.current_library_name, {})
         is_movie = library_config.get("type", "tv") == "movie"
 
-        series_record: Dict[str, Any] = self.cached_library_data[series_name]
-        target_dict: Dict[str, Any] = (
+        series_record: dict[str, Any] = self.cached_library_data[series_name]
+        target_dict: dict[str, Any] = (
             series_record if is_movie else series_record.get("metadata", {})
         )
 
@@ -1223,7 +1219,7 @@ class Controller(QObject):
                 self.series_selected.emit(series_name)
 
     def apply_episode_metadata_match(
-        self, series_name: str, episode_path: str, match_dictionary: Dict[str, Any]
+        self, series_name: str, episode_path: str, match_dictionary: dict[str, Any]
     ) -> None:
         logger.info(
             f"Controller applying episode metadata match for '{series_name}' at '{episode_path}': {match_dictionary}"
@@ -1231,7 +1227,7 @@ class Controller(QObject):
         if series_name not in self.cached_library_data:
             return
 
-        series_record: Dict[str, Any] = self.cached_library_data[series_name]
+        series_record: dict[str, Any] = self.cached_library_data[series_name]
         episode_found: bool = False
 
         for season_data in series_record.get("seasons", {}).values():
@@ -1271,7 +1267,7 @@ class Controller(QObject):
                 self.series_selected.emit(series_name)
 
     def update_episode_metadata(
-        self, series_name: str, episode_path: str, metadata_dictionary: Dict[str, Any]
+        self, series_name: str, episode_path: str, metadata_dictionary: dict[str, Any]
     ) -> None:
         """Persists manual metadata overrides for a specific episode."""
         logger.info(
@@ -1280,7 +1276,7 @@ class Controller(QObject):
         if series_name not in self.cached_library_data:
             return
 
-        series_record: Dict[str, Any] = self.cached_library_data[series_name]
+        series_record: dict[str, Any] = self.cached_library_data[series_name]
         episode_found: bool = False
 
         for season_data in series_record.get("seasons", {}).values():
@@ -1313,7 +1309,7 @@ class Controller(QObject):
         library_config = self._config.libraries.get(self.current_library_name, {})
         is_movie = library_config.get("type", "tv") == "movie"
 
-        series_record: Dict[str, Any] = self.cached_library_data[series_name]
+        series_record: dict[str, Any] = self.cached_library_data[series_name]
         if is_movie:
             series_record["locked_metadata"] = locked
             if self.current_library_name:
@@ -1364,7 +1360,7 @@ class Controller(QObject):
             error=self._on_worker_error,
         )
 
-    def _on_refresh_finished(self, updated_library: Dict[str, Any]) -> None:
+    def _on_refresh_finished(self, updated_library: dict[str, Any]) -> None:
         refresh_worker = self.worker_manager.refresh.instance
         scanned_library_name = (
             getattr(refresh_worker, "library_name", None) or self.current_library_name
@@ -1417,7 +1413,7 @@ class Controller(QObject):
             error=self._on_worker_error,
         )
 
-    def _on_series_scan_finished(self, updated_library: Dict[str, Any]) -> None:
+    def _on_series_scan_finished(self, updated_library: dict[str, Any]) -> None:
         scan_series_worker = self.worker_manager.scan_series.instance
         scanned_library_name = (
             getattr(scan_series_worker, "library_name", None)
@@ -1457,8 +1453,8 @@ class Controller(QObject):
             )
             return
 
-        target_episode: Optional[Dict[str, Any]] = None
-        target_season_name: Optional[str] = None
+        target_episode: dict[str, Any] | None = None
+        target_season_name: str | None = None
         for season_name, season_data in series_record.get("seasons", {}).items():
             for ep in season_data.get("episodes", []):
                 if ep.get("path") == episode_path:
@@ -1515,7 +1511,7 @@ class Controller(QObject):
             logger.exception("Failed to refresh episode metadata from TMDB")
 
     def update_movie_metadata(
-        self, movie_name: str, movie_path: str, metadata: Dict[str, Any]
+        self, movie_name: str, movie_path: str, metadata: dict[str, Any]
     ) -> None:
         """
         Updates movie metadata in the database and refreshes local cache.
@@ -1532,7 +1528,7 @@ class Controller(QObject):
         self._cache_series_metrics()
         self.library_loaded.emit()
 
-    def merge_subtitles(self, video_path: str, subtitle_paths: List[str]) -> None:
+    def merge_subtitles(self, video_path: str, subtitle_paths: list[str]) -> None:
         """Triggers background ffmpeg worker to merge external subtitles into video file."""
         if self.worker_manager.subtitle_merge.is_running:
             self.status_changed.emit("Subtitle merge already in progress.")
@@ -1554,7 +1550,7 @@ class Controller(QObject):
         # Trigger scan to update metadata/details if needed
         self.trigger_scan(force_refresh=False)
 
-    def embed_metadata(self, video_path: str, metadata: Dict[str, str]) -> None:
+    def embed_metadata(self, video_path: str, metadata: dict[str, str]) -> None:
         """Triggers background ffmpeg worker to embed metadata into video file."""
         if self.worker_manager.metadata_embed.is_running:
             self.status_changed.emit("Metadata embedding already in progress.")
@@ -1623,7 +1619,7 @@ class Controller(QObject):
         self.selected_series_name = new_name
         self.series_selected.emit(new_name)
 
-    def apply_rename_batch(self, preview_results: List[Dict[str, Any]]) -> None:
+    def apply_rename_batch(self, preview_results: list[dict[str, Any]]) -> None:
         logger.info(
             f"Controller executing batch renames for {len(preview_results)} files."
         )

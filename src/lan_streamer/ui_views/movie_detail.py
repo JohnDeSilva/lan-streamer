@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import QPoint, Qt, Signal, Slot
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPolygon
@@ -36,7 +36,7 @@ class MovieDetailView(QWidget):
     back_requested = Signal()
 
     def __init__(
-        self, controller_instance: Controller, parent: Optional[QWidget] = None
+        self, controller_instance: Controller, parent: QWidget | None = None
     ) -> None:
         super().__init__(parent)
         self.controller: Controller = controller_instance
@@ -46,9 +46,9 @@ class MovieDetailView(QWidget):
         self.metadata_label: QLabel = QLabel()
         self._current_movie_name: str = ""
         self._current_movie_path: str = ""
-        self._current_movie_db_id: Optional[str] = None
-        self._cached_movie_data_copy: Optional[Dict[str, Any]] = None
-        self._loading_task_name: Optional[str] = None
+        self._current_movie_db_id: str | None = None
+        self._cached_movie_data_copy: dict[str, Any] | None = None
+        self._loading_task_name: str | None = None
 
         self._setup_ui()
         self.controller.movie_selected.connect(self.populate_movie_details)
@@ -163,7 +163,7 @@ class MovieDetailView(QWidget):
         logger.info(f"Populating movie details for: '{movie_name}'")
         self._current_movie_name = movie_name
         self._current_movie_db_id = None
-        movie_record: Dict[str, Any] = self.controller.cached_library_data.get(
+        movie_record: dict[str, Any] = self.controller.cached_library_data.get(
             movie_name, {}
         )
         self._current_movie_path = movie_record.get("path", "")
@@ -175,14 +175,14 @@ class MovieDetailView(QWidget):
         )
 
         # Build metadata label details
-        year: Optional[int] = movie_record.get("year")
-        runtime: Optional[int] = movie_record.get("file_runtime") or movie_record.get(
+        year: int | None = movie_record.get("year")
+        runtime: int | None = movie_record.get("file_runtime") or movie_record.get(
             "runtime"
         )
-        rating: Optional[str] = movie_record.get("rating")
-        genre: Optional[str] = movie_record.get("genre")
+        rating: str | None = movie_record.get("rating")
+        genre: str | None = movie_record.get("genre")
 
-        metadata_parts: List[str] = []
+        metadata_parts: list[str] = []
         if year:
             metadata_parts.append(str(year))
         if runtime:
@@ -261,7 +261,7 @@ class MovieDetailView(QWidget):
     def _update_movie_ui(
         self,
         movie_name: str,
-        movie_database_identifier: Optional[str],
+        movie_database_identifier: str | None,
         cast_entries: list[dict[str, Any]],
     ) -> None:
         if getattr(self.controller, "is_video_playing", False):
@@ -271,7 +271,7 @@ class MovieDetailView(QWidget):
 
     def _fetch_movie_db_and_cast(
         self, movie_name: str
-    ) -> tuple[Optional[str], list[dict[str, Any]]]:
+    ) -> tuple[str | None, list[dict[str, Any]]]:
         """Fetch movie DB ID and cast list (to be run in a background thread)."""
         from sqlalchemy.orm import joinedload
 
@@ -333,7 +333,7 @@ class MovieDetailView(QWidget):
         )
         dialog.exec()
 
-    def _lookup_movie_id(self) -> Optional[str]:
+    def _lookup_movie_id(self) -> str | None:
         """Query the database for the Movie UUID matching the current movie name."""
         if not self._current_movie_name:
             return None

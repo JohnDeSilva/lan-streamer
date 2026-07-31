@@ -8,7 +8,7 @@ using :class:`AsyncHTTPClient` instead of ``requests.Session``.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from lan_streamer.providers.http_client import AsyncHTTPClient
 from lan_streamer.system.config import config
@@ -23,7 +23,7 @@ class AsyncOpenSubtitlesClient:
 
     def __init__(self) -> None:
         self._http_client = AsyncHTTPClient(requests_per_second=10.0, timeout=15.0)
-        self._token: Optional[str] = None
+        self._token: str | None = None
 
     def _get_headers(self) -> dict[str, str]:
         headers: dict[str, str] = {
@@ -63,10 +63,10 @@ class AsyncOpenSubtitlesClient:
 
     async def search_subtitles(
         self,
-        query: Optional[str] = None,
-        tmdb_identifier: Optional[int] = None,
-        season_number: Optional[int] = None,
-        episode_number: Optional[int] = None,
+        query: str | None = None,
+        tmdb_identifier: int | None = None,
+        season_number: int | None = None,
+        episode_number: int | None = None,
         languages: str = "en",
     ) -> list[dict[str, Any]]:
         if not config.opensubtitles_api_key:
@@ -97,7 +97,7 @@ class AsyncOpenSubtitlesClient:
             logger.exception("Error searching OpenSubtitles")
             return []
 
-    async def get_download_link(self, file_id: int) -> Optional[str]:
+    async def get_download_link(self, file_id: int) -> str | None:
         if not self._token:
             logged_in = await self.login()
             if not logged_in:
@@ -124,7 +124,7 @@ class AsyncOpenSubtitlesClient:
             logger.exception("Error getting OpenSubtitles download link")
         return None
 
-    async def download_subtitle(self, download_url: str) -> Optional[bytes]:
+    async def download_subtitle(self, download_url: str) -> bytes | None:
         logger.info(
             f"Downloading subtitle content from OpenSubtitles URL: '{download_url}'"
         )

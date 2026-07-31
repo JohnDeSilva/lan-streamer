@@ -1,6 +1,5 @@
 import logging
 import threading
-from typing import List
 
 from lan_streamer import db
 from lan_streamer.system.config import config as app_config
@@ -20,7 +19,7 @@ class SmartRowService:
     ) -> None:
         self._cache_lock: threading.Lock = threading.Lock()
 
-    def on_episode_watched(self, file_path: str) -> List[str]:
+    def on_episode_watched(self, file_path: str) -> list[str]:
         """Handle episode watched event by performing incremental cache update.
 
         Returns the list of config_hashes that were updated, so the caller
@@ -35,7 +34,7 @@ class SmartRowService:
             return self._rebuild_affected_configs(affected_libraries)
         return []
 
-    def rebuild_for_libraries(self, library_names: List[str]) -> List[str]:
+    def rebuild_for_libraries(self, library_names: list[str]) -> list[str]:
         """Rebuild smart row cache entries that reference the given libraries.
 
         Returns the list of config_hashes that were updated.
@@ -43,7 +42,7 @@ class SmartRowService:
         logger.info(f"SmartRowService: rebuilding cache for libraries {library_names}")
         return self._rebuild_affected_configs(library_names)
 
-    def _rebuild_affected_configs(self, library_names: List[str]) -> List[str]:
+    def _rebuild_affected_configs(self, library_names: list[str]) -> list[str]:
         """Rebuild only the smart row configs that reference the given libraries.
 
         Config is loaded by get_affected_config_hashes_for_libraries, so
@@ -78,7 +77,7 @@ class SmartRowService:
 
             return config_hashes
 
-    def _resolve_libraries_for_path(self, file_path: str) -> List[str]:
+    def _resolve_libraries_for_path(self, file_path: str) -> list[str]:
         """Determine which libraries contain the given file path."""
         try:
             from sqlalchemy import select

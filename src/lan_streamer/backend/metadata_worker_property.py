@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -14,7 +14,7 @@ from lan_streamer.system.async_utils import get_subprocess_semaphore
 logger = logging.getLogger("lan_streamer.backend")
 
 
-def _produce_item_update(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _produce_item_update(item: dict[str, Any]) -> dict[str, Any] | None:
     """Probe a single item and return its update dict, or ``None`` if no
     new data was extracted."""
     file_path = item["path"]
@@ -57,21 +57,21 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
 
     def __init__(
         self,
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        changed_season_ids: Optional[Set[str]] = None,
-        changed_movie_ids: Optional[Set[str]] = None,
+        async_task_manager: AsyncTaskManager | None = None,
+        changed_season_ids: set[str] | None = None,
+        changed_movie_ids: set[str] | None = None,
         force_refresh: bool = False,
-        parent: Optional[QObject] = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
-        self.changed_season_ids: Optional[Set[str]] = changed_season_ids
-        self.changed_movie_ids: Optional[Set[str]] = changed_movie_ids
+        self.changed_season_ids: set[str] | None = changed_season_ids
+        self.changed_movie_ids: set[str] | None = changed_movie_ids
         self.force_refresh: bool = force_refresh
         self._lock: asyncio.Lock = asyncio.Lock()
         self._total_count: int = 0
         self._completed_count: int = 0
         self._last_batch_emitted: int = 0
-        self._database_writer: Optional[AsyncDatabaseWriter] = None
+        self._database_writer: AsyncDatabaseWriter | None = None
 
     async def _emit_progress_batch(self) -> None:
         """Emit progress_updated signal if batch interval has been reached."""
@@ -100,7 +100,7 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
                 items_list = await asyncio.to_thread(db.get_items_missing_runtime)
 
             # Filter out items that already have complete metadata
-            candidates: List[Dict[str, Any]] = []
+            candidates: list[dict[str, Any]] = []
             for item in items_list:
                 if item["type"] == "episode":
                     if (
@@ -132,18 +132,18 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
                 return 0
 
             # Group candidates by library
-            items_by_library: Dict[str, List[Dict[str, Any]]] = {}
+            items_by_library: dict[str, list[dict[str, Any]]] = {}
             for item in candidates:
                 library = item.get("library_name") or "_unknown"
                 items_by_library.setdefault(library, []).append(item)
 
             # Process each library concurrently
-            async def process_library(library_items: List[Dict[str, Any]]) -> int:
+            async def process_library(library_items: list[dict[str, Any]]) -> int:
                 local_updated = 0
 
                 # Group episodes by season
-                episodes_by_season: Dict[Optional[str], List[Dict[str, Any]]] = {}
-                movies: List[Dict[str, Any]] = []
+                episodes_by_season: dict[str | None, list[dict[str, Any]]] = {}
+                movies: list[dict[str, Any]] = []
                 for item in library_items:
                     if item["type"] == "episode":
                         season_id = item.get("season_id")
@@ -159,7 +159,7 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
                         )
                         break
 
-                    season_updates: List[Dict[str, Any]] = []
+                    season_updates: list[dict[str, Any]] = []
                     for ep in season_episodes:
                         if self.isInterruptionRequested():
                             break

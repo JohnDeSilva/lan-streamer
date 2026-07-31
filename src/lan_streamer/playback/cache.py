@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -22,8 +22,8 @@ class CacheWorker(AsyncWorkerBase):
         self,
         src_path: str,
         dest_path: str,
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        parent: Optional[QObject] = None,
+        async_task_manager: AsyncTaskManager | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
         self.src_path: Path = Path(src_path)

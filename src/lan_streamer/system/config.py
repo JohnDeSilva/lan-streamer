@@ -2,7 +2,7 @@ import copy
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 
 def _parse_config_path() -> Path:
@@ -46,7 +46,7 @@ class Config:
     # Single source of truth for all DB-backed setting defaults.
     # Referenced by both __init__ (to seed safe pre-DB values) and
     # load_from_db (to fill in missing rows on first run).
-    _DB_DEFAULTS: Dict[str, Any] = {
+    _DB_DEFAULTS: dict[str, Any] = {
         "libraries": {},
         "sync_history_on_start": True,
         "filter_out_watched": False,
@@ -150,7 +150,7 @@ class Config:
                 logger.debug("Config file has not changed on disk. Skipping load.")
                 return
 
-            with open(CONFIG_FILE, "r") as file_handle:
+            with open(CONFIG_FILE) as file_handle:
                 config_data = json.load(file_handle)
 
             self.database_path = str(

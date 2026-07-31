@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -25,7 +25,7 @@ from lan_streamer.ui_views import (
 
 
 @pytest.fixture
-def sample_library_dictionary(generated_video_asset: str) -> Dict[str, Any]:
+def sample_library_dictionary(generated_video_asset: str) -> dict[str, Any]:
     return {
         "Cosmos": {
             "metadata": {
@@ -65,7 +65,7 @@ def sample_library_dictionary(generated_video_asset: str) -> Dict[str, Any]:
 
 
 def test_library_grid_view_rendering(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any
+    sample_library_dictionary: dict[str, Any], qtbot: Any
 ) -> None:
     from lan_streamer.system.config import config
 
@@ -87,20 +87,20 @@ def test_library_grid_view_rendering(
         grid_view.populate_grid()
         assert grid_view.series_list_widget.count() == 1
 
-        list_item: Optional[QListWidgetItem] = grid_view.series_list_widget.item(0)
+        list_item: QListWidgetItem | None = grid_view.series_list_widget.item(0)
         assert list_item is not None
         assert "Cosmos" in list_item.text()
         assert "(1/2)" in list_item.text()
 
         # Trigger click
-        selected_series_emitted: List[str] = []
+        selected_series_emitted: list[str] = []
         controller_instance.series_selected.connect(selected_series_emitted.append)
 
         grid_view.on_item_clicked(list_item)
         assert selected_series_emitted == ["Cosmos"]
 
         # Trigger open settings button
-        settings_button_instance: Optional[QPushButton] = grid_view.findChild(
+        settings_button_instance: QPushButton | None = grid_view.findChild(
             QPushButton, "openSettingsButton"
         )
         assert settings_button_instance is not None
@@ -290,7 +290,7 @@ def test_library_grid_view_combined_view(qtbot: Any) -> None:
 
 
 def test_series_detail_view_rendering(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any
+    sample_library_dictionary: dict[str, Any], qtbot: Any
 ) -> None:
     import copy
     import datetime
@@ -343,9 +343,9 @@ def test_series_detail_view_rendering(
         assert detail_view.seasons_tab_widget.tabText(0) == "Season 1"
 
     # Verify table row properties
-    page_widget: Optional[Any] = detail_view.seasons_tab_widget.widget(0)
+    page_widget: Any | None = detail_view.seasons_tab_widget.widget(0)
     assert page_widget is not None
-    table_widget: Optional[Any] = page_widget.findChild(QTableWidget)
+    table_widget: Any | None = page_widget.findChild(QTableWidget)
     assert isinstance(table_widget, QTableWidget)
     assert table_widget.columnCount() == 6
     assert table_widget.rowCount() == 4
@@ -398,7 +398,7 @@ def test_series_detail_view_rendering(
 
 
 def test_series_detail_view_play_next_button(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any
+    sample_library_dictionary: dict[str, Any], qtbot: Any
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -451,7 +451,7 @@ def test_series_detail_view_play_next_button(
 
 
 def test_e2e_right_click_marks_watched(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any, generated_video_asset: str
+    sample_library_dictionary: dict[str, Any], qtbot: Any, generated_video_asset: str
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -461,9 +461,9 @@ def test_e2e_right_click_marks_watched(
     qtbot.addWidget(detail_view)
     detail_view.populate_series_details("Cosmos")
 
-    page_widget: Optional[Any] = detail_view.seasons_tab_widget.widget(0)
+    page_widget: Any | None = detail_view.seasons_tab_widget.widget(0)
     assert page_widget is not None
-    table_widget: Optional[Any] = page_widget.findChild(QTableWidget)
+    table_widget: Any | None = page_widget.findChild(QTableWidget)
     assert isinstance(table_widget, QTableWidget)
 
     from unittest.mock import patch
@@ -525,7 +525,7 @@ def test_e2e_right_click_marks_watched(
 
 
 def test_e2e_title_click_triggers_playback(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any, generated_video_asset: str
+    sample_library_dictionary: dict[str, Any], qtbot: Any, generated_video_asset: str
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -535,7 +535,7 @@ def test_e2e_title_click_triggers_playback(
     qtbot.addWidget(detail_view)
     detail_view.populate_series_details("Cosmos")
 
-    requested_paths_emitted: List[str] = []
+    requested_paths_emitted: list[str] = []
     controller_instance.playback_requested.connect(requested_paths_emitted.append)
 
     detail_view.trigger_episode_playback_by_row(season_tab_index=0, row_index=0)
@@ -543,7 +543,7 @@ def test_e2e_title_click_triggers_playback(
 
 
 def test_series_detail_view_bulk_actions_and_tab_selection(qtbot: Any) -> None:
-    multi_season_library: Dict[str, Any] = {
+    multi_season_library: dict[str, Any] = {
         "Cosmos": {
             "metadata": {"tmdb_name": "Cosmos"},
             "seasons": {
@@ -578,7 +578,7 @@ def test_series_detail_view_bulk_actions_and_tab_selection(qtbot: Any) -> None:
 
     # Test Mark season as watched button
     with patch("lan_streamer.db.update_season_watched_status") as mock_db_season:
-        season_button: Optional[QPushButton] = detail_view.findChild(
+        season_button: QPushButton | None = detail_view.findChild(
             QPushButton, "markSeasonWatchedButton_Season 2"
         )
         assert season_button is not None
@@ -598,7 +598,7 @@ def test_series_detail_view_bulk_actions_and_tab_selection(qtbot: Any) -> None:
 
 
 def test_metadata_match_dialog_workflow(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any
+    sample_library_dictionary: dict[str, Any], qtbot: Any
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -634,7 +634,7 @@ def test_metadata_match_dialog_workflow(
             dialog_instance.apply_selected()
             mock_save.assert_called_once()
 
-            metadata_dictionary: Dict[str, Any] = (
+            metadata_dictionary: dict[str, Any] = (
                 controller_instance.cached_library_data["Cosmos"]["metadata"]
             )
             assert metadata_dictionary["tmdb_identifier"] == "999"
@@ -643,7 +643,7 @@ def test_metadata_match_dialog_workflow(
 
 
 def test_jellyfin_match_dialog_workflow(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any
+    sample_library_dictionary: dict[str, Any], qtbot: Any
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -676,14 +676,14 @@ def test_jellyfin_match_dialog_workflow(
                 mock_save.assert_called_once()
                 mock_scan.assert_not_called()
 
-            metadata_dictionary: Dict[str, Any] = (
+            metadata_dictionary: dict[str, Any] = (
                 controller_instance.cached_library_data["Cosmos"]["metadata"]
             )
             assert metadata_dictionary["jellyfin_id"] == "jellyfin_id_123"
 
 
 def test_rename_preview_dialog_workflow(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any, generated_video_asset: str
+    sample_library_dictionary: dict[str, Any], qtbot: Any, generated_video_asset: str
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -712,7 +712,7 @@ def test_rename_preview_dialog_workflow(
         assert child_item.text(0) == "test_video.mkv"
 
         def side_effect_perform(
-            preview_results: List[Dict[str, Any]], success_callback: Any
+            preview_results: list[dict[str, Any]], success_callback: Any
         ) -> None:
             for item_dictionary in preview_results:
                 success_callback(
@@ -1025,7 +1025,7 @@ def test_settings_dialog_global_actions(qtbot: Any) -> None:
 
 
 def test_episode_metadata_match_dialog_workflow(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any, generated_video_asset: str
+    sample_library_dictionary: dict[str, Any], qtbot: Any, generated_video_asset: str
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -1069,7 +1069,7 @@ def test_episode_metadata_match_dialog_workflow(
                 dialog_instance.apply_selected()
                 mock_save.assert_called_once()
 
-                episode_record: Dict[str, Any] = (
+                episode_record: dict[str, Any] = (
                     controller_instance.cached_library_data["Cosmos"]["seasons"][
                         "Season 1"
                     ]["episodes"][0]
@@ -1087,7 +1087,7 @@ def test_episode_metadata_match_dialog_workflow(
 
 
 def test_series_detail_view_episode_match_button(
-    sample_library_dictionary: Dict[str, Any], qtbot: Any, generated_video_asset: str
+    sample_library_dictionary: dict[str, Any], qtbot: Any, generated_video_asset: str
 ) -> None:
     controller_instance = Controller()
     controller_instance.cached_library_data = sample_library_dictionary
@@ -1097,14 +1097,14 @@ def test_series_detail_view_episode_match_button(
     qtbot.addWidget(detail_view)
     detail_view.populate_series_details("Cosmos")
 
-    emitted_signals: List[Any] = []
+    emitted_signals: list[Any] = []
 
     def slot(series_name: str, path_string: str) -> None:
         emitted_signals.append((series_name, path_string))
 
     controller_instance.episode_details_requested.connect(slot)
 
-    match_button: Optional[QPushButton] = detail_view.findChild(
+    match_button: QPushButton | None = detail_view.findChild(
         QPushButton, "detailsEpisodeButton_0"
     )
     assert match_button is not None
@@ -1681,7 +1681,7 @@ def test_subtitle_search_dialog_workflow(qtbot: Any, tmp_path: Any) -> None:
                 "lan_streamer.providers.opensubtitles.opensubtitles_client.download_subtitle",
                 return_value=b"subtitle data",
             ),
-            patch("builtins.open", side_effect=IOError("Write permission denied")),
+            patch("builtins.open", side_effect=OSError("Write permission denied")),
             patch("lan_streamer.ui_views.QMessageBox.critical") as mock_crit,
         ):
             movie_dialog._on_download_clicked()
@@ -1751,7 +1751,7 @@ def test_library_grid_view_next_up_sorting(qtbot: Any) -> None:
     # Cosmos: Partially Watched (watched_episodes=1, total=2, last_played_at=3000) -> Candidate!
     # Star Trek: Fully Watched (watched_episodes=1, total=1, last_played_at=5000) -> Non-candidate!
     # Doctor Who: Unwatched (watched_episodes=0, total=1, last_played_at=0) -> Non-candidate!
-    library_data: Dict[str, Any] = {
+    library_data: dict[str, Any] = {
         "Cosmos": {
             "metadata": {
                 "first_air_date": "1980-09-28",

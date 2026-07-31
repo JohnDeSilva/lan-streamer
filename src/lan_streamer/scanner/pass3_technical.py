@@ -8,7 +8,7 @@ filesystem walking for discovery.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from lan_streamer.scanner.file_property_scanner import get_detailed_file_info
 
@@ -27,9 +27,9 @@ _UPGRADE_FIELDS = (
 
 
 def _upgrade_episode_metadata(
-    episode: Dict[str, Any],
+    episode: dict[str, Any],
     force_refresh: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Upgrade technical metadata via ffprobe when codec is stub or forced."""
     video_path: str | None = episode.get("path")
     current_codec: str | None = episode.get("video_codec")
@@ -54,7 +54,7 @@ def _upgrade_episode_metadata(
         is_stub,
         force_refresh,
     )
-    detailed: Dict[str, Any] = get_detailed_file_info(video_path)
+    detailed: dict[str, Any] = get_detailed_file_info(video_path)
 
     for field in _UPGRADE_FIELDS:
         value = detailed.get(field)
@@ -71,7 +71,7 @@ def _upgrade_episode_metadata(
     return episode
 
 
-def _handle_missing_file(episode: Dict[str, Any]) -> Dict[str, Any]:
+def _handle_missing_file(episode: dict[str, Any]) -> dict[str, Any]:
     """Set path to ``None`` when the underlying file no longer exists."""
     video_path: str | None = episode.get("path")
     if not video_path:
@@ -91,7 +91,7 @@ def _handle_missing_file(episode: Dict[str, Any]) -> Dict[str, Any]:
     return episode
 
 
-def _upgrade_orphan_versions(movie_data: Dict[str, Any], movie_name: str) -> None:
+def _upgrade_orphan_versions(movie_data: dict[str, Any], movie_name: str) -> None:
     """Upgrade or clean up version entries with a different path than active."""
     active_path: str | None = movie_data.get("path")
     for version in movie_data.get("versions", []):
@@ -117,9 +117,9 @@ def _upgrade_orphan_versions(movie_data: Dict[str, Any], movie_name: str) -> Non
 
 def scan_series_pass3(
     series_directory: Path,
-    existing_series_data: Dict[str, Any],
+    existing_series_data: dict[str, Any],
     force_refresh: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Pass 3 for series — upgrade stubs and mark missing files.
 
     Args:
@@ -137,9 +137,9 @@ def scan_series_pass3(
         force_refresh,
     )
 
-    seasons: Dict[str, Any] = existing_series_data.get("seasons", {})
+    seasons: dict[str, Any] = existing_series_data.get("seasons", {})
     for season_data in seasons.values():
-        episodes: list[Dict[str, Any]] = season_data.get("episodes", [])
+        episodes: list[dict[str, Any]] = season_data.get("episodes", [])
         for index, episode in enumerate(episodes):
             _upgrade_episode_metadata(episode, force_refresh)
             _handle_missing_file(episode)
@@ -150,9 +150,9 @@ def scan_series_pass3(
 
 def scan_movie_pass3(
     series_directory: Path,
-    existing_movie_data: Dict[str, Any],
+    existing_movie_data: dict[str, Any],
     force_refresh: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Pass 3 for movies — upgrade stub and clean missing files.
 
     Args:

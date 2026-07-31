@@ -345,11 +345,11 @@ def test_divided_service_logging_realtime_flow(tmp_path) -> None:
         assert db_log_file.exists()
         assert ui_log_file.exists()
 
-        with open(db_log_file, "r") as f:
+        with open(db_log_file) as f:
             db_content = f.read()
             assert "Test message db session" in db_content
 
-        with open(ui_log_file, "r") as f:
+        with open(ui_log_file) as f:
             ui_content = f.read()
             assert "Test message main" in ui_content
 

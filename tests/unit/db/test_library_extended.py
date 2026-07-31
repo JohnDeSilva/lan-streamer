@@ -13,7 +13,7 @@ Missing lines to hit: 46, 53, 55, 58, 64, 218, 243-246, 258, 293, 295, 297, 299,
 """
 
 import json
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -621,7 +621,7 @@ def test_save_episode_record_date_added_int_comparison(mock_db_file) -> None:
         existing_by_path = {"/existing/ep1.mkv": existing_ep}
         existing_by_number = {1: existing_ep}
         existing_by_name = {"ep1.mkv": existing_ep}
-        stats: Dict[str, Any] = {"episodes": 0}
+        stats: dict[str, Any] = {"episodes": 0}
 
         # Simulate os.path.getctime() returning a float with fractional part
         episode_data = {
@@ -673,7 +673,7 @@ def test_save_episode_record_date_added_no_false_update_on_repeat(mock_db_file) 
         existing_by_path = {"/repeat/ep1.mkv": existing_ep}
         existing_by_number = {1: existing_ep}
         existing_by_name = {"ep1.mkv": existing_ep}
-        stats: Dict[str, Any] = {"episodes": 0}
+        stats: dict[str, Any] = {"episodes": 0}
 
         # First save with float date_added
         episode_data = {
@@ -1009,12 +1009,12 @@ def test_save_episode_record_creates_media_files_from_versions(
         session.add(season)
         session.flush()
 
-        existing_by_path: Dict[str, Episode] = {}
-        existing_by_number: Dict[int, Episode] = {}
-        existing_by_name: Dict[str, Episode] = {}
-        stats: Dict[str, Any] = {"episodes": 0}
+        existing_by_path: dict[str, Episode] = {}
+        existing_by_number: dict[int, Episode] = {}
+        existing_by_name: dict[str, Episode] = {}
+        stats: dict[str, Any] = {"episodes": 0}
 
-        episode_data: Dict[str, Any] = {
+        episode_data: dict[str, Any] = {
             "name": "S01E01 - Pilot",
             "path": "/root1/Season 1/S01E01.mkv",
             "tmdb_number": 1,

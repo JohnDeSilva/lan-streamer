@@ -32,7 +32,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Callable, Coroutine, Optional
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from PySide6.QtCore import QObject
 
@@ -58,7 +59,7 @@ class AsyncTaskManager(QObject):
     operation is skipped gracefully.
     """
 
-    def __init__(self, parent: Optional[QObject] = None) -> None:
+    def __init__(self, parent: QObject | None = None) -> None:
         """
         Initialise the task manager.
 
@@ -77,8 +78,8 @@ class AsyncTaskManager(QObject):
         self,
         coroutine: Coroutine[Any, Any, Any],
         name: str,
-        on_done_callback: Optional[Callable[[asyncio.Task[Any]], Any]] = None,
-    ) -> Optional[asyncio.Task[Any]]:
+        on_done_callback: Callable[[asyncio.Task[Any]], Any] | None = None,
+    ) -> asyncio.Task[Any] | None:
         """
         Schedule *coroutine* as a named asyncio task.
 
@@ -262,7 +263,7 @@ class AsyncTaskManager(QObject):
         coroutine_factory: CoroutineFactory,
         interval_seconds: float,
         name: str,
-    ) -> Optional[asyncio.Task[Any]]:
+    ) -> asyncio.Task[Any] | None:
         """
         Create a recurring task that runs *coroutine_factory* every
         *interval_seconds*.
@@ -302,7 +303,7 @@ class AsyncTaskManager(QObject):
     # Bulk stop
     # ------------------------------------------------------------------
 
-    def stop_all(self) -> Optional[asyncio.Task[None]]:
+    def stop_all(self) -> asyncio.Task[None] | None:
         """
         Cancel all tracked tasks and wait briefly for cancellation.
 
@@ -343,7 +344,7 @@ class AsyncTaskManager(QObject):
             for index, task in enumerate(pending):
                 try:
                     await asyncio.wait_for(task, timeout=DEFAULT_CANCEL_TIMEOUT)
-                except asyncio.CancelledError, asyncio.TimeoutError:
+                except TimeoutError, asyncio.CancelledError:
                     logger.debug(
                         "stop_all: task %d/%d finished after cancellation "
                         "(CancelledError/TimeoutError).",

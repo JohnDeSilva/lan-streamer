@@ -12,7 +12,6 @@ More extended Controller tests covering:
 - delete_series / delete_episode edge cases
 """
 
-from typing import List
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -78,7 +77,7 @@ def ctrl_movie(mock_db_save):
 
 def test_apply_jellyfin_watch_match_tv(ctrl_tv, mock_db_save) -> None:
     mock_save, _ = mock_db_save
-    received: List[str] = []
+    received: list[str] = []
     ctrl_tv.series_selected.connect(received.append)
 
     ctrl_tv.apply_jellyfin_watch_match("ShowA", {"id": "jelly-001"})
@@ -92,7 +91,7 @@ def test_apply_jellyfin_watch_match_tv(ctrl_tv, mock_db_save) -> None:
 
 def test_apply_jellyfin_watch_match_movie(ctrl_movie, mock_db_save) -> None:
     _, mock_movie_save = mock_db_save
-    received: List[str] = []
+    received: list[str] = []
     ctrl_movie.movie_selected.connect(received.append)
 
     ctrl_movie.apply_jellyfin_watch_match("Film", {"id": "jelly-film-222"})
@@ -114,7 +113,7 @@ def test_apply_jellyfin_watch_match_unknown_series(ctrl_tv) -> None:
 
 def test_apply_episode_metadata_match_found(ctrl_tv, mock_db_save) -> None:
     mock_save, _ = mock_db_save
-    received: List[str] = []
+    received: list[str] = []
     ctrl_tv.series_selected.connect(received.append)
 
     ctrl_tv.apply_episode_metadata_match(
@@ -178,7 +177,7 @@ def test_update_episode_metadata_unknown_series(ctrl_tv, mock_db_save) -> None:
 def test_trigger_series_refresh_no_library() -> None:
     c = Controller()
     c.current_library_name = ""
-    statuses: List[str] = []
+    statuses: list[str] = []
     c.status_changed.connect(statuses.append)
 
     with patch("lan_streamer.backend.RefreshSeriesWorker") as mock_cls:
@@ -196,7 +195,7 @@ def test_trigger_series_refresh_worker_already_running() -> None:
     mock_worker._is_async_worker = True
     c.worker_manager.scan._instance = mock_worker
 
-    statuses: List[str] = []
+    statuses: list[str] = []
     c.status_changed.connect(statuses.append)
 
     with patch("lan_streamer.backend.RefreshSeriesWorker") as mock_cls:
@@ -215,7 +214,7 @@ def test_on_refresh_finished_same_library(ctrl_tv, mock_db_save) -> None:
     mock_refresh.library_name = "TVLib"
     ctrl_tv.worker_manager.refresh._instance = mock_refresh
 
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl_tv.library_loaded.connect(lambda: signals.append(True))
     ctrl_tv._on_refresh_finished(updated_lib)
     assert ctrl_tv.cached_library_data == updated_lib
@@ -229,10 +228,10 @@ def test_on_refresh_finished_different_library(ctrl_tv, mock_db_save) -> None:
     mock_refresh.item_name = "ShowA"
     ctrl_tv.worker_manager.refresh._instance = mock_refresh
 
-    statuses: List[str] = []
+    statuses: list[str] = []
     ctrl_tv.status_changed.connect(statuses.append)
 
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl_tv.library_loaded.connect(lambda: signals.append(True))
 
     ctrl_tv._on_refresh_finished(updated_lib)
@@ -259,7 +258,7 @@ def test_merge_subtitles_skips_if_running(ctrl_tv) -> None:
     mock_worker._is_async_worker = True
     ctrl_tv.worker_manager.subtitle_merge._instance = mock_worker
 
-    statuses: List[str] = []
+    statuses: list[str] = []
     ctrl_tv.status_changed.connect(statuses.append)
 
     with patch("lan_streamer.backend.SubtitleMergeWorker") as mock_cls:
@@ -285,7 +284,7 @@ def test_embed_metadata_skips_if_running(ctrl_tv) -> None:
     mock_worker._is_async_worker = True
     ctrl_tv.worker_manager.metadata_embed._instance = mock_worker
 
-    statuses: List[str] = []
+    statuses: list[str] = []
     ctrl_tv.status_changed.connect(statuses.append)
 
     with patch("lan_streamer.backend.MetadataEmbedWorker") as mock_cls:
@@ -310,7 +309,7 @@ def test_embed_metadata_series_no_episodes(ctrl_tv) -> None:
         "metadata": {},
         "seasons": {"S1": {"episodes": []}},
     }
-    statuses: List[str] = []
+    statuses: list[str] = []
     ctrl_tv.status_changed.connect(statuses.append)
 
     with patch("lan_streamer.backend.SeriesMetadataEmbedWorker") as mock_cls:
@@ -330,7 +329,7 @@ def test_embed_metadata_series_skips_if_running(ctrl_tv) -> None:
     mock_worker._is_async_worker = True
     ctrl_tv.worker_manager.metadata_embed._instance = mock_worker
 
-    statuses: List[str] = []
+    statuses: list[str] = []
     ctrl_tv.status_changed.connect(statuses.append)
 
     with patch("lan_streamer.backend.SeriesMetadataEmbedWorker") as mock_cls:
@@ -345,7 +344,7 @@ def test_embed_metadata_series_skips_if_running(ctrl_tv) -> None:
 
 def test_update_series_name_renames_and_emits(ctrl_tv, mock_db_save) -> None:
     mock_save, _ = mock_db_save
-    received: List[str] = []
+    received: list[str] = []
     ctrl_tv.series_selected.connect(received.append)
 
     ctrl_tv.update_series_name("ShowA", "ShowRenamed")
@@ -409,7 +408,7 @@ def test_set_video_playing_true(ctrl_tv) -> None:
 
 def test_set_video_playing_false_emits_library_loaded(ctrl_tv) -> None:
     ctrl_tv.is_video_playing = True
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl_tv.library_loaded.connect(lambda: signals.append(True))
 
     ctrl_tv.set_video_playing(False)
@@ -418,7 +417,7 @@ def test_set_video_playing_false_emits_library_loaded(ctrl_tv) -> None:
 
 def test_set_video_playing_false_emits_series_selected(ctrl_tv) -> None:
     ctrl_tv.is_video_playing = True
-    received: List[str] = []
+    received: list[str] = []
     ctrl_tv.series_selected.connect(received.append)
 
     ctrl_tv.set_video_playing(False)
@@ -427,7 +426,7 @@ def test_set_video_playing_false_emits_series_selected(ctrl_tv) -> None:
 
 def test_set_video_playing_false_emits_movie_selected(ctrl_movie) -> None:
     ctrl_movie.is_video_playing = True
-    received: List[str] = []
+    received: list[str] = []
     ctrl_movie.movie_selected.connect(received.append)
 
     ctrl_movie.set_video_playing(False)
@@ -437,7 +436,7 @@ def test_set_video_playing_false_emits_movie_selected(ctrl_movie) -> None:
 def test_set_video_playing_false_no_selected(ctrl_tv) -> None:
     ctrl_tv.is_video_playing = True
     ctrl_tv.selected_series_name = ""
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl_tv.library_loaded.connect(lambda: signals.append(True))
 
     ctrl_tv.set_video_playing(False)
@@ -483,7 +482,7 @@ def test_delete_series_no_library() -> None:
 def test_trigger_series_scan_no_library() -> None:
     c = Controller()
     c.current_library_name = ""
-    statuses: List[str] = []
+    statuses: list[str] = []
     c.status_changed.connect(statuses.append)
 
     with patch("lan_streamer.backend.ScanSingleSeriesWorker") as mock_cls:
@@ -501,7 +500,7 @@ def test_trigger_series_scan_worker_already_running() -> None:
     mock_worker._is_async_worker = True
     c.worker_manager.scan._instance = mock_worker
 
-    statuses: List[str] = []
+    statuses: list[str] = []
     c.status_changed.connect(statuses.append)
 
     with patch("lan_streamer.backend.ScanSingleSeriesWorker") as mock_cls:
@@ -515,7 +514,7 @@ def test_on_series_scan_finished_same_library(ctrl_tv, mock_db_save) -> None:
     mock_scan.library_name = "TVLib"
     ctrl_tv.worker_manager.scan_series._instance = mock_scan
 
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl_tv.library_loaded.connect(lambda: signals.append(True))
     ctrl_tv._on_series_scan_finished(updated_library)
     assert ctrl_tv.cached_library_data == updated_library
@@ -529,7 +528,7 @@ def test_on_series_scan_finished_different_library(ctrl_tv, mock_db_save) -> Non
     mock_scan.series_name = "ShowA"
     ctrl_tv.worker_manager.scan_series._instance = mock_scan
 
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl_tv.library_loaded.connect(lambda: signals.append(True))
     ctrl_tv._on_series_scan_finished(updated_library)
     assert ctrl_tv.cached_library_data != updated_library

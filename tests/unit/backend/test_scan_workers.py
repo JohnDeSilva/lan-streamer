@@ -1,5 +1,6 @@
 import asyncio
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import patch
 
 from PySide6.QtCore import Qt
@@ -41,7 +42,7 @@ def test_cleanup_worker_execution() -> None:
             "lan_streamer.backend.scan_worker_cleanup.db.cleanup_library",
             return_value={"series": 1},
         ) as mock_clean:
-            emitted_results: List[Dict[str, Any]] = []
+            emitted_results: list[dict[str, Any]] = []
             worker = CleanupWorker(
                 "TestLib", ["/path"], async_task_manager=task_manager
             )
@@ -62,7 +63,7 @@ def test_cleanup_worker_execution() -> None:
             "lan_streamer.backend.scan_worker_cleanup.db.cleanup_library",
             side_effect=Exception("Cleanup error"),
         ):
-            emitted_errors: List[str] = []
+            emitted_errors: list[str] = []
             worker = CleanupWorker(
                 "TestLib", ["/path"], async_task_manager=task_manager
             )
@@ -125,9 +126,9 @@ def test_scan_all_libraries_worker_execution() -> None:
             "TV_Lib": {"paths": ["/tv_path"], "type": "tv"},
             "Movie_Lib": {"paths": ["/movie_path"], "type": "movie"},
         }
-        progress_emitted: List[tuple] = []
-        batch_emitted: List[List[Dict[str, Any]]] = []
-        finished_emitted: List[bool] = []
+        progress_emitted: list[tuple] = []
+        batch_emitted: list[list[dict[str, Any]]] = []
+        finished_emitted: list[bool] = []
 
         worker = ScanAllLibrariesWorker(force_refresh=True)
         worker.library_progress.connect(
@@ -185,7 +186,7 @@ def test_scan_all_libraries_worker_execution() -> None:
             "lan_streamer.backend.scan_worker_all.scan_directories",
             side_effect=Exception("Scan error"),
         ):
-            library_errors_emitted: List[tuple] = []
+            library_errors_emitted: list[tuple] = []
             worker = ScanAllLibrariesWorker()
             worker.library_error.connect(
                 lambda lib, msg: library_errors_emitted.append((lib, msg)),

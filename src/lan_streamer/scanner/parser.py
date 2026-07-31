@@ -2,7 +2,6 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ def _parse_movie_folder(folder_name: str) -> tuple[str, int | None]:
     return folder_name, None
 
 
-def find_video_files(directory: Path) -> List[Path]:
+def find_video_files(directory: Path) -> list[Path]:
     """
     Recursively finds all video files under directory using fast os.scandir traversal.
     Skips hidden folders/files starting with '.' to speed up scanning.

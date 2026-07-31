@@ -11,7 +11,7 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -48,47 +48,47 @@ class AsyncScanWorker(AsyncWorkerBase):
 
     def __init__(
         self,
-        root_directories: List[str],
+        root_directories: list[str],
         library_type: str,
-        existing_library: Dict[str, Any],
-        async_task_manager: Optional[AsyncTaskManager] = None,
+        existing_library: dict[str, Any],
+        async_task_manager: AsyncTaskManager | None = None,
         force_refresh: bool = False,
         cleanup: bool = False,
-        parent: Optional[QObject] = None,
+        parent: QObject | None = None,
         library_name: str = "",
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
-        self.root_directories: List[str] = root_directories
+        self.root_directories: list[str] = root_directories
         self.library_type: str = library_type
-        self.existing_library: Dict[str, Any] = existing_library
+        self.existing_library: dict[str, Any] = existing_library
         self.force_refresh: bool = force_refresh
         self.cleanup: bool = cleanup
         self.library_name: str = library_name
 
         # Result state — readable after finished signal.
-        self.unavailable_directories: List[str] = []
-        self.problems: List[Dict[str, Any]] = []
-        self.stats: Dict[str, int] = create_empty_stats()
-        self.changed_season_ids: Set[str] = set()
-        self.changed_movie_ids: Set[str] = set()
+        self.unavailable_directories: list[str] = []
+        self.problems: list[dict[str, Any]] = []
+        self.stats: dict[str, int] = create_empty_stats()
+        self.changed_season_ids: set[str] = set()
+        self.changed_movie_ids: set[str] = set()
 
         # Pass tracking
         self.current_pass: int = 1
-        self.pass_stats: Dict[int, Dict[str, int]] = {}
+        self.pass_stats: dict[int, dict[str, int]] = {}
 
         # Async database writer — created in run_async
-        self.database_writer: Optional[AsyncDatabaseWriter] = None
+        self.database_writer: AsyncDatabaseWriter | None = None
 
         # Detail-progress buffer protected by a lock because _detail_callback
         # runs inside a scanner thread (via run_in_fs_executor).
-        self._detail_progress_buffer: List[Dict[str, Any]] = []
+        self._detail_progress_buffer: list[dict[str, Any]] = []
         self._detail_lock: threading.Lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Public API — overrides AsyncWorkerBase
     # ------------------------------------------------------------------
 
-    async def run_async(self) -> Dict[str, Any]:
+    async def run_async(self) -> dict[str, Any]:
         """Execute the two-pass scan (offline + metadata resolution)."""
         start_time = time.time()
         self.problems = []
@@ -119,7 +119,7 @@ class AsyncScanWorker(AsyncWorkerBase):
 
             # Fetch jellyfin correlation data (sync call for now; could be
             # replaced with async client in a follow-up).
-            jellyfin_data: Optional[Dict[str, Any]] = None
+            jellyfin_data: dict[str, Any] | None = None
             from lan_streamer.providers.jellyfin import jellyfin_client
 
             if jellyfin_client.is_configured():
@@ -129,7 +129,7 @@ class AsyncScanWorker(AsyncWorkerBase):
             show_future = library_config.get("show_future_episodes", True)
 
             # Callbacks for the sync scanner
-            def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
+            def _detail_callback(event: str, payload: dict[str, Any]) -> None:
                 # This runs inside the scanner thread; lock the buffer.
                 with self._detail_lock:
                     self._detail_progress_buffer.append(
@@ -138,9 +138,9 @@ class AsyncScanWorker(AsyncWorkerBase):
 
             def _season_callback(
                 series_name: str,
-                series_data: Dict[str, Any],
+                series_data: dict[str, Any],
                 season_name: str,
-                season_data: Dict[str, Any],
+                season_data: dict[str, Any],
             ) -> None:
                 assert self.database_writer is not None
                 logger.info(
@@ -177,7 +177,7 @@ class AsyncScanWorker(AsyncWorkerBase):
                         logger,
                     )
 
-            def _movie_callback(movie_name: str, movie_data: Dict[str, Any]) -> None:
+            def _movie_callback(movie_name: str, movie_data: dict[str, Any]) -> None:
                 assert self.database_writer is not None
                 logger.info(
                     "AsyncScanWorker writing movie '%s' to database...",
@@ -311,7 +311,7 @@ class AsyncScanWorker(AsyncWorkerBase):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
+    def _emit_detail_progress(self, event: str, payload: dict[str, Any]) -> None:
         flush_needed = False
         with self._detail_lock:
             self._detail_progress_buffer.append({"event": event, "payload": payload})
@@ -330,11 +330,11 @@ class AsyncScanWorker(AsyncWorkerBase):
 
     def _merge_season_result(
         self,
-        stats: Optional[Dict[str, Any]],
+        stats: dict[str, Any] | None,
         series_name: str,
-        series_data: Dict[str, Any],
+        series_data: dict[str, Any],
         season_name: str,
-        season_data: Dict[str, Any],
+        season_data: dict[str, Any],
     ) -> None:
         if not stats:
             return
@@ -378,9 +378,9 @@ class AsyncScanWorker(AsyncWorkerBase):
 
     def _merge_movie_result(
         self,
-        stats: Optional[Dict[str, Any]],
+        stats: dict[str, Any] | None,
         movie_name: str,
-        movie_data: Dict[str, Any],
+        movie_data: dict[str, Any],
     ) -> None:
         if not stats:
             return

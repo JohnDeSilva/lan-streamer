@@ -3,7 +3,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from PySide6.QtCore import QEvent, QRect, QRectF, QSize, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter
@@ -152,7 +152,7 @@ class VerticalMediaButton(QWidget):
 class FullscreenControlsView(QGraphicsView):
     """Custom QGraphicsView to automatically keep the rotated control bar scaled."""
 
-    def __init__(self, scene: QGraphicsScene, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, scene: QGraphicsScene, parent: QWidget | None = None) -> None:
         super().__init__(scene, parent)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -244,7 +244,7 @@ class VideoPlayerWidget(QWidget):
         self.previous_volume = 80
         self.wakelock = WakeLock()
         self.next_episode_popup_shown: bool = False
-        self.next_episode_info: Optional[Dict[str, Any]] = None
+        self.next_episode_info: dict[str, Any] | None = None
         self.is_transitioning_to_next: bool = False
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
@@ -1881,7 +1881,7 @@ class VideoPlayerWidget(QWidget):
 
         title: str = self.next_episode_info.get("title") or "Unknown Title"
         season: str = self.next_episode_info.get("season") or "Unknown Season"
-        episode_number: Optional[Any] = self.next_episode_info.get("episode_number")
+        episode_number: Any | None = self.next_episode_info.get("episode_number")
         poster_path: str = self.next_episode_info.get("poster_path") or ""
 
         # Load poster if path exists
@@ -1921,7 +1921,7 @@ class VideoPlayerWidget(QWidget):
     def play_next_episode(self) -> None:
         """Plays the next episode immediately, preserving fullscreen state."""
         logger.info("User requested to play the next episode immediately")
-        next_episode_path: Optional[str] = (
+        next_episode_path: str | None = (
             self.next_episode_info.get("path") if self.next_episode_info else None
         )
         self.next_episode_popup_frame.hide()

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -30,25 +30,25 @@ class ScanSingleSeriesWorker(AsyncWorkerBase):
         library_name: str,
         series_name: str,
         library_type: str,
-        root_directories: List[str],
-        existing_library: Dict[str, Any],
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        parent: Optional[QObject] = None,
+        root_directories: list[str],
+        existing_library: dict[str, Any],
+        async_task_manager: AsyncTaskManager | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
         self.library_name: str = library_name
         self.series_name: str = series_name
         self.library_type: str = library_type
-        self.root_directories: List[str] = root_directories
-        self.existing_library: Dict[str, Any] = existing_library
+        self.root_directories: list[str] = root_directories
+        self.existing_library: dict[str, Any] = existing_library
 
-    async def run_async(self) -> Dict[str, Any]:
+    async def run_async(self) -> dict[str, Any]:
         logger.info(
             f"ScanSingleSeriesWorker starting for item: '{self.series_name}' in library '{self.library_name}'"
         )
 
         # Find all matching series directories in all root directories
-        target_directories: List[Path] = []
+        target_directories: list[Path] = []
         for root_directory in self.root_directories:
             potential_directory = Path(root_directory) / self.series_name
             if potential_directory.exists() and potential_directory.is_dir():
@@ -65,14 +65,14 @@ class ScanSingleSeriesWorker(AsyncWorkerBase):
         logger.info("ScanSingleSeriesWorker finished successfully")
         return updated_library
 
-    def _do_scan(self, target_directories: List[Path]) -> Dict[str, Any]:
+    def _do_scan(self, target_directories: list[Path]) -> dict[str, Any]:
         # Fetch Jellyfin correlation data if configured
-        jellyfin_data: Optional[Dict[str, Any]] = None
+        jellyfin_data: dict[str, Any] | None = None
         if jellyfin_client.is_configured():
             jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
         existing_item = self.existing_library.get(self.series_name)
-        item_data: Optional[Dict[str, Any]] = existing_item
+        item_data: dict[str, Any] | None = existing_item
 
         for target_directory in target_directories:
             if self.library_type == "movie":

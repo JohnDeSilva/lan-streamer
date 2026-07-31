@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
@@ -49,17 +49,17 @@ class SegmentedProgressBar(QWidget):
     _COLOR_PASS3_DONE = QColor("#22c55e")
     _COLOR_FAILED = QColor("#ef4444")
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setMinimumHeight(52)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         # Ordered list of library names
-        self._library_order: List[str] = []
+        self._library_order: list[str] = []
         # {library_name: {"roots": [root_dir, ...], "root_totals": {root: int},
         #                  "root_done": {root: int}, "state": STATE_*}}
-        self._libraries: Dict[str, Any] = {}
+        self._libraries: dict[str, Any] = {}
         # {root_dir: state}
-        self._root_states: Dict[str, int] = {}
+        self._root_states: dict[str, int] = {}
         self._current_pass: int = 1
         self._pass3_fraction: float = 0.0
 
@@ -84,9 +84,9 @@ class SegmentedProgressBar(QWidget):
 
     def init_from_tree(
         self,
-        tree: Dict[str, Any],
-        library_order: Optional[List[str]] = None,
-        library_config_source: Optional[Dict[str, Dict[str, Any]]] = None,
+        tree: dict[str, Any],
+        library_order: list[str] | None = None,
+        library_config_source: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         """Called once with the pre-discovery tree structure."""
         self._library_order = (
@@ -300,7 +300,7 @@ class ScanProgressTree(QWidget):
     _ICON_SKIPPED = "⊘"
     _ICON_FAILED = "✗"
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -332,15 +332,15 @@ class ScanProgressTree(QWidget):
         layout.addWidget(self._tree)
 
         # Lookup maps
-        self._lib_nodes: Dict[str, QTreeWidgetItem] = {}
-        self._lib_types: Dict[str, str] = {}  # library → "tv" | "movie"
-        self._folder_nodes: Dict[
+        self._lib_nodes: dict[str, QTreeWidgetItem] = {}
+        self._lib_types: dict[str, str] = {}  # library → "tv" | "movie"
+        self._folder_nodes: dict[
             str, QTreeWidgetItem
         ] = {}  # key = "library|root|folder"
-        self._season_nodes: Dict[
+        self._season_nodes: dict[
             str, QTreeWidgetItem
         ] = {}  # key = "library|folder|season"
-        self._file_nodes: Dict[str, QTreeWidgetItem] = {}  # key = file path
+        self._file_nodes: dict[str, QTreeWidgetItem] = {}  # key = file path
 
     # ------------------------------------------------------------------
     # Key helpers
@@ -358,9 +358,9 @@ class ScanProgressTree(QWidget):
 
     def init_from_tree(
         self,
-        tree: Dict[str, Any],
-        library_order: Optional[List[str]] = None,
-        library_config_source: Optional[Dict[str, Dict[str, Any]]] = None,
+        tree: dict[str, Any],
+        library_order: list[str] | None = None,
+        library_config_source: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         """Builds the initial tree with all folder, season, and file nodes in pending state."""
         self._tree.clear()
@@ -486,7 +486,7 @@ class ScanProgressTree(QWidget):
     # Folder-level state (series / movie folder)
     # ------------------------------------------------------------------
 
-    def _find_folder_node(self, library: str, folder: str) -> Optional[QTreeWidgetItem]:
+    def _find_folder_node(self, library: str, folder: str) -> QTreeWidgetItem | None:
         """Return the folder node for the first matching root key."""
         for key, node in self._folder_nodes.items():
             if key.startswith(f"{library}|") and key.endswith(f"|{folder}"):
@@ -569,7 +569,7 @@ class ScanProgressTree(QWidget):
             return
 
         # Prefer the season node as parent; fall back to folder node
-        parent_node: Optional[QTreeWidgetItem] = None
+        parent_node: QTreeWidgetItem | None = None
         if season:
             season_key = self._season_key(library, folder, season)
             parent_node = self._season_nodes.get(season_key)
@@ -637,12 +637,12 @@ class LibraryScanProgressBar(QWidget):
     _COLOR_ACTIVE_FOLDER = QColor("#3b82f6")
     _COLOR_DONE_FOLDER = QColor("#10b981")
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setMinimumHeight(16)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._roots_order: List[str] = []
-        self._roots: Dict[str, Any] = {}
+        self._roots_order: list[str] = []
+        self._roots: dict[str, Any] = {}
         self._current_pass: int = 1
         self._pass3_fraction: float = 0.0
 
@@ -666,9 +666,9 @@ class LibraryScanProgressBar(QWidget):
 
     def init_from_roots(
         self,
-        roots: Dict[str, List[str]],
-        roots_order: List[str],
-        library_roots: Optional[Dict[str, str]] = None,
+        roots: dict[str, list[str]],
+        roots_order: list[str],
+        library_roots: dict[str, str] | None = None,
     ) -> None:
         """Called with the initial discovery {root_dir: [folder1, folder2, ...]}.
 

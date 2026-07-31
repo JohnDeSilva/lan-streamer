@@ -1,14 +1,14 @@
 """Metadata updates service — manages series data cleaning."""
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from lan_streamer.db.utils import natural_sort_key
 
 logger = logging.getLogger("lan_streamer.services.metadata_updates")
 
 
-def clean_series_data(series_data: Dict[str, Any]) -> Dict[str, Any] | None:
+def clean_series_data(series_data: dict[str, Any]) -> dict[str, Any] | None:
     """Cleans up temporary tmdb variables from series data."""
     clean_seasons = {}
     for season, season_data in series_data.get("seasons", {}).items():

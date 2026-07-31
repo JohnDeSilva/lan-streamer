@@ -7,7 +7,7 @@ Verifies that:
 """
 
 import concurrent.futures
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
@@ -27,7 +27,7 @@ def test_fetch_tmdb_episodes_parallel_uses_provided_executor() -> None:
     executor = MagicMock(spec=concurrent.futures.ThreadPoolExecutor)
     executor.submit.return_value = mock_future
 
-    season_indices: Dict[str, int] = {"Season 1": 1}
+    season_indices: dict[str, int] = {"Season 1": 1}
 
     with patch(
         "lan_streamer.scanner.pass2_metadata.tmdb_client.get_episodes",
@@ -54,7 +54,7 @@ def test_fetch_tmdb_episodes_parallel_handles_fetch_failure() -> None:
     executor = MagicMock(spec=concurrent.futures.ThreadPoolExecutor)
     executor.submit.return_value = failing_future
 
-    season_indices: Dict[str, int] = {"Season 2": 2}
+    season_indices: dict[str, int] = {"Season 2": 2}
 
     result = _fetch_tmdb_episodes_parallel(
         tmdb_series_id=99,

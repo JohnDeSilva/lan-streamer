@@ -3,8 +3,9 @@
 import datetime
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QPixmap
@@ -53,7 +54,7 @@ class SeasonDetailView(QWidget):
     back_requested = Signal()
 
     def __init__(
-        self, controller_instance: Controller, parent: Optional[QWidget] = None
+        self, controller_instance: Controller, parent: QWidget | None = None
     ) -> None:
         """Initialize the season detail view.
 
@@ -63,25 +64,25 @@ class SeasonDetailView(QWidget):
         """
         super().__init__(parent)
         self.controller: Controller = controller_instance
-        self._current_series_name: Optional[str] = None
-        self._current_season_name: Optional[str] = None
+        self._current_series_name: str | None = None
+        self._current_season_name: str | None = None
 
         # State for mapper tabs
-        self._current_series_data: Dict[str, Any] = {}
-        self._current_season_data: Dict[str, Any] = {}
-        self._current_season_episodes: List[Dict[str, Any]] = []
+        self._current_series_data: dict[str, Any] = {}
+        self._current_season_data: dict[str, Any] = {}
+        self._current_season_episodes: list[dict[str, Any]] = []
 
         # TMDB mapper state
-        self._tmdb_mapper_episodes: List[Dict[str, Any]] = []
-        self._tmdb_entries: List[Dict[str, Any]] = []
-        self._tmdb_row_episodes: List[int] = []
+        self._tmdb_mapper_episodes: list[dict[str, Any]] = []
+        self._tmdb_entries: list[dict[str, Any]] = []
+        self._tmdb_row_episodes: list[int] = []
 
         # MAL mapper state
-        self._mal_selected_anime_id: Optional[int] = None
-        self._mal_local_episodes: List[Dict[str, Any]] = []
-        self._mal_row_episodes: List[int] = []
-        self._mal_entries: List[
-            Dict[str, Any]
+        self._mal_selected_anime_id: int | None = None
+        self._mal_local_episodes: list[dict[str, Any]] = []
+        self._mal_row_episodes: list[int] = []
+        self._mal_entries: list[
+            dict[str, Any]
         ] = []  # list of {id, title} for tracked entries
 
         main_layout = QVBoxLayout(self)
@@ -230,7 +231,7 @@ class SeasonDetailView(QWidget):
         self._current_season_name = season_name
         logger.info("Displaying season '%s' of series '%s'", season_name, series_name)
 
-        series_record: Dict[str, Any] = self.controller.cached_library_data.get(
+        series_record: dict[str, Any] = self.controller.cached_library_data.get(
             series_name, {}
         )
         if not series_record:
@@ -240,8 +241,8 @@ class SeasonDetailView(QWidget):
 
         self._current_series_data = series_record
 
-        metadata_dict: Dict[str, Any] = series_record.get("metadata", {})
-        seasons_dict: Dict[str, Any] = series_record.get("seasons", {})
+        metadata_dict: dict[str, Any] = series_record.get("metadata", {})
+        seasons_dict: dict[str, Any] = series_record.get("seasons", {})
         library_name = self.controller.current_library_name
         saved_group_id = config.get_series_preference(
             library_name, series_name, "display_group_id", "default"
@@ -256,8 +257,8 @@ class SeasonDetailView(QWidget):
                 group_details = tmdb_client.get_episode_group_details(saved_group_id)
                 if group_details and "groups" in group_details:
                     # Build episode lookup maps from original seasons
-                    db_episodes_by_id: Dict[str, Dict[str, Any]] = {}
-                    db_episodes_by_number: Dict[tuple, Dict[str, Any]] = {}
+                    db_episodes_by_id: dict[str, dict[str, Any]] = {}
+                    db_episodes_by_number: dict[tuple, dict[str, Any]] = {}
                     for s_name, s_data in seasons_dict.items():
                         s_num_match = re.search(r"\d+", s_name)
                         s_num = int(s_num_match.group()) if s_num_match else 0
@@ -272,12 +273,12 @@ class SeasonDetailView(QWidget):
                                 db_episodes_by_number[(s_num, ep_num)] = ep
 
                     # Re-group using the configured display group
-                    regrouped_seasons: Dict[str, Dict[str, Any]] = {}
+                    regrouped_seasons: dict[str, dict[str, Any]] = {}
                     for group in group_details["groups"]:
                         group_name = (
                             group.get("name") or f"Group {group.get('order', '')}"
                         )
-                        episodes_list: List[Dict[str, Any]] = []
+                        episodes_list: list[dict[str, Any]] = []
                         for group_ep in group.get("episodes", []):
                             ep_id = str(group_ep.get("id", ""))
                             db_ep = db_episodes_by_id.get(ep_id)
@@ -326,7 +327,7 @@ class SeasonDetailView(QWidget):
                             }
                     seasons_dict = regrouped_seasons
 
-        season_data: Dict[str, Any] = seasons_dict.get(season_name, {})
+        season_data: dict[str, Any] = seasons_dict.get(season_name, {})
         if not season_data:
             logger.warning(
                 "Season '%s' not found for series '%s'", season_name, series_name
@@ -337,7 +338,7 @@ class SeasonDetailView(QWidget):
         self._current_season_data = season_data
 
         # Poster
-        season_meta: Dict[str, Any] = season_data.get("metadata", {})
+        season_meta: dict[str, Any] = season_data.get("metadata", {})
         poster_path: str = season_meta.get("poster_path") or metadata_dict.get(
             "poster_path", ""
         )
@@ -377,11 +378,11 @@ class SeasonDetailView(QWidget):
         self._overview_label.setText(season_overview or "No overview available.")
 
         # Episodes — already in display group order when a group was applied above
-        episodes: List[Dict[str, Any]] = list(season_data.get("episodes", []))
+        episodes: list[dict[str, Any]] = list(season_data.get("episodes", []))
 
         if saved_group_id == "default":
 
-            def _episode_sort_key(episode: Dict[str, Any]) -> int:
+            def _episode_sort_key(episode: dict[str, Any]) -> int:
                 number = episode.get("tmdb_number")
                 if isinstance(number, (int, float)):
                     return int(number)
@@ -426,7 +427,7 @@ class SeasonDetailView(QWidget):
             self.controller.playback_requested.emit(path)
 
     def _build_episode_table(
-        self, episodes: List[Dict[str, Any]], series_name: str, season_name: str
+        self, episodes: list[dict[str, Any]], series_name: str, season_name: str
     ) -> None:
         """Populate the 6-column episode table with progress bars and context menu."""
         table = self._episode_table
@@ -435,7 +436,7 @@ class SeasonDetailView(QWidget):
         today_str = datetime.date.today().isoformat()
 
         # Compute which file paths are shared by multiple episodes
-        path_counts: Dict[str, int] = {}
+        path_counts: dict[str, int] = {}
         for ep in episodes:
             p = ep.get("path")
             if p:
@@ -449,7 +450,7 @@ class SeasonDetailView(QWidget):
 
         # Context menu
         def make_context_menu(
-            ep_list: List[Dict[str, Any]],
+            ep_list: list[dict[str, Any]],
         ) -> Callable[[QPoint], None]:
             def show_menu(position: QPoint) -> None:
                 item = table.itemAt(position)
@@ -505,10 +506,10 @@ class SeasonDetailView(QWidget):
         self,
         table: QTableWidget,
         row: int,
-        episode: Dict[str, Any],
+        episode: dict[str, Any],
         series_name: str,
         today_str: str,
-        shared_paths: Optional[set[str]] = None,
+        shared_paths: set[str] | None = None,
     ) -> None:
         """Render a single episode row with icon, color, progress bar, and details button."""
         number = str(episode.get("tmdb_number") or (row + 1))
@@ -650,7 +651,7 @@ class SeasonDetailView(QWidget):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _parse_season_number(season_name: str) -> Optional[int]:
+    def _parse_season_number(season_name: str) -> int | None:
         """Extract season number from a season name like 'Season 1' or 'S01'."""
         match = re.search(r"(\d+)", season_name)
         if match:
@@ -809,7 +810,7 @@ class SeasonDetailView(QWidget):
             return
 
         tmdb_id = self._current_series_data.get("metadata", {}).get("tmdb_identifier")
-        season_number: Optional[int] = None
+        season_number: int | None = None
         should_restore = tmdb_id is not None
         season_has_no_number = False
 
@@ -867,7 +868,7 @@ class SeasonDetailView(QWidget):
                 saved_group_id,
             )
 
-            episodes: List[Dict[str, Any]] = []
+            episodes: list[dict[str, Any]] = []
             if saved_group_id and saved_group_id != "default":
                 group_details = tmdb_client.get_episode_group_details(saved_group_id)
                 if group_details and "groups" in group_details:
@@ -1200,7 +1201,7 @@ class SeasonDetailView(QWidget):
 
     def _populate_tmdb_episodes(
         self,
-        raw_episodes: List[Dict[str, Any]],
+        raw_episodes: list[dict[str, Any]],
         series_id: int,
         series_title: str,
         season_number: int = 1,
@@ -1369,7 +1370,7 @@ class SeasonDetailView(QWidget):
             self._current_season_name,
         )
 
-        updates: Dict[str, Dict[str, Any]] = {}
+        updates: dict[str, dict[str, Any]] = {}
         for row_idx in range(self._tmdb_mapper_table.rowCount()):
             combo = self._tmdb_mapper_table.cellWidget(row_idx, 3)
             if isinstance(combo, QComboBox):
@@ -1523,7 +1524,7 @@ class SeasonDetailView(QWidget):
             return
 
         # Collect unique MAL anime IDs from per-episode saved data
-        episode_mal_ids: Dict[int, list[str]] = {}
+        episode_mal_ids: dict[int, list[str]] = {}
         for ep in self._mal_local_episodes:
             aid = ep.get("myanimelist_anime_id")
             if aid is not None:
@@ -1740,7 +1741,7 @@ class SeasonDetailView(QWidget):
 
     def _populate_mal_episodes(
         self,
-        details: Dict[str, Any],
+        details: dict[str, Any],
         append: bool = False,
         filter_used_paths: bool = False,
     ) -> None:
@@ -1748,7 +1749,7 @@ class SeasonDetailView(QWidget):
         if num_episodes == 0:
             num_episodes = max(12, len(self._mal_local_episodes) + 5)
 
-        anime_id: Optional[int] = details.get("id")
+        anime_id: int | None = details.get("id")
         anime_title: str = details.get("title") or f"ID: {anime_id}"
 
         start_row = self._mal_mapper_table.rowCount() if append else 0
@@ -1889,12 +1890,12 @@ class SeasonDetailView(QWidget):
 
         # Collect active anime IDs from the table rows
         active_ids: set[int] = set()
-        updates: Dict[str, Dict[str, Any]] = {}
+        updates: dict[str, dict[str, Any]] = {}
         for row_idx in range(self._mal_mapper_table.rowCount()):
             entry_item = self._mal_mapper_table.item(row_idx, 1)
             if entry_item is None:
                 continue
-            row_anime_id: Optional[int] = entry_item.data(Qt.ItemDataRole.UserRole)
+            row_anime_id: int | None = entry_item.data(Qt.ItemDataRole.UserRole)
             if row_anime_id is None:
                 continue
             active_ids.add(row_anime_id)

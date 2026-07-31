@@ -8,7 +8,7 @@ locking, cancellation, and signal propagation.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -27,7 +27,7 @@ class _StubController(QObject):
 
     scan_completed = Signal()
 
-    def __init__(self, parent: Optional[QObject] = None) -> None:
+    def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.task_manager = AsyncTaskManager(parent=self)
         self.trigger_scan_all = MagicMock()

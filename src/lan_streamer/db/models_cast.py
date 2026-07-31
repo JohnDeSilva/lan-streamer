@@ -7,7 +7,7 @@ associated with series and movies.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -36,21 +36,21 @@ class Person(Base):
     __tablename__ = "people"
 
     id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
-    tmdb_identifier: Mapped[Optional[int]] = mapped_column(
+    tmdb_identifier: Mapped[int | None] = mapped_column(
         Integer, unique=True, nullable=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    profile_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    biography: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    birth_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
-    death_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
-    place_of_birth: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    also_known_as: Mapped[Optional[str]] = mapped_column(
+    profile_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    biography: Mapped[str | None] = mapped_column(String, nullable=True)
+    birth_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    death_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    place_of_birth: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    also_known_as: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # JSON string
     updated_at: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    media_cast: Mapped[List["MediaCast"]] = relationship(
+    media_cast: Mapped[list[MediaCast]] = relationship(
         "MediaCast",
         back_populates="person",
         cascade="all, delete-orphan",
@@ -79,48 +79,48 @@ class MediaCast(Base):
         nullable=False,
         index=True,
     )
-    series_id: Mapped[Optional[str]] = mapped_column(
+    series_id: Mapped[str | None] = mapped_column(
         UUIDBLOB,
         ForeignKey("series.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    season_id: Mapped[Optional[str]] = mapped_column(
+    season_id: Mapped[str | None] = mapped_column(
         UUIDBLOB,
         ForeignKey("seasons.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    episode_id: Mapped[Optional[str]] = mapped_column(
+    episode_id: Mapped[str | None] = mapped_column(
         UUIDBLOB,
         ForeignKey("episodes.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    movie_id: Mapped[Optional[str]] = mapped_column(
+    movie_id: Mapped[str | None] = mapped_column(
         UUIDBLOB,
         ForeignKey("movies.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
     role: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    character: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    job: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    department: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    character: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    job: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(50), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    tmdb_credit_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    tmdb_credit_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    person: Mapped["Person"] = relationship("Person", back_populates="media_cast")
-    series: Mapped[Optional["Series"]] = relationship(
+    person: Mapped[Person] = relationship("Person", back_populates="media_cast")
+    series: Mapped[Series | None] = relationship(
         "Series", back_populates="media_cast", foreign_keys=[series_id]
     )
-    season: Mapped[Optional["Season"]] = relationship(
+    season: Mapped[Season | None] = relationship(
         "Season", back_populates="media_cast", foreign_keys=[season_id]
     )
-    episode: Mapped[Optional["Episode"]] = relationship(
+    episode: Mapped[Episode | None] = relationship(
         "Episode", back_populates="media_cast", foreign_keys=[episode_id]
     )
-    movie: Mapped[Optional["Movie"]] = relationship(
+    movie: Mapped[Movie | None] = relationship(
         "Movie", back_populates="media_cast", foreign_keys=[movie_id]
     )
 
@@ -152,13 +152,13 @@ class MediaImage(Base):
     __tablename__ = "media_images"
 
     id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
-    series_id: Mapped[Optional[str]] = mapped_column(
+    series_id: Mapped[str | None] = mapped_column(
         UUIDBLOB,
         ForeignKey("series.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    movie_id: Mapped[Optional[str]] = mapped_column(
+    movie_id: Mapped[str | None] = mapped_column(
         UUIDBLOB,
         ForeignKey("movies.id", ondelete="CASCADE"),
         nullable=True,
@@ -166,17 +166,17 @@ class MediaImage(Base):
     )
     image_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     source: Mapped[str] = mapped_column(String(10), nullable=False)
-    remote_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    local_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    remote_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    local_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     is_selected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    width: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    height: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    language: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    language: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
-    series: Mapped[Optional["Series"]] = relationship(
+    series: Mapped[Series | None] = relationship(
         "Series", back_populates="images", foreign_keys=[series_id]
     )
-    movie: Mapped[Optional["Movie"]] = relationship(
+    movie: Mapped[Movie | None] = relationship(
         "Movie", back_populates="images", foreign_keys=[movie_id]
     )

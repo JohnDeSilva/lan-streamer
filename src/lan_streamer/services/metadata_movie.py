@@ -7,14 +7,14 @@ into the movie metadata dictionary.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from lan_streamer.providers.tmdb import tmdb_client
 
 logger = logging.getLogger("lan_streamer.services.metadata_movie")
 
 
-def _build_movie_metadata_defaults() -> Dict[str, Any]:
+def _build_movie_metadata_defaults() -> dict[str, Any]:
     """Returns a blank movie metadata dictionary with all expected keys.
 
     Returns:
@@ -36,8 +36,8 @@ def _build_movie_metadata_defaults() -> Dict[str, Any]:
 
 
 def _apply_existing_movie_metadata(
-    metadata: Dict[str, Any],
-    existing: Dict[str, Any],
+    metadata: dict[str, Any],
+    existing: dict[str, Any],
     manual_jellyfin_id: str | None,
 ) -> None:
     """Copies non-empty scalar fields from *existing* movie data into *metadata*,
@@ -56,9 +56,9 @@ def _apply_existing_movie_metadata(
 
 
 def _resolve_movie_jellyfin_id(
-    movie_metadata: Dict[str, Any],
+    movie_metadata: dict[str, Any],
     video_path: str,
-    jellyfin_data: Dict[str, Any] | None,
+    jellyfin_data: dict[str, Any] | None,
 ) -> str:
     """Three-step Jellyfin ID resolution for a movie.
 
@@ -92,9 +92,9 @@ def _resolve_movie_jellyfin_id(
 
 
 def _resolve_movie_poster(
-    tmdb_movie: Dict[str, Any],
+    tmdb_movie: dict[str, Any],
     tmdb_id: str,
-    existing_movie_data: Dict[str, Any] | None,
+    existing_movie_data: dict[str, Any] | None,
     offline: bool = False,
 ) -> str:
     """Three-step poster resolution for a movie.
@@ -134,9 +134,9 @@ def _resolve_movie_poster(
 
 
 def _apply_tmdb_movie_data(
-    movie_metadata: Dict[str, Any],
-    tmdb_movie: Dict[str, Any],
-    existing_movie_data: Dict[str, Any] | None,
+    movie_metadata: dict[str, Any],
+    tmdb_movie: dict[str, Any],
+    existing_movie_data: dict[str, Any] | None,
     offline: bool = False,
     metadata_only: bool = False,
 ) -> None:

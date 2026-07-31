@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -25,13 +25,13 @@ class MetadataEmbedWorker(AsyncWorkerBase):
     def __init__(
         self,
         video_path: str,
-        metadata: Dict[str, str],
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        parent: Optional[QObject] = None,
+        metadata: dict[str, str],
+        async_task_manager: AsyncTaskManager | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
         self.video_path: str = video_path
-        self.metadata: Dict[str, str] = metadata
+        self.metadata: dict[str, str] = metadata
 
     async def run_async(self) -> str:
         logger.info(f"Starting metadata embedding for {self.video_path}")
@@ -77,13 +77,13 @@ class SeriesMetadataEmbedWorker(AsyncWorkerBase):
     def __init__(
         self,
         series_name: str,
-        episodes: List[Dict[str, Any]],
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        parent: Optional[QObject] = None,
+        episodes: list[dict[str, Any]],
+        async_task_manager: AsyncTaskManager | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
         self.series_name: str = series_name
-        self.episodes: List[Dict[str, Any]] = episodes
+        self.episodes: list[dict[str, Any]] = episodes
 
     async def run_async(self) -> None:
         total_episodes = len(self.episodes)

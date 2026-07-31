@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import QSize, Qt, Slot
 from PySide6.QtGui import QColor, QIcon
@@ -37,7 +37,7 @@ class LibraryGridView(QWidget):
     """
 
     def __init__(
-        self, controller_instance: Controller, parent: Optional[QWidget] = None
+        self, controller_instance: Controller, parent: QWidget | None = None
     ) -> None:
         super().__init__(parent)
         self.controller: Controller = controller_instance
@@ -45,18 +45,18 @@ class LibraryGridView(QWidget):
         self.library_tab_bar: QTabBar = QTabBar()
         self.library_selector: QComboBox = QComboBox(self)
         self.library_selector.hide()
-        self.library_names_list: List[str] = []
+        self.library_names_list: list[str] = []
         self.sort_label: QLabel = QLabel("Sort By:")
         self.sort_selector: QComboBox = QComboBox()
         self.order_label: QLabel = QLabel("Order:")
         self.order_selector: QComboBox = QComboBox()
         self.sort_order_container: QWidget = QWidget()
         self.filter_watched_checkbox: QCheckBox = QCheckBox("Hide Watched")
-        self.cached_icons: Dict[str, QIcon] = {}
-        self._last_order_mode: Optional[str] = None
+        self.cached_icons: dict[str, QIcon] = {}
+        self._last_order_mode: str | None = None
         self.scan_progress_bar: LibraryScanProgressBar = LibraryScanProgressBar()
         self.scan_status_label: QLabel = QLabel()
-        self._smart_row_widgets: Dict[str, QWidget] = {}
+        self._smart_row_widgets: dict[str, QWidget] = {}
 
         self._setup_ui()
         self._wire_signals()
@@ -203,7 +203,7 @@ class LibraryGridView(QWidget):
         self.controller.smart_rows_updated.connect(self._on_smart_rows_updated)
 
     @Slot(str, dict)
-    def _on_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
+    def _on_detail_progress(self, event: str, payload: dict[str, Any]) -> None:
         root = payload.get("root", "")
         folder = payload.get("folder", "")
         if event == "init_library_scan":
@@ -214,8 +214,8 @@ class LibraryGridView(QWidget):
             self.scan_status_label.setText("Starting library scan...")
             self.scan_status_label.setVisible(True)
         elif event == "init_tree":
-            roots_dict: Dict[str, List[str]] = {}
-            roots_order: List[str] = []
+            roots_dict: dict[str, list[str]] = {}
+            roots_order: list[str] = []
             tree = payload.get("tree", {})
             library_order = payload.get("library_order") or list(
                 config.libraries.keys()
@@ -304,7 +304,7 @@ class LibraryGridView(QWidget):
             self.library_selector.blockSignals(False)
             self.on_library_changed(library_name)
 
-    def populate_libraries(self, library_names: List[str]) -> None:
+    def populate_libraries(self, library_names: list[str]) -> None:
         self.library_selector.blockSignals(True)
         self.library_selector.clear()
         self.library_tab_bar.blockSignals(True)
@@ -459,11 +459,11 @@ class LibraryGridView(QWidget):
             self._last_order_mode = None
         self.order_selector.blockSignals(False)
         # Build list of displayable series structured records
-        series_entries: List[Dict[str, Any]] = []
+        series_entries: list[dict[str, Any]] = []
         for series_name, series_data in self.controller.cached_library_data.items():
-            metrics_dictionary: Dict[str, Any] = series_data.get("metrics", {})
+            metrics_dictionary: dict[str, Any] = series_data.get("metrics", {})
             is_movie: bool = "seasons" not in series_data
-            metadata_dictionary: Dict[str, Any] = (
+            metadata_dictionary: dict[str, Any] = (
                 series_data if is_movie else series_data.get("metadata", {})
             )
 
@@ -572,7 +572,7 @@ class LibraryGridView(QWidget):
                 else:
                     tooltip_text: str = f"Unwatched: {unwatched}/{total_count}"
 
-            list_item: Optional[QListWidgetItem] = None
+            list_item: QListWidgetItem | None = None
             if row_index < current_item_count:
                 list_item = self.series_list_widget.item(row_index)
 
@@ -659,7 +659,7 @@ class LibraryGridView(QWidget):
     @Slot()
     def _open_search_dialog(self) -> None:
         """Open the search dialog, scoped to current library (or all if combined view)."""
-        library_name: Optional[str] = None
+        library_name: str | None = None
         if self.controller.current_library_name != "Combined View":
             library_name = self.controller.current_library_name
 
@@ -692,7 +692,7 @@ class LibraryGridView(QWidget):
             else:
                 self.controller.select_series(item_name)
 
-    def _build_smart_row_widget(self, row_config: Dict[str, Any]) -> Optional[QWidget]:
+    def _build_smart_row_widget(self, row_config: dict[str, Any]) -> QWidget | None:
         """Build a single smart row widget from a row configuration dict.
 
         Returns None if the row has no items.
@@ -840,7 +840,7 @@ class LibraryGridView(QWidget):
         self.combined_scroll_layout.addStretch()
 
     @Slot(list)
-    def _on_smart_rows_updated(self, changed_config_hashes: List[str]) -> None:
+    def _on_smart_rows_updated(self, changed_config_hashes: list[str]) -> None:
         """Handle targeted smart row updates from the controller.
 
         Always processes updates even when the combined view is hidden,

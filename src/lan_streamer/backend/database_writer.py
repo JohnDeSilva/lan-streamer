@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 import lan_streamer.db as database_module
 
@@ -20,8 +21,8 @@ class DatabaseWriteTask:
     def __init__(
         self,
         action: str,
-        payload: Dict[str, Any],
-        callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        payload: dict[str, Any],
+        callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         """Initialise a database write task.
 
@@ -31,12 +32,12 @@ class DatabaseWriteTask:
             callback: Optional callback triggered on success.
         """
         self.action: str = action
-        self.payload: Dict[str, Any] = payload
-        self.callback: Optional[Callable[[Dict[str, Any]], None]] = callback
+        self.payload: dict[str, Any] = payload
+        self.callback: Callable[[dict[str, Any]], None] | None = callback
         self.event: threading.Event = threading.Event()
         self.async_event: asyncio.Event | None = None
-        self.result: Optional[Dict[str, Any]] = None
-        self.error: Optional[Exception] = None
+        self.result: dict[str, Any] | None = None
+        self.error: Exception | None = None
 
 
 class AsyncDatabaseWriter:
@@ -69,14 +70,14 @@ class AsyncDatabaseWriter:
         if self._task is not None:
             try:
                 await asyncio.wait_for(self._task, timeout=30.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._task.cancel()
                 try:
                     await self._task
                 except asyncio.CancelledError:
                     pass
 
-    async def submit(self, action: str, payload: Dict[str, Any]) -> DatabaseWriteTask:
+    async def submit(self, action: str, payload: dict[str, Any]) -> DatabaseWriteTask:
         """Enqueue a write task and return it immediately.
 
         The caller can ``await task.async_event.wait()`` to block until
@@ -88,7 +89,7 @@ class AsyncDatabaseWriter:
         return task
 
     def sync_submit(
-        self, action: str, payload: Dict[str, Any], loop: asyncio.AbstractEventLoop
+        self, action: str, payload: dict[str, Any], loop: asyncio.AbstractEventLoop
     ) -> DatabaseWriteTask:
         """Synchronous submit for use from scanner callbacks in other threads.
 
@@ -112,8 +113,8 @@ class AsyncDatabaseWriter:
         return task
 
     def _execute_write_task(
-        self, action: str, payload: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+        self, action: str, payload: dict[str, Any]
+    ) -> dict[str, Any] | None:
         """Map action to the corresponding database function and run it."""
         if action == "save_season":
             return database_module.save_season_data(
@@ -130,7 +131,7 @@ class AsyncDatabaseWriter:
                 payload["movie_data"],
             )
         elif action == "save_library":
-            stats: Dict[str, Any] = database_module.save_library(
+            stats: dict[str, Any] = database_module.save_library(
                 payload["library_name"], payload["library_data"]
             )
             return stats

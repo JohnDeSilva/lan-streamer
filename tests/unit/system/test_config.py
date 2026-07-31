@@ -197,7 +197,7 @@ def test_config_generates_on_startup_if_not_exists(mock_config_file) -> None:
     config = Config()
     assert mock_config_file.exists()
 
-    with open(mock_config_file, "r") as f:
+    with open(mock_config_file) as f:
         data = json.load(f)
     assert data["database_path"] == config.database_path
     assert data["log_level"] == "INFO"
@@ -249,7 +249,7 @@ def test_config_generates_and_backups_db_on_startup(tmp_path, mock_config_file) 
 
             # Verify config file is generated with backup frequencies set to 1
             assert mock_config_file.exists()
-            with open(mock_config_file, "r") as f:
+            with open(mock_config_file) as f:
                 data = json.load(f)
             assert data["config_backup_frequency"] == 1
             assert data["database_backup_frequency"] == 1

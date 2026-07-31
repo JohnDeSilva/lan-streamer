@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtWidgets import (
     QDialog,
@@ -32,10 +32,10 @@ class SubtitleSearchDialog(QDialog):
     def __init__(
         self,
         media_name: str,
-        media_record: Dict[str, Any],
-        controller_instance: "Controller",
+        media_record: dict[str, Any],
+        controller_instance: Controller,
         is_movie: bool = False,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         logger.info(
@@ -45,7 +45,7 @@ class SubtitleSearchDialog(QDialog):
         self.media_record = media_record
         self.controller = controller_instance
         self.is_movie = is_movie
-        self.results: List[Dict[str, Any]] = []
+        self.results: list[dict[str, Any]] = []
 
         self.setWindowTitle(f"Search Subtitles: {media_name}")
         self.resize(800, 500)

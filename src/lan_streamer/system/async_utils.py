@@ -13,17 +13,11 @@ import functools
 import logging
 import subprocess
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, List, Optional, TypeVar
+from typing import Any
 
 logger: logging.Logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Type variables
-# ---------------------------------------------------------------------------
-
-F = TypeVar("F", bound=Callable[..., Any])
-T = TypeVar("T")
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +25,7 @@ T = TypeVar("T")
 # ---------------------------------------------------------------------------
 
 
-async def run_in_executor(
+async def run_in_executor[T](
     callable: Callable[..., T],
     *args: Any,
     **kwargs: Any,
@@ -71,7 +65,7 @@ async def run_in_executor(
 # overloading network filesystems with concurrent I/O requests.
 
 _FS_EXECUTOR_LOCK: threading.Lock = threading.Lock()
-_FS_EXECUTOR: Optional[ThreadPoolExecutor] = None
+_FS_EXECUTOR: ThreadPoolExecutor | None = None
 
 
 def get_fs_executor() -> ThreadPoolExecutor:
@@ -115,7 +109,7 @@ def shutdown_fs_executor() -> None:
 atexit.register(shutdown_fs_executor)
 
 
-async def run_in_fs_executor(
+async def run_in_fs_executor[T](
     callable: Callable[..., T],
     *args: Any,
     **kwargs: Any,
@@ -178,9 +172,9 @@ class AsyncSemaphore:
 
     async def __aexit__(
         self,
-        exc_type: Optional[type],
-        exc_value: Optional[BaseException],
-        traceback: Optional[object],
+        exc_type: type | None,
+        exc_value: BaseException | None,
+        traceback: object | None,
     ) -> None:
         """Release the semaphore, allowing another waiter to proceed."""
         self._semaphore.release()
@@ -190,8 +184,8 @@ class AsyncSemaphore:
 # Global concurrency semaphores (Stage 6)
 # ---------------------------------------------------------------------------
 
-_NETWORK_SEMAPHORE: Optional[asyncio.Semaphore] = None
-_SUBPROCESS_SEMAPHORE: Optional[asyncio.Semaphore] = None
+_NETWORK_SEMAPHORE: asyncio.Semaphore | None = None
+_SUBPROCESS_SEMAPHORE: asyncio.Semaphore | None = None
 _SEMAPHORE_LOCK: threading.Lock = threading.Lock()
 _NETWORK_SEMAPHORE_VALUE: int = 10
 _SUBPROCESS_SEMAPHORE_VALUE: int = 3
@@ -235,10 +229,10 @@ def get_subprocess_semaphore() -> asyncio.Semaphore:
 
 
 async def async_run_subprocess(
-    command: List[str],
-    stdin: Optional[bytes] = None,
-    timeout: Optional[float] = None,
-) -> "subprocess.CompletedProcess[str]":
+    command: list[str],
+    stdin: bytes | None = None,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Run a subprocess asynchronously via ``asyncio.create_subprocess_exec``.
 
     Acquires :func:`get_subprocess_semaphore` before spawning the process,

@@ -5,7 +5,6 @@ Targeting lines: 97, 105, 148, 160, 171-173, 176-178, 189-196, 218-222, 230-246,
 505-526, 538, 543, 549-561, 564, 569-573, 587-596, and more.
 """
 
-from typing import List
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -141,7 +140,7 @@ def test_cache_series_metrics_excludes_placeholder_episodes() -> None:
 
 
 def test_select_series_emits_signal(ctrl) -> None:
-    received: List[str] = []
+    received: list[str] = []
     ctrl.series_selected.connect(received.append)
     ctrl.select_series("ShowA")
     assert received == ["ShowA"]
@@ -149,21 +148,21 @@ def test_select_series_emits_signal(ctrl) -> None:
 
 
 def test_select_series_ignores_unknown(ctrl) -> None:
-    received: List[str] = []
+    received: list[str] = []
     ctrl.series_selected.connect(received.append)
     ctrl.select_series("NonExistent")
     assert received == []
 
 
 def test_select_movie_emits_signal(ctrl) -> None:
-    received: List[str] = []
+    received: list[str] = []
     ctrl.movie_selected.connect(received.append)
     ctrl.select_movie("MovieX")
     assert received == ["MovieX"]
 
 
 def test_select_movie_ignores_unknown(ctrl) -> None:
-    received: List[str] = []
+    received: list[str] = []
     ctrl.movie_selected.connect(received.append)
     ctrl.select_movie("NonExistent")
     assert received == []
@@ -176,7 +175,7 @@ def test_select_movie_ignores_unknown(ctrl) -> None:
 
 def test_set_sort_descending_emits_library_loaded(ctrl) -> None:
     ctrl.sort_descending = False
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
     ctrl.set_sort_descending(True)
     assert ctrl.sort_descending is True
@@ -185,7 +184,7 @@ def test_set_sort_descending_emits_library_loaded(ctrl) -> None:
 
 def test_set_sort_descending_same_value_no_emit(ctrl) -> None:
     ctrl.sort_descending = True
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
     ctrl.set_sort_descending(True)
     assert len(signals) == 0
@@ -213,7 +212,7 @@ def test_mark_episode_watched_updates_cache_movie(ctrl) -> None:
 
 
 def test_mark_episode_watched_emits_library_loaded(ctrl) -> None:
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
     with patch("lan_streamer.db.update_episode_watched_status"):
         ctrl.mark_episode_watched("/tv/ShowA/S01E01.mkv", True)
@@ -222,7 +221,7 @@ def test_mark_episode_watched_emits_library_loaded(ctrl) -> None:
 
 def test_mark_episode_watched_suppressed_during_playback(ctrl) -> None:
     ctrl.is_video_playing = True
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
     with patch("lan_streamer.db.update_episode_watched_status"):
         ctrl.mark_episode_watched("/tv/ShowA/S01E01.mkv", True)
@@ -252,7 +251,7 @@ def test_mark_season_unwatched(ctrl) -> None:
 
 def test_mark_season_watched_suppressed_during_playback(ctrl) -> None:
     ctrl.is_video_playing = True
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
     with patch("lan_streamer.db.update_season_watched_status"):
         ctrl.mark_season_watched("ShowA", "Season 1")
@@ -296,7 +295,7 @@ def test_mark_series_watched(ctrl) -> None:
 
 def test_mark_series_watched_suppressed_during_playback(ctrl) -> None:
     ctrl.is_video_playing = True
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
     with patch("lan_streamer.db.update_series_watched_status"):
         ctrl.mark_series_watched("ShowA")
@@ -338,7 +337,7 @@ def test_mark_series_watched_skips_placeholder_episodes(ctrl) -> None:
 def test_trigger_scan_no_library_name() -> None:
     c = Controller()
     c.current_library_name = ""
-    statuses: List[str] = []
+    statuses: list[str] = []
     c.status_changed.connect(statuses.append)
 
     with patch("lan_streamer.ui_views.controller.AsyncScanWorker") as mock_cls:
@@ -355,7 +354,7 @@ def test_trigger_scan_no_library_name() -> None:
 def test_trigger_scan_and_update_no_library() -> None:
     c = Controller()
     c.current_library_name = ""
-    statuses: List[str] = []
+    statuses: list[str] = []
     c.status_changed.connect(statuses.append)
 
     with patch("lan_streamer.ui_views.controller.AsyncScanWorker") as mock_cls:
@@ -461,7 +460,7 @@ def test_trigger_jellyfin_pull_not_configured() -> None:
         jellyfin_client=mock_jellyfin,
         tmdb_client=MagicMock(),
     )
-    statuses: List[str] = []
+    statuses: list[str] = []
     c.status_changed.connect(statuses.append)
 
     c.trigger_jellyfin_pull()
@@ -477,7 +476,7 @@ def test_trigger_jellyfin_push_not_configured() -> None:
         jellyfin_client=mock_jellyfin,
         tmdb_client=MagicMock(),
     )
-    statuses: List[str] = []
+    statuses: list[str] = []
     c.status_changed.connect(statuses.append)
 
     c.trigger_jellyfin_push()
@@ -491,7 +490,7 @@ def test_trigger_jellyfin_push_not_configured() -> None:
 
 def test_on_scan_all_detail_progress_finish_root_tv(ctrl) -> None:
     ctrl.current_library_name = "TestLib"
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
 
     with patch("lan_streamer.db.load_library", return_value={}) as mock_load:
@@ -504,7 +503,7 @@ def test_on_scan_all_detail_progress_finish_root_tv(ctrl) -> None:
 
 def test_on_scan_all_detail_progress_finish_root_movie(ctrl) -> None:
     ctrl.current_library_name = "MovieLib"
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
 
     with patch("lan_streamer.db.load_movie_library", return_value={}) as mock_load:
@@ -517,7 +516,7 @@ def test_on_scan_all_detail_progress_finish_root_movie(ctrl) -> None:
 
 def test_on_scan_all_detail_progress_finish_root_combined_view(ctrl) -> None:
     ctrl.current_library_name = "Combined View"
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
 
     ctrl._on_scan_all_detail_progress_batch(
@@ -528,7 +527,7 @@ def test_on_scan_all_detail_progress_finish_root_combined_view(ctrl) -> None:
 
 def test_on_scan_all_detail_progress_non_finish_root(ctrl) -> None:
     """Other events should not trigger library_loaded."""
-    signals: List[bool] = []
+    signals: list[bool] = []
     ctrl.library_loaded.connect(lambda: signals.append(True))
 
     ctrl._on_scan_all_detail_progress_batch(
@@ -545,7 +544,7 @@ def test_on_scan_all_detail_progress_non_finish_root(ctrl) -> None:
 def test_on_scan_all_finished_combined_view() -> None:
     c = Controller()
     c.current_library_name = "Combined View"
-    signals: List[bool] = []
+    signals: list[bool] = []
     c.library_loaded.connect(lambda: signals.append(True))
 
     with patch.object(c, "select_library") as mock_select:
@@ -584,7 +583,7 @@ def test_trigger_runtime_extraction_skips_if_running() -> None:
 
 def test_on_runtime_progress_emits_global_progress() -> None:
     c = Controller()
-    received: List[tuple] = []
+    received: list[tuple] = []
     c.global_progress_updated.connect(
         lambda label, done, total: received.append((label, done, total))
     )
@@ -705,7 +704,7 @@ def test_apply_metadata_match_emits_movie_selected(mock_db_save) -> None:
     }
     c.selected_series_name = "Film"
 
-    received: List[str] = []
+    received: list[str] = []
     c.movie_selected.connect(received.append)
 
     match = {"id": "555", "name": "Film"}
@@ -717,7 +716,7 @@ def test_apply_metadata_match_emits_movie_selected(mock_db_save) -> None:
 
 def test_apply_metadata_match_emits_series_selected(ctrl, mock_db_save) -> None:
     ctrl.selected_series_name = "ShowA"
-    received: List[str] = []
+    received: list[str] = []
     ctrl.series_selected.connect(received.append)
 
     match = {"id": "111", "name": "ShowA"}
@@ -754,7 +753,7 @@ def test_trigger_global_cleanup_queue(ctrl, mock_db_save) -> None:
 def test_trigger_global_cleanup_empty_queue(ctrl, mock_db_save) -> None:
     """Global cleanup with empty library list emits completion."""
     config.libraries = {}
-    statuses: List[str] = []
+    statuses: list[str] = []
     ctrl.status_changed.connect(statuses.append)
 
     ctrl.trigger_global_cleanup()

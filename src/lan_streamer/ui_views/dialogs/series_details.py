@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
@@ -34,14 +34,14 @@ class SeriesDetailsDialog(QDialog):
     def __init__(
         self,
         series_name: str,
-        controller_instance: "Controller",
-        parent: Optional[QWidget] = None,
+        controller_instance: Controller,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         logger.info(f"Initializing SeriesDetailsDialog for series '{series_name}'")
         self.series_name: str = series_name
-        self.controller: "Controller" = controller_instance
-        self.series_record: Dict[str, Any] = self.controller.cached_library_data.get(
+        self.controller: Controller = controller_instance
+        self.series_record: dict[str, Any] = self.controller.cached_library_data.get(
             series_name, {}
         )
 

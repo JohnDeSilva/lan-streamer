@@ -1,6 +1,5 @@
 import logging
 import time
-from typing import Set, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -19,7 +18,7 @@ from lan_streamer.db.models import (
 logger = logging.getLogger(__name__)
 
 
-def _sync_watched_by_ids(session: Session, watched_ids: Set[str]) -> int:
+def _sync_watched_by_ids(session: Session, watched_ids: set[str]) -> int:
     """
     Marks all Episodes and Movies whose Jellyfin ID is in *watched_ids* as watched.
     Returns the combined update count.
@@ -55,7 +54,7 @@ def _sync_watched_by_ids(session: Session, watched_ids: Set[str]) -> int:
     return count
 
 
-def _sync_watched_by_paths(session: Session, watched_paths: Set[str]) -> int:
+def _sync_watched_by_paths(session: Session, watched_paths: set[str]) -> int:
     """
     Marks all Episodes and Movies whose file path is in *watched_paths* as watched.
     Returns the combined update count.
@@ -99,7 +98,7 @@ def _sync_watched_by_paths(session: Session, watched_paths: Set[str]) -> int:
 
 
 def _sync_watched_by_names(
-    session: Session, watched_names: Set[Tuple[str, str]]
+    session: Session, watched_names: set[tuple[str, str]]
 ) -> int:
     """
     Marks Episodes whose (series_name, episode_name) pair is in *watched_names* as watched.
@@ -132,9 +131,9 @@ def _sync_watched_by_names(
 
 
 def sync_watched_from_jellyfin_data(
-    watched_ids: Set[str],
-    watched_paths: Set[str],
-    watched_names: Set[Tuple[str, str]] | None = None,
+    watched_ids: set[str],
+    watched_paths: set[str],
+    watched_names: set[tuple[str, str]] | None = None,
 ) -> int:
     """
     Bulk-updates watched=True for all episodes whose Jellyfin ID is in watched_ids

@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import Slot
 from PySide6.QtGui import QFont
@@ -41,8 +41,8 @@ class MovieDetailsDialog(QDialog):
         self,
         movie_name: str,
         movie_path: str,
-        controller_instance: "Controller",
-        parent: Optional[QWidget] = None,
+        controller_instance: Controller,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         logger.info(
@@ -50,8 +50,8 @@ class MovieDetailsDialog(QDialog):
         )
         self.movie_name: str = movie_name
         self.movie_path: str = movie_path
-        self.controller: "Controller" = controller_instance
-        self.movie_record: Dict[str, Any] = self.controller.cached_library_data.get(
+        self.controller: Controller = controller_instance
+        self.movie_record: dict[str, Any] = self.controller.cached_library_data.get(
             movie_name, {}
         )
 

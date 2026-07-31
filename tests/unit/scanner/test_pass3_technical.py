@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import patch
 
 from lan_streamer.scanner.pass3_technical import (
@@ -24,7 +24,7 @@ def test_upgrade_episode_metadata_stub_codec_upgrades(tmp_path: Path) -> None:
     video_file = tmp_path / "episode.mkv"
     video_file.write_text("dummy content")
 
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": str(video_file),
         "video_codec": "Unknown",
@@ -34,7 +34,7 @@ def test_upgrade_episode_metadata_stub_codec_upgrades(tmp_path: Path) -> None:
         "versions": [],
     }
 
-    fake_detailed: Dict[str, Any] = {
+    fake_detailed: dict[str, Any] = {
         "resolution": "1920x1080",
         "video_codec": "h264",
         "bit_rate": 5000000,
@@ -67,14 +67,14 @@ def test_upgrade_episode_metadata_none_codec_upgrades(tmp_path: Path) -> None:
     video_file = tmp_path / "episode.mkv"
     video_file.write_text("dummy content")
 
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": str(video_file),
         "video_codec": None,
         "versions": [],
     }
 
-    fake_detailed: Dict[str, Any] = {
+    fake_detailed: dict[str, Any] = {
         "resolution": "1280x720",
         "video_codec": "h265",
         "bit_rate": 3000000,
@@ -101,7 +101,7 @@ def test_upgrade_episode_metadata_force_refresh_overrides_known(tmp_path: Path) 
     video_file = tmp_path / "episode.mkv"
     video_file.write_text("dummy content")
 
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": str(video_file),
         "video_codec": "h264",
@@ -115,7 +115,7 @@ def test_upgrade_episode_metadata_force_refresh_overrides_known(tmp_path: Path) 
         "versions": [],
     }
 
-    upgraded_detailed: Dict[str, Any] = {
+    upgraded_detailed: dict[str, Any] = {
         "resolution": "3840x2160",
         "video_codec": "h265",
         "bit_rate": 15000000,
@@ -142,7 +142,7 @@ def test_upgrade_episode_metadata_known_codec_no_force(tmp_path: Path) -> None:
     video_file = tmp_path / "episode.mkv"
     video_file.write_text("dummy content")
 
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": str(video_file),
         "video_codec": "h264",
@@ -160,7 +160,7 @@ def test_upgrade_episode_metadata_known_codec_no_force(tmp_path: Path) -> None:
 
 def test_upgrade_episode_metadata_no_path() -> None:
     """Episode with no path is returned unchanged without ffprobe call."""
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": None,
         "video_codec": "Unknown",
@@ -178,7 +178,7 @@ def test_upgrade_episode_metadata_no_path() -> None:
 
 def test_upgrade_episode_metadata_file_gone(tmp_path: Path) -> None:
     """When the file does not exist on disk, a warning is logged and episode unchanged."""
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": str(tmp_path / "nonexistent.mkv"),
         "video_codec": "Unknown",
@@ -199,7 +199,7 @@ def test_upgrade_episode_metadata_upgrades_versions_too(tmp_path: Path) -> None:
     video_file = tmp_path / "episode.mkv"
     video_file.write_text("dummy content")
 
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": str(video_file),
         "video_codec": "Unknown",
@@ -209,7 +209,7 @@ def test_upgrade_episode_metadata_upgrades_versions_too(tmp_path: Path) -> None:
         ],
     }
 
-    fake_detailed: Dict[str, Any] = {
+    fake_detailed: dict[str, Any] = {
         "resolution": "1920x1080",
         "video_codec": "h264",
         "bit_rate": 5000000,
@@ -240,7 +240,7 @@ def test_upgrade_episode_metadata_ignores_none_values(tmp_path: Path) -> None:
     video_file = tmp_path / "episode.mkv"
     video_file.write_text("dummy content")
 
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": str(video_file),
         "video_codec": "Unknown",
@@ -248,7 +248,7 @@ def test_upgrade_episode_metadata_ignores_none_values(tmp_path: Path) -> None:
         "versions": [],
     }
 
-    fake_detailed: Dict[str, Any] = {
+    fake_detailed: dict[str, Any] = {
         "resolution": None,  # Should NOT overwrite existing
         "video_codec": "h264",
         "bit_rate": None,
@@ -281,7 +281,7 @@ def test_handle_missing_file_file_exists(tmp_path: Path) -> None:
     video_file = tmp_path / "existing.mkv"
     video_file.write_text("dummy")
 
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": str(video_file),
         "versions": [],
@@ -294,7 +294,7 @@ def test_handle_missing_file_file_exists(tmp_path: Path) -> None:
 
 def test_handle_missing_file_file_gone(tmp_path: Path) -> None:
     """When the file no longer exists, path is set to None."""
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": str(tmp_path / "deleted.mkv"),
         "versions": [],
@@ -306,7 +306,7 @@ def test_handle_missing_file_file_gone(tmp_path: Path) -> None:
 
 def test_handle_missing_file_no_path() -> None:
     """Episode with no path is returned unchanged."""
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": None,
         "versions": [],
@@ -321,7 +321,7 @@ def test_handle_missing_file_clears_version_paths_too(tmp_path: Path) -> None:
     """Version entries matching the missing path also have their path set to None."""
     missing_path = str(tmp_path / "gone.mkv")
 
-    episode: Dict[str, Any] = {
+    episode: dict[str, Any] = {
         "name": "S01E01",
         "path": missing_path,
         "versions": [
@@ -346,7 +346,7 @@ def test_upgrade_orphan_versions_upgrades_existing_unknown(tmp_path: Path) -> No
     version_path = tmp_path / "alternate.mkv"
     version_path.write_text("dummy")
 
-    movie_data: Dict[str, Any] = {
+    movie_data: dict[str, Any] = {
         "path": str(tmp_path / "main.mkv"),
         "versions": [
             {
@@ -357,7 +357,7 @@ def test_upgrade_orphan_versions_upgrades_existing_unknown(tmp_path: Path) -> No
         ],
     }
 
-    fake_detailed: Dict[str, Any] = {
+    fake_detailed: dict[str, Any] = {
         "resolution": "1920x1080",
         "video_codec": "h264",
         "bit_rate": 5000000,
@@ -380,7 +380,7 @@ def test_upgrade_orphan_versions_upgrades_existing_unknown(tmp_path: Path) -> No
 
 def test_upgrade_orphan_versions_clears_missing(tmp_path: Path) -> None:
     """Orphan version with missing file gets its path cleared."""
-    movie_data: Dict[str, Any] = {
+    movie_data: dict[str, Any] = {
         "path": str(tmp_path / "main.mkv"),
         "versions": [
             {
@@ -398,7 +398,7 @@ def test_upgrade_orphan_versions_skips_active_path(tmp_path: Path) -> None:
     """Versions with the same path as the active movie path are skipped."""
     common_path = str(tmp_path / "movie.mkv")
 
-    movie_data: Dict[str, Any] = {
+    movie_data: dict[str, Any] = {
         "path": common_path,
         "versions": [
             {"path": common_path, "video_codec": "Unknown"},
@@ -416,7 +416,7 @@ def test_upgrade_orphan_versions_skips_active_path(tmp_path: Path) -> None:
 
 def test_upgrade_orphan_versions_skips_none_path() -> None:
     """Versions with no path are skipped."""
-    movie_data: Dict[str, Any] = {
+    movie_data: dict[str, Any] = {
         "path": "/main.mkv",
         "versions": [
             {"path": None, "video_codec": "Unknown"},
@@ -436,7 +436,7 @@ def test_upgrade_orphan_versions_known_codec_no_upgrade(tmp_path: Path) -> None:
     version_path = tmp_path / "known.mkv"
     version_path.write_text("dummy")
 
-    movie_data: Dict[str, Any] = {
+    movie_data: dict[str, Any] = {
         "path": str(tmp_path / "main.mkv"),
         "versions": [
             {
@@ -466,7 +466,7 @@ def test_scan_series_pass3_normal(tmp_path: Path) -> None:
     video_file = series_dir / "S01E01.mkv"
     video_file.write_text("dummy")
 
-    series_data: Dict[str, Any] = {
+    series_data: dict[str, Any] = {
         "name": "Test Series",
         "seasons": {
             "Season 1": {
@@ -488,7 +488,7 @@ def test_scan_series_pass3_normal(tmp_path: Path) -> None:
         },
     }
 
-    fake_detailed: Dict[str, Any] = {
+    fake_detailed: dict[str, Any] = {
         "resolution": "1920x1080",
         "video_codec": "h264",
         "bit_rate": 4000000,
@@ -525,7 +525,7 @@ def test_scan_series_pass3_force_refresh(tmp_path: Path) -> None:
     video_file = series_dir / "ep.mkv"
     video_file.write_text("dummy")
 
-    series_data: Dict[str, Any] = {
+    series_data: dict[str, Any] = {
         "name": "Series",
         "seasons": {
             "Season 1": {
@@ -542,7 +542,7 @@ def test_scan_series_pass3_force_refresh(tmp_path: Path) -> None:
         },
     }
 
-    upgraded: Dict[str, Any] = {
+    upgraded: dict[str, Any] = {
         "resolution": "3840x2160",
         "video_codec": "h265",
         "bit_rate": 12000000,
@@ -569,7 +569,7 @@ def test_scan_series_pass3_empty_seasons(tmp_path: Path) -> None:
     series_dir = tmp_path / "Empty Series"
     series_dir.mkdir()
 
-    series_data: Dict[str, Any] = {
+    series_data: dict[str, Any] = {
         "name": "Empty Series",
         "seasons": {},
     }
@@ -583,7 +583,7 @@ def test_scan_series_pass3_no_seasons_key(tmp_path: Path) -> None:
     series_dir = tmp_path / "NoSeasons"
     series_dir.mkdir()
 
-    series_data: Dict[str, Any] = {
+    series_data: dict[str, Any] = {
         "name": "NoSeasons",
     }
 
@@ -596,7 +596,7 @@ def test_scan_series_pass3_empty_episode_list(tmp_path: Path) -> None:
     series_dir = tmp_path / "Series"
     series_dir.mkdir()
 
-    series_data: Dict[str, Any] = {
+    series_data: dict[str, Any] = {
         "name": "Series",
         "seasons": {
             "Season 1": {"episodes": []},
@@ -612,7 +612,7 @@ def test_scan_series_pass3_name_fallback(tmp_path: Path) -> None:
     series_dir = tmp_path / "DirectoryName"
     series_dir.mkdir()
 
-    series_data: Dict[str, Any] = {
+    series_data: dict[str, Any] = {
         "seasons": {},
     }
 
@@ -633,14 +633,14 @@ def test_scan_movie_pass3_normal(tmp_path: Path) -> None:
     video_file = movie_dir / "movie.mkv"
     video_file.write_text("dummy")
 
-    movie_data: Dict[str, Any] = {
+    movie_data: dict[str, Any] = {
         "name": "Test Movie",
         "path": str(video_file),
         "video_codec": "Unknown",
         "versions": [],
     }
 
-    fake_detailed: Dict[str, Any] = {
+    fake_detailed: dict[str, Any] = {
         "resolution": "1920x1080",
         "video_codec": "h264",
         "bit_rate": 6000000,
@@ -670,7 +670,7 @@ def test_scan_movie_pass3_force_refresh(tmp_path: Path) -> None:
     video_file = movie_dir / "movie.mkv"
     video_file.write_text("dummy")
 
-    movie_data: Dict[str, Any] = {
+    movie_data: dict[str, Any] = {
         "name": "Movie",
         "path": str(video_file),
         "video_codec": "h264",
@@ -684,7 +684,7 @@ def test_scan_movie_pass3_force_refresh(tmp_path: Path) -> None:
         "versions": [],
     }
 
-    upgraded: Dict[str, Any] = {
+    upgraded: dict[str, Any] = {
         "resolution": "3840x2160",
         "video_codec": "h265",
         "bit_rate": 15000000,
@@ -710,7 +710,7 @@ def test_scan_movie_pass3_missing_file(tmp_path: Path) -> None:
     movie_dir = tmp_path / "Ghost Movie"
     movie_dir.mkdir()
 
-    movie_data: Dict[str, Any] = {
+    movie_data: dict[str, Any] = {
         "name": "Ghost Movie",
         "path": str(movie_dir / "nonexistent.mkv"),
         "video_codec": "Unknown",
@@ -735,7 +735,7 @@ def test_scan_movie_pass3_with_orphan_versions(tmp_path: Path) -> None:
     alt_video = movie_dir / "alt.mkv"
     alt_video.write_text("dummy")
 
-    movie_data: Dict[str, Any] = {
+    movie_data: dict[str, Any] = {
         "name": "Movie Versions",
         "path": str(main_video),
         "video_codec": "Unknown",
@@ -748,7 +748,7 @@ def test_scan_movie_pass3_with_orphan_versions(tmp_path: Path) -> None:
         ],
     }
 
-    fake_detailed: Dict[str, Any] = {
+    fake_detailed: dict[str, Any] = {
         "resolution": "1920x1080",
         "video_codec": "h264",
         "bit_rate": 5000000,
@@ -779,13 +779,13 @@ def test_scan_movie_pass3_name_fallback(tmp_path: Path) -> None:
     video_file = movie_dir / "movie.mkv"
     video_file.write_text("dummy")
 
-    movie_data: Dict[str, Any] = {
+    movie_data: dict[str, Any] = {
         "path": str(video_file),
         "video_codec": "Unknown",
         "versions": [],
     }
 
-    fake_detailed: Dict[str, Any] = {
+    fake_detailed: dict[str, Any] = {
         "resolution": "1280x720",
         "video_codec": "h264",
         "bit_rate": 2000000,

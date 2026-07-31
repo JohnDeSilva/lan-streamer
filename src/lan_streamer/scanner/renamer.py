@@ -1,7 +1,7 @@
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from lan_streamer.scanner.parser import SUBTITLE_EXTENSIONS
 
@@ -69,7 +69,7 @@ def is_safe_filename(filename: str) -> tuple[bool, str | None]:
     return True, None
 
 
-def format_name(template: str, data: Dict[str, Any]) -> str:
+def format_name(template: str, data: dict[str, Any]) -> str:
     """
     Formats a name using a template and a data dictionary.
     Supports tokens like {SeriesTitle}, {SeasonNumber}, {EpisodeNumber}, {EpisodeTitle}.
@@ -102,8 +102,8 @@ def format_name(template: str, data: Dict[str, Any]) -> str:
 
 
 def get_rename_preview(
-    series_data: Dict[str, Any], file_template: str
-) -> List[Dict[str, Any]]:
+    series_data: dict[str, Any], file_template: str
+) -> list[dict[str, Any]]:
     """
     Generates a list of preview items for renaming.
     Each item contains old_path, new_name, and new_path.
@@ -240,8 +240,8 @@ def get_rename_preview(
 
 
 def perform_rename(
-    previews: List[Dict[str, Any]], db_callback: Any = None
-) -> List[Dict[str, Any]]:
+    previews: list[dict[str, Any]], db_callback: Any = None
+) -> list[dict[str, Any]]:
     """
     Executes the renames.
     db_callback is an optional function to update the database for each successful rename.

@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
@@ -39,8 +39,8 @@ class EpisodeDetailsDialog(QDialog):
         self,
         series_name: str,
         episode_path: str,
-        controller_instance: "Controller",
-        parent: Optional[QWidget] = None,
+        controller_instance: Controller,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         logger.info(
@@ -48,8 +48,8 @@ class EpisodeDetailsDialog(QDialog):
         )
         self.series_name: str = series_name
         self.episode_path: str = episode_path
-        self.controller: "Controller" = controller_instance
-        self.episode_record: Dict[str, Any] = {}
+        self.controller: Controller = controller_instance
+        self.episode_record: dict[str, Any] = {}
 
         # UI Elements for Tab 1 (Metadata)
         self.title_edit: QLineEdit = QLineEdit()

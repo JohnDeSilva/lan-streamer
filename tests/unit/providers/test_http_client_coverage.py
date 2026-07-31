@@ -86,7 +86,7 @@ class TestClientErrorRetry:
     ) -> None:
         async def run() -> None:
             session = MagicMock()
-            session.request = AsyncMock(side_effect=asyncio.TimeoutError("timeout"))
+            session.request = AsyncMock(side_effect=TimeoutError("timeout"))
 
             with patch.object(client, "_get_session", AsyncMock(return_value=session)):
                 with pytest.raises(asyncio.TimeoutError):

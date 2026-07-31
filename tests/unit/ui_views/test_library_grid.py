@@ -8,7 +8,7 @@ Covers: __init__, _setup_ui, _wire_signals, populate_libraries, on_library_chang
         _open_search_dialog, _on_search_result_selected, search button integration.
 """
 
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -42,7 +42,7 @@ def grid_view(qtbot, mock_db_save):
 
 def _make_tv_library(
     series_name: str = "My Show", watched: int = 0, total: int = 5
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create a minimal TV library dict with metrics."""
     episodes = []
     for i in range(total):
@@ -72,7 +72,7 @@ def _make_tv_library(
 
 def _make_movie_library(
     movie_name: str = "My Movie", watched: bool = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create a minimal movie library dict."""
     return {
         movie_name: {

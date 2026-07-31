@@ -7,7 +7,7 @@ Verifies that:
 """
 
 import asyncio
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 
@@ -18,7 +18,7 @@ def test_task_map_inverted_lookup_multiple_libraries() -> None:
     library_names = ["Library Alpha", "Library Beta", "Library Gamma"]
 
     async def _run_check() -> None:
-        task_map: Dict[asyncio.Task, str] = {}
+        task_map: dict[asyncio.Task, str] = {}
         for library_name in library_names:
 
             async def _dummy_coro(name: str = library_name) -> str:
@@ -56,7 +56,7 @@ def test_task_map_lookup_does_not_use_next_generator() -> None:
     a task completes without iterating through all map entries."""
 
     async def _run_check() -> None:
-        task_map: Dict[asyncio.Task, str] = {}
+        task_map: dict[asyncio.Task, str] = {}
 
         # Create 5 tasks and build the inverted map
         library_names_ordered = [f"Lib{i}" for i in range(5)]
@@ -69,7 +69,7 @@ def test_task_map_lookup_does_not_use_next_generator() -> None:
             task_map[task] = name
 
         pending = set(task_map.keys())
-        resolved: Dict[str, str] = {}
+        resolved: dict[str, str] = {}
 
         while pending:
             done, pending = await asyncio.wait(

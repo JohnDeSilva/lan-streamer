@@ -116,7 +116,7 @@ def main():
 
     # Read existing changelog
     try:
-        with open("CHANGELOG.md", "r", encoding="utf-8") as f:
+        with open("CHANGELOG.md", encoding="utf-8") as f:
             existing_content = f.read()
     except FileNotFoundError:
         existing_content = ""

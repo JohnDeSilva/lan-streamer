@@ -1,4 +1,3 @@
-from typing import List
 from unittest.mock import patch
 
 from lan_streamer.backend import JellyfinPullWorker, JellyfinPushWorker
@@ -15,7 +14,7 @@ def test_jellyfin_pull_worker_execution() -> None:
             "lan_streamer.db.sync_watched_from_jellyfin_data", return_value=1
         ) as mock_sync,
     ):
-        emitted_results: List[int] = []
+        emitted_results: list[int] = []
         worker = JellyfinPullWorker()
         worker.finished.connect(emitted_results.append)
         worker.run()
@@ -27,7 +26,7 @@ def test_jellyfin_pull_worker_execution() -> None:
         "lan_streamer.providers.jellyfin.jellyfin_client.fetch_watched_episodes",
         side_effect=Exception("Pull error"),
     ):
-        emitted_errors: List[str] = []
+        emitted_errors: list[str] = []
         worker = JellyfinPullWorker()
         worker.error.connect(emitted_errors.append)
         worker.run()
@@ -45,7 +44,7 @@ def test_jellyfin_push_worker_execution() -> None:
             "lan_streamer.providers.jellyfin.jellyfin_client.set_watched_status"
         ) as mock_set,
     ):
-        emitted_results: List[int] = []
+        emitted_results: list[int] = []
         worker = JellyfinPushWorker()
         worker.finished.connect(emitted_results.append)
         worker.run()
@@ -57,7 +56,7 @@ def test_jellyfin_push_worker_execution() -> None:
         "lan_streamer.db.get_all_episodes_with_jellyfin_id",
         side_effect=Exception("Push error"),
     ):
-        emitted_errors: List[str] = []
+        emitted_errors: list[str] = []
         worker = JellyfinPushWorker()
         worker.error.connect(emitted_errors.append)
         worker.run()
@@ -78,7 +77,7 @@ def test_jellyfin_push_worker_execution_skips_unwatched() -> None:
             "lan_streamer.providers.jellyfin.jellyfin_client.set_watched_status"
         ) as mock_set,
     ):
-        emitted_results: List[int] = []
+        emitted_results: list[int] = []
         worker = JellyfinPushWorker()
         worker.finished.connect(emitted_results.append)
         worker.run()

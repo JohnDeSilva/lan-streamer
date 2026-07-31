@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 import uuid
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from lan_streamer.db.models_cast import MediaCast, MediaImage
@@ -45,7 +45,7 @@ class UUIDBLOB(TypeDecorator):
     impl = LargeBinary
     cache_ok = True
 
-    def process_bind_param(self, value: Any, dialect: Any) -> Optional[bytes]:
+    def process_bind_param(self, value: Any, dialect: Any) -> bytes | None:
         if value is None:
             return None
         if isinstance(value, bytes):
@@ -59,7 +59,7 @@ class UUIDBLOB(TypeDecorator):
         except ValueError, TypeError, AttributeError:
             return value
 
-    def process_result_value(self, value: Any, dialect: Any) -> Optional[str]:
+    def process_result_value(self, value: Any, dialect: Any) -> str | None:
         if value is None:
             return None
         if isinstance(value, bytes) and len(value) == 16:
@@ -67,7 +67,7 @@ class UUIDBLOB(TypeDecorator):
         return value
 
 
-class SecretType(str, enum.Enum):
+class SecretType(enum.StrEnum):
     """Enumeration of supported external-service secret types."""
 
     JELLYFIN = "jellyfin"
@@ -84,14 +84,14 @@ class EncryptedString(TypeDecorator):
     impl = String
     cache_ok = True
 
-    def process_bind_param(self, value: Any, dialect: Any) -> Optional[str]:
+    def process_bind_param(self, value: Any, dialect: Any) -> str | None:
         if value is None:
             return None
         from lan_streamer.system.encryption import encrypt_secret
 
         return encrypt_secret(value)
 
-    def process_result_value(self, value: Any, dialect: Any) -> Optional[str]:
+    def process_result_value(self, value: Any, dialect: Any) -> str | None:
         if value is None:
             return None
         from lan_streamer.system.encryption import decrypt_secret
@@ -120,7 +120,7 @@ class AppSecret(Base):
         UUIDBLOB, primary_key=True, default=_new_uuid_str
     )
     secret_type: Mapped[str] = mapped_column(String, nullable=False)
-    secret: Mapped[Optional[str]] = mapped_column(EncryptedString, default="{}")
+    secret: Mapped[str | None] = mapped_column(EncryptedString, default="{}")
 
     __table_args__ = (UniqueConstraint("secret_type", name="uq_app_secrets_type"),)
 
@@ -136,7 +136,7 @@ class AppConfig(Base):
     __tablename__ = "app_config"
 
     key: Mapped[str] = mapped_column(String, primary_key=True)
-    value: Mapped[Optional[str]] = mapped_column(String)
+    value: Mapped[str | None] = mapped_column(String)
     type: Mapped[str] = mapped_column(String, default="str")
 
 
@@ -146,38 +146,38 @@ class Series(Base):
     __tablename__ = "series"
 
     id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
-    library_name: Mapped[Optional[str]] = mapped_column(String)
-    name: Mapped[Optional[str]] = mapped_column(String)
-    jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
-    tmdb_identifier: Mapped[Optional[str]] = mapped_column(String)
-    poster_path: Mapped[Optional[str]] = mapped_column(String)
-    overview: Mapped[Optional[str]] = mapped_column(String)
-    tmdb_name: Mapped[Optional[str]] = mapped_column(String)
-    locked_metadata: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
-    first_air_date: Mapped[Optional[str]] = mapped_column(String)
-    rating: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
-    genre: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
-    tmdb_episode_group_id: Mapped[Optional[str]] = mapped_column(String)
+    library_name: Mapped[str | None] = mapped_column(String)
+    name: Mapped[str | None] = mapped_column(String)
+    jellyfin_id: Mapped[str | None] = mapped_column(String)
+    tmdb_identifier: Mapped[str | None] = mapped_column(String)
+    poster_path: Mapped[str | None] = mapped_column(String)
+    overview: Mapped[str | None] = mapped_column(String)
+    tmdb_name: Mapped[str | None] = mapped_column(String)
+    locked_metadata: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    first_air_date: Mapped[str | None] = mapped_column(String)
+    rating: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    genre: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    tmdb_episode_group_id: Mapped[str | None] = mapped_column(String)
     # Per-series user preferences
-    pref_hide_missing_future: Mapped[Optional[bool]] = mapped_column(
+    pref_hide_missing_future: Mapped[bool | None] = mapped_column(
         Boolean, default=False
     )
-    pref_display_group_id: Mapped[Optional[str]] = mapped_column(String, default=None)
+    pref_display_group_id: Mapped[str | None] = mapped_column(String, default=None)
 
-    seasons: Mapped[List["Season"]] = relationship(
+    seasons: Mapped[list[Season]] = relationship(
         "Season",
         back_populates="series",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    media_cast: Mapped[List["MediaCast"]] = relationship(
+    media_cast: Mapped[list[MediaCast]] = relationship(
         "MediaCast",
         back_populates="series",
         cascade="all, delete-orphan",
         passive_deletes=True,
         foreign_keys="MediaCast.series_id",
     )
-    images: Mapped[List["MediaImage"]] = relationship(
+    images: Mapped[list[MediaImage]] = relationship(
         "MediaImage",
         back_populates="series",
         cascade="all, delete-orphan",
@@ -196,25 +196,23 @@ class Season(Base):
     __tablename__ = "seasons"
 
     id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
-    series_id: Mapped[Optional[str]] = mapped_column(
+    series_id: Mapped[str | None] = mapped_column(
         UUIDBLOB, ForeignKey("series.id", ondelete="CASCADE")
     )
-    name: Mapped[Optional[str]] = mapped_column(String)
-    jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
-    poster_path: Mapped[Optional[str]] = mapped_column(String)
-    myanimelist_id: Mapped[Optional[int]] = mapped_column(Integer)
-    series_name: Mapped[Optional[str]] = mapped_column(String)
+    name: Mapped[str | None] = mapped_column(String)
+    jellyfin_id: Mapped[str | None] = mapped_column(String)
+    poster_path: Mapped[str | None] = mapped_column(String)
+    myanimelist_id: Mapped[int | None] = mapped_column(Integer)
+    series_name: Mapped[str | None] = mapped_column(String)
 
-    series: Mapped[Optional["Series"]] = relationship(
-        "Series", back_populates="seasons"
-    )
-    episodes: Mapped[List["Episode"]] = relationship(
+    series: Mapped[Series | None] = relationship("Series", back_populates="seasons")
+    episodes: Mapped[list[Episode]] = relationship(
         "Episode",
         back_populates="season",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    media_cast: Mapped[List["MediaCast"]] = relationship(
+    media_cast: Mapped[list[MediaCast]] = relationship(
         "MediaCast",
         back_populates="season",
         cascade="all, delete-orphan",
@@ -232,16 +230,16 @@ class CompatibilityMixin:
     """Mixin to provide backward-compatible properties and initialization logic for Episode and Movie."""
 
     id: Mapped[str]
-    media_files: Mapped[List["MediaFile"]]
-    default_path: Mapped[Optional[str]]
-    playback_state: Mapped[Optional["PlaybackState"]]
+    media_files: Mapped[list[MediaFile]]
+    default_path: Mapped[str | None]
+    playback_state: Mapped[PlaybackState | None]
 
     def __init__(self, **kwargs: Any) -> None:
         self._pending_media_attrs: dict[str, Any] = {}
         self._pending_playback_attrs: dict[str, Any] = {}
         super().__init__(**kwargs)
 
-    def _flush_pending_to(self, mf: "MediaFile") -> None:
+    def _flush_pending_to(self, mf: MediaFile) -> None:
         """Apply any buffered media attributes onto a real MediaFile."""
         pending = getattr(self, "_pending_media_attrs", None)
         if pending:
@@ -249,7 +247,7 @@ class CompatibilityMixin:
                 setattr(mf, attr, val)
             pending.clear()
 
-    def _ensure_playback_state(self) -> "PlaybackState":
+    def _ensure_playback_state(self) -> PlaybackState:
         if not self.playback_state:
             from lan_streamer.db.models import PlaybackState
 
@@ -308,7 +306,7 @@ class CompatibilityMixin:
             self._pending_playback_attrs[attr] = value
 
     @property
-    def path(self) -> Optional[str]:
+    def path(self) -> str | None:
         if self.default_path:
             return self.default_path
         if self.media_files:
@@ -316,7 +314,7 @@ class CompatibilityMixin:
         return None
 
     @path.setter
-    def path(self, value: Optional[str]) -> None:
+    def path(self, value: str | None) -> None:
         if value == self.path:
             return
         self.default_path = value
@@ -362,51 +360,51 @@ class CompatibilityMixin:
         self._set_playback_attr("last_played_at", value)
 
     @property
-    def resolution(self) -> Optional[str]:
+    def resolution(self) -> str | None:
         return self._get_media_attr("resolution")
 
     @resolution.setter
-    def resolution(self, value: Optional[str]) -> None:
+    def resolution(self, value: str | None) -> None:
         self._set_media_attr("resolution", value)
 
     @property
-    def video_codec(self) -> Optional[str]:
+    def video_codec(self) -> str | None:
         return self._get_media_attr("video_codec")
 
     @video_codec.setter
-    def video_codec(self, value: Optional[str]) -> None:
+    def video_codec(self, value: str | None) -> None:
         self._set_media_attr("video_codec", value)
 
     @property
-    def audio_tracks(self) -> Optional[str]:
+    def audio_tracks(self) -> str | None:
         return self._get_media_attr("audio_tracks")
 
     @audio_tracks.setter
-    def audio_tracks(self, value: Optional[str]) -> None:
+    def audio_tracks(self, value: str | None) -> None:
         self._set_media_attr("audio_tracks", value)
 
     @property
-    def subtitle_tracks(self) -> Optional[str]:
+    def subtitle_tracks(self) -> str | None:
         return self._get_media_attr("subtitle_tracks")
 
     @subtitle_tracks.setter
-    def subtitle_tracks(self, value: Optional[str]) -> None:
+    def subtitle_tracks(self, value: str | None) -> None:
         self._set_media_attr("subtitle_tracks", value)
 
     @property
-    def bit_rate(self) -> Optional[int]:
+    def bit_rate(self) -> int | None:
         return self._get_media_attr("bit_rate")
 
     @bit_rate.setter
-    def bit_rate(self, value: Optional[int]) -> None:
+    def bit_rate(self, value: int | None) -> None:
         self._set_media_attr("bit_rate", value)
 
     @property
-    def file_runtime(self) -> Optional[int]:
+    def file_runtime(self) -> int | None:
         return self._get_media_attr("runtime")
 
     @file_runtime.setter
-    def file_runtime(self, value: Optional[int]) -> None:
+    def file_runtime(self, value: int | None) -> None:
         self._set_media_attr("runtime", value)
 
 
@@ -416,47 +414,45 @@ class Episode(CompatibilityMixin, Base):
     __tablename__ = "episodes"
 
     id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
-    season_id: Mapped[Optional[str]] = mapped_column(
+    season_id: Mapped[str | None] = mapped_column(
         UUIDBLOB, ForeignKey("seasons.id", ondelete="CASCADE")
     )
-    name: Mapped[Optional[str]] = mapped_column(String)
-    jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
-    tmdb_episode_identifier: Mapped[Optional[str]] = mapped_column(String)
-    tmdb_name: Mapped[Optional[str]] = mapped_column(String)
-    tmdb_number: Mapped[Optional[int]] = mapped_column(Integer)
-    date_added: Mapped[Optional[int]] = mapped_column(Integer, default=0)
-    air_date: Mapped[Optional[str]] = mapped_column(String)
-    runtime: Mapped[Optional[int]] = mapped_column(Integer)
-    myanimelist_anime_id: Mapped[Optional[int]] = mapped_column(Integer)
-    myanimelist_episode_number: Mapped[Optional[int]] = mapped_column(Integer)
-    default_path: Mapped[Optional[str]] = mapped_column(String)
-    series_name: Mapped[Optional[str]] = mapped_column(String)
-    season_name: Mapped[Optional[str]] = mapped_column(String)
+    name: Mapped[str | None] = mapped_column(String)
+    jellyfin_id: Mapped[str | None] = mapped_column(String)
+    tmdb_episode_identifier: Mapped[str | None] = mapped_column(String)
+    tmdb_name: Mapped[str | None] = mapped_column(String)
+    tmdb_number: Mapped[int | None] = mapped_column(Integer)
+    date_added: Mapped[int | None] = mapped_column(Integer, default=0)
+    air_date: Mapped[str | None] = mapped_column(String)
+    runtime: Mapped[int | None] = mapped_column(Integer)
+    myanimelist_anime_id: Mapped[int | None] = mapped_column(Integer)
+    myanimelist_episode_number: Mapped[int | None] = mapped_column(Integer)
+    default_path: Mapped[str | None] = mapped_column(String)
+    series_name: Mapped[str | None] = mapped_column(String)
+    season_name: Mapped[str | None] = mapped_column(String)
 
-    season: Mapped[Optional["Season"]] = relationship(
-        "Season", back_populates="episodes"
-    )
-    media_files: Mapped[List["MediaFile"]] = relationship(
+    season: Mapped[Season | None] = relationship("Season", back_populates="episodes")
+    media_files: Mapped[list[MediaFile]] = relationship(
         "MediaFile",
         secondary="metadata_file_mappings",
         back_populates="episodes",
         passive_deletes=True,
         overlaps="media_files,episodes,movies,file_mappings",
     )
-    playback_state: Mapped[Optional["PlaybackState"]] = relationship(
+    playback_state: Mapped[PlaybackState | None] = relationship(
         "PlaybackState",
         back_populates="episode",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    media_cast: Mapped[List["MediaCast"]] = relationship(
+    media_cast: Mapped[list[MediaCast]] = relationship(
         "MediaCast",
         back_populates="episode",
         cascade="all, delete-orphan",
         passive_deletes=True,
         foreign_keys="MediaCast.episode_id",
     )
-    file_mappings: Mapped[List["MetadataFileMapping"]] = relationship(
+    file_mappings: Mapped[list[MetadataFileMapping]] = relationship(
         "MetadataFileMapping",
         back_populates="episode",
         cascade="all, delete-orphan",
@@ -477,50 +473,50 @@ class Movie(CompatibilityMixin, Base):
     __tablename__ = "movies"
 
     id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
-    library_name: Mapped[Optional[str]] = mapped_column(String)
-    name: Mapped[Optional[str]] = mapped_column(String)
-    jellyfin_id: Mapped[Optional[str]] = mapped_column(String)
-    tmdb_identifier: Mapped[Optional[str]] = mapped_column(String)
-    poster_path: Mapped[Optional[str]] = mapped_column(String)
-    overview: Mapped[Optional[str]] = mapped_column(String)
-    tmdb_name: Mapped[Optional[str]] = mapped_column(String)
-    locked_metadata: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
-    date_added: Mapped[Optional[int]] = mapped_column(Integer, default=0)
-    myanimelist_anime_id: Mapped[Optional[int]] = mapped_column(Integer)
-    runtime: Mapped[Optional[int]] = mapped_column(Integer)
-    rating: Mapped[Optional[str]] = mapped_column(String)
-    genre: Mapped[Optional[str]] = mapped_column(String)
-    year: Mapped[Optional[int]] = mapped_column(Integer)
-    default_path: Mapped[Optional[str]] = mapped_column(String)
+    library_name: Mapped[str | None] = mapped_column(String)
+    name: Mapped[str | None] = mapped_column(String)
+    jellyfin_id: Mapped[str | None] = mapped_column(String)
+    tmdb_identifier: Mapped[str | None] = mapped_column(String)
+    poster_path: Mapped[str | None] = mapped_column(String)
+    overview: Mapped[str | None] = mapped_column(String)
+    tmdb_name: Mapped[str | None] = mapped_column(String)
+    locked_metadata: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    date_added: Mapped[int | None] = mapped_column(Integer, default=0)
+    myanimelist_anime_id: Mapped[int | None] = mapped_column(Integer)
+    runtime: Mapped[int | None] = mapped_column(Integer)
+    rating: Mapped[str | None] = mapped_column(String)
+    genre: Mapped[str | None] = mapped_column(String)
+    year: Mapped[int | None] = mapped_column(Integer)
+    default_path: Mapped[str | None] = mapped_column(String)
 
-    media_files: Mapped[List["MediaFile"]] = relationship(
+    media_files: Mapped[list[MediaFile]] = relationship(
         "MediaFile",
         secondary="metadata_file_mappings",
         back_populates="movies",
         passive_deletes=True,
         overlaps="media_files,episodes,movies,file_mappings",
     )
-    playback_state: Mapped[Optional["PlaybackState"]] = relationship(
+    playback_state: Mapped[PlaybackState | None] = relationship(
         "PlaybackState",
         back_populates="movie",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    media_cast: Mapped[List["MediaCast"]] = relationship(
+    media_cast: Mapped[list[MediaCast]] = relationship(
         "MediaCast",
         back_populates="movie",
         cascade="all, delete-orphan",
         passive_deletes=True,
         foreign_keys="MediaCast.movie_id",
     )
-    images: Mapped[List["MediaImage"]] = relationship(
+    images: Mapped[list[MediaImage]] = relationship(
         "MediaImage",
         back_populates="movie",
         cascade="all, delete-orphan",
         passive_deletes=True,
         foreign_keys="MediaImage.movie_id",
     )
-    file_mappings: Mapped[List["MetadataFileMapping"]] = relationship(
+    file_mappings: Mapped[list[MetadataFileMapping]] = relationship(
         "MetadataFileMapping",
         back_populates="movie",
         cascade="all, delete-orphan",
@@ -541,30 +537,30 @@ class MediaFile(Base):
 
     id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
     path: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    size_bytes: Mapped[Optional[int]] = mapped_column(Integer)
-    video_type: Mapped[Optional[str]] = mapped_column(String)
-    video_codec: Mapped[Optional[str]] = mapped_column(String)
-    resolution: Mapped[Optional[str]] = mapped_column(String)
-    bit_rate: Mapped[Optional[int]] = mapped_column(Integer)
-    audio_tracks: Mapped[Optional[str]] = mapped_column(String)
-    subtitle_tracks: Mapped[Optional[str]] = mapped_column(String)
-    runtime: Mapped[Optional[int]] = mapped_column(Integer)
+    size_bytes: Mapped[int | None] = mapped_column(Integer)
+    video_type: Mapped[str | None] = mapped_column(String)
+    video_codec: Mapped[str | None] = mapped_column(String)
+    resolution: Mapped[str | None] = mapped_column(String)
+    bit_rate: Mapped[int | None] = mapped_column(Integer)
+    audio_tracks: Mapped[str | None] = mapped_column(String)
+    subtitle_tracks: Mapped[str | None] = mapped_column(String)
+    runtime: Mapped[int | None] = mapped_column(Integer)
 
-    episodes: Mapped[List["Episode"]] = relationship(
+    episodes: Mapped[list[Episode]] = relationship(
         "Episode",
         secondary="metadata_file_mappings",
         back_populates="media_files",
         passive_deletes=True,
         overlaps="media_files,episodes,movies,file_mappings",
     )
-    movies: Mapped[List["Movie"]] = relationship(
+    movies: Mapped[list[Movie]] = relationship(
         "Movie",
         secondary="metadata_file_mappings",
         back_populates="media_files",
         passive_deletes=True,
         overlaps="media_files,episodes,movies,file_mappings",
     )
-    file_mappings: Mapped[List["MetadataFileMapping"]] = relationship(
+    file_mappings: Mapped[list[MetadataFileMapping]] = relationship(
         "MetadataFileMapping",
         back_populates="media_file",
         cascade="all, delete-orphan",
@@ -584,29 +580,29 @@ class MetadataFileMapping(Base):
     media_file_id: Mapped[str] = mapped_column(
         UUIDBLOB, ForeignKey("media_files.id", ondelete="CASCADE"), nullable=False
     )
-    episode_id: Mapped[Optional[str]] = mapped_column(
+    episode_id: Mapped[str | None] = mapped_column(
         UUIDBLOB, ForeignKey("episodes.id", ondelete="CASCADE"), nullable=True
     )
-    movie_id: Mapped[Optional[str]] = mapped_column(
+    movie_id: Mapped[str | None] = mapped_column(
         UUIDBLOB, ForeignKey("movies.id", ondelete="CASCADE"), nullable=True
     )
-    file_path: Mapped[Optional[str]] = mapped_column(String)
-    series_name: Mapped[Optional[str]] = mapped_column(String)
-    season_name: Mapped[Optional[str]] = mapped_column(String)
-    episode_name: Mapped[Optional[str]] = mapped_column(String)
-    movie_name: Mapped[Optional[str]] = mapped_column(String)
+    file_path: Mapped[str | None] = mapped_column(String)
+    series_name: Mapped[str | None] = mapped_column(String)
+    season_name: Mapped[str | None] = mapped_column(String)
+    episode_name: Mapped[str | None] = mapped_column(String)
+    movie_name: Mapped[str | None] = mapped_column(String)
 
-    episode: Mapped[Optional["Episode"]] = relationship(
+    episode: Mapped[Episode | None] = relationship(
         "Episode",
         back_populates="file_mappings",
         overlaps="media_files,episodes",
     )
-    movie: Mapped[Optional["Movie"]] = relationship(
+    movie: Mapped[Movie | None] = relationship(
         "Movie",
         back_populates="file_mappings",
         overlaps="media_files,movies",
     )
-    media_file: Mapped["MediaFile"] = relationship(
+    media_file: Mapped[MediaFile] = relationship(
         "MediaFile",
         back_populates="file_mappings",
         overlaps="media_files,episodes,movies",
@@ -627,13 +623,13 @@ class PlaybackState(Base):
     __tablename__ = "playback_states"
 
     id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
-    episode_id: Mapped[Optional[str]] = mapped_column(
+    episode_id: Mapped[str | None] = mapped_column(
         UUIDBLOB,
         ForeignKey("episodes.id", ondelete="CASCADE"),
         nullable=True,
         unique=True,
     )
-    movie_id: Mapped[Optional[str]] = mapped_column(
+    movie_id: Mapped[str | None] = mapped_column(
         UUIDBLOB,
         ForeignKey("movies.id", ondelete="CASCADE"),
         nullable=True,
@@ -642,17 +638,15 @@ class PlaybackState(Base):
     watched: Mapped[bool] = mapped_column(Boolean, default=False)
     last_played_position: Mapped[int] = mapped_column(Integer, default=0)
     last_played_at: Mapped[int] = mapped_column(Integer, default=0)
-    series_name: Mapped[Optional[str]] = mapped_column(String)
-    season_name: Mapped[Optional[str]] = mapped_column(String)
-    episode_name: Mapped[Optional[str]] = mapped_column(String)
-    movie_name: Mapped[Optional[str]] = mapped_column(String)
+    series_name: Mapped[str | None] = mapped_column(String)
+    season_name: Mapped[str | None] = mapped_column(String)
+    episode_name: Mapped[str | None] = mapped_column(String)
+    movie_name: Mapped[str | None] = mapped_column(String)
 
-    episode: Mapped[Optional["Episode"]] = relationship(
+    episode: Mapped[Episode | None] = relationship(
         "Episode", back_populates="playback_state"
     )
-    movie: Mapped[Optional["Movie"]] = relationship(
-        "Movie", back_populates="playback_state"
-    )
+    movie: Mapped[Movie | None] = relationship("Movie", back_populates="playback_state")
 
 
 class SmartRowCache(Base):
@@ -676,33 +670,33 @@ class SmartRowCache(Base):
         String, nullable=False
     )  # "series", "season", "movie"
 
-    series_id: Mapped[Optional[str]] = mapped_column(
+    series_id: Mapped[str | None] = mapped_column(
         UUIDBLOB,
         ForeignKey("series.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    movie_id: Mapped[Optional[str]] = mapped_column(
+    movie_id: Mapped[str | None] = mapped_column(
         UUIDBLOB,
         ForeignKey("movies.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
 
-    season_name: Mapped[Optional[str]] = mapped_column(String)
+    season_name: Mapped[str | None] = mapped_column(String)
     date_added: Mapped[int] = mapped_column(Integer, default=0)
-    air_date: Mapped[Optional[str]] = mapped_column(String)
+    air_date: Mapped[str | None] = mapped_column(String)
     watched_count: Mapped[int] = mapped_column(Integer, default=0)
     total_count: Mapped[int] = mapped_column(Integer, default=1)
     last_played_at: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[int] = mapped_column(Integer, default=0)
 
-    series: Mapped[Optional["Series"]] = relationship(
+    series: Mapped[Series | None] = relationship(
         "Series",
         lazy="joined",
         foreign_keys=[series_id],
     )
-    movie: Mapped[Optional["Movie"]] = relationship(
+    movie: Mapped[Movie | None] = relationship(
         "Movie",
         lazy="joined",
         foreign_keys=[movie_id],

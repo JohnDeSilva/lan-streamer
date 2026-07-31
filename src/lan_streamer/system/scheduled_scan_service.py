@@ -9,7 +9,7 @@ on a configurable interval.  A simple flag prevents concurrent scans.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -41,7 +41,7 @@ class ScheduledScanService(QObject):
         self,
         controller: Any,
         interval_seconds: float = 3600.0,
-        parent: Optional[QObject] = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._controller = controller

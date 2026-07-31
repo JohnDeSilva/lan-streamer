@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 import aiohttp
 
@@ -206,7 +206,7 @@ class AsyncMyAnimeListClient:
             logger.exception(f"Failed to search MyAnimeList for '{query}'")
             return []
 
-    async def get_anime_details(self, anime_id: int) -> Optional[dict[str, Any]]:
+    async def get_anime_details(self, anime_id: int) -> dict[str, Any] | None:
         if not self.is_configured():
             return None
 

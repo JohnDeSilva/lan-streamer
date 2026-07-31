@@ -1,6 +1,7 @@
 import logging
 import sys
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from PySide6.QtGui import QPixmap as QPixmap_real
 from PySide6.QtWidgets import (

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from PySide6.QtCore import Qt
@@ -49,8 +49,8 @@ def test_runtime_extraction_worker_execution() -> None:
             },
         ]
 
-        progress_emitted: List[tuple] = []
-        finished_emitted: List[int] = []
+        progress_emitted: list[tuple] = []
+        finished_emitted: list[int] = []
 
         from PySide6.QtCore import QObject
 
@@ -91,7 +91,7 @@ def test_runtime_extraction_worker_execution() -> None:
         "lan_streamer.db.get_items_missing_runtime",
         side_effect=Exception("DB connection error"),
     ):
-        errors_emitted: List[str] = []
+        errors_emitted: list[str] = []
         from PySide6.QtCore import QObject
 
         from lan_streamer.system.async_task_manager import AsyncTaskManager
@@ -122,7 +122,7 @@ def test_subtitle_merge_worker_success(tmp_path: Path) -> None:
     subtitle_file = tmp_path / "sub.srt"
     subtitle_file.touch()
 
-    finished_emitted: List[str] = []
+    finished_emitted: list[str] = []
     worker = SubtitleMergeWorker(str(video_file), [str(subtitle_file)])
     worker.finished.connect(finished_emitted.append)
 
@@ -146,13 +146,13 @@ def test_subtitle_merge_worker_language_metadata(tmp_path: Path) -> None:
     subtitle_file = tmp_path / "movie.en.srt"
     subtitle_file.touch()
 
-    captured_command: List[List[str]] = []
+    captured_command: list[list[str]] = []
 
-    async def fake_async_run_subprocess(cmd: List[str], **kwargs: Any) -> Any:
+    async def fake_async_run_subprocess(cmd: list[str], **kwargs: Any) -> Any:
         captured_command.append(cmd)
         return _mock_completed_process(0)
 
-    finished_emitted: List[str] = []
+    finished_emitted: list[str] = []
     worker = SubtitleMergeWorker(str(video_file), [str(subtitle_file)])
     worker.finished.connect(finished_emitted.append)
 
@@ -176,7 +176,7 @@ def test_subtitle_merge_worker_ffmpeg_failure(tmp_path: Path) -> None:
     video_file = tmp_path / "video.mp4"
     video_file.touch()
 
-    errors_emitted: List[str] = []
+    errors_emitted: list[str] = []
     worker = SubtitleMergeWorker(str(video_file), [str(tmp_path / "sub.srt")])
     worker.error.connect(errors_emitted.append)
 
@@ -195,7 +195,7 @@ def test_subtitle_merge_worker_exception(tmp_path: Path) -> None:
     video_file = tmp_path / "video.mp4"
     video_file.touch()
 
-    errors_emitted: List[str] = []
+    errors_emitted: list[str] = []
     worker = SubtitleMergeWorker(str(video_file), [])
     worker.error.connect(errors_emitted.append)
 
@@ -212,7 +212,7 @@ def test_metadata_embed_worker_success(tmp_path: Path) -> None:
     video_file = tmp_path / "movie.mp4"
     video_file.touch()
 
-    finished_emitted: List[str] = []
+    finished_emitted: list[str] = []
     worker = MetadataEmbedWorker(str(video_file), {"title": "Test Movie", "year": ""})
     worker.finished.connect(finished_emitted.append)
 
@@ -233,7 +233,7 @@ def test_metadata_embed_worker_ffmpeg_failure(tmp_path: Path) -> None:
     video_file = tmp_path / "movie.mp4"
     video_file.touch()
 
-    errors_emitted: List[str] = []
+    errors_emitted: list[str] = []
     worker = MetadataEmbedWorker(str(video_file), {"title": "Test"})
     worker.error.connect(errors_emitted.append)
 
@@ -253,7 +253,7 @@ def test_series_metadata_embed_worker_success(tmp_path: Path) -> None:
     ep1.touch()
     ep2.touch()
 
-    episodes: List[Dict[str, Any]] = [
+    episodes: list[dict[str, Any]] = [
         {
             "path": str(ep1),
             "tmdb_name": "Episode 1",
@@ -263,8 +263,8 @@ def test_series_metadata_embed_worker_success(tmp_path: Path) -> None:
         {"path": str(ep2), "tmdb_name": "Episode 2", "tmdb_number": 2, "air_date": ""},
     ]
 
-    progress_emitted: List[tuple] = []
-    finished_emitted: List[bool] = []
+    progress_emitted: list[tuple] = []
+    finished_emitted: list[bool] = []
 
     worker = SeriesMetadataEmbedWorker("My Series", episodes)
     worker.progress_updated.connect(
@@ -287,12 +287,12 @@ def test_series_metadata_embed_worker_success(tmp_path: Path) -> None:
 
 def test_series_metadata_embed_worker_skips_empty_path() -> None:
     """Episodes with an empty or None path should be silently skipped."""
-    episodes: List[Dict[str, Any]] = [
+    episodes: list[dict[str, Any]] = [
         {"path": "", "tmdb_name": "Ghost Episode"},
         {"path": None, "tmdb_name": "Ghost Episode 2"},
     ]
 
-    finished_emitted: List[bool] = []
+    finished_emitted: list[bool] = []
     worker = SeriesMetadataEmbedWorker("Test Series", episodes)
     worker.finished.connect(lambda: finished_emitted.append(True))
 
@@ -308,11 +308,11 @@ def test_series_metadata_embed_worker_skips_empty_path() -> None:
 
 def test_series_metadata_embed_worker_exception() -> None:
     """Unexpected exceptions should emit via the error signal."""
-    episodes: List[Dict[str, Any]] = [
+    episodes: list[dict[str, Any]] = [
         {"path": "/some/video.mp4", "tmdb_name": "EP"},
     ]
 
-    errors_emitted: List[str] = []
+    errors_emitted: list[str] = []
     worker = SeriesMetadataEmbedWorker("Series X", episodes)
     worker.error.connect(errors_emitted.append)
 

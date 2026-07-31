@@ -1,13 +1,13 @@
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from lan_streamer.scanner import has_video_files_shallow
 
 logger = logging.getLogger("lan_streamer.backend")
 
 
-def create_empty_stats() -> Dict[str, int]:
+def create_empty_stats() -> dict[str, int]:
     """Return a fresh zeroed stats dictionary with all 20 keys."""
     return {
         "series_scanned": 0,
@@ -33,7 +33,7 @@ def create_empty_stats() -> Dict[str, int]:
     }
 
 
-def merge_stats_dicts(target: Dict[str, int], source: Dict[str, int]) -> None:
+def merge_stats_dicts(target: dict[str, int], source: dict[str, int]) -> None:
     """Merge all values from *source* into *target* in-place."""
     for key, value in source.items():
         if key in target:
@@ -42,7 +42,7 @@ def merge_stats_dicts(target: Dict[str, int], source: Dict[str, int]) -> None:
 
 def log_stats_breakdown(
     label: str,
-    stats_dict: Dict[str, int],
+    stats_dict: dict[str, int],
     log_target: logging.Logger = logger,
 ) -> None:
     """Log a single stats breakdown section.
@@ -84,7 +84,7 @@ def log_stats_breakdown(
 
 
 def log_issues_report(
-    problems: List[Dict[str, Any]],
+    problems: list[dict[str, Any]],
     log_target: logging.Logger = logger,
 ) -> None:
     """Log grouped issues from the scan run.
@@ -96,7 +96,7 @@ def log_issues_report(
     if not problems:
         return
 
-    grouped: Dict[str, Dict[str, List[str]]] = {}
+    grouped: dict[str, dict[str, list[str]]] = {}
     for prob in problems:
         problem_type = prob["type"]
         problem_error = prob["error"]
@@ -123,7 +123,7 @@ def log_issues_report(
 
 
 def log_db_write_error(
-    problems_list: List[Dict[str, Any]],
+    problems_list: list[dict[str, Any]],
     item_description: str,
     error: Exception,
     log_target: logging.Logger = logger,
@@ -155,10 +155,10 @@ def log_db_write_error(
 
 
 def discover_single_library_tree_impl(
-    root_directories: List[str],
+    root_directories: list[str],
     library_type: str,
-    existing_library: Optional[Dict[str, Any]] = None,
-) -> Dict[str, List[str]]:
+    existing_library: dict[str, Any] | None = None,
+) -> dict[str, list[str]]:
     """
     Pre-walks all library directories to count total folders and files
     for a single library so the UI can initialize the segmented progress bar
@@ -167,7 +167,7 @@ def discover_single_library_tree_impl(
     If ``existing_library`` is provided, the folder structure is extracted from it
     to avoid redundant filesystem I/O (especially important for network shares).
     """
-    roots: Dict[str, List[str]] = {}
+    roots: dict[str, list[str]] = {}
 
     if existing_library:
         # Build roots from existing library data — no filesystem I/O needed.
@@ -204,7 +204,7 @@ def discover_single_library_tree_impl(
 
 
 def series_belongs_to_root(
-    series_data: Dict[str, Any], root_dir: str, library_type: str
+    series_data: dict[str, Any], root_dir: str, library_type: str
 ) -> bool:
     """Check if a series belongs to a specific root directory."""
     try:
@@ -212,7 +212,7 @@ def series_belongs_to_root(
     except Exception:
         resolved_root = root_dir
 
-    paths: List[str] = []
+    paths: list[str] = []
     if library_type == "movie":
         if series_data.get("path"):
             paths.append(series_data["path"])

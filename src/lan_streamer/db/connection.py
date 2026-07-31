@@ -1,9 +1,10 @@
 import logging
 import os
 import sys
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -80,7 +81,7 @@ def get_session_factory() -> sessionmaker[Session]:
 
 
 @contextmanager
-def get_session() -> Generator[Session, None, None]:
+def get_session() -> Generator[Session]:
     session_factory = get_session_factory()
     session = session_factory()
     session.expire_on_commit = False

@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
@@ -37,8 +37,8 @@ class EpisodeMatchDialog(QDialog):
         self,
         series_name: str,
         episode_path: str,
-        controller_instance: "Controller",
-        parent: Optional[QWidget] = None,
+        controller_instance: Controller,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         logger.info(
@@ -46,15 +46,15 @@ class EpisodeMatchDialog(QDialog):
         )
         self.series_name: str = series_name
         self.episode_path: str = episode_path
-        self.controller: "Controller" = controller_instance
+        self.controller: Controller = controller_instance
         self.season_selector: QComboBox = QComboBox()
         self.results_table: QTableWidget = QTableWidget()
-        self.search_results_list: List[Dict[str, Any]] = []
+        self.search_results_list: list[dict[str, Any]] = []
 
-        series_record: Dict[str, Any] = self.controller.cached_library_data.get(
+        series_record: dict[str, Any] = self.controller.cached_library_data.get(
             self.series_name, {}
         )
-        metadata_dictionary: Dict[str, Any] = series_record.get("metadata", {})
+        metadata_dictionary: dict[str, Any] = series_record.get("metadata", {})
         self.tmdb_identifier: str = metadata_dictionary.get("tmdb_identifier", "")
 
         if not self.tmdb_identifier:
@@ -118,7 +118,7 @@ class EpisodeMatchDialog(QDialog):
         main_layout.addLayout(bottom_buttons_layout)
 
     def _populate_seasons(self) -> None:
-        seasons_list: List[Dict[str, Any]] = []
+        seasons_list: list[dict[str, Any]] = []
         if self.tmdb_identifier:
             seasons_list = tmdb_client.get_seasons(self.tmdb_identifier)
 
@@ -151,7 +151,7 @@ class EpisodeMatchDialog(QDialog):
         self.results_table.setRowCount(0)
         self.search_results_list = []
 
-        episodes_data: List[Dict[str, Any]] = tmdb_client.get_episodes(
+        episodes_data: list[dict[str, Any]] = tmdb_client.get_episodes(
             self.tmdb_identifier, season_number_int
         )
 
@@ -201,7 +201,7 @@ class EpisodeMatchDialog(QDialog):
 
     @Slot()
     def apply_selected(self) -> None:
-        selected_rows: List[int] = [
+        selected_rows: list[int] = [
             item.row() for item in self.results_table.selectedItems()
         ]
         if not selected_rows:
@@ -214,7 +214,7 @@ class EpisodeMatchDialog(QDialog):
             return
 
         target_row_index: int = selected_rows[0]
-        match_record: Dict[str, Any] = self.search_results_list[target_row_index]
+        match_record: dict[str, Any] = self.search_results_list[target_row_index]
         logger.info(
             f"EpisodeMatchDialog applying match for '{self.episode_path}': {match_record}"
         )
@@ -233,17 +233,17 @@ class RenamePreviewDialog(QDialog):
     def __init__(
         self,
         series_name: str,
-        controller_instance: "Controller",
-        parent: Optional[QWidget] = None,
+        controller_instance: Controller,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         logger.info(f"Initializing RenamePreviewDialog for series '{series_name}'")
         self.series_name: str = series_name
-        self.controller: "Controller" = controller_instance
+        self.controller: Controller = controller_instance
         self.template_input: QLineEdit = QLineEdit()
         self.preview_tree: QTreeWidget = QTreeWidget()
-        self.preview_results_list: List[Dict[str, Any]] = []
-        self.all_previews_list: List[Dict[str, Any]] = []
+        self.preview_results_list: list[dict[str, Any]] = []
+        self.all_previews_list: list[dict[str, Any]] = []
 
         self.setWindowTitle(f"Rename Preview: {series_name}")
         self.resize(900, 600)
@@ -352,7 +352,7 @@ class RenamePreviewDialog(QDialog):
         ):
             return
 
-        series_dictionary: Dict[str, Any] = self.controller.cached_library_data[
+        series_dictionary: dict[str, Any] = self.controller.cached_library_data[
             self.series_name
         ]
 

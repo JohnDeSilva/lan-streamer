@@ -4,7 +4,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from typing import Dict, Optional, cast
+from typing import cast
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPalette
@@ -99,13 +99,13 @@ async def main() -> None:
     console_handler.setFormatter(log_formatter)
     root_logger.addHandler(console_handler)
 
-    file_handlers: Dict[str, logging.Handler] = {}
+    file_handlers: dict[str, logging.Handler] = {}
 
     def add_file_handler(
         logger_object: logging.Logger,
         filename: str,
         formatter: logging.Formatter,
-        info_message: Optional[str] = None,
+        info_message: str | None = None,
     ) -> None:
         try:
             from logging.handlers import TimedRotatingFileHandler
@@ -267,7 +267,7 @@ async def main() -> None:
     series_detail_view.back_requested.connect(on_grid_back_requested)
     movie_detail_view.back_requested.connect(on_grid_back_requested)
 
-    previous_layout_index: list[Optional[int]] = [None]
+    previous_layout_index: list[int | None] = [None]
 
     def on_playback_requested(file_path: str) -> None:
         logger.info(
@@ -580,7 +580,7 @@ async def main() -> None:
                 await asyncio.wait_for(
                     asyncio.gather(*pending, return_exceptions=True), timeout=5.0
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Timeout waiting for pending tasks to shut down.")
             except RuntimeError:
                 logger.warning(

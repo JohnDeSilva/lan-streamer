@@ -1,7 +1,7 @@
 """Full-page cast detail view with biography and filmography."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QPixmap
@@ -26,14 +26,14 @@ class CastDetailView(QWidget):
     back_requested = Signal()
     media_item_clicked = Signal(str, str)  # media_type, media_id
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         """Initialize the cast detail view.
 
         Args:
             parent: Optional parent widget.
         """
         super().__init__(parent)
-        self._current_person_id: Optional[str] = None
+        self._current_person_id: str | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

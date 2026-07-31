@@ -6,12 +6,12 @@ and can be safely imported by both :mod:`~.metadata_movie` and
 """
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger("lan_streamer.services.metadata_common")
 
 
-def _build_locked_tv_tmdb_stub(existing_series: Dict[str, Any]) -> Dict[str, Any]:
+def _build_locked_tv_tmdb_stub(existing_series: dict[str, Any]) -> dict[str, Any]:
     """Builds a minimal prefetched TMDB stub for a locked TV series so the
     scanner can skip a network round-trip while still carrying the right ID.
 
@@ -35,9 +35,9 @@ def _build_locked_tv_tmdb_stub(existing_series: Dict[str, Any]) -> Dict[str, Any
 
 
 def _build_locked_movie_tmdb_stub(
-    existing_movie: Dict[str, Any],
+    existing_movie: dict[str, Any],
     folder_name: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Builds a minimal prefetched TMDB stub for a locked movie entry so the
     scanner can skip a network round-trip while still carrying the right ID.
 
@@ -59,7 +59,7 @@ def _build_locked_movie_tmdb_stub(
 
 
 def _resolve_existing_jellyfin_id(
-    existing_item: Dict[str, Any], library_type: str
+    existing_item: dict[str, Any], library_type: str
 ) -> str | None:
     """Reads the stored Jellyfin ID from *existing_item* for either library type.
 
@@ -76,8 +76,8 @@ def _resolve_existing_jellyfin_id(
 
 
 def _merge_season_episodes(
-    existing_episodes: List[Any],
-    new_episodes: List[Any],
+    existing_episodes: list[Any],
+    new_episodes: list[Any],
     season_name: str,
 ) -> None:
     """Merges *new_episodes* into *existing_episodes* in-place, skipping

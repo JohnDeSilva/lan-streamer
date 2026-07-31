@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -8,7 +8,7 @@ from lan_streamer.ui_views import Controller
 
 
 @pytest.fixture
-def sample_library_dictionary() -> Dict[str, Any]:
+def sample_library_dictionary() -> dict[str, Any]:
     return {
         "Cosmos": {
             "metadata": {
@@ -96,7 +96,7 @@ def mock_controller(mock_db_save):
     return controller
 
 
-def test_controller_metrics_caching(sample_library_dictionary: Dict[str, Any]) -> None:
+def test_controller_metrics_caching(sample_library_dictionary: dict[str, Any]) -> None:
     controller_instance = Controller(
         config=MagicMock(),
         db=MagicMock(),
@@ -106,7 +106,7 @@ def test_controller_metrics_caching(sample_library_dictionary: Dict[str, Any]) -
     controller_instance.cached_library_data = sample_library_dictionary
     controller_instance._cache_series_metrics()
 
-    metrics_dictionary: Dict[str, Any] = sample_library_dictionary["Cosmos"]["metrics"]
+    metrics_dictionary: dict[str, Any] = sample_library_dictionary["Cosmos"]["metrics"]
     assert metrics_dictionary["total_episodes"] == 2
     assert metrics_dictionary["watched_episodes"] == 1
     assert metrics_dictionary["max_date_added"] == 2000
@@ -114,11 +114,11 @@ def test_controller_metrics_caching(sample_library_dictionary: Dict[str, Any]) -
 
 
 def test_controller_library_selection(
-    sample_library_dictionary: Dict[str, Any],
+    sample_library_dictionary: dict[str, Any],
 ) -> None:
     controller_instance = Controller()
     with patch("lan_streamer.db.load_library", return_value=sample_library_dictionary):
-        loaded_signals_emitted: List[bool] = []
+        loaded_signals_emitted: list[bool] = []
         controller_instance.library_loaded.connect(
             lambda: loaded_signals_emitted.append(True)
         )
@@ -140,7 +140,7 @@ def test_controller_sorting_and_filtering() -> None:
         jellyfin_client=MagicMock(),
         tmdb_client=MagicMock(),
     )
-    loaded_signals_emitted: List[bool] = []
+    loaded_signals_emitted: list[bool] = []
     controller_instance.library_loaded.connect(
         lambda: loaded_signals_emitted.append(True)
     )
@@ -197,7 +197,7 @@ def test_controller_jellyfin_sync_triggers() -> None:
         mock_push.assert_called_once()
 
 
-def test_controller_worker_slots(sample_library_dictionary: Dict[str, Any]) -> None:
+def test_controller_worker_slots(sample_library_dictionary: dict[str, Any]) -> None:
     controller_instance = Controller()
     controller_instance.current_library_name = "Cosmos"
     controller_instance.selected_series_name = "Cosmos"
@@ -220,7 +220,7 @@ def test_controller_worker_slots(sample_library_dictionary: Dict[str, Any]) -> N
 
 
 def test_controller_scan_unavailable_directories(
-    sample_library_dictionary: Dict[str, Any],
+    sample_library_dictionary: dict[str, Any],
 ) -> None:
     controller_instance = Controller()
     controller_instance.current_library_name = "Cosmos"
@@ -235,7 +235,7 @@ def test_controller_scan_unavailable_directories(
     ]
     controller_instance.worker_manager.scan._instance = mock_scan_worker
 
-    status_emitted: List[str] = []
+    status_emitted: list[str] = []
     controller_instance.status_changed.connect(status_emitted.append)
 
     with patch("lan_streamer.db.save_library"):
@@ -255,7 +255,7 @@ def test_controller_scan_all_unavailable_directories() -> None:
     mock_scan_all_worker.unavailable_directories = ["/unavailable/all/1"]
     controller_instance.worker_manager.scan_all._instance = mock_scan_all_worker
 
-    status_emitted: List[str] = []
+    status_emitted: list[str] = []
     controller_instance.status_changed.connect(status_emitted.append)
 
     with patch.object(controller_instance, "select_library"):
@@ -375,7 +375,7 @@ def test_controller_partial_scan_updates() -> None:
 
 
 def test_controller_file_system_monitoring(
-    sample_library_dictionary: Dict[str, Any], tmp_path: Any
+    sample_library_dictionary: dict[str, Any], tmp_path: Any
 ) -> None:
     mock_config = MagicMock()
     mock_config.libraries = {}

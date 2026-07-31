@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import List, Optional
 
 from PySide6.QtCore import QObject, Signal
 
@@ -20,13 +19,13 @@ class CleanupWorker(AsyncWorkerBase):
     def __init__(
         self,
         library_name: str,
-        root_directories: List[str],
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        parent: Optional[QObject] = None,
+        root_directories: list[str],
+        async_task_manager: AsyncTaskManager | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
         self.library_name: str = library_name
-        self.root_directories: List[str] = root_directories
+        self.root_directories: list[str] = root_directories
 
     async def run_async(self) -> dict:
         logger.info(f"CleanupWorker starting for library {self.library_name}")
