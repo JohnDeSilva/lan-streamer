@@ -1,7 +1,8 @@
 from PySide6.QtCore import Qt
+
 from lan_streamer.ui_views.progress_widgets import (
-    SegmentedProgressBar,
     ScanProgressTree,
+    SegmentedProgressBar,
 )
 
 

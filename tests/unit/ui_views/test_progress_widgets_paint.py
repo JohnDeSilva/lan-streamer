@@ -8,15 +8,14 @@ Specifically covers:
 - Lines 672–788: LibraryScanProgressBar.paintEvent (called directly)
 """
 
-from PySide6.QtGui import QPaintEvent
 from PySide6.QtCore import QRect
+from PySide6.QtGui import QPaintEvent
 
 from lan_streamer.ui_views.progress_widgets import (
-    SegmentedProgressBar,
-    ScanProgressTree,
     LibraryScanProgressBar,
+    ScanProgressTree,
+    SegmentedProgressBar,
 )
-
 
 # ---------------------------------------------------------------------------
 # Line 108: raw root not in config paths (fallback append branch)

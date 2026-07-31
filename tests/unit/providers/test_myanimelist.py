@@ -1,6 +1,8 @@
-import pytest
 import time
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from lan_streamer.providers.myanimelist import MyAnimeListClient
 from lan_streamer.system.config import config
 

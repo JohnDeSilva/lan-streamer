@@ -1,9 +1,10 @@
-import logging
 import json
-from typing import Dict, Any, Callable
+import logging
+from typing import Any, Callable, Dict
+
 from sqlalchemy import select
 
-from lan_streamer.db.models import Series, AppConfig, AppSecret, SecretType
+from lan_streamer.db.models import AppConfig, AppSecret, SecretType, Series
 
 logger = logging.getLogger("lan_streamer.db.queries")
 
@@ -129,6 +130,7 @@ def get_all_secrets() -> Dict[str, Dict[str, Any]]:
     try:
         logger.debug("Executing DB query get_all_secrets")
         import uuid
+
         from sqlalchemy import text
 
         with get_session() as session:

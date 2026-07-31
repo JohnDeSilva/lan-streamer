@@ -1,34 +1,34 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import logging
+import sys
 from pathlib import Path
 from typing import Dict, Optional, cast
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedLayout
-from PySide6.QtGui import QPalette, QColor, QFont
-from PySide6.QtCore import Qt
 
-from lan_streamer import db, __version__
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtWidgets import QApplication, QMainWindow, QStackedLayout, QWidget
+
+from lan_streamer import __version__, db
+from lan_streamer.playback import VideoPlayerWidget, play_video
 from lan_streamer.system.config import config
 from lan_streamer.ui_views import (
-    Controller,
-    LibraryGridView,
-    SeriesDetailView,
-    MovieDetailView,
-    SeasonDetailView,
     CastDetailView,
-    MetadataMatchDialog,
-    JellyfinMatchDialog,
-    EpisodeMatchDialog,
+    Controller,
     EpisodeDetailsDialog,
+    EpisodeMatchDialog,
+    JellyfinMatchDialog,
+    LibraryGridView,
+    MetadataMatchDialog,
     MovieDetailsDialog,
-    SeriesDetailsDialog,
+    MovieDetailView,
     RenamePreviewDialog,
+    SeasonDetailView,
+    SeriesDetailsDialog,
+    SeriesDetailView,
     get_application_stylesheet,
 )
-from lan_streamer.playback import VideoPlayerWidget
-from lan_streamer.playback import play_video
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -603,6 +603,7 @@ def run_main() -> None:
     Falls back to :func:`asyncio.run` if qasync is not available.
     """
     import os
+
     from PySide6.QtWidgets import QApplication
 
     if len(sys.argv) > 1:

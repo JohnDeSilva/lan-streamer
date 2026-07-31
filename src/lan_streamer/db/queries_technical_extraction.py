@@ -1,10 +1,11 @@
-import logging
 import json
-from typing import Dict, Any, List, Optional
+import logging
+from typing import Any, Dict, List, Optional
+
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
-from lan_streamer.db.models import Episode, Movie, MediaFile, Season
+from lan_streamer.db.models import Episode, MediaFile, Movie, Season
 
 logger = logging.getLogger("lan_streamer.db.queries")
 

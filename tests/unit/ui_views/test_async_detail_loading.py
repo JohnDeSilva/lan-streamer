@@ -1,8 +1,8 @@
 import asyncio
-from unittest.mock import patch, MagicMock
 from typing import Any
+from unittest.mock import MagicMock, patch
 
-from lan_streamer.ui_views import SeriesDetailView, MovieDetailView, Controller
+from lan_streamer.ui_views import Controller, MovieDetailView, SeriesDetailView
 
 
 def test_series_detail_view_async_loading_flow(qtbot: Any) -> None:

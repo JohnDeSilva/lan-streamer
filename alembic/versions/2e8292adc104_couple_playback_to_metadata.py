@@ -6,13 +6,13 @@ Create Date: 2026-06-15 11:46:14.476149
 
 """
 
+import uuid
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-import lan_streamer.db.models
-import uuid
+from alembic import op
 
+import lan_streamer.db.models
 
 # revision identifiers, used by Alembic.
 revision: str = "2e8292adc104"

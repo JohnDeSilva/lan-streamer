@@ -1,13 +1,14 @@
 import logging
 import time
 from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from lan_streamer.db.models import (
-    Series,
-    Season,
     MediaFile,
+    Season,
+    Series,
 )
 
 logger = logging.getLogger("lan_streamer.db.queries")
@@ -81,9 +82,7 @@ def update_episode_playback_position(path: str, position: int) -> bool:
     try:
         logger.debug(f"Saving playback position for '{path}' to {position}s")
         with get_session() as session:
-            from lan_streamer.db.models import PlaybackState
-
-            from lan_streamer.db.models import Episode, Movie
+            from lan_streamer.db.models import Episode, Movie, PlaybackState
 
             mf = session.scalars(
                 select(MediaFile)

@@ -2,13 +2,13 @@ import hashlib
 import json
 import logging
 import time
-from typing import Dict, Any, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import joinedload
 
 from lan_streamer.db.connection import get_session
-from lan_streamer.db.models import SmartRowCache, Series, Movie
+from lan_streamer.db.models import Movie, Series, SmartRowCache
 from lan_streamer.db.queries_ui import get_combined_smart_row as compute_smart_row
 from lan_streamer.system.config import config as app_config
 

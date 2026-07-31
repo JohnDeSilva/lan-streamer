@@ -9,12 +9,12 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 
-from lan_streamer.db.models import (
-    Season,
-    PlaybackState,
-    MetadataFileMapping,
-)
 import lan_streamer.db as db_mod
+from lan_streamer.db.models import (
+    MetadataFileMapping,
+    PlaybackState,
+    Season,
+)
 
 
 def _alembic_cfg(db_path: Any) -> Config:

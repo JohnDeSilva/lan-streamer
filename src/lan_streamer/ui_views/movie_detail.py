@@ -1,28 +1,28 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
-
+from PySide6.QtCore import QPoint, Qt, Signal, Slot
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPolygon
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMenu,
     QPushButton,
-    QFrame,
     QScrollArea,
     QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Slot, QPoint, Signal
-from PySide6.QtGui import QFont, QIcon, QPainter, QPolygon, QColor, QAction
-from lan_streamer.ui_views.proxy import QPixmap
+from sqlalchemy import select
+
 from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Movie
 from lan_streamer.system.config import config
 from lan_streamer.ui_views.controller import Controller
+from lan_streamer.ui_views.proxy import QPixmap
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +274,7 @@ class MovieDetailView(QWidget):
     ) -> tuple[Optional[str], list[dict[str, Any]]]:
         """Fetch movie DB ID and cast list (to be run in a background thread)."""
         from sqlalchemy.orm import joinedload
+
         from lan_streamer.db.models_cast import MediaCast
 
         movie_database_identifier = None

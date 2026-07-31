@@ -1,7 +1,9 @@
 import json
-import pytest
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
+
 from lan_streamer.system.config import Config
 
 
@@ -273,8 +275,9 @@ def test_config_generates_and_backups_db_on_startup(tmp_path, mock_config_file) 
 
 def test_config_custom_file_from_arguments() -> None:
     import sys
-    from unittest.mock import patch
     from pathlib import Path
+    from unittest.mock import patch
+
     from lan_streamer.system.config import _parse_config_path
 
     # Test parser when --config is passed

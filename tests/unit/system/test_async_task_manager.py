@@ -16,10 +16,9 @@ import pytest
 from PySide6.QtCore import QObject
 
 from lan_streamer.system.async_task_manager import (
-    AsyncTaskManager,
     DEFAULT_CANCEL_TIMEOUT,
+    AsyncTaskManager,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

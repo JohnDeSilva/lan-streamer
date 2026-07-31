@@ -17,7 +17,6 @@ from PySide6.QtCore import QObject, Signal
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.scheduled_scan_service import ScheduledScanService
 
-
 # ---------------------------------------------------------------------------
 # Stub controller
 # ---------------------------------------------------------------------------

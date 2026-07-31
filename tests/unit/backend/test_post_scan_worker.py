@@ -1,6 +1,7 @@
 import asyncio
 from typing import Any
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 from lan_streamer.backend.post_scan_worker import PostScanWorker

@@ -2,14 +2,14 @@
 
 from pathlib import Path
 from typing import Any, Dict
+from unittest.mock import MagicMock, patch
 
-from unittest.mock import patch, MagicMock
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QDialog, QMessageBox, QTableWidgetItem
 
+from lan_streamer.system.config import config
 from lan_streamer.ui_views import SeasonDetailView
 from lan_streamer.ui_views.controller import Controller
-from lan_streamer.system.config import config
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QTableWidgetItem, QMessageBox
 
 
 def _make_controller_with_data(
@@ -1990,7 +1990,7 @@ def test_mal_apply_skips_malformed_rows(qtbot: Any) -> None:
     view._mal_entries = [{"id": 123, "title": "Test"}]
     view._mal_row_episodes = [1, 2]
 
-    from PySide6.QtWidgets import QTableWidgetItem, QComboBox
+    from PySide6.QtWidgets import QComboBox, QTableWidgetItem
 
     item0 = QTableWidgetItem("Test")
     item0.setData(Qt.ItemDataRole.UserRole, 123)
@@ -2046,7 +2046,7 @@ def test_mal_apply_clears_unmapped(qtbot: Any) -> None:
     view._mal_entries = [{"id": 123, "title": "Test"}]
     view._mal_row_episodes = [1]
 
-    from PySide6.QtWidgets import QTableWidgetItem, QComboBox
+    from PySide6.QtWidgets import QComboBox, QTableWidgetItem
 
     item0 = QTableWidgetItem("Test")
     item0.setData(Qt.ItemDataRole.UserRole, 123)
@@ -2157,7 +2157,7 @@ def test_mal_apply_skips_row_anime_id_none(qtbot: Any) -> None:
     view._mal_entries = [{"id": 123, "title": "Test"}]
     view._mal_row_episodes = [1]
 
-    from PySide6.QtWidgets import QTableWidgetItem, QComboBox
+    from PySide6.QtWidgets import QComboBox, QTableWidgetItem
 
     item0 = QTableWidgetItem("Test")
     item0.setData(Qt.ItemDataRole.UserRole, 123)
@@ -2216,7 +2216,7 @@ def test_mal_apply_adds_missing_metadata_key(qtbot: Any) -> None:
     season.pop("metadata", None)
     assert "metadata" not in season
 
-    from PySide6.QtWidgets import QTableWidgetItem, QComboBox
+    from PySide6.QtWidgets import QComboBox, QTableWidgetItem
 
     item0 = QTableWidgetItem("Test")
     item0.setData(Qt.ItemDataRole.UserRole, 123)

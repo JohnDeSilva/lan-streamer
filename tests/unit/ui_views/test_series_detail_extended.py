@@ -14,14 +14,14 @@ Extended SeriesDetailView tests targeting missing coverage:
   - tab restoration on reload
 """
 
-import pytest
-from unittest.mock import patch
 from typing import List
+from unittest.mock import patch
 
-from lan_streamer.ui_views.series_detail import SeriesDetailView
-from lan_streamer.ui_views.controller import Controller
+import pytest
+
 from lan_streamer.system.config import config
-
+from lan_streamer.ui_views.controller import Controller
+from lan_streamer.ui_views.series_detail import SeriesDetailView
 
 # ---------------------------------------------------------------------------
 # Fixtures

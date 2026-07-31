@@ -2,18 +2,18 @@ import logging
 import time
 from typing import Set, Tuple
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import (
-    Series,
-    Season,
     Episode,
-    Movie,
     MediaFile,
-    PlaybackState,
     MetadataFileMapping,
+    Movie,
+    PlaybackState,
+    Season,
+    Series,
 )
 
 logger = logging.getLogger(__name__)

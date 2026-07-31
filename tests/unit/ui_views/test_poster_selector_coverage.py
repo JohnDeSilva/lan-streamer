@@ -15,10 +15,9 @@ from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Movie, Season, Series
 from lan_streamer.ui_views.dialogs.poster_selector import (
     PosterSelectorDialog,
-    _TmdbImageFetchWorker,
     _ThumbnailDownloader,
+    _TmdbImageFetchWorker,
 )
-
 
 # -----------------------------------------------------------------------
 # Fixtures

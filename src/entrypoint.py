@@ -1,6 +1,6 @@
+import logging
 import os
 import sys
-import logging
 
 if __name__ == "__main__" and len(sys.argv) > 1:
     if sys.argv[1] in ("--version", "-v", "-V"):

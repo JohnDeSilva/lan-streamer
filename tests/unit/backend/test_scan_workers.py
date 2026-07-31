@@ -1,6 +1,6 @@
 import asyncio
-from unittest.mock import patch
 from typing import Any, Callable, Dict, List
+from unittest.mock import patch
 
 from PySide6.QtCore import Qt
 
@@ -8,7 +8,6 @@ from lan_streamer.backend import (
     CleanupWorker,
     ScanAllLibrariesWorker,
 )
-
 
 # ---------------------------------------------------------------------------
 # Wait helper
@@ -27,8 +26,9 @@ async def _wait_until(
 
 
 def test_cleanup_worker_execution() -> None:
-    from lan_streamer.system.async_task_manager import AsyncTaskManager
     from PySide6.QtCore import QObject
+
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
 
     loop = asyncio.new_event_loop()
     try:
@@ -512,7 +512,8 @@ def test_scan_all_libraries_unavailable_dir_dedup() -> None:
 
 def test_scan_all_libraries_worker_cancellation() -> None:
     """Verify that ScanAllLibrariesWorker aborts early on interruption request and does not save."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
+
     from lan_streamer.backend.scan_worker_all import ScanAllLibrariesWorker
 
     with (
@@ -552,6 +553,7 @@ def test_scan_report_statistics_correctness() -> None:
     and that skipped episodes inside a changed season are counted in episodes_skipped.
     """
     from unittest.mock import patch
+
     from lan_streamer.backend.scan_worker_all import ScanAllLibrariesWorker
     from lan_streamer.scanner.core import LibraryDict
 

@@ -2,13 +2,14 @@ import base64
 import os
 from pathlib import Path
 from unittest.mock import patch
+
 from cryptography.fernet import Fernet
 
 from lan_streamer.system.encryption import (
-    encrypt_secret,
-    decrypt_secret,
-    get_encryption_key,
     _derive_fernet_key,
+    decrypt_secret,
+    encrypt_secret,
+    get_encryption_key,
 )
 
 

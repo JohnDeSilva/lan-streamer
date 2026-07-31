@@ -13,7 +13,7 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import Qt, QThread, Signal, QObject, Slot
+from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog,
@@ -34,7 +34,7 @@ from sqlalchemy import select, update
 
 from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Movie, Season, Series
-from lan_streamer.providers.tmdb import tmdb_client, TMDB_IMAGE_BASE_ORIGINAL
+from lan_streamer.providers.tmdb import TMDB_IMAGE_BASE_ORIGINAL, tmdb_client
 
 logger = logging.getLogger(__name__)
 

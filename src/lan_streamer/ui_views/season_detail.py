@@ -4,10 +4,10 @@ import datetime
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
-from PySide6.QtCore import Qt, Signal, QPoint
-from PySide6.QtGui import QBrush, QFont, QPixmap, QColor, QAction
+from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtGui import QAction, QBrush, QColor, QFont, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -33,10 +33,11 @@ from lan_streamer.ui_views.controller import Controller
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QMenu
-    from lan_streamer.providers.tmdb import tmdb_client
+
     from lan_streamer.providers.myanimelist import myanimelist_client
+    from lan_streamer.providers.tmdb import tmdb_client
 else:
-    from lan_streamer.ui_views.proxy import QMenu, tmdb_client, myanimelist_client
+    from lan_streamer.ui_views.proxy import QMenu, myanimelist_client, tmdb_client
 
 logger = logging.getLogger(__name__)
 

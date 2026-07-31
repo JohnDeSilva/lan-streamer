@@ -3,6 +3,7 @@ import hashlib
 import logging
 import os
 from pathlib import Path
+
 from cryptography.fernet import Fernet
 
 logger: logging.Logger = logging.getLogger(__name__)

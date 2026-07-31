@@ -1,7 +1,7 @@
 import pytest
 import sqlalchemy as sa
-from alembic.config import Config
 from alembic import command
+from alembic.config import Config
 
 
 def test_air_date_migration_with_fake_data(tmp_path) -> None:

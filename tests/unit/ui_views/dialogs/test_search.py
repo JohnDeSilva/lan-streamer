@@ -2,8 +2,8 @@
 Tests for ui_views/dialogs/search.py – SearchDialog
 """
 
+from typing import Any, Dict, List
 from unittest.mock import MagicMock, create_autospec
-from typing import List, Dict, Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog

@@ -1,7 +1,7 @@
 import pytest
 
 from lan_streamer import db
-from lan_streamer.db.models import Series, Season, Episode
+from lan_streamer.db.models import Episode, Season, Series
 
 
 @pytest.fixture
@@ -10,7 +10,7 @@ def mock_db_file(tmp_path) -> None:
 
 
 def test_sync_watched_from_paths(mock_db_file) -> None:
-    from lan_streamer.db import sync_watched_from_jellyfin_data, get_session
+    from lan_streamer.db import get_session, sync_watched_from_jellyfin_data
 
     with get_session() as session:
         series = Series(name="Show", library_name="Lib")

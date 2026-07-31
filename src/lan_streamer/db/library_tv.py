@@ -6,17 +6,17 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
-from sqlalchemy import select, inspect
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session, selectinload
 
-from lan_streamer.db.models import Series, Season, Episode
 from lan_streamer.db.library_shared import (
-    get_session,
-    _update_field_safely,
     _sync_media_files,
+    _update_field_safely,
+    get_session,
 )
+from lan_streamer.db.models import Episode, Season, Series
 
 logger = logging.getLogger(__name__)
 

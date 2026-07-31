@@ -2,21 +2,21 @@
 Movie library persistence functions — load, save, and cleanup of Movie records.
 """
 
+import json
 import logging
 import time
-import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from lan_streamer.db.models import Movie, MediaFile
 from lan_streamer.db.library_shared import (
-    get_session,
-    _update_field_safely,
     _sync_media_files,
+    _update_field_safely,
+    get_session,
 )
+from lan_streamer.db.models import MediaFile, Movie
 
 logger = logging.getLogger(__name__)
 

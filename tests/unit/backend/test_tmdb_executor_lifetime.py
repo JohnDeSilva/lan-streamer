@@ -10,7 +10,6 @@ import concurrent.futures
 from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Tests for _fetch_tmdb_episodes_parallel accepting an executor parameter
 # ---------------------------------------------------------------------------
@@ -71,10 +70,12 @@ def test_scan_worker_all_shuts_down_tmdb_executor() -> None:
     """ScanAllLibrariesWorker shuts down the tmdb_prefetch_executor in its
     finally block after a scan completes."""
     import asyncio
-    from lan_streamer.scanner import LibraryDict
-    from lan_streamer.backend import ScanAllLibrariesWorker
-    from lan_streamer.system.async_task_manager import AsyncTaskManager
+
     from PySide6.QtCore import QObject
+
+    from lan_streamer.backend import ScanAllLibrariesWorker
+    from lan_streamer.scanner import LibraryDict
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
 
     shutdown_calls: list = []
 
@@ -163,9 +164,11 @@ def test_scan_worker_all_shuts_down_tmdb_executor_on_exception() -> None:
     Verifies BUG-02 fix: executor created inside try block so finally always runs.
     """
     import asyncio
+
+    from PySide6.QtCore import QObject
+
     from lan_streamer.backend import ScanAllLibrariesWorker
     from lan_streamer.system.async_task_manager import AsyncTaskManager
-    from PySide6.QtCore import QObject
 
     shutdown_calls: list = []
 

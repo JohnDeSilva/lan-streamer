@@ -1,4 +1,5 @@
 from unittest.mock import patch
+
 from lan_streamer.backend.metadata_worker_property import FilePropertyExtractionWorker
 
 

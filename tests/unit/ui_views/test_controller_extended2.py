@@ -12,13 +12,13 @@ More extended Controller tests covering:
 - delete_series / delete_episode edge cases
 """
 
-import pytest
-from unittest.mock import patch, MagicMock, ANY
 from typing import List
+from unittest.mock import ANY, MagicMock, patch
 
-from lan_streamer.ui_views import Controller
+import pytest
+
 from lan_streamer.system.config import config
-
+from lan_streamer.ui_views import Controller
 
 # ---------------------------------------------------------------------------
 # Fixtures

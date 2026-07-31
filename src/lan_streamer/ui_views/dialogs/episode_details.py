@@ -1,27 +1,27 @@
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from PySide6.QtWidgets import (
-    QDialog,
-    QWidget,
-    QLineEdit,
-    QCheckBox,
-    QListWidget,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QHBoxLayout,
-    QGridLayout,
-    QTabWidget,
-    QComboBox,
-)
 from PySide6.QtCore import Slot
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QPushButton,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
+from lan_streamer.ui_views.dialogs.subtitle_search import SubtitleSearchDialog
 from lan_streamer.ui_views.proxy import (
     QMessageBox,
 )
-from lan_streamer.ui_views.dialogs.subtitle_search import SubtitleSearchDialog
 
 logger = logging.getLogger(__name__)
 
@@ -269,8 +269,9 @@ class EpisodeDetailsDialog(QDialog):
         if not path:
             return
 
-        from lan_streamer.scanner import get_detailed_file_info
         import json
+
+        from lan_streamer.scanner import get_detailed_file_info
 
         versions = self.episode_record.get("versions") or []
         info = None

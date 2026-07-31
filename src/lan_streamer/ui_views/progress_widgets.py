@@ -1,19 +1,18 @@
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
+from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
     QHBoxLayout,
     QPushButton,
+    QSizePolicy,
     QTreeWidget,
     QTreeWidgetItem,
-    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QColor, QPainter, QPen, QFont
-
 
 logger = logging.getLogger(__name__)
 

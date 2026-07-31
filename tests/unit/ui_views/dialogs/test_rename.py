@@ -1,6 +1,8 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
 from PySide6.QtCore import Qt
+
 from lan_streamer.ui_views import Controller
 from lan_streamer.ui_views.dialogs.rename import EpisodeMatchDialog, RenamePreviewDialog
 

@@ -22,13 +22,13 @@ from __future__ import annotations
 import json
 import uuid
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
-from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -108,7 +108,6 @@ def _db_setup(mock_db_file):
 def test_series_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
     """Series rows get a 16-byte BLOB primary key automatically on insert."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import Series
 
     with db_mod.get_session() as session:
@@ -121,7 +120,6 @@ def test_series_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
 def test_season_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
     """Season rows get a 16-byte BLOB primary key automatically on insert."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import Season, Series
 
     with db_mod.get_session() as session:
@@ -139,7 +137,6 @@ def test_season_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
 def test_episode_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
     """Episode rows get a 16-byte BLOB primary key automatically on insert."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import Episode, Season, Series
 
     with db_mod.get_session() as session:
@@ -160,7 +157,6 @@ def test_episode_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
 def test_movie_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
     """Movie rows get a 16-byte BLOB primary key automatically on insert."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import Movie
 
     with db_mod.get_session() as session:
@@ -173,7 +169,6 @@ def test_movie_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
 def test_app_secret_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
     """AppSecret rows get a 16-byte BLOB primary key automatically on insert."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import AppSecret, SecretType
 
     with db_mod.get_session() as session:
@@ -192,7 +187,6 @@ def test_app_secret_pk_is_blob_uuid(mock_db_file, _db_setup) -> None:
 def test_each_row_gets_unique_uuid(mock_db_file, _db_setup) -> None:
     """Two rows in the same table must not share the same UUID PK."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import Movie
 
     with db_mod.get_session() as session:
@@ -211,7 +205,6 @@ def test_each_row_gets_unique_uuid(mock_db_file, _db_setup) -> None:
 def test_season_series_fk_is_blob(mock_db_file, _db_setup) -> None:
     """Season.series_id must equal its parent Series.id (both BLOB)."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import Season, Series
 
     with db_mod.get_session() as session:
@@ -228,7 +221,6 @@ def test_season_series_fk_is_blob(mock_db_file, _db_setup) -> None:
 def test_episode_season_fk_is_blob(mock_db_file, _db_setup) -> None:
     """Episode.season_id must equal its parent Season.id (both BLOB)."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import Episode, Season, Series
 
     with db_mod.get_session() as session:
@@ -247,9 +239,9 @@ def test_episode_season_fk_is_blob(mock_db_file, _db_setup) -> None:
 
 def test_cascade_delete_from_series(mock_db_file, _db_setup) -> None:
     """Deleting a Series must cascade-delete its Seasons and Episodes."""
-    import lan_streamer.db as db_mod
     from sqlalchemy import select
 
+    import lan_streamer.db as db_mod
     from lan_streamer.db.models import Episode, Season, Series
 
     with db_mod.get_session() as session:
@@ -284,7 +276,6 @@ def test_cascade_delete_from_series(mock_db_file, _db_setup) -> None:
 def test_set_secret_creates_uuid_pk(mock_db_file, _db_setup) -> None:
     """set_secret() must insert a BLOB UUID pk without being passed one."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import AppSecret, SecretType
 
     db_mod.set_secret(SecretType.JELLYFIN, {"url": "http://jf", "api_key": "key"})
@@ -302,7 +293,6 @@ def test_set_secret_creates_uuid_pk(mock_db_file, _db_setup) -> None:
 def test_set_secret_upsert_preserves_uuid(mock_db_file, _db_setup) -> None:
     """Calling set_secret() twice for the same type must not change the PK."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import AppSecret, SecretType
 
     db_mod.set_secret(SecretType.TMDB, {"api_key": "first"})
@@ -336,7 +326,6 @@ def test_set_secret_upsert_preserves_uuid(mock_db_file, _db_setup) -> None:
 def test_update_items_runtime_batch_episode_bytes_id(_db_setup) -> None:
     """update_items_runtime_batch must update an episode looked up by its bytes UUID."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import Episode, Season, Series
 
     with db_mod.get_session() as session:
@@ -381,7 +370,6 @@ def test_update_items_runtime_batch_episode_bytes_id(_db_setup) -> None:
 def test_update_items_runtime_batch_movie_bytes_id(_db_setup) -> None:
     """update_items_runtime_batch must update a movie looked up by its bytes UUID."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import Movie
 
     with db_mod.get_session() as session:
@@ -445,7 +433,6 @@ def test_update_items_runtime_batch_nonexistent_bytes_id_is_noop(_db_setup) -> N
 def test_get_items_missing_runtime_returns_string_ids(_db_setup) -> None:
     """get_items_missing_runtime must return dicts whose 'id' values are strings."""
     import lan_streamer.db as db_mod
-
     from lan_streamer.db.models import Episode, Movie, Season, Series
 
     with db_mod.get_session() as session:

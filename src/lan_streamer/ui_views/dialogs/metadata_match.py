@@ -1,23 +1,23 @@
 import logging
-from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
-from PySide6.QtGui import QColor, QBrush
+from PySide6.QtCore import Slot
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QDialog,
-    QWidget,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
     QLineEdit,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QHeaderView,
+    QWidget,
 )
-from PySide6.QtCore import Slot
 
 from lan_streamer.system.config import config
-from lan_streamer.ui_views.proxy import tmdb_client, jellyfin_client, QMessageBox
+from lan_streamer.ui_views.proxy import QMessageBox, jellyfin_client, tmdb_client
 
 if TYPE_CHECKING:
     from lan_streamer.ui_views.controller import Controller

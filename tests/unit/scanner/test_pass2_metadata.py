@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
-
 from lan_streamer.scanner.pass2_metadata import (
     _add_tmdb_only_seasons,
     _build_movie_data,

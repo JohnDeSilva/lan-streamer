@@ -81,14 +81,15 @@ class SmartRowService:
     def _resolve_libraries_for_path(self, file_path: str) -> List[str]:
         """Determine which libraries contain the given file path."""
         try:
+            from sqlalchemy import select
+
             from lan_streamer.db.connection import get_session
             from lan_streamer.db.models import (
+                Episode,
                 MediaFile,
                 MetadataFileMapping,
-                Episode,
                 Movie,
             )
-            from sqlalchemy import select
 
             with get_session() as session:
                 media_file = session.scalars(

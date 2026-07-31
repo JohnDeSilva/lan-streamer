@@ -2,7 +2,7 @@ import copy
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 
 def _parse_config_path() -> Path:
@@ -251,12 +251,12 @@ class Config:
         """
         logger.debug("Loading DB-backed config settings from database.")
         try:
+            from lan_streamer.db.models import SecretType
             from lan_streamer.db.queries_config import (
-                get_all_app_configs,
                 bulk_set_app_configs,
+                get_all_app_configs,
                 get_all_secrets,
             )
-            from lan_streamer.db.models import SecretType
 
             # 1. Fetch all rows from the database in a single query.
             config_dict = get_all_app_configs()
@@ -350,8 +350,8 @@ class Config:
         """
         logger.debug("Saving DB-backed config settings to database.")
         try:
-            from lan_streamer.db.queries_config import set_app_config, set_secret
             from lan_streamer.db.models import SecretType
+            from lan_streamer.db.queries_config import set_app_config, set_secret
 
             # General settings
             set_app_config("libraries", self.libraries)

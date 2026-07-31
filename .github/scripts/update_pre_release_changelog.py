@@ -1,7 +1,7 @@
-import sys
-import subprocess
-from datetime import datetime
 import re
+import subprocess
+import sys
+from datetime import datetime
 
 
 def get_commits(latest_tag):

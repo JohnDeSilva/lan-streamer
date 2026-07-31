@@ -8,7 +8,9 @@ Jellyfin is used only to:
 """
 
 import logging
+
 import requests
+
 from lan_streamer.system.config import config
 
 logger = logging.getLogger(__name__)

@@ -1,8 +1,8 @@
-import sys
-import subprocess
 import logging
-import threading
 import os
+import subprocess
+import sys
+import threading
 from typing import Any
 
 logger = logging.getLogger(__name__)

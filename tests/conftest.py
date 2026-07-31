@@ -1,13 +1,13 @@
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlparse
 
 import pytest
 import requests
-from urllib.parse import urlparse
 
 # Save the original request method for reference
 _original_request = requests.Session.request
@@ -119,11 +119,11 @@ def protect_user_dirs(tmp_path, tmp_path_factory) -> None:
     Ensure no test can ever overwrite the user's actual config or DB.
     We patch all the paths to point to tmp_path.
     """
-    from lan_streamer.system.config import config
     import lan_streamer.db
     import lan_streamer.providers.tmdb
     from lan_streamer.providers.jellyfin import jellyfin_client
     from lan_streamer.providers.tmdb import tmdb_client
+    from lan_streamer.system.config import config
 
     # Save original state
     config_dict = dict(config.__dict__)

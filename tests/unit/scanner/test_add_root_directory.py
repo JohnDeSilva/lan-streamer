@@ -1,9 +1,8 @@
 import shutil
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from lan_streamer.scanner import scan_directories
-
 
 _MOCK_TMDB_PATHS = [
     "lan_streamer.services.metadata_series.tmdb_client",
@@ -369,9 +368,10 @@ def test_file_moved_between_roots_preserves_episode_and_watched(tmp_path: Path) 
     # ------------------------------------------------------------------
     #  Verify default_path directly in the DB (not just via load_library)
     # ------------------------------------------------------------------
+    from sqlalchemy import select as _select
+
     from lan_streamer.db.connection import get_session as _get_session
     from lan_streamer.db.models import Episode as _Episode
-    from sqlalchemy import select as _select
 
     with _get_session() as _session:
         _ep_db = _session.scalars(

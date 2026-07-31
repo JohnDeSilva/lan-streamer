@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import Any
-
-from lan_streamer.scanner import scan_directories
-import lan_streamer.scanner as scanner
 from unittest.mock import MagicMock, patch
+
+import lan_streamer.scanner as scanner
+from lan_streamer.scanner import scan_directories
 
 
 def _mock_tmdb(search_return=None, seasons=None, episodes=None) -> None:
@@ -1485,8 +1485,8 @@ def test_build_movie_metadata_defaults() -> None:
 
 def test_apply_existing_movie_metadata_copies_fields() -> None:
     from lan_streamer.scanner import (
-        _build_movie_metadata_defaults,
         _apply_existing_movie_metadata,
+        _build_movie_metadata_defaults,
     )
 
     metadata = _build_movie_metadata_defaults()
@@ -1499,8 +1499,8 @@ def test_apply_existing_movie_metadata_copies_fields() -> None:
 
 def test_apply_existing_movie_metadata_manual_jellyfin_id() -> None:
     from lan_streamer.scanner import (
-        _build_movie_metadata_defaults,
         _apply_existing_movie_metadata,
+        _build_movie_metadata_defaults,
     )
 
     metadata = _build_movie_metadata_defaults()
@@ -1512,8 +1512,8 @@ def test_apply_existing_movie_metadata_manual_jellyfin_id() -> None:
 
 def test_apply_existing_movie_metadata_ignores_falsy() -> None:
     from lan_streamer.scanner import (
-        _build_movie_metadata_defaults,
         _apply_existing_movie_metadata,
+        _build_movie_metadata_defaults,
     )
 
     metadata = _build_movie_metadata_defaults()
@@ -1970,7 +1970,7 @@ def test_extract_video_runtime_both_fail(tmp_path: Path) -> None:
 
 
 def test_scanner_additional_coverage(tmp_path: Path) -> None:
-    from lan_streamer.scanner import scan_directories, _resolve_episode_jellyfin_id
+    from lan_streamer.scanner import _resolve_episode_jellyfin_id, scan_directories
 
     # 1. _resolve_episode_jellyfin_id names map match
     episode_file = tmp_path / "Avatar S01E01.mkv"
@@ -2258,9 +2258,10 @@ def test_scan_series_warns_on_nested_too_deep_files(tmp_path) -> None:
 def test_get_detailed_file_info_and_runtime_worker(tmp_path) -> None:
     """Verify that get_detailed_file_info parses technical metadata and FilePropertyExtractionWorker saves it to the DB."""
     import json
-    from lan_streamer.scanner import get_detailed_file_info
-    from lan_streamer.backend import FilePropertyExtractionWorker
+
     import lan_streamer.db as db
+    from lan_streamer.backend import FilePropertyExtractionWorker
+    from lan_streamer.scanner import get_detailed_file_info
 
     video_file = tmp_path / "detailed_video.mkv"
     video_file.touch()
@@ -2610,8 +2611,9 @@ def test_scanner_queries_tmdb_when_single_item_refresh_true(tmp_path):
 
 
 def test_scan_series_show_future_episodes(tmp_path) -> None:
-    from lan_streamer.scanner import scan_series
     import datetime
+
+    from lan_streamer.scanner import scan_series
 
     series_dir = tmp_path / "Future Show"
     series_dir.mkdir()
@@ -2689,8 +2691,9 @@ def test_scan_series_show_future_episodes(tmp_path) -> None:
 
 
 def test_scan_series_preserves_only_past_missing_episodes(tmp_path) -> None:
-    from lan_streamer.scanner import scan_series
     import datetime
+
+    from lan_streamer.scanner import scan_series
 
     series_dir = tmp_path / "Preserve Show"
     series_dir.mkdir()
@@ -2753,7 +2756,7 @@ def test_scan_series_preserves_only_past_missing_episodes(tmp_path) -> None:
 
 def test_save_library_prunes_placeholders() -> None:
     from lan_streamer.db.library import save_library
-    from lan_streamer.db.models import Series, Season, Episode
+    from lan_streamer.db.models import Episode, Season, Series
 
     mock_session = MagicMock()
     mock_series = Series(library_name="TestLib", name="TestShow")
@@ -3398,6 +3401,7 @@ def test_get_scan_executor_concurrent_creation_creates_only_one_instance() -> No
     create multiple executors (double-checked locking must hold under contention).
     """
     import concurrent.futures
+
     import lan_streamer.scanner.core as core_module
 
     core_module.shutdown_scan_executor()
@@ -3457,8 +3461,9 @@ def test_shutdown_scan_executor_is_registered_with_atexit() -> None:
     We verify this by reloading the module under a patched atexit.register and
     confirming our function is among the arguments passed to register().
     """
-    import importlib
     import atexit
+    import importlib
+
     import lan_streamer.scanner.core as core_module
 
     registered_funcs: list[object] = []

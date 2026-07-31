@@ -9,13 +9,8 @@ from typing import Any, Dict, List, Optional, Set
 from PySide6.QtCore import QObject, Signal
 
 from lan_streamer import db
-from lan_streamer.providers.jellyfin import jellyfin_client
-from lan_streamer.scanner import (
-    VIDEO_EXTENSIONS,
-    has_video_files,
-    scan_directories,
-)
-from lan_streamer.system.config import config
+from lan_streamer.backend.async_worker_base import AsyncWorkerBase
+from lan_streamer.backend.database_writer import AsyncDatabaseWriter
 from lan_streamer.backend.scan_worker_base import (
     create_empty_stats,
     log_db_write_error,
@@ -24,11 +19,15 @@ from lan_streamer.backend.scan_worker_base import (
     merge_stats_dicts,
     series_belongs_to_root,
 )
-from lan_streamer.backend.async_worker_base import AsyncWorkerBase
+from lan_streamer.providers.jellyfin import jellyfin_client
+from lan_streamer.scanner import (
+    VIDEO_EXTENSIONS,
+    has_video_files,
+    scan_directories,
+)
 from lan_streamer.system.async_task_manager import AsyncTaskManager
-from lan_streamer.backend.database_writer import AsyncDatabaseWriter
-from lan_streamer.system.async_utils import run_in_fs_executor, run_in_executor
-
+from lan_streamer.system.async_utils import run_in_executor, run_in_fs_executor
+from lan_streamer.system.config import config
 
 logger = logging.getLogger("lan_streamer.backend")
 

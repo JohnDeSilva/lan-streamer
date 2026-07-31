@@ -3,51 +3,54 @@ import re
 import uuid
 from pathlib import Path
 from typing import (
-    List,
-    Dict,
-    Any,
-    Optional,
-    Set,
-    Protocol,
     TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Set,
 )
 
-from PySide6.QtCore import QObject, Signal, QFileSystemWatcher, QTimer
+from PySide6.QtCore import QFileSystemWatcher, QObject, QTimer, Signal
 
+from lan_streamer import db as _db_default
 from lan_streamer.services.smart_row_service import SmartRowService
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.config import config as _config_default
 from lan_streamer.system.scheduled_scan_service import ScheduledScanService
 from lan_streamer.system.threading_manager import WorkerManager
-from lan_streamer import db as _db_default
-
 
 if TYPE_CHECKING:
+    from lan_streamer.backend import (
+        AsyncScanWorker,
+        CleanupWorker,
+        FilePropertyExtractionWorker,
+        JellyfinPullWorker,
+        JellyfinPushWorker,
+        MetadataApplyWorker,
+        ScanAllLibrariesWorker,
+    )
     from lan_streamer.providers.jellyfin import (
         jellyfin_client as _jellyfin_default,
     )
     from lan_streamer.providers.tmdb import tmdb_client as _tmdb_default
-    from lan_streamer.backend import (
-        MetadataApplyWorker,
-        AsyncScanWorker,
+else:
+    from lan_streamer.backend import AsyncScanWorker
+    from lan_streamer.ui_views.proxy import (
         CleanupWorker,
+        FilePropertyExtractionWorker,
         JellyfinPullWorker,
         JellyfinPushWorker,
+        MetadataApplyWorker,
         ScanAllLibrariesWorker,
-        FilePropertyExtractionWorker,
     )
-else:
     from lan_streamer.ui_views.proxy import (
         jellyfin_client as _jellyfin_default,
-        tmdb_client as _tmdb_default,
-        MetadataApplyWorker,
-        CleanupWorker,
-        JellyfinPullWorker,
-        JellyfinPushWorker,
-        ScanAllLibrariesWorker,
-        FilePropertyExtractionWorker,
     )
-    from lan_streamer.backend import AsyncScanWorker
+    from lan_streamer.ui_views.proxy import (
+        tmdb_client as _tmdb_default,
+    )
 
 logger = logging.getLogger(__name__)
 

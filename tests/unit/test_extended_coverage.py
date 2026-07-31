@@ -15,9 +15,9 @@ Tests for:
 """
 
 import logging
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # system/logging_handler.py
@@ -86,12 +86,12 @@ class TestQtLogHandler:
 class TestSetupQtLogging:
     def test_setup_with_divide_logs_by_service(self) -> None:
         """When divide_logs_by_service=True, each service logger gets the handler."""
-        from lan_streamer.system.logging_handler import (
-            setup_qt_logging,
-            qt_log_handler,
-            SERVICE_LOGGERS,
-        )
         from lan_streamer.system.config import config
+        from lan_streamer.system.logging_handler import (
+            SERVICE_LOGGERS,
+            qt_log_handler,
+            setup_qt_logging,
+        )
 
         formatter = logging.Formatter("%(message)s")
         original = config.divide_logs_by_service
@@ -109,8 +109,8 @@ class TestSetupQtLogging:
             config.divide_logs_by_service = original
 
     def test_setup_without_divide_logs(self) -> None:
-        from lan_streamer.system.logging_handler import setup_qt_logging, qt_log_handler
         from lan_streamer.system.config import config
+        from lan_streamer.system.logging_handler import qt_log_handler, setup_qt_logging
 
         formatter = logging.Formatter("%(message)s")
         config.divide_logs_by_service = False
@@ -218,6 +218,7 @@ class TestConfigSaveLoadEdgeCases:
         """Test that database_path and log_directory tildes are expanded correctly."""
         import json
         from pathlib import Path
+
         from lan_streamer.system.config import Config
 
         config_file = tmp_path / "config.json"
@@ -242,6 +243,7 @@ class TestConfigSaveLoadEdgeCases:
     def test_load_config_properties_expansion(self) -> None:
         """Test that properties like cache_directory expand tilde on setting."""
         from pathlib import Path
+
         from lan_streamer.system.config import Config
 
         cfg = Config()
@@ -272,6 +274,7 @@ class TestConfigSaveLoadEdgeCases:
 @pytest.fixture
 def mal_client():
     import time
+
     from lan_streamer.providers.myanimelist import MyAnimeListClient
     from lan_streamer.system.config import config
 

@@ -9,18 +9,18 @@ import pytest
 
 from lan_streamer.db import get_session
 from lan_streamer.db.library_tv import (
-    _strip_counter_suffix,
-    _save_season_record,
+    _cleanup_tv_library,
     _save_episode_record,
+    _save_season_record,
+    _strip_counter_suffix,
     save_library,
     save_season_data,
-    _cleanup_tv_library,
 )
 from lan_streamer.db.models import (
-    Series,
-    Season,
     Episode,
     ScannedDirectory,
+    Season,
+    Series,
 )
 
 

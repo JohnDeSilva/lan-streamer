@@ -1,5 +1,5 @@
-from unittest.mock import patch, MagicMock
 import sys
+from unittest.mock import MagicMock, patch
 
 # Mock ctypes before importing WakeLock to avoid issues on non-Windows platforms
 mock_ctypes = MagicMock()

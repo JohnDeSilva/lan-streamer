@@ -1,13 +1,13 @@
 """Database queries for cast, crew, and person data."""
 
 import logging
-from typing import Optional, List, Any
+from typing import Any, List, Optional
 
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import joinedload
 
 from lan_streamer.db.connection import get_session
-from lan_streamer.db.models_cast import Person, MediaCast, MediaImage
+from lan_streamer.db.models_cast import MediaCast, MediaImage, Person
 
 logger = logging.getLogger(__name__)
 

@@ -6,9 +6,9 @@ Verifies that:
 - After PostScanWorker signals (finished/error), the specific worker is removed from the list
 """
 
+import logging
 from typing import TYPE_CHECKING, Any, Dict
 from unittest.mock import MagicMock, patch
-import logging
 
 if TYPE_CHECKING:
     from lan_streamer.ui_views import Controller

@@ -1,13 +1,13 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+from lan_streamer.backend.scan_worker_all import ScanAllLibrariesWorker
 from lan_streamer.ui_views import Controller
-from lan_streamer.ui_views.progress_widgets import (
-    SegmentedProgressBar,
-    LibraryScanProgressBar,
-)
 from lan_streamer.ui_views.dialogs.settings import SettingsDialog
 from lan_streamer.ui_views.library_grid import LibraryGridView
-from lan_streamer.backend.scan_worker_all import ScanAllLibrariesWorker
+from lan_streamer.ui_views.progress_widgets import (
+    LibraryScanProgressBar,
+    SegmentedProgressBar,
+)
 
 
 def test_segmented_progress_bar_passes(qtbot) -> None:

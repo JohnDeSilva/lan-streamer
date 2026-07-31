@@ -1,36 +1,36 @@
-import os
-import time
 import logging
+import os
+import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
-import sys
 
+from PySide6.QtCore import QEvent, QRect, QRectF, QSize, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter
 from PySide6.QtWidgets import (
-    QWidget,
-    QMainWindow,
-    QVBoxLayout,
-    QHBoxLayout,
     QBoxLayout,
-    QPushButton,
-    QSlider,
-    QLabel,
-    QFrame,
     QComboBox,
-    QSizePolicy,
-    QProgressBar,
-    QMessageBox,
-    QMenu,
-    QGraphicsView,
+    QFrame,
     QGraphicsScene,
+    QGraphicsView,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QSizePolicy,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QEvent, QSize, QRectF, QRect
-from PySide6.QtGui import QFont, QPainter, QColor, QIcon
 
-from lan_streamer.system.config import config
 from lan_streamer import db
+from lan_streamer.playback.proxy import CacheWorker, vlc
 from lan_streamer.playback.wakelock import WakeLock
-from lan_streamer.playback.proxy import vlc, CacheWorker
 from lan_streamer.system.async_task_manager import AsyncTaskManager
+from lan_streamer.system.config import config
 
 logger = logging.getLogger("lan_streamer.player_widget")
 

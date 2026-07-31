@@ -1,8 +1,9 @@
-from unittest.mock import patch
 from typing import Any
-from lan_streamer.ui_views import SeriesDetailView, Controller
-from lan_streamer.ui_views.dialogs.series_details import SeriesDetailsDialog
+from unittest.mock import patch
+
 from lan_streamer.system.config import config
+from lan_streamer.ui_views import Controller, SeriesDetailView
+from lan_streamer.ui_views.dialogs.series_details import SeriesDetailsDialog
 
 
 def test_series_detail_view_hide_missing_future(qtbot: Any) -> None:

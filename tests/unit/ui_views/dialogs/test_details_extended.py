@@ -7,10 +7,10 @@ Extended tests for details dialogs:
   episode table (load/interactions), MAL tab
 """
 
-import pytest
-from unittest.mock import patch
 from typing import List
+from unittest.mock import patch
 
+import pytest
 
 from lan_streamer.ui_views import (
     Controller,
@@ -18,7 +18,6 @@ from lan_streamer.ui_views import (
     MovieDetailsDialog,
     SeriesDetailsDialog,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

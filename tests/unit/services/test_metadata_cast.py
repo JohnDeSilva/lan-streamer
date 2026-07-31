@@ -1,15 +1,16 @@
 """Tests for the metadata_cast service layer."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from sqlalchemy import select
 
 from lan_streamer.db import get_session
-from lan_streamer.db.models import Series, Movie, Episode
-from lan_streamer.db.models_cast import Person, MediaCast
+from lan_streamer.db.models import Episode, Movie, Series
+from lan_streamer.db.models_cast import MediaCast, Person
 from lan_streamer.services.metadata_cast import (
-    fetch_and_store_series_credits,
-    fetch_and_store_movie_credits,
     fetch_and_store_episode_credits,
+    fetch_and_store_movie_credits,
+    fetch_and_store_series_credits,
 )
 
 

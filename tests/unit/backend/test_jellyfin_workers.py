@@ -1,5 +1,5 @@
-from unittest.mock import patch
 from typing import List
+from unittest.mock import patch
 
 from lan_streamer.backend import JellyfinPullWorker, JellyfinPushWorker
 

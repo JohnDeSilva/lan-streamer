@@ -11,8 +11,8 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from lan_streamer.system.encryption import (
     _derive_fernet_key,
-    encrypt_secret,
     decrypt_secret,
+    encrypt_secret,
     get_encryption_key,
 )
 

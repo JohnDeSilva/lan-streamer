@@ -10,9 +10,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 
-from lan_streamer.db.models import Series, Season, Episode, Movie, MediaFile
 import lan_streamer.db as db_mod
-
+from lan_streamer.db.models import Episode, MediaFile, Movie, Season, Series
 
 # ---------------------------------------------------------------------------
 # Shared helpers

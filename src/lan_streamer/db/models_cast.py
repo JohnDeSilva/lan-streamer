@@ -19,10 +19,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from lan_streamer.db.models import UUIDBLOB, _new_uuid_str, Base
+from lan_streamer.db.models import UUIDBLOB, Base, _new_uuid_str
 
 if TYPE_CHECKING:
-    from lan_streamer.db.models import Series, Season, Episode, Movie
+    from lan_streamer.db.models import Episode, Movie, Season, Series
 
 
 class Person(Base):

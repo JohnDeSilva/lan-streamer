@@ -1,11 +1,12 @@
-import pytest
-from unittest.mock import MagicMock, patch
 import os
 import time
-from PySide6.QtCore import Qt
 from typing import Any
+from unittest.mock import MagicMock, patch
 
-from lan_streamer.playback import VideoPlayerWidget, CacheWorker
+import pytest
+from PySide6.QtCore import Qt
+
+from lan_streamer.playback import CacheWorker, VideoPlayerWidget
 from lan_streamer.system.config import config
 
 
@@ -362,8 +363,8 @@ def test_volume_osd(player_widget) -> None:
 
 
 def test_resize_event(player_widget) -> None:
-    from PySide6.QtGui import QResizeEvent
     from PySide6.QtCore import QSize
+    from PySide6.QtGui import QResizeEvent
 
     event = QResizeEvent(QSize(800, 600), QSize(640, 480))
     player_widget.resizeEvent(event)
@@ -425,8 +426,8 @@ def test_toggle_fullscreen(player_widget) -> None:
 
 
 def test_key_press_events(player_widget) -> None:
-    from PySide6.QtGui import QKeyEvent
     from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeyEvent
 
     with patch.object(player_widget, "toggle_fullscreen") as mock_toggle:
         with patch.object(player_widget, "play_pause") as mock_play:

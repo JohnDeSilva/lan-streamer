@@ -2,24 +2,24 @@
 
 from __future__ import annotations
 
+import pytest
+
 from lan_streamer.db import get_session
+from lan_streamer.db.models import (
+    Episode,
+    MediaFile,
+    MetadataFileMapping,
+    Movie,
+    PlaybackState,
+    Season,
+    Series,
+)
 from lan_streamer.db.queries_ui import (
-    get_combined_smart_row,
     get_combined_next_up,
+    get_combined_smart_row,
     get_next_episode,
     search_media_names,
 )
-from lan_streamer.db.models import (
-    Series,
-    Season,
-    Episode,
-    Movie,
-    MediaFile,
-    MetadataFileMapping,
-    PlaybackState,
-)
-
-import pytest
 
 
 @pytest.fixture

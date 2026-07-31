@@ -11,7 +11,6 @@ from PySide6.QtCore import QObject
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 
-
 # ---------------------------------------------------------------------------
 # Wait helper
 # ---------------------------------------------------------------------------

@@ -11,11 +11,12 @@ Extended tests for db/queries.py – covering lines that have no existing covera
  - natural_sort_key (numeric vs string parts)
 """
 
-import pytest
 from unittest.mock import patch
 
+import pytest
+
 from lan_streamer import db
-from lan_streamer.db.models import Series, Season, Episode, Movie
+from lan_streamer.db.models import Episode, Movie, Season, Series
 
 
 @pytest.fixture
@@ -481,8 +482,9 @@ def test_get_items_missing_runtime_exception() -> None:
 
 
 def test_update_items_runtime_batch_episode_with_tech_info(mock_db_file) -> None:
-    from lan_streamer.db import get_session
     import json
+
+    from lan_streamer.db import get_session
 
     with get_session() as session:
         series = Series(name="TechShow", library_name="TechLib")
@@ -530,8 +532,9 @@ def test_update_items_runtime_batch_episode_with_tech_info(mock_db_file) -> None
 
 
 def test_update_items_runtime_batch_movie_with_tech_info(mock_db_file) -> None:
-    from lan_streamer.db import get_session
     import json
+
+    from lan_streamer.db import get_session
 
     with get_session() as session:
         movie = Movie(
@@ -628,7 +631,7 @@ def test_update_items_runtime_batch_exception() -> None:
 
 
 def test_get_combined_smart_row_watched_filter(mock_db_file) -> None:
-    from lan_streamer.db import get_session, get_combined_smart_row
+    from lan_streamer.db import get_combined_smart_row, get_session
 
     with get_session() as session:
         # Series that is fully watched
@@ -689,7 +692,7 @@ def test_get_combined_smart_row_watched_filter(mock_db_file) -> None:
 
 
 def test_get_combined_smart_row_empty_library_names(mock_db_file) -> None:
-    from lan_streamer.db import get_session, get_combined_smart_row
+    from lan_streamer.db import get_combined_smart_row, get_session
 
     with get_session() as session:
         s = Series(name="SomeShow", library_name="SomeLib")
@@ -711,7 +714,7 @@ def test_get_combined_smart_row_empty_library_names(mock_db_file) -> None:
 
 def test_get_combined_smart_row_default_sort(mock_db_file) -> None:
     """Test that an unknown sort_by falls back to alphabetical."""
-    from lan_streamer.db import get_session, get_combined_smart_row
+    from lan_streamer.db import get_combined_smart_row, get_session
 
     with get_session() as session:
         s = Series(name="ZShow", library_name="SortLib")
@@ -736,7 +739,7 @@ def test_get_combined_smart_row_default_sort(mock_db_file) -> None:
 
 def test_get_combined_smart_row_recently_aired(mock_db_file) -> None:
     """Test 'Recently Aired' sort mode for series with air_dates."""
-    from lan_streamer.db import get_session, get_combined_smart_row
+    from lan_streamer.db import get_combined_smart_row, get_session
 
     with get_session() as session:
         s_old = Series(name="OldShow", library_name="AiredLib")
@@ -890,9 +893,9 @@ def test_update_episode_path_exception() -> None:
 
 
 def test_get_all_app_configs_empty(mock_db_file) -> None:
-    from lan_streamer.db.queries_config import get_all_app_configs
     from lan_streamer.db.connection import get_session
     from lan_streamer.db.models import AppConfig
+    from lan_streamer.db.queries_config import get_all_app_configs
 
     with get_session() as session:
         session.query(AppConfig).delete()
@@ -902,9 +905,9 @@ def test_get_all_app_configs_empty(mock_db_file) -> None:
 
 
 def test_bulk_set_and_get_all_app_configs(mock_db_file) -> None:
-    from lan_streamer.db.queries_config import bulk_set_app_configs, get_all_app_configs
     from lan_streamer.db.connection import get_session
     from lan_streamer.db.models import AppConfig
+    from lan_streamer.db.queries_config import bulk_set_app_configs, get_all_app_configs
 
     # Delete existing
     with get_session() as session:
@@ -945,6 +948,7 @@ def test_bulk_set_and_get_all_app_configs(mock_db_file) -> None:
 
 def test_get_all_app_configs_db_error(caplog) -> None:
     import logging
+
     from lan_streamer.db.queries_config import get_all_app_configs
 
     with (
@@ -963,6 +967,7 @@ def test_get_all_app_configs_db_error(caplog) -> None:
 
 def test_bulk_set_app_configs_db_error(caplog) -> None:
     import logging
+
     from lan_streamer.db.queries_config import bulk_set_app_configs
 
     with (
@@ -980,10 +985,10 @@ def test_bulk_set_app_configs_db_error(caplog) -> None:
 
 
 def test_load_from_db_calls_bulk_apis(mock_db_file) -> None:
-    from lan_streamer.system.config import Config
+    import lan_streamer.db.queries_config as db_queries
     from lan_streamer.db.connection import get_session
     from lan_streamer.db.models import AppConfig
-    import lan_streamer.db.queries_config as db_queries
+    from lan_streamer.system.config import Config
 
     with get_session() as session:
         session.query(AppConfig).delete()
@@ -1009,9 +1014,9 @@ def test_load_from_db_calls_bulk_apis(mock_db_file) -> None:
 
 
 def test_get_all_secrets_empty(mock_db_file) -> None:
-    from lan_streamer.db.queries_config import get_all_secrets
     from lan_streamer.db.connection import get_session
     from lan_streamer.db.models import AppSecret
+    from lan_streamer.db.queries_config import get_all_secrets
 
     # Ensure no rows exist in AppSecret
     with get_session() as session:
@@ -1022,9 +1027,9 @@ def test_get_all_secrets_empty(mock_db_file) -> None:
 
 
 def test_get_all_secrets_success(mock_db_file) -> None:
-    from lan_streamer.db.queries_config import get_all_secrets, set_secret
-    from lan_streamer.db.models import SecretType, AppSecret
     from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import AppSecret, SecretType
+    from lan_streamer.db.queries_config import get_all_secrets, set_secret
 
     with get_session() as session:
         session.query(AppSecret).delete()
@@ -1043,6 +1048,7 @@ def test_get_all_secrets_success(mock_db_file) -> None:
 
 def test_get_all_secrets_db_error(caplog) -> None:
     import logging
+
     from lan_streamer.db.queries_config import get_all_secrets
 
     with (
@@ -1060,10 +1066,10 @@ def test_get_all_secrets_db_error(caplog) -> None:
 
 
 def test_load_from_db_calls_get_all_secrets(mock_db_file) -> None:
-    from lan_streamer.system.config import Config
+    import lan_streamer.db.queries_config as db_queries
     from lan_streamer.db.connection import get_session
     from lan_streamer.db.models import AppSecret
-    import lan_streamer.db.queries_config as db_queries
+    from lan_streamer.system.config import Config
 
     with get_session() as session:
         session.query(AppSecret).delete()
@@ -1081,11 +1087,13 @@ def test_load_from_db_calls_get_all_secrets(mock_db_file) -> None:
 
 def test_secrets_are_actually_encrypted_in_db(mock_db_file) -> None:
     """Verifies that set_secret encrypts data in database, and get_all_secrets returns it decrypted."""
-    from lan_streamer.db.queries_config import set_secret, get_all_secrets
-    from lan_streamer.db.models import SecretType, AppSecret
-    from lan_streamer.db.connection import get_session
-    from sqlalchemy import text
     import json
+
+    from sqlalchemy import text
+
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import AppSecret, SecretType
+    from lan_streamer.db.queries_config import get_all_secrets, set_secret
 
     with get_session() as database_session:
         database_session.query(AppSecret).delete()
@@ -1117,12 +1125,14 @@ def test_secrets_are_actually_encrypted_in_db(mock_db_file) -> None:
 
 def test_legacy_unencrypted_secrets_migrated_transparently(mock_db_file) -> None:
     """Verifies that legacy unencrypted secrets are read correctly and transparently encrypted."""
-    from lan_streamer.db.queries_config import get_all_secrets
-    from lan_streamer.db.models import SecretType, AppSecret
-    from lan_streamer.db.connection import get_session
-    from sqlalchemy import text
     import json
     import uuid
+
+    from sqlalchemy import text
+
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import AppSecret, SecretType
+    from lan_streamer.db.queries_config import get_all_secrets
 
     legacy_secret_uuid = uuid.uuid4()
 

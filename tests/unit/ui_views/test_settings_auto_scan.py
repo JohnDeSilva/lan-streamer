@@ -1,8 +1,10 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from PySide6.QtWidgets import QDialog
+
+from lan_streamer.system.config import config
 from lan_streamer.ui_views import Controller
 from lan_streamer.ui_views.library_grid import LibraryGridView
-from lan_streamer.system.config import config
 
 
 def test_controller_reloads_config_on_actions(mock_db_save) -> None:

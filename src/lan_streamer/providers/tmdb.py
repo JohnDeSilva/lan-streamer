@@ -11,7 +11,9 @@ import random
 import threading
 import time
 from pathlib import Path
+
 import requests
+
 from lan_streamer.system.config import config
 
 logger = logging.getLogger(__name__)

@@ -1,6 +1,7 @@
 import logging
 from collections import deque
 from typing import Deque, List, Tuple
+
 from PySide6.QtCore import QObject, Signal
 
 

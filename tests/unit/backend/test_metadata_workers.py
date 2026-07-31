@@ -1,16 +1,15 @@
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+from unittest.mock import MagicMock, patch
 
 from PySide6.QtCore import Qt
 
-
 from lan_streamer.backend import (
     FilePropertyExtractionWorker,
-    SubtitleMergeWorker,
     MetadataEmbedWorker,
-    SeriesMetadataEmbedWorker,
     RefreshSeriesWorker,
+    SeriesMetadataEmbedWorker,
+    SubtitleMergeWorker,
 )
 
 
@@ -54,6 +53,7 @@ def test_runtime_extraction_worker_execution() -> None:
         finished_emitted: List[int] = []
 
         from PySide6.QtCore import QObject
+
         from lan_streamer.system.async_task_manager import AsyncTaskManager
 
         dummy_parent = QObject()
@@ -93,6 +93,7 @@ def test_runtime_extraction_worker_execution() -> None:
     ):
         errors_emitted: List[str] = []
         from PySide6.QtCore import QObject
+
         from lan_streamer.system.async_task_manager import AsyncTaskManager
 
         dummy_parent = QObject()

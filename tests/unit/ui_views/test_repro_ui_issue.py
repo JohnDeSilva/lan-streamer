@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock, patch
+
 from PySide6.QtWidgets import QApplication
 
 
