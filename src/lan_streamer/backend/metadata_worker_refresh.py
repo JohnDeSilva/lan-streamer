@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -27,24 +27,24 @@ class RefreshSeriesWorker(AsyncWorkerBase):
         library_name: str,
         item_name: str,
         library_type: str,
-        root_directories: List[str],
-        existing_library: Dict[str, Any],
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        parent: Optional[QObject] = None,
+        root_directories: list[str],
+        existing_library: dict[str, Any],
+        async_task_manager: AsyncTaskManager | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
         self.library_name: str = library_name
         self.item_name: str = item_name
         self.library_type: str = library_type
-        self.root_directories: List[str] = root_directories
-        self.existing_library: Dict[str, Any] = existing_library
+        self.root_directories: list[str] = root_directories
+        self.existing_library: dict[str, Any] = existing_library
 
-    async def run_async(self) -> Dict[str, Any]:
+    async def run_async(self) -> dict[str, Any]:
         logger.info(
             f"RefreshSeriesWorker starting for item: {self.item_name} in library {self.library_name}"
         )
         # Find the path of the specific series/movie directory within the root directories
-        target_dir: Optional[Path] = None
+        target_dir: Path | None = None
         for root_dir in self.root_directories:
             potential_dir = Path(root_dir) / self.item_name
             if potential_dir.exists() and potential_dir.is_dir():
@@ -60,9 +60,9 @@ class RefreshSeriesWorker(AsyncWorkerBase):
         logger.info("RefreshSeriesWorker finished successfully")
         return updated_library
 
-    def _do_refresh(self, target_dir: Path) -> Dict[str, Any]:
+    def _do_refresh(self, target_dir: Path) -> dict[str, Any]:
         # Fetch Jellyfin correlation data if configured
-        jellyfin_data: Optional[Dict[str, Any]] = None
+        jellyfin_data: dict[str, Any] | None = None
         if jellyfin_client.is_configured():
             jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 

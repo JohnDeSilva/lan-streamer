@@ -4,7 +4,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -64,11 +64,11 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
 
     def __init__(
         self,
-        async_task_manager: Optional[AsyncTaskManager] = None,
+        async_task_manager: AsyncTaskManager | None = None,
         force_refresh: bool = False,
         run_pass1: bool = True,
         run_pass2: bool = True,
-        parent: Optional[QObject] = None,
+        parent: QObject | None = None,
     ) -> None:
         """Initialise the scan-all-libraries worker."""
         super().__init__(async_task_manager=async_task_manager, parent=parent)
@@ -78,30 +78,30 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
 
         # Shared mutable state — protected by _lock when accessed from threads.
         self._lock = threading.Lock()
-        self._detail_progress_buffer: List[Dict[str, Any]] = []
+        self._detail_progress_buffer: list[dict[str, Any]] = []
 
-        self.unavailable_directories: List[str] = []
-        self.problems: List[Dict[str, Any]] = []
-        self.stats: Dict[str, int] = create_empty_stats()
-        self.changed_season_ids: Set[str] = set()
-        self.changed_movie_ids: Set[str] = set()
+        self.unavailable_directories: list[str] = []
+        self.problems: list[dict[str, Any]] = []
+        self.stats: dict[str, int] = create_empty_stats()
+        self.changed_season_ids: set[str] = set()
+        self.changed_movie_ids: set[str] = set()
         self.current_pass: int = 1
 
         # Per-pass statistics dict: self.pass_stats[1] = Pass 1 stats, [2] = Pass 2 stats.
-        self.pass_stats: Dict[int, Dict[str, int]] = {}
+        self.pass_stats: dict[int, dict[str, int]] = {}
 
         # Per-library per-pass statistics: self.pass_stats_per_library[name][1] = Pass 1 stats.
-        self.pass_stats_per_library: Dict[str, Dict[int, Dict[str, int]]] = {}
+        self.pass_stats_per_library: dict[str, dict[int, dict[str, int]]] = {}
 
         # Libraries that had any add/update activity during the scan (for
         # incremental cache rebuild — Proposal H).
-        self.changed_libraries: Set[str] = set()
+        self.changed_libraries: set[str] = set()
 
         # Database writer and event loop — created in run_async() for each scan.
-        self._database_writer: Optional[AsyncDatabaseWriter] = None
-        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._database_writer: AsyncDatabaseWriter | None = None
+        self._event_loop: asyncio.AbstractEventLoop | None = None
 
-    def emit_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
+    def emit_detail_progress(self, event: str, payload: dict[str, Any]) -> None:
         """Add a progress event to the thread-safe buffer and emit if full."""
         flush_needed = False
         with self._lock:
@@ -131,8 +131,8 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
     def _log_per_library_scan_report(
         library_name: str,
         paths_str: str,
-        stats_dict: Dict[str, Any],
-        status_notes: Optional[List[str]] = None,
+        stats_dict: dict[str, Any],
+        status_notes: list[str] | None = None,
     ) -> None:
         """Log an individual library scan report with accumulated stats.
 
@@ -178,7 +178,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         )
 
     def _log_scan_summary(
-        self, duration: float, libraries_dictionary: Dict[str, Dict[str, Any]]
+        self, duration: float, libraries_dictionary: dict[str, dict[str, Any]]
     ) -> None:
         """Log the combined scan summary with per-library and pass totals.
 
@@ -212,7 +212,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                     accumulated_stats[key] = pass1_stats.get(key, 0) + pass2_stats.get(
                         key, 0
                     )
-            status_notes: List[str] = []
+            status_notes: list[str] = []
             if pass1_stats.get("_skipped"):
                 status_notes.append("Pass 1 FAILED — no offline data")
             if pass2_stats.get("_skipped"):
@@ -257,12 +257,12 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
     def _scan_library_pass(
         self,
         library_name: str,
-        library_configuration: Dict[str, Any],
-        existing_library_data: Dict[str, Any],
-        jellyfin_data: Optional[Dict[str, Any]],
+        library_configuration: dict[str, Any],
+        existing_library_data: dict[str, Any],
+        jellyfin_data: dict[str, Any] | None,
         pass_number: int,
-        tmdb_prefetch_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
-    ) -> Dict[str, Any]:
+        tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None = None,
+    ) -> dict[str, Any]:
         """Execute one scan pass for a single library inside a thread-pool worker.
 
         Args:
@@ -279,7 +279,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             ``library_name``, ``library_data``, ``pass_stats``, ``problems``,
             ``unavailable_directories``, ``changed_season_ids``, ``changed_movie_ids``.
         """
-        root_directories: List[str] = list(library_configuration.get("paths", []))
+        root_directories: list[str] = list(library_configuration.get("paths", []))
         library_type: str = library_configuration.get("type", "tv")
         show_future_episodes: bool = library_configuration.get(
             "show_future_episodes", True
@@ -292,12 +292,12 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         assert loop is not None
 
         # Local accumulators (thread-local, protected by local_lock)
-        local_stats: Dict[str, int] = create_empty_stats()
-        local_problems: List[Dict[str, Any]] = []
-        local_changed_season_ids: Set[str] = set()
-        local_changed_movie_ids: Set[str] = set()
-        local_series_scanned: Set[str] = set()
-        library_unavailable_directories: List[str] = []
+        local_stats: dict[str, int] = create_empty_stats()
+        local_problems: list[dict[str, Any]] = []
+        local_changed_season_ids: set[str] = set()
+        local_changed_movie_ids: set[str] = set()
+        local_series_scanned: set[str] = set()
+        library_unavailable_directories: list[str] = []
         # Local lock protects local_stats/local_problems because folder-level
         # parallel scan (scan_directories) submits scan_series/scan_movie as
         # futures to the global executor, and those futures invoke
@@ -317,17 +317,17 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             NOTE: This callback is invoked from thread-pool workers and MUST
             remain thread-safe. It uses lock-buffered emit_detail_progress."""
 
-            def _detail_callback(event: str, payload: Dict[str, Any]) -> None:
-                enriched: Dict[str, Any] = {"library": library_name_cb, **payload}
+            def _detail_callback(event: str, payload: dict[str, Any]) -> None:
+                enriched: dict[str, Any] = {"library": library_name_cb, **payload}
                 self.emit_detail_progress(event, enriched)
 
             return _detail_callback
 
         def _season_callback(
             series_name: str,
-            series_data: Dict[str, Any],
+            series_data: dict[str, Any],
             season_name: str,
-            season_data: Dict[str, Any],
+            season_data: dict[str, Any],
         ) -> None:
             """Process a single season during scanning, persisting it to the
             database and accumulating local statistics."""
@@ -442,7 +442,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
 
         # Callback invoked from thread-pool workers — must be thread-safe.
         # It acquires self._lock for shared-state access.
-        def _movie_callback(movie_name: str, movie_data: Dict[str, Any]) -> None:
+        def _movie_callback(movie_name: str, movie_data: dict[str, Any]) -> None:
             """Process a single movie during scanning, persisting it to the
             database and accumulating local statistics."""
             logger.info(
@@ -528,7 +528,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         logger,
                     )
 
-        def _save_library_data(library_data: Dict[str, Any]) -> None:
+        def _save_library_data(library_data: dict[str, Any]) -> None:
             """Persist the full library data to the database.
 
             Only ``_removed`` and ``deleted`` keys from the return value are
@@ -612,7 +612,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             if self.isInterruptionRequested():
                 raise InterruptedError("Scan interrupted.")
             _save_library_data(updated_library_data)
-            current_library_data: Dict[str, Any] = updated_library_data
+            current_library_data: dict[str, Any] = updated_library_data
         else:
             current_library_data = existing_library_data
             for root_dir in root_directories:
@@ -690,9 +690,9 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
     def _discover_single_library_tree(
         self,
         library_name: str,
-        library_configuration: Dict[str, Any],
-        existing_library_data: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        library_configuration: dict[str, Any],
+        existing_library_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Pre-walk directories of a single library to build its tree structure.
 
         Args:
@@ -703,11 +703,11 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         Returns:
             A dictionary containing library type and its roots.
         """
-        root_directories: List[str] = list(library_configuration.get("paths", []))
+        root_directories: list[str] = list(library_configuration.get("paths", []))
         library_type: str = library_configuration.get("type", "tv")
         # Build the detailed tree structure (with seasons/episodes) from the
         # existing library data if available; otherwise fall back to filesystem.
-        detailed_roots: Dict[str, Any] = {}
+        detailed_roots: dict[str, Any] = {}
         for root_dir in root_directories:
             if existing_library_data:
                 # Build from existing data
@@ -715,7 +715,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 for series_name, series_data in existing_library_data.items():
                     if series_belongs_to_root(series_data, root_dir, library_type):
                         if library_type in ("tv", "anime"):
-                            seasons: Dict[str, List[str]] = {}
+                            seasons: dict[str, list[str]] = {}
                             for season_name, season_data in series_data.get(
                                 "seasons", {}
                             ).items():
@@ -748,12 +748,12 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 ):
                     series_name = series_path.name
                     if library_type in ("tv", "anime"):
-                        seasons: Dict[str, List[str]] = {}
+                        seasons: dict[str, list[str]] = {}
                         for season_path in series_path.iterdir():
                             if season_path.is_dir() and not season_path.name.startswith(
                                 "."
                             ):
-                                episodes: List[str] = []
+                                episodes: list[str] = []
                                 for episode_path in season_path.iterdir():
                                     if (
                                         episode_path.is_file()
@@ -768,8 +768,8 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         return {"type": library_type, "roots": detailed_roots}
 
     async def _discover_tree(
-        self, library_data_by_name: Dict[str, Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, library_data_by_name: dict[str, dict[str, Any]]
+    ) -> dict[str, Any]:
         """Pre-walk all library directories to count total folders and files in parallel.
 
         This allows the UI to initialise the tree and segmented progress bar
@@ -781,7 +781,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         Returns:
             A nested dictionary keyed by library name.
         """
-        libraries_dictionary: Dict[str, Dict[str, Any]] = config.libraries
+        libraries_dictionary: dict[str, dict[str, Any]] = config.libraries
         tasks = []
         for library_name, library_configuration in libraries_dictionary.items():
             existing_data = library_data_by_name.get(library_name, {})
@@ -793,7 +793,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             )
             tasks.append((asyncio.create_task(coro), library_name))
 
-        tree: Dict[str, Any] = {}
+        tree: dict[str, Any] = {}
         for task, library_name in tasks:
             try:
                 tree[library_name] = await task
@@ -829,7 +829,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         # It is shared across all libraries in both passes to avoid creating and
         # destroying short-lived thread pools on every series scan.
         # Ownership is here: shut down in the finally block below.
-        tmdb_prefetch_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+        tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None = None
 
         try:
             tmdb_prefetch_executor = concurrent.futures.ThreadPoolExecutor(
@@ -840,13 +840,13 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             )
             await self._database_writer.start()
             logger.info("ScanAllLibrariesWorker starting global scan run")
-            libraries_dictionary: Dict[str, Dict[str, Any]] = config.libraries
+            libraries_dictionary: dict[str, dict[str, Any]] = config.libraries
             total_count: int = len(libraries_dictionary)
             self.unavailable_directories = []
 
             # Load existing library data from the database FIRST, so tree discovery
             # can use it to avoid redundant filesystem I/O.
-            library_data_by_name: Dict[str, Dict[str, Any]] = {}
+            library_data_by_name: dict[str, dict[str, Any]] = {}
             for (
                 library_name,
                 library_configuration,
@@ -870,7 +870,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             )
             self.flush_detail_progress()
 
-            jellyfin_data: Optional[Dict[str, Any]] = None
+            jellyfin_data: dict[str, Any] | None = None
             if jellyfin_client.is_configured():
                 jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
@@ -884,7 +884,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 logger.info("ScanAllLibrariesWorker starting Pass 1 (Offline Scan)")
                 self.emit_detail_progress("start_offline_scan", {})
 
-                library_task_map: Dict[asyncio.Task, str] = {}
+                library_task_map: dict[asyncio.Task, str] = {}
                 for (
                     library_name,
                     library_configuration,
@@ -993,7 +993,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 self.emit_detail_progress("start_metadata_resolution", {})
 
                 completed_count: int = 0
-                library_task_map_pass2: Dict[asyncio.Task, str] = {}
+                library_task_map_pass2: dict[asyncio.Task, str] = {}
                 for (
                     library_name,
                     library_configuration,

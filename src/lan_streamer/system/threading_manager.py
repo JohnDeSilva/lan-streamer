@@ -1,6 +1,7 @@
 import logging
 import traceback
-from typing import Any, Callable, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from PySide6.QtCore import QObject
 
@@ -30,10 +31,10 @@ class WorkerSlot(QObject):
       skip when a worker is active.
     """
 
-    def __init__(self, parent: Optional[QObject] = None) -> None:
+    def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._instance: Optional[QObject] = None
-        self._connected_signal_slots: List[tuple[Any, Callable]] = []
+        self._instance: QObject | None = None
+        self._connected_signal_slots: list[tuple[Any, Callable]] = []
 
     @property
     def is_running(self) -> bool:
@@ -44,7 +45,7 @@ class WorkerSlot(QObject):
         return False
 
     @property
-    def instance(self) -> Optional[AnyWorker]:
+    def instance(self) -> AnyWorker | None:
         return self._instance
 
     @staticmethod
@@ -59,7 +60,7 @@ class WorkerSlot(QObject):
     def start(
         self,
         factory: Callable[[], AnyWorker],
-        **signal_slots: Optional[Callable],
+        **signal_slots: Callable | None,
     ) -> AnyWorker:
         """
         Stop any existing worker, create a new one via *factory*, connect
@@ -191,7 +192,7 @@ class WorkerManager(QObject):
         )
     """
 
-    def __init__(self, parent: Optional[QObject] = None) -> None:
+    def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
 
         self.scan: WorkerSlot = WorkerSlot(self)
@@ -208,7 +209,7 @@ class WorkerManager(QObject):
         self.refresh: WorkerSlot = WorkerSlot(self)
         self.scan_series: WorkerSlot = WorkerSlot(self)
 
-        self._all_slots: List[WorkerSlot] = [
+        self._all_slots: list[WorkerSlot] = [
             self.scan,
             self.scan_all,
             self.cleanup,

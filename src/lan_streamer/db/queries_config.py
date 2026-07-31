@@ -1,6 +1,7 @@
 import json
 import logging
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 from sqlalchemy import select
 
@@ -15,7 +16,7 @@ def get_session() -> Any:
     return lan_streamer.db.connection.get_session()
 
 
-_TYPE_COERCIONS: Dict[str, Callable[[Any], Any]] = {
+_TYPE_COERCIONS: dict[str, Callable[[Any], Any]] = {
     "bool": lambda v: v == "1",
     "int": int,
     "float": float,
@@ -63,7 +64,7 @@ def set_app_config(key: str, value: Any) -> None:
         logger.exception(f"Error writing app_config key '{key}'")
 
 
-def get_all_app_configs() -> Dict[str, Any]:
+def get_all_app_configs() -> dict[str, Any]:
     """Returns all app_config rows as a dictionary of key -> coerced_value."""
     try:
         logger.debug("Executing DB query get_all_app_configs")
@@ -84,7 +85,7 @@ def get_all_app_configs() -> Dict[str, Any]:
         return {}
 
 
-def bulk_set_app_configs(config_dict: Dict[str, Any]) -> None:
+def bulk_set_app_configs(config_dict: dict[str, Any]) -> None:
     """Upserts all key/value pairs in config_dict into app_config in a single session."""
     try:
         logger.debug(
@@ -125,7 +126,7 @@ def bulk_set_app_configs(config_dict: Dict[str, Any]) -> None:
         logger.exception("Error writing bulk app_config settings")
 
 
-def get_all_secrets() -> Dict[str, Dict[str, Any]]:
+def get_all_secrets() -> dict[str, dict[str, Any]]:
     """Returns all app_secrets rows as a dictionary of secret_type string -> payload dict."""
     try:
         logger.debug("Executing DB query get_all_secrets")
@@ -194,7 +195,7 @@ def get_all_secrets() -> Dict[str, Dict[str, Any]]:
         return {}
 
 
-def set_secret(secret_type: SecretType, payload: Dict[str, Any]) -> None:
+def set_secret(secret_type: SecretType, payload: dict[str, Any]) -> None:
     """Upserts the full credential payload for *secret_type*."""
     try:
         logger.debug(

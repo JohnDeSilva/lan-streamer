@@ -1,7 +1,7 @@
 """Tests for the redesigned SeasonDetailView."""
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from PySide6.QtCore import Qt
@@ -15,7 +15,7 @@ from lan_streamer.ui_views.controller import Controller
 def _make_controller_with_data(
     series_name: str,
     season_name: str,
-    episodes: list[Dict[str, Any]],
+    episodes: list[dict[str, Any]],
 ) -> MagicMock:
     """Build a mock Controller with cached_library_data containing the given episodes."""
     controller = MagicMock(spec=Controller)
@@ -970,7 +970,7 @@ def test_season_detail_mal_load_multiple_entries(qtbot: Any) -> None:
         mock_pixmap.return_value.isNull.return_value = False
         mock_mal.is_configured.return_value = True
 
-        def mock_get_anime_details(anime_id: int) -> Dict[str, Any]:
+        def mock_get_anime_details(anime_id: int) -> dict[str, Any]:
             data = {
                 111: {
                     "id": 111,

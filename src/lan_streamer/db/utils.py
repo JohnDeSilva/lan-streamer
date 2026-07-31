@@ -2,12 +2,12 @@
 
 import logging
 import re
-from typing import Any, List, Optional
+from typing import Any
 
 logger = logging.getLogger("lan_streamer.db")
 
 
-def natural_sort_key(s: Optional[str]) -> List[Any]:
+def natural_sort_key(s: str | None) -> list[Any]:
     """
     Key function for natural sorting (e.g., "Season 2" < "Season 10").
     """

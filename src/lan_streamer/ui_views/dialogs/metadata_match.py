@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import Slot
 from PySide6.QtGui import QBrush, QColor
@@ -34,16 +34,16 @@ class MetadataMatchDialog(QDialog):
     def __init__(
         self,
         series_name: str,
-        controller_instance: "Controller",
-        parent: Optional[QWidget] = None,
+        controller_instance: Controller,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         logger.info(f"Initializing MetadataMatchDialog for series '{series_name}'")
         self.series_name: str = series_name
-        self.controller: "Controller" = controller_instance
+        self.controller: Controller = controller_instance
         self.search_input: QLineEdit = QLineEdit()
         self.results_table: QTableWidget = QTableWidget()
-        self.search_results_list: List[Dict[str, Any]] = []
+        self.search_results_list: list[dict[str, Any]] = []
 
         self.setWindowTitle(f"Match Metadata: {series_name}")
         self.resize(800, 500)
@@ -103,9 +103,9 @@ class MetadataMatchDialog(QDialog):
 
         main_layout.addLayout(bottom_buttons_layout)
 
-    def _resolve_mapped_identifiers(self) -> Set[str]:
+    def _resolve_mapped_identifiers(self) -> set[str]:
         """Return the set of TMDB IDs currently mapped to this series or movie."""
-        mapped: Set[str] = set()
+        mapped: set[str] = set()
         library_config = config.libraries.get(self.controller.current_library_name, {})
         is_movie = library_config.get("type", "tv") == "movie"
         record = self.controller.cached_library_data.get(self.series_name, {})
@@ -204,7 +204,7 @@ class MetadataMatchDialog(QDialog):
 
     @Slot()
     def apply_selected(self) -> None:
-        selected_rows: List[int] = [
+        selected_rows: list[int] = [
             item.row() for item in self.results_table.selectedItems()
         ]
         if not selected_rows:
@@ -215,7 +215,7 @@ class MetadataMatchDialog(QDialog):
             return
 
         target_row_index: int = selected_rows[0]
-        match_record: Dict[str, Any] = self.search_results_list[target_row_index]
+        match_record: dict[str, Any] = self.search_results_list[target_row_index]
         logger.info(
             f"MetadataMatchDialog applying match for '{self.series_name}': {match_record}"
         )
@@ -232,16 +232,16 @@ class JellyfinMatchDialog(QDialog):
     def __init__(
         self,
         series_name: str,
-        controller_instance: "Controller",
-        parent: Optional[QWidget] = None,
+        controller_instance: Controller,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         logger.info(f"Initializing JellyfinMatchDialog for series '{series_name}'")
         self.series_name: str = series_name
-        self.controller: "Controller" = controller_instance
+        self.controller: Controller = controller_instance
         self.search_input: QLineEdit = QLineEdit()
         self.results_table: QTableWidget = QTableWidget()
-        self.search_results_list: List[Dict[str, Any]] = []
+        self.search_results_list: list[dict[str, Any]] = []
 
         self.setWindowTitle(f"Match Jellyfin Watch History: {series_name}")
         self.resize(800, 500)
@@ -316,7 +316,7 @@ class JellyfinMatchDialog(QDialog):
         is_movie = library_config.get("type", "tv") == "movie"
 
         if is_movie:
-            raw_results: List[Dict[str, Any]] = jellyfin_client.search_movie(
+            raw_results: list[dict[str, Any]] = jellyfin_client.search_movie(
                 query_string
             )
         else:
@@ -364,7 +364,7 @@ class JellyfinMatchDialog(QDialog):
 
     @Slot()
     def apply_selected(self) -> None:
-        selected_rows: List[int] = [
+        selected_rows: list[int] = [
             item.row() for item in self.results_table.selectedItems()
         ]
         if not selected_rows:
@@ -375,7 +375,7 @@ class JellyfinMatchDialog(QDialog):
             return
 
         target_row_index: int = selected_rows[0]
-        match_record: Dict[str, Any] = self.search_results_list[target_row_index]
+        match_record: dict[str, Any] = self.search_results_list[target_row_index]
         logger.info(
             f"JellyfinMatchDialog linking watch match for '{self.series_name}': {match_record}"
         )

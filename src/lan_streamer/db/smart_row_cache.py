@@ -2,7 +2,7 @@ import hashlib
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import joinedload
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_config_hash(
-    library_names: List[str], sort_by: str, filter_mode: str
+    library_names: list[str], sort_by: str, filter_mode: str
 ) -> str:
     """Create a deterministic hash from smart row configuration parameters."""
     raw = (
@@ -30,8 +30,8 @@ def compute_config_hash(
 
 
 def get_cached_smart_rows(
-    library_names: List[str], sort_by: str, filter_mode: str
-) -> List[Dict[str, Any]]:
+    library_names: list[str], sort_by: str, filter_mode: str
+) -> list[dict[str, Any]]:
     """Read smart row results from cache, falling back to live computation."""
     config_hash = compute_config_hash(library_names, sort_by, filter_mode)
     try:
@@ -68,7 +68,7 @@ def get_cached_smart_rows(
 
 
 def rebuild_cache_for_config(
-    library_names: List[str], sort_by: str, filter_mode: str
+    library_names: list[str], sort_by: str, filter_mode: str
 ) -> None:
     """Compute a single smart row configuration and cache the results."""
     config_hash = compute_config_hash(library_names, sort_by, filter_mode)
@@ -137,11 +137,11 @@ def rebuild_all_cache() -> None:
 
 
 def get_affected_config_hashes_for_libraries(
-    library_names: List[str],
-) -> List[str]:
+    library_names: list[str],
+) -> list[str]:
     """Return config hashes for all enabled rows that include the given
     libraries. An empty library list (all libraries) always matches."""
-    config_hashes: Set[str] = set()
+    config_hashes: set[str] = set()
     app_config.load()
     for row_config in app_config.combined_views:
         if not row_config.get("enabled", True):
@@ -158,14 +158,14 @@ def get_affected_config_hashes_for_libraries(
     return list(config_hashes)
 
 
-def _row_to_dict(row: SmartRowCache) -> Dict[str, Any]:
+def _row_to_dict(row: SmartRowCache) -> dict[str, Any]:
     """Convert a cached row back to the dict format expected by the UI.
 
     Display data (name, poster_path, library_name) is resolved via FK
     relationships to Series / Movie. Computed aggregation fields come
     directly from the cache.
     """
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "type": row.item_type,
         "date_added": row.date_added,
         "air_date": row.air_date or "",
@@ -209,12 +209,12 @@ def _row_to_dict(row: SmartRowCache) -> Dict[str, Any]:
     return result
 
 
-def _resolve_series_ids(items: List[Dict[str, Any]]) -> Dict[str, str]:
+def _resolve_series_ids(items: list[dict[str, Any]]) -> dict[str, str]:
     """Build a map of (library_name, name) → series.id for all items.
 
     Uses a single bulk query with OR conditions to avoid N+1 lookups.
     """
-    names: Set[tuple] = set()
+    names: set[tuple] = set()
     for item in items:
         item_type = item.get("type")
         library = item.get("library_name", "")
@@ -228,7 +228,7 @@ def _resolve_series_ids(items: List[Dict[str, Any]]) -> Dict[str, str]:
     if not names:
         return {}
 
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     try:
         with get_session() as session:
             from sqlalchemy import or_
@@ -250,12 +250,12 @@ def _resolve_series_ids(items: List[Dict[str, Any]]) -> Dict[str, str]:
     return result
 
 
-def _resolve_movie_ids(items: List[Dict[str, Any]]) -> Dict[str, str]:
+def _resolve_movie_ids(items: list[dict[str, Any]]) -> dict[str, str]:
     """Build a map of (library_name, name) → movie.id for all items.
 
     Uses a single bulk query with OR conditions to avoid N+1 lookups.
     """
-    names: Set[tuple] = set()
+    names: set[tuple] = set()
     for item in items:
         if item.get("type") == "movie":
             library = item.get("library_name", "")
@@ -265,7 +265,7 @@ def _resolve_movie_ids(items: List[Dict[str, Any]]) -> Dict[str, str]:
     if not names:
         return {}
 
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     try:
         with get_session() as session:
             from sqlalchemy import or_
@@ -288,8 +288,8 @@ def _resolve_movie_ids(items: List[Dict[str, Any]]) -> Dict[str, str]:
 
 
 def _lookup_series_id(
-    item: Dict[str, Any], series_ids: Dict[str, str], item_type: str
-) -> Optional[str]:
+    item: dict[str, Any], series_ids: dict[str, str], item_type: str
+) -> str | None:
     """Look up the series ID for an item from the pre-built map."""
     if item_type == "movie":
         return None
@@ -299,8 +299,8 @@ def _lookup_series_id(
 
 
 def _lookup_movie_id(
-    item: Dict[str, Any], movie_ids: Dict[str, str], item_type: str
-) -> Optional[str]:
+    item: dict[str, Any], movie_ids: dict[str, str], item_type: str
+) -> str | None:
     """Look up the movie ID for an item from the pre-built map."""
     if item_type != "movie":
         return None

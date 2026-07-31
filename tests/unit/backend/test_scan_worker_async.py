@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -156,9 +156,9 @@ class TestAsyncScanWorker:
             library_name="TestLib",
         )
 
-        partial_results: List[Dict[str, Any]] = []
+        partial_results: list[dict[str, Any]] = []
 
-        def _on_partial(data: Dict[str, Any]) -> None:
+        def _on_partial(data: dict[str, Any]) -> None:
             partial_results.append(data)
 
         worker.partial_result.connect(_on_partial)

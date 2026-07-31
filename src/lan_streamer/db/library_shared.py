@@ -3,7 +3,7 @@ Shared internal helpers used by both library_tv.py and library_movie.py.
 """
 
 import json
-from typing import Any, Dict, List
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -31,7 +31,7 @@ def _update_field_safely(existing_val: Any, incoming_val: Any) -> Any:
 
 
 def _sync_media_files(
-    session: Session, owner: Any, versions_data: List[Dict[str, Any]] | None
+    session: Session, owner: Any, versions_data: list[dict[str, Any]] | None
 ) -> None:
     if versions_data is None:
         return

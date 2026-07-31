@@ -3,7 +3,7 @@ import logging
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QCloseEvent, QFont, QTextCursor
@@ -52,12 +52,12 @@ class SettingsDialog(QDialog):
 
     def __init__(
         self,
-        controller_instance: Optional["Controller"] = None,
-        parent: Optional[QWidget] = None,
+        controller_instance: Controller | None = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         logger.info("Initializing SettingsDialog")
-        self.controller: Optional["Controller"] = controller_instance
+        self.controller: Controller | None = controller_instance
         self.setWindowTitle("Application Configuration")
         self.resize(800, 700)
 
@@ -83,7 +83,7 @@ class SettingsDialog(QDialog):
         self.scan_report_display.setFont(QFont("Courier New", 10))
         self.scan_report_display.setVisible(False)
         self._scan_running: bool = False
-        self.current_scan_logs: List[str] = []
+        self.current_scan_logs: list[str] = []
 
         if self.controller is not None:
             self.controller.global_progress_updated.connect(self._on_global_progress)
@@ -107,7 +107,7 @@ class SettingsDialog(QDialog):
         self.opensubtitles_password_input: QLineEdit = QLineEdit()
         self.opensubtitles_api_key_input: QLineEdit = QLineEdit()
 
-        self.staged_libraries: Dict[str, Dict[str, Any]] = {}
+        self.staged_libraries: dict[str, dict[str, Any]] = {}
         self.library_name_input: QLineEdit = QLineEdit()
         self.library_type_input: QComboBox = QComboBox()
         self.library_selector: QComboBox = QComboBox()
@@ -149,10 +149,10 @@ class SettingsDialog(QDialog):
         self.log_search_input: QLineEdit = QLineEdit()
         self.log_autoscroll_checkbox: QCheckBox = QCheckBox()
         self.log_display: QPlainTextEdit = QPlainTextEdit()
-        self.all_log_records: List[Tuple[str, str]] = []
+        self.all_log_records: list[tuple[str, str]] = []
         self._logging_connected: bool = False
 
-        self.staged_combined_views: List[Dict[str, Any]] = []
+        self.staged_combined_views: list[dict[str, Any]] = []
         self.enable_combined_view_checkbox: QCheckBox = QCheckBox(
             "Enable Combined Library View"
         )
@@ -1013,7 +1013,7 @@ class SettingsDialog(QDialog):
         self.combined_views_list_widget.blockSignals(False)
         self._on_combined_view_selected()
 
-    def _get_default_row_name(self, row: Dict[str, Any]) -> str:
+    def _get_default_row_name(self, row: dict[str, Any]) -> str:
         libs = row.get("libraries", [])
         lib_str = ", ".join(libs) if libs else "All Libraries"
         sort_str = row.get("sort_by", "Alphabetical")
@@ -1334,7 +1334,7 @@ class SettingsDialog(QDialog):
             self, "Select Root Directory"
         )
         if chosen_directory:
-            paths: List[str] = self.staged_libraries[selected_library].get("paths", [])
+            paths: list[str] = self.staged_libraries[selected_library].get("paths", [])
             if chosen_directory not in paths:
                 paths.append(chosen_directory)
                 self.staged_libraries[selected_library]["paths"] = paths
@@ -1343,14 +1343,12 @@ class SettingsDialog(QDialog):
     @Slot()
     def remove_staged_directory(self) -> None:
         selected_library: str = self.library_selector.currentText()
-        selected_item: Optional[QListWidgetItem] = (
-            self.directory_list_widget.currentItem()
-        )
+        selected_item: QListWidgetItem | None = self.directory_list_widget.currentItem()
         if not selected_library or selected_item is None:
             return
 
         directory_path: str = selected_item.text()
-        paths: List[str] = self.staged_libraries[selected_library].get("paths", [])
+        paths: list[str] = self.staged_libraries[selected_library].get("paths", [])
         if directory_path in paths:
             paths.remove(directory_path)
             self.staged_libraries[selected_library]["paths"] = paths
@@ -1402,7 +1400,7 @@ class SettingsDialog(QDialog):
         except ValueError:
             pass
 
-        warnings: List[str] = []
+        warnings: list[str] = []
         if db_freq > 0 and db_ret < db_freq:
             warnings.append(
                 f"- Database Backup Retention ({db_ret} days) is less than its backup frequency ({db_freq} days)."
@@ -1730,7 +1728,7 @@ class SettingsDialog(QDialog):
         self.global_progress_bar.mark_library_done(library_name)
 
     @Slot(str, dict)
-    def _on_detail_progress(self, event: str, payload: Dict[str, Any]) -> None:
+    def _on_detail_progress(self, event: str, payload: dict[str, Any]) -> None:
         """Routes granular scan events to the SegmentedProgressBar and ScanProgressTree."""
         library = payload.get("library", "")
         root = payload.get("root", "")
@@ -2011,7 +2009,7 @@ class SettingsDialog(QDialog):
         search_term: str = self.log_search_input.text().strip().lower()
         selected_level: str = self.log_level_filter.currentText()
         level_threshold: int = self._get_level_value(selected_level)
-        matching_lines: List[str] = []
+        matching_lines: list[str] = []
         for formatted_message, level_name in self.all_log_records:
             record_level_val: int = self._get_level_value(level_name)
             if record_level_val < level_threshold:
@@ -2025,7 +2023,7 @@ class SettingsDialog(QDialog):
             self._scroll_to_bottom()
 
     def _get_level_value(self, level_name: str) -> int:
-        levels: Dict[str, int] = {
+        levels: dict[str, int] = {
             "DEBUG": 10,
             "INFO": 20,
             "WARNING": 30,
@@ -2036,7 +2034,7 @@ class SettingsDialog(QDialog):
 
     def _format_log_to_html(self, message: str, level_name: str) -> str:
         escaped_message: str = html.escape(message)
-        colors: Dict[str, str] = {
+        colors: dict[str, str] = {
             "DEBUG": "#7f8c8d",
             "INFO": "#2ecc71",
             "WARNING": "#f1c40f",

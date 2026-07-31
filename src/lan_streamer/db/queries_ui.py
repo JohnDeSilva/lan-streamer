@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload, selectinload
@@ -18,7 +18,7 @@ from lan_streamer.db.utils import natural_sort_key
 logger = logging.getLogger("lan_streamer.db.queries")
 
 
-def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
+def get_combined_next_up(library_names: list[str]) -> list[dict[str, Any]]:
     """
     For partially watched series (having at least one watched episode or playback position),
     returns the next unplayed season in the series.
@@ -191,8 +191,8 @@ def get_combined_next_up(library_names: List[str]) -> List[Dict[str, Any]]:
 
 
 def get_combined_smart_row(
-    library_names: List[str], sort_by: str, filter_mode: str
-) -> List[Dict[str, Any]]:
+    library_names: list[str], sort_by: str, filter_mode: str
+) -> list[dict[str, Any]]:
     """Returns filtered and sorted series and movies across the specified libraries."""
     try:
         logger.debug(
@@ -334,7 +334,7 @@ def get_combined_smart_row(
         return []
 
 
-def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
+def get_next_episode(current_path: str) -> dict[str, Any] | None:
     """
     Finds the next episode in the same series for a given episode path.
     Sorts seasons and episodes naturally by name.
@@ -342,7 +342,7 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
     try:
         logger.debug(f"Determining next episode after: '{current_path}'")
         with get_session() as session:
-            current_episode: Optional[Episode] = session.scalars(
+            current_episode: Episode | None = session.scalars(
                 select(Episode)
                 .join(MetadataFileMapping, MetadataFileMapping.episode_id == Episode.id)
                 .join(MediaFile, MediaFile.id == MetadataFileMapping.media_file_id)
@@ -378,12 +378,12 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
                 return None
 
             # Get all seasons of the series, sorted naturally by name
-            seasons: List[Season] = sorted(
+            seasons: list[Season] = sorted(
                 series.seasons, key=lambda season: natural_sort_key(season.name)
             )
 
             # Construct flat list of all episodes in series in natural order
-            ordered_episodes: List[Tuple[Episode, Season, int]] = []
+            ordered_episodes: list[tuple[Episode, Season, int]] = []
             for season in seasons:
                 # Sort episodes in this season by TMDB number (default grouping), excluding missing/future episodes
                 valid_episodes = [
@@ -391,7 +391,7 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
                     for episode in season.episodes
                     if episode.default_path or episode.media_files
                 ]
-                season_episodes: List[Episode] = sorted(
+                season_episodes: list[Episode] = sorted(
                     valid_episodes,
                     key=lambda episode: (
                         episode.tmdb_number
@@ -453,9 +453,9 @@ def get_next_episode(current_path: str) -> Optional[Dict[str, Any]]:
 
 def search_media_names(
     query_text: str,
-    library_names: Optional[List[str]] = None,
+    library_names: list[str] | None = None,
     limit: int = 50,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Search series and movies by name using case-insensitive partial matching.
 
@@ -500,7 +500,7 @@ def search_media_names(
             movie_list = list(session.scalars(movie_statement).all())
 
             # Sort all results together: exact match first, starts with second, contains third
-            def sort_key(item: Any) -> Tuple[int, str]:
+            def sort_key(item: Any) -> tuple[int, str]:
                 name_lower = (item.name or "").lower()
                 query_lower = clean_query.lower()
                 if name_lower == query_lower:
@@ -509,9 +509,9 @@ def search_media_names(
                     return (1, name_lower)
                 return (2, name_lower)
 
-            all_items: List[Any] = sorted(series_list + movie_list, key=sort_key)
+            all_items: list[Any] = sorted(series_list + movie_list, key=sort_key)
 
-            results: List[Dict[str, Any]] = []
+            results: list[dict[str, Any]] = []
             for item in all_items[:limit]:
                 item_type = "series" if isinstance(item, Series) else "movie"
                 results.append(

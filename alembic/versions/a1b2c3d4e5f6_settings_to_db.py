@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, Sequence, Union
+from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
@@ -24,9 +25,9 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision: str = "a1b2c3d4e5f6"
-down_revision: Union[str, Sequence[str], None] = ("dd91b65c745e", "90c0fcb92ee7")
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = ("dd91b65c745e", "90c0fcb92ee7")
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +88,7 @@ def _encode(key: str, value: Any) -> str:
     return str(value)
 
 
-def _load_config() -> Dict[str, Any]:
+def _load_config() -> dict[str, Any]:
     """Return the parsed config.json, or an empty dict if it doesn't exist."""
     try:
         from alembic import context
@@ -99,7 +100,7 @@ def _load_config() -> Dict[str, Any]:
             config_file = CONFIG_FILE
 
         if config_file.exists():
-            with open(config_file, "r") as file_handle:
+            with open(config_file) as file_handle:
                 return json.load(file_handle)
     except Exception:
         pass
@@ -162,7 +163,7 @@ def upgrade() -> None:
 
     # 4a. Seed app_secrets -------------------------------------------------
     # Jellyfin
-    jellyfin_secret: Dict[str, Any] = {
+    jellyfin_secret: dict[str, Any] = {
         "url": cfg.get("jellyfin_url", ""),
         "api_key": cfg.get("jellyfin_api_key", ""),
     }
@@ -179,7 +180,7 @@ def upgrade() -> None:
     )
 
     # TMDB
-    tmdb_secret: Dict[str, Any] = {
+    tmdb_secret: dict[str, Any] = {
         "api_key": cfg.get("tmdb_api_key", cfg.get("tvdb_api_key", "")),
     }
     bind.execute(
@@ -195,7 +196,7 @@ def upgrade() -> None:
     )
 
     # MyAnimeList
-    mal_secret: Dict[str, Any] = {
+    mal_secret: dict[str, Any] = {
         "client_id": cfg.get("myanimelist_client_id", ""),
         "client_secret": cfg.get("myanimelist_client_secret", ""),
         "access_token": cfg.get("myanimelist_access_token", ""),
@@ -215,7 +216,7 @@ def upgrade() -> None:
     )
 
     # OpenSubtitles
-    os_secret: Dict[str, Any] = {
+    os_secret: dict[str, Any] = {
         "username": cfg.get("opensubtitles_username", ""),
         "password": cfg.get("opensubtitles_password", ""),
         "api_key": cfg.get("opensubtitles_api_key", ""),
@@ -320,7 +321,7 @@ def upgrade() -> None:
         )
 
     # 4c. Back-fill series preference columns from series_preferences ------
-    series_prefs: Dict[str, Dict[str, Any]] = cfg.get("series_preferences", {})
+    series_prefs: dict[str, dict[str, Any]] = cfg.get("series_preferences", {})
     if series_prefs:
         for pref_key, pref_dict in series_prefs.items():
             # pref_key format: "LibraryName:SeriesName"
@@ -331,7 +332,7 @@ def upgrade() -> None:
             display_group = pref_dict.get("display_group_id", None)
 
             updates = []
-            params: Dict[str, Any] = {
+            params: dict[str, Any] = {
                 "lib": library_name,
                 "name": series_name,
             }

@@ -2,7 +2,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 from PySide6.QtCore import QProcess, Slot
 from PySide6.QtGui import QCloseEvent
@@ -36,7 +35,7 @@ class UpdateDialog(QDialog):
         new_version: str,
         release_notes: str,
         download_url: str,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         logger.info(
@@ -46,8 +45,8 @@ class UpdateDialog(QDialog):
         self.current_version = current_version
         self.new_version = new_version
         self.download_url = download_url
-        self.worker: Optional[DownloadWorker] = None
-        self.install_worker: Optional[InstallWorker] = None
+        self.worker: DownloadWorker | None = None
+        self.install_worker: InstallWorker | None = None
         self.use_in_place = False
 
         self.setWindowTitle("Update Available")
@@ -313,7 +312,7 @@ class UpdateDialog(QDialog):
             event.accept()
 
     def _launch_detached_clean_env(
-        self, executable_path: str, arguments: Optional[list[str]] = None
+        self, executable_path: str, arguments: list[str] | None = None
     ) -> None:
         """Launches a child process with a clean environment, stripping PyInstaller variables
         to prevent the child from attempting to use the parent's temporary MEIPASS directory.

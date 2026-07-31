@@ -1,7 +1,7 @@
 """Database queries for cast, crew, and person data."""
 
 import logging
-from typing import Any, List, Optional
+from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import joinedload
@@ -12,7 +12,7 @@ from lan_streamer.db.models_cast import MediaCast, MediaImage, Person
 logger = logging.getLogger(__name__)
 
 
-def get_cast_for_series(series_id: str) -> List[MediaCast]:
+def get_cast_for_series(series_id: str) -> list[MediaCast]:
     """Get all cast/crew entries for a series, ordered by sort_order.
 
     Args:
@@ -33,7 +33,7 @@ def get_cast_for_series(series_id: str) -> List[MediaCast]:
         return list(result)
 
 
-def get_cast_for_season(season_id: str) -> List[MediaCast]:
+def get_cast_for_season(season_id: str) -> list[MediaCast]:
     """Get all cast/crew entries for a season.
 
     Args:
@@ -54,7 +54,7 @@ def get_cast_for_season(season_id: str) -> List[MediaCast]:
         return list(result)
 
 
-def get_cast_for_episode(episode_id: str) -> List[MediaCast]:
+def get_cast_for_episode(episode_id: str) -> list[MediaCast]:
     """Get all cast/crew entries for an episode.
 
     Args:
@@ -77,7 +77,7 @@ def get_cast_for_episode(episode_id: str) -> List[MediaCast]:
         return list(result)
 
 
-def get_cast_for_movie(movie_id: str) -> List[MediaCast]:
+def get_cast_for_movie(movie_id: str) -> list[MediaCast]:
     """Get all cast/crew entries for a movie.
 
     Args:
@@ -98,7 +98,7 @@ def get_cast_for_movie(movie_id: str) -> List[MediaCast]:
         return list(result)
 
 
-def get_person_by_id(person_id: str) -> Optional[Person]:
+def get_person_by_id(person_id: str) -> Person | None:
     """Get a person by their ID.
 
     Args:
@@ -114,7 +114,7 @@ def get_person_by_id(person_id: str) -> Optional[Person]:
         return result
 
 
-def get_person_by_tmdb_id(tmdb_identifier: int) -> Optional[Person]:
+def get_person_by_tmdb_id(tmdb_identifier: int) -> Person | None:
     """Get a person by their TMDB identifier.
 
     Args:
@@ -137,8 +137,8 @@ def get_person_by_tmdb_id(tmdb_identifier: int) -> Optional[Person]:
 def get_or_create_person(
     tmdb_identifier: int,
     name: str,
-    profile_path: Optional[str] = None,
-    session: Optional[Any] = None,
+    profile_path: str | None = None,
+    session: Any | None = None,
 ) -> Person:
     """Get existing person by TMDB identifier or create a new one.
 
@@ -172,7 +172,7 @@ def _get_or_create_person_impl(
     session: Any,
     tmdb_identifier: int,
     name: str,
-    profile_path: Optional[str] = None,
+    profile_path: str | None = None,
 ) -> Person:
     statement = select(Person).where(Person.tmdb_identifier == tmdb_identifier)
     person = session.execute(statement).unique().scalar_one_or_none()
@@ -200,7 +200,7 @@ def _get_or_create_person_impl(
     return person
 
 
-def get_filmography(person_id: str) -> List[MediaCast]:
+def get_filmography(person_id: str) -> list[MediaCast]:
     """Get all media a person appears in, with eager-loaded media info.
 
     Args:
@@ -232,10 +232,10 @@ def get_filmography(person_id: str) -> List[MediaCast]:
 
 
 def delete_cast_for_media(
-    series_id: Optional[str] = None,
-    season_id: Optional[str] = None,
-    episode_id: Optional[str] = None,
-    movie_id: Optional[str] = None,
+    series_id: str | None = None,
+    season_id: str | None = None,
+    episode_id: str | None = None,
+    movie_id: str | None = None,
 ) -> None:
     """Delete all cast entries for a specific series, season, episode, or movie (for re-fetch).
 
@@ -274,10 +274,10 @@ def delete_cast_for_media(
 
 
 def get_images_for_media(
-    series_id: Optional[str] = None,
-    movie_id: Optional[str] = None,
-    image_type: Optional[str] = None,
-) -> List[MediaImage]:
+    series_id: str | None = None,
+    movie_id: str | None = None,
+    image_type: str | None = None,
+) -> list[MediaImage]:
     """Get all images for a series or movie, optionally filtered by type.
 
     Args:
@@ -348,12 +348,12 @@ def set_selected_image(image_id: str) -> None:
 
 
 def add_media_image(
-    series_id: Optional[str] = None,
-    movie_id: Optional[str] = None,
+    series_id: str | None = None,
+    movie_id: str | None = None,
     image_type: str = "poster",
     source: str = "tmdb",
-    remote_url: Optional[str] = None,
-    local_path: Optional[str] = None,
+    remote_url: str | None = None,
+    local_path: str | None = None,
 ) -> MediaImage:
     """Add a new image record for a series or movie.
 

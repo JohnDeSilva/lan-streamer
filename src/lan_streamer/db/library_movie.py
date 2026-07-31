@@ -6,7 +6,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -21,7 +21,7 @@ from lan_streamer.db.models import MediaFile, Movie
 logger = logging.getLogger(__name__)
 
 
-def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> bool:
+def _apply_movie_fields(movie: Movie, movie_data: dict[str, Any]) -> bool:
     """
     Applies all creative metadata fields from *movie_data* onto the *movie* ORM object.
     Only overrides existing values when the incoming value is non-falsy.
@@ -114,7 +114,7 @@ def _apply_movie_fields(movie: Movie, movie_data: Dict[str, Any]) -> bool:
 def _cleanup_movie_library(
     session: Session,
     library_name: str,
-    stats: Dict[str, int],
+    stats: dict[str, int],
 ) -> None:
     """Removes Movie records whose file path no longer exists on disk."""
     movie_list = session.scalars(
@@ -133,7 +133,7 @@ def _cleanup_movie_library(
             stats["movies_removed"] = stats.get("movies_removed", 0) + 1
 
 
-def load_movie_library(library_name: str) -> Dict[str, Any]:
+def load_movie_library(library_name: str) -> dict[str, Any]:
     """
     Loads the movie library from the database and constructs a dictionary structure.
     """
@@ -169,13 +169,13 @@ def load_movie_library(library_name: str) -> Dict[str, Any]:
     return library_data
 
 
-def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
+def save_movie_library(library_name: str, library: dict[str, Any]) -> dict[str, Any]:
     """
     Updates the database for the given movie library name using SQLAlchemy ORM.
     """
 
     start_time = time.time()
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "movies": 0,
         "deleted": 0,
         "issues": [],
@@ -340,12 +340,12 @@ def save_movie_library(library_name: str, library: Dict[str, Any]) -> Dict[str, 
 
 
 def save_movie_data(
-    library_name: str, movie_name: str, movie_data: Dict[str, Any]
-) -> Dict[str, Any]:
+    library_name: str, movie_name: str, movie_data: dict[str, Any]
+) -> dict[str, Any]:
     """
     Saves or updates a single movie in the database.
     """
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "movies": 0,
         "deleted": 0,
         "issues": [],

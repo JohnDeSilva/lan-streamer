@@ -7,12 +7,12 @@ exist in the same directory.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("lan_streamer.scanner")
 
 
-def get_version_score_key(version: Dict[str, Any]) -> tuple:
+def get_version_score_key(version: dict[str, Any]) -> tuple:
     """Return a sort key for a version dict so higher-quality versions sort first.
 
     Factors considered (in order of importance):
@@ -81,8 +81,8 @@ def get_version_score_key(version: Dict[str, Any]) -> tuple:
 
 
 def choose_active_version(
-    versions: List[Dict[str, Any]], default_path: Optional[str] = None
-) -> Dict[str, Any]:
+    versions: list[dict[str, Any]], default_path: str | None = None
+) -> dict[str, Any]:
     """Select the active version from a list of version dicts.
 
     If ``default_path`` is provided and matches a version, that version is

@@ -1,8 +1,8 @@
 import json
 import os
+from collections.abc import Generator
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Generator
 from unittest.mock import patch
 
 import pytest
@@ -13,7 +13,7 @@ from lan_streamer.system.config import config
 
 
 @pytest.fixture
-def backup_environment(tmp_path: Path) -> Generator[Path, None, None]:
+def backup_environment(tmp_path: Path) -> Generator[Path]:
     test_config_file: Path = tmp_path / "config.json"
     test_config_file.write_text(json.dumps({"sort_mode": "Alphabetical"}))
 

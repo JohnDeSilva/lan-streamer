@@ -7,7 +7,7 @@ Create Date: 2026-06-15 11:46:14.476149
 """
 
 import uuid
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
@@ -16,9 +16,9 @@ import lan_streamer.db.models
 
 # revision identifiers, used by Alembic.
 revision: str = "2e8292adc104"
-down_revision: Union[str, Sequence[str], None] = "aa368f3de380"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "aa368f3de380"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

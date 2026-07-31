@@ -1,7 +1,7 @@
 """Targeted tests for SeasonDetailView uncovered lines."""
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from PySide6.QtCore import QPoint
@@ -14,7 +14,7 @@ from lan_streamer.ui_views.controller import Controller
 def _make_controller_with_data(
     series_name: str,
     season_name: str,
-    episodes: list[Dict[str, Any]],
+    episodes: list[dict[str, Any]],
     *,
     metadata: dict | None = None,
 ) -> MagicMock:

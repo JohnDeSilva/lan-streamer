@@ -16,15 +16,16 @@ import concurrent.futures
 import logging
 import os
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from lan_streamer.scanner.parser import has_video_files
 
 logger = logging.getLogger("lan_streamer.scanner")
 
-_global_scan_executor: Optional[ThreadPoolExecutor] = None
+_global_scan_executor: ThreadPoolExecutor | None = None
 _global_scan_executor_lock = threading.Lock()
 
 
@@ -62,25 +63,25 @@ class LibraryDict(dict[str, Any]):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.unavailable_directories: List[str] = []
+        self.unavailable_directories: list[str] = []
 
     def __repr__(self) -> str:
         return f"LibraryDict({len(self)} items, unavailable={self.unavailable_directories})"
 
 
 def scan_directories(
-    root_directories: List[str],
+    root_directories: list[str],
     library_type: str = "tv",
-    existing_library: Optional[Dict[str, Any]] = None,
-    jellyfin_data: Optional[Dict[str, Any]] = None,
+    existing_library: dict[str, Any] | None = None,
+    jellyfin_data: dict[str, Any] | None = None,
     force_refresh: bool = False,
     single_item_refresh: bool = False,
-    detail_callback: Optional[Callable] = None,
+    detail_callback: Callable | None = None,
     show_future_episodes: bool = True,
-    season_callback: Optional[Callable] = None,
-    movie_callback: Optional[Callable] = None,
-    is_interrupted: Optional[Callable] = None,
-    tmdb_prefetch_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
+    season_callback: Callable | None = None,
+    movie_callback: Callable | None = None,
+    is_interrupted: Callable | None = None,
+    tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None = None,
     pass_number: int = 0,
 ) -> LibraryDict:
     """Dispatch to the appropriate pass implementation.
@@ -186,14 +187,14 @@ def scan_directories(
 
 
 def _scan_pass1(
-    root_directories: List[str],
+    root_directories: list[str],
     library_type: str,
-    existing_library: Dict[str, Any],
+    existing_library: dict[str, Any],
     force_refresh: bool,
-    detail_callback: Optional[Callable],
-    season_callback: Optional[Callable],
-    movie_callback: Optional[Callable],
-    is_interrupted: Optional[Callable],
+    detail_callback: Callable | None,
+    season_callback: Callable | None,
+    movie_callback: Callable | None,
+    is_interrupted: Callable | None,
 ) -> LibraryDict:
     """Walk filesystem, discover files, create stub records.
 
@@ -357,18 +358,18 @@ def _scan_pass1(
 
 
 def _scan_pass2(
-    root_directories: List[str],
+    root_directories: list[str],
     library_type: str,
-    existing_library: Dict[str, Any],
-    jellyfin_data: Optional[Dict[str, Any]],
+    existing_library: dict[str, Any],
+    jellyfin_data: dict[str, Any] | None,
     force_refresh: bool,
     single_item_refresh: bool,
-    detail_callback: Optional[Callable],
+    detail_callback: Callable | None,
     show_future_episodes: bool,
-    season_callback: Optional[Callable],
-    movie_callback: Optional[Callable],
-    is_interrupted: Optional[Callable],
-    tmdb_prefetch_executor: Optional[concurrent.futures.ThreadPoolExecutor],
+    season_callback: Callable | None,
+    movie_callback: Callable | None,
+    is_interrupted: Callable | None,
+    tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None,
 ) -> LibraryDict:
     """Resolve TMDB metadata for all items in *existing_library*.
 
@@ -379,7 +380,7 @@ def _scan_pass2(
     library = LibraryDict()
 
     # Group items by root directory for progress reporting.
-    items_by_root: Dict[str, List[tuple[str, Any]]] = {}
+    items_by_root: dict[str, list[tuple[str, Any]]] = {}
     resolved_roots = (
         [str(Path(r).resolve()) for r in root_directories] if root_directories else [""]
     )
@@ -487,11 +488,11 @@ def _scan_pass2(
 
 
 def _scan_pass3(
-    root_directories: List[str],
+    root_directories: list[str],
     library_type: str,
-    existing_library: Dict[str, Any],
+    existing_library: dict[str, Any],
     force_refresh: bool,
-    is_interrupted: Optional[Callable],
+    is_interrupted: Callable | None,
 ) -> LibraryDict:
     """Batch ffprobe scan and cleanup for all items in *existing_library*."""
     from lan_streamer.scanner.pass3_technical import scan_movie_pass3, scan_series_pass3
@@ -501,7 +502,7 @@ def _scan_pass3(
     resolved_roots = (
         [str(Path(r).resolve()) for r in root_directories] if root_directories else [""]
     )
-    items_by_root: Dict[str, List[tuple[str, Any]]] = {}
+    items_by_root: dict[str, list[tuple[str, Any]]] = {}
     for series_name, existing_series in existing_library.items():
         m_root = _resolve_item_root(
             series_name, existing_series, library_type, resolved_roots
@@ -546,14 +547,14 @@ def _scan_pass3(
 
 def _resolve_item_root(
     series_name: str,
-    series_data: Dict[str, Any],
+    series_data: dict[str, Any],
     library_type: str,
-    resolved_roots: List[str],
+    resolved_roots: list[str],
 ) -> str:
     """Determine which root directory an item belongs to."""
     for root in resolved_roots:
         root_path = Path(root)
-        paths: List[str] = []
+        paths: list[str] = []
         if library_type == "movie":
             if series_data.get("path"):
                 paths.append(series_data["path"])
@@ -581,7 +582,7 @@ def _resolve_item_root(
     return resolved_roots[0] if resolved_roots else ""
 
 
-def _find_series_dir(series_name: str, root_directories: List[str]) -> Optional[Path]:
+def _find_series_dir(series_name: str, root_directories: list[str]) -> Path | None:
     """Find the actual filesystem directory for a series."""
     for root in root_directories:
         candidate = Path(root) / series_name
@@ -590,7 +591,7 @@ def _find_series_dir(series_name: str, root_directories: List[str]) -> Optional[
     return None
 
 
-def _episode_merge_key(episode: Dict[str, Any]) -> tuple:
+def _episode_merge_key(episode: dict[str, Any]) -> tuple:
     """Return a dedup key for an episode dict.
 
     Key is scoped to a single season (caller already groups by season name).
@@ -609,15 +610,15 @@ def _episode_merge_key(episode: Dict[str, Any]) -> tuple:
 
 
 def _merge_episodes_by_number(
-    existing_episodes: List[Dict[str, Any]],
-    incoming_episodes: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    existing_episodes: list[dict[str, Any]],
+    incoming_episodes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Merge two episode lists, combining versions for episodes with the same number.
 
     Episodes are matched by ``episode_number`` or ``tmdb_number``; unnumbered
     episodes are deduplicated by path.
     """
-    by_key: Dict[tuple, Dict[str, Any]] = {}
+    by_key: dict[tuple, dict[str, Any]] = {}
 
     for episode in existing_episodes:
         key = _episode_merge_key(episode)
@@ -650,8 +651,8 @@ def _merge_episodes_by_number(
 
 
 def _merge_series_data(
-    existing: Dict[str, Any], incoming: Dict[str, Any]
-) -> Dict[str, Any]:
+    existing: dict[str, Any], incoming: dict[str, Any]
+) -> dict[str, Any]:
     """Merge two series data dicts, combining seasons and episodes from both.
 
     When the same season exists in both inputs, episodes within that season
@@ -661,7 +662,7 @@ def _merge_series_data(
     merged = {**existing, **incoming}
     existing_seasons = existing.get("seasons", {})
     incoming_seasons = incoming.get("seasons", {})
-    merged_seasons: Dict[str, Any] = {}
+    merged_seasons: dict[str, Any] = {}
     for season_name in set(existing_seasons) | set(incoming_seasons):
         existing_season = existing_seasons.get(season_name)
         incoming_season = incoming_seasons.get(season_name)

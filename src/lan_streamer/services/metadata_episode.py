@@ -9,7 +9,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from lan_streamer.providers.tmdb import tmdb_client
 from lan_streamer.scanner.parser import (
@@ -22,15 +22,15 @@ logger = logging.getLogger("lan_streamer.services.metadata_episode")
 
 def _process_season_metadata(
     season_directory: Path,
-    series_data: Dict[str, Any],
-    existing_series_data: Dict[str, Any] | None,
-    existing_episodes_by_path: Dict[str, Any],
+    series_data: dict[str, Any],
+    existing_series_data: dict[str, Any] | None,
+    existing_episodes_by_path: dict[str, Any],
     force_refresh: bool = False,
     single_item_refresh: bool = False,
     offline: bool = False,
     metadata_only: bool = False,
     prefetched_tmdb_episodes: list[Any] | None = None,
-) -> tuple[str, int, Dict[str, Any], list[Any]]:
+) -> tuple[str, int, dict[str, Any], list[Any]]:
     """Season-level metadata resolution + TMDB episode fetch.
 
     Matches a local season directory to a TMDB season, resolves the season
@@ -53,7 +53,7 @@ def _process_season_metadata(
         A 4-tuple ``(season_name, season_index, season_metadata, tmdb_episodes)``.
     """
     season_name = season_directory.name
-    season_metadata: Dict[str, Any] = {
+    season_metadata: dict[str, Any] = {
         "jellyfin_id": "",
     }
     tmdb_episodes: list[Any] = []
@@ -223,17 +223,17 @@ def _process_episode_file(
     episode_file: Path,
     season_name: str,
     series_directory: Path,
-    series_data: Dict[str, Any],
-    season_metadata: Dict[str, Any],
+    series_data: dict[str, Any],
+    season_metadata: dict[str, Any],
     tmdb_episodes: list[Any],
-    tmdb_series: Dict[str, Any] | None,
-    jellyfin_data: Dict[str, dict] | None,
-    existing_episodes_by_path: Dict[str, Any],
-    existing_series_data: Dict[str, Any] | None = None,
+    tmdb_series: dict[str, Any] | None,
+    jellyfin_data: dict[str, dict] | None,
+    existing_episodes_by_path: dict[str, Any],
+    existing_series_data: dict[str, Any] | None = None,
     offline: bool = False,
     metadata_only: bool = False,
     hint_episode_number: int | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Per-episode metadata matching against the TMDB episode list.
 
     Attempts to match a local video file to a TMDB episode using, in order:

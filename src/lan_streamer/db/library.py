@@ -13,7 +13,7 @@ cleanup_library is defined here as it bridges both TV and Movie cleanup.
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from sqlalchemy import select
 
@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 def _cleanup_orphaned_media_files(
-    session: Any, root_directories: List[str], stats: Dict[str, int]
+    session: Any, root_directories: list[str], stats: dict[str, int]
 ) -> None:
     """Removes MediaFile records under root_directories whose physical file no longer exists on disk."""
     from pathlib import Path
@@ -88,7 +88,7 @@ def _cleanup_orphaned_media_files(
     stats["media_files_removed"] = stats.get("media_files_removed", 0) + removed_count
 
 
-def cleanup_library(library_name: str, root_directories: List[str]) -> Dict[str, int]:
+def cleanup_library(library_name: str, root_directories: list[str]) -> dict[str, int]:
     """
     Removes series/seasons/episodes or movies that are no longer present on the file system.
     Returns a dictionary with counts of deleted items.

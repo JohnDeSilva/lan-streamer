@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from sqlalchemy import select
 
@@ -11,7 +11,7 @@ from lan_streamer.db.utils import natural_sort_key
 logger = logging.getLogger("lan_streamer.db.orm_serialization")
 
 
-def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
+def _build_episode_dict(episode: Episode) -> dict[str, Any]:
     """Maps a single Episode ORM row to its plain dictionary representation."""
     primary_mf = None
     if episode.media_files:
@@ -113,7 +113,7 @@ def _build_episode_dict(episode: Episode) -> Dict[str, Any]:
     }
 
 
-def _build_season_dict(season: Season) -> Dict[str, Any]:
+def _build_season_dict(season: Season) -> dict[str, Any]:
     """Maps a single Season ORM row (with its episodes) to a plain dict."""
     episodes = [_build_episode_dict(episode) for episode in season.episodes]
     episodes.sort(key=lambda x: natural_sort_key(x["name"]))
@@ -127,9 +127,9 @@ def _build_season_dict(season: Season) -> Dict[str, Any]:
     }
 
 
-def _build_series_dict(series: Series) -> Dict[str, Any]:
+def _build_series_dict(series: Series) -> dict[str, Any]:
     """Maps a single Series ORM row (with seasons and episodes) to a plain dict."""
-    seasons: Dict[str, Any] = {}
+    seasons: dict[str, Any] = {}
     for season in series.seasons:
         if season.name is not None:
             seasons[season.name] = _build_season_dict(season)
@@ -148,7 +148,7 @@ def _build_series_dict(series: Series) -> Dict[str, Any]:
     }
 
 
-def _build_movie_dict(movie: Movie) -> Dict[str, Any]:
+def _build_movie_dict(movie: Movie) -> dict[str, Any]:
     """Maps a single Movie ORM row to its plain dictionary representation."""
     primary_mf = None
     if movie.media_files:

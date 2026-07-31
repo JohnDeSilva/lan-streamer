@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 from PySide6.QtCore import QObject
@@ -39,8 +39,8 @@ class _StubAsyncWorker(AsyncWorkerBase):
         self,
         async_task_manager: AsyncTaskManager,
         return_value: Any = "done",
-        raise_error: Optional[Exception] = None,
-        parent: Optional[QObject] = None,
+        raise_error: Exception | None = None,
+        parent: QObject | None = None,
         sleep_duration: float = 0.0,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)

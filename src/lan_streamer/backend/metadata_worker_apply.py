@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -34,28 +34,28 @@ class MetadataApplyWorker(AsyncWorkerBase):
 
     def __init__(
         self,
-        series_record: Dict[str, Any],
+        series_record: dict[str, Any],
         tmdb_identifier: str,
-        saved_group_id: Optional[str],
-        series_directory: Optional[Path] = None,
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        poster_path: Optional[str] = None,
+        saved_group_id: str | None,
+        series_directory: Path | None = None,
+        async_task_manager: AsyncTaskManager | None = None,
+        poster_path: str | None = None,
         is_movie: bool = False,
         show_future_episodes: bool = True,
         tmdb_client: Any = None,
-        parent: Optional[QObject] = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
-        self._series_record: Dict[str, Any] = series_record
+        self._series_record: dict[str, Any] = series_record
         self._tmdb_identifier: str = tmdb_identifier
-        self._saved_group_id: Optional[str] = saved_group_id
-        self._series_directory: Optional[Path] = series_directory
-        self._poster_path: Optional[str] = poster_path
+        self._saved_group_id: str | None = saved_group_id
+        self._series_directory: Path | None = series_directory
+        self._poster_path: str | None = poster_path
         self._is_movie: bool = is_movie
         self._show_future_episodes: bool = show_future_episodes
         self._tmdb: Any = tmdb_client or _tmdb_default
 
-    async def run_async(self) -> tuple[Dict[str, Any], str]:
+    async def run_async(self) -> tuple[dict[str, Any], str]:
         logger.info(
             "MetadataApplyWorker starting TMDB sync for series "
             f"(TMDB ID: {self._tmdb_identifier})"
@@ -67,7 +67,7 @@ class MetadataApplyWorker(AsyncWorkerBase):
             self._saved_group_id,
         )
 
-        cached_poster: Optional[str] = self._poster_path
+        cached_poster: str | None = self._poster_path
         if self._poster_path and self._tmdb_identifier:
             prefix = "tmdb_movie_" if self._is_movie else "tmdb_series_"
             try:
@@ -101,10 +101,10 @@ class MetadataApplyWorker(AsyncWorkerBase):
 
     def _sync_tmdb_episodes(
         self,
-        series_record: Dict[str, Any],
+        series_record: dict[str, Any],
         tmdb_identifier: str,
-        saved_group_id: Optional[str],
-    ) -> Dict[str, Any]:
+        saved_group_id: str | None,
+    ) -> dict[str, Any]:
         """Re-scan the series directory against the new TMDB series.
 
         Uses the 2-pass scanner pipeline:
@@ -116,11 +116,11 @@ class MetadataApplyWorker(AsyncWorkerBase):
         """
         # Use the series directory resolved by the controller, if available.
         # This is the authoritative path and avoids unsafe filesystem inference.
-        series_directory: Optional[Path] = self._series_directory
+        series_directory: Path | None = self._series_directory
 
         # Fetch the full TMDB series data for the new identifier
         try:
-            tmdb_series_data: Optional[Dict[str, Any]] = self._tmdb.get_series_by_id(
+            tmdb_series_data: dict[str, Any] | None = self._tmdb.get_series_by_id(
                 tmdb_identifier
             )
         except Exception as exc:
@@ -174,10 +174,10 @@ class MetadataApplyWorker(AsyncWorkerBase):
 
     def _fallback_sync(
         self,
-        series_record: Dict[str, Any],
+        series_record: dict[str, Any],
         tmdb_identifier: str,
-        saved_group_id: Optional[str],
-    ) -> Dict[str, Any]:
+        saved_group_id: str | None,
+    ) -> dict[str, Any]:
         """Legacy fallback: match existing episode dicts against new TMDB episodes.
 
         Used when the series directory cannot be resolved or the scanner
@@ -187,7 +187,7 @@ class MetadataApplyWorker(AsyncWorkerBase):
 
         result = copy.deepcopy(series_record)
 
-        episode_group_details: Optional[Dict[str, Any]] = None
+        episode_group_details: dict[str, Any] | None = None
         if saved_group_id and saved_group_id != "default":
             try:
                 episode_group_details = self._tmdb.get_episode_group_details(
@@ -202,7 +202,7 @@ class MetadataApplyWorker(AsyncWorkerBase):
                 tmdb_identifier
             )
 
-        group_seasons: Dict[int, List[Dict[str, Any]]] = {}
+        group_seasons: dict[int, list[dict[str, Any]]] = {}
         if (
             episode_group_details
             and isinstance(episode_group_details, dict)
@@ -259,7 +259,7 @@ class MetadataApplyWorker(AsyncWorkerBase):
                         episode_item_dict.get("name")
                         or Path(str(episode_item_dict.get("path", ""))).name
                     )
-                    matched_tmdb_episode: Optional[Dict[str, Any]] = None
+                    matched_tmdb_episode: dict[str, Any] | None = None
 
                     episode_number_match = re.search(
                         r"[Ss]\d+[Ee](\d+)", episode_filename

@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QPoint, Qt, Signal, Slot
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPolygon
@@ -50,7 +51,7 @@ class SeriesDetailView(QWidget):
     back_requested = Signal()
 
     def __init__(
-        self, controller_instance: Controller, parent: Optional[QWidget] = None
+        self, controller_instance: Controller, parent: QWidget | None = None
     ) -> None:
         super().__init__(parent)
         self.controller: Controller = controller_instance
@@ -61,12 +62,12 @@ class SeriesDetailView(QWidget):
         self._next_episode_path: str = ""
         self.seasons_tab_widget: QTabWidget = QTabWidget()
         self._current_series_name: str = ""
-        self._current_series_db_id: Optional[str] = None
-        self._season_tables: Dict[str, QTableWidget] = {}
-        self.episode_groups_cache: Dict[str, List[Dict[str, Any]]] = {}
-        self.episode_group_details_cache: Dict[str, Dict[str, Any]] = {}
-        self._cached_series_data_copy: Optional[Dict[str, Any]] = None
-        self._loading_task_name: Optional[str] = None
+        self._current_series_db_id: str | None = None
+        self._season_tables: dict[str, QTableWidget] = {}
+        self.episode_groups_cache: dict[str, list[dict[str, Any]]] = {}
+        self.episode_group_details_cache: dict[str, dict[str, Any]] = {}
+        self._cached_series_data_copy: dict[str, Any] | None = None
+        self._loading_task_name: str | None = None
 
         self._setup_ui()
         self.controller.series_selected.connect(self.populate_series_details)
@@ -208,7 +209,7 @@ class SeriesDetailView(QWidget):
         )
         dialog.exec()
 
-    def _lookup_series_id(self) -> Optional[str]:
+    def _lookup_series_id(self) -> str | None:
         """Query the database for the Series UUID matching the current series name."""
         if not self._current_series_name:
             return None
@@ -240,7 +241,7 @@ class SeriesDetailView(QWidget):
 
     def _fetch_series_db_and_cast(
         self, series_name: str
-    ) -> tuple[Optional[str], list[dict[str, Any]]]:
+    ) -> tuple[str | None, list[dict[str, Any]]]:
         """Fetch series DB ID and cast list (to be run in a background thread)."""
         from sqlalchemy.orm import joinedload
 
@@ -461,10 +462,10 @@ class SeriesDetailView(QWidget):
 
         logger.info(f"Populating series details for: '{series_name}'")
 
-        series_record: Dict[str, Any] = self.controller.cached_library_data.get(
+        series_record: dict[str, Any] = self.controller.cached_library_data.get(
             series_name, {}
         )
-        metadata_dictionary: Dict[str, Any] = series_record.get("metadata", {})
+        metadata_dictionary: dict[str, Any] = series_record.get("metadata", {})
 
         series_display_title: str = metadata_dictionary.get("tmdb_name") or series_name
         self.title_label.setText(series_display_title)
@@ -582,13 +583,13 @@ class SeriesDetailView(QWidget):
         )
 
         # 2. Get metadata dictionary
-        series_record: Dict[str, Any] = self.controller.cached_library_data.get(
+        series_record: dict[str, Any] = self.controller.cached_library_data.get(
             series_name, {}
         )
-        metadata_dictionary: Dict[str, Any] = series_record.get("metadata", {})
+        metadata_dictionary: dict[str, Any] = series_record.get("metadata", {})
 
         # 3. Fetch TMDB episode groups
-        available_groups: List[Dict[str, str]] = [
+        available_groups: list[dict[str, str]] = [
             {"id": "default", "name": "TV Order (Default)"}
         ]
         tmdb_identifier = metadata_dictionary.get("tmdb_identifier")
@@ -642,17 +643,17 @@ class SeriesDetailView(QWidget):
     def _update_series_ui(
         self,
         series_name: str,
-        series_database_identifier: Optional[str],
-        cast_entries: List[Dict[str, Any]],
-        available_groups: List[Dict[str, str]],
-        group_details: Optional[Dict[str, Any]],
+        series_database_identifier: str | None,
+        cast_entries: list[dict[str, Any]],
+        available_groups: list[dict[str, str]],
+        group_details: dict[str, Any] | None,
         saved_group_identifier: str,
     ) -> None:
         if getattr(self.controller, "is_video_playing", False):
             return
 
         self._current_series_db_id = series_database_identifier
-        series_record: Dict[str, Any] = self.controller.cached_library_data.get(
+        series_record: dict[str, Any] = self.controller.cached_library_data.get(
             series_name, {}
         )
         is_opening: bool = self._current_series_name != series_name
@@ -660,7 +661,7 @@ class SeriesDetailView(QWidget):
         self._season_tables = {}
 
         # Save active tab text to restore it later and prevent tab jumping
-        current_tab_name: Optional[str] = None
+        current_tab_name: str | None = None
         if self.seasons_tab_widget.count() > 0:
             current_tab_name = self.seasons_tab_widget.tabText(
                 self.seasons_tab_widget.currentIndex()
@@ -683,7 +684,7 @@ class SeriesDetailView(QWidget):
         )
 
         group_order_map = {}
-        seasons_dictionary: Dict[str, Any] = series_record.get("seasons", {})
+        seasons_dictionary: dict[str, Any] = series_record.get("seasons", {})
         if group_details and "groups" in group_details:
             # Re-group episodes from database seasons by matching on tmdb_episode_identifier
             db_episodes_by_id = {}
@@ -788,11 +789,11 @@ class SeriesDetailView(QWidget):
         sorted_season_names = filtered_season_names
 
         # Determine next unwatched episode in natural order
-        next_episode_path: Optional[str] = None
-        next_episode_season_text: Optional[str] = None
-        next_episode_number_text: Optional[str] = None
+        next_episode_path: str | None = None
+        next_episode_season_text: str | None = None
+        next_episode_number_text: str | None = None
 
-        def episode_sort_key(episode_item: Dict[str, Any]) -> tuple:
+        def episode_sort_key(episode_item: dict[str, Any]) -> tuple:
             num = episode_item.get("tmdb_number")
             if num is not None:
                 try:
@@ -935,7 +936,7 @@ class SeriesDetailView(QWidget):
             episode_table.setRowCount(len(sorted_episodes))
 
             def make_cell_clicked_slot(
-                episode_list: List[Dict[str, Any]],
+                episode_list: list[dict[str, Any]],
             ) -> Callable[[int, int], None]:
                 def slot(row: int, col: int) -> None:
                     if col == 1:  # Title column
@@ -951,14 +952,14 @@ class SeriesDetailView(QWidget):
             episode_table.cellClicked.connect(make_cell_clicked_slot(sorted_episodes))
 
             for row_index, episode_record in enumerate(sorted_episodes):
-                tmdb_number_value: Optional[int] = episode_record.get("tmdb_number")
+                tmdb_number_value: int | None = episode_record.get("tmdb_number")
                 number_string: str = (
                     str(tmdb_number_value)
                     if tmdb_number_value is not None
                     else str(row_index + 1)
                 )
 
-                tmdb_name_value: Optional[str] = episode_record.get("tmdb_name")
+                tmdb_name_value: str | None = episode_record.get("tmdb_name")
                 title_string: str = (
                     tmdb_name_value
                     if tmdb_name_value
@@ -1098,14 +1099,14 @@ class SeriesDetailView(QWidget):
                 episode_table.setCellWidget(row_index, 4, progress_container)
 
             def make_context_menu_slot(
-                table: QTableWidget, season: str, episode_list: List[Dict[str, Any]]
+                table: QTableWidget, season: str, episode_list: list[dict[str, Any]]
             ) -> Callable[[QPoint], None]:
                 def show_context_menu(position: QPoint) -> None:
-                    item: Optional[QTableWidgetItem] = table.itemAt(position)
+                    item: QTableWidgetItem | None = table.itemAt(position)
                     if not item:
                         return
                     row: int = item.row()
-                    episode: Dict[str, Any] = episode_list[row]
+                    episode: dict[str, Any] = episode_list[row]
                     if not episode.get("path"):
                         return
 
@@ -1245,9 +1246,7 @@ class SeriesDetailView(QWidget):
         self, season_tab_index: int, row_index: int
     ) -> None:
         """Test Helper triggering playback by simulating a click on the episode title cell."""
-        target_widget: Optional[QWidget] = self.seasons_tab_widget.widget(
-            season_tab_index
-        )
+        target_widget: QWidget | None = self.seasons_tab_widget.widget(season_tab_index)
         if target_widget:
             table_target = target_widget.findChild(QTableWidget)
             if table_target:

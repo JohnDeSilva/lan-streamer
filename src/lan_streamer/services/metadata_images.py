@@ -1,7 +1,7 @@
 """Service layer for fetching and managing media images from TMDB."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import select
 
@@ -15,7 +15,7 @@ from lan_streamer.providers.tmdb import tmdb_client
 logger = logging.getLogger(__name__)
 
 
-def _lookup_series_id(tmdb_identifier: str) -> Optional[str]:
+def _lookup_series_id(tmdb_identifier: str) -> str | None:
     """Look up the DB UUID for a series by its TMDB identifier."""
     with get_session() as session:
         stmt = select(Series).where(Series.tmdb_identifier == tmdb_identifier)
@@ -26,7 +26,7 @@ def _lookup_series_id(tmdb_identifier: str) -> Optional[str]:
         return series.id
 
 
-def _lookup_movie_id(tmdb_identifier: str) -> Optional[str]:
+def _lookup_movie_id(tmdb_identifier: str) -> str | None:
     """Look up the DB UUID for a movie by its TMDB identifier."""
     with get_session() as session:
         stmt = select(Movie).where(Movie.tmdb_identifier == tmdb_identifier)
@@ -66,9 +66,9 @@ def fetch_and_store_movie_images(movie_id: str, tmdb_identifier: int) -> None:
 
 
 def _store_images_from_tmdb(
-    images_data: Dict[str, Any],
-    series_id: Optional[str] = None,
-    movie_id: Optional[str] = None,
+    images_data: dict[str, Any],
+    series_id: str | None = None,
+    movie_id: str | None = None,
 ) -> None:
     """Process TMDB images response and store in media_images table."""
     stored_count = 0
@@ -78,7 +78,7 @@ def _store_images_from_tmdb(
         ("backdrop", "backdrops"),
         ("logo", "logos"),
     ]:
-        images_list: List[Dict[str, Any]] = images_data.get(tmdb_key, [])
+        images_list: list[dict[str, Any]] = images_data.get(tmdb_key, [])
         for image_info in images_list:
             file_path = image_info.get("file_path", "")
             if not file_path:

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -20,8 +20,8 @@ class JellyfinPullWorker(AsyncWorkerBase):
 
     def __init__(
         self,
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        parent: Optional[QObject] = None,
+        async_task_manager: AsyncTaskManager | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
 
@@ -48,14 +48,14 @@ class JellyfinPushWorker(AsyncWorkerBase):
 
     def __init__(
         self,
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        parent: Optional[QObject] = None,
+        async_task_manager: AsyncTaskManager | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
 
     async def run_async(self) -> int:
         logger.info("JellyfinPushWorker starting run")
-        episodes_list: List[Dict[str, Any]] = await asyncio.to_thread(
+        episodes_list: list[dict[str, Any]] = await asyncio.to_thread(
             db.get_all_episodes_with_jellyfin_id
         )
         watched_episodes = [ep for ep in episodes_list if ep.get("watched")]
@@ -70,7 +70,7 @@ class JellyfinPushWorker(AsyncWorkerBase):
         return pushed_count
 
     def _push_loop(
-        self, watched_episodes: List[Dict[str, Any]], total_episodes: int
+        self, watched_episodes: list[dict[str, Any]], total_episodes: int
     ) -> int:
         pushed_count = 0
         for episode_record in watched_episodes:

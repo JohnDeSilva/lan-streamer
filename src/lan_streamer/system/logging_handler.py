@@ -1,6 +1,5 @@
 import logging
 from collections import deque
-from typing import Deque, List, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
@@ -20,7 +19,7 @@ class QtLogHandler(logging.Handler):
     def __init__(self, capacity: int = 1000) -> None:
         super().__init__()
         self.emitter: LogSignalEmitter = LogSignalEmitter()
-        self.buffer: Deque[Tuple[str, str]] = deque(maxlen=capacity)
+        self.buffer: deque[tuple[str, str]] = deque(maxlen=capacity)
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -37,7 +36,7 @@ qt_log_handler: QtLogHandler = QtLogHandler()
 
 
 # Global list of service loggers configured in the application
-SERVICE_LOGGERS: List[str] = [
+SERVICE_LOGGERS: list[str] = [
     "lan_streamer.db",
     "lan_streamer.backend",
     "lan_streamer.scanner",

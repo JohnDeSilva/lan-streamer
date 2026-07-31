@@ -1,7 +1,7 @@
 """Dialog for selecting a MyAnimeList entry from search results."""
 
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QIcon, QPixmap
@@ -31,7 +31,7 @@ def _status_label(status: str) -> str:
     return mapping.get(status, status.replace("_", " ").title() if status else "")
 
 
-def _build_alt_titles_text(item: Dict[str, Any]) -> str:
+def _build_alt_titles_text(item: dict[str, Any]) -> str:
     parts: list[str] = []
     en = item.get("english_title") or ""
     if en:
@@ -57,19 +57,19 @@ class MalSearchResultsDialog(QDialog):
 
     def __init__(
         self,
-        results: List[Dict[str, Any]],
-        parent: Optional[QWidget] = None,
-        existing_mapped_ids: Optional[Set[int]] = None,
+        results: list[dict[str, Any]],
+        parent: QWidget | None = None,
+        existing_mapped_ids: set[int] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("MyAnimeList Search Results")
         self.resize(900, 520)
 
-        self._selected_id: Optional[int] = None
-        self._selected_title: Optional[str] = None
-        self._cached_thumbnails: Dict[str, QIcon] = {}
-        self._pending_thumbnails: List[tuple[int, str]] = []
-        self._existing_mapped_ids: Set[int] = existing_mapped_ids or set()
+        self._selected_id: int | None = None
+        self._selected_title: str | None = None
+        self._cached_thumbnails: dict[str, QIcon] = {}
+        self._pending_thumbnails: list[tuple[int, str]] = []
+        self._existing_mapped_ids: set[int] = existing_mapped_ids or set()
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
@@ -151,12 +151,12 @@ class MalSearchResultsDialog(QDialog):
         if self._results_table.rowCount() > 0:
             self._results_table.selectRow(0)
 
-    def _populate_table(self, results: List[Dict[str, Any]]) -> None:
+    def _populate_table(self, results: list[dict[str, Any]]) -> None:
         self._results_table.setRowCount(len(results))
         self._pending_thumbnails = []
 
         for row_index, item in enumerate(results):
-            anime_id: Optional[int] = item.get("id")
+            anime_id: int | None = item.get("id")
             title: str = item.get("title") or "Unknown"
             start_date: str = item.get("start_date") or ""
             num_episodes: int = item.get("num_episodes") or 0
@@ -281,10 +281,10 @@ class MalSearchResultsDialog(QDialog):
             self._selected_id,
         )
 
-    def selected_id(self) -> Optional[int]:
+    def selected_id(self) -> int | None:
         """Return the MAL anime ID chosen by the user, or ``None``."""
         return self._selected_id
 
-    def selected_title(self) -> Optional[str]:
+    def selected_title(self) -> str | None:
         """Return the title of the chosen MAL entry, or ``None``."""
         return self._selected_title

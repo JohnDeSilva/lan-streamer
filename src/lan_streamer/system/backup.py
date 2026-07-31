@@ -5,7 +5,6 @@ import re
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from sqlalchemy import create_engine, text
 
@@ -14,7 +13,7 @@ from lan_streamer.system.config import CONFIG_FILE, config
 logger = logging.getLogger(__name__)
 
 
-def get_backup_time_from_filename(filename: str) -> Optional[datetime]:
+def get_backup_time_from_filename(filename: str) -> datetime | None:
     """
     Extracts the backup timestamp from a standardized backup filename.
     Format: YYYYMMDD_HHMMSS_filename
@@ -39,10 +38,10 @@ def cleanup_old_backups(
         return
 
     try:
-        backup_files: List[Tuple[datetime, Path]] = []
+        backup_files: list[tuple[datetime, Path]] = []
         for file_item in backup_directory_path.iterdir():
             if file_item.is_file() and file_item.name.endswith(target_suffix):
-                parsed_time: Optional[datetime] = get_backup_time_from_filename(
+                parsed_time: datetime | None = get_backup_time_from_filename(
                     file_item.name
                 )
                 if parsed_time is not None:
@@ -147,10 +146,10 @@ def perform_scheduled_backups() -> None:
         logger.info("Configuration backup frequency is set to 0 (startup); backing up.")
         create_config_backup()
     elif config_frequency > 0:
-        latest_backup_time: Optional[datetime] = None
+        latest_backup_time: datetime | None = None
         for file_item in backup_directory.iterdir():
             if file_item.is_file() and file_item.name.endswith(config_suffix):
-                parsed_time: Optional[datetime] = get_backup_time_from_filename(
+                parsed_time: datetime | None = get_backup_time_from_filename(
                     file_item.name
                 )
                 if parsed_time is not None:
@@ -223,7 +222,7 @@ def restore_config_backup(backup_file_path: str) -> bool:
 
     # Attempt to read and validate JSON contents
     try:
-        with open(source_backup_path, "r") as file_handle:
+        with open(source_backup_path) as file_handle:
             parsed_data = json.load(file_handle)
             if not isinstance(parsed_data, dict):
                 logger.error(
@@ -268,7 +267,7 @@ def restore_database_backup(backup_file_path: str) -> bool:
     try:
         validation_engine = create_engine(f"sqlite:///{source_backup_path}")
         with validation_engine.connect() as connection_instance:
-            integrity_result: Optional[str] = connection_instance.execute(
+            integrity_result: str | None = connection_instance.execute(
                 text("PRAGMA integrity_check")
             ).scalar()
             if integrity_result != "ok":

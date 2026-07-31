@@ -4,7 +4,7 @@ Search dialog with debounced autocomplete for series and movie discovery.
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QIcon
@@ -43,9 +43,9 @@ class SearchDialog(QDialog):
 
     def __init__(
         self,
-        controller: "Controller",
-        library_name: Optional[str] = None,
-        parent: Optional[QWidget] = None,
+        controller: Controller,
+        library_name: str | None = None,
+        parent: QWidget | None = None,
     ) -> None:
         """
         Initialise the search dialog.
@@ -56,10 +56,10 @@ class SearchDialog(QDialog):
             parent: Optional parent QWidget.
         """
         super().__init__(parent)
-        self._controller: "Controller" = controller
-        self._library_name: Optional[str] = library_name
-        self._cached_icons: Dict[str, QIcon] = {}
-        self._pending_thumbnails: List = []
+        self._controller: Controller = controller
+        self._library_name: str | None = library_name
+        self._cached_icons: dict[str, QIcon] = {}
+        self._pending_thumbnails: list = []
 
         title = "Search"
         if library_name:
@@ -160,7 +160,7 @@ class SearchDialog(QDialog):
         if len(query_text) < 2:
             return
 
-        library_names: Optional[List[str]] = None
+        library_names: list[str] | None = None
         if self._library_name:
             library_names = [self._library_name]
 

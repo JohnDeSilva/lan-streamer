@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QIcon, QPixmap
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 THUMBNAIL_SIZE = 96
 
 
-def _parse_season_number(season_name: str) -> Optional[int]:
+def _parse_season_number(season_name: str) -> int | None:
     match = re.search(r"(\d+)", season_name)
     return int(match.group(1)) if match else None
 
@@ -42,22 +42,22 @@ class TmdbSearchResultsDialog(QDialog):
 
     def __init__(
         self,
-        results: List[Dict[str, Any]],
+        results: list[dict[str, Any]],
         current_season_name: str = "",
-        parent: Optional[QWidget] = None,
-        existing_mapped_ids: Optional[Set[int]] = None,
+        parent: QWidget | None = None,
+        existing_mapped_ids: set[int] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("TMDB Series Search Results")
         self.resize(900, 520)
 
-        self._selected_id: Optional[int] = None
-        self._selected_title: Optional[str] = None
+        self._selected_id: int | None = None
+        self._selected_title: str | None = None
         self._selected_season_number: int = 1
         self._current_season_name = current_season_name
-        self._cached_thumbnails: Dict[str, QIcon] = {}
-        self._pending_thumbnails: List[tuple[int, str]] = []
-        self._existing_mapped_ids: Set[int] = existing_mapped_ids or set()
+        self._cached_thumbnails: dict[str, QIcon] = {}
+        self._pending_thumbnails: list[tuple[int, str]] = []
+        self._existing_mapped_ids: set[int] = existing_mapped_ids or set()
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
@@ -127,12 +127,12 @@ class TmdbSearchResultsDialog(QDialog):
         if self._results_table.rowCount() > 0:
             self._results_table.selectRow(0)
 
-    def _populate_table(self, results: List[Dict[str, Any]]) -> None:
+    def _populate_table(self, results: list[dict[str, Any]]) -> None:
         self._results_table.setRowCount(len(results))
         self._pending_thumbnails = []
 
         for row_index, item in enumerate(results):
-            series_id: Optional[int] = item.get("id")
+            series_id: int | None = item.get("id")
             title: str = item.get("name") or item.get("title") or "Unknown"
             first_air_date: str = item.get("first_air_date") or ""
             overview: str = item.get("overview") or ""
@@ -277,11 +277,11 @@ class TmdbSearchResultsDialog(QDialog):
         else:
             logger.info("No TMDB entry selected in dialog")
 
-    def selected_id(self) -> Optional[int]:
+    def selected_id(self) -> int | None:
         """Return the TMDB series ID chosen by the user, or ``None``."""
         return self._selected_id
 
-    def selected_title(self) -> Optional[str]:
+    def selected_title(self) -> str | None:
         """Return the title of the chosen TMDB entry, or ``None``."""
         return self._selected_title
 

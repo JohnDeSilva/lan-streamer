@@ -14,7 +14,6 @@ Extended SeriesDetailView tests targeting missing coverage:
   - tab restoration on reload
 """
 
-from typing import List
 from unittest.mock import patch
 
 import pytest
@@ -318,7 +317,7 @@ def test_trigger_episode_playback_by_row_emits_signal(ctrl_with_show, qtbot) -> 
     v = make_view(ctrl_with_show, qtbot)
     populate(v, ctrl_with_show)
 
-    emitted: List[str] = []
+    emitted: list[str] = []
     ctrl_with_show.playback_requested.connect(emitted.append)
 
     v.trigger_episode_playback_by_row(0, 0)  # season tab 0, row 0
@@ -329,7 +328,7 @@ def test_trigger_episode_playback_by_row_invalid_tab(ctrl_with_show, qtbot) -> N
     v = make_view(ctrl_with_show, qtbot)
     populate(v, ctrl_with_show)
 
-    emitted: List[str] = []
+    emitted: list[str] = []
     ctrl_with_show.playback_requested.connect(emitted.append)
 
     v.trigger_episode_playback_by_row(99, 0)  # Invalid tab

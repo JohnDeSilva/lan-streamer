@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import List, Optional
 
 from PySide6.QtCore import QObject, Signal
 
@@ -22,13 +21,13 @@ class SubtitleMergeWorker(AsyncWorkerBase):
     def __init__(
         self,
         video_path: str,
-        subtitle_paths: List[str],
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        parent: Optional[QObject] = None,
+        subtitle_paths: list[str],
+        async_task_manager: AsyncTaskManager | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
         self.video_path: str = video_path
-        self.subtitle_paths: List[str] = subtitle_paths
+        self.subtitle_paths: list[str] = subtitle_paths
 
     async def run_async(self) -> str:
         logger.info(f"SubtitleMergeWorker starting for {self.video_path}")

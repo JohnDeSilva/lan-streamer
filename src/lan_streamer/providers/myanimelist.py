@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import requests
 
@@ -32,7 +32,7 @@ class MyAnimeListClient:
         """Checks if the user has authenticated and we have an access token."""
         return bool(config.myanimelist_access_token.strip())
 
-    def get_auth_headers(self) -> Dict[str, str]:
+    def get_auth_headers(self) -> dict[str, str]:
         """
         Returns headers for authenticated MAL API requests.
         Refreshes token automatically if expired.
@@ -66,7 +66,7 @@ class MyAnimeListClient:
             f"&redirect_uri=http://localhost/"
         )
 
-    def exchange_auth_code(self, code: str, code_verifier: str) -> Tuple[bool, str]:
+    def exchange_auth_code(self, code: str, code_verifier: str) -> tuple[bool, str]:
         """
         Exchanges the authorization code for access and refresh tokens.
         """
@@ -162,7 +162,7 @@ class MyAnimeListClient:
         config.save_to_db()
         logger.info("Removed MyAnimeList connection credentials.")
 
-    def search_anime(self, query: str) -> List[Dict[str, Any]]:
+    def search_anime(self, query: str) -> list[dict[str, Any]]:
         """
         Searches MyAnimeList for anime matching the given query string.
         """
@@ -172,7 +172,7 @@ class MyAnimeListClient:
 
         logger.debug(f"Searching MyAnimeList for: '{query}'")
         url = "https://api.myanimelist.net/v2/anime"
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "q": query,
             "limit": 50,
             "fields": (
@@ -219,7 +219,7 @@ class MyAnimeListClient:
             logger.exception(f"Failed to search MyAnimeList for '{query}'")
             return []
 
-    def get_anime_details(self, anime_id: int) -> Optional[Dict[str, Any]]:
+    def get_anime_details(self, anime_id: int) -> dict[str, Any] | None:
         """
         Fetches full details of a specific MyAnimeList entry.
         """

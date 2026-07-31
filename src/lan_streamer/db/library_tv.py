@@ -6,7 +6,7 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session, selectinload
@@ -34,7 +34,7 @@ def _strip_counter_suffix(name: str) -> str:
     return _COUNTER_SUFFIX_RE.sub("", name)
 
 
-def load_library(library_name: str) -> Dict[str, Any]:
+def load_library(library_name: str) -> dict[str, Any]:
     """
     Loads the library from the database and constructs a nested dictionary structure.
     """
@@ -83,9 +83,9 @@ def _save_series_record(
     session: Session,
     library_name: str,
     series_name: str,
-    series_data: Dict[str, Any],
-    existing_series: Dict[str, Series],
-    stats: Dict[str, Any],
+    series_data: dict[str, Any],
+    existing_series: dict[str, Series],
+    stats: dict[str, Any],
 ) -> Series:
     series = existing_series.get(series_name)
     is_new = False
@@ -133,9 +133,9 @@ def _save_season_record(
     session: Session,
     series: Series,
     season_name: str,
-    season_data: Dict[str, Any],
-    existing_seasons: Dict[str, Season],
-    stats: Dict[str, Any],
+    season_data: dict[str, Any],
+    existing_seasons: dict[str, Season],
+    stats: dict[str, Any],
 ) -> Season:
     season = existing_seasons.get(season_name)
     is_new = False
@@ -177,11 +177,11 @@ def _save_season_record(
 def _save_episode_record(
     session: Session,
     season: Season,
-    episode_data: Dict[str, Any],
-    existing_by_path: Dict[str, Episode],
-    existing_by_number: Dict[int, Episode],
-    existing_by_name: Dict[str, Episode],
-    stats: Dict[str, Any],
+    episode_data: dict[str, Any],
+    existing_by_path: dict[str, Episode],
+    existing_by_number: dict[int, Episode],
+    existing_by_name: dict[str, Episode],
+    stats: dict[str, Any],
     processed_episodes: set[Episode] | None = None,
     incoming_paths_in_season: set[str] | None = None,
 ) -> Episode:
@@ -559,13 +559,13 @@ def _save_episode_record(
     return episode
 
 
-def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
+def save_library(library_name: str, library: dict[str, Any]) -> dict[str, Any]:
     """
     Updates the database for the given library name using SQLAlchemy ORM.
     """
 
     start_time = time.time()
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "series": 0,
         "seasons": 0,
         "episodes": 0,
@@ -760,8 +760,8 @@ def save_library(library_name: str, library: Dict[str, Any]) -> Dict[str, Any]:
 def _cleanup_tv_library(
     session: Session,
     library_name: str,
-    root_directories: List[str],
-    stats: Dict[str, int],
+    root_directories: list[str],
+    stats: dict[str, int],
 ) -> None:
     """
     Removes Series records whose folder no longer exists in any root directory.
@@ -875,14 +875,14 @@ def _cleanup_tv_library(
 def save_season_data(
     library_name: str,
     series_name: str,
-    series_data: Dict[str, Any],
+    series_data: dict[str, Any],
     season_name: str,
-    season_data: Dict[str, Any],
-) -> Dict[str, Any]:
+    season_data: dict[str, Any],
+) -> dict[str, Any]:
     """
     Saves or updates a single season of a series in the database.
     """
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "series": 0,
         "seasons": 0,
         "episodes": 0,

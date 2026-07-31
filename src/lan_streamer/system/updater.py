@@ -29,7 +29,7 @@ def get_linux_distro() -> str:
     """
     try:
         if os.path.exists("/etc/os-release"):
-            with open("/etc/os-release", "r") as f:
+            with open("/etc/os-release") as f:
                 for line in f:
                     if line.startswith("ID="):
                         return line.strip().split("=")[1].strip('"').lower()

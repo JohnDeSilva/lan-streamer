@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
@@ -16,9 +16,9 @@ def get_session() -> Any:
     return lan_streamer.db.connection.get_session()
 
 
-def get_all_media_items() -> List[Dict[str, Any]]:
+def get_all_media_items() -> list[dict[str, Any]]:
     """Retrieves ALL episodes and movies with file paths for force-refresh extraction."""
-    items_list: List[Dict[str, Any]] = []
+    items_list: list[dict[str, Any]] = []
     try:
         logger.debug("Executing DB query: get_all_media_items")
         with get_session() as session:
@@ -37,7 +37,7 @@ def get_all_media_items() -> List[Dict[str, Any]]:
                     episode.media_files[0].path if episode.media_files else None
                 )
                 if path:
-                    library_name: Optional[str] = None
+                    library_name: str | None = None
                     if episode.season and episode.season.series:
                         library_name = episode.season.series.library_name
                     items_list.append(
@@ -76,9 +76,9 @@ def get_all_media_items() -> List[Dict[str, Any]]:
     return items_list
 
 
-def get_items_missing_runtime() -> List[Dict[str, Any]]:
+def get_items_missing_runtime() -> list[dict[str, Any]]:
     """Retrieves all episodes and movies whose runtime is 0/missing or whose technical metadata (codec, bit rate, resolution) is missing."""
-    items_list: List[Dict[str, Any]] = []
+    items_list: list[dict[str, Any]] = []
     try:
         logger.debug("Executing DB query: get_items_missing_runtime")
         with get_session() as session:
@@ -121,7 +121,7 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
                     episode.media_files[0].path if episode.media_files else None
                 )
                 if path:
-                    library_name: Optional[str] = None
+                    library_name: str | None = None
                     if episode.season and episode.season.series:
                         library_name = episode.season.series.library_name
                     items_list.append(
@@ -183,7 +183,7 @@ def get_items_missing_runtime() -> List[Dict[str, Any]]:
     return items_list
 
 
-def update_items_runtime_batch(updates: List[Dict[str, Any]]) -> None:
+def update_items_runtime_batch(updates: list[dict[str, Any]]) -> None:
     """Updates the runtime and technical info fields for multiple episodes or movies in a single transaction."""
     try:
         logger.debug(

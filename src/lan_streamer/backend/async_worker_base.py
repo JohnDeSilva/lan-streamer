@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -43,11 +43,11 @@ class AsyncWorkerBase(QObject):
 
     def __init__(
         self,
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        parent: Optional[QObject] = None,
+        async_task_manager: AsyncTaskManager | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
-        self._async_task_manager: Optional[AsyncTaskManager] = async_task_manager
+        self._async_task_manager: AsyncTaskManager | None = async_task_manager
         self._task_name: str = f"{self.__class__.__name__}_{id(self)}"
         self._cancelled: bool = False
 

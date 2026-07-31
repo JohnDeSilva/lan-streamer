@@ -14,7 +14,7 @@ import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from lan_streamer.db.utils import natural_sort_key
 from lan_streamer.providers.tmdb import tmdb_client
@@ -46,11 +46,11 @@ _TODAY_STR: str = datetime.date.today().isoformat()
 
 def _fetch_tmdb_episodes_parallel(
     tmdb_series_id: str | int,
-    season_indices: Dict[str, int],
+    season_indices: dict[str, int],
     executor: concurrent.futures.ThreadPoolExecutor,
-) -> Dict[str, list]:
+) -> dict[str, list]:
     """Fetch TMDB episode lists for multiple seasons in parallel."""
-    prefetched: Dict[str, list] = {}
+    prefetched: dict[str, list] = {}
     fetch_futures = {
         executor.submit(tmdb_client.get_episodes, tmdb_series_id, s_idx): s_name
         for s_name, s_idx in season_indices.items()
@@ -70,7 +70,7 @@ def _fetch_tmdb_episodes_parallel(
     return prefetched
 
 
-def _season_name_from_tmdb(tmdb_season: Dict[str, Any]) -> str:
+def _season_name_from_tmdb(tmdb_season: dict[str, Any]) -> str:
     """Derive a local-friendly season name from a TMDB season dict."""
     if tmdb_season.get("season_number", -1) == 0:
         return "Specials"
@@ -83,12 +83,12 @@ def _season_name_from_tmdb(tmdb_season: Dict[str, Any]) -> str:
 
 
 def _create_tmdb_placeholder_episodes(
-    tmdb_episodes: list[Dict[str, Any]],
-    local_episodes: list[Dict[str, Any]],
+    tmdb_episodes: list[dict[str, Any]],
+    local_episodes: list[dict[str, Any]],
     season_name: str,
-    season_metadata: Dict[str, Any],
+    season_metadata: dict[str, Any],
     show_future_episodes: bool = True,
-) -> list[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Create placeholder records for TMDB episodes not found locally."""
     local_numbers = {
         ep["tmdb_number"] for ep in local_episodes if ep.get("tmdb_number") is not None
@@ -98,7 +98,7 @@ def _create_tmdb_placeholder_episodes(
         if season_name.lower() == "specials"
         else int((re.search(r"\d+", season_name) or ["1"])[0])
     )
-    placeholders: list[Dict[str, Any]] = []
+    placeholders: list[dict[str, Any]] = []
     for tmdb_ep in tmdb_episodes:
         episode_number = tmdb_ep.get("episode_number")
         if episode_number is None or episode_number in local_numbers:
@@ -109,7 +109,7 @@ def _create_tmdb_placeholder_episodes(
                 continue
         mal_id = season_metadata.get("myanimelist_id")
         ep_name = tmdb_ep.get("name") or "TBA"
-        record: Dict[str, Any] = {
+        record: dict[str, Any] = {
             "name": f"S{season_index:02d}E{episode_number:02d} - {ep_name}",
             "path": None,
             "tmdb_identifier": str(tmdb_ep.get("id", "")),
@@ -130,14 +130,14 @@ def _create_tmdb_placeholder_episodes(
 
 
 def _add_tmdb_only_seasons(
-    series_data: Dict[str, Any],
+    series_data: dict[str, Any],
     force_refresh: bool,
     single_item_refresh: bool,
-    prefetched_season_episodes: Dict[str, list[Any]],
+    prefetched_season_episodes: dict[str, list[Any]],
     show_future_episodes: bool = True,
 ) -> None:
     """Create season entries for TMDB seasons not represented on disk."""
-    tmdb_seasons: list[Dict[str, Any]] = series_data.get("_tmdb_seasons", [])
+    tmdb_seasons: list[dict[str, Any]] = series_data.get("_tmdb_seasons", [])
     tmdb_series_id: str = str(series_data.get("_tmdb_series_id") or "")
     is_locked = bool(series_data.get("metadata", {}).get("locked_metadata", False))
     for tmdb_season in tmdb_seasons:
@@ -146,7 +146,7 @@ def _add_tmdb_only_seasons(
             continue
         season_number = tmdb_season.get("season_number", -1)
         logger.info(f"Adding TMDB-only season '{season_name}'")
-        season_metadata: Dict[str, Any] = {
+        season_metadata: dict[str, Any] = {
             "jellyfin_id": "",
             "tmdb_identifier": str(tmdb_season.get("id", "")),
             "season_directory_path": "",
@@ -165,7 +165,7 @@ def _add_tmdb_only_seasons(
                 if dl:
                     season_metadata["poster_path"] = dl
 
-        tmdb_episodes_list: list[Dict[str, Any]] = []
+        tmdb_episodes_list: list[dict[str, Any]] = []
         if not is_locked and tmdb_series_id:
             groups = series_data.get("_tmdb_episode_group_details")
             if groups and isinstance(groups, dict) and "groups" in groups:
@@ -216,8 +216,8 @@ def _add_tmdb_only_seasons(
 
 
 def _preserve_existing_episode_data(
-    series_data: Dict[str, Any],
-    existing_series_data: Dict[str, Any] | None,
+    series_data: dict[str, Any],
+    existing_series_data: dict[str, Any] | None,
     show_future_episodes: bool = True,
 ) -> None:
     """Preserve missing seasons and episodes from previous scans (non-destructive)."""
@@ -258,7 +258,7 @@ def _preserve_existing_episode_data(
         )
 
 
-def _filter_future_episodes(series_data: Dict[str, Any]) -> None:
+def _filter_future_episodes(series_data: dict[str, Any]) -> None:
     """Remove future-dated placeholder episodes from series data in-place."""
     for season_data in series_data.get("seasons", {}).values():
         season_data["episodes"] = [
@@ -275,16 +275,16 @@ def _filter_future_episodes(series_data: Dict[str, Any]) -> None:
 
 def scan_series_pass2(
     series_directory: Path,
-    existing_series_data: Dict[str, Any] | None,
-    tmdb_series: Dict[str, Any] | None = None,
-    jellyfin_data: Dict[str, dict] | None = None,
+    existing_series_data: dict[str, Any] | None,
+    tmdb_series: dict[str, Any] | None = None,
+    jellyfin_data: dict[str, dict] | None = None,
     force_refresh: bool = False,
     single_item_refresh: bool = False,
     show_future_episodes: bool = True,
     detail_callback: Callable | None = None,
     season_callback: Callable | None = None,
     tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run Pass 2 metadata resolution for a single TV series.
 
     Sub-passes: 2A (series metadata), 2B (season metadata + pre-fetch),
@@ -338,11 +338,11 @@ def scan_series_pass2(
         }
         for sn, sd in existing_series_data.get("seasons", {}).items()
     }
-    prefetched: Dict[str, list[Any]] = {}
+    prefetched: dict[str, list[Any]] = {}
     if not is_locked and tmdb_client.is_configured():
         tid = series_data.get("_tmdb_series_id")
         if tid and not series_data.get("_tmdb_episode_group_details"):
-            indices: Dict[str, int] = {}
+            indices: dict[str, int] = {}
             for sn in series_data["seasons"]:
                 if sn.lower() == "specials":
                     indices[sn] = 0
@@ -381,7 +381,7 @@ def scan_series_pass2(
             .get(season_name, {})
             .get("episodes", [])
         )
-        matched: list[Dict[str, Any]] = []
+        matched: list[dict[str, Any]] = []
         for ed in existing_eps:
             ep_path = ed.get("path")
             if not ep_path:
@@ -456,16 +456,16 @@ def scan_series_pass2(
 
 
 def _resolve_tmdb_movie_data(
-    tmdb_movie: Dict[str, Any] | None,
-    movie_metadata: Dict[str, Any],
+    tmdb_movie: dict[str, Any] | None,
+    movie_metadata: dict[str, Any],
     title: str,
     year: int | None,
     is_locked: bool,
     existing_tmdb_id: str,
-    existing_movie_data: Dict[str, Any] | None,
+    existing_movie_data: dict[str, Any] | None,
     single_item_refresh: bool,
     video_path: str,
-    jellyfin_data: Dict[str, dict] | None,
+    jellyfin_data: dict[str, dict] | None,
 ) -> None:
     """Fetch and apply TMDB metadata to movie_metadata in-place. Always online."""
     if is_locked:
@@ -506,15 +506,15 @@ def _resolve_tmdb_movie_data(
 def _build_movie_data(
     folder_name: str,
     video_path: str,
-    movie_metadata: Dict[str, Any],
-    existing_movie_data: Dict[str, Any] | None,
+    movie_metadata: dict[str, Any],
+    existing_movie_data: dict[str, Any] | None,
     ctime: float,
-    active_version: Dict[str, Any],
-    versions: list[Dict[str, Any]],
+    active_version: dict[str, Any],
+    versions: list[dict[str, Any]],
     default_path: str | None,
     is_movie_changed: bool,
     last_scanned_mtime: float | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build the final movie data dictionary from gathered information."""
     return {
         "name": folder_name,
@@ -564,13 +564,13 @@ def _build_movie_data(
 
 def scan_movie_pass2(
     movie_directory: Path,
-    existing_movie_data: Dict[str, Any] | None,
-    tmdb_movie: Dict[str, Any] | None = None,
-    jellyfin_data: Dict[str, dict] | None = None,
+    existing_movie_data: dict[str, Any] | None,
+    tmdb_movie: dict[str, Any] | None = None,
+    jellyfin_data: dict[str, dict] | None = None,
     force_refresh: bool = False,
     single_item_refresh: bool = False,
     detail_callback: Callable | None = None,
-) -> Dict[str, Any] | None:
+) -> dict[str, Any] | None:
     """Run Pass 2 metadata resolution for a single movie.
 
     Resolves TMDB movie data, applies metadata, and downloads the poster
@@ -585,7 +585,7 @@ def scan_movie_pass2(
     is_locked = existing_movie_data.get("locked_metadata", False)
     existing_tmdb_id = existing_movie_data.get("tmdb_identifier", "")
 
-    versions: list[Dict[str, Any]] = existing_movie_data.get("versions", [])
+    versions: list[dict[str, Any]] = existing_movie_data.get("versions", [])
     if not versions and existing_movie_data.get("path"):
         versions = [get_stub_file_info(existing_movie_data["path"])]
     default_path = existing_movie_data.get("default_path") or existing_movie_data.get(

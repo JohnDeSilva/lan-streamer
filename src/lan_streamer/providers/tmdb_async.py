@@ -13,7 +13,7 @@ import logging
 import re
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from lan_streamer.providers.http_client import AsyncHTTPClient
 from lan_streamer.system.config import config
@@ -35,9 +35,9 @@ class AsyncTMDBClient:
 
     def __init__(
         self,
-        http_client: Optional[AsyncHTTPClient] = None,
-        api_key: Optional[str] = None,
-        cache_dir: Optional[str | Path] = None,
+        http_client: AsyncHTTPClient | None = None,
+        api_key: str | None = None,
+        cache_dir: str | Path | None = None,
     ) -> None:
         self._http_client = http_client or AsyncHTTPClient(
             requests_per_second=10.0,
@@ -63,7 +63,7 @@ class AsyncTMDBClient:
     async def close(self) -> None:
         await self._http_client.close()
 
-    def _params(self, extra: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    def _params(self, extra: dict[str, Any] | None = None) -> dict[str, Any]:
         parameters: dict[str, Any] = {}
         api_key = self._effective_api_key
         if api_key:
@@ -73,14 +73,14 @@ class AsyncTMDBClient:
         return parameters
 
     async def _make_get(
-        self, url: str, extra_params: Optional[dict[str, Any]] = None
+        self, url: str, extra_params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Thin helper: GET with auth params, return parsed JSON."""
         params = self._params(extra_params)
         return await self._http_client.get(url, params=params)
 
     async def _make_get_list(
-        self, url: str, extra_params: Optional[dict[str, Any]] = None
+        self, url: str, extra_params: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         """GET returning JSON and extracting the 'results' key as a list."""
         data = await self._make_get(url, extra_params=extra_params)
@@ -134,7 +134,7 @@ class AsyncTMDBClient:
         results_list: list[dict[str, Any]],
         target_title: str,
         custom_threshold: float = 0.7,
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Pick the best-matching result from a list of TMDB results."""
         target_clean = AsyncTMDBClient._clean_name(target_title).lower()
         if not target_clean:
@@ -185,7 +185,7 @@ class AsyncTMDBClient:
             return []
 
     async def _do_movie_search(
-        self, query: str, year: Optional[int] = None
+        self, query: str, year: int | None = None
     ) -> list[dict[str, Any]]:
         """Raw TMDB movie search."""
         logger.debug("Executing async TMDB Movie search for query: '%s'", query)
@@ -205,7 +205,7 @@ class AsyncTMDBClient:
     # Public API
     # ------------------------------------------------------------------
 
-    async def search_series(self, name: str) -> Optional[dict[str, Any]]:
+    async def search_series(self, name: str) -> dict[str, Any] | None:
         """Search TMDB for the best-matching TV series."""
         exact_name = name.replace(".", " ").replace("_", " ").strip()
         colon_name = exact_name.replace(" - ", ": ").replace("-", ":")
@@ -280,8 +280,8 @@ class AsyncTMDBClient:
         return results[:limit]
 
     async def search_movie(
-        self, name: str, year: Optional[int] = None
-    ) -> Optional[dict[str, Any]]:
+        self, name: str, year: int | None = None
+    ) -> dict[str, Any] | None:
         """Search TMDB for the best-matching movie."""
         exact_name = name.replace(".", " ").replace("_", " ").strip()
         cleaned_name = self._clean_name(name)
@@ -322,7 +322,7 @@ class AsyncTMDBClient:
 
     async def get_series_by_id(
         self, tmdb_identifier: str | int
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Fetch full series details from TMDB."""
         logger.info(
             "Requesting TMDB (async) series details for ID '%s'", tmdb_identifier
@@ -335,7 +335,7 @@ class AsyncTMDBClient:
 
     async def get_movie_by_id(
         self, tmdb_identifier: str | int
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Fetch full movie details from TMDB."""
         logger.info(
             "Requesting TMDB (async) movie details for ID '%s'", tmdb_identifier
@@ -449,9 +449,7 @@ class AsyncTMDBClient:
             )
             return []
 
-    async def get_episode_group_details(
-        self, group_id: str
-    ) -> Optional[dict[str, Any]]:
+    async def get_episode_group_details(self, group_id: str) -> dict[str, Any] | None:
         """Fetch details for a specific episode group."""
         logger.info(
             "Requesting TMDB (async) episode group details for group ID '%s'",
@@ -467,7 +465,7 @@ class AsyncTMDBClient:
 
     async def get_season_based_episode_group(
         self, tmdb_identifier: str | int
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Resolve the best season-based episode group for a series."""
         groups = await self.get_episode_groups(tmdb_identifier)
         if not groups:

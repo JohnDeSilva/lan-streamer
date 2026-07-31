@@ -2,7 +2,7 @@
 Tests for ui_views/dialogs/search.py – SearchDialog
 """
 
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import MagicMock, create_autospec
 
 from PySide6.QtCore import Qt
@@ -20,7 +20,7 @@ def _make_mock_controller() -> MagicMock:
 
 def _make_fake_results(
     count: int = 3, item_type: str = "series"
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Generate fake search results for testing."""
     return [
         {
@@ -33,7 +33,7 @@ def _make_fake_results(
     ]
 
 
-def _make_fake_movie_results(count: int = 2) -> List[Dict[str, Any]]:
+def _make_fake_movie_results(count: int = 2) -> list[dict[str, Any]]:
     """Generate fake movie search results."""
     return [
         {

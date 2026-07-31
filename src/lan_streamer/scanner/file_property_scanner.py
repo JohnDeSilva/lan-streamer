@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def _get_ffprobe_command() -> str:
     return "ffprobe"
 
 
-def _extract_video_runtime(file_path: str) -> Optional[int]:
+def _extract_video_runtime(file_path: str) -> int | None:
     """
     Extracts video runtime in minutes directly from the video file itself.
     First attempts using ffprobe via subprocess for clean offline parsing,
@@ -90,12 +90,12 @@ def _extract_video_runtime(file_path: str) -> Optional[int]:
     return None
 
 
-def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
+def get_detailed_file_info(file_path: str) -> dict[str, Any]:
     """
     Extracts exhaustive technical metadata from a video file using ffprobe.
     Returns a dictionary containing resolution, codecs, track listings, and runtime.
     """
-    info: Dict[str, Any] = {
+    info: dict[str, Any] = {
         "path": file_path,
         "size_bytes": None,
         "video_type": None,
@@ -208,12 +208,12 @@ def get_detailed_file_info(file_path: str) -> Dict[str, Any]:
     return info
 
 
-def get_stub_file_info(file_path: str) -> Dict[str, Any]:
+def get_stub_file_info(file_path: str) -> dict[str, Any]:
     """
     Instantly returns basic size/type file info without doing heavy FFmpeg/ffprobe calls.
     Sets codec/resolution/runtime to default placeholder values.
     """
-    info: Dict[str, Any] = {
+    info: dict[str, Any] = {
         "path": file_path,
         "size_bytes": None,
         "video_type": None,

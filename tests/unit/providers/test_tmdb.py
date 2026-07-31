@@ -687,7 +687,7 @@ def test_tmdb_fallback_to_default_cache_dir() -> None:
 
 
 def test_make_request_429_respects_retry_after_header(
-    tmdb: TMDBClient, mock_session: "MagicMock"
+    tmdb: TMDBClient, mock_session: MagicMock
 ) -> None:
     """A 429 with a numeric Retry-After header sleeps for that exact duration."""
     rate_limited_response = MagicMock()
@@ -715,7 +715,7 @@ def test_make_request_429_respects_retry_after_header(
 
 
 def test_make_request_429_uses_exponential_backoff_without_retry_after(
-    tmdb: TMDBClient, mock_session: "MagicMock"
+    tmdb: TMDBClient, mock_session: MagicMock
 ) -> None:
     """A 429 without a Retry-After header falls back to exponential backoff with jitter."""
     rate_limited_response = MagicMock()
@@ -746,7 +746,7 @@ def test_make_request_429_uses_exponential_backoff_without_retry_after(
 
 
 def test_make_request_raises_runtime_error_after_all_429_retries_exhausted(
-    tmdb: TMDBClient, mock_session: "MagicMock"
+    tmdb: TMDBClient, mock_session: MagicMock
 ) -> None:
     """When every attempt returns 429, _make_request must raise RuntimeError.
 
@@ -773,7 +773,7 @@ def test_make_request_raises_runtime_error_after_all_429_retries_exhausted(
 
 
 def test_make_request_retries_on_network_error_and_succeeds(
-    tmdb: TMDBClient, mock_session: "MagicMock"
+    tmdb: TMDBClient, mock_session: MagicMock
 ) -> None:
     """A transient network error on the first attempt should be retried."""
     success_response = MagicMock()
@@ -793,7 +793,7 @@ def test_make_request_retries_on_network_error_and_succeeds(
 
 
 def test_make_request_reraises_on_final_network_error(
-    tmdb: TMDBClient, mock_session: "MagicMock"
+    tmdb: TMDBClient, mock_session: MagicMock
 ) -> None:
     """After max_retries network errors, the original exception is re-raised."""
     # _make_request dispatches GET to session.get(), not session.request().
@@ -810,7 +810,7 @@ def test_make_request_reraises_on_final_network_error(
 
 
 def test_rate_limit_lock_is_class_level_shared_across_instances(
-    tmp_path: "Path",
+    tmp_path: Path,
 ) -> None:
     """The throttle state must be shared by all TMDBClient instances.
 
@@ -832,7 +832,7 @@ def test_rate_limit_lock_is_class_level_shared_across_instances(
 
 
 def test_concurrent_requests_are_serialised_by_throttle(
-    tmp_path: "Path", mock_session: "MagicMock"
+    tmp_path: Path, mock_session: MagicMock
 ) -> None:
     """Concurrent _make_request calls from multiple threads must be serialised
     by the class-level throttle so no two requests fire within 100ms of each other.
@@ -1031,7 +1031,7 @@ def test_get_cached_image_empty_key(tmdb) -> None:
     assert tmdb.get_cached_image(None) == ""
 
 
-def test_rate_limit_lock_not_held_during_sleep(tmp_path: "Path") -> None:
+def test_rate_limit_lock_not_held_during_sleep(tmp_path: Path) -> None:
     """Regression test for sleep-inside-lock bug.
 
     Previously ``_make_request`` held ``_class_rate_limit_lock`` for the full

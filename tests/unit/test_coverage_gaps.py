@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Dict
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -335,7 +334,7 @@ class TestLibraryCleanupEdgeCases:
             session.add(mf)
             session.flush()
 
-        stats: Dict[str, int] = {}
+        stats: dict[str, int] = {}
         root_dir = tmp_path / "lib"
         root_dir.mkdir()
 
@@ -360,7 +359,7 @@ class TestLibraryCleanupEdgeCases:
             session.add(mf)
             session.flush()
 
-        stats: Dict[str, int] = {}
+        stats: dict[str, int] = {}
         with patch("lan_streamer.db.library.Path") as MockPath:
             mock_path_instance = MagicMock()
             mock_path_instance.relative_to.return_value = root_dir

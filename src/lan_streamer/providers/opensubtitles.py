@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import requests
 
@@ -14,12 +14,12 @@ USER_AGENT = "LAN-Streamer/0.14.1"
 class OpenSubtitlesClient:
     """Client for interacting with the OpenSubtitles.com REST API."""
 
-    def __init__(self, session: Optional[requests.Session] = None) -> None:
+    def __init__(self, session: requests.Session | None = None) -> None:
         """Initialize the OpenSubtitles client with no active token."""
-        self.token: Optional[str] = None
+        self.token: str | None = None
         self.session = session or requests.Session()
 
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self) -> dict[str, str]:
         """Generate API headers including authentication token and API Key."""
         headers = {
             "Api-Key": config.opensubtitles_api_key,
@@ -61,19 +61,19 @@ class OpenSubtitlesClient:
 
     def search_subtitles(
         self,
-        query: Optional[str] = None,
-        tmdb_id: Optional[int] = None,
-        season_number: Optional[int] = None,
-        episode_number: Optional[int] = None,
+        query: str | None = None,
+        tmdb_id: int | None = None,
+        season_number: int | None = None,
+        episode_number: int | None = None,
         languages: str = "en",
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Search for subtitles on OpenSubtitles.com."""
         if not config.opensubtitles_api_key:
             logger.warning("OpenSubtitles API Key missing.")
             return []
 
         url = f"{OPENSUBTITLES_API_BASE}subtitles"
-        params: Dict[str, Any] = {"languages": languages}
+        params: dict[str, Any] = {"languages": languages}
 
         if tmdb_id:
             params["tmdb_id"] = tmdb_id
@@ -102,7 +102,7 @@ class OpenSubtitlesClient:
             logger.exception(f"Error searching OpenSubtitles: {e}")
         return []
 
-    def get_download_link(self, file_id: int) -> Optional[str]:
+    def get_download_link(self, file_id: int) -> str | None:
         """Request a download link for a specific subtitle file."""
         if not self.token:
             self.login()
@@ -135,7 +135,7 @@ class OpenSubtitlesClient:
             logger.exception(f"Error getting OpenSubtitles download link: {e}")
         return None
 
-    def download_subtitle(self, download_url: str) -> Optional[bytes]:
+    def download_subtitle(self, download_url: str) -> bytes | None:
         """Download the actual subtitle content."""
         logger.info(
             f"Downloading subtitle content from OpenSubtitles URL: '{download_url}'"

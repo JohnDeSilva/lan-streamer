@@ -1,7 +1,7 @@
 """Service layer for fetching and storing cast/crew metadata from TMDB."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import select
 
@@ -17,7 +17,7 @@ from lan_streamer.providers.tmdb import tmdb_client
 logger = logging.getLogger(__name__)
 
 
-def _lookup_series_id(tmdb_identifier: str) -> Optional[str]:
+def _lookup_series_id(tmdb_identifier: str) -> str | None:
     """Look up the DB UUID for a series by its TMDB identifier."""
     with get_session() as session:
         stmt = select(Series).where(Series.tmdb_identifier == tmdb_identifier)
@@ -28,7 +28,7 @@ def _lookup_series_id(tmdb_identifier: str) -> Optional[str]:
         return series.id
 
 
-def _lookup_movie_id(tmdb_identifier: str) -> Optional[str]:
+def _lookup_movie_id(tmdb_identifier: str) -> str | None:
     """Look up the DB UUID for a movie by its TMDB identifier."""
     with get_session() as session:
         stmt = select(Movie).where(Movie.tmdb_identifier == tmdb_identifier)
@@ -55,15 +55,15 @@ def _map_tmdb_role(job: str, department: str) -> str:
 
 def _fetch_and_store_credits_for_media(
     media_id: str,
-    credits_data: Dict[str, Any],
-    series_id: Optional[str] = None,
-    season_id: Optional[str] = None,
-    episode_id: Optional[str] = None,
-    movie_id: Optional[str] = None,
+    credits_data: dict[str, Any],
+    series_id: str | None = None,
+    season_id: str | None = None,
+    episode_id: str | None = None,
+    movie_id: str | None = None,
 ) -> None:
     """Store TMDB credits data into the media_cast table."""
-    cast_list: List[Dict[str, Any]] = credits_data.get("cast", [])
-    crew_list: List[Dict[str, Any]] = credits_data.get("crew", [])
+    cast_list: list[dict[str, Any]] = credits_data.get("cast", [])
+    crew_list: list[dict[str, Any]] = credits_data.get("crew", [])
 
     stored_count = 0
     inserted_keys = set()

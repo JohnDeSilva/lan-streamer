@@ -8,7 +8,7 @@ and detecting new series files.
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from lan_streamer.providers.tmdb import tmdb_client
 from lan_streamer.scanner.parser import (
@@ -21,8 +21,8 @@ logger = logging.getLogger("lan_streamer.services.metadata_series")
 
 
 def _build_existing_episodes_index(
-    existing_series_data: Dict[str, Any],
-) -> Dict[str, Any]:
+    existing_series_data: dict[str, Any],
+) -> dict[str, Any]:
     """Builds a path → episode-dict lookup from an existing series data structure.
 
     Args:
@@ -31,7 +31,7 @@ def _build_existing_episodes_index(
     Returns:
         A mapping of absolute file paths to episode dictionaries.
     """
-    index: Dict[str, Any] = {}
+    index: dict[str, Any] = {}
     for season in existing_series_data.get("seasons", {}).values():
         for episode in season.get("episodes", []):
             index[episode["path"]] = episode
@@ -40,7 +40,7 @@ def _build_existing_episodes_index(
 
 def _detect_new_series_files(
     series_directory: Path,
-    existing_episodes_by_path: Dict[str, Any],
+    existing_episodes_by_path: dict[str, Any],
 ) -> bool:
     """Returns ``True`` when at least one video file inside *series_directory*
     is not present in *existing_episodes_by_path*, indicating the library has
@@ -86,7 +86,7 @@ def _detect_new_series_files(
 
 def _build_series_metadata_defaults(
     manual_jellyfin_id: str | None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Returns a blank series metadata dictionary with all expected keys.
 
     Args:
@@ -108,9 +108,9 @@ def _build_series_metadata_defaults(
 
 
 def _resolve_series_poster(
-    tmdb_series: Dict[str, Any],
+    tmdb_series: dict[str, Any],
     tmdb_identifier: str,
-    existing_series_data: Dict[str, Any] | None,
+    existing_series_data: dict[str, Any] | None,
     offline: bool = False,
 ) -> str:
     """Three-step poster resolution for a TV series.
@@ -160,10 +160,10 @@ def _resolve_episode_jellyfin_id(
     tmdb_number: int | None,
     season_name: str,
     series_directory: Path,
-    series_data: Dict[str, Any],
-    season_metadata: Dict[str, Any],
-    tmdb_series: Dict[str, Any] | None,
-    jellyfin_data: Dict[str, Any] | None,
+    series_data: dict[str, Any],
+    season_metadata: dict[str, Any],
+    tmdb_series: dict[str, Any] | None,
+    jellyfin_data: dict[str, Any] | None,
 ) -> tuple[str, str, str]:
     """Multi-strategy Jellyfin ID resolution for a single episode file.
 
@@ -263,16 +263,16 @@ def _resolve_episode_jellyfin_id(
 
 def _process_series_metadata(
     series_directory: Path,
-    tmdb_series: Dict[str, Any] | None,
-    jellyfin_data: Dict[str, Any] | None,
+    tmdb_series: dict[str, Any] | None,
+    jellyfin_data: dict[str, Any] | None,
     manual_jellyfin_id: str | None,
-    existing_series_data: Dict[str, Any] | None,
+    existing_series_data: dict[str, Any] | None,
     force_refresh: bool,
     cleanup: bool,
     single_item_refresh: bool = False,
     offline: bool = False,
     metadata_only: bool = False,
-) -> tuple[Dict[str, Any], bool, Dict[str, Any] | None, Dict[str, Any], bool]:
+) -> tuple[dict[str, Any], bool, dict[str, Any] | None, dict[str, Any], bool]:
     """Full series-level metadata resolution.
 
     Handles locked-series stubs, early returns when nothing has changed, TMDB
@@ -302,7 +302,7 @@ def _process_series_metadata(
     """
     series_name = series_directory.name
 
-    existing_episodes_by_path: Dict[str, Any] = {}
+    existing_episodes_by_path: dict[str, Any] = {}
     is_locked = False
     existing_tmdb_identifier = ""
     if existing_series_data:
@@ -327,7 +327,7 @@ def _process_series_metadata(
             if full:
                 tmdb_series = full
 
-    series_metadata: Dict[str, Any] = _build_series_metadata_defaults(
+    series_metadata: dict[str, Any] = _build_series_metadata_defaults(
         manual_jellyfin_id
     )
 
@@ -499,7 +499,7 @@ def _process_series_metadata(
                 "tmdb_series_map", {}
             ).get(tmdb_id, "")
 
-    series_data: Dict[str, Any] = {
+    series_data: dict[str, Any] = {
         "metadata": series_metadata,
         "seasons": {},
         "_tmdb_seasons": tmdb_seasons,

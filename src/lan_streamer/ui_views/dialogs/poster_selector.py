@@ -11,7 +11,7 @@ import logging
 import shutil
 import webbrowser
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
 from PySide6.QtGui import QPixmap
@@ -55,7 +55,7 @@ class _TmdbImageFetchWorker(QObject):
         self,
         tmdb_identifier: int,
         media_kind: str,
-        parent: Optional[QObject] = None,
+        parent: QObject | None = None,
     ) -> None:
         """Initialise the worker.
 
@@ -76,8 +76,8 @@ class _TmdbImageFetchWorker(QObject):
             else:
                 raw_data = tmdb_client.get_movie_images(self._tmdb_identifier)
 
-            poster_entries: List[Dict[str, Any]] = raw_data.get("posters", [])
-            backdrop_entries: List[Dict[str, Any]] = raw_data.get("backdrops", [])
+            poster_entries: list[dict[str, Any]] = raw_data.get("posters", [])
+            backdrop_entries: list[dict[str, Any]] = raw_data.get("backdrops", [])
             all_entries = [
                 {"image_type": "poster", **entry} for entry in poster_entries
             ] + [{"image_type": "backdrop", **entry} for entry in backdrop_entries]
@@ -107,7 +107,7 @@ class _ThumbnailDownloader(QObject):
     downloaded = Signal(bytes, object)  # content, label
 
     def __init__(
-        self, image_url: str, label: QLabel, parent: Optional[QObject] = None
+        self, image_url: str, label: QLabel, parent: QObject | None = None
     ) -> None:
         super().__init__(parent)
         self.image_url = image_url
@@ -148,21 +148,21 @@ class PosterSelectorDialog(QDialog):
         self,
         media_name: str,
         media_kind: str = "series",
-        series_name: Optional[str] = None,
-        parent: Optional[QWidget] = None,
+        series_name: str | None = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._media_name = media_name
         self._media_kind = media_kind  # "series", "season", or "movie"
         self._series_name = series_name  # only used when media_kind == "season"
 
-        self._series_db_id: Optional[str] = None
-        self._movie_db_id: Optional[str] = None
-        self._season_db_id: Optional[str] = None
-        self._tmdb_numeric_id: Optional[int] = None
+        self._series_db_id: str | None = None
+        self._movie_db_id: str | None = None
+        self._season_db_id: str | None = None
+        self._tmdb_numeric_id: int | None = None
 
-        self._fetch_thread: Optional[QThread] = None
-        self._fetch_worker: Optional[_TmdbImageFetchWorker] = None
+        self._fetch_thread: QThread | None = None
+        self._fetch_worker: _TmdbImageFetchWorker | None = None
 
         self.setWindowTitle(f"Change Poster — {media_name}")
         self.setMinimumSize(800, 580)
@@ -444,7 +444,7 @@ class PosterSelectorDialog(QDialog):
         self._local_apply_button.clicked.connect(self._on_apply_local_poster)
         container_layout.addWidget(self._local_apply_button)
 
-        self._local_selected_path: Optional[str] = None
+        self._local_selected_path: str | None = None
         container_layout.addStretch()
         return container
 
@@ -491,7 +491,7 @@ class PosterSelectorDialog(QDialog):
             self._tmdb_numeric_id,
         )
 
-    def _on_tmdb_images_ready(self, image_list: List[Dict[str, Any]]) -> None:
+    def _on_tmdb_images_ready(self, image_list: list[dict[str, Any]]) -> None:
         """Populate TMDB image grid once images are fetched."""
         self._tmdb_fetch_button.setEnabled(True)
 
@@ -537,7 +537,7 @@ class PosterSelectorDialog(QDialog):
         self._tmdb_grid_layout.addWidget(error_label, 0, 0)
         logger.error("TMDB image fetch error: %s", error_message)
 
-    def _build_tmdb_image_card(self, image_entry: Dict[str, Any]) -> QFrame:
+    def _build_tmdb_image_card(self, image_entry: dict[str, Any]) -> QFrame:
         """Build a single image card widget for the TMDB grid.
 
         Args:

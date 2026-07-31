@@ -6,7 +6,7 @@ in a background thread so the UI thread is not blocked after a scan completes.
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import QObject
 
@@ -36,17 +36,17 @@ class PostScanWorker(AsyncWorkerBase):
     def __init__(
         self,
         library_name: str,
-        library_data: Dict[str, Any],
+        library_data: dict[str, Any],
         library_type: str,
-        smart_row_service: Optional[SmartRowService] = None,
-        async_task_manager: Optional[AsyncTaskManager] = None,
-        parent: Optional[QObject] = None,
+        smart_row_service: SmartRowService | None = None,
+        async_task_manager: AsyncTaskManager | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
         self.library_name: str = library_name
-        self.library_data: Dict[str, Any] = library_data
+        self.library_data: dict[str, Any] = library_data
         self.library_type: str = library_type
-        self.smart_row_service: Optional[SmartRowService] = smart_row_service
+        self.smart_row_service: SmartRowService | None = smart_row_service
 
     def start(self) -> None:
         """Start the worker, falling back to synchronous execution if no event loop is running."""
@@ -58,7 +58,7 @@ class PostScanWorker(AsyncWorkerBase):
             result = self._run_sync()
             self.finished.emit(result)
 
-    def _run_sync(self) -> Dict[str, Any]:
+    def _run_sync(self) -> dict[str, Any]:
         """Execute post-scan operations synchronously."""
         if self.library_type == "movie":
             db.save_movie_library(self.library_name, self.library_data)
@@ -69,7 +69,7 @@ class PostScanWorker(AsyncWorkerBase):
             self.library_name,
             self.library_type,
         )
-        changed_hashes: List[str] = []
+        changed_hashes: list[str] = []
         if self.smart_row_service is not None:
             changed_hashes = self.smart_row_service.rebuild_for_libraries(
                 [self.library_name]
@@ -86,7 +86,7 @@ class PostScanWorker(AsyncWorkerBase):
             "changed_hashes": changed_hashes,
         }
 
-    async def run_async(self) -> Dict[str, Any]:
+    async def run_async(self) -> dict[str, Any]:
         """Persist library data and rebuild smart row cache."""
         if self.library_type == "movie":
             await run_in_executor(
@@ -100,7 +100,7 @@ class PostScanWorker(AsyncWorkerBase):
             self.library_type,
         )
 
-        changed_hashes: List[str] = []
+        changed_hashes: list[str] = []
         if self.smart_row_service is not None:
             changed_hashes = await run_in_executor(
                 self.smart_row_service.rebuild_for_libraries,
