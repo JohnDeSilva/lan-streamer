@@ -9,12 +9,11 @@ from lan_streamer.providers.tmdb import TMDB_IMAGE_BASE, TMDBClient
 
 @pytest.fixture
 def tmdb(tmp_path, mock_session) -> TMDBClient:
-    client = TMDBClient(
+    return TMDBClient(
         session=mock_session,
         api_key="test-tmdb-key",
         cache_dir=tmp_path,
     )
-    return client
 
 
 # ------------------------------------------------------------------

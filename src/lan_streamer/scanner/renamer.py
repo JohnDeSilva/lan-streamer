@@ -17,8 +17,7 @@ def sanitize_filename(filename: str) -> str:
     # Also remove control characters
     sanitized = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", sanitized)
     # Strip leading/trailing whitespace and periods (trailing periods are bad on Windows)
-    sanitized = sanitized.strip().strip(".")
-    return sanitized
+    return sanitized.strip().strip(".")
 
 
 def is_safe_filename(filename: str) -> tuple[bool, str | None]:

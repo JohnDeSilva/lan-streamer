@@ -33,7 +33,7 @@ def get_linux_distro() -> str:
                 for line in f:
                     if line.startswith("ID="):
                         return line.strip().split("=")[1].strip('"').lower()
-                    elif line.startswith("ID_LIKE="):
+                    if line.startswith("ID_LIKE="):
                         likes = line.strip().split("=")[1].strip('"').lower()
                         if "fedora" in likes or "rhel" in likes or "centos" in likes:
                             return "fedora"
@@ -311,11 +311,10 @@ class UpdateCheckWorker(QThread):
                 )
                 self.finished.emit(True, best_release_data, "")
                 return
-            else:
-                logger.info(
-                    f"UpdateCheckWorker: current version '{__version__}' is up-to-date (best available: "
-                    f"'{best_release_data['version']}')"
-                )
+            logger.info(
+                f"UpdateCheckWorker: current version '{__version__}' is up-to-date (best available: "
+                f"'{best_release_data['version']}')"
+            )
 
         self.finished.emit(True, {}, "")
 

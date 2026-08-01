@@ -65,12 +65,11 @@ def service(
     controller: _StubController,
 ) -> ScheduledScanService:
     """Return a ScheduledScanService wired to a stub controller."""
-    svc = ScheduledScanService(
+    return ScheduledScanService(
         controller=controller,
         interval_seconds=0.05,
         parent=controller,
     )
-    return svc
 
 
 # ---------------------------------------------------------------------------

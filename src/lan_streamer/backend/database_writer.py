@@ -123,29 +123,28 @@ class AsyncDatabaseWriter:
                 payload["season_name"],
                 payload["season_data"],
             )
-        elif action == "save_movie":
+        if action == "save_movie":
             return database_module.save_movie_data(
                 payload["library_name"],
                 payload["movie_name"],
                 payload["movie_data"],
             )
-        elif action == "save_library":
+        if action == "save_library":
             stats: dict[str, Any] = database_module.save_library(
                 payload["library_name"], payload["library_data"]
             )
             return stats
-        elif action == "save_movie_library":
-            stats = database_module.save_movie_library(
+        if action == "save_movie_library":
+            return database_module.save_movie_library(
                 payload["library_name"], payload["library_data"]
             )
-            return stats
-        elif action == "save_directory_mtime":
+        if action == "save_directory_mtime":
             database_module.save_directory_mtime(payload["path"], payload["mtime"])
             return {}
-        elif action == "update_items_runtime_batch":
+        if action == "update_items_runtime_batch":
             database_module.update_items_runtime_batch(payload["updates"])
             return {}
-        elif action == "fetch_and_store_series_credits_and_images":
+        if action == "fetch_and_store_series_credits_and_images":
             from lan_streamer.services import metadata_cast, metadata_images
 
             metadata_cast.fetch_and_store_series_credits(
@@ -155,7 +154,7 @@ class AsyncDatabaseWriter:
                 payload["series_id"], payload["tmdb_id"]
             )
             return {}
-        elif action == "fetch_and_store_movie_credits_and_images":
+        if action == "fetch_and_store_movie_credits_and_images":
             from lan_streamer.services import metadata_cast, metadata_images
 
             metadata_cast.fetch_and_store_movie_credits(
@@ -165,8 +164,7 @@ class AsyncDatabaseWriter:
                 payload["movie_id"], payload["tmdb_id"]
             )
             return {}
-        else:
-            raise ValueError(f"Unknown database write action: {action}")
+        raise ValueError(f"Unknown database write action: {action}")
 
     def _execute_batch(self, batch: list[DatabaseWriteTask]) -> None:
         """Execute a batch of write tasks in sequence within a single thread."""

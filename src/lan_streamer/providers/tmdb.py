@@ -164,8 +164,7 @@ class TMDBClient:
         )
         name = re.sub(r"(?i)\b(S\d+|Season\s*\d+)\b", "", name)
         name = name.replace("-", " ")
-        name = re.sub(r"\s+", " ", name).strip()
-        return name
+        return re.sub(r"\s+", " ", name).strip()
 
     def _is_similar(self, original: str, found: str, threshold: float = 0.7) -> bool:
         from difflib import SequenceMatcher

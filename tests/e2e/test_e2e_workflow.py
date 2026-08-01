@@ -185,7 +185,7 @@ def test_library_grid_view_combined_view(qtbot: Any) -> None:
     def mock_get_combined_smart_row(libraries, sort_by, filter_mode):
         if sort_by == "Next Up":
             return next_up_mock
-        elif sort_by == "Recently Added":
+        if sort_by == "Recently Added":
             return recently_added_mock
         return []
 

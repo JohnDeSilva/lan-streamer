@@ -173,9 +173,9 @@ class AsyncSemaphore:
 
     async def __aexit__(
         self,
-        exc_type: type | None,
+        exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: object | None,
+        traceback: object,
     ) -> None:
         """Release the semaphore, allowing another waiter to proceed."""
         self._semaphore.release()

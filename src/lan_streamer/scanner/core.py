@@ -141,7 +141,7 @@ def scan_directories(
         )
         result.unavailable_directories = unavailable
         return result
-    elif pass_number == 1:
+    if pass_number == 1:
         return _scan_pass1(
             root_directories=root_directories,
             library_type=library_type,
@@ -152,7 +152,7 @@ def scan_directories(
             movie_callback=movie_callback,
             is_interrupted=is_interrupted,
         )
-    elif pass_number == 2:
+    if pass_number == 2:
         return _scan_pass2(
             root_directories=root_directories,
             library_type=library_type,
@@ -167,7 +167,7 @@ def scan_directories(
             is_interrupted=is_interrupted,
             tmdb_prefetch_executor=tmdb_prefetch_executor,
         )
-    elif pass_number == 3:
+    if pass_number == 3:
         return _scan_pass3(
             root_directories=root_directories,
             library_type=library_type,
@@ -175,10 +175,7 @@ def scan_directories(
             force_refresh=force_refresh,
             is_interrupted=is_interrupted,
         )
-    else:
-        raise ValueError(
-            f"Invalid pass_number: {pass_number!r} (expected 0, 1, 2, or 3)"
-        )
+    raise ValueError(f"Invalid pass_number: {pass_number!r} (expected 0, 1, 2, or 3)")
 
 
 # =============================================================================

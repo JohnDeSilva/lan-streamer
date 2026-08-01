@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
 
@@ -45,10 +46,13 @@ class CacheWorker(AsyncWorkerBase):
                 fdst.write(buf)
             return buf
 
-        with (
-            open(self.src_path, "rb") as fsrc,
-            open(self.dest_path, "wb") as fdst,
-        ):
+        async with AsyncExitStack() as exit_stack:
+            fsrc = await asyncio.to_thread(
+                lambda: exit_stack.enter_context(open(self.src_path, "rb"))  # noqa: SIM115
+            )
+            fdst = await asyncio.to_thread(
+                lambda: exit_stack.enter_context(open(self.dest_path, "wb"))  # noqa: SIM115
+            )
             while True:
                 if self._cancelled:
                     logger.info("CacheWorker cancelled.")
