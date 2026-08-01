@@ -13,6 +13,10 @@ from lan_streamer.system.async_utils import async_run_subprocess
 logger = logging.getLogger("lan_streamer.backend")
 
 
+class FfmpegExecutionError(RuntimeError):
+    """Raised when ffmpeg fails to embed metadata into a video container."""
+
+
 class MetadataEmbedWorker(AsyncWorkerBase):
     """
     Background worker that uses ffmpeg to embed metadata into a video container.
@@ -55,7 +59,7 @@ class MetadataEmbedWorker(AsyncWorkerBase):
 
         if result.returncode != 0:
             error_message = stderr_str or "Unknown ffmpeg error"
-            raise Exception(f"ffmpeg execution failed: {error_message}")
+            raise FfmpegExecutionError(f"ffmpeg execution failed: {error_message}")
 
         # Atomically replace
         await asyncio.to_thread(os.replace, output_path, self.video_path)

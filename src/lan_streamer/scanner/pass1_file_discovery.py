@@ -143,8 +143,8 @@ def _scan_season_files(season_directory: Path) -> list[dict[str, Any]]:
         logger.warning(
             "Permission denied reading season directory: '%s'", season_directory
         )
-    except OSError as error:
-        logger.error("Error reading season directory '%s': %s", season_directory, error)
+    except OSError:
+        logger.exception("Error reading season directory '%s'", season_directory)
     # Merge duplicate episodes with the same number into a single entry with combined versions.
     merged: dict[tuple[int, int], dict[str, Any]] = {}
     unnumbered: list[dict[str, Any]] = []
@@ -332,8 +332,8 @@ def scan_series_pass1(
         logger.warning(
             "Permission denied reading series directory '%s'", series_directory
         )
-    except OSError as error:
-        logger.error("Error reading series directory '%s': %s", series_directory, error)
+    except OSError:
+        logger.exception("Error reading series directory '%s'", series_directory)
 
     # Process each season.
     for season_name, season_directory_path, existing_season in season_directories:

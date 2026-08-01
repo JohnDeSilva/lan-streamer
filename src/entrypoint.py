@@ -64,11 +64,10 @@ def setup_vlc_environment() -> None:
                     try:
                         ctypes.CDLL(vlc_core_path)
                         logger.info("Successfully pre-loaded libvlccore.")
-                    except OSError as exception:
-                        logger.error(
-                            "Failed to pre-load libvlccore from %s: %s",
+                    except OSError:
+                        logger.exception(
+                            "Failed to pre-load libvlccore from %s",
                             vlc_core_path,
-                            exception,
                         )
                 else:
                     logger.warning(

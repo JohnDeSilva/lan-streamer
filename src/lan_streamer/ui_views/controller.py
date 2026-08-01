@@ -1670,8 +1670,8 @@ class Controller(QObject):
 
         try:
             self._db.delete_series_record(self.current_library_name, series_name)
-        except Exception as e:
-            logger.exception(f"Failed to delete series record for {series_name}: {e}")
+        except Exception:
+            logger.exception(f"Failed to delete series record for {series_name}")
 
         self.select_library(self.current_library_name, reset_selection=True)
 
@@ -1680,10 +1680,8 @@ class Controller(QObject):
         logger.info(f"Controller deleting episode: {absolute_path}")
         try:
             self._db.delete_episode_record(absolute_path)
-        except Exception as e:
-            logger.exception(
-                f"Failed to delete episode record for {absolute_path}: {e}"
-            )
+        except Exception:
+            logger.exception(f"Failed to delete episode record for {absolute_path}")
 
         if self.current_library_name:
             self.select_library(self.current_library_name, reset_selection=False)

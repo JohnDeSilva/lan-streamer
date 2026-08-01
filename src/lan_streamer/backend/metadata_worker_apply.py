@@ -77,8 +77,8 @@ class MetadataApplyWorker(AsyncWorkerBase):
                     f"{prefix}{self._tmdb_identifier}",
                 )
                 cached_poster = downloaded or self._poster_path
-            except Exception as e:
-                logger.exception(f"Failed to download poster: {e}")
+            except Exception:
+                logger.exception("Failed to download poster")
                 cached_poster = self._poster_path
 
         logger.info("MetadataApplyWorker completed successfully")
@@ -123,9 +123,9 @@ class MetadataApplyWorker(AsyncWorkerBase):
             tmdb_series_data: dict[str, Any] | None = self._tmdb.get_series_by_id(
                 tmdb_identifier
             )
-        except Exception as exc:
+        except Exception:
             logger.exception(
-                f"Failed to fetch TMDB series data for ID {tmdb_identifier}: {exc}"
+                f"Failed to fetch TMDB series data for ID {tmdb_identifier}"
             )
             tmdb_series_data = None
 
@@ -193,9 +193,9 @@ class MetadataApplyWorker(AsyncWorkerBase):
                 episode_group_details = self._tmdb.get_episode_group_details(
                     saved_group_id
                 )
-            except Exception as e:
+            except Exception:
                 logger.exception(
-                    f"Failed to fetch saved group details {saved_group_id}: {e}"
+                    f"Failed to fetch saved group details {saved_group_id}"
                 )
         if not episode_group_details:
             episode_group_details = self._tmdb.get_season_based_episode_group(

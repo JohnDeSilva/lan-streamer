@@ -131,8 +131,8 @@ async def main() -> None:
                 logger_object.propagate = False
             if info_message:
                 logging.info(info_message)
-        except (OSError, ValueError) as exc:
-            logging.error(f"Could not create log file {filename}: {exc}")
+        except OSError, ValueError:
+            logging.exception(f"Could not create log file {filename}")
 
     log_directory = Path(config.log_directory).expanduser().absolute()
     try:

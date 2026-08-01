@@ -60,8 +60,8 @@ def cleanup_old_backups(
                     logger.warning(
                         f"Failed to delete old backup file {file_path_to_delete}: {exception_instance}"
                     )
-    except Exception as exception_instance:
-        logger.exception(f"Error during backup retention cleanup: {exception_instance}")
+    except Exception:
+        logger.exception("Error during backup retention cleanup")
 
 
 def create_config_backup() -> bool:
@@ -87,8 +87,8 @@ def create_config_backup() -> bool:
             backup_directory, f"_{source_path.name}", config.config_backup_retention
         )
         return True
-    except Exception as exception_instance:
-        logger.exception(f"Failed to create configuration backup: {exception_instance}")
+    except Exception:
+        logger.exception("Failed to create configuration backup")
         return False
 
 
@@ -115,8 +115,8 @@ def create_database_backup() -> bool:
             backup_directory, f"_{source_path.name}", config.database_backup_retention
         )
         return True
-    except Exception as exception_instance:
-        logger.exception(f"Failed to create database backup: {exception_instance}")
+    except Exception:
+        logger.exception("Failed to create database backup")
         return False
 
 
@@ -231,10 +231,8 @@ def restore_config_backup(backup_file_path: str) -> bool:
                     "Configuration backup does not contain a valid JSON dictionary structure."
                 )
                 return False
-    except Exception as exception_instance:
-        logger.exception(
-            f"Validation failed: unable to parse configuration backup file: {exception_instance}"
-        )
+    except Exception:
+        logger.exception("Validation failed: unable to parse configuration backup file")
         return False
 
     # Perform active configuration file replacement
@@ -246,10 +244,8 @@ def restore_config_backup(backup_file_path: str) -> bool:
         # Refresh active in-memory configuration state
         config.load()
         return True
-    except Exception as exception_instance:
-        logger.exception(
-            f"Critical error overwriting configuration file: {exception_instance}"
-        )
+    except Exception:
+        logger.exception("Critical error overwriting configuration file")
         return False
 
 
@@ -281,9 +277,9 @@ def restore_database_backup(backup_file_path: str) -> bool:
             # Verify standard schema table inclusion
             connection_instance.execute(text("SELECT count(*) FROM series")).scalar()
         validation_engine.dispose()
-    except Exception as exception_instance:
+    except Exception:
         logger.exception(
-            f"Validation failed: database backup file is corrupt or unreadable: {exception_instance}"
+            "Validation failed: database backup file is corrupt or unreadable"
         )
         return False
 
@@ -303,8 +299,6 @@ def restore_database_backup(backup_file_path: str) -> bool:
             "Database file successfully overwritten with verified backup state."
         )
         return True
-    except Exception as exception_instance:
-        logger.exception(
-            f"Critical error overwriting database file: {exception_instance}"
-        )
+    except Exception:
+        logger.exception("Critical error overwriting database file")
         return False

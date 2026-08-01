@@ -224,5 +224,5 @@ class SubtitleSearchDialog(QDialog):
             QMessageBox.information(self, "Download", f"Subtitle saved to:\n{sub_path}")
             self.accept()
         except Exception as e:
-            logger.exception(f"SubtitleSearchDialog failed to save subtitle file: {e}")
+            logger.exception("SubtitleSearchDialog failed to save subtitle file")
             QMessageBox.critical(self, "Download", f"Error saving subtitle: {e}")

@@ -235,9 +235,9 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
                 f"{updated_count} of {self._total_count} items"
             )
             return updated_count
-        except Exception as exception_instance:
+        except Exception:
             logger.exception("FilePropertyExtractionWorker failed")
-            raise exception_instance
+            raise
         finally:
             if self._database_writer is not None:
                 await self._database_writer.stop()
