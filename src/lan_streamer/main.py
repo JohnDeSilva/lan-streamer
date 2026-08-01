@@ -502,7 +502,8 @@ async def main() -> None:
             )
             main_window.hide()
 
-        asyncio.create_task(auto_shutdown())
+        auto_shutdown_task = asyncio.create_task(auto_shutdown())
+        logger.info(f"Scheduled automatic shutdown task: {auto_shutdown_task}")
 
     if (
         config.check_for_updates_on_startup

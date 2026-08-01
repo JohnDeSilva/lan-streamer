@@ -142,7 +142,7 @@ def test_update_check_worker_http_error(qtbot) -> None:
         with qtbot.waitSignal(worker.finished) as blocker:
             worker.start()
 
-        success, release_info, error_msg = blocker.args
+        success, _release_info, error_msg = blocker.args
         assert success is False
         assert "HTTP Error 404" in error_msg
 
@@ -154,7 +154,7 @@ def test_update_check_worker_exception(qtbot) -> None:
         with qtbot.waitSignal(worker.finished) as blocker:
             worker.start()
 
-        success, release_info, error_msg = blocker.args
+        success, _release_info, error_msg = blocker.args
         assert success is False
         assert "Timeout" in error_msg
 
@@ -312,7 +312,7 @@ def test_update_check_worker_rc_picks_newest(qtbot) -> None:
         with qtbot.waitSignal(worker.finished) as blocker:
             worker.start()
 
-        success, release_info, error_msg = blocker.args
+        success, release_info, _error_msg = blocker.args
         assert success is True
         assert release_info["version"] == "v0.27.0-rc.1"
         assert release_info["download_url"] == "https://example.invalid/download/rc.exe"
@@ -357,7 +357,7 @@ def test_update_check_worker_rc_skips_drafts(qtbot) -> None:
         with qtbot.waitSignal(worker.finished) as blocker:
             worker.start()
 
-        success, release_info, error_msg = blocker.args
+        success, release_info, _error_msg = blocker.args
         assert success is True
         assert release_info["version"] == "v0.26.0"
         assert (
@@ -405,7 +405,7 @@ def test_update_check_worker_rc_prefers_stable_over_prerelease(qtbot) -> None:
         with qtbot.waitSignal(worker.finished) as blocker:
             worker.start()
 
-        success, release_info, error_msg = blocker.args
+        success, release_info, _error_msg = blocker.args
         assert success is True
         assert release_info["version"] == "v0.27.0"
         assert (

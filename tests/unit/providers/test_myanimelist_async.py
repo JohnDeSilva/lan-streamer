@@ -142,7 +142,7 @@ class TestExchangeAuthCode:
             client._http_client._get_session = AsyncMock(return_value=mock_session)
 
             with patch.object(config, "save_to_db") as mock_save:
-                success, msg = await client.exchange_auth_code("auth_code", "verifier")
+                success, _msg = await client.exchange_auth_code("auth_code", "verifier")
                 assert success is True
                 mock_save.assert_called_once()
 
@@ -156,7 +156,7 @@ class TestExchangeAuthCode:
             mock_session.post = MagicMock(side_effect=Exception("API Error"))
             client._http_client._get_session = AsyncMock(return_value=mock_session)
 
-            success, msg = await client.exchange_auth_code("auth_code", "verifier")
+            success, _msg = await client.exchange_auth_code("auth_code", "verifier")
             assert success is False
 
         _run(run(), event_loop)

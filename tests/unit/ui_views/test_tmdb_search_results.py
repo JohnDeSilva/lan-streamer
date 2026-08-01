@@ -1,4 +1,4 @@
-"""Tests for ui_views/dialogs/tmdb_search_results.py – _parse_season_number & TmdbSearchResultsDialog."""
+"""Tests for ui_views/dialogs/tmdb_search_results.py - _parse_season_number & TmdbSearchResultsDialog."""
 
 from unittest.mock import MagicMock, patch
 
@@ -64,7 +64,7 @@ class TestParseSeasonNumber:
 
 
 # ===================================================================
-# TmdbSearchResultsDialog – construction
+# TmdbSearchResultsDialog - construction
 # ===================================================================
 
 
@@ -91,7 +91,7 @@ class TestDialogConstruction:
 
 
 # ===================================================================
-# _populate_table – cell content, UserRole, overview truncation
+# _populate_table - cell content, UserRole, overview truncation
 # ===================================================================
 
 

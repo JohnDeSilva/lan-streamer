@@ -17,7 +17,7 @@ def get_version_score_key(version: dict[str, Any]) -> tuple:
 
     Factors considered (in order of importance):
 
-    - **Resolution** (*width × height*, higher is better).
+    - **Resolution** (*width x height*, higher is better).
     - **Bit rate** (higher is better).
     - **Video codec** (AV1 → HEVC/H.265 → H.264/AVC → other).
     - **Audio codec** (TrueHD/Atmos → DTS-HD → DTS → EAC3/AC3 → AAC/Opus → MP3).

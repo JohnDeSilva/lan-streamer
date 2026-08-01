@@ -1,14 +1,14 @@
 """
 Additional targeted tests for:
- - backend/scan_workers.py – ScanAllLibrariesWorker.run() with root_dir loop (lines 186-216, 264-265, 288)
- - backend/scan_workers.py – ScanWorker.run() Jellyfin configured branch (line 97)
- - backend/scan_workers.py – CleanupWorker.run() both success and error paths
- - backend/scan_workers.py – ScanAllLibrariesWorker._discover_tree() branches
- - db/connection.py – init_db frozen path (line 112) and mkdir failure (lines 103-105)
+ - backend/scan_workers.py - ScanAllLibrariesWorker.run() with root_dir loop (lines 186-216, 264-265, 288)
+ - backend/scan_workers.py - ScanWorker.run() Jellyfin configured branch (line 97)
+ - backend/scan_workers.py - CleanupWorker.run() both success and error paths
+ - backend/scan_workers.py - ScanAllLibrariesWorker._discover_tree() branches
+ - db/connection.py - init_db frozen path (line 112) and mkdir failure (lines 103-105)
                        and alembic failure path (lines 133-135)
- - db/queries.py – remaining lines: corrupt audio/subtitle JSON (lines 37-44),
+ - db/queries.py - remaining lines: corrupt audio/subtitle JSON (lines 37-44),
                    get_next_episode last-episode path, get_next_episode missing current
- - scanner/core.py – scan_directories existing_library merge/preserve paths
+ - scanner/core.py - scan_directories existing_library merge/preserve paths
 """
 
 from pathlib import Path
@@ -18,7 +18,7 @@ import pytest
 from PySide6.QtCore import Qt
 
 # ---------------------------------------------------------------------------
-# backend/scan_workers.py – ScanAllLibrariesWorker with root_dirs loop
+# backend/scan_workers.py - ScanAllLibrariesWorker with root_dirs loop
 # ---------------------------------------------------------------------------
 
 
@@ -349,7 +349,7 @@ def test_scan_all_libraries_worker_discover_tree(tmp_path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# db/connection.py – init_db edge cases
+# db/connection.py - init_db edge cases
 # ---------------------------------------------------------------------------
 
 
@@ -441,7 +441,7 @@ def test_init_db_creates_backup_if_db_exists(tmp_path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# db/queries.py – corrupt JSON in audio_tracks / subtitle_tracks
+# db/queries.py - corrupt JSON in audio_tracks / subtitle_tracks
 # ---------------------------------------------------------------------------
 
 
@@ -496,7 +496,7 @@ def test_build_movie_dict_corrupt_json(mock_db_file) -> None:
 
 
 # ---------------------------------------------------------------------------
-# db/queries.py – get_next_episode edge cases
+# db/queries.py - get_next_episode edge cases
 # ---------------------------------------------------------------------------
 
 
@@ -559,7 +559,7 @@ def test_get_next_episode_next_has_no_path(mock_db_file) -> None:
 
 
 # ---------------------------------------------------------------------------
-# scanner/core.py – scan_directories preserve-existing-library path
+# scanner/core.py - scan_directories preserve-existing-library path
 # ---------------------------------------------------------------------------
 
 

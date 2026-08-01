@@ -922,7 +922,7 @@ class TestScanSeriesPass1:
         callback.assert_any_call(
             "finish_season", {"folder": "Test Series", "season": "Season 1"}
         )
-        # Episode lifecycle (2 episodes × 2 calls each)
+        # Episode lifecycle (2 episodes x 2 calls each)
         assert callback.call_count >= 6
 
     def test_detail_callback_skips_none_path_episodes(self, tmp_path: Path) -> None:

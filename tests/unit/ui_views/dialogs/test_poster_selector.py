@@ -76,7 +76,7 @@ def movie_record(tmp_path):
 @pytest.fixture
 def sample_image(tmp_path) -> str:
     """Create a minimal valid JPEG image file for testing."""
-    # 1×1 white JPEG bytes (minimal valid JPEG)
+    # 1x1 white JPEG bytes (minimal valid JPEG)
     jpeg_bytes = (
         b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
         b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t"

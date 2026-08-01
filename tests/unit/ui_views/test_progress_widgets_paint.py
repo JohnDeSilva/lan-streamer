@@ -4,8 +4,8 @@ Additional targeted coverage tests for progress_widgets.py.
 Specifically covers:
 - Line 108: SegmentedProgressBar.init_from_tree when raw root not in config paths
 - Line 383: ScanProgressTree.init_from_tree when raw root not in config paths
-- Lines 148–261: SegmentedProgressBar.paintEvent (called directly)
-- Lines 672–788: LibraryScanProgressBar.paintEvent (called directly)
+- Lines 148-261: SegmentedProgressBar.paintEvent (called directly)
+- Lines 672-788: LibraryScanProgressBar.paintEvent (called directly)
 """
 
 from PySide6.QtCore import QRect
@@ -68,7 +68,7 @@ class TestRawRootFallbackBranch:
 
 
 # ---------------------------------------------------------------------------
-# SegmentedProgressBar.paintEvent  (lines 148–261)
+# SegmentedProgressBar.paintEvent  (lines 148-261)
 # ---------------------------------------------------------------------------
 
 
@@ -195,7 +195,7 @@ class TestSegmentedProgressBarPaintEventDirect:
 
 
 # ---------------------------------------------------------------------------
-# LibraryScanProgressBar.paintEvent  (lines 672–788)
+# LibraryScanProgressBar.paintEvent  (lines 672-788)
 # ---------------------------------------------------------------------------
 
 

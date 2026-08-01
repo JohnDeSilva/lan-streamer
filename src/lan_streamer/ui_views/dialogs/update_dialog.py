@@ -349,7 +349,7 @@ class UpdateDialog(QDialog):
                     clean_env.pop(target_variable, None)
 
         # Spawn process using subprocess.Popen with detachment flags
-        command_list = [executable_path] + arguments
+        command_list = [executable_path, *arguments]
         try:
             logger.info(
                 f"UpdateDialog: launching detached child process: {command_list}"

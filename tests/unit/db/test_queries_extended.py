@@ -1,5 +1,5 @@
 """
-Extended tests for db/queries.py – covering lines that have no existing coverage:
+Extended tests for db/queries.py - covering lines that have no existing coverage:
  - _trigger_mal_push_async
  - update_episode_watched_status (MAL branch, movie branch, movie+MAL branch)
  - update_season_watched_status (MAL branch)
@@ -93,7 +93,7 @@ def test_trigger_mal_push_async_configured(mock_db_file) -> None:
 
 
 # ---------------------------------------------------------------------------
-# update_episode_watched_status – movie path
+# update_episode_watched_status - movie path
 # ---------------------------------------------------------------------------
 
 
@@ -204,7 +204,7 @@ def test_update_episode_watched_status_episode_with_mal(mock_db_file) -> None:
 
 
 # ---------------------------------------------------------------------------
-# update_season_watched_status – MAL branch
+# update_season_watched_status - MAL branch
 # ---------------------------------------------------------------------------
 
 
@@ -335,7 +335,7 @@ def test_update_season_watched_status_skip_placeholder_mal(mock_db_file) -> None
 
 
 # ---------------------------------------------------------------------------
-# update_series_watched_status – MAL branch
+# update_series_watched_status - MAL branch
 # ---------------------------------------------------------------------------
 
 
@@ -465,7 +465,7 @@ def test_update_series_watched_status_skip_placeholder_mal(mock_db_file) -> None
 
 
 # ---------------------------------------------------------------------------
-# get_items_missing_runtime – exception path
+# get_items_missing_runtime - exception path
 # ---------------------------------------------------------------------------
 
 
@@ -478,7 +478,7 @@ def test_get_items_missing_runtime_exception() -> None:
 
 
 # ---------------------------------------------------------------------------
-# update_items_runtime_batch – with technical fields
+# update_items_runtime_batch - with technical fields
 # ---------------------------------------------------------------------------
 
 
@@ -627,7 +627,7 @@ def test_update_items_runtime_batch_exception() -> None:
 
 
 # ---------------------------------------------------------------------------
-# get_combined_smart_row – Watched/Unwatched filter_mode
+# get_combined_smart_row - Watched/Unwatched filter_mode
 # ---------------------------------------------------------------------------
 
 
@@ -675,7 +675,7 @@ def test_get_combined_smart_row_watched_filter(mock_db_file) -> None:
         session.add(m_unwatched)
         session.commit()
 
-    # Watched filter – only fully-watched series and watched movies
+    # Watched filter - only fully-watched series and watched movies
     results = get_combined_smart_row(["Lib"], "Alphabetical", "Watched")
     names = {r["name"] for r in results}
     assert "Watched Show" in names
@@ -683,7 +683,7 @@ def test_get_combined_smart_row_watched_filter(mock_db_file) -> None:
     assert "Partial Show" not in names
     assert "Unwatched Movie" not in names
 
-    # Unwatched filter – only partially/unwatched series and unwatched movies
+    # Unwatched filter - only partially/unwatched series and unwatched movies
     results = get_combined_smart_row(["Lib"], "Alphabetical", "Unwatched")
     names = {r["name"] for r in results}
     assert "Partial Show" in names
@@ -775,7 +775,7 @@ def test_get_combined_smart_row_exception() -> None:
 
 
 # ---------------------------------------------------------------------------
-# get_combined_next_up – exception path and empty library
+# get_combined_next_up - exception path and empty library
 # ---------------------------------------------------------------------------
 
 
@@ -793,7 +793,7 @@ def test_get_combined_next_up_no_libraries(mock_db_file) -> None:
 
 
 # ---------------------------------------------------------------------------
-# get_episode_playback_position – movie path
+# get_episode_playback_position - movie path
 # ---------------------------------------------------------------------------
 
 
@@ -822,7 +822,7 @@ def test_get_episode_playback_position_missing() -> None:
 
 
 # ---------------------------------------------------------------------------
-# is_movie – exception path
+# is_movie - exception path
 # ---------------------------------------------------------------------------
 
 
@@ -834,7 +834,7 @@ def test_is_movie_exception() -> None:
 
 
 # ---------------------------------------------------------------------------
-# get_next_episode – non-existent path edge case
+# get_next_episode - non-existent path edge case
 # ---------------------------------------------------------------------------
 
 
@@ -851,7 +851,7 @@ def test_get_next_episode_exception() -> None:
 
 
 # ---------------------------------------------------------------------------
-# delete_series_record and delete_episode_record – exception paths
+# delete_series_record and delete_episode_record - exception paths
 # ---------------------------------------------------------------------------
 
 
@@ -878,7 +878,7 @@ def test_delete_episode_record_exception() -> None:
 
 
 # ---------------------------------------------------------------------------
-# update_episode_path – exception path
+# update_episode_path - exception path
 # ---------------------------------------------------------------------------
 
 

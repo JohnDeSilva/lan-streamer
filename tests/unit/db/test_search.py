@@ -1,5 +1,5 @@
 """
-Tests for db/queries_ui.py – search_media_names (series + movies)
+Tests for db/queries_ui.py - search_media_names (series + movies)
 """
 
 import pytest

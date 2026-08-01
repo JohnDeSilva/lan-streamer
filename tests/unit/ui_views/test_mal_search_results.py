@@ -1,4 +1,4 @@
-"""Tests for ui_views/dialogs/mal_search_results.py – _status_label, _build_alt_titles_text & MalSearchResultsDialog."""
+"""Tests for ui_views/dialogs/mal_search_results.py - _status_label, _build_alt_titles_text & MalSearchResultsDialog."""
 
 from unittest.mock import MagicMock, patch
 
@@ -119,7 +119,7 @@ class TestBuildAltTitlesText:
 
 
 # ===================================================================
-# MalSearchResultsDialog – construction
+# MalSearchResultsDialog - construction
 # ===================================================================
 
 
@@ -146,7 +146,7 @@ class TestDialogConstruction:
 
 
 # ===================================================================
-# _populate_table – cell content, defaults, synopsis truncation
+# _populate_table - cell content, defaults, synopsis truncation
 # ===================================================================
 
 

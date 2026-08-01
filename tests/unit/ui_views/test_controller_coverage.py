@@ -3,6 +3,7 @@
 1154-1155, 1392-1404)."""
 
 import logging
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -280,7 +281,7 @@ class TestOnScanAndUpdateCleanupSkip:
         # because getattr(updated_library, "unavailable_directories", []) is
         # used to detect unavailable root directories.
         class _LibDict(dict):
-            unavailable_directories: list = []
+            unavailable_directories: ClassVar[list[str]] = []
 
         updated_library = _LibDict({"series": {}})
         updated_library.unavailable_directories = ["/unavail"]
@@ -307,7 +308,7 @@ class TestOnScanAndUpdateCleanupSkip:
         controller_instance.worker_manager.scan._instance = mock_scan_worker
 
         class _LibDict(dict):
-            unavailable_directories: list = []
+            unavailable_directories: ClassVar[list[str]] = []
 
         updated_library = _LibDict({"series": {}})
         updated_library.unavailable_directories = ["/unavail"]

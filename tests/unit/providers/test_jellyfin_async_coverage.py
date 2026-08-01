@@ -365,7 +365,7 @@ class TestFetchWatchedNotConfigured:
     def test_not_configured(self, event_loop: asyncio.AbstractEventLoop) -> None:
         async def run() -> None:
             c = AsyncJellyfinClient(jellyfin_url="", jellyfin_api_key="")
-            ids, paths, names = await c.fetch_watched_episodes()
+            ids, _paths, _names = await c.fetch_watched_episodes()
             assert ids == set()
 
         _run(run(), event_loop)
@@ -375,7 +375,7 @@ class TestFetchWatchedNotConfigured:
     ) -> None:
         async def run() -> None:
             client.get_current_user_id = AsyncMock(return_value=None)
-            ids, paths, names = await client.fetch_watched_episodes()
+            ids, _paths, _names = await client.fetch_watched_episodes()
             assert ids == set()
 
         _run(run(), event_loop)

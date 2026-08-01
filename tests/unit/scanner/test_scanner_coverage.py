@@ -825,7 +825,7 @@ class TestProcessSeasonMetadata:
             mock_tmdb.get_episodes.return_value = [
                 {"id": 1, "episode_number": 1, "name": "Spec ep"}
             ]
-            name, idx, meta, episodes = _process_season_metadata(
+            name, idx, _meta, episodes = _process_season_metadata(
                 season_dir,
                 series_data,
                 None,
@@ -849,7 +849,7 @@ class TestProcessSeasonMetadata:
 
         with patch("lan_streamer.services.metadata_episode.tmdb_client") as mock_tmdb:
             mock_tmdb.get_episodes.return_value = []
-            name, idx, meta, episodes = _process_season_metadata(
+            name, idx, _meta, _episodes = _process_season_metadata(
                 season_dir,
                 series_data,
                 None,
@@ -871,7 +871,7 @@ class TestProcessSeasonMetadata:
         }
 
         with patch("lan_streamer.services.metadata_episode.tmdb_client") as mock_tmdb:
-            name, idx, meta, episodes = _process_season_metadata(
+            name, idx, _meta, episodes = _process_season_metadata(
                 season_dir,
                 series_data,
                 None,

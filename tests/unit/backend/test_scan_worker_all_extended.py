@@ -219,4 +219,4 @@ def test_scan_all_libraries_pass2_exception_with_good_pass1() -> None:
         assert any(name == "Lib1" for name, _ in library_error_events)
         assert any(name == "Lib2" for name, _ in library_error_events)
         assert all("Pass 2 failure" in msg for _, msg in library_error_events)
-        assert call_count[0] == 4  # 2 libs × 2 passes
+        assert call_count[0] == 4  # 2 libs x 2 passes

@@ -1,5 +1,5 @@
 """
-Tests for ui_views/library_grid.py – LibraryGridView
+Tests for ui_views/library_grid.py - LibraryGridView
 Covers: __init__, _setup_ui, _wire_signals, populate_libraries, on_library_changed,
         on_library_tab_changed, populate_grid (various sort modes), _on_detail_progress,
         _on_scan_completed, on_order_changed, on_item_clicked, populate_combined_view,
@@ -117,7 +117,7 @@ class TestLibraryGridViewConstruction:
 
 class TestPopulateLibraries:
     def test_populates_tab_bar_with_library_names(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.populate_libraries(["ShowLib", "MovieLib"])
         assert view.library_tab_bar.count() >= 2  # May include "Combined View"
         assert "ShowLib" in view.library_names_list
@@ -142,7 +142,7 @@ class TestPopulateLibraries:
             config.enable_combined_view = False
 
     def test_combined_view_included_when_enabled(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         config.enable_combined_view = True
         try:
             view.populate_libraries(["ShowLib"])
@@ -151,7 +151,7 @@ class TestPopulateLibraries:
             config.enable_combined_view = False
 
     def test_empty_library_list(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.populate_libraries([])
         assert view.library_tab_bar.count() == 0 or True  # No crash
 
@@ -172,7 +172,7 @@ class TestOnLibraryChanged:
             mock_select.assert_called_once_with("ShowLib")
 
     def test_combined_view_shows_combined_scroll(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.show()  # Widget must be shown for isVisible() to return True
         config.combined_views = []
         with patch.object(view, "populate_combined_view") as mock_populate:
@@ -183,7 +183,7 @@ class TestOnLibraryChanged:
             mock_populate.assert_called_once()
 
     def test_empty_library_name_no_crash(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.on_library_changed("")  # Should not crash
 
 
@@ -194,14 +194,14 @@ class TestOnLibraryChanged:
 
 class TestOnLibraryTabChanged:
     def test_tab_change_calls_on_library_changed(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.library_names_list = ["Alpha", "Beta"]
         with patch.object(view, "on_library_changed") as mock_change:
             view.on_library_tab_changed(1)
             mock_change.assert_called_once_with("Beta")
 
     def test_tab_change_invalid_index_no_crash(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.library_names_list = ["Alpha"]
         view.on_library_tab_changed(99)  # Out of range, should not crash
 
@@ -213,14 +213,14 @@ class TestOnLibraryTabChanged:
 
 class TestOnSelectorTextChanged:
     def test_selector_change_syncs_tab(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.library_names_list = ["Alpha", "Beta"]
         with patch.object(view, "on_library_changed") as mock_change:
             view._on_selector_text_changed("Alpha")
             mock_change.assert_called_once_with("Alpha")
 
     def test_selector_change_unknown_text_no_crash(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.library_names_list = ["Alpha"]
         view._on_selector_text_changed("Nonexistent")  # Should not crash
 
@@ -454,7 +454,7 @@ class TestOnItemClicked:
 
 class TestOnDetailProgress:
     def test_init_library_scan_shows_progress_bar(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.show()  # Must be shown for isVisible() to work
         payload = {
             "roots": {"/tv": ["Show A"]},
@@ -465,7 +465,7 @@ class TestOnDetailProgress:
         assert view.scan_status_label.isVisible()
 
     def test_init_tree_shows_progress_bar(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.show()  # Must be shown for isVisible() to work
         config.libraries = {"MyLib": {"paths": ["/tv"]}}
         payload = {
@@ -481,7 +481,7 @@ class TestOnDetailProgress:
         assert view.scan_progress_bar.isVisible()
 
     def test_start_folder_marks_active(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.show()  # Must be shown for isVisible() to work
         # Initialize the bar first
         view.scan_progress_bar.init_from_roots({"/tv": ["Show A"]}, ["/tv"])
@@ -490,7 +490,7 @@ class TestOnDetailProgress:
         assert view.scan_status_label.isVisible()
 
     def test_finish_folder_marks_done(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.scan_progress_bar.init_from_roots({"/tv": ["Show A"]}, ["/tv"])
         view.scan_progress_bar.mark_folder_active("/tv", "Show A")
         payload = {"root": "/tv", "folder": "Show A"}
@@ -498,7 +498,7 @@ class TestOnDetailProgress:
         # Should not crash
 
     def test_unknown_event_no_crash(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view._on_detail_progress("unknown_event", {})
 
 
@@ -509,7 +509,7 @@ class TestOnDetailProgress:
 
 class TestOnScanCompleted:
     def test_hides_progress_bar(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         view.scan_progress_bar.setVisible(True)
         view.scan_status_label.setVisible(True)
         view._on_scan_completed()
@@ -524,14 +524,14 @@ class TestOnScanCompleted:
 
 class TestPopulateCombinedView:
     def test_shows_empty_label_when_no_rows(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         config.combined_views = []
         view.populate_combined_view()
         # Should show "No rows configured" label
         assert view.combined_scroll_layout.count() == 1
 
     def test_populates_rows_with_data(self, grid_view, mock_db_file) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         config.combined_views = [
             {
                 "name": "Recent",
@@ -561,7 +561,7 @@ class TestPopulateCombinedView:
         assert view.combined_scroll_layout.count() >= 1
 
     def test_skips_disabled_rows(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         config.combined_views = [
             {
                 "name": "Disabled Row",
@@ -576,7 +576,7 @@ class TestPopulateCombinedView:
         assert view.combined_scroll_layout.count() == 1
 
     def test_skips_rows_with_no_items(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         config.combined_views = [
             {
                 "name": "Empty Row",
@@ -593,7 +593,7 @@ class TestPopulateCombinedView:
         # No crash is the key assertion
 
     def test_populates_season_type_items(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         config.combined_views = [
             {
                 "name": "Seasons Row",
@@ -622,7 +622,7 @@ class TestPopulateCombinedView:
             view.populate_combined_view()
 
     def test_populates_movie_type_items(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         config.combined_views = [
             {
                 "name": "Movie Row",
@@ -649,7 +649,7 @@ class TestPopulateCombinedView:
             view.populate_combined_view()
 
     def test_max_items_truncation(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         config.combined_views = [
             {
                 "name": "Small Row",
@@ -735,7 +735,7 @@ class TestOnCombinedItemClicked:
             mock_series.assert_called_once_with("My Show")
 
     def test_click_no_data_no_crash(self, grid_view) -> None:
-        view, controller = grid_view
+        view, _controller = grid_view
         item = QListWidgetItem("No Data")
         item.setData(Qt.ItemDataRole.UserRole, None)
         view.on_combined_item_clicked(item)  # Should not crash
@@ -777,13 +777,13 @@ class TestTriggerCombinedScan:
 class TestSearchButton:
     def test_search_button_exists_single_library(self, grid_view) -> None:
         """Search button should exist in the single-library toolbar."""
-        view, controller = grid_view
+        view, _controller = grid_view
         search_buttons = view.findChildren(QPushButton, "searchMediaButton")
         assert len(search_buttons) >= 1
 
     def test_search_button_exists_combined(self, grid_view) -> None:
         """Search button should exist in the combined view toolbar."""
-        view, controller = grid_view
+        view, _controller = grid_view
         search_buttons = view.findChildren(QPushButton, "searchMediaButton")
         assert len(search_buttons) >= 1
 

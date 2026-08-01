@@ -73,7 +73,7 @@ def test_mal_exchange_auth_code_success(mal) -> None:
     mal.session.post = MagicMock(return_value=mock_resp)
 
     with patch.object(config, "save_to_db") as mock_save:
-        success, msg = mal.exchange_auth_code("auth_code", "verifier")
+        success, _msg = mal.exchange_auth_code("auth_code", "verifier")
         assert success is True
         assert config.myanimelist_access_token == "new-access"
         assert config.myanimelist_refresh_token == "new-refresh"
