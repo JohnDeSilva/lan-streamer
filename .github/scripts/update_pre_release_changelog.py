@@ -1,7 +1,7 @@
 import re
 import subprocess
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 
 
 def get_commits(latest_tag):
@@ -71,7 +71,7 @@ def main():
 
     latest_tag = sys.argv[1]
     next_tag = sys.argv[2]
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
 
     commits = get_commits(latest_tag)
     categories = parse_commits(commits)

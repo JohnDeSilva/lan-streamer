@@ -38,7 +38,7 @@ from lan_streamer.services.metadata_series import _process_series_metadata
 from lan_streamer.services.metadata_updates import clean_series_data
 
 logger = logging.getLogger("lan_streamer.scanner.pass2_metadata")
-_TODAY_STR: str = datetime.date.today().isoformat()
+_TODAY_STR: str = datetime.datetime.now(datetime.UTC).date().isoformat()
 
 
 # =============================================================================

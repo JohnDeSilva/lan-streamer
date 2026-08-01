@@ -671,7 +671,7 @@ class SeriesDetailView(QWidget):
 
         import datetime
 
-        today_str = datetime.date.today().isoformat()
+        today_str = datetime.datetime.now(datetime.UTC).date().isoformat()
         library_config = config.libraries.get(self.controller.current_library_name, {})
         show_future_episodes = library_config.get("show_future_episodes", True)
 
@@ -988,7 +988,7 @@ class SeriesDetailView(QWidget):
                     if air_date_string:
                         try:
                             air_date_obj = datetime.date.fromisoformat(air_date_string)
-                            today_obj = datetime.date.today()
+                            today_obj = datetime.datetime.now(datetime.UTC).date()
                             if air_date_obj < today_obj:
                                 is_missing = True
                         except ValueError:

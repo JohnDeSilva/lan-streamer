@@ -2,7 +2,7 @@ import contextlib
 import html
 import logging
 import zipfile
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -1963,7 +1963,7 @@ class SettingsDialog(QDialog):
 
         try:
             home_dir = Path.home()
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
             zip_filename = f"lan_streamer_logs_{timestamp}.zip"
             zip_filepath = home_dir / zip_filename
 

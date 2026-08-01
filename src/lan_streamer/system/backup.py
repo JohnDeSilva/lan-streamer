@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import shutil
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
@@ -21,7 +21,7 @@ def get_backup_time_from_filename(filename: str) -> datetime | None:
     match_object = re.match(r"^(\d{8}_\d{6})_", filename)
     if match_object:
         try:
-            return datetime.strptime(match_object.group(1), "%Y%m%d_%H%M%S")
+            return datetime.strptime(f"{match_object.group(1)}+0000", "%Y%m%d_%H%M%S%z")
         except ValueError:
             return None
     return None
@@ -47,7 +47,7 @@ def cleanup_old_backups(
                 if parsed_time is not None:
                     backup_files.append((parsed_time, file_item))
 
-        current_time: datetime = datetime.now()
+        current_time: datetime = datetime.now(UTC)
         for parsed_time, file_path_to_delete in backup_files:
             days_old: int = (current_time - parsed_time).days
             if days_old > retention_limit:
@@ -76,7 +76,7 @@ def create_config_backup() -> bool:
     backup_directory: Path = Path(config.backup_directory)
     try:
         backup_directory.mkdir(parents=True, exist_ok=True)
-        timestamp_string: str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp_string: str = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         backup_filename: str = f"{timestamp_string}_{source_path.name}"
         destination_path: Path = backup_directory / backup_filename
 
@@ -104,7 +104,7 @@ def create_database_backup() -> bool:
     backup_directory: Path = Path(config.backup_directory)
     try:
         backup_directory.mkdir(parents=True, exist_ok=True)
-        timestamp_string: str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp_string: str = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         backup_filename: str = f"{timestamp_string}_{source_path.name}"
         destination_path: Path = backup_directory / backup_filename
 
@@ -135,7 +135,7 @@ def perform_scheduled_backups() -> None:
         )
         return
 
-    current_time: datetime = datetime.now()
+    current_time: datetime = datetime.now(UTC)
 
     # 1. Process Configuration Backup Schedule
     config_source: Path = CONFIG_FILE

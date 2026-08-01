@@ -295,7 +295,7 @@ def test_series_detail_view_rendering(
     import copy
     import datetime
 
-    today = datetime.date.today()
+    today = datetime.datetime.now(datetime.UTC).date()
     future_date = (today + datetime.timedelta(days=10)).isoformat()
     past_date = (today - datetime.timedelta(days=10)).isoformat()
 

@@ -2622,7 +2622,7 @@ def test_scan_series_show_future_episodes(tmp_path) -> None:
     episode_file = season_dir / "Future Show S01E01.mkv"
     episode_file.touch()
 
-    today = datetime.date.today()
+    today = datetime.datetime.now(datetime.UTC).date()
     past_date = (today - datetime.timedelta(days=5)).isoformat()
     future_date = (today + datetime.timedelta(days=5)).isoformat()
 
@@ -2701,7 +2701,7 @@ def test_scan_series_preserves_only_past_missing_episodes(tmp_path) -> None:
     season_dir.mkdir()
     (season_dir / "S01E01.mkv").touch()
 
-    today = datetime.date.today()
+    today = datetime.datetime.now(datetime.UTC).date()
     past_date = (today - datetime.timedelta(days=5)).isoformat()
     future_date = (today + datetime.timedelta(days=5)).isoformat()
 

@@ -1,7 +1,7 @@
 import json
 import os
 from collections.abc import Generator
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -61,7 +61,7 @@ def test_cleanup_old_backups_retention(backup_environment: Path) -> None:
     backup_directory: Path = backup_environment / "backups"
 
     # Create 10 mock backup files with chronological timestamps relative to now
-    base_time: datetime = datetime.now()
+    base_time: datetime = datetime.now(UTC)
     for index in range(10):
         # index 0 is 9 days ago, index 9 is today (0 days ago)
         file_time: datetime = base_time - timedelta(days=(9 - index))
@@ -134,7 +134,7 @@ def test_perform_scheduled_backups_frequency_interval(backup_environment: Path) 
         file_item.unlink()
 
     # 2. Simulate recent backup (1 day ago) -> should NOT generate backup
-    recent_time: datetime = datetime.now() - timedelta(days=1)
+    recent_time: datetime = datetime.now(UTC) - timedelta(days=1)
     recent_filename: str = f"{recent_time.strftime('%Y%m%d_%H%M%S')}_config.json"
     (backup_directory / recent_filename).write_text("old config")
 
@@ -146,7 +146,7 @@ def test_perform_scheduled_backups_frequency_interval(backup_environment: Path) 
     # 3. Simulate stale backup (8 days ago) -> should generate fresh backup
     # Clear the recent backup first
     (backup_directory / recent_filename).unlink()
-    stale_time: datetime = datetime.now() - timedelta(days=8)
+    stale_time: datetime = datetime.now(UTC) - timedelta(days=8)
     stale_filename: str = f"{stale_time.strftime('%Y%m%d_%H%M%S')}_config.json"
     (backup_directory / stale_filename).write_text("stale config")
 
@@ -368,7 +368,7 @@ def test_perform_scheduled_backups_database_recent_and_stale(
     config.database_backup_retention = 10
 
     # 1. Recent database backup (2 days ago)
-    recent_time = datetime.now() - timedelta(days=2)
+    recent_time = datetime.now(UTC) - timedelta(days=2)
     recent_name = f"{recent_time.strftime('%Y%m%d_%H%M%S')}_library.db"
     (backup_directory / recent_name).write_text("recent db content")
 
@@ -382,7 +382,7 @@ def test_perform_scheduled_backups_database_recent_and_stale(
         f.unlink()
 
     # 2. Stale database backup (6 days ago)
-    stale_time = datetime.now() - timedelta(days=6)
+    stale_time = datetime.now(UTC) - timedelta(days=6)
     stale_name = f"{stale_time.strftime('%Y%m%d_%H%M%S')}_library.db"
     (backup_directory / stale_name).write_text("stale db content")
 
