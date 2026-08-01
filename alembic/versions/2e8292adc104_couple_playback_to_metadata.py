@@ -57,7 +57,7 @@ def upgrade() -> None:
     # Aggregated state by metadata ID: (type, target_id) -> record
     aggregated = {}
 
-    for mf_id, watched, last_pos, last_at, ep_id, mv_id in old_records:
+    for _mf_id, watched, last_pos, last_at, ep_id, mv_id in old_records:
         target_id = ep_id or mv_id
         if not target_id:
             continue
@@ -136,7 +136,7 @@ def downgrade() -> None:
 
     # Insert into old table, avoiding duplicate primary key (media_file_id) issues
     seen_media_files = set()
-    for ep_id, mv_id, watched, last_pos, last_at, mf_id in new_records:
+    for _ep_id, _mv_id, watched, last_pos, last_at, mf_id in new_records:
         if mf_id in seen_media_files:
             continue
         seen_media_files.add(mf_id)

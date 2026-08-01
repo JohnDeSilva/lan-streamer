@@ -329,9 +329,7 @@ class UpdateDialog(QDialog):
 
         # Clear all PyInstaller-specific environment variables to prevent issues with child process
         for environment_key in list(clean_env.keys()):
-            if environment_key.startswith("_PYI_") or environment_key.startswith(
-                "PYI_"
-            ):
+            if environment_key.startswith(("_PYI_", "PYI_")):
                 clean_env.pop(environment_key, None)
 
         # Force PyInstaller bootloader to reset the environment for the new executable

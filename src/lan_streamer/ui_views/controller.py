@@ -204,7 +204,7 @@ class Controller(QObject):
         )
 
     def _cache_series_metrics(self) -> None:
-        for series_name, series_data in self.cached_library_data.items():
+        for _series_name, series_data in self.cached_library_data.items():
             if "seasons" not in series_data:
                 is_watched = bool(series_data.get("watched"))
                 series_data["metrics"] = {
@@ -1073,7 +1073,7 @@ class Controller(QObject):
         # Clear old TMDB fields from series/season metadata and episodes
         target_dict["locked_metadata"] = False
         target_dict.pop("tmdb_episode_group_id", None)
-        for season_name, season_data in list(series_record.get("seasons", {}).items()):
+        for _season_name, season_data in list(series_record.get("seasons", {}).items()):
             season_data.get("metadata", {}).pop("tmdb_identifier", None)
             filtered_episodes = []
             for ep in season_data.get("episodes", []):

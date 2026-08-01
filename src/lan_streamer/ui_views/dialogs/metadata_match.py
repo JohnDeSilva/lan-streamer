@@ -327,9 +327,7 @@ class JellyfinMatchDialog(QDialog):
             production_year_value: str = (
                 str(production_year) if production_year is not None else ""
             )
-            first_air_date_value: str = (
-                production_year_value if production_year_value else ""
-            )
+            first_air_date_value: str = production_year_value or ""
 
             self.search_results_list.append(
                 {

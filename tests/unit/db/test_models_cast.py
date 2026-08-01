@@ -1,6 +1,7 @@
 """Tests for the cast/crew database models."""
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from lan_streamer.db import get_session
 from lan_streamer.db.models import Movie, Series
@@ -280,7 +281,7 @@ def test_person_tmdb_identifier_unique() -> None:
         session.add(person2)
         import pytest
 
-        with pytest.raises(Exception):
+        with pytest.raises(SQLAlchemyError):
             session.commit()
         session.rollback()
 

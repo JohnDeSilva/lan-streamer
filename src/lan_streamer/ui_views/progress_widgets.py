@@ -67,7 +67,7 @@ class SegmentedProgressBar(QWidget):
         self._current_pass = pass_num
         self._pass3_fraction = 0.0
         # Reset state/done counters for a clean pass fill
-        for lib_name, lib_data in self._libraries.items():
+        for _lib_name, lib_data in self._libraries.items():
             lib_data["state"] = self.STATE_PENDING
             for r in lib_data["roots"]:
                 lib_data["root_done"][r] = 0
@@ -117,7 +117,7 @@ class SegmentedProgressBar(QWidget):
             self._libraries[lib_name] = {
                 "roots": roots,
                 "root_totals": {r: len(lib_data["roots"][r]) for r in roots},
-                "root_done": {r: 0 for r in roots},
+                "root_done": dict.fromkeys(roots, 0),
                 "state": self.STATE_PENDING,
             }
             for r in roots:
@@ -147,7 +147,7 @@ class SegmentedProgressBar(QWidget):
 
     def advance_root(self, root_dir: str) -> None:
         """Increment the done counter for a root directory."""
-        for lib_name, lib_data in self._libraries.items():
+        for _lib_name, lib_data in self._libraries.items():
             if root_dir in lib_data["root_done"]:
                 lib_data["root_done"][root_dir] = min(
                     lib_data["root_done"][root_dir] + 1,
@@ -253,7 +253,7 @@ class SegmentedProgressBar(QWidget):
                 num_roots = len(roots)
                 if num_roots > 1:
                     root_w = lw / num_roots
-                    for ridx, root_dir in enumerate(roots):
+                    for ridx, _root_dir in enumerate(roots):
                         rx = lx + int(ridx * root_w)
                         if ridx > 0:
                             painter.setPen(QPen(self._COLOR_ROOT_DIVIDER, 1))
@@ -650,7 +650,7 @@ class LibraryScanProgressBar(QWidget):
         self._current_pass = pass_num
         self._pass3_fraction = 0.0
         # Reset state/done counters for a clean pass fill
-        for root_dir, root_data in self._roots.items():
+        for _root_dir, root_data in self._roots.items():
             root_data["state"] = self.STATE_PENDING
             for f in root_data["folder_states"]:
                 root_data["folder_states"][f] = self.STATE_PENDING
@@ -684,7 +684,7 @@ class LibraryScanProgressBar(QWidget):
             folders = roots[root_dir]
             self._roots[root_dir] = {
                 "folders": folders,
-                "folder_states": {f: self.STATE_PENDING for f in folders},
+                "folder_states": dict.fromkeys(folders, self.STATE_PENDING),
                 "state": self.STATE_PENDING,
             }
             # Track library name for this root if provided

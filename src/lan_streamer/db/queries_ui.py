@@ -425,15 +425,13 @@ def get_next_episode(current_path: str) -> dict[str, Any] | None:
                 return None
 
             result = {
-                "title": next_episode.tmdb_name
-                if next_episode.tmdb_name
-                else (next_episode.name or "Unknown"),
+                "title": next_episode.tmdb_name or (next_episode.name or "Unknown"),
                 "season": next_season.name or "Unknown",
                 "episode_number": next_episode.tmdb_number
                 if next_episode.tmdb_number is not None
                 else calculated_episode_number,
                 "path": next_path,
-                "poster_path": series.poster_path if series.poster_path else "",
+                "poster_path": series.poster_path or "",
                 "runtime": next_episode.runtime or 0,
             }
             logger.info(

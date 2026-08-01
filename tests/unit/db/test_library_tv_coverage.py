@@ -458,10 +458,10 @@ class TestSaveLibraryExceptionHandling:
 
     def test_exception_records_issue(self, library_name: str) -> None:
         with (
-            pytest.raises(Exception),
+            pytest.raises(RuntimeError),
             patch(
                 "lan_streamer.db.library_tv.get_session",
-                side_effect=Exception("db failure"),
+                side_effect=RuntimeError("db failure"),
             ),
         ):
             save_library(library_name, {"SomeSeries": {"metadata": {}, "seasons": {}}})
@@ -576,10 +576,10 @@ class TestSaveSeasonData:
 
     def test_save_season_data_exception(self, library_name: str) -> None:
         with (
-            pytest.raises(Exception),
+            pytest.raises(RuntimeError),
             patch(
                 "lan_streamer.db.library_tv.get_session",
-                side_effect=Exception("db failure"),
+                side_effect=RuntimeError("db failure"),
             ),
         ):
             save_season_data(

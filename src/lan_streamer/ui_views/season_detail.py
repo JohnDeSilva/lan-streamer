@@ -1302,7 +1302,7 @@ class SeasonDetailView(QWidget):
             combo = QComboBox()
             combo.addItem("Unmapped / None", userData=None)
             selected_idx = 0
-            for idx, local_ep in enumerate(self._tmdb_local_episodes):
+            for _idx, local_ep in enumerate(self._tmdb_local_episodes):
                 local_path = local_ep["path"]
                 if filter_used_paths and local_path in used_paths:
                     continue
@@ -1819,7 +1819,7 @@ class SeasonDetailView(QWidget):
             combo = QComboBox()
             combo.addItem("Unmapped / None", userData=None)
             selected_idx = 0
-            for idx, local_ep in enumerate(self._mal_local_episodes):
+            for _idx, local_ep in enumerate(self._mal_local_episodes):
                 local_path = local_ep["path"]
                 if filter_used_paths and local_path in used_paths:
                     continue

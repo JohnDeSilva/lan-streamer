@@ -34,8 +34,6 @@ def _new_uuid_str() -> str:
 class Base(DeclarativeBase):
     """SQLAlchemy declarative base class for database models."""
 
-    pass
-
 
 class UUIDBLOB(TypeDecorator):
     """Platform-independent UUID type stored as 16-byte BLOB/LargeBinary,

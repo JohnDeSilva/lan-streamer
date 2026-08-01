@@ -1115,7 +1115,7 @@ def test_secrets_are_actually_encrypted_in_db(mock_db_file) -> None:
         # It shouldn't be parseable as raw JSON (decryption is required)
         try:
             json.loads(raw_result)
-            assert False, "Database value should be encrypted and not raw JSON"
+            raise AssertionError("Database value should be encrypted and not raw JSON")
         except json.JSONDecodeError:
             pass
 
@@ -1164,7 +1164,7 @@ def test_legacy_unencrypted_secrets_migrated_transparently(mock_db_file) -> None
         assert "legacy-unencrypted-key" not in raw_result
         try:
             json.loads(raw_result)
-            assert False, (
+            raise AssertionError(
                 "Legacy unencrypted secret should have been transparently encrypted in DB"
             )
         except json.JSONDecodeError:

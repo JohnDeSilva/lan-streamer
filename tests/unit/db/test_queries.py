@@ -41,11 +41,11 @@ def test_update_watched_status(mock_db_file) -> None:
 
 def test_db_error_handling(mock_db_file) -> None:
     with patch("lan_streamer.db.connection.get_session") as mock_session:
-        mock_session.side_effect = Exception("Mocked error")
+        mock_session.side_effect = RuntimeError("Mocked error")
 
         # These should catch the error and log it, not crash
         assert db.load_library("Lib") == {}
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             db.save_library("Lib", {})
         db.update_episode_watched_status("path", True)
 
@@ -168,11 +168,11 @@ def test_update_episode_path_missing(mock_db_file) -> None:
 
 def test_db_error_handling_extended(mock_db_file) -> None:
     with patch("lan_streamer.db.connection.get_session") as mock_session:
-        mock_session.side_effect = Exception("Mocked error")
+        mock_session.side_effect = RuntimeError("Mocked error")
         # Test get_all_episodes_with_jellyfin_id error path
         assert db.get_all_episodes_with_jellyfin_id() == []
         # Test cleanup_library error path
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             db.cleanup_library("Lib", [])
         # Test playback position error paths
         assert db.update_episode_playback_position("path", 100) is False

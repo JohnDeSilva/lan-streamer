@@ -303,7 +303,7 @@ class TestAsyncWorkerBaseUncovered:
 
         class _CancelWorker(AsyncWorkerBase):
             async def run_async(self) -> None:
-                raise asyncio.CancelledError()
+                raise asyncio.CancelledError
 
         worker = _CancelWorker()
 
@@ -518,7 +518,7 @@ class TestAsyncTaskManagerEdgeCases:
             nonlocal run_count
             run_count += 1
             if run_count == 1:
-                raise asyncio.CancelledError()
+                raise asyncio.CancelledError
 
         try:
 

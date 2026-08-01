@@ -77,7 +77,7 @@ class SeriesDetailsDialog(QDialog):
                     except OSError, ValueError, TypeError:
                         paths.add(str(Path(p).parent))
 
-        paths_label = QLabel("\n".join(sorted(list(paths))))
+        paths_label = QLabel("\n".join(sorted(paths)))
         paths_label.setWordWrap(True)
         info_form.addRow("Series Path(s):", paths_label)
 

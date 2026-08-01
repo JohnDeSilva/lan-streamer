@@ -262,7 +262,6 @@ class VideoPlayerWidget(QWidget):
 
     def _apply_fullscreen_styles(self) -> None:
         """Applies styling to fullscreen overlay based on config."""
-        pass
 
     def _create_vertical_media_button(
         self, icon: str, label_text: str, slot: Any, font_size: int = 20
@@ -1991,7 +1990,7 @@ class VideoPlayerWidget(QWidget):
 
             if total_size_bytes > max_size_bytes:
                 cached_files.sort(key=lambda item: item[0])
-                for modification_time, file_size, file_path in cached_files:
+                for _modification_time, file_size, file_path in cached_files:
                     if total_size_bytes <= max_size_bytes:
                         break
                     try:

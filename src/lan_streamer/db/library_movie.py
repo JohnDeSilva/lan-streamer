@@ -49,7 +49,7 @@ def _apply_movie_fields(movie: Movie, movie_data: dict[str, Any]) -> bool:
             movie.locked_metadata = val
             changed = True
 
-    for attr, key, default_val in [
+    for attr, key, _default_val in [
         ("date_added", "date_added", 0),
         ("runtime", "runtime", 0),
         ("year", "year", 0),
@@ -300,7 +300,7 @@ def save_movie_library(library_name: str, library: dict[str, Any]) -> dict[str, 
                 stats["movies_scanned"] = stats.get("movies_scanned", 0) + 1
 
             # Persist movie directory mtimes
-            for movie_name, movie_data in library.items():
+            for _, movie_data in library.items():
                 movie_dir = movie_data.get("movie_directory_path")
                 movie_mtime = movie_data.get("last_scanned_mtime")
                 if movie_dir and movie_mtime is not None:
