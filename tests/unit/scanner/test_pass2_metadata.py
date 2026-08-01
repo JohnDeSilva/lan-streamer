@@ -26,7 +26,7 @@ from lan_streamer.scanner.pass2_metadata import (
     scan_series_pass2,
 )
 
-_TODAY: str = datetime.date.today().isoformat()
+_TODAY: str = datetime.datetime.now(datetime.UTC).date().isoformat()
 
 
 # ===========================================================================
@@ -1771,4 +1771,6 @@ class TestScanMoviePass2:
 
 def _ensure_future() -> str:
     """Return an ISO date string guaranteed to be in the future."""
-    return (datetime.date.today() + datetime.timedelta(days=365 * 10)).isoformat()
+    return (
+        datetime.datetime.now(datetime.UTC).date() + datetime.timedelta(days=365 * 10)
+    ).isoformat()

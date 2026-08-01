@@ -102,7 +102,7 @@ def test_season_detail_missing_episode(qtbot: Any) -> None:
     """Test that episodes without a path display as missing (red) or future (purple)."""
     import datetime
 
-    today = datetime.date.today()
+    today = datetime.datetime.now(datetime.UTC).date()
     past_date = (today - datetime.timedelta(days=10)).isoformat()
     future_date = (today + datetime.timedelta(days=30)).isoformat()
 

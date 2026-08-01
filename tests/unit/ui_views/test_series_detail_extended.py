@@ -350,7 +350,9 @@ def test_populate_hides_future_episodes_when_show_future_false(
     # Add a future episode without a path
     import datetime
 
-    future_date = (datetime.date.today() + datetime.timedelta(days=30)).isoformat()
+    future_date = (
+        datetime.datetime.now(datetime.UTC).date() + datetime.timedelta(days=30)
+    ).isoformat()
     ctrl_with_show.cached_library_data["ShowA"]["seasons"]["Season 1"][
         "episodes"
     ].append(

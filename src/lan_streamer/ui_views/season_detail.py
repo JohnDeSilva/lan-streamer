@@ -434,7 +434,7 @@ class SeasonDetailView(QWidget):
         table = self._episode_table
         table.setRowCount(0)
         table.setRowCount(len(episodes))
-        today_str = datetime.date.today().isoformat()
+        today_str = datetime.datetime.now(datetime.UTC).date().isoformat()
 
         # Compute which file paths are shared by multiple episodes
         path_counts: dict[str, int] = {}
@@ -537,7 +537,10 @@ class SeasonDetailView(QWidget):
             missing = False
             if air_date:
                 try:
-                    if datetime.date.fromisoformat(air_date) < datetime.date.today():
+                    if (
+                        datetime.date.fromisoformat(air_date)
+                        < datetime.datetime.now(datetime.UTC).date()
+                    ):
                         missing = True
                 except ValueError:
                     if air_date < today_str:
