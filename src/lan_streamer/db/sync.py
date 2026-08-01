@@ -173,7 +173,7 @@ def get_all_episodes_with_jellyfin_id() -> list:
     items: list = []
     try:
         with get_session() as session:
-            model: type[Episode] | type[Movie]
+            model: type[Episode | Movie]
             for model in (Episode, Movie):
                 rows = session.scalars(
                     select(model).where(

@@ -8,12 +8,11 @@ from lan_streamer.providers.jellyfin import JellyfinClient
 
 @pytest.fixture
 def jf_client(mock_session) -> JellyfinClient:
-    client = JellyfinClient(
+    return JellyfinClient(
         session=mock_session,
         jellyfin_url="http://test-jf",
         jellyfin_api_key="test-key",
     )
-    return client
 
 
 def test_jellyfin_is_configured(jf_client) -> None:

@@ -130,15 +130,15 @@ async def main() -> None:
             if logger_object != logging.getLogger():
                 logger_object.propagate = False
             if info_message:
-                logging.info(info_message)
+                logging.info(info_message)  # noqa: LOG015
         except OSError, ValueError:
-            logging.exception(f"Could not create log file {filename}")
+            logging.exception(f"Could not create log file {filename}")  # noqa: LOG015
 
-    log_directory = Path(config.log_directory).expanduser().absolute()
+    log_directory = Path(config.log_directory).expanduser().absolute()  # noqa: ASYNC240
     try:
-        log_directory.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(log_directory.mkdir, parents=True, exist_ok=True)
     except OSError as exc:
-        logging.warning(f"Could not create log directory {log_directory}: {exc}")
+        logging.warning(f"Could not create log directory {log_directory}: {exc}")  # noqa: LOG015
 
     try:
         import time
@@ -149,7 +149,7 @@ async def main() -> None:
                 with contextlib.suppress(Exception):
                     path_item.unlink()
     except OSError as exc:
-        logging.debug(f"Error cleaning old logs: {exc}")
+        logging.debug(f"Error cleaning old logs: {exc}")  # noqa: LOG015
 
     from lan_streamer.system.logging_handler import SERVICE_LOGGERS, setup_qt_logging
 
@@ -161,7 +161,7 @@ async def main() -> None:
             f"Logging to {log_directory / 'lan-streamer.log'} (rotated daily)",
         )
     else:
-        logging.info("Logging divided into individual service log files")
+        logging.info("Logging divided into individual service log files")  # noqa: LOG015
         # Map logger names to their respective file names
         logger_to_filename = {
             "lan_streamer.db": "db.log",
@@ -561,7 +561,7 @@ async def main() -> None:
         app_close_event = asyncio.Event()
         application_instance.aboutToQuit.connect(app_close_event.set)
         try:
-            while main_window.isVisible() and not app_close_event.is_set():
+            while main_window.isVisible() and not app_close_event.is_set():  # noqa: ASYNC110
                 await asyncio.sleep(0.1)
         except RuntimeError:
             logger.warning(

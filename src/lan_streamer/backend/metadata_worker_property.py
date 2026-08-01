@@ -223,10 +223,9 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for res in results:
                 if isinstance(res, BaseException):
-                    logger.exception("Error in process_library task", exc_info=res)
+                    logger.error("Error in process_library task", exc_info=res)
                     raise res
-                else:
-                    updated_count += res
+                updated_count += res
 
             self.progress_updated.emit(self._completed_count, self._total_count)
             logger.info(

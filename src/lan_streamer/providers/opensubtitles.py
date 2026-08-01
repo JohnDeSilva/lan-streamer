@@ -51,10 +51,9 @@ class OpenSubtitlesClient:
                 self.token = response.json().get("token")
                 logger.info("Successfully logged in to OpenSubtitles.com")
                 return True
-            else:
-                logger.error(
-                    f"OpenSubtitles login failed: {response.status_code} {response.text}"
-                )
+            logger.error(
+                f"OpenSubtitles login failed: {response.status_code} {response.text}"
+            )
         except Exception:
             logger.exception("Error logging in to OpenSubtitles")
         return False
@@ -94,10 +93,9 @@ class OpenSubtitlesClient:
                 results = data.get("data", [])
                 logger.info(f"OpenSubtitles search returned {len(results)} results.")
                 return results
-            else:
-                logger.error(
-                    f"OpenSubtitles search failed: {response.status_code} {response.text}"
-                )
+            logger.error(
+                f"OpenSubtitles search failed: {response.status_code} {response.text}"
+            )
         except Exception:
             logger.exception("Error searching OpenSubtitles")
         return []
@@ -127,10 +125,9 @@ class OpenSubtitlesClient:
                     f"OpenSubtitles download link resolved successfully: {link}"
                 )
                 return link
-            else:
-                logger.error(
-                    f"OpenSubtitles download request failed: {response.status_code} {response.text}"
-                )
+            logger.error(
+                f"OpenSubtitles download request failed: {response.status_code} {response.text}"
+            )
         except Exception:
             logger.exception("Error getting OpenSubtitles download link")
         return None
@@ -147,10 +144,9 @@ class OpenSubtitlesClient:
                     "Successfully downloaded subtitle content from OpenSubtitles."
                 )
                 return response.content
-            else:
-                logger.error(
-                    f"Failed to download subtitle from {download_url}: {response.status_code}"
-                )
+            logger.error(
+                f"Failed to download subtitle from {download_url}: {response.status_code}"
+            )
         except Exception:
             logger.exception("Error downloading subtitle content")
         return None

@@ -1070,7 +1070,7 @@ class VideoPlayerWidget(QWidget):
             if event.type() == QEvent.Type.MouseButtonDblClick:
                 self.toggle_fullscreen()
                 return True
-            elif event.type() == QEvent.Type.MouseMove:
+            if event.type() == QEvent.Type.MouseMove:
                 self._handle_mouse_move()
         return super().eventFilter(watched, event)
 

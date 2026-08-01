@@ -121,7 +121,7 @@ def bulk_set_app_configs(config_dict: dict[str, Any]) -> None:
                     row.value = "1" if value else "0"
                 else:
                     row.value = str(value)
-            logging.info(f"Bulk upserted {len(config_dict)} app_config settings")
+            logger.info(f"Bulk upserted {len(config_dict)} app_config settings")
             logger.debug(f"Successfully saved bulk app_configs to DB: {config_dict}")
     except Exception:
         logger.exception("Error writing bulk app_config settings")

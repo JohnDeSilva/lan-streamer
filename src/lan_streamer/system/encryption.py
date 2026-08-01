@@ -45,11 +45,10 @@ def get_encryption_key() -> bytes:
             if len(decoded_key) == 32:
                 logger.debug(f"Loaded encryption key from file: {key_file_path}")
                 return file_content.encode("utf-8")
-            else:
-                logger.warning(
-                    f"Key file {key_file_path} contains invalid key length. Deriving key."
-                )
-                return _derive_fernet_key(file_content)
+            logger.warning(
+                f"Key file {key_file_path} contains invalid key length. Deriving key."
+            )
+            return _derive_fernet_key(file_content)
         except OSError, ValueError, TypeError:
             logger.exception(
                 "Error reading encryption key file; deriving temporary key."
