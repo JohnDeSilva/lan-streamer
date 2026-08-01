@@ -959,10 +959,8 @@ class SeriesDetailView(QWidget):
                 )
 
                 tmdb_name_value: str | None = episode_record.get("tmdb_name")
-                title_string: str = (
-                    tmdb_name_value
-                    if tmdb_name_value
-                    else episode_record.get("name", "Unknown")
+                title_string: str = tmdb_name_value or episode_record.get(
+                    "name", "Unknown"
                 )
 
                 absolute_path: str = episode_record.get("path") or ""
@@ -1100,8 +1098,8 @@ class SeriesDetailView(QWidget):
             def make_context_menu_slot(
                 table: QTableWidget, season: str, episode_list: list[dict[str, Any]]
             ) -> Callable[[QPoint], None]:
-                def show_context_menu(position: QPoint) -> None:
-                    item: QTableWidgetItem | None = table.itemAt(position)
+                def show_context_menu(menu_position: QPoint) -> None:
+                    item: QTableWidgetItem | None = table.itemAt(menu_position)
                     if not item:
                         return
                     row: int = item.row()
@@ -1156,7 +1154,7 @@ class SeriesDetailView(QWidget):
                     remove_action.triggered.connect(handle_delete)
                     menu.addAction(remove_action)
 
-                    menu.exec(table.viewport().mapToGlobal(position))
+                    menu.exec(table.viewport().mapToGlobal(menu_position))
 
                 return show_context_menu
 

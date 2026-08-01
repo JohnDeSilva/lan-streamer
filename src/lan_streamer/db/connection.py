@@ -21,7 +21,7 @@ _DEFAULT_DB_FILE = Path(os.getenv("LAN_STREAMER_DB", config.database_path))
 def _get_runtime_db_file() -> Path:
     db_module = sys.modules.get("lan_streamer.db")
     if db_module and hasattr(db_module, "DB_FILE"):
-        return Path(getattr(db_module, "DB_FILE"))
+        return Path(getattr(db_module, "DB_FILE"))  # noqa: B009
     return _DEFAULT_DB_FILE
 
 
@@ -63,7 +63,7 @@ def get_engine() -> Engine:
             dbapi_connection.create_function("upper", 1, _sqlite_unicode_upper)
 
         if db_module:
-            setattr(db_module, "_engine", _engine)
+            setattr(db_module, "_engine", _engine)  # noqa: B010
 
     return _engine
 
@@ -76,7 +76,7 @@ def get_session_factory() -> sessionmaker[Session]:
             autocommit=False, autoflush=False, bind=get_engine()
         )
         if db_module:
-            setattr(db_module, "_SessionLocal", _SessionLocal)
+            setattr(db_module, "_SessionLocal", _SessionLocal)  # noqa: B010
     return _SessionLocal
 
 
@@ -137,7 +137,7 @@ def init_db() -> bool:
         from alembic.config import Config
 
         if getattr(sys, "frozen", False):
-            base_path: Path = Path(getattr(sys, "_MEIPASS"))
+            base_path: Path = Path(getattr(sys, "_MEIPASS"))  # noqa: B009
         else:
             base_path = Path(__file__).parent.parent.parent.parent
 
@@ -161,7 +161,7 @@ def init_db() -> bool:
         logger.info("Database migration completed successfully.")
 
         if db_module:
-            setattr(db_module, "_db_initialized", True)
+            setattr(db_module, "_db_initialized", True)  # noqa: B010
         return True
     except Exception as exc:
         logger.error(f"Failed to run database migrations: {exc}", exc_info=True)

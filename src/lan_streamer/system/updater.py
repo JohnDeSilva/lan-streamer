@@ -294,7 +294,7 @@ class UpdateCheckWorker(QThread):
         best_release_data = None
         best_release_value = None
 
-        for _, (is_prerelease, release_data) in best_release_per_version.items():
+        for _, (_, release_data) in best_release_per_version.items():
             comparable_value = parse_comparable_version(release_data["version"])
             if best_release_value is None or comparable_value > best_release_value:
                 best_release_value = comparable_value

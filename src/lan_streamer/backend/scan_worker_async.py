@@ -298,7 +298,7 @@ class AsyncScanWorker(AsyncWorkerBase):
             for pass_num in [1, 2]:
                 if pass_num in self.pass_stats:
                     for key, value in self.pass_stats[pass_num].items():
-                        if key.endswith("_scanned") or key.endswith("_skipped"):
+                        if key.endswith(("_scanned", "_skipped")):
                             self.stats[key] = max(self.stats.get(key, 0), value)
                         elif not key.startswith("_"):
                             self.stats[key] = self.stats.get(key, 0) + value
@@ -383,9 +383,7 @@ class AsyncScanWorker(AsyncWorkerBase):
             target_stats["episodes_skipped"] += skipped
 
         for key in target_stats:
-            if key in stats and not (
-                key.endswith("_scanned") or key.endswith("_skipped")
-            ):
+            if key in stats and not (key.endswith(("_scanned", "_skipped"))):
                 target_stats[key] += stats[key]
 
         if season_data.get("_changed", True) and "season_id" in stats:
@@ -410,9 +408,7 @@ class AsyncScanWorker(AsyncWorkerBase):
             target_stats["movies_skipped"] += 1
 
         for key in target_stats:
-            if key in stats and not (
-                key.endswith("_scanned") or key.endswith("_skipped")
-            ):
+            if key in stats and not (key.endswith(("_scanned", "_skipped"))):
                 target_stats[key] += stats[key]
 
         if movie_data.get("_changed", True) and "movie_id" in stats:

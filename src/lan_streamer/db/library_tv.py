@@ -697,7 +697,7 @@ def save_library(library_name: str, library: dict[str, Any]) -> dict[str, Any]:
                         stats["episodes_removed"] += 1
 
             # Persist directory mtimes for series and seasons
-            for series_name, series_data in library.items():
+            for _, series_data in library.items():
                 series_metadata = series_data.get("metadata", {})
                 series_dir = series_metadata.get("series_directory_path")
                 series_mtime = series_metadata.get("last_scanned_mtime")
@@ -715,7 +715,7 @@ def save_library(library_name: str, library: dict[str, Any]) -> dict[str, Any]:
                                 path=series_dir, last_scanned_mtime=series_mtime
                             )
                         )
-                for season_name, season_data in series_data.get("seasons", {}).items():
+                for _, season_data in series_data.get("seasons", {}).items():
                     season_metadata = season_data.get("metadata", {})
                     season_dir = season_metadata.get("season_directory_path")
                     season_mtime = season_metadata.get("last_scanned_mtime")

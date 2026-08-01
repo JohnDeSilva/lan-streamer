@@ -140,7 +140,7 @@ def scan_series_pass3(
     seasons: dict[str, Any] = existing_series_data.get("seasons", {})
     for season_data in seasons.values():
         episodes: list[dict[str, Any]] = season_data.get("episodes", [])
-        for index, episode in enumerate(episodes):
+        for _index, episode in enumerate(episodes):
             _upgrade_episode_metadata(episode, force_refresh)
             _handle_missing_file(episode)
 

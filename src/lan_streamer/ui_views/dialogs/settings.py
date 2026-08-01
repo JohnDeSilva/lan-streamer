@@ -1001,7 +1001,7 @@ class SettingsDialog(QDialog):
         self.combined_views_list_widget.blockSignals(True)
         current_idx = self.combined_views_list_widget.currentRow()
         self.combined_views_list_widget.clear()
-        for idx, row in enumerate(self.staged_combined_views):
+        for _idx, row in enumerate(self.staged_combined_views):
             status = "Enabled" if row.get("enabled", True) else "Disabled"
             self.combined_views_list_widget.addItem(
                 f"{row.get('name', 'Unnamed')} - {status}"
@@ -2034,8 +2034,7 @@ class SettingsDialog(QDialog):
             if "[SCAN_REPORT]" in formatted_message:
                 idx = formatted_message.index("[SCAN_REPORT]")
                 content = formatted_message[idx + len("[SCAN_REPORT]") :]
-                if content.startswith(" "):
-                    content = content[1:]
+                content = content.removeprefix(" ")
                 if is_separator(content) or content not in self._appended_report_lines:
                     if not is_separator(content):
                         self._appended_report_lines.add(content)

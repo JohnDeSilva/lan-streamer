@@ -220,7 +220,7 @@ def _resolve_episode_jellyfin_id(
             if tmdb_series and tmdb_series.get("name")
             else series_directory.name
         ).lower()
-        lookup_episode = str(tmdb_name if tmdb_name else episode_file.stem).lower()
+        lookup_episode = str(tmdb_name or episode_file.stem).lower()
         jellyfin_id = name_map.get((lookup_series, lookup_episode), "")
 
     # 4. Series-ID map — SxxExx then episode name

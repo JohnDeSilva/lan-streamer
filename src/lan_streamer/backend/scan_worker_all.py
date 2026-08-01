@@ -203,7 +203,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             accumulated_stats = {}
             all_keys = set(pass1_stats.keys()) | set(pass2_stats.keys())
             for key in all_keys:
-                if key.endswith("_scanned") or key.endswith("_skipped"):
+                if key.endswith(("_scanned", "_skipped")):
                     # Use max to avoid double-counting unique entities across passes
                     accumulated_stats[key] = max(
                         pass1_stats.get(key, 0), pass2_stats.get(key, 0)
@@ -388,7 +388,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                         # Add/update/remove counts from db return value
                         for key in local_stats:
                             if key in stats and not (
-                                key.endswith("_scanned") or key.endswith("_skipped")
+                                key.endswith(("_scanned", "_skipped"))
                             ):
                                 local_stats[key] += stats[key]
 
@@ -486,7 +486,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
 
                         for key in local_stats:
                             if key in stats and not (
-                                key.endswith("_scanned") or key.endswith("_skipped")
+                                key.endswith(("_scanned", "_skipped"))
                             ):
                                 local_stats[key] += stats[key]
 
@@ -1137,7 +1137,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             for pass_num in [1, 2]:
                 if pass_num in self.pass_stats:
                     for key, value in self.pass_stats[pass_num].items():
-                        if key.endswith("_scanned") or key.endswith("_skipped"):
+                        if key.endswith(("_scanned", "_skipped")):
                             self.stats[key] = max(self.stats.get(key, 0), value)
                         elif not key.startswith("_"):
                             self.stats[key] = self.stats.get(key, 0) + value

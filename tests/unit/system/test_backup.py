@@ -72,7 +72,7 @@ def test_cleanup_old_backups_retention(backup_environment: Path) -> None:
     backup.cleanup_old_backups(backup_directory, "_config.json", 3)
 
     # Verify that files older than 3 days are deleted (leaving 0, 1, 2, and 3 days ago files remaining)
-    remaining_files: list[Path] = sorted(list(backup_directory.glob("*_config.json")))
+    remaining_files: list[Path] = sorted(backup_directory.glob("*_config.json"))
     assert len(remaining_files) == 4
 
     # The oldest timestamp remaining should be 3 days ago
