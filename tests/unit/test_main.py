@@ -155,7 +155,7 @@ def test_main_logging_setup(tmp_path: Any) -> None:
 
 def test_main_logging_failure() -> None:
     def mock_file_handler(*args: Any, **kwargs: Any) -> None:
-        raise Exception("Log failure")
+        raise OSError("Log failure")
 
     mock_error_target = MagicMock()
 
@@ -517,7 +517,7 @@ def test_main_log_directory_creation_failure() -> None:
 
 def test_main_log_cleanup_exception() -> None:
     with (
-        patch("pathlib.Path.glob", side_effect=Exception("Glob failed")),
+        patch("pathlib.Path.glob", side_effect=OSError("Glob failed")),
         patch("lan_streamer.main.QApplication", MagicMock()),
         patch("lan_streamer.main.QMainWindow", MagicMock()),
         patch("lan_streamer.main.QWidget", MagicMock()),

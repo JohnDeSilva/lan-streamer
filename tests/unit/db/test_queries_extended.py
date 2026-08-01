@@ -14,6 +14,7 @@ Extended tests for db/queries.py – covering lines that have no existing covera
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from lan_streamer import db
 from lan_streamer.db.models import Episode, Movie, Season, Series
@@ -955,7 +956,7 @@ def test_get_all_app_configs_db_error(caplog) -> None:
         patch("lan_streamer.db.connection.get_session") as mock_session,
         caplog.at_level(logging.WARNING, logger="lan_streamer.db.queries"),
     ):
-        mock_session.side_effect = Exception("disk I/O error")
+        mock_session.side_effect = SQLAlchemyError("disk I/O error")
         result = get_all_app_configs()
 
     assert result == {}
@@ -974,7 +975,7 @@ def test_bulk_set_app_configs_db_error(caplog) -> None:
         patch("lan_streamer.db.connection.get_session") as mock_session,
         caplog.at_level(logging.ERROR, logger="lan_streamer.db.queries"),
     ):
-        mock_session.side_effect = Exception("disk I/O error")
+        mock_session.side_effect = SQLAlchemyError("disk I/O error")
         # Should not raise exception
         bulk_set_app_configs({"some_key": "some_val"})
 
@@ -1055,7 +1056,7 @@ def test_get_all_secrets_db_error(caplog) -> None:
         patch("lan_streamer.db.connection.get_session") as mock_session,
         caplog.at_level(logging.WARNING, logger="lan_streamer.db.queries"),
     ):
-        mock_session.side_effect = Exception("disk I/O error")
+        mock_session.side_effect = SQLAlchemyError("disk I/O error")
         result = get_all_secrets()
 
     assert result == {}

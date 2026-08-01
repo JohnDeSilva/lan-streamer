@@ -243,7 +243,7 @@ class MalSearchResultsDialog(QDialog):
                     self._cached_thumbnails[poster_url] = icon
                 else:
                     return
-            except Exception:
+            except http_requests.RequestException, OSError, ValueError:
                 logger.debug("Failed to load MAL poster thumbnail: %s", poster_url)
                 return
         item = self._results_table.item(row_index, 0)

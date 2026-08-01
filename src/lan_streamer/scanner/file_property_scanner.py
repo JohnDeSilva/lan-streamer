@@ -73,7 +73,12 @@ def _extract_video_runtime(file_path: str) -> int | None:
         if process_result.returncode == 0 and process_result.stdout.strip():
             duration_seconds: float = float(process_result.stdout.strip())
             return int(round(duration_seconds / 60.0))
-    except Exception as error_instance:
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        subprocess.TimeoutExpired,
+        ValueError,
+    ) as error_instance:
         logger.debug(f"ffprobe extraction failed for '{file_path}': {error_instance}")
 
     try:
@@ -85,7 +90,7 @@ def _extract_video_runtime(file_path: str) -> int | None:
         duration_milliseconds: int = media_object.get_duration()
         if duration_milliseconds > 0:
             return int(round(duration_milliseconds / 60000.0))
-    except Exception as error_instance:
+    except (ImportError, OSError, ValueError, TypeError) as error_instance:
         logger.debug(f"vlc extraction failed for '{file_path}': {error_instance}")
 
     return None
@@ -121,7 +126,7 @@ def get_detailed_file_info(file_path: str) -> dict[str, Any]:
     path_obj = Path(file_path)
     try:
         info["size_bytes"] = path_obj.stat().st_size
-    except Exception as stat_error:
+    except OSError as stat_error:
         logger.error(
             f"get_detailed_file_info: Failed to read file stats/size for '{file_path}': {stat_error}"
         )
@@ -169,7 +174,7 @@ def get_detailed_file_info(file_path: str) -> dict[str, Any]:
                     dur = float(duration_str)
                     if dur > 0 and info["size_bytes"] is not None:
                         info["bit_rate"] = int(round((info["size_bytes"] * 8) / dur))
-                except Exception:
+                except ValueError, TypeError:
                     pass
 
             for stream in streams:
@@ -198,7 +203,13 @@ def get_detailed_file_info(file_path: str) -> dict[str, Any]:
                 elif codec_type == "subtitle":
                     info["subtitle_tracks"].append(track_info)
 
-    except Exception as exc:
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        subprocess.TimeoutExpired,
+        ValueError,
+        TypeError,
+    ) as exc:
         logger.error(f"Failed to extract detailed info for {file_path}: {exc}")
 
     if not info.get("runtime"):
@@ -231,7 +242,7 @@ def get_stub_file_info(file_path: str) -> dict[str, Any]:
     try:
         if path_obj.exists():
             info["size_bytes"] = path_obj.stat().st_size
-    except Exception as stat_error:
+    except OSError as stat_error:
         logger.error(
             f"get_stub_file_info: Failed to read file stats/size for '{file_path}': {stat_error}"
         )

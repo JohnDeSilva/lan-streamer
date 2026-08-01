@@ -209,7 +209,7 @@ def series_belongs_to_root(
     """Check if a series belongs to a specific root directory."""
     try:
         resolved_root = str(Path(root_dir).resolve())
-    except Exception:
+    except OSError:
         resolved_root = root_dir
 
     paths: list[str] = []
@@ -232,6 +232,6 @@ def series_belongs_to_root(
             p_path = Path(p).resolve()
             if p_path.is_relative_to(resolved_root):
                 return True
-        except Exception:
+        except OSError, ValueError:
             pass
     return False

@@ -72,7 +72,7 @@ def _detect_new_series_files(
                 )
                 if is_valid_season:
                     continue
-        except Exception:
+        except ValueError:
             pass
 
         abs_path = str(file_path.absolute())

@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import requests
 from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QPixmap
 from PySide6.QtWidgets import (
@@ -994,7 +995,13 @@ class SeasonDetailView(QWidget):
         if search_text and not season_has_no_number:
             try:
                 results = tmdb_client.search_series_full(search_text)
-            except Exception:
+            except (
+                requests.exceptions.RequestException,
+                OSError,
+                ValueError,
+                KeyError,
+                RuntimeError,
+            ):
                 results = []
             if results:
                 from lan_streamer.ui_views.dialogs.tmdb_search_results import (

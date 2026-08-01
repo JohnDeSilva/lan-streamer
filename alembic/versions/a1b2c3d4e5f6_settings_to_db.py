@@ -102,7 +102,7 @@ def _load_config() -> dict[str, Any]:
         if config_file.exists():
             with open(config_file) as file_handle:
                 return json.load(file_handle)
-    except Exception:
+    except OSError, ValueError:
         pass
     return {}
 

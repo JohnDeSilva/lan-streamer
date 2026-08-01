@@ -52,7 +52,7 @@ def _build_episode_dict(episode: Episode) -> dict[str, Any]:
             audio_tracks = (
                 json.loads(primary_mf.audio_tracks) if primary_mf.audio_tracks else []
             )
-        except Exception:
+        except json.JSONDecodeError, TypeError:
             audio_tracks = []
         try:
             subtitle_tracks = (
@@ -60,18 +60,18 @@ def _build_episode_dict(episode: Episode) -> dict[str, Any]:
                 if primary_mf.subtitle_tracks
                 else []
             )
-        except Exception:
+        except json.JSONDecodeError, TypeError:
             subtitle_tracks = []
 
     versions = []
     for mf in episode.media_files:
         try:
             audio = json.loads(mf.audio_tracks) if mf.audio_tracks else []
-        except Exception:
+        except json.JSONDecodeError, TypeError:
             audio = []
         try:
             subs = json.loads(mf.subtitle_tracks) if mf.subtitle_tracks else []
-        except Exception:
+        except json.JSONDecodeError, TypeError:
             subs = []
         versions.append(
             {
@@ -189,7 +189,7 @@ def _build_movie_dict(movie: Movie) -> dict[str, Any]:
             audio_tracks = (
                 json.loads(primary_mf.audio_tracks) if primary_mf.audio_tracks else []
             )
-        except Exception:
+        except json.JSONDecodeError, TypeError:
             audio_tracks = []
         try:
             subtitle_tracks = (
@@ -197,18 +197,18 @@ def _build_movie_dict(movie: Movie) -> dict[str, Any]:
                 if primary_mf.subtitle_tracks
                 else []
             )
-        except Exception:
+        except json.JSONDecodeError, TypeError:
             subtitle_tracks = []
 
     versions = []
     for mf in movie.media_files:
         try:
             audio = json.loads(mf.audio_tracks) if mf.audio_tracks else []
-        except Exception:
+        except json.JSONDecodeError, TypeError:
             audio = []
         try:
             subs = json.loads(mf.subtitle_tracks) if mf.subtitle_tracks else []
-        except Exception:
+        except json.JSONDecodeError, TypeError:
             subs = []
         versions.append(
             {

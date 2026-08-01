@@ -12,6 +12,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from lan_streamer.scanner.file_property_scanner import get_stub_file_info
 from lan_streamer.scanner.parser import (
     VIDEO_EXTENSIONS,
@@ -48,7 +50,7 @@ def _validate_series_file_layout(series_directory: Path) -> None:
                     outside_file_paths.append(file_path)
                 elif len(parts) > 2:
                     nested_too_deeply.append(file_path)
-        except Exception:
+        except ValueError:
             pass
 
     if outside_file_paths:
@@ -244,7 +246,7 @@ def _save_directory_mtime(path: str, display_name: str) -> None:
         logger.warning(
             "Could not read directory mtime for '%s': %s", display_name, mtime_error
         )
-    except Exception:
+    except SQLAlchemyError:
         logger.debug(
             "Could not persist directory mtime for '%s' (DB not ready)", display_name
         )

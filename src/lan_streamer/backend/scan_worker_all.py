@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, Signal
+from sqlalchemy.exc import SQLAlchemyError
 
 from lan_streamer import db
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
@@ -424,13 +425,27 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                                         "Skipping cast/image fetch for series '%s' (cached)",
                                         series_name,
                                     )
-                            except Exception as fetch_error:
+                            except (
+                                OSError,
+                                ValueError,
+                                TypeError,
+                                KeyError,
+                                RuntimeError,
+                                SQLAlchemyError,
+                            ) as fetch_error:
                                 logger.warning(
                                     "Failed to fetch cast/images for series '%s': %s",
                                     series_name,
                                     fetch_error,
                                 )
-            except Exception as error:
+            except (
+                OSError,
+                ValueError,
+                TypeError,
+                KeyError,
+                RuntimeError,
+                SQLAlchemyError,
+            ) as error:
                 with local_lock:
                     log_db_write_error(
                         local_problems,
@@ -513,13 +528,27 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                                         "Skipping cast/image fetch for movie '%s' (cached)",
                                         movie_name,
                                     )
-                            except Exception as fetch_error:
+                            except (
+                                OSError,
+                                ValueError,
+                                TypeError,
+                                KeyError,
+                                RuntimeError,
+                                SQLAlchemyError,
+                            ) as fetch_error:
                                 logger.warning(
                                     "Failed to fetch cast/images for movie '%s': %s",
                                     movie_name,
                                     fetch_error,
                                 )
-            except Exception as error:
+            except (
+                OSError,
+                ValueError,
+                TypeError,
+                KeyError,
+                RuntimeError,
+                SQLAlchemyError,
+            ) as error:
                 with local_lock:
                     log_db_write_error(
                         local_problems,
@@ -557,7 +586,14 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                                 key.endswith("_removed") or key == "deleted"
                             ):
                                 local_stats[key] += stats[key]
-            except Exception as error:
+            except (
+                OSError,
+                ValueError,
+                TypeError,
+                KeyError,
+                RuntimeError,
+                SQLAlchemyError,
+            ) as error:
                 with local_lock:
                     log_db_write_error(
                         local_problems,

@@ -74,7 +74,7 @@ class SeriesDetailsDialog(QDialog):
                     # Attempt to find the series folder (2 levels up from episode file)
                     try:
                         paths.add(str(Path(p).parent.parent))
-                    except Exception:
+                    except OSError, ValueError, TypeError:
                         paths.add(str(Path(p).parent))
 
         paths_label = QLabel("\n".join(sorted(list(paths))))

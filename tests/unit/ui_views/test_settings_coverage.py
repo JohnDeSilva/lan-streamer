@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
+from zipfile import BadZipFile
 
 import pytest
 from PySide6.QtWidgets import QMessageBox
@@ -767,6 +768,7 @@ class TestExportLogs:
             mock_path_cls.home.return_value = Path("/tmp")
             mock_zipfile.ZipFile.side_effect = OSError("disk full")
             mock_zipfile.ZIP_DEFLATED = 8
+            mock_zipfile.BadZipFile = BadZipFile
             dialog._export_logs()
         mock_crit.assert_called_once()
 

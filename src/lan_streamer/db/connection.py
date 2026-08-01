@@ -120,7 +120,7 @@ def init_db() -> bool:
     logger.info(f"Initializing database at: '{db_file}'")
     try:
         db_file.parent.mkdir(parents=True, exist_ok=True)
-    except Exception as exc:
+    except OSError as exc:
         logger.warning(f"Could not create database directory {db_file.parent}: {exc}")
         return False
     if db_file.is_file():
@@ -129,7 +129,7 @@ def init_db() -> bool:
 
             logger.info("Backing up database before running migrations...")
             create_database_backup()
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             logger.warning(f"Failed to create pre-migration database backup: {exc}")
 
     try:

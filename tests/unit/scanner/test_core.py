@@ -1301,10 +1301,10 @@ def test_extract_video_runtime_failure(tmp_path) -> None:
 
     # Both ffprobe and vlc raise exceptions
     with (
-        patch("subprocess.run", side_effect=Exception("ffprobe error")),
+        patch("subprocess.run", side_effect=OSError("ffprobe error")),
         patch.dict(
             "sys.modules",
-            {"vlc": MagicMock(Instance=MagicMock(side_effect=Exception("vlc error")))},
+            {"vlc": MagicMock(Instance=MagicMock(side_effect=OSError("vlc error")))},
         ),
     ):
         assert _extract_video_runtime(str(video_file.absolute())) is None

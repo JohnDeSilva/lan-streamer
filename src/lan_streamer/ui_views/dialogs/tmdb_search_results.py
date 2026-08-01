@@ -4,6 +4,7 @@ import logging
 import re
 from typing import Any
 
+import requests
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
@@ -200,7 +201,7 @@ class TmdbSearchResultsDialog(QDialog):
                     self._cached_thumbnails[poster_url] = icon
                 else:
                     return
-            except Exception:
+            except requests.RequestException, OSError, ValueError:
                 logger.debug("Failed to load TMDB poster thumbnail: %s", poster_url)
                 return
         item = self._results_table.item(row_index, 0)
@@ -211,7 +212,7 @@ class TmdbSearchResultsDialog(QDialog):
         """Auto-match the best season for the current season name."""
         try:
             seasons = tmdb_client.get_seasons(series_id)
-        except Exception:
+        except requests.exceptions.RequestException, RuntimeError:
             seasons = []
         if not seasons:
             return 1

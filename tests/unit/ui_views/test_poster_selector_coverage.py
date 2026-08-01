@@ -7,6 +7,7 @@ All tests use mocked DB sessions and network calls — no real I/O.
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QLabel
@@ -269,7 +270,7 @@ class TestThumbnailDownloader:
             lambda _code, _lang: signals_received.append(True)
         )
 
-        with patch("requests.get", side_effect=Exception("timeout")):
+        with patch("requests.get", side_effect=requests.exceptions.Timeout("timeout")):
             downloader.start_download()
             import time
 

@@ -101,7 +101,7 @@ class EncryptedString(TypeDecorator):
             return value
         try:
             return decrypt_secret(value)
-        except Exception:
+        except ValueError, TypeError:
             return value
 
 

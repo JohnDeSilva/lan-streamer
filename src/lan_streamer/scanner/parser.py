@@ -125,7 +125,7 @@ def has_video_files(directory: Path) -> bool:
                             pass
             except OSError:
                 pass
-    except Exception:
+    except OSError:
         pass
     return False
 
