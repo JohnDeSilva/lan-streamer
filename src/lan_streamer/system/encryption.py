@@ -33,7 +33,7 @@ def get_encryption_key() -> bytes:
             decoded_key = base64.urlsafe_b64decode(environment_key.encode("utf-8"))
             if len(decoded_key) == 32:
                 return environment_key.encode("utf-8")
-        except Exception:
+        except ValueError, TypeError:
             pass
         return _derive_fernet_key(environment_key)
 
@@ -50,7 +50,7 @@ def get_encryption_key() -> bytes:
                     f"Key file {key_file_path} contains invalid key length. Deriving key."
                 )
                 return _derive_fernet_key(file_content)
-        except Exception as error:
+        except (OSError, ValueError, TypeError) as error:
             logger.error(
                 f"Error reading encryption key file: {error}. Deriving temporary key."
             )

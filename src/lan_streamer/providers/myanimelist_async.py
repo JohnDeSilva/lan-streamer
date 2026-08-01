@@ -88,7 +88,7 @@ class AsyncMyAnimeListClient:
                             or error_data.get("error")
                             or str(error_data)
                         )
-                    except Exception:
+                    except ValueError, TypeError:
                         error_msg = await response.text()
                     logger.error(
                         f"MyAnimeList token exchange failed ({response.status}): {error_msg}"

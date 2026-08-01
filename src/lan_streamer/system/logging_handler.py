@@ -27,7 +27,7 @@ class QtLogHandler(logging.Handler):
             level_name: str = record.levelname
             self.buffer.append((formatted_message, level_name))
             self.emitter.log_emitted.emit(formatted_message, level_name)
-        except Exception:
+        except ValueError, TypeError, RuntimeError:
             self.handleError(record)
 
 

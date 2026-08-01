@@ -14,7 +14,7 @@ def get_commits(latest_tag):
             check=True,
         )
         return result.stdout.strip().split("\n")
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         print(f"Error getting commits: {e}")
         sys.exit(1)
 

@@ -124,7 +124,7 @@ class _ThumbnailDownloader(QObject):
                 response = http_requests.get(self.image_url, timeout=8)
                 if response.status_code == 200:
                     self.downloaded.emit(response.content, self.label)
-            except Exception:
+            except http_requests.RequestException, OSError:
                 logger.debug("Thumbnail fetch failed for %s", self.image_url)
 
         threading.Thread(target=worker, daemon=True).start()

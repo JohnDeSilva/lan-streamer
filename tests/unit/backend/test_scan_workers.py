@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import patch
 
 from PySide6.QtCore import Qt
+from sqlalchemy.exc import SQLAlchemyError
 
 from lan_streamer.backend import (
     CleanupWorker,
@@ -213,7 +214,7 @@ def test_scan_all_libraries_worker_reporting() -> None:
         patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
         patch(
             "lan_streamer.backend.scan_worker_all.db.save_library",
-            side_effect=Exception("DB Fail Library Save"),
+            side_effect=SQLAlchemyError("DB Fail Library Save"),
         ),
         patch(
             "lan_streamer.backend.scan_worker_all.scan_directories",
@@ -221,7 +222,7 @@ def test_scan_all_libraries_worker_reporting() -> None:
         ) as mock_scan_all,
         patch(
             "lan_streamer.backend.scan_worker_all.db.save_season_data",
-            side_effect=Exception("DB Fail Progressive Season"),
+            side_effect=SQLAlchemyError("DB Fail Progressive Season"),
         ),
         patch("lan_streamer.backend.scan_worker_all.logger") as mock_log_all,
     ):

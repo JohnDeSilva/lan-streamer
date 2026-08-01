@@ -829,7 +829,7 @@ class SeriesDetailView(QWidget):
 
             try:
                 sorted_episodes = sorted(episodes_list, key=episode_sort_key)
-            except Exception:
+            except TypeError, ValueError:
                 sorted_episodes = episodes_list
 
             for index, episode_record in enumerate(sorted_episodes):
@@ -929,7 +929,7 @@ class SeriesDetailView(QWidget):
 
             try:
                 sorted_episodes = sorted(episodes_list, key=episode_sort_key)
-            except Exception:
+            except TypeError, ValueError:
                 sorted_episodes = episodes_list
 
             episode_table.setRowCount(len(sorted_episodes))

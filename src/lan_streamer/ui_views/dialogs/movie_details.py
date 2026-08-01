@@ -309,12 +309,12 @@ class MovieDetailsDialog(QDialog):
                 size_bytes = 0
             elif size_bytes is None:
                 size_bytes = Path(path).stat().st_size
-        except Exception:
+        except OSError:
             size_bytes = 0
 
         try:
             size_mb = float(size_bytes) / (1024 * 1024)
-        except Exception:
+        except ValueError, TypeError:
             size_mb = 0.0
         self.size_label.setText(f"{size_mb:.2f} MB")
         self.type_label.setText(
@@ -337,7 +337,7 @@ class MovieDetailsDialog(QDialog):
                 bit_rate_bps = 0
             else:
                 bit_rate_bps = int(bit_rate_bps)
-        except Exception:
+        except ValueError, TypeError:
             bit_rate_bps = 0
 
         if bit_rate_bps > 0:
@@ -353,7 +353,7 @@ class MovieDetailsDialog(QDialog):
         if isinstance(audio_tracks, str):
             try:
                 audio_tracks = json.loads(audio_tracks)
-            except Exception:
+            except json.JSONDecodeError, TypeError:
                 audio_tracks = []
         for track in audio_tracks:
             self.audio_list.addItem(
@@ -365,7 +365,7 @@ class MovieDetailsDialog(QDialog):
         if isinstance(subtitle_tracks, str):
             try:
                 subtitle_tracks = json.loads(subtitle_tracks)
-            except Exception:
+            except json.JSONDecodeError, TypeError:
                 subtitle_tracks = []
         for track in subtitle_tracks:
             self.subtitle_list.addItem(
@@ -389,7 +389,7 @@ class MovieDetailsDialog(QDialog):
                     ):
                         ext_subs.append(str(f.absolute()))
                         self.external_sub_list.addItem(f.name)
-        except Exception:
+        except OSError:
             pass
 
         self.merge_button.setEnabled(len(ext_subs) > 0)

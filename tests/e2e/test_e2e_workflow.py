@@ -285,7 +285,7 @@ def test_library_grid_view_combined_view(qtbot: Any) -> None:
     try:
         Path(valid_img_path).unlink()
         Path(temp_dir).rmdir()
-    except Exception:
+    except OSError:
         pass
 
 

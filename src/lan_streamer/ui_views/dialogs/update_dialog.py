@@ -154,7 +154,7 @@ class UpdateDialog(QDialog):
                         f"is not writable. Falling back to updates directory."
                     )
                     self.use_in_place = False
-            except Exception as exception:
+            except OSError as exception:
                 logger.warning(
                     f"UpdateDialog: Error checking in-place update feasibility: {exception}. "
                     f"Falling back to updates directory."
@@ -229,7 +229,7 @@ class UpdateDialog(QDialog):
                             f"UpdateDialog: making downloaded program executable at: {program_path}"
                         )
                         os.chmod(program_path, 0o755)
-                    except Exception as exception:
+                    except OSError as exception:
                         logger.error(
                             f"UpdateDialog: failed to chmod downloaded update: {exception}"
                         )

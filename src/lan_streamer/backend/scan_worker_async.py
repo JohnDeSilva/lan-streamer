@@ -14,6 +14,7 @@ import time
 from typing import Any
 
 from PySide6.QtCore import QObject, Signal
+from sqlalchemy.exc import SQLAlchemyError
 
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.backend.database_writer import AsyncDatabaseWriter
@@ -169,7 +170,14 @@ class AsyncScanWorker(AsyncWorkerBase):
                         season_name,
                         season_data,
                     )
-                except Exception as error:
+                except (
+                    OSError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    RuntimeError,
+                    SQLAlchemyError,
+                ) as error:
                     log_db_write_error(
                         self.problems,
                         f"Season '{season_name}' of series '{series_name}'",
@@ -196,7 +204,14 @@ class AsyncScanWorker(AsyncWorkerBase):
                     if task.error:
                         raise task.error
                     self._merge_movie_result(task.result, movie_name, movie_data)
-                except Exception as error:
+                except (
+                    OSError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    RuntimeError,
+                    SQLAlchemyError,
+                ) as error:
                     log_db_write_error(
                         self.problems,
                         f"Movie '{movie_name}'",

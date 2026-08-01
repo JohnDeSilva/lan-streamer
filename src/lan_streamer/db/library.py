@@ -68,7 +68,7 @@ def _cleanup_orphaned_media_files(
                     break
                 except ValueError:
                     continue
-        except Exception as exception_instance:
+        except (OSError, ValueError) as exception_instance:
             logger.warning(
                 f"Cleanup: Unable to resolve path '{mf.path}': {exception_instance}"
             )
@@ -81,7 +81,7 @@ def _cleanup_orphaned_media_files(
                     )
                     session.delete(mf)
                     removed_count += 1
-            except Exception as exception_instance:
+            except OSError as exception_instance:
                 logger.warning(
                     f"Cleanup: Unable to check existence of '{mf.path}': {exception_instance}"
                 )

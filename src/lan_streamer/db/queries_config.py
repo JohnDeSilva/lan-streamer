@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from lan_streamer.db.models import AppConfig, AppSecret, SecretType, Series
 
@@ -80,7 +81,7 @@ def get_all_app_configs() -> dict[str, Any]:
                     config_dict[row.key] = coerce(row.value)
             logger.debug(f"get_all_app_configs query response: {config_dict}")
             return config_dict
-    except Exception:
+    except SQLAlchemyError, ValueError, TypeError:
         logger.warning("Error reading all app_config rows")
         return {}
 
@@ -143,7 +144,7 @@ def get_all_secrets() -> dict[str, dict[str, Any]]:
                         secrets_dictionary[secret_row.secret_type] = json.loads(
                             secret_row.secret
                         )
-                    except Exception:
+                    except json.JSONDecodeError, TypeError:
                         logger.warning(
                             f"Error parsing secret for type '{secret_row.secret_type}'"
                         )
@@ -162,7 +163,7 @@ def get_all_secrets() -> dict[str, dict[str, Any]]:
                         if isinstance(value, str):
                             try:
                                 return uuid.UUID(value).hex
-                            except Exception:
+                            except ValueError, TypeError:
                                 return value.encode("utf-8").hex()
                         return ""
 
@@ -190,7 +191,7 @@ def get_all_secrets() -> dict[str, dict[str, Any]]:
                 f"get_all_secrets query response: [MASKED secrets keys: {masked_dictionary}]"
             )
             return secrets_dictionary
-    except Exception:
+    except SQLAlchemyError, ValueError, TypeError:
         logger.warning("Error reading all secrets from database")
         return {}
 

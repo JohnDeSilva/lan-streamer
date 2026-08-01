@@ -40,13 +40,13 @@ def get_version_score_key(version: dict[str, Any]) -> tuple:
         try:
             w, h = res.split("x")
             res_score = int(w) * int(h)
-        except Exception:
+        except ValueError:
             pass
 
     bit_rate = version.get("bit_rate") or 0
     try:
         bit_rate = int(bit_rate)
-    except Exception:
+    except ValueError, TypeError:
         bit_rate = 0
 
     video_codec = (version.get("video_codec") or "").lower()

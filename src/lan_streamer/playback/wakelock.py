@@ -77,7 +77,7 @@ class WakeLock:
                 self._cookie = match.group(1)
                 logger.info(f"Linux sleep inhibition active (cookie: {self._cookie})")
                 return
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             logger.debug(f"gdbus inhibition failed: {e}")
 
         # Fallback to xdg-screensaver suspend (less reliable for some WMs)
@@ -86,7 +86,7 @@ class WakeLock:
                 ["xdg-screensaver", "suspend", "0x0"]
             )  # 0x0 is a dummy window id
             logger.info("Linux sleep inhibition active (xdg-screensaver)")
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             logger.debug(f"xdg-screensaver failed: {e}")
 
     def _uninhibit_linux(self) -> None:
@@ -105,7 +105,7 @@ class WakeLock:
                     self._cookie,
                 ]
                 subprocess.run(cmd, check=True, capture_output=True)
-            except Exception as e:
+            except (OSError, subprocess.SubprocessError) as e:
                 logger.debug(
                     f"gdbus uninhibit failed (lock likely auto-released by session): {e}"
                 )
@@ -138,7 +138,7 @@ class WakeLock:
                 "Releasing Windows sleep inhibition via SetThreadExecutionState"
             )
             ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)  # type: ignore[attr-defined]
-        except Exception:
+        except OSError:
             pass
 
     def _inhibit_macos(self, reason: str) -> None:
@@ -161,7 +161,7 @@ class WakeLock:
             try:
                 self._process.terminate()
                 self._process.wait(timeout=1)
-            except Exception:
+            except OSError, subprocess.SubprocessError, ValueError, TypeError:
                 with contextlib.suppress(Exception):
                     self._process.kill()
             self._process = None

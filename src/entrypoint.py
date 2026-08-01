@@ -27,7 +27,7 @@ def setup_vlc_environment() -> None:
         from lan_streamer.system.config import config
 
         log_level_string = config.log_level.upper()
-    except Exception:
+    except OSError, ValueError, KeyError, TypeError, AttributeError:
         log_level_string = "INFO"
 
     log_level = getattr(logging, log_level_string, logging.INFO)
@@ -64,7 +64,7 @@ def setup_vlc_environment() -> None:
                     try:
                         ctypes.CDLL(vlc_core_path)
                         logger.info("Successfully pre-loaded libvlccore.")
-                    except Exception as exception:
+                    except OSError as exception:
                         logger.error(
                             "Failed to pre-load libvlccore from %s: %s",
                             vlc_core_path,

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import requests
 from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QDialog
 
@@ -608,7 +609,7 @@ class TestTMDbAutoSearch:
             ),
             patch(
                 "lan_streamer.ui_views.season_detail.tmdb_client.search_series_full",
-                side_effect=Exception("network error"),
+                side_effect=requests.exceptions.RequestException("network error"),
             ),
         ):
             view.display_season("Test Series", "Season 1")
@@ -645,7 +646,7 @@ class TestTMDbSearch:
         with (
             patch(
                 "lan_streamer.ui_views.season_detail.tmdb_client.search_series_full",
-                side_effect=Exception("network error"),
+                side_effect=requests.exceptions.RequestException("network error"),
             ),
             patch(
                 "lan_streamer.ui_views.season_detail.QMessageBox.warning"
@@ -889,7 +890,7 @@ class TestMALEntrySelected:
         with (
             patch(
                 "lan_streamer.ui_views.season_detail.myanimelist_client.get_anime_details",
-                side_effect=Exception("network error"),
+                side_effect=requests.exceptions.RequestException("network error"),
             ),
             patch(
                 "lan_streamer.ui_views.season_detail.QMessageBox.warning"
@@ -915,7 +916,7 @@ class TestMALEntrySelected:
         with (
             patch(
                 "lan_streamer.ui_views.season_detail.myanimelist_client.get_anime_details",
-                side_effect=Exception("network error"),
+                side_effect=requests.exceptions.RequestException("network error"),
             ),
             patch(
                 "lan_streamer.ui_views.season_detail.QMessageBox.warning"

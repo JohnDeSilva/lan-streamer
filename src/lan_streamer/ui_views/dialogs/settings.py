@@ -1976,7 +1976,7 @@ class SettingsDialog(QDialog):
                 "Export Successful",
                 f"Logs successfully exported to:\n{zip_filepath}",
             )
-        except Exception as e:
+        except (OSError, ValueError, zipfile.BadZipFile) as e:
             QMessageBox.critical(
                 self,
                 "Export Error",
@@ -2103,7 +2103,7 @@ class SettingsDialog(QDialog):
                 from lan_streamer.system.logging_handler import qt_log_handler
 
                 qt_log_handler.emitter.log_emitted.disconnect(self._on_log_emitted)
-            except Exception:
+            except RuntimeError, ImportError, SystemError:
                 pass
             self._logging_connected = False
 

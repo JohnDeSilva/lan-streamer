@@ -56,7 +56,7 @@ def cleanup_old_backups(
                     logger.info(
                         f"Deleted old backup: {file_path_to_delete.name} (age: {days_old} days, limit: {retention_limit} days)"
                     )
-                except Exception as exception_instance:
+                except OSError as exception_instance:
                     logger.warning(
                         f"Failed to delete old backup file {file_path_to_delete}: {exception_instance}"
                     )
@@ -129,7 +129,7 @@ def perform_scheduled_backups() -> None:
     backup_directory: Path = Path(config.backup_directory)
     try:
         backup_directory.mkdir(parents=True, exist_ok=True)
-    except Exception as exception_instance:
+    except OSError as exception_instance:
         logger.warning(
             f"Could not initialize backup directory {backup_directory}: {exception_instance}"
         )

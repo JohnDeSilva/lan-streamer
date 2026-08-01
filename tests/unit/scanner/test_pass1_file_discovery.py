@@ -11,6 +11,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from lan_streamer.scanner.pass1_file_discovery import (
     _check_season_unchanged,
@@ -636,7 +637,7 @@ class TestSaveDirectoryMtime:
 
         with patch(
             "lan_streamer.db.save_directory_mtime",
-            side_effect=Exception("DB error"),
+            side_effect=SQLAlchemyError("DB error"),
         ):
             from lan_streamer.scanner.pass1_file_discovery import logger as pass1_logger
 

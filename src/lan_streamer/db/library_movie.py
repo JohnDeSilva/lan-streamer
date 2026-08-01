@@ -228,7 +228,7 @@ def save_movie_library(library_name: str, library: dict[str, Any]) -> dict[str, 
                         try:
                             if not Path(m.path).exists():
                                 is_missing = True
-                        except Exception:
+                        except OSError:
                             is_missing = True
                     if is_missing:
                         existing_movies_by_tmdb[m.tmdb_identifier] = m

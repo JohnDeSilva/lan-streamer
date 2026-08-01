@@ -17,7 +17,7 @@ def _parse_config_path() -> Path:
             elif argument.startswith("--config="):
                 path_part = argument.split("=", 1)[1]
                 return Path(path_part).expanduser().absolute()
-    except Exception:
+    except OSError, ValueError, TypeError:
         pass
     return Path.home() / ".config" / "lan-streamer" / "config.json"
 
@@ -216,7 +216,7 @@ class Config:
         logger.debug(f"Attempting to save startup config to {CONFIG_FILE}")
         try:
             CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        except Exception as exception_instance:
+        except OSError as exception_instance:
             logger.warning(
                 f"Could not create config directory {CONFIG_FILE.parent}: {exception_instance}"
             )

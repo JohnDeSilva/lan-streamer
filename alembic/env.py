@@ -13,7 +13,7 @@ from lan_streamer.db import DB_FILE
 from lan_streamer.db.models import Base
 
 # Ensure the database directory exists before Alembic attempts to connect
-with contextlib.suppress(Exception):
+with contextlib.suppress(OSError):
     DB_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # this is the Alembic Config object, which provides
@@ -29,7 +29,7 @@ if config.config_file_name is not None:
             from logging.config import fileConfig
 
             fileConfig(config.config_file_name, disable_existing_loggers=False)
-        except Exception:
+        except OSError, ValueError:
             pass
 
 # add your model's MetaData object here

@@ -92,7 +92,7 @@ class MyAnimeListClient:
                         or err_json.get("message")
                         or err_json.get("error")
                     )
-                except Exception:
+                except ValueError, TypeError:
                     error_msg = None
                 if not error_msg:
                     error_msg = response.text

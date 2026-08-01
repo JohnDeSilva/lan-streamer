@@ -574,7 +574,7 @@ def _resolve_item_root(
                 return root
             except ValueError:
                 continue
-            except Exception:
+            except OSError:
                 continue
         if (root_path / series_name).exists():
             return root

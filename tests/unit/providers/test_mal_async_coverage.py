@@ -158,7 +158,7 @@ class TestExchangeAuthCodeErrors:
         async def run() -> None:
             mock_session = AsyncMock()
             mock_resp = _mock_response(status=500, text_data="Server Error")
-            mock_resp.json = AsyncMock(side_effect=Exception("not json"))
+            mock_resp.json = AsyncMock(side_effect=ValueError("not json"))
             mock_session.post = MagicMock(return_value=mock_resp)
             client._http_client._get_session = AsyncMock(return_value=mock_session)
 

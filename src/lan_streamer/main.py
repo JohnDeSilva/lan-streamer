@@ -131,13 +131,13 @@ async def main() -> None:
                 logger_object.propagate = False
             if info_message:
                 logging.info(info_message)
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             logging.error(f"Could not create log file {filename}: {exc}")
 
     log_directory = Path(config.log_directory).expanduser().absolute()
     try:
         log_directory.mkdir(parents=True, exist_ok=True)
-    except Exception as exc:
+    except OSError as exc:
         logging.warning(f"Could not create log directory {log_directory}: {exc}")
 
     try:
@@ -148,7 +148,7 @@ async def main() -> None:
             if path_item.is_file() and path_item.stat().st_mtime < cutoff:
                 with contextlib.suppress(Exception):
                     path_item.unlink()
-    except Exception as exc:
+    except OSError as exc:
         logging.debug(f"Error cleaning old logs: {exc}")
 
     from lan_streamer.system.logging_handler import SERVICE_LOGGERS, setup_qt_logging

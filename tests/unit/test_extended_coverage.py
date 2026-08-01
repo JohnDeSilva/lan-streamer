@@ -31,7 +31,7 @@ class TestQtLogHandler:
 
         handler = QtLogHandler()
         # Make format() raise to hit the except branch (line 30-31)
-        handler.format = MagicMock(side_effect=Exception("format error"))
+        handler.format = MagicMock(side_effect=ValueError("format error"))
         handler.handleError = MagicMock()
 
         record = logging.LogRecord(
@@ -318,7 +318,7 @@ def test_exchange_auth_code_non200_json_parse_error(mal_client) -> None:
     """Tests the non-200 branch where JSON parsing of error fails and text is used."""
     mock_resp = MagicMock()
     mock_resp.status_code = 500
-    mock_resp.json.side_effect = Exception("not json")
+    mock_resp.json.side_effect = ValueError("not json")
     mock_resp.text = "Internal Server Error"
     mal_client.session.post = MagicMock(return_value=mock_resp)
 

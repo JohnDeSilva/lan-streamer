@@ -1,3 +1,4 @@
+import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -122,7 +123,7 @@ def test_wakelock_macos_kill_on_terminate_timeout() -> None:
     """If terminate raises an exception, uninhibit must attempt kill."""
     wakelock = WakeLock()
     mock_process = MagicMock()
-    mock_process.terminate.side_effect = Exception("terminate failed")
+    mock_process.terminate.side_effect = OSError("terminate failed")
 
     wakelock._process = mock_process
     wakelock.active = True
@@ -162,7 +163,7 @@ def test_wakelock_linux_xdg_exception() -> None:
     with (
         patch("sys.platform", "linux"),
         patch("subprocess.check_output", side_effect=FileNotFoundError()),
-        patch("subprocess.Popen", side_effect=Exception("xdg failed")),
+        patch("subprocess.Popen", side_effect=subprocess.SubprocessError("xdg failed")),
     ):
         wakelock.inhibit()
         assert wakelock.active is True
@@ -173,7 +174,7 @@ def test_wakelock_linux_uninhibit_exceptions() -> None:
     wakelock._cookie = "123"
     with (
         patch("sys.platform", "linux"),
-        patch("subprocess.run", side_effect=Exception("fail")),
+        patch("subprocess.run", side_effect=subprocess.SubprocessError("fail")),
     ):
         # both gdbus and xdg-screensaver fail
         wakelock._uninhibit_linux()
@@ -183,7 +184,7 @@ def test_wakelock_linux_uninhibit_exceptions() -> None:
 def test_wakelock_windows_exceptions() -> None:
     wakelock = WakeLock()
     with patch("sys.platform", "win32"):
-        mock_ctypes.windll.kernel32.SetThreadExecutionState.side_effect = Exception(
+        mock_ctypes.windll.kernel32.SetThreadExecutionState.side_effect = OSError(
             "win fail"
         )
         wakelock._inhibit_windows()
@@ -199,8 +200,8 @@ def test_wakelock_macos_exceptions() -> None:
             assert wakelock._process is None
 
         mock_process = MagicMock()
-        mock_process.terminate.side_effect = Exception("term fail")
-        mock_process.kill.side_effect = Exception("kill fail")
+        mock_process.terminate.side_effect = OSError("term fail")
+        mock_process.kill.side_effect = OSError("kill fail")
         wakelock._process = mock_process
         wakelock._uninhibit_macos()
         assert wakelock._process is None

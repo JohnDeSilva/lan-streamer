@@ -16,6 +16,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import requests
+
 from lan_streamer.db.utils import natural_sort_key
 from lan_streamer.providers.tmdb import tmdb_client
 from lan_streamer.scanner.file_property_scanner import (
@@ -63,7 +65,14 @@ def _fetch_tmdb_episodes_parallel(
             logger.debug(
                 f"Pre-fetched {len(episodes)} TMDB episodes for season '{season_name}'"
             )
-        except Exception as error:
+        except (
+            requests.exceptions.RequestException,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            RuntimeError,
+        ) as error:
             logger.warning(
                 f"Failed to pre-fetch TMDB episodes for season '{season_name}': {error}"
             )
