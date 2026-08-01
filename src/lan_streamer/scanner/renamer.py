@@ -179,9 +179,8 @@ def get_rename_preview(
                     else:
                         suffix = f" - {idx + 1}"
                     new_filename = f"{new_stem}{suffix}{old_path.suffix}"
-                else:
-                    if not new_filename.lower().endswith(old_path.suffix.lower()):
-                        new_filename += old_path.suffix
+                elif not new_filename.lower().endswith(old_path.suffix.lower()):
+                    new_filename += old_path.suffix
 
                 new_path = old_path.parent / new_filename
                 new_stem = Path(new_filename).stem

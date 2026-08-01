@@ -234,7 +234,7 @@ class SegmentedProgressBar(QWidget):
                             painter.fillRect(
                                 rx, bar_top, rw, bar_height, self._COLOR_FAILED
                             )
-                        elif root_state == self.STATE_DONE or state == self.STATE_DONE:
+                        elif self.STATE_DONE in {root_state, state}:
                             painter.fillRect(rx, bar_top, rw, bar_height, color_done)
                         elif state == self.STATE_ACTIVE:
                             fill_fraction = root_done / root_total
@@ -817,16 +817,11 @@ class LibraryScanProgressBar(QWidget):
                         fx = rx + int(fidx * folder_w)
                         fw = int(folder_w) - 1
 
-                        if (
-                            folder_state == self.STATE_FAILED
-                            or state == self.STATE_FAILED
-                        ):
+                        if self.STATE_FAILED in {folder_state, state}:
                             painter.fillRect(
                                 fx, bar_top, fw, bar_height, self._COLOR_FAILED
                             )
-                        elif (
-                            folder_state == self.STATE_DONE or state == self.STATE_DONE
-                        ):
+                        elif self.STATE_DONE in {folder_state, state}:
                             painter.fillRect(fx, bar_top, fw, bar_height, color_done)
                         elif folder_state == self.STATE_ACTIVE:
                             painter.fillRect(fx, bar_top, fw, bar_height, color_active)

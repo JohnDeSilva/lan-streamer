@@ -69,6 +69,7 @@ def _extract_video_runtime(file_path: str) -> int | None:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=True,
             )
         if process_result.returncode == 0 and process_result.stdout.strip():
             duration_seconds: float = float(process_result.stdout.strip())
@@ -150,6 +151,7 @@ def get_detailed_file_info(file_path: str) -> dict[str, Any]:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=True,
             )
         if process_result.returncode == 0:
             data = json.loads(process_result.stdout)

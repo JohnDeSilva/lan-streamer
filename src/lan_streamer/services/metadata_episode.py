@@ -192,20 +192,19 @@ def _process_season_metadata(
                                 "runtime": group_ep.get("runtime") or 0,
                             }
                         )
+            elif season_index < 0:
+                logger.warning(
+                    f"Skipping TMDB episode fetch for series ID '{series_data['_tmdb_series_id']}': "
+                    f"season index '{season_index}' is invalid (could not parse a season number "
+                    f"from directory name '{season_name}')."
+                )
             else:
-                if season_index < 0:
-                    logger.warning(
-                        f"Skipping TMDB episode fetch for series ID '{series_data['_tmdb_series_id']}': "
-                        f"season index '{season_index}' is invalid (could not parse a season number "
-                        f"from directory name '{season_name}')."
-                    )
-                else:
-                    logger.info(
-                        f"Fetching TMDB episodes list for series ID '{series_data['_tmdb_series_id']}', season index '{season_index}'"
-                    )
-                    tmdb_episodes = tmdb_client.get_episodes(
-                        series_data["_tmdb_series_id"], season_index
-                    )
+                logger.info(
+                    f"Fetching TMDB episodes list for series ID '{series_data['_tmdb_series_id']}', season index '{season_index}'"
+                )
+                tmdb_episodes = tmdb_client.get_episodes(
+                    series_data["_tmdb_series_id"], season_index
+                )
 
     current_mtime = None
     if not metadata_only and season_directory.exists():

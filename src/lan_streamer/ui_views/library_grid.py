@@ -326,11 +326,10 @@ class LibraryGridView(QWidget):
             self.library_tab_bar.setCurrentIndex(idx)
             self.library_selector.setCurrentText(current)
             self.on_library_changed(current)
-        else:
-            if self.library_names_list:
-                self.library_tab_bar.setCurrentIndex(0)
-                self.library_selector.setCurrentText(self.library_names_list[0])
-                self.on_library_changed(self.library_names_list[0])
+        elif self.library_names_list:
+            self.library_tab_bar.setCurrentIndex(0)
+            self.library_selector.setCurrentText(self.library_names_list[0])
+            self.on_library_changed(self.library_names_list[0])
         self.library_tab_bar.blockSignals(False)
         self.library_selector.blockSignals(False)
 

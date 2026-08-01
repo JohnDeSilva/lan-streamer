@@ -75,8 +75,7 @@ def get_combined_next_up(library_names: list[str]) -> list[dict[str, Any]]:
                         continue
                     season_lower = season.name.lower()
                     if (
-                        season_lower == "specials"
-                        or season_lower == "special"
+                        season_lower in {"specials", "special"}
                         or "special" in season_lower
                         or season_lower.startswith("season 0")
                     ):
@@ -140,14 +139,11 @@ def get_combined_next_up(library_names: list[str]) -> list[dict[str, Any]]:
                             continue
                         if episode.playback_state:
                             value = episode.playback_state.last_played_at or 0
-                            if value > max_last_played:
-                                max_last_played = value
+                            max_last_played = max(max_last_played, value)
                         added_value = episode.date_added or 0
-                        if added_value > max_date_added:
-                            max_date_added = added_value
+                        max_date_added = max(max_date_added, added_value)
                         air_value = episode.air_date or ""
-                        if air_value > max_air_date:
-                            max_air_date = air_value
+                        max_air_date = max(max_air_date, air_value)
 
                 season_episodes = [
                     episode
@@ -243,11 +239,9 @@ def get_combined_smart_row(
                         if episode.playback_state and episode.playback_state.watched:
                             watched_episodes += 1
                         value = episode.date_added or 0
-                        if value > max_date_added:
-                            max_date_added = value
+                        max_date_added = max(max_date_added, value)
                         air_value = episode.air_date or ""
-                        if air_value > max_air_date:
-                            max_air_date = air_value
+                        max_air_date = max(max_air_date, air_value)
 
                 if total_episodes == 0:
                     continue

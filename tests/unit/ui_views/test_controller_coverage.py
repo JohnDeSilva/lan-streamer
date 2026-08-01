@@ -245,9 +245,7 @@ class TestOnPostScanFinished:
         controller_instance._doing_scan_and_update = False
 
         received = []
-        controller_instance.smart_rows_updated.connect(
-            lambda hashes: received.extend(hashes)
-        )
+        controller_instance.smart_rows_updated.connect(received.extend)
 
         controller_instance._on_post_scan_finished(
             {"changed_hashes": ["hash_a", "hash_b"]}, set(), set()

@@ -31,7 +31,7 @@ _global_scan_executor_lock = threading.Lock()
 
 def get_scan_executor() -> ThreadPoolExecutor:
     """Return the global shared ThreadPoolExecutor instance."""
-    global _global_scan_executor
+    global _global_scan_executor  # noqa: PLW0603
     if _global_scan_executor is None:
         with _global_scan_executor_lock:
             if _global_scan_executor is None:
@@ -45,7 +45,7 @@ def get_scan_executor() -> ThreadPoolExecutor:
 
 def shutdown_scan_executor() -> None:
     """Shut down the global scan executor, cancelling queued futures."""
-    global _global_scan_executor
+    global _global_scan_executor  # noqa: PLW0603
     with _global_scan_executor_lock:
         executor = _global_scan_executor
         if executor is not None:
@@ -318,14 +318,9 @@ def _scan_pass1(
             if library_type == "movie":
                 if movie_callback and series_data:
                     movie_callback(series_name, series_data)
-            else:
-                if season_callback and series_data:
-                    for season_name, season_data in series_data.get(
-                        "seasons", {}
-                    ).items():
-                        season_callback(
-                            series_name, series_data, season_name, season_data
-                        )
+            elif season_callback and series_data:
+                for season_name, season_data in series_data.get("seasons", {}).items():
+                    season_callback(series_name, series_data, season_name, season_data)
 
             if detail_callback:
                 detail_callback(
@@ -449,7 +444,7 @@ def _scan_pass2(
                 for f in futures:
                     f.cancel()
                 break
-            series_name, m_root = futures[future]
+            series_name, future_root = futures[future]
             try:
                 result = future.result()
             except Exception:
@@ -459,7 +454,7 @@ def _scan_pass2(
                 if detail_callback:
                     detail_callback(
                         "finish_folder",
-                        {"root": m_root, "folder": series_name, "skipped": True},
+                        {"root": future_root, "folder": series_name, "skipped": True},
                     )
                 continue
 

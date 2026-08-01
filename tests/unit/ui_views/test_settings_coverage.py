@@ -644,7 +644,7 @@ class TestOnDetailProgress:
         """Lines 1741-1757: init_tree event."""
         dialog = self._make_dialog(qtbot)
         dialog.show()
-        qtbot.waitUntil(lambda: dialog.isVisible())
+        qtbot.waitUntil(dialog.isVisible)
         dialog._scan_running = False
         payload = {
             "tree": {"TV": {"root1": 10}},
@@ -657,7 +657,7 @@ class TestOnDetailProgress:
         """Lines 1752-1754: scan_progress_tree hidden when _scan_running."""
         dialog = self._make_dialog(qtbot)
         dialog.show()
-        qtbot.waitUntil(lambda: dialog.isVisible())
+        qtbot.waitUntil(dialog.isVisible)
         dialog._scan_running = True
         payload = {
             "tree": {"TV": {"root1": 10}},

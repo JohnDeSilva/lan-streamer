@@ -78,4 +78,4 @@ ignore_errors = true
 src = ["src"]
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I", "UP", "SIM", "BLE", "TRY400", "TRY401", "TRY201", "TRY002", "TRY203", "DTZ", "S110", "S112", "RUF"]
+select = ["E4", "E7", "E9", "F", "I", "UP", "SIM", "BLE", "TRY400", "TRY401", "TRY201", "TRY002", "TRY203", "DTZ", "S110", "S112", "RUF", "PLC0206", "PLC0207", "PLR0402", "PLR1714", "PLR1730", "PLR5501", "PLW0108", "PLW0603", "PLW1510", "PLW2901"]

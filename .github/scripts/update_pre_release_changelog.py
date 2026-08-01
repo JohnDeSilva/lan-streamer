@@ -28,10 +28,10 @@ def parse_commits(commits):
     )
 
     for commit in commits:
-        commit = commit.strip()
-        if not commit:
+        commit_line = commit.strip()
+        if not commit_line:
             continue
-        match = pattern.match(commit)
+        match = pattern.match(commit_line)
         if match:
             ctype = match.group(1).lower()
             msg = match.group(2).strip()
@@ -39,7 +39,7 @@ def parse_commits(commits):
             msg = msg[0].upper() + msg[1:] if msg else msg
 
             # Reconstruct the line (with scope if present)
-            scope_match = re.match(r"^[a-zA-Z0-9_-]+(?:\([^)]+\))?!?:", commit)
+            scope_match = re.match(r"^[a-zA-Z0-9_-]+(?:\([^)]+\))?!?:", commit_line)
             prefix = ""
             if scope_match:
                 prefix = scope_match.group(0).split(":")[0].strip()
@@ -85,9 +85,9 @@ def main():
         # But we still want a header if they pushed commits (or just list them as other)
         categories["Other"] = []
         for commit in commits:
-            commit = commit.strip()
-            if commit and not any(
-                commit.lower().startswith(x)
+            commit_line = commit.strip()
+            if commit_line and not any(
+                commit_line.lower().startswith(x)
                 for x in [
                     "feat",
                     "fix",
@@ -100,7 +100,7 @@ def main():
                     "ci",
                 ]
             ):
-                categories["Other"].append(commit)
+                categories["Other"].append(commit_line)
 
     # Build markdown
     markdown_lines = [f"## {next_tag} ({today})\n"]

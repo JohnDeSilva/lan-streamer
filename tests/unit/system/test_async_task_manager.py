@@ -131,7 +131,7 @@ def test_create_task_auto_removes_on_completion(
 
     async def _run() -> None:
         task = manager.create_task(
-            quick(), name="auto_clean", on_done_callback=lambda t: completed.append(t)
+            quick(), name="auto_clean", on_done_callback=completed.append
         )
         assert task is not None
         await task
@@ -482,9 +482,7 @@ def test_schedule_interval_creates_tracked_task(
         pass
 
     async def _run() -> None:
-        task = manager.schedule_interval(
-            lambda: sample(), interval_seconds=10.0, name="interval"
-        )
+        task = manager.schedule_interval(sample, interval_seconds=10.0, name="interval")
         assert task is not None
         assert manager._tasks.get("interval") is task
         assert manager.is_task_running("interval") is True
@@ -505,7 +503,7 @@ def test_schedule_interval_runs_multiple_times(
 
     async def _run() -> None:
         task = manager.schedule_interval(
-            lambda: increment(), interval_seconds=0.01, name="counter"
+            increment, interval_seconds=0.01, name="counter"
         )
         assert task is not None
 
@@ -536,9 +534,7 @@ def test_schedule_interval_continues_after_error(
         # Second attempt succeeds
 
     async def _run() -> None:
-        task = manager.schedule_interval(
-            lambda: flaky(), interval_seconds=0.01, name="flaky"
-        )
+        task = manager.schedule_interval(flaky, interval_seconds=0.01, name="flaky")
         assert task is not None
 
     event_loop.run_until_complete(_run())
@@ -566,7 +562,7 @@ def test_schedule_interval_stops_on_cancellation(
 
     async def _run() -> None:
         task = manager.schedule_interval(
-            lambda: sample(), interval_seconds=0.01, name="stop_test"
+            sample, interval_seconds=0.01, name="stop_test"
         )
         assert task is not None
 
@@ -677,9 +673,7 @@ def test_schedule_interval_no_event_loop(
         patch("asyncio.get_running_loop", side_effect=raise_no_loop),
         caplog.at_level("WARNING"),
     ):
-        result = manager.schedule_interval(
-            lambda: dummy(), interval_seconds=1.0, name="no_loop"
-        )
+        result = manager.schedule_interval(dummy, interval_seconds=1.0, name="no_loop")
 
     assert result is None
     assert "No running event loop" in caplog.text

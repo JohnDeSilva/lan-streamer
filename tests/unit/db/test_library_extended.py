@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-import lan_streamer.db as db
+from lan_streamer import db
 from lan_streamer.db import get_session
 from lan_streamer.db.models import Episode, Movie, Season, Series
 from lan_streamer.system.config import config
