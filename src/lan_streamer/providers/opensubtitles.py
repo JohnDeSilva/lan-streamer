@@ -55,8 +55,8 @@ class OpenSubtitlesClient:
                 logger.error(
                     f"OpenSubtitles login failed: {response.status_code} {response.text}"
                 )
-        except Exception as e:
-            logger.exception(f"Error logging in to OpenSubtitles: {e}")
+        except Exception:
+            logger.exception("Error logging in to OpenSubtitles")
         return False
 
     def search_subtitles(
@@ -98,8 +98,8 @@ class OpenSubtitlesClient:
                 logger.error(
                     f"OpenSubtitles search failed: {response.status_code} {response.text}"
                 )
-        except Exception as e:
-            logger.exception(f"Error searching OpenSubtitles: {e}")
+        except Exception:
+            logger.exception("Error searching OpenSubtitles")
         return []
 
     def get_download_link(self, file_id: int) -> str | None:
@@ -131,8 +131,8 @@ class OpenSubtitlesClient:
                 logger.error(
                     f"OpenSubtitles download request failed: {response.status_code} {response.text}"
                 )
-        except Exception as e:
-            logger.exception(f"Error getting OpenSubtitles download link: {e}")
+        except Exception:
+            logger.exception("Error getting OpenSubtitles download link")
         return None
 
     def download_subtitle(self, download_url: str) -> bytes | None:
@@ -151,8 +151,8 @@ class OpenSubtitlesClient:
                 logger.error(
                     f"Failed to download subtitle from {download_url}: {response.status_code}"
                 )
-        except Exception as e:
-            logger.exception(f"Error downloading subtitle content: {e}")
+        except Exception:
+            logger.exception("Error downloading subtitle content")
         return None
 
 

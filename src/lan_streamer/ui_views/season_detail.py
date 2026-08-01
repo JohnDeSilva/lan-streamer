@@ -948,11 +948,10 @@ class SeasonDetailView(QWidget):
                         tmdb_id,
                         season_number,
                     )
-                except Exception as exc:
+                except Exception:
                     logger.exception(
-                        "Failed to fetch TMDB episodes for ID %s: %s",
+                        "Failed to fetch TMDB episodes for ID %s",
                         tmdb_id,
-                        exc,
                     )
 
             if episodes:
@@ -1040,7 +1039,7 @@ class SeasonDetailView(QWidget):
         try:
             results = tmdb_client.search_series_full(query)
         except Exception as exc:
-            logger.exception("Failed to search TMDB: %s", exc)
+            logger.exception("Failed to search TMDB")
             QMessageBox.warning(
                 self,
                 "Search Failed",
@@ -1092,7 +1091,7 @@ class SeasonDetailView(QWidget):
         try:
             results = tmdb_client.search_series_full(query)
         except Exception as exc:
-            logger.exception("Failed to search TMDB: %s", exc)
+            logger.exception("Failed to search TMDB")
             QMessageBox.warning(self, "Search Failed", f"Could not search TMDB: {exc}")
             return
 
@@ -1146,9 +1145,7 @@ class SeasonDetailView(QWidget):
         try:
             raw_episodes = tmdb_client.get_episodes(series_id, season_number)
         except Exception as exc:
-            logger.exception(
-                "Failed to fetch TMDB episodes for ID %s: %s", series_id, exc
-            )
+            logger.exception("Failed to fetch TMDB episodes for ID %s", series_id)
             QMessageBox.warning(
                 self,
                 "Fetch Failed",
@@ -1180,9 +1177,7 @@ class SeasonDetailView(QWidget):
         try:
             raw_episodes = tmdb_client.get_episodes(series_id, season_number)
         except Exception as exc:
-            logger.exception(
-                "Failed to fetch TMDB episodes for ID %s: %s", series_id, exc
-            )
+            logger.exception("Failed to fetch TMDB episodes for ID %s", series_id)
             QMessageBox.warning(
                 self,
                 "Fetch Failed",
@@ -1609,8 +1604,8 @@ class SeasonDetailView(QWidget):
         if search_text and not season_has_no_number:
             try:
                 results = myanimelist_client.search_anime(search_text)
-            except Exception as exc:
-                logger.exception("MAL mapper: auto-search failed: %s", exc)
+            except Exception:
+                logger.exception("MAL mapper: auto-search failed")
                 results = []
             if results:
                 logger.info(
@@ -1633,7 +1628,7 @@ class SeasonDetailView(QWidget):
         try:
             results = myanimelist_client.search_anime(query)
         except Exception as exc:
-            logger.exception("Failed to search MyAnimeList: %s", exc)
+            logger.exception("Failed to search MyAnimeList")
             QMessageBox.warning(
                 self,
                 "Search Failed",
@@ -1676,7 +1671,7 @@ class SeasonDetailView(QWidget):
         try:
             results = myanimelist_client.search_anime(query)
         except Exception as exc:
-            logger.exception("Failed to search MyAnimeList: %s", exc)
+            logger.exception("Failed to search MyAnimeList")
             QMessageBox.warning(
                 self, "Search Failed", f"Could not search MyAnimeList: {exc}"
             )
@@ -1717,7 +1712,7 @@ class SeasonDetailView(QWidget):
         try:
             details = myanimelist_client.get_anime_details(anime_id)
         except Exception as exc:
-            logger.exception("Failed to fetch MAL details for ID %s: %s", anime_id, exc)
+            logger.exception("Failed to fetch MAL details for ID %s", anime_id)
             QMessageBox.warning(
                 self, "Fetch Failed", f"Could not fetch MyAnimeList details: {exc}"
             )
@@ -1734,7 +1729,7 @@ class SeasonDetailView(QWidget):
         try:
             details = myanimelist_client.get_anime_details(anime_id)
         except Exception as exc:
-            logger.exception("Failed to fetch MAL details for ID %s: %s", anime_id, exc)
+            logger.exception("Failed to fetch MAL details for ID %s", anime_id)
             QMessageBox.warning(
                 self, "Fetch Failed", f"Could not fetch MyAnimeList details: {exc}"
             )

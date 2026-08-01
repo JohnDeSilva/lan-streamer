@@ -455,6 +455,6 @@ def save_movie_data(
                 f"Successfully saved movie '{movie_name}' to database. Stats: {stats}"
             )
             return stats
-    except Exception as e:
-        logger.exception(f"Failed to save movie '{movie_name}' to database: {e}")
-        raise e
+    except Exception:
+        logger.exception(f"Failed to save movie '{movie_name}' to database")
+        raise

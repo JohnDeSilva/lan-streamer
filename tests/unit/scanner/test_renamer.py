@@ -7,6 +7,10 @@ from lan_streamer.scanner.renamer import (
 )
 
 
+class DatabaseWriteError(Exception):
+    """Raised by test callbacks to simulate a database write failure."""
+
+
 def test_sanitize_filename() -> None:
     assert sanitize_filename("Show: Special? Title*") == "Show Special Title"
     assert sanitize_filename("File/Path\\Illegal") == "FilePathIllegal"
@@ -279,7 +283,7 @@ def test_perform_rename_db_callback_error(tmp_path) -> None:
     ]
 
     def bad_callback(o, n) -> None:
-        raise Exception("DB Error")
+        raise DatabaseWriteError("DB Error")
 
     results = perform_rename(previews, db_callback=bad_callback)
     assert results[0]["success"]  # Still success for file rename

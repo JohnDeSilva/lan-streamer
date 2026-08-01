@@ -451,9 +451,9 @@ def _process_series_metadata(
                         logger.info(
                             f"Using saved default group ID {saved_group_id} for series '{series_name}' metadata scan"
                         )
-                    except Exception as e:
+                    except Exception:
                         logger.exception(
-                            f"Failed to fetch saved group details {saved_group_id}: {e}"
+                            f"Failed to fetch saved group details {saved_group_id}"
                         )
                 if saved_group_id == "default":
                     episode_group_details = None

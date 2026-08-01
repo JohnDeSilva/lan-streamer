@@ -128,11 +128,10 @@ class AsyncHTTPClient:
                 except (TimeoutError, aiohttp.ClientError) as error:
                     last_exception = error
                     if attempt == self._max_retries - 1:
-                        logger.error(
-                            "Request to %s failed after %d retries: %s",
+                        logger.exception(
+                            "Request to %s failed after %d retries",
                             url,
                             self._max_retries,
-                            error,
                         )
                         raise
                     sleep_time = self._backoff_factor * (2**attempt) + random.uniform(

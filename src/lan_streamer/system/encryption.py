@@ -50,9 +50,9 @@ def get_encryption_key() -> bytes:
                     f"Key file {key_file_path} contains invalid key length. Deriving key."
                 )
                 return _derive_fernet_key(file_content)
-        except (OSError, ValueError, TypeError) as error:
-            logger.error(
-                f"Error reading encryption key file: {error}. Deriving temporary key."
+        except OSError, ValueError, TypeError:
+            logger.exception(
+                "Error reading encryption key file; deriving temporary key."
             )
 
     # Generate a new key and save it
@@ -67,9 +67,9 @@ def get_encryption_key() -> bytes:
             key_file.write(new_key.decode("utf-8"))
         logger.info(f"Generated new encryption key and saved to {key_file_path}")
         return new_key
-    except Exception as error:
+    except Exception:
         logger.exception(
-            f"Failed to generate and save encryption key to {key_file_path}: {error}"
+            f"Failed to generate and save encryption key to {key_file_path}"
         )
         # Return a fallback derived key based on machine/user details so we don't crash
         try:
@@ -89,9 +89,9 @@ def encrypt_secret(plain_text: str) -> str:
         fernet_cipher = Fernet(key)
         encrypted_bytes = fernet_cipher.encrypt(plain_text.encode("utf-8"))
         return encrypted_bytes.decode("utf-8")
-    except Exception as error:
+    except Exception:
         logger.exception("Failed to encrypt secret data")
-        raise error
+        raise
 
 
 def decrypt_secret(cipher_text: str) -> str:
@@ -103,8 +103,8 @@ def decrypt_secret(cipher_text: str) -> str:
         fernet_cipher = Fernet(key)
         decrypted_bytes = fernet_cipher.decrypt(cipher_text.encode("utf-8"))
         return decrypted_bytes.decode("utf-8")
-    except Exception as error:
-        logger.error(
+    except Exception:
+        logger.exception(
             "Failed to decrypt secret data. The encryption key might be incorrect or missing."
         )
-        raise error
+        raise

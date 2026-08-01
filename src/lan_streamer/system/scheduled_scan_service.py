@@ -109,7 +109,7 @@ class ScheduledScanService(QObject):
             )
         except Exception as error:
             self._scan_in_progress = False
-            logger.exception("Failed to start ad-hoc scan: %s", error)
+            logger.exception("Failed to start ad-hoc scan")
             self.scan_error.emit(str(error))
 
     async def _run_scheduled_scan(self) -> None:
@@ -130,5 +130,5 @@ class ScheduledScanService(QObject):
             )
         except Exception as error:
             self._scan_in_progress = False
-            logger.exception("Failed to start scheduled scan: %s", error)
+            logger.exception("Failed to start scheduled scan")
             self.scan_error.emit(str(error))

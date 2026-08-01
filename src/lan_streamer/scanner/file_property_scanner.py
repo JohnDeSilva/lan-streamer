@@ -126,9 +126,9 @@ def get_detailed_file_info(file_path: str) -> dict[str, Any]:
     path_obj = Path(file_path)
     try:
         info["size_bytes"] = path_obj.stat().st_size
-    except OSError as stat_error:
-        logger.error(
-            f"get_detailed_file_info: Failed to read file stats/size for '{file_path}': {stat_error}"
+    except OSError:
+        logger.exception(
+            f"get_detailed_file_info: Failed to read file stats/size for '{file_path}'"
         )
 
     suffix = path_obj.suffix
@@ -209,8 +209,8 @@ def get_detailed_file_info(file_path: str) -> dict[str, Any]:
         subprocess.TimeoutExpired,
         ValueError,
         TypeError,
-    ) as exc:
-        logger.error(f"Failed to extract detailed info for {file_path}: {exc}")
+    ):
+        logger.exception(f"Failed to extract detailed info for {file_path}")
 
     if not info.get("runtime"):
         info["runtime"] = _extract_video_runtime(file_path)
@@ -242,9 +242,9 @@ def get_stub_file_info(file_path: str) -> dict[str, Any]:
     try:
         if path_obj.exists():
             info["size_bytes"] = path_obj.stat().st_size
-    except OSError as stat_error:
-        logger.error(
-            f"get_stub_file_info: Failed to read file stats/size for '{file_path}': {stat_error}"
+    except OSError:
+        logger.exception(
+            f"get_stub_file_info: Failed to read file stats/size for '{file_path}'"
         )
 
     suffix = path_obj.suffix

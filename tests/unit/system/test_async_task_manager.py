@@ -452,10 +452,7 @@ def test_is_task_running_false_after_cancellation(
     """is_task_running returns False after a task is cancelled."""
 
     async def wait_forever() -> None:
-        try:
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            raise
+        await asyncio.Event().wait()
 
     async def _run() -> None:
         task = manager.create_task(wait_forever(), name="cancel_me")
@@ -603,10 +600,7 @@ def test_stop_all_cancels_and_waits(
     """stop_all cancels all tasks and returns a cleanup task."""
 
     async def long_running(name: str) -> None:
-        try:
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            raise
+        await asyncio.Event().wait()
 
     async def _setup() -> None:
         for i in range(3):

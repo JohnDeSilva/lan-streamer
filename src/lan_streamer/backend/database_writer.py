@@ -213,9 +213,9 @@ class AsyncDatabaseWriter:
             if task.action in self._EXCLUSIVE_ACTIONS:
                 try:
                     await asyncio.to_thread(self._execute_batch, [task])
-                except Exception as error:
+                except Exception:
                     logger.exception(
-                        f"AsyncDatabaseWriter task '{task.action}' execution failed: {error}"
+                        f"AsyncDatabaseWriter task '{task.action}' execution failed"
                     )
                 finally:
                     if task.async_event is not None:
@@ -244,8 +244,8 @@ class AsyncDatabaseWriter:
 
             try:
                 await asyncio.to_thread(self._execute_batch, batch)
-            except Exception as error:
-                logger.exception(f"AsyncDatabaseWriter batch execution failed: {error}")
+            except Exception:
+                logger.exception("AsyncDatabaseWriter batch execution failed")
             finally:
                 for bt in batch:
                     if bt.async_event is not None:
@@ -257,9 +257,9 @@ class AsyncDatabaseWriter:
             if exclusive_task is not None:
                 try:
                     await asyncio.to_thread(self._execute_batch, [exclusive_task])
-                except Exception as error:
+                except Exception:
                     logger.exception(
-                        f"AsyncDatabaseWriter task '{exclusive_task.action}' execution failed: {error}"
+                        f"AsyncDatabaseWriter task '{exclusive_task.action}' execution failed"
                     )
                 finally:
                     if exclusive_task.async_event is not None:

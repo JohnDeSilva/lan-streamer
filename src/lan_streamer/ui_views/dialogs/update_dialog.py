@@ -229,9 +229,9 @@ class UpdateDialog(QDialog):
                             f"UpdateDialog: making downloaded program executable at: {program_path}"
                         )
                         os.chmod(program_path, 0o755)
-                    except OSError as exception:
-                        logger.error(
-                            f"UpdateDialog: failed to chmod downloaded update: {exception}"
+                    except OSError:
+                        logger.exception(
+                            "UpdateDialog: failed to chmod downloaded update"
                         )
 
                 # Open/execute program

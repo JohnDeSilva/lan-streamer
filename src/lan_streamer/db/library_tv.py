@@ -1029,8 +1029,8 @@ def save_season_data(
                 f"Stats: {stats}"
             )
             return stats
-    except Exception as e:
+    except Exception:
         logger.exception(
-            f"Failed to save season '{season_name}' of series '{series_name}' to database: {e}"
+            f"Failed to save season '{season_name}' of series '{series_name}' to database"
         )
         raise
