@@ -75,7 +75,7 @@ def test_fetch_watched_episodes(jf_client) -> None:
     }
     jf_client.session.get = MagicMock(return_value=mock_resp)
 
-    ids, paths, names = jf_client.fetch_watched_episodes()
+    ids, paths, _names = jf_client.fetch_watched_episodes()
     assert paths == {"/movies/show/s01e01.mkv", "/movies/show/s01e02.mkv"}
     assert ids == {"ep1", "ep2", "ep3"}
 
@@ -94,7 +94,7 @@ def test_fetch_watched_episodes_pagination(jf_client) -> None:
 
     jf_client.session.get = MagicMock(side_effect=[page1, page2])
 
-    ids, paths, names = jf_client.fetch_watched_episodes()
+    _ids, paths, _names = jf_client.fetch_watched_episodes()
     assert len(paths) == 5001
     assert jf_client.session.get.call_count == 2
 
@@ -409,7 +409,7 @@ def test_jellyfin_fetch_watched_episodes_edge_cases(jf_client) -> None:
         ]
     }
     jf_client.session.get = MagicMock(return_value=mock_resp)
-    ids, paths, names = jf_client.fetch_watched_episodes()
+    _ids, _paths, names = jf_client.fetch_watched_episodes()
     assert ("coolshow", "episodeone") in names
 
 

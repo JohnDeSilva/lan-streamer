@@ -205,7 +205,7 @@ class CastDetailView(QWidget):
             else:
                 continue
 
-            # Poster thumbnail – fixed width, stretches to full row height
+            # Poster thumbnail - fixed width, stretches to full row height
             poster_label = QLabel()
             poster_label.setFixedWidth(50)
             poster_label.setStyleSheet(

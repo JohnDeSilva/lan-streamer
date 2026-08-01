@@ -674,7 +674,7 @@ class TestProcessSeriesMetadata:
         mock_tmdb.download_image.return_value = "/dl/poster.jpg"
         mock_tmdb.get_cached_image.return_value = ""
         with patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb):
-            series_data, is_early, tmdb_series, ep_index, refreshed = (
+            series_data, is_early, _tmdb_series, ep_index, _refreshed = (
                 _process_series_metadata(
                     series_directory=series_dir,
                     tmdb_series=None,
@@ -702,7 +702,7 @@ class TestProcessSeriesMetadata:
         mock_tmdb = MagicMock()
         mock_tmdb.search_series.return_value = None
         with patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb):
-            series_data, is_early, tmdb_series, ep_index, refreshed = (
+            series_data, is_early, _tmdb_series, _ep_index, _refreshed = (
                 _process_series_metadata(
                     series_directory=series_dir,
                     tmdb_series=None,
@@ -750,7 +750,7 @@ class TestProcessSeriesMetadata:
             },
         }
 
-        series_data, is_early, tmdb_series, ep_index, refreshed = (
+        series_data, is_early, _tmdb_series, _ep_index, _refreshed = (
             _process_series_metadata(
                 series_directory=series_dir,
                 tmdb_series=None,
@@ -796,7 +796,7 @@ class TestProcessSeriesMetadata:
         mock_tmdb.download_image.return_value = ""
 
         with patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb):
-            series_data, is_early, tmdb_series, ep_index, refreshed = (
+            series_data, _is_early, _tmdb_series, _ep_index, _refreshed = (
                 _process_series_metadata(
                     series_directory=series_dir,
                     tmdb_series=None,
@@ -855,7 +855,7 @@ class TestProcessSeriesMetadata:
         mock_tmdb.get_episode_group_details.side_effect = Exception("no groups")
 
         with patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb):
-            series_data, is_early, tmdb_series, ep_index, refreshed = (
+            series_data, _is_early, _tmdb_series, _ep_index, refreshed = (
                 _process_series_metadata(
                     series_directory=series_dir,
                     tmdb_series=None,
@@ -895,7 +895,7 @@ class TestProcessSeriesMetadata:
         mock_tmdb.download_image.return_value = "/dl/new.jpg"
 
         with patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb):
-            series_data, is_early, tmdb_series, ep_index, refreshed = (
+            series_data, _is_early, _tmdb_series, ep_index, _refreshed = (
                 _process_series_metadata(
                     series_directory=Path("/nonexistent"),
                     tmdb_series=None,
@@ -930,7 +930,7 @@ class TestProcessSeriesMetadata:
         }
 
         with patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb):
-            series_data, is_early, tmdb_series, ep_index, refreshed = (
+            series_data, _is_early, _tmdb_series, _ep_index, _refreshed = (
                 _process_series_metadata(
                     series_directory=series_dir,
                     tmdb_series=None,
@@ -953,7 +953,7 @@ class TestProcessSeriesMetadata:
 
         mock_tmdb = MagicMock()
         with patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb):
-            series_data, is_early, tmdb_series, ep_index, refreshed = (
+            series_data, _is_early, _tmdb_series, _ep_index, _refreshed = (
                 _process_series_metadata(
                     series_directory=series_dir,
                     tmdb_series=None,
@@ -985,7 +985,7 @@ class TestProcessSeriesMetadata:
         mock_tmdb.get_cached_image.return_value = ""
         mock_tmdb.download_image.return_value = ""
         with patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb):
-            series_data, is_early, _, _, _ = _process_series_metadata(
+            series_data, _is_early, _, _, _ = _process_series_metadata(
                 series_directory=series_dir,
                 tmdb_series=None,
                 jellyfin_data=None,
@@ -1019,7 +1019,7 @@ class TestProcessSeasonMetadata:
         mock_tmdb = MagicMock()
         mock_tmdb.get_episodes.return_value = [{"id": 1, "episode_number": 1}]
         with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-            name, idx, meta, episodes = _process_season_metadata(
+            name, idx, _meta, episodes = _process_season_metadata(
                 season_dir, series_data, None, {}
             )
         assert name == "Specials"
@@ -1041,7 +1041,7 @@ class TestProcessSeasonMetadata:
         mock_tmdb = MagicMock()
         mock_tmdb.get_episodes.return_value = []
         with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-            name, idx, meta, episodes = _process_season_metadata(
+            name, idx, _meta, _episodes = _process_season_metadata(
                 season_dir, series_data, None, {}
             )
         assert name == "Season 3"
@@ -1061,7 +1061,7 @@ class TestProcessSeasonMetadata:
 
         mock_tmdb = MagicMock()
         with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-            name, idx, meta, episodes = _process_season_metadata(
+            name, idx, _meta, episodes = _process_season_metadata(
                 season_dir, series_data, None, {}
             )
         assert name == "MiniSeries"
@@ -1099,7 +1099,7 @@ class TestProcessSeasonMetadata:
             mock_tmdb.get_cached_image.return_value = ""
             mock_tmdb.get_episodes.return_value = []
             with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-                name, idx, meta, episodes = _process_season_metadata(
+                _name, _idx, meta, _episodes = _process_season_metadata(
                     season_dir,
                     series_data,
                     existing,
@@ -1123,7 +1123,7 @@ class TestProcessSeasonMetadata:
         mock_tmdb.get_cached_image.return_value = "/cache/season.jpg"
         mock_tmdb.get_episodes.return_value = []
         with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-            name, idx, meta, episodes = _process_season_metadata(
+            _name, _idx, meta, _episodes = _process_season_metadata(
                 season_dir, series_data, None, {}
             )
         assert meta["poster_path"] == "/cache/season.jpg"
@@ -1145,7 +1145,7 @@ class TestProcessSeasonMetadata:
         mock_tmdb.download_image.return_value = "/dl/season.jpg"
         mock_tmdb.get_episodes.return_value = []
         with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-            name, idx, meta, episodes = _process_season_metadata(
+            _name, _idx, meta, _episodes = _process_season_metadata(
                 season_dir, series_data, None, {}
             )
         assert meta["poster_path"] == "/dl/season.jpg"
@@ -1175,7 +1175,7 @@ class TestProcessSeasonMetadata:
 
         mock_tmdb = MagicMock()
         with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-            name, idx, meta, episodes = _process_season_metadata(
+            _name, _idx, meta, _episodes = _process_season_metadata(
                 season_dir, series_data, existing, {}
             )
         assert meta["tmdb_identifier"] == "legacy_id"
@@ -1194,7 +1194,7 @@ class TestProcessSeasonMetadata:
 
         mock_tmdb = MagicMock()
         with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-            name, idx, meta, episodes = _process_season_metadata(
+            _name, _idx, _meta, episodes = _process_season_metadata(
                 season_dir, series_data, None, {}
             )
         assert episodes == []
@@ -1213,7 +1213,7 @@ class TestProcessSeasonMetadata:
 
         mock_tmdb = MagicMock()
         with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-            name, idx, meta, episodes = _process_season_metadata(
+            _name, _idx, _meta, episodes = _process_season_metadata(
                 season_dir, series_data, None, {}, offline=True
             )
         assert episodes == []
@@ -1246,7 +1246,7 @@ class TestProcessSeasonMetadata:
 
         mock_tmdb = MagicMock()
         with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-            name, idx, meta, episodes = _process_season_metadata(
+            _name, _idx, _meta, episodes = _process_season_metadata(
                 season_dir, series_data, existing, {}, force_refresh=False
             )
         assert episodes == []
@@ -1283,7 +1283,7 @@ class TestProcessSeasonMetadata:
 
         mock_tmdb = MagicMock()
         with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-            name, idx, meta, episodes = _process_season_metadata(
+            _name, _idx, _meta, episodes = _process_season_metadata(
                 season_dir, series_data, None, {}
             )
         assert len(episodes) == 1
@@ -1305,7 +1305,7 @@ class TestProcessSeasonMetadata:
         mock_tmdb = MagicMock()
         mock_tmdb.get_cached_image.return_value = ""
         with patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb):
-            name, idx, meta, episodes = _process_season_metadata(
+            _name, _idx, meta, _episodes = _process_season_metadata(
                 season_dir, series_data, None, {}, offline=True
             )
         assert meta["poster_path"] == ""

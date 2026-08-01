@@ -369,7 +369,7 @@ class TestCheckStable:
             worker = UpdateCheckWorker()
             with qtbot.waitSignal(worker.finished) as blocker:
                 worker.start()
-            success, release_info, error_msg = blocker.args
+            success, _release_info, error_msg = blocker.args
             assert success is False
             assert "missing tag_name" in error_msg.lower()
 
@@ -399,7 +399,7 @@ class TestCheckStable:
             worker = UpdateCheckWorker()
             with qtbot.waitSignal(worker.finished) as blocker:
                 worker.start()
-            success, release_info, error_msg = blocker.args
+            success, release_info, _error_msg = blocker.args
             assert success is True
             assert release_info == {}
 
@@ -443,7 +443,7 @@ class TestCheckRC:
             worker = UpdateCheckWorker(release_channel="rc")
             with qtbot.waitSignal(worker.finished) as blocker:
                 worker.start()
-            success, release_info, error_msg = blocker.args
+            success, release_info, _error_msg = blocker.args
             assert success is True
             assert release_info == {}
 
@@ -772,7 +772,7 @@ class TestInstallWorker:
         worker = InstallWorker(str(src), str(dst))
         with qtbot.waitSignal(worker.finished) as blocker:
             worker.start()
-        success, msg = blocker.args
+        success, _msg = blocker.args
         assert success is True
         assert dst.read_bytes() == b"new"
 

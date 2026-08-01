@@ -335,7 +335,7 @@ class VideoPlayerWidget(QWidget):
         """)
         vol_icon.clicked.connect(self.toggle_mute)
 
-        minus_btn = RotatedButton("−")
+        minus_btn = RotatedButton("\u2212")
         minus_btn.setObjectName("volumeMinusBtn")
         minus_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         minus_btn.setFixedSize(12, 12)
@@ -1107,10 +1107,8 @@ class VideoPlayerWidget(QWidget):
 
     def keyPressEvent(self, event: Any) -> None:
         if (
-            event.key() == Qt.Key.Key_Escape
-            and self.window().isFullScreen()
-            or event.key() == Qt.Key.Key_F
-        ):
+            event.key() == Qt.Key.Key_Escape and self.window().isFullScreen()
+        ) or event.key() == Qt.Key.Key_F:
             self.toggle_fullscreen()
         elif event.key() == Qt.Key.Key_Space:
             self.play_pause()

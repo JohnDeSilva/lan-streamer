@@ -333,7 +333,7 @@ def test_cancel_task_already_done(
 
         # The done callback removes the task from tracking, so re-insert it
         # to exercise the "already done" code path in cancel_task.
-        manager._tasks["done_task"] = task  # noqa: SLF001
+        manager._tasks["done_task"] = task
 
     event_loop.run_until_complete(_run())
 

@@ -71,7 +71,7 @@ def test_settings_dialog_with_controller_connects_signals(
     dialog_with_controller,
 ) -> None:
     """When a controller is given, signals should be connected at init."""
-    dialog, ctrl = dialog_with_controller
+    _dialog, ctrl = dialog_with_controller
     # If no error occurred, signals are connected. Emit to verify.
     ctrl.global_progress_updated.emit("test", 1, 10)
 
@@ -352,13 +352,13 @@ def test_export_logs_with_log_files(dialog, tmp_path) -> None:
 
 
 def test_on_global_progress_shows_bar(dialog_with_controller) -> None:
-    dialog, ctrl = dialog_with_controller
+    _dialog, ctrl = dialog_with_controller
     # Just verify emitting the signal doesn't crash
     ctrl.global_progress_updated.emit("Scanning", 3, 10)
 
 
 def test_on_detail_progress_shows_tree(dialog_with_controller) -> None:
-    dialog, ctrl = dialog_with_controller
+    _dialog, ctrl = dialog_with_controller
     # Just verify emitting the signal doesn't crash
     ctrl.detail_progress_updated.emit("start_folder", {"root": "/tv", "folder": "Show"})
 

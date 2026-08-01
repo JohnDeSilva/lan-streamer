@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -338,7 +338,7 @@ def test_controller_scan_all_fallback_to_all_when_worker_missing_attr() -> None:
 
     # Worker without changed_libraries attribute (simulates old worker code)
     class MockWorkerWithoutChangedLibraries:
-        unavailable_directories = []
+        unavailable_directories: ClassVar[list[str]] = []
 
     mock_scan_all_worker = MockWorkerWithoutChangedLibraries()
     controller_instance.worker_manager.scan_all._instance = mock_scan_all_worker  # type: ignore[assignment]

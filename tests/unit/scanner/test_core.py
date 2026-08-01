@@ -1980,7 +1980,7 @@ def test_scanner_additional_coverage(tmp_path: Path) -> None:
             "jf_series_id": {"episodes": {}, "names": {"avatar": "jf_ep_avatar"}}
         }
     }
-    jellyfin_id, new_series_id, new_season_id = _resolve_episode_jellyfin_id(
+    jellyfin_id, _new_series_id, _new_season_id = _resolve_episode_jellyfin_id(
         episode_path=str(episode_file),
         episode_name="Avatar S01E01.mkv",
         episode_file=episode_file,

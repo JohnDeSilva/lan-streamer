@@ -72,7 +72,7 @@ def _extract_video_runtime(file_path: str) -> int | None:
             )
         if process_result.returncode == 0 and process_result.stdout.strip():
             duration_seconds: float = float(process_result.stdout.strip())
-            return int(round(duration_seconds / 60.0))
+            return round(duration_seconds / 60.0)
     except (
         OSError,
         subprocess.SubprocessError,
@@ -89,7 +89,7 @@ def _extract_video_runtime(file_path: str) -> int | None:
         media_object.parse()
         duration_milliseconds: int = media_object.get_duration()
         if duration_milliseconds > 0:
-            return int(round(duration_milliseconds / 60000.0))
+            return round(duration_milliseconds / 60000.0)
     except (ImportError, OSError, ValueError, TypeError) as error_instance:
         logger.debug(f"vlc extraction failed for '{file_path}': {error_instance}")
 
@@ -161,7 +161,7 @@ def get_detailed_file_info(file_path: str) -> dict[str, Any]:
             if duration_str:
                 try:
                     duration_seconds = float(duration_str)
-                    info["runtime"] = int(round(duration_seconds / 60.0))
+                    info["runtime"] = round(duration_seconds / 60.0)
                 except ValueError:
                     pass
 
@@ -173,7 +173,7 @@ def get_detailed_file_info(file_path: str) -> dict[str, Any]:
                 try:
                     dur = float(duration_str)
                     if dur > 0 and info["size_bytes"] is not None:
-                        info["bit_rate"] = int(round((info["size_bytes"] * 8) / dur))
+                        info["bit_rate"] = round((info["size_bytes"] * 8) / dur)
                 except ValueError, TypeError:
                     pass
 

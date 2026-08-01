@@ -574,7 +574,7 @@ class MetadataFileMapping(Base):
     """Many-to-many relationship mapping table between MediaFile and Episode or Movie."""
 
     __tablename__ = "metadata_file_mappings"
-    __mapper_args__ = {"confirm_deleted_rows": False}
+    __mapper_args__ = {"confirm_deleted_rows": False}  # noqa: RUF012
 
     id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
     media_file_id: Mapped[str] = mapped_column(

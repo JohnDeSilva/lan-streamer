@@ -5,6 +5,7 @@ Targeting lines: 97, 105, 148, 160, 171-173, 176-178, 189-196, 218-222, 230-246,
 505-526, 538, 543, 549-561, 564, 569-573, 587-596, and more.
 """
 
+from typing import ClassVar
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -738,7 +739,7 @@ def test_apply_metadata_match_unknown_series_no_crash(ctrl, mock_db_save) -> Non
 
 def test_trigger_global_cleanup_queue(ctrl, mock_db_save) -> None:
     """Global cleanup processes all libraries from the config."""
-    mock_save, _ = mock_db_save
+    _mock_save, _ = mock_db_save
     config.libraries = {"LibA": {"paths": ["/a"]}, "LibB": {"paths": ["/b"]}}
 
     with patch("lan_streamer.ui_views.controller.CleanupWorker") as mock_cls:
@@ -825,7 +826,7 @@ def test_on_scan_all_finished_skips_global_cleanup_if_unavailable(
     ctrl._running_cleanup_after_scan = True
 
     class MockWorker:
-        unavailable_directories = ["/path/not/exist"]
+        unavailable_directories: ClassVar[list[str]] = ["/path/not/exist"]
 
     mock_worker_instance = MockWorker()
     ctrl.worker_manager.scan_all._instance = mock_worker_instance

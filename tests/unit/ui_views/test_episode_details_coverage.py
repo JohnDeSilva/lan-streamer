@@ -246,7 +246,7 @@ class TestOnDefaultFileChangedVersionFound:
 class TestSafeStrForMock:
     def test_safe_str_returns_default_for_mock(self, mock_controller, tmp_path):
         ep = _make_episode_record()
-        dialog, fake_path = _build_dialog(mock_controller, ep, tmp_path)
+        dialog, _fake_path = _build_dialog(mock_controller, ep, tmp_path)
 
         mock_info = {
             "video_type": MagicMock(),
@@ -274,7 +274,7 @@ class TestSafeStrForMock:
 class TestOnDefaultFileSizeBytesMock:
     def test_sets_size_to_zero_when_size_bytes_is_mock(self, mock_controller, tmp_path):
         ep = _make_episode_record()
-        dialog, fake_path = _build_dialog(mock_controller, ep, tmp_path)
+        dialog, _fake_path = _build_dialog(mock_controller, ep, tmp_path)
 
         mock_info = {
             "size_bytes": MagicMock(),
@@ -303,7 +303,7 @@ class TestOnDefaultFileSizeBytesMock:
 class TestOnDefaultFileSizeConversionError:
     def test_falls_back_to_zero_on_conversion_error(self, mock_controller, tmp_path):
         ep = _make_episode_record()
-        dialog, fake_path = _build_dialog(mock_controller, ep, tmp_path)
+        dialog, _fake_path = _build_dialog(mock_controller, ep, tmp_path)
 
         bad_info = {
             "size_bytes": "not_a_number",
@@ -702,7 +702,7 @@ class TestOnSaveClickedRuntimeValueError:
     ):
         """Lines 419-424: Non-numeric runtime shows QMessageBox warning."""
         ep = _make_episode_record()
-        dialog, fake_path = _build_dialog(mock_controller, ep, tmp_path)
+        dialog, _fake_path = _build_dialog(mock_controller, ep, tmp_path)
 
         dialog.title_edit.setText("Title")
         dialog.runtime_edit.setText("not_a_number")
@@ -727,7 +727,7 @@ class TestOnSaveClickedNoMatchingVersion:
     def test_saves_metadata_without_version_fields(self, mock_controller, tmp_path):
         """Lines 403-408, 426-428: No version match means no codec fields saved."""
         ep = _make_episode_record(versions=[])
-        dialog, fake_path = _build_dialog(mock_controller, ep, tmp_path)
+        dialog, _fake_path = _build_dialog(mock_controller, ep, tmp_path)
 
         dialog.title_edit.setText("Title Only")
         dialog.runtime_edit.setText("30")
@@ -749,7 +749,7 @@ class TestOnSearchOsubClicked:
     def test_opens_dialog_and_refreshes_on_accept(self, mock_controller, tmp_path):
         """Lines 527-535: SubtitleSearchDialog opens; file info refreshes on accept."""
         ep = _make_episode_record()
-        dialog, fake_path = _build_dialog(mock_controller, ep, tmp_path)
+        dialog, _fake_path = _build_dialog(mock_controller, ep, tmp_path)
 
         mock_dialog_instance = MagicMock()
         mock_dialog_instance.exec.return_value = True
@@ -768,7 +768,7 @@ class TestOnSearchOsubClicked:
     def test_does_not_refresh_when_dialog_rejected(self, mock_controller, tmp_path):
         """Lines 527-535: No refresh when dialog is rejected."""
         ep = _make_episode_record()
-        dialog, fake_path = _build_dialog(mock_controller, ep, tmp_path)
+        dialog, _fake_path = _build_dialog(mock_controller, ep, tmp_path)
 
         mock_dialog_instance = MagicMock()
         mock_dialog_instance.exec.return_value = False

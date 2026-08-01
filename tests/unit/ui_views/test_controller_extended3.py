@@ -105,7 +105,7 @@ def test_download_provider_artwork_movie_prefix(mock_db_save) -> None:
 
 
 def test_on_scan_finished_movie_library(mock_db_save) -> None:
-    mock_save, mock_movie_save = mock_db_save
+    _mock_save, mock_movie_save = mock_db_save
     c = Controller()
     c.current_library_name = "MovieLib"
     config.libraries["MovieLib"] = {"type": "movie", "paths": []}
@@ -148,7 +148,7 @@ def test_apply_metadata_match_tv_overview_and_air_date(ctrl_tv, mock_db_save) ->
 def test_apply_metadata_match_clears_old_placeholders_and_metadata(
     ctrl_tv, mock_db_save
 ) -> None:
-    mock_save, _ = mock_db_save
+    _mock_save, _ = mock_db_save
 
     # Pre-populate episodes
     ctrl_tv.cached_library_data["ShowA"]["seasons"] = {

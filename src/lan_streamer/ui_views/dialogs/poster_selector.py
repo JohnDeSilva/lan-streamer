@@ -566,7 +566,9 @@ class PosterSelectorDialog(QDialog):
         width_value = image_entry.get("width", 0)
         height_value = image_entry.get("height", 0)
 
-        meta_label = QLabel(f"{image_type.capitalize()} • {width_value}×{height_value}")
+        meta_label = QLabel(
+            f"{image_type.capitalize()} • {width_value}\u00d7{height_value}"
+        )
         meta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         meta_label.setStyleSheet("color: #475569; font-size: 10px;")
         card_layout.addWidget(meta_label)

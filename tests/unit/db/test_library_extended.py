@@ -94,8 +94,8 @@ def test_apply_movie_fields_empty_audio_subtitle_keeps_existing(mock_db_file) ->
         session.flush()
 
         movie_data = {
-            "audio_tracks": [],  # empty – should keep existing
-            "subtitle_tracks": [],  # empty – should keep existing
+            "audio_tracks": [],  # empty - should keep existing
+            "subtitle_tracks": [],  # empty - should keep existing
         }
         _apply_movie_fields(movie, movie_data)
         session.commit()

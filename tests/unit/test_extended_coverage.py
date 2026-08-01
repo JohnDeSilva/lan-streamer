@@ -1,7 +1,7 @@
 """
 Tests for:
- - system/logging_handler.py  (lines 30-31 – handler error path, setup_qt_logging with divide_logs_by_service)
- - system/config.py           (lines 245, 272-273 – config load/save edge cases)
+ - system/logging_handler.py  (lines 30-31 - handler error path, setup_qt_logging with divide_logs_by_service)
+ - system/config.py           (lines 245, 272-273 - config load/save edge cases)
  - providers/myanimelist.py   (remaining uncovered lines: exchange_auth_code failure json,
                                exchange_auth_code non-200 with error_msg None,
                                get_anime_details not configured,
@@ -11,7 +11,7 @@ Tests for:
   - backend/scan_workers.py    (discover_single_library_tree_impl edge cases,
                                ScanAllLibrariesWorker with no root dirs,
                                ScanAllLibrariesWorker movie library)
- - playback/cache.py          (CacheWorker run – exception path)
+ - playback/cache.py          (CacheWorker run - exception path)
 """
 
 import logging
@@ -149,7 +149,7 @@ class TestSetApplicationLogLevel:
 
 
 # ---------------------------------------------------------------------------
-# system/config.py – edge cases
+# system/config.py - edge cases
 # ---------------------------------------------------------------------------
 
 
@@ -269,7 +269,7 @@ class TestConfigSaveLoadEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# providers/myanimelist.py – remaining uncovered paths
+# providers/myanimelist.py - remaining uncovered paths
 # ---------------------------------------------------------------------------
 
 
@@ -335,7 +335,7 @@ def test_exchange_auth_code_non200_no_error_info(mal_client) -> None:
     mock_resp.text = ""
     mal_client.session.post = MagicMock(return_value=mock_resp)
 
-    success, msg = mal_client.exchange_auth_code("code", "verifier")
+    success, _msg = mal_client.exchange_auth_code("code", "verifier")
     assert success is False
 
 
@@ -478,7 +478,7 @@ def test_exchange_auth_code_includes_client_secret(mal_client) -> None:
     mal_client.session.post = MagicMock(return_value=mock_resp)
 
     with patch.object(config, "save"):
-        success, msg = mal_client.exchange_auth_code("code", "verifier")
+        success, _msg = mal_client.exchange_auth_code("code", "verifier")
         assert success is True
 
     call_data = mal_client.session.post.call_args[1]["data"]
@@ -486,7 +486,7 @@ def test_exchange_auth_code_includes_client_secret(mal_client) -> None:
 
 
 # ---------------------------------------------------------------------------
-# backend/scan_workers.py – additional coverage
+# backend/scan_workers.py - additional coverage
 # ---------------------------------------------------------------------------
 
 
@@ -592,7 +592,7 @@ def test_scan_all_libraries_worker_movie_library() -> None:
 
 
 # ---------------------------------------------------------------------------
-# playback/cache.py – CacheWorker exception path
+# playback/cache.py - CacheWorker exception path
 # ---------------------------------------------------------------------------
 
 

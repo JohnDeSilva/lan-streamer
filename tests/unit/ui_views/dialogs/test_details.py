@@ -728,8 +728,8 @@ def test_manual_mapping_remapping_and_unmapping_db(mock_series_controller):
     with get_session() as session:
         episodes = session.query(Episode).all()
         assert len(episodes) == 2
-        ep1 = [e for e in episodes if e.tmdb_number == 1][0]
-        ep2 = [e for e in episodes if e.tmdb_number == 2][0]
+        ep1 = next(e for e in episodes if e.tmdb_number == 1)
+        ep2 = next(e for e in episodes if e.tmdb_number == 2)
         assert ep1.default_path == "/media/tv/Cosmos/S01E01.mkv"
         assert ep2.default_path == "/media/tv/Cosmos/S01E02.mkv"
         assert len(ep1.media_files) == 1
@@ -801,11 +801,15 @@ def test_manual_mapping_remapping_and_unmapping_db(mock_series_controller):
     loaded = load_library("TV")
     cosmos_eps = loaded["Cosmos"]["seasons"]["Season 1"]["episodes"]
     # Check that S01E01.mkv is mapped to tmdb_number=2
-    ep_s01e01 = [e for e in cosmos_eps if e["path"] == "/media/tv/Cosmos/S01E01.mkv"][0]
+    ep_s01e01 = next(
+        e for e in cosmos_eps if e["path"] == "/media/tv/Cosmos/S01E01.mkv"
+    )
     assert ep_s01e01["tmdb_number"] == 2
     assert ep_s01e01["tmdb_episode_identifier"] == "102"
 
     # Check that S01E02.mkv is unmapped (tmdb_number=None)
-    ep_s01e02 = [e for e in cosmos_eps if e["path"] == "/media/tv/Cosmos/S01E02.mkv"][0]
+    ep_s01e02 = next(
+        e for e in cosmos_eps if e["path"] == "/media/tv/Cosmos/S01E02.mkv"
+    )
     assert ep_s01e02["tmdb_number"] is None
     assert ep_s01e02["tmdb_episode_identifier"] in (None, "")

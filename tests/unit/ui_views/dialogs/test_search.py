@@ -1,5 +1,5 @@
 """
-Tests for ui_views/dialogs/search.py – SearchDialog
+Tests for ui_views/dialogs/search.py - SearchDialog
 """
 
 from typing import Any
