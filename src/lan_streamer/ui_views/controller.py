@@ -232,14 +232,11 @@ class Controller(QObject):
                         if episode_record.get("watched"):
                             watched_episodes += 1
                         added_timestamp: int = episode_record.get("date_added") or 0
-                        if added_timestamp > max_date_added:
-                            max_date_added = added_timestamp
+                        max_date_added = max(max_date_added, added_timestamp)
                         air_date_string: str = episode_record.get("air_date") or ""
-                        if air_date_string > max_air_date:
-                            max_air_date = air_date_string
+                        max_air_date = max(max_air_date, air_date_string)
                         lp: int = episode_record.get("last_played_at") or 0
-                        if lp > last_played_at:
-                            last_played_at = lp
+                        last_played_at = max(last_played_at, lp)
 
                 series_data["metrics"] = {
                     "total_episodes": total_episodes,
@@ -561,11 +558,10 @@ class Controller(QObject):
             worker.finished.connect(_on_post_scan_done)
             worker.error.connect(_on_post_scan_error)
             worker.start()
-        else:
-            if self._running_pass3_after_scan and not self._doing_scan_and_update:
-                self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
-            elif not self._doing_scan_and_update:
-                self.scan_completed.emit()
+        elif self._running_pass3_after_scan and not self._doing_scan_and_update:
+            self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
+        elif not self._doing_scan_and_update:
+            self.scan_completed.emit()
 
         return changed_season_ids, changed_movie_ids
 
@@ -846,8 +842,7 @@ class Controller(QObject):
             if event == "finish_root":
                 scanned_library = payload.get("library")
                 if scanned_library and (
-                    self.current_library_name == scanned_library
-                    or self.current_library_name == "Combined View"
+                    self.current_library_name in {scanned_library, "Combined View"}
                 ):
                     if self.current_library_name == "Combined View":
                         self.library_loaded.emit()

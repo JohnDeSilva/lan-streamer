@@ -344,9 +344,8 @@ class UpdateDialog(QDialog):
         ]:
             if original_variable in clean_env:
                 clean_env[target_variable] = clean_env[original_variable]
-            else:
-                if target_variable in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
-                    clean_env.pop(target_variable, None)
+            elif target_variable in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
+                clean_env.pop(target_variable, None)
 
         # Spawn process using subprocess.Popen with detachment flags
         command_list = [executable_path, *arguments]

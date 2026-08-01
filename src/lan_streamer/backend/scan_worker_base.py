@@ -137,7 +137,7 @@ def log_db_write_error(
         log_target: Logger to write to (defaults to module logger).
     """
     error_message: str = str(error)
-    clean_message: str = error_message.split("\n")[0].strip()
+    clean_message: str = error_message.split("\n", maxsplit=1)[0].strip()
     if "\n" in error_message:
         log_target.debug(f"Database write failure detailed error: {error_message}")
     log_target.warning(

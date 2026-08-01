@@ -80,11 +80,10 @@ class RotatedButton(QPushButton):
                 color_str = "#0284c7"
             elif self.underMouse():
                 color_str = "#38bdf8"
+            elif obj_name in ("volumeMinusBtn", "volumePlusBtn"):
+                color_str = "#94a3b8"
             else:
-                if obj_name in ("volumeMinusBtn", "volumePlusBtn"):
-                    color_str = "#94a3b8"
-                else:
-                    color_str = "#f8fafc"
+                color_str = "#f8fafc"
 
             painter.setFont(self.font())
             painter.setPen(QColor(color_str))

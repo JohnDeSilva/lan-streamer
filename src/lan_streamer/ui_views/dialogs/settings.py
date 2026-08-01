@@ -1008,9 +1008,8 @@ class SettingsDialog(QDialog):
             )
         if current_idx >= 0 and current_idx < len(self.staged_combined_views):
             self.combined_views_list_widget.setCurrentRow(current_idx)
-        else:
-            if self.staged_combined_views:
-                self.combined_views_list_widget.setCurrentRow(0)
+        elif self.staged_combined_views:
+            self.combined_views_list_widget.setCurrentRow(0)
         self.combined_views_list_widget.blockSignals(False)
         self._on_combined_view_selected()
 
@@ -1081,11 +1080,7 @@ class SettingsDialog(QDialog):
         row["max_items"] = self.row_max_items_spinbox.value()
 
         new_default = self._get_default_row_name(row)
-        if (
-            current_name == ""
-            or current_name == old_default
-            or current_name == "New Smart Row"
-        ):
+        if current_name in {"", old_default, "New Smart Row"}:
             row["name"] = new_default
             self.row_name_input.blockSignals(True)
             self.row_name_input.setText(new_default)
@@ -1117,11 +1112,7 @@ class SettingsDialog(QDialog):
         row["libraries"] = selected_libs
 
         new_default = self._get_default_row_name(row)
-        if (
-            current_name == ""
-            or current_name == old_default
-            or current_name == "New Smart Row"
-        ):
+        if current_name in {"", old_default, "New Smart Row"}:
             row["name"] = new_default
             self.row_name_input.blockSignals(True)
             self.row_name_input.setText(new_default)
@@ -1194,9 +1185,8 @@ class SettingsDialog(QDialog):
             self.library_order_list_widget.addItem(lib_name)
         if current_idx >= 0 and current_idx < len(self.staged_libraries):
             self.library_order_list_widget.setCurrentRow(current_idx)
-        else:
-            if self.staged_libraries:
-                self.library_order_list_widget.setCurrentRow(0)
+        elif self.staged_libraries:
+            self.library_order_list_widget.setCurrentRow(0)
         self.library_order_list_widget.blockSignals(False)
 
     @Slot()

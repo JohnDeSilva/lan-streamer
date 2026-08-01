@@ -427,9 +427,8 @@ def _process_series_metadata(
                 series_metadata["poster_path"] = _resolve_series_poster(
                     tmdb_series, tmdb_identifier, existing_series_data, offline
                 )
-            else:
-                if not series_metadata.get("poster_path"):
-                    series_metadata["poster_path"] = ""
+            elif not series_metadata.get("poster_path"):
+                series_metadata["poster_path"] = ""
 
             if (
                 tmdb_identifier

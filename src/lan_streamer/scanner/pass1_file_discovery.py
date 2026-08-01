@@ -373,9 +373,8 @@ def scan_series_pass1(
                     if ep.get("path") and ep["path"] not in existing_paths:
                         series_data["_has_new_files"] = True
                 episodes = _link_existing_episodes(episodes, existing_eps)
-            else:
-                if episodes:
-                    series_data["_has_new_files"] = True
+            elif episodes:
+                series_data["_has_new_files"] = True
             if detail_callback:
                 for episode in episodes:
                     ep_path = episode.get("path")
@@ -551,11 +550,11 @@ def scan_movie_pass1(
         "watched": False,
         "last_played_position": 0,
     }
-    for key in field_defaults:
+    for key, default_value in field_defaults.items():
         if existing_movie_data and key in existing_movie_data:
             movie_data[key] = existing_movie_data[key]
         else:
-            movie_data[key] = field_defaults[key]
+            movie_data[key] = default_value
 
     _save_directory_mtime(str(movie_directory.absolute()), movie_directory.name)
 

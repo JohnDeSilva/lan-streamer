@@ -79,7 +79,7 @@ _TEMPLATE_DB_PATH = None
 
 
 def get_template_db(tmp_path_factory) -> Path:
-    global _TEMPLATE_DB_PATH
+    global _TEMPLATE_DB_PATH  # noqa: PLW0603
     if _TEMPLATE_DB_PATH is None:
         temp_dir = tmp_path_factory.getbasetemp()
         worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")

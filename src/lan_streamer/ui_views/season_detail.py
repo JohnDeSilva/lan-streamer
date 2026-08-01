@@ -1541,11 +1541,11 @@ class SeasonDetailView(QWidget):
                 {k: len(v) for k, v in episode_mal_ids.items()},
             )
             loaded_count = 0
-            for aid in episode_mal_ids:
+            for aid, aid_paths in episode_mal_ids.items():
                 logger.info(
                     "MAL mapper: fetching details for anime ID %s (%d paths)",
                     aid,
-                    len(episode_mal_ids[aid]),
+                    len(aid_paths),
                 )
                 details = myanimelist_client.get_anime_details(aid)
                 if details:

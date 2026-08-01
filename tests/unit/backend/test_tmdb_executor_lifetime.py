@@ -230,7 +230,7 @@ def test_scan_worker_all_shuts_down_tmdb_executor_on_exception() -> None:
             finished_flag: list = []
             error_flag: list = []
             worker.finished.connect(lambda: finished_flag.append(True))
-            worker.error.connect(lambda msg: error_flag.append(msg))
+            worker.error.connect(error_flag.append)
 
             async def _run() -> None:
                 worker.start()

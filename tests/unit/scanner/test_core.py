@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import lan_streamer.scanner as scanner
+from lan_streamer import scanner
 from lan_streamer.scanner import scan_directories
 
 
@@ -2259,7 +2259,7 @@ def test_get_detailed_file_info_and_runtime_worker(tmp_path) -> None:
     """Verify that get_detailed_file_info parses technical metadata and FilePropertyExtractionWorker saves it to the DB."""
     import json
 
-    import lan_streamer.db as db
+    from lan_streamer import db
     from lan_streamer.backend import FilePropertyExtractionWorker
     from lan_streamer.scanner import get_detailed_file_info
 

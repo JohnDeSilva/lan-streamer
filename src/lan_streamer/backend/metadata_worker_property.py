@@ -108,12 +108,11 @@ class FilePropertyExtractionWorker(AsyncWorkerBase):
                         and item.get("season_id") not in self.changed_season_ids
                     ):
                         continue
-                else:
-                    if (
-                        self.changed_movie_ids is not None
-                        and item.get("id") not in self.changed_movie_ids
-                    ):
-                        continue
+                elif (
+                    self.changed_movie_ids is not None
+                    and item.get("id") not in self.changed_movie_ids
+                ):
+                    continue
 
                 candidates.append(item)
 

@@ -502,7 +502,7 @@ def test_build_movie_dict_corrupt_json(mock_db_file) -> None:
 
 def test_get_next_episode_is_last_in_series(mock_db_file) -> None:
     """get_next_episode returns None when episode is last in series."""
-    import lan_streamer.db as db
+    from lan_streamer import db
     from lan_streamer.db import get_session
     from lan_streamer.db.models import Episode, Season, Series
 
@@ -528,7 +528,7 @@ def test_get_next_episode_is_last_in_series(mock_db_file) -> None:
 
 def test_get_next_episode_next_has_no_path(mock_db_file) -> None:
     """get_next_episode returns None when next episode is a placeholder (no path)."""
-    import lan_streamer.db as db
+    from lan_streamer import db
     from lan_streamer.db import get_session
     from lan_streamer.db.models import Episode, Season, Series
 

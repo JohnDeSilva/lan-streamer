@@ -524,7 +524,7 @@ class TestAsyncTaskManagerEdgeCases:
 
             async def _run() -> None:
                 task = manager.schedule_interval(
-                    lambda: flaky(), interval_seconds=0.01, name="cancel_during"
+                    flaky, interval_seconds=0.01, name="cancel_during"
                 )
                 assert task is not None
 

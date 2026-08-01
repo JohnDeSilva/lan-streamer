@@ -80,7 +80,7 @@ def get_fs_executor() -> ThreadPoolExecutor:
         A :class:`concurrent.futures.ThreadPoolExecutor` with at most 3
         worker threads.
     """
-    global _FS_EXECUTOR
+    global _FS_EXECUTOR  # noqa: PLW0603
     if _FS_EXECUTOR is None:
         with _FS_EXECUTOR_LOCK:
             if _FS_EXECUTOR is None:
@@ -97,7 +97,7 @@ def shutdown_fs_executor() -> None:
     Safe to call multiple times.  After this call a new executor will be
     created on the next :func:`get_fs_executor` call.
     """
-    global _FS_EXECUTOR
+    global _FS_EXECUTOR  # noqa: PLW0603
     with _FS_EXECUTOR_LOCK:
         executor = _FS_EXECUTOR
         if executor is not None:
@@ -203,7 +203,7 @@ def get_network_semaphore() -> asyncio.Semaphore:
     Returns:
         An :class:`asyncio.Semaphore` with value 10.
     """
-    global _NETWORK_SEMAPHORE
+    global _NETWORK_SEMAPHORE  # noqa: PLW0603
     if _NETWORK_SEMAPHORE is None:
         with _SEMAPHORE_LOCK:
             if _NETWORK_SEMAPHORE is None:
@@ -221,7 +221,7 @@ def get_subprocess_semaphore() -> asyncio.Semaphore:
     Returns:
         An :class:`asyncio.Semaphore` with value 3.
     """
-    global _SUBPROCESS_SEMAPHORE
+    global _SUBPROCESS_SEMAPHORE  # noqa: PLW0603
     if _SUBPROCESS_SEMAPHORE is None:
         with _SEMAPHORE_LOCK:
             if _SUBPROCESS_SEMAPHORE is None:

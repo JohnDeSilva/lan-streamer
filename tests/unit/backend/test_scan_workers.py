@@ -137,7 +137,7 @@ def test_scan_all_libraries_worker_execution() -> None:
             Qt.DirectConnection,
         )
         worker.detail_progress_batch.connect(
-            lambda batch: batch_emitted.append(batch),
+            batch_emitted.append,
             Qt.DirectConnection,
         )
         worker.finished.connect(
