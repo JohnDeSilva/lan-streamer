@@ -1,10 +1,13 @@
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
 from lan_streamer.providers.tmdb import TMDB_IMAGE_BASE, TMDBClient
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture

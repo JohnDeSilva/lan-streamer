@@ -16,10 +16,13 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # scanner/__init__.py — lines 97, 111
@@ -275,12 +278,12 @@ class TestAsyncWorkerBaseUncovered:
         from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 
         worker = AsyncWorkerBase()
-        with pytest.raises(NotImplementedError):
-            loop = asyncio.new_event_loop()
-            try:
+        loop = asyncio.new_event_loop()
+        try:
+            with pytest.raises(NotImplementedError):
                 loop.run_until_complete(worker.run_async())
-            finally:
-                loop.close()
+        finally:
+            loop.close()
 
     def test_start_without_async_task_manager_raises(self) -> None:
         """Line 75: start() without AsyncTaskManager raises RuntimeError."""

@@ -1,6 +1,5 @@
 import asyncio
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 from PySide6.QtCore import Qt
@@ -11,20 +10,25 @@ from lan_streamer.backend import (
     ScanAllLibrariesWorker,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 # ---------------------------------------------------------------------------
 # Wait helper
 # ---------------------------------------------------------------------------
 
 
 async def _wait_until(
-    condition: Callable[[], bool], timeout: float = 1.0, interval: float = 0.001
+    condition: Callable[[], bool],
+    timeout_seconds: float = 1.0,
+    interval: float = 0.001,
 ) -> None:
     """Wait until condition() returns True, raising TimeoutError otherwise."""
-    for _ in range(int(timeout / interval)):
+    for _ in range(int(timeout_seconds / interval)):
         if condition():
             return
         await asyncio.sleep(interval)
-    raise TimeoutError(f"Condition not met within {timeout}s")
+    raise TimeoutError(f"Condition not met within {timeout_seconds}s")
 
 
 def test_cleanup_worker_execution() -> None:

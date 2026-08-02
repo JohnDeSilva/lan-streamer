@@ -246,7 +246,7 @@ def test_format_name_errors() -> None:
         format_name("{SeriesTitle:invalid_format}", {"SeriesTitle": "Title"})
         == "{SeriesTitle:invalid_format}"
     )
-    # KeyError (token not in context)
+    # KeyError — token not in context
     assert format_name("{UnknownToken}", {"SeriesTitle": "Title"}) == "{UnknownToken}"
 
 

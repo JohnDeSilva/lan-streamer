@@ -1,7 +1,6 @@
 """Targeted tests for SeasonDetailView uncovered lines."""
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import requests
@@ -10,6 +9,9 @@ from PySide6.QtWidgets import QDialog
 
 from lan_streamer.ui_views import SeasonDetailView
 from lan_streamer.ui_views.controller import Controller
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_controller_with_data(

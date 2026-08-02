@@ -227,10 +227,7 @@ def _process_episode_file(
     tmdb_series: dict[str, Any] | None,
     jellyfin_data: dict[str, dict] | None,
     existing_episodes_by_path: dict[str, Any],
-    existing_series_data: dict[str, Any] | None = None,
-    offline: bool = False,
-    metadata_only: bool = False,
-    hint_episode_number: int | None = None,
+    **episode_options: Any,
 ) -> dict[str, Any]:
     """Per-episode metadata matching against the TMDB episode list.
 
@@ -251,24 +248,20 @@ def _process_episode_file(
         jellyfin_data: Jellyfin sync data (may be ``None``).
         existing_episodes_by_path: Path → episode-dict lookup from existing
             data.
-        existing_series_data: Previously indexed series data (may be
-            ``None``).
-        offline: When ``True``, skip network calls.
-        metadata_only: When ``True``, read ``date_added`` from the existing
-            record instead of the filesystem.
+        **episode_options: Accepts ``existing_series_data``, ``offline``,
+            ``metadata_only`` and ``hint_episode_number`` (all optional).
 
     Returns:
         The fully resolved episode dictionary.
     """
+    existing_series_data: dict[str, Any] | None = episode_options.pop(
+        "existing_series_data", None
+    )
+    offline: bool = episode_options.pop("offline", False)
+    metadata_only: bool = episode_options.pop("metadata_only", False)
+    hint_episode_number: int | None = episode_options.pop("hint_episode_number", None)
     episode_path = str(episode_file.absolute())
     episode_name = episode_file.name
-
-    tmdb_episode_identifier = None
-    tmdb_name = None
-    tmdb_number = None
-    air_date = ""
-    runtime = 0
-    jellyfin_id = ""
 
     existing_episode = existing_episodes_by_path.get(episode_path)
     cached_tmdb_episode_identifier = (
@@ -277,134 +270,41 @@ def _process_episode_file(
         if existing_episode
         else None
     )
-    if existing_episode:
-        tmdb_episode_identifier = cached_tmdb_episode_identifier or ""
-        tmdb_name = existing_episode.get("tmdb_name")
-        tmdb_number = existing_episode.get("tmdb_number")
-        air_date = existing_episode.get("air_date", "")
-        runtime = existing_episode.get("runtime", 0)
-        jellyfin_id = existing_episode.get("jellyfin_id", "")
-        logger.debug(f"Reusing existing metadata for '{episode_name}'")
-        # Fill in missing tmdb_name from TMDB episode list when we have
-        # a tmdb_number but no cached name.
-        if tmdb_name is None and tmdb_number is not None and tmdb_episodes:
-            for tmdb_ep in tmdb_episodes:
-                if tmdb_ep.get("episode_number") == tmdb_number:
-                    tmdb_name = tmdb_ep.get("name")
-                    if not tmdb_episode_identifier:
-                        tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
-                    if not air_date:
-                        air_date = tmdb_ep.get("air_date", "")
-                    if not runtime:
-                        runtime = tmdb_ep.get("runtime", 0)
-                    break
-        if tmdb_number is None:
-            if cached_tmdb_episode_identifier and tmdb_episodes:
-                for tmdb_ep in tmdb_episodes:
-                    if str(tmdb_ep.get("id")) == str(cached_tmdb_episode_identifier):
-                        tmdb_number = tmdb_ep.get("episode_number")
-                        if not tmdb_name:
-                            tmdb_name = tmdb_ep.get("name")
-                        if not air_date:
-                            air_date = tmdb_ep.get("air_date", "")
-                        if not runtime:
-                            runtime = tmdb_ep.get("runtime", 0)
-                        break
-            if tmdb_number is None:
-                if hint_episode_number is not None and hint_episode_number > 0:
-                    tmdb_number = hint_episode_number
-                else:
-                    parsed = _parse_episode_number(episode_name)
-                    if parsed:
-                        _, parsed_num = parsed
-                        tmdb_number = parsed_num
-                if tmdb_number is not None and tmdb_episodes:
-                    for tmdb_ep in tmdb_episodes:
-                        if tmdb_ep.get("episode_number") == tmdb_number:
-                            if not tmdb_episode_identifier:
-                                tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
-                            if not tmdb_name:
-                                tmdb_name = tmdb_ep.get("name")
-                            if not air_date:
-                                air_date = tmdb_ep.get("air_date", "")
-                            if not runtime:
-                                runtime = tmdb_ep.get("runtime", 0)
-                            break
-                else:
-                    lookup_name = episode_file.stem.lower()
-                    for tmdb_ep in tmdb_episodes:
-                        tmdb_episode_name = str(tmdb_ep.get("name") or "").lower()
-                        if tmdb_episode_name and tmdb_episode_name in lookup_name:
-                            tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
-                            tmdb_name = tmdb_ep.get("name")
-                            tmdb_number = tmdb_ep.get("episode_number")
-                            air_date = tmdb_ep.get("air_date", "")
-                            runtime = tmdb_ep.get("runtime", 0)
-                            logger.debug(
-                                f"Matched '{episode_name}' by parsed substring: "
-                                f"'{tmdb_episode_name}' -> TMDB Name: '{tmdb_name}'"
-                            )
-                            break
-    else:
-        # Check if there is an existing placeholder in this season in existing_series_data
-        placeholder_episode = None
-        if hint_episode_number is not None and hint_episode_number > 0:
-            parsed = (0, hint_episode_number)
-        else:
-            parsed = _parse_episode_number(episode_name)
-        if (
-            parsed
-            and existing_series_data
-            and season_name in existing_series_data.get("seasons", {})
-        ):
-            _, episode_number = parsed
-            for ep in existing_series_data["seasons"][season_name].get("episodes", []):
-                if not ep.get("path") and ep.get("tmdb_number") == episode_number:
-                    placeholder_episode = ep
-                    break
 
-        if placeholder_episode:
-            tmdb_episode_identifier = placeholder_episode.get(
-                "tmdb_episode_identifier"
-            ) or placeholder_episode.get("tmdb_identifier")
-            tmdb_name = placeholder_episode.get("tmdb_name")
-            tmdb_number = placeholder_episode.get("tmdb_number")
-            air_date = placeholder_episode.get("air_date", "")
-            runtime = placeholder_episode.get("runtime", 0)
-            jellyfin_id = placeholder_episode.get("jellyfin_id", "")
-            logger.info(
-                f"Matched '{episode_name}' to existing placeholder episode S{season_name} E{tmdb_number}"
-            )
-        elif parsed:
-            _, episode_number = parsed
-            tmdb_number = episode_number
-            for tmdb_episode in tmdb_episodes:
-                if tmdb_episode.get("episode_number") == episode_number:
-                    tmdb_episode_identifier = str(tmdb_episode.get("id", ""))
-                    tmdb_name = tmdb_episode.get("name")
-                    tmdb_number = tmdb_episode.get("episode_number")
-                    air_date = tmdb_episode.get("air_date", "")
-                    runtime = tmdb_episode.get("runtime", 0)
-                    logger.debug(
-                        f"Matched '{episode_name}' by parsed episode number: "
-                        f"{episode_number} -> TMDB Name: '{tmdb_name}'"
-                    )
-                    break
-        else:
-            lookup_name = episode_file.stem.lower()
-            for tmdb_episode in tmdb_episodes:
-                tmdb_episode_name = str(tmdb_episode.get("name") or "").lower()
-                if tmdb_episode_name and tmdb_episode_name in lookup_name:
-                    tmdb_episode_identifier = str(tmdb_episode.get("id", ""))
-                    tmdb_name = tmdb_episode.get("name")
-                    tmdb_number = tmdb_episode.get("episode_number")
-                    air_date = tmdb_episode.get("air_date", "")
-                    runtime = tmdb_episode.get("runtime", 0)
-                    logger.debug(
-                        f"Matched '{episode_name}' by parsed substring: "
-                        f"'{tmdb_episode_name}' -> TMDB Name: '{tmdb_name}'"
-                    )
-                    break
+    placeholder_episode: dict[str, Any] | None = None
+    if existing_episode:
+        (
+            tmdb_episode_identifier,
+            tmdb_name,
+            tmdb_number,
+            air_date,
+            runtime,
+            jellyfin_id,
+        ) = _match_existing_episode_metadata(
+            existing_episode,
+            episode_name,
+            episode_file,
+            tmdb_episodes,
+            hint_episode_number,
+            cached_tmdb_episode_identifier,
+        )
+    else:
+        (
+            tmdb_episode_identifier,
+            tmdb_name,
+            tmdb_number,
+            air_date,
+            runtime,
+            jellyfin_id,
+            placeholder_episode,
+        ) = _match_fresh_episode_metadata(
+            episode_file,
+            episode_name,
+            tmdb_episodes,
+            existing_series_data,
+            season_name,
+            hint_episode_number,
+        )
 
     if metadata_only:
         ctime = existing_episode.get("date_added") or 0 if existing_episode else 0
@@ -509,3 +409,175 @@ def _process_episode_file(
         res["myanimelist_episode_number"] = ep_num
 
     return res
+
+
+def _match_existing_episode_metadata(
+    existing_episode: dict[str, Any],
+    episode_name: str,
+    episode_file: Path,
+    tmdb_episodes: list[Any],
+    hint_episode_number: int | None,
+    cached_tmdb_episode_identifier: Any,
+) -> tuple[Any, Any, Any, Any, Any, str]:
+    """Reuse cached metadata for an existing episode, filling gaps from TMDB."""
+    tmdb_episode_identifier = cached_tmdb_episode_identifier or ""
+    tmdb_name = existing_episode.get("tmdb_name")
+    tmdb_number = existing_episode.get("tmdb_number")
+    air_date = existing_episode.get("air_date", "")
+    runtime = existing_episode.get("runtime", 0)
+    jellyfin_id = existing_episode.get("jellyfin_id", "")
+    logger.debug(f"Reusing existing metadata for '{episode_name}'")
+    # Fill in missing tmdb_name from TMDB episode list when we have
+    # a tmdb_number but no cached name.
+    if tmdb_name is None and tmdb_number is not None and tmdb_episodes:
+        for tmdb_ep in tmdb_episodes:
+            if tmdb_ep.get("episode_number") == tmdb_number:
+                tmdb_name = tmdb_ep.get("name")
+                if not tmdb_episode_identifier:
+                    tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
+                if not air_date:
+                    air_date = tmdb_ep.get("air_date", "")
+                if not runtime:
+                    runtime = tmdb_ep.get("runtime", 0)
+                break
+    if tmdb_number is None:
+        if cached_tmdb_episode_identifier and tmdb_episodes:
+            for tmdb_ep in tmdb_episodes:
+                if str(tmdb_ep.get("id")) == str(cached_tmdb_episode_identifier):
+                    tmdb_number = tmdb_ep.get("episode_number")
+                    if not tmdb_name:
+                        tmdb_name = tmdb_ep.get("name")
+                    if not air_date:
+                        air_date = tmdb_ep.get("air_date", "")
+                    if not runtime:
+                        runtime = tmdb_ep.get("runtime", 0)
+                    break
+        if tmdb_number is None:
+            if hint_episode_number is not None and hint_episode_number > 0:
+                tmdb_number = hint_episode_number
+            else:
+                parsed = _parse_episode_number(episode_name)
+                if parsed:
+                    _, parsed_num = parsed
+                    tmdb_number = parsed_num
+            if tmdb_number is not None and tmdb_episodes:
+                for tmdb_ep in tmdb_episodes:
+                    if tmdb_ep.get("episode_number") == tmdb_number:
+                        if not tmdb_episode_identifier:
+                            tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
+                        if not tmdb_name:
+                            tmdb_name = tmdb_ep.get("name")
+                        if not air_date:
+                            air_date = tmdb_ep.get("air_date", "")
+                        if not runtime:
+                            runtime = tmdb_ep.get("runtime", 0)
+                        break
+            else:
+                lookup_name = episode_file.stem.lower()
+                for tmdb_ep in tmdb_episodes:
+                    tmdb_episode_name = str(tmdb_ep.get("name") or "").lower()
+                    if tmdb_episode_name and tmdb_episode_name in lookup_name:
+                        tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
+                        tmdb_name = tmdb_ep.get("name")
+                        tmdb_number = tmdb_ep.get("episode_number")
+                        air_date = tmdb_ep.get("air_date", "")
+                        runtime = tmdb_ep.get("runtime", 0)
+                        logger.debug(
+                            f"Matched '{episode_name}' by parsed substring: "
+                            f"'{tmdb_episode_name}' -> TMDB Name: '{tmdb_name}'"
+                        )
+                        break
+    return (
+        tmdb_episode_identifier,
+        tmdb_name,
+        tmdb_number,
+        air_date,
+        runtime,
+        jellyfin_id,
+    )
+
+
+def _match_fresh_episode_metadata(
+    episode_file: Path,
+    episode_name: str,
+    tmdb_episodes: list[Any],
+    existing_series_data: dict[str, Any] | None,
+    season_name: str,
+    hint_episode_number: int | None,
+) -> tuple[Any, Any, Any, Any, Any, str, dict[str, Any] | None]:
+    """Match a brand-new episode file to TMDB, or to a prior placeholder."""
+    tmdb_episode_identifier = None
+    tmdb_name = None
+    tmdb_number = None
+    air_date = ""
+    runtime = 0
+    jellyfin_id = ""
+    placeholder_episode = None
+    parsed: tuple[int, int] | None
+    if hint_episode_number is not None and hint_episode_number > 0:
+        parsed = (0, hint_episode_number)
+    else:
+        parsed = _parse_episode_number(episode_name)
+    if (
+        parsed
+        and existing_series_data
+        and season_name in existing_series_data.get("seasons", {})
+    ):
+        _, episode_number = parsed
+        for ep in existing_series_data["seasons"][season_name].get("episodes", []):
+            if not ep.get("path") and ep.get("tmdb_number") == episode_number:
+                placeholder_episode = ep
+                break
+
+    if placeholder_episode:
+        tmdb_episode_identifier = placeholder_episode.get(
+            "tmdb_episode_identifier"
+        ) or placeholder_episode.get("tmdb_identifier")
+        tmdb_name = placeholder_episode.get("tmdb_name")
+        tmdb_number = placeholder_episode.get("tmdb_number")
+        air_date = placeholder_episode.get("air_date", "")
+        runtime = placeholder_episode.get("runtime", 0)
+        jellyfin_id = placeholder_episode.get("jellyfin_id", "")
+        logger.info(
+            f"Matched '{episode_name}' to existing placeholder episode S{season_name} E{tmdb_number}"
+        )
+    elif parsed:
+        _, episode_number = parsed
+        tmdb_number = episode_number
+        for tmdb_episode in tmdb_episodes:
+            if tmdb_episode.get("episode_number") == episode_number:
+                tmdb_episode_identifier = str(tmdb_episode.get("id", ""))
+                tmdb_name = tmdb_episode.get("name")
+                tmdb_number = tmdb_episode.get("episode_number")
+                air_date = tmdb_episode.get("air_date", "")
+                runtime = tmdb_episode.get("runtime", 0)
+                logger.debug(
+                    f"Matched '{episode_name}' by parsed episode number: "
+                    f"{episode_number} -> TMDB Name: '{tmdb_name}'"
+                )
+                break
+    else:
+        lookup_name = episode_file.stem.lower()
+        for tmdb_episode in tmdb_episodes:
+            tmdb_episode_name = str(tmdb_episode.get("name") or "").lower()
+            if tmdb_episode_name and tmdb_episode_name in lookup_name:
+                tmdb_episode_identifier = str(tmdb_episode.get("id", ""))
+                tmdb_name = tmdb_episode.get("name")
+                tmdb_number = tmdb_episode.get("episode_number")
+                air_date = tmdb_episode.get("air_date", "")
+                runtime = tmdb_episode.get("runtime", 0)
+                logger.debug(
+                    f"Matched '{episode_name}' by parsed substring: "
+                    f"'{tmdb_episode_name}' -> TMDB Name: '{tmdb_name}'"
+                )
+                break
+
+    return (
+        tmdb_episode_identifier,
+        tmdb_name,
+        tmdb_number,
+        air_date,
+        runtime,
+        jellyfin_id,
+        placeholder_episode,
+    )

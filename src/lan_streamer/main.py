@@ -59,6 +59,98 @@ def setup_dark_theme(application_instance: QApplication) -> None:
 async def main() -> None:
     import os
 
+    _parse_cli_arguments()
+    _handle_dry_run()
+
+    _configure_qt_platform()
+    await _setup_logging()
+
+    from lan_streamer.system.backup import perform_scheduled_backups
+
+    perform_scheduled_backups()
+
+    logger.info("Initializing database...")
+    db.init_db()
+    logger.info("Loading settings from database...")
+    config.load_from_db()
+
+    logger.info("Initializing Qt Application...")
+    application_instance = _initialize_application()
+    application_instance.setFont(QFont("Inter", 14))
+
+    main_window, stacked_layout = _create_main_window()
+
+    logger.debug("Instantiating Controller and UI views...")
+    controller = Controller()
+    application_instance.aboutToQuit.connect(controller.worker_manager.stop_all)
+    application_instance.aboutToQuit.connect(controller.async_task_manager.stop_all)
+    library_grid_view = LibraryGridView(controller)
+    series_detail_view = SeriesDetailView(controller)
+    movie_detail_view = MovieDetailView(controller)
+    season_detail_view = SeasonDetailView(controller)
+    cast_detail_view = CastDetailView()
+    player_view = VideoPlayerWidget()
+
+    stacked_layout.addWidget(library_grid_view)  # index 0
+    stacked_layout.addWidget(series_detail_view)  # index 1
+    stacked_layout.addWidget(movie_detail_view)  # index 2
+    stacked_layout.addWidget(season_detail_view)  # index 3
+    stacked_layout.addWidget(cast_detail_view)  # index 4
+    stacked_layout.addWidget(player_view)  # index 5
+
+    previous_layout_index: list[int | None] = [None]
+    _wire_navigation_signals(
+        controller,
+        stacked_layout,
+        library_grid_view,
+        series_detail_view,
+        movie_detail_view,
+        player_view,
+        previous_layout_index,
+    )
+    _wire_dialog_signals(
+        controller,
+        stacked_layout,
+        series_detail_view,
+        movie_detail_view,
+        main_window,
+    )
+    _wire_season_and_cast_signals(
+        controller,
+        stacked_layout,
+        series_detail_view,
+        movie_detail_view,
+        season_detail_view,
+        cast_detail_view,
+    )
+
+    controller.status_changed.connect(main_window.statusBar().showMessage)
+
+    # Initialize library dropdown entries
+    library_names_list = list(config.libraries.keys())
+    logger.debug(f"Populating Library Grid View libraries: {library_names_list}")
+    library_grid_view.populate_libraries(library_names_list)
+
+    logger.info("Displaying Main Window. Starting Qt event loop.")
+    main_window.show()
+
+    if os.environ.get("LAN_STREAMER_TEST_RUN") == "1":
+        _schedule_auto_shutdown(main_window)
+
+    _check_startup_updates(main_window)
+
+    # If running under a unit test (mocked QApplication), exit early to avoid blocking/hanging.
+    if "mock" in type(application_instance).__name__.lower():
+        logger.info(
+            "Mock QApplication detected. Exiting main function immediately for testing."
+        )
+        return
+
+    await _run_qt_event_loop(application_instance, main_window)
+
+
+def _parse_cli_arguments() -> None:
+    """Handle ``--version`` and ``--help`` CLI arguments before startup."""
     if len(sys.argv) > 1:
         if sys.argv[1] in ("--version", "-v", "-V"):
             print(f"lan-streamer {__version__}")
@@ -72,20 +164,36 @@ async def main() -> None:
             print("  -h, --help             Show this help message and exit.")
             sys.exit(0)
 
-    if os.environ.get("LAN_STREAMER_DRY_RUN") == "1":
-        if not os.environ.get("QT_QPA_PLATFORM"):
-            os.environ["QT_QPA_PLATFORM"] = "offscreen"
-        app_inst = QApplication.instance()
-        if app_inst is None:
-            app_inst = QApplication(sys.argv)
-        print(
-            "LAN Streamer: Dry run verification successful. Qt application successfully initialized."
-        )
-        os._exit(0)
+
+def _handle_dry_run() -> None:
+    """Exit early when ``LAN_STREAMER_DRY_RUN`` is enabled (CI smoke test)."""
+    import os
+
+    if os.environ.get("LAN_STREAMER_DRY_RUN") != "1":
+        return
+    if not os.environ.get("QT_QPA_PLATFORM"):
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    app_inst = QApplication.instance()
+    if app_inst is None:
+        app_inst = QApplication(sys.argv)
+    print(
+        "LAN Streamer: Dry run verification successful. Qt application successfully initialized."
+    )
+    os._exit(0)
+
+
+def _configure_qt_platform() -> None:
+    """Force xcb backend on Wayland sessions when no platform is pre-set."""
+    import os
 
     if sys.platform.startswith("linux") and not os.environ.get("QT_QPA_PLATFORM"):
         if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
             os.environ["QT_QPA_PLATFORM"] = "xcb"
+
+
+async def _setup_logging() -> None:
+    """Configure console and file logging based on config settings."""
+    import logging
 
     log_formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -188,23 +296,19 @@ async def main() -> None:
 
     setup_qt_logging(log_formatter)
 
-    from lan_streamer.system.backup import perform_scheduled_backups
 
-    perform_scheduled_backups()
-
-    logger.info("Initializing database...")
-    db.init_db()
-    logger.info("Loading settings from database...")
-    config.load_from_db()
-    logger.info("Initializing Qt Application...")
+def _initialize_application() -> QApplication:
+    """Create (or reuse) the QApplication and apply the dark theme."""
     app_inst = QApplication.instance()
     if app_inst is None:
         app_inst = QApplication(sys.argv)
-    application_instance = cast(QApplication, app_inst)
+    application_instance = cast("QApplication", app_inst)
     setup_dark_theme(application_instance)
+    return application_instance
 
-    application_instance.setFont(QFont("Inter", 14))
 
+def _create_main_window() -> tuple[QMainWindow, QStackedLayout]:
+    """Create the main window with its stacked central layout."""
     main_window = QMainWindow()
     main_window.setWindowTitle(f"LAN Streamer v{__version__}")
     main_window.resize(1600, 1000)
@@ -213,26 +317,20 @@ async def main() -> None:
     central_widget = QWidget()
     stacked_layout = QStackedLayout(central_widget)
     main_window.setCentralWidget(central_widget)
+    return main_window, stacked_layout
 
-    logger.debug("Instantiating Controller and UI views...")
-    controller = Controller()
-    application_instance.aboutToQuit.connect(controller.worker_manager.stop_all)
-    application_instance.aboutToQuit.connect(controller.async_task_manager.stop_all)
-    library_grid_view = LibraryGridView(controller)
-    series_detail_view = SeriesDetailView(controller)
-    movie_detail_view = MovieDetailView(controller)
-    season_detail_view = SeasonDetailView(controller)
-    cast_detail_view = CastDetailView()
-    player_view = VideoPlayerWidget()
 
-    stacked_layout.addWidget(library_grid_view)  # index 0
-    stacked_layout.addWidget(series_detail_view)  # index 1
-    stacked_layout.addWidget(movie_detail_view)  # index 2
-    stacked_layout.addWidget(season_detail_view)  # index 3
-    stacked_layout.addWidget(cast_detail_view)  # index 4
-    stacked_layout.addWidget(player_view)  # index 5
+def _wire_navigation_signals(
+    controller: Controller,
+    stacked_layout: QStackedLayout,
+    library_grid_view: LibraryGridView,
+    series_detail_view: SeriesDetailView,
+    movie_detail_view: MovieDetailView,
+    player_view: VideoPlayerWidget,
+    previous_layout_index: list[int | None],
+) -> None:
+    """Wire view routing, back-navigation, and playback signals."""
 
-    # Wire view routing and modal display signals
     def on_series_selected(series_name: str) -> None:
         logger.info(f"Navigating to Series Detail View for series: '{series_name}'")
         if not getattr(controller, "is_video_playing", False):
@@ -265,8 +363,6 @@ async def main() -> None:
 
     series_detail_view.back_requested.connect(on_grid_back_requested)
     movie_detail_view.back_requested.connect(on_grid_back_requested)
-
-    previous_layout_index: list[int | None] = [None]
 
     def on_playback_requested(file_path: str) -> None:
         logger.info(
@@ -304,6 +400,16 @@ async def main() -> None:
         controller.mark_episode_watched(file_path, True)
 
     player_view.watched_marked.connect(on_watched_marked)
+
+
+def _wire_dialog_signals(
+    controller: Controller,
+    stacked_layout: QStackedLayout,
+    series_detail_view: SeriesDetailView,
+    movie_detail_view: MovieDetailView,
+    main_window: QMainWindow,
+) -> None:
+    """Wire modal dialog display signals from the controller."""
 
     def on_metadata_dialog_requested(series_name: str) -> None:
         logger.info(f"Opening Metadata Match Dialog for series: '{series_name}'")
@@ -374,7 +480,17 @@ async def main() -> None:
 
     controller.series_details_requested.connect(on_series_details_requested)
 
-    # Wire season detail navigation
+
+def _wire_season_and_cast_signals(
+    controller: Controller,
+    stacked_layout: QStackedLayout,
+    series_detail_view: SeriesDetailView,
+    movie_detail_view: MovieDetailView,
+    season_detail_view: SeasonDetailView,
+    cast_detail_view: CastDetailView,
+) -> None:
+    """Wire season-detail, cast-detail, and filmography navigation signals."""
+
     def on_season_detail_requested(series_name: str, season_name: str) -> None:
         logger.info(
             "Navigating to Season Detail View for '%s' - '%s'",
@@ -394,16 +510,14 @@ async def main() -> None:
 
     season_detail_view.back_requested.connect(on_season_detail_back)
 
-    # Wire cast detail navigation
-    cast_detail_previous_index = 1
+    cast_detail_previous_index: list[int] = [1]
 
     def on_cast_member_selected(person_id: str) -> None:
-        nonlocal cast_detail_previous_index
-        cast_detail_previous_index = stacked_layout.currentIndex()
+        cast_detail_previous_index[0] = stacked_layout.currentIndex()
         logger.info(
             "Navigating to Cast Detail View for person: %s (from index %d)",
             person_id,
-            cast_detail_previous_index,
+            cast_detail_previous_index[0],
         )
         cast_detail_view.display_person(person_id)
         stacked_layout.setCurrentIndex(4)
@@ -413,9 +527,9 @@ async def main() -> None:
     def on_cast_detail_back() -> None:
         logger.info(
             "Navigating back from Cast Detail to previous view (index %d)",
-            cast_detail_previous_index,
+            cast_detail_previous_index[0],
         )
-        stacked_layout.setCurrentIndex(cast_detail_previous_index)
+        stacked_layout.setCurrentIndex(cast_detail_previous_index[0])
 
     cast_detail_view.back_requested.connect(on_cast_detail_back)
 
@@ -478,32 +592,25 @@ async def main() -> None:
 
     cast_detail_view.media_item_clicked.connect(on_filmography_item_clicked)
 
-    # Season detail now handles its own navigation without cast section
 
-    controller.status_changed.connect(main_window.statusBar().showMessage)
+def _schedule_auto_shutdown(main_window: QMainWindow) -> None:
+    """Schedule an automatic window-close when running under test mode."""
+    logger.info("Test run mode active. Scheduling automatic shutdown in 3 seconds...")
 
-    # Initialize library dropdown entries
-    library_names_list = list(config.libraries.keys())
-    logger.debug(f"Populating Library Grid View libraries: {library_names_list}")
-    library_grid_view.populate_libraries(library_names_list)
-
-    logger.info("Displaying Main Window. Starting Qt event loop.")
-    main_window.show()
-
-    if os.environ.get("LAN_STREAMER_TEST_RUN") == "1":
+    async def auto_shutdown() -> None:
+        await asyncio.sleep(3.0)
         logger.info(
-            "Test run mode active. Scheduling automatic shutdown in 3 seconds..."
+            "Automatic shutdown timer fired. Hiding window to trigger shutdown..."
         )
+        main_window.hide()
 
-        async def auto_shutdown() -> None:
-            await asyncio.sleep(3.0)
-            logger.info(
-                "Automatic shutdown timer fired. Hiding window to trigger shutdown..."
-            )
-            main_window.hide()
+    auto_shutdown_task = asyncio.create_task(auto_shutdown())
+    logger.info(f"Scheduled automatic shutdown task: {auto_shutdown_task}")
 
-        auto_shutdown_task = asyncio.create_task(auto_shutdown())
-        logger.info(f"Scheduled automatic shutdown task: {auto_shutdown_task}")
+
+def _check_startup_updates(main_window: QMainWindow) -> None:
+    """Run an asynchronous update check on startup when enabled."""
+    import os
 
     if (
         config.check_for_updates_on_startup
@@ -543,12 +650,12 @@ async def main() -> None:
         worker.finished.connect(on_startup_check_finished)
         worker.start()
 
-    # If running under a unit test (mocked QApplication), exit early to avoid blocking/hanging.
-    if "mock" in type(application_instance).__name__.lower():
-        logger.info(
-            "Mock QApplication detected. Exiting main function immediately for testing."
-        )
-        return
+
+async def _run_qt_event_loop(
+    application_instance: QApplication, main_window: QMainWindow
+) -> None:
+    """Run the Qt event loop with asyncio integration via qasync."""
+    import os
 
     try:
         import qasync  # noqa: F401

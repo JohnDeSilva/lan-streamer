@@ -1,12 +1,14 @@
 import json
 import logging
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from lan_streamer.db.models import AppConfig, AppSecret, SecretType, Series
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger("lan_streamer.db.queries")
 

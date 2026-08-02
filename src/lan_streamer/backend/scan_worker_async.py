@@ -11,7 +11,7 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, Signal
 from sqlalchemy.exc import SQLAlchemyError
@@ -26,9 +26,11 @@ from lan_streamer.backend.scan_worker_base import (
     log_stats_breakdown,
 )
 from lan_streamer.scanner import LibraryDict, scan_directories
-from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.async_utils import run_in_fs_executor
 from lan_streamer.system.config import config
+
+if TYPE_CHECKING:
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 logger = logging.getLogger("lan_streamer.backend")
 

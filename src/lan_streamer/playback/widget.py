@@ -634,8 +634,17 @@ class VideoPlayerWidget(QWidget):
     def _setup_ui(self) -> None:
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self._setup_video_frame()
+        self._setup_progress_overlay()
+        self._setup_fullscreen_overlay()
+        self._build_fullscreen_layout()
+        self._setup_osd_and_popup()
+        self._setup_stats_overlay()
+        self._setup_controls_widget()
+        self._build_controls_seek_layout(self.controls_layout)
+        self._build_controls_buttons_layout(self.controls_layout)
 
-        # Video Frame
+    def _setup_video_frame(self) -> None:
         self.video_frame = QFrame()
         self.video_frame.setWindowFlags(
             Qt.WindowType.Widget | Qt.WindowType.FramelessWindowHint
@@ -651,7 +660,7 @@ class VideoPlayerWidget(QWidget):
         self.video_frame.installEventFilter(self)
         self.main_layout.addWidget(self.video_frame)
 
-        # Progress Overlay (for caching)
+    def _setup_progress_overlay(self) -> None:
         self.progress_overlay = QWidget(self)
         self.progress_overlay.setStyleSheet("background-color: rgba(0, 0, 0, 150);")
         overlay_layout = QVBoxLayout(self.progress_overlay)
@@ -666,7 +675,7 @@ class VideoPlayerWidget(QWidget):
         overlay_layout.addStretch()
         self.progress_overlay.hide()
 
-        # Fullscreen Scene, View, and Overlay QFrame
+    def _setup_fullscreen_overlay(self) -> None:
         self.fullscreen_scene = QGraphicsScene(self)
         self.fullscreen_scene.setBackgroundBrush(Qt.BrushStyle.NoBrush)
 
@@ -714,6 +723,7 @@ class VideoPlayerWidget(QWidget):
         self.fs_seek_slider.setMaximum(1000)
         self.fs_seek_slider.sliderMoved.connect(self.set_position)
 
+    def _build_fullscreen_layout(self) -> None:
         fs_main_layout = QVBoxLayout(self.fullscreen_overlay)
         fs_main_layout.setContentsMargins(20, 15, 20, 15)
         fs_main_layout.setSpacing(10)
@@ -788,6 +798,7 @@ class VideoPlayerWidget(QWidget):
         self._apply_fullscreen_styles()
         self.fullscreen_overlay.hide()
 
+    def _setup_osd_and_popup(self) -> None:
         # Volume OSD
         self.osd_label = QLabel(self)
         self.osd_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -899,7 +910,7 @@ class VideoPlayerWidget(QWidget):
 
         self.next_episode_popup_frame.hide()
 
-        # Stats Overlay
+    def _setup_stats_overlay(self) -> None:
         self.stats_overlay = QFrame(self)
         self.stats_overlay.setStyleSheet(
             "background-color: rgba(0, 0, 0, 220); color: white; border: 1px solid #555; border-radius: 5px;"
@@ -912,6 +923,7 @@ class VideoPlayerWidget(QWidget):
         stats_layout.addWidget(self.stats_label)
         self.stats_overlay.hide()
 
+    def _setup_controls_widget(self) -> None:
         # Controls Widget (container for easy hiding in fullscreen)
         self.controls_widget = QWidget()
         self.controls_widget.setObjectName("controlsWidget")
@@ -925,9 +937,9 @@ class VideoPlayerWidget(QWidget):
                 color: #f8fafc;
             }
         """)
-        controls_layout = QVBoxLayout(self.controls_widget)
-        controls_layout.setContentsMargins(20, 15, 20, 15)
-        controls_layout.setSpacing(10)
+        self.controls_layout = QVBoxLayout(self.controls_widget)
+        self.controls_layout.setContentsMargins(20, 15, 20, 15)
+        self.controls_layout.setSpacing(10)
 
         # Legacy controls for test compatibility
         self.time_label = QLabel("00:00 / 00:00", self.controls_widget)
@@ -959,6 +971,7 @@ class VideoPlayerWidget(QWidget):
         self.audio_combo.currentIndexChanged.connect(self.change_audio_track)
         self.subtitle_combo.currentIndexChanged.connect(self.change_subtitle_track)
 
+    def _build_controls_seek_layout(self, controls_layout: QVBoxLayout) -> None:
         # 1. Seek Slider Row
         seek_layout = QHBoxLayout()
         seek_layout.setContentsMargins(0, 0, 0, 0)
@@ -1008,6 +1021,7 @@ class VideoPlayerWidget(QWidget):
         seek_layout.addWidget(self.duration_label)
         controls_layout.addLayout(seek_layout)
 
+    def _build_controls_buttons_layout(self, controls_layout: QVBoxLayout) -> None:
         # 2. Buttons / Pane Row
         buttons_layout = QHBoxLayout()
         buttons_layout.setContentsMargins(0, 0, 0, 0)

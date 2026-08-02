@@ -2,13 +2,15 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, Signal
 
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
-from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.async_utils import async_run_subprocess
+
+if TYPE_CHECKING:
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 logger = logging.getLogger("lan_streamer.backend")
 

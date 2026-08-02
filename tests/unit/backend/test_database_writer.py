@@ -10,7 +10,7 @@ from lan_streamer.backend.database_writer import (
 )
 
 
-@pytest.fixture()
+@pytest.fixture
 def event_loop() -> asyncio.AbstractEventLoop:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

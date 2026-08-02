@@ -16,12 +16,15 @@ import concurrent.futures
 import logging
 import os
 import threading
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from lan_streamer.scanner.parser import has_video_files
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger("lan_streamer.scanner")
 
@@ -69,6 +72,17 @@ class LibraryDict(dict[str, Any]):
         return f"LibraryDict({len(self)} items, unavailable={self.unavailable_directories})"
 
 
+@dataclass
+class ScanContext:
+    """Shared progress/interruption state threaded through the scan passes."""
+
+    detail_callback: Callable | None = None
+    season_callback: Callable | None = None
+    movie_callback: Callable | None = None
+    is_interrupted: Callable | None = None
+    tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None = None
+
+
 def scan_directories(
     root_directories: list[str],
     library_type: str = "tv",
@@ -76,13 +90,9 @@ def scan_directories(
     jellyfin_data: dict[str, Any] | None = None,
     force_refresh: bool = False,
     single_item_refresh: bool = False,
-    detail_callback: Callable | None = None,
     show_future_episodes: bool = True,
-    season_callback: Callable | None = None,
-    movie_callback: Callable | None = None,
-    is_interrupted: Callable | None = None,
-    tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None = None,
     pass_number: int = 0,
+    **scan_options: Any,
 ) -> LibraryDict:
     """Dispatch to the appropriate pass implementation.
 
@@ -93,17 +103,29 @@ def scan_directories(
         jellyfin_data: Jellyfin correlation data (Pass 2 only).
         force_refresh: Re-scan even when mtimes match.
         single_item_refresh: Force-refresh metadata for a single item.
-        detail_callback: Progress callback ``(event, payload)``.
         show_future_episodes: Include future-dated TMDB placeholders.
-        season_callback: Called for each season scanned (Pass 1/2).
-        movie_callback: Called for each movie scanned (Pass 1/2).
-        is_interrupted: Callable returning True if scan should abort.
-        tmdb_prefetch_executor: Shared executor for TMDB pre-fetch (Pass 2).
         pass_number: Which pass to execute (0 = all, 1 = discovery, 2 = metadata, 3 = technical).
+        **scan_options: Accepts ``detail_callback``, ``season_callback``,
+            ``movie_callback``, ``is_interrupted`` and ``tmdb_prefetch_executor``
+            which are bundled into a :class:`ScanContext` for the passes.
 
     Returns:
         A :class:`LibraryDict` with discovered / resolved series/movie data.
     """
+    detail_callback: Callable | None = scan_options.pop("detail_callback", None)
+    season_callback: Callable | None = scan_options.pop("season_callback", None)
+    movie_callback: Callable | None = scan_options.pop("movie_callback", None)
+    is_interrupted: Callable | None = scan_options.pop("is_interrupted", None)
+    tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None = (
+        scan_options.pop("tmdb_prefetch_executor", None)
+    )
+    scan_context = ScanContext(
+        detail_callback=detail_callback,
+        season_callback=season_callback,
+        movie_callback=movie_callback,
+        is_interrupted=is_interrupted,
+        tmdb_prefetch_executor=tmdb_prefetch_executor,
+    )
     existing_library = existing_library or {}
 
     if pass_number == 0:
@@ -112,10 +134,7 @@ def scan_directories(
             library_type=library_type,
             existing_library=existing_library,
             force_refresh=force_refresh,
-            detail_callback=detail_callback,
-            season_callback=season_callback,
-            movie_callback=movie_callback,
-            is_interrupted=is_interrupted,
+            scan_context=scan_context,
         )
         unavailable = list(lib.unavailable_directories)
         lib = _scan_pass2(
@@ -125,19 +144,15 @@ def scan_directories(
             jellyfin_data=jellyfin_data,
             force_refresh=force_refresh,
             single_item_refresh=single_item_refresh,
-            detail_callback=detail_callback,
             show_future_episodes=show_future_episodes,
-            season_callback=season_callback,
-            movie_callback=movie_callback,
-            is_interrupted=is_interrupted,
-            tmdb_prefetch_executor=tmdb_prefetch_executor,
+            scan_context=scan_context,
         )
         result = _scan_pass3(
             root_directories=root_directories,
             library_type=library_type,
             existing_library=lib,
             force_refresh=force_refresh,
-            is_interrupted=is_interrupted,
+            scan_context=scan_context,
         )
         result.unavailable_directories = unavailable
         return result
@@ -147,10 +162,7 @@ def scan_directories(
             library_type=library_type,
             existing_library=existing_library,
             force_refresh=force_refresh,
-            detail_callback=detail_callback,
-            season_callback=season_callback,
-            movie_callback=movie_callback,
-            is_interrupted=is_interrupted,
+            scan_context=scan_context,
         )
     if pass_number == 2:
         return _scan_pass2(
@@ -160,12 +172,8 @@ def scan_directories(
             jellyfin_data=jellyfin_data,
             force_refresh=force_refresh,
             single_item_refresh=single_item_refresh,
-            detail_callback=detail_callback,
             show_future_episodes=show_future_episodes,
-            season_callback=season_callback,
-            movie_callback=movie_callback,
-            is_interrupted=is_interrupted,
-            tmdb_prefetch_executor=tmdb_prefetch_executor,
+            scan_context=scan_context,
         )
     if pass_number == 3:
         return _scan_pass3(
@@ -173,7 +181,7 @@ def scan_directories(
             library_type=library_type,
             existing_library=existing_library,
             force_refresh=force_refresh,
-            is_interrupted=is_interrupted,
+            scan_context=scan_context,
         )
     raise ValueError(f"Invalid pass_number: {pass_number!r} (expected 0, 1, 2, or 3)")
 
@@ -188,15 +196,16 @@ def _scan_pass1(
     library_type: str,
     existing_library: dict[str, Any],
     force_refresh: bool,
-    detail_callback: Callable | None,
-    season_callback: Callable | None,
-    movie_callback: Callable | None,
-    is_interrupted: Callable | None,
+    scan_context: ScanContext,
 ) -> LibraryDict:
     """Walk filesystem, discover files, create stub records.
 
     Each series/movie directory is scanned in parallel via the global executor.
     """
+    detail_callback = scan_context.detail_callback
+    season_callback = scan_context.season_callback
+    movie_callback = scan_context.movie_callback
+    is_interrupted = scan_context.is_interrupted
     from lan_streamer.scanner.pass1_file_discovery import (
         scan_movie_pass1,
         scan_series_pass1,
@@ -356,17 +365,18 @@ def _scan_pass2(
     jellyfin_data: dict[str, Any] | None,
     force_refresh: bool,
     single_item_refresh: bool,
-    detail_callback: Callable | None,
     show_future_episodes: bool,
-    season_callback: Callable | None,
-    movie_callback: Callable | None,
-    is_interrupted: Callable | None,
-    tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None,
+    scan_context: ScanContext,
 ) -> LibraryDict:
     """Resolve TMDB metadata for all items in *existing_library*.
 
     No filesystem walking — operates entirely on previously-discovered data.
     """
+    detail_callback = scan_context.detail_callback
+    season_callback = scan_context.season_callback
+    movie_callback = scan_context.movie_callback
+    is_interrupted = scan_context.is_interrupted
+    tmdb_prefetch_executor = scan_context.tmdb_prefetch_executor
     from lan_streamer.scanner.pass2_metadata import scan_movie_pass2, scan_series_pass2
 
     library = LibraryDict()
@@ -483,9 +493,10 @@ def _scan_pass3(
     library_type: str,
     existing_library: dict[str, Any],
     force_refresh: bool,
-    is_interrupted: Callable | None,
+    scan_context: ScanContext,
 ) -> LibraryDict:
     """Batch ffprobe scan and cleanup for all items in *existing_library*."""
+    is_interrupted = scan_context.is_interrupted
     from lan_streamer.scanner.pass3_technical import scan_movie_pass3, scan_series_pass3
 
     library = LibraryDict()

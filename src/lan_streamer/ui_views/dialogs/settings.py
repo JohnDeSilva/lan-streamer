@@ -217,6 +217,53 @@ class SettingsDialog(QDialog):
         tab_container: QTabWidget = QTabWidget()
 
         # Connectivity Configuration Pane
+        connectivity_tab: QWidget = self._build_connectivity_tab()
+
+        # Libraries Management Pane
+        libraries_tab: QWidget = self._build_libraries_tab()
+
+        # Combined View Setup Pane
+        combined_tab: QWidget = self._build_combined_view_tab()
+
+        # Video Player Settings Pane
+        player_tab: QWidget = self._build_player_tab()
+
+        # Advanced Settings Pane
+        advanced_tab: QWidget = self._build_advanced_tab()
+
+        # Library Management Pane
+        management_tab: QWidget = self._build_management_tab()
+
+        # Running Logs Tab
+        logs_tab: QWidget = self._build_logs_tab()
+
+        # Add tabs in the requested order
+        tab_container.addTab(management_tab, "Library Management")
+        tab_container.addTab(player_tab, "Video Player")
+        tab_container.addTab(libraries_tab, "Libraries Setup")
+        tab_container.addTab(combined_tab, "Combined View")
+        tab_container.addTab(connectivity_tab, "Remote API's")
+        tab_container.addTab(advanced_tab, "Advanced")
+        tab_container.addTab(logs_tab, "Logs")
+
+        main_layout.addWidget(tab_container)
+
+        # Dialog Standard Action Buttons
+        buttons_layout: QHBoxLayout = QHBoxLayout()
+        buttons_layout.addStretch()
+
+        cancel_button: QPushButton = QPushButton("Discard")
+        cancel_button.clicked.connect(self.reject)
+        buttons_layout.addWidget(cancel_button)
+
+        save_button: QPushButton = QPushButton("Save Settings")
+        save_button.setObjectName("accentButton")
+        save_button.clicked.connect(self.save_config)
+        buttons_layout.addWidget(save_button)
+
+        main_layout.addLayout(buttons_layout)
+
+    def _build_connectivity_tab(self) -> QWidget:
         connectivity_tab: QWidget = QWidget()
         connectivity_layout: QGridLayout = QGridLayout(connectivity_tab)
         connectivity_layout.setSpacing(12)
@@ -304,8 +351,9 @@ class SettingsDialog(QDialog):
         connectivity_layout.addLayout(mal_buttons_layout, 13, 0, 1, 2)
 
         connectivity_layout.setRowStretch(14, 1)
+        return connectivity_tab
 
-        # Libraries Management Pane
+    def _build_libraries_tab(self) -> QWidget:
         libraries_tab: QWidget = QWidget()
         libraries_main_layout: QHBoxLayout = QHBoxLayout(libraries_tab)
         libraries_main_layout.setSpacing(15)
@@ -402,8 +450,9 @@ class SettingsDialog(QDialog):
         right_layout.addLayout(order_btns_layout)
 
         libraries_main_layout.addWidget(right_column, 1)
+        return libraries_tab
 
-        # Combined View Setup Pane
+    def _build_combined_view_tab(self) -> QWidget:
         combined_tab: QWidget = QWidget()
         combined_tab_main_layout: QVBoxLayout = QVBoxLayout(combined_tab)
         combined_tab_main_layout.setContentsMargins(10, 10, 10, 10)
@@ -500,8 +549,9 @@ class SettingsDialog(QDialog):
         self.combined_views_list_widget.currentRowChanged.connect(
             self._on_combined_view_selected
         )
+        return combined_tab
 
-        # Video Player Settings Pane
+    def _build_player_tab(self) -> QWidget:
         player_tab: QWidget = QWidget()
         player_layout: QVBoxLayout = QVBoxLayout(player_tab)
         player_layout.setSpacing(15)
@@ -543,14 +593,22 @@ class SettingsDialog(QDialog):
         player_layout.addLayout(position_layout)
 
         player_layout.addStretch()
+        return player_tab
 
-        # Advanced Settings Pane
+    def _build_advanced_tab(self) -> QWidget:
         advanced_tab: QWidget = QWidget()
         advanced_layout: QVBoxLayout = QVBoxLayout(advanced_tab)
         advanced_layout.setSpacing(15)
         advanced_layout.setContentsMargins(10, 10, 10, 10)
 
-        # 1. Database Settings Group
+        advanced_layout.addWidget(self._build_database_group())
+        advanced_layout.addWidget(self._build_log_group())
+        advanced_layout.addWidget(self._build_config_group())
+        advanced_layout.addWidget(self._build_updates_group())
+        advanced_layout.addStretch()
+        return advanced_tab
+
+    def _build_database_group(self) -> QFrame:
         db_frame: QFrame = QFrame()
         db_frame.setObjectName("dbGroupFrame")
         db_frame.setStyleSheet(
@@ -587,9 +645,9 @@ class SettingsDialog(QDialog):
         restore_database_button.clicked.connect(self.trigger_restore_database)
         db_group_layout.addWidget(restore_database_button, 4, 1)
 
-        advanced_layout.addWidget(db_frame)
+        return db_frame
 
-        # 2. Log Settings Group
+    def _build_log_group(self) -> QFrame:
         logs_frame: QFrame = QFrame()
         logs_frame.setObjectName("logsGroupFrame")
         logs_frame.setStyleSheet(
@@ -629,9 +687,9 @@ class SettingsDialog(QDialog):
         logs_group_layout.addWidget(log_ret_label, 4, 0)
         logs_group_layout.addWidget(self.log_retention_input, 4, 1)
 
-        advanced_layout.addWidget(logs_frame)
+        return logs_frame
 
-        # 3. Configuration Settings Group
+    def _build_config_group(self) -> QFrame:
         config_frame: QFrame = QFrame()
         config_frame.setObjectName("configGroupFrame")
         config_frame.setStyleSheet(
@@ -670,9 +728,9 @@ class SettingsDialog(QDialog):
         restore_config_button.clicked.connect(self.trigger_restore_config)
         config_group_layout.addWidget(restore_config_button, 4, 1)
 
-        advanced_layout.addWidget(config_frame)
+        return config_frame
 
-        # 4. Updates Settings Group
+    def _build_updates_group(self) -> QFrame:
         updates_frame: QFrame = QFrame()
         updates_frame.setObjectName("updatesGroupFrame")
         updates_frame.setStyleSheet(
@@ -701,11 +759,9 @@ class SettingsDialog(QDialog):
         self.check_updates_now_button.clicked.connect(self.trigger_manual_update_check)
         updates_group_layout.addWidget(self.check_updates_now_button, 3, 0, 1, 1)
 
-        advanced_layout.addWidget(updates_frame)
+        return updates_frame
 
-        advanced_layout.addStretch()
-
-        # Library Management Pane
+    def _build_management_tab(self) -> QWidget:
         management_tab: QWidget = QWidget()
         management_layout: QVBoxLayout = QVBoxLayout(management_tab)
         management_layout.setSpacing(15)
@@ -826,8 +882,9 @@ class SettingsDialog(QDialog):
         management_layout.addWidget(self.scan_report_display, 1)
 
         management_layout.addStretch()
+        return management_tab
 
-        # Running Logs Tab
+    def _build_logs_tab(self) -> QWidget:
         logs_tab: QWidget = QWidget()
         logs_layout: QVBoxLayout = QVBoxLayout(logs_tab)
         logs_layout.setSpacing(10)
@@ -886,32 +943,7 @@ class SettingsDialog(QDialog):
             """
         )
         logs_layout.addWidget(self.log_display)
-
-        # Add tabs in the requested order
-        tab_container.addTab(management_tab, "Library Management")
-        tab_container.addTab(player_tab, "Video Player")
-        tab_container.addTab(libraries_tab, "Libraries Setup")
-        tab_container.addTab(combined_tab, "Combined View")
-        tab_container.addTab(connectivity_tab, "Remote API's")
-        tab_container.addTab(advanced_tab, "Advanced")
-        tab_container.addTab(logs_tab, "Logs")
-
-        main_layout.addWidget(tab_container)
-
-        # Dialog Standard Action Buttons
-        buttons_layout: QHBoxLayout = QHBoxLayout()
-        buttons_layout.addStretch()
-
-        cancel_button: QPushButton = QPushButton("Discard")
-        cancel_button.clicked.connect(self.reject)
-        buttons_layout.addWidget(cancel_button)
-
-        save_button: QPushButton = QPushButton("Save Settings")
-        save_button.setObjectName("accentButton")
-        save_button.clicked.connect(self.save_config)
-        buttons_layout.addWidget(save_button)
-
-        main_layout.addLayout(buttons_layout)
+        return logs_tab
 
     def _load_config(self) -> None:
         self.jellyfin_url_input.setText(config.jellyfin_url)

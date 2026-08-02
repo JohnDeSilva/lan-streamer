@@ -56,7 +56,7 @@ def test_get_headers_with_token(client) -> None:
 
 
 @pytest.mark.parametrize(
-    "username,password",
+    ("username", "password"),
     [
         ("", ""),
         ("", "pass"),
@@ -90,7 +90,7 @@ def test_login_success(client, mock_session) -> None:
 
 
 @pytest.mark.parametrize(
-    "status_code, text, side_effect, expected_result",
+    ("status_code", "text", "side_effect", "expected_result"),
     [
         (401, "Unauthorized", None, False),
         (500, "Internal Error", None, False),
@@ -170,7 +170,7 @@ def test_search_subtitles_by_query_success(client, mock_session) -> None:
 
 
 @pytest.mark.parametrize(
-    "status_code, text, side_effect",
+    ("status_code", "text", "side_effect"),
     [
         (429, "Too Many Requests", None),
         (500, "Internal Server Error", None),
@@ -247,7 +247,7 @@ def test_get_download_link_login_fails_returns_none(
 
 
 @pytest.mark.parametrize(
-    "status_code, text, side_effect",
+    ("status_code", "text", "side_effect"),
     [
         (406, "Download quota exceeded", None),
         (500, "Internal error", None),
@@ -290,7 +290,7 @@ def test_download_subtitle_success(client, mock_session) -> None:
 
 
 @pytest.mark.parametrize(
-    "status_code, text, side_effect",
+    ("status_code", "text", "side_effect"),
     [
         (403, "Forbidden", None),
         (500, "Server Error", None),

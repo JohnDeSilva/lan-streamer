@@ -1,16 +1,19 @@
 import logging
 import os
 import sys
-from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import create_engine, event
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from lan_streamer.system.config import config
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 

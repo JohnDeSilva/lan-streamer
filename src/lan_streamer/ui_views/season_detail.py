@@ -3,7 +3,6 @@
 import datetime
 import logging
 import re
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -31,13 +30,15 @@ from PySide6.QtWidgets import (
 
 from lan_streamer import db
 from lan_streamer.system.config import config
-from lan_streamer.ui_views.controller import Controller
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from PySide6.QtWidgets import QMenu
 
     from lan_streamer.providers.myanimelist import myanimelist_client
     from lan_streamer.providers.tmdb import tmdb_client
+    from lan_streamer.ui_views.controller import Controller
 else:
     from lan_streamer.ui_views.proxy import QMenu, myanimelist_client, tmdb_client
 

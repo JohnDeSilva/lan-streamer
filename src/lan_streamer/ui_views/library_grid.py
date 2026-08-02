@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QSize, Qt, Slot
 from PySide6.QtGui import QColor, QIcon
@@ -22,10 +22,12 @@ from PySide6.QtWidgets import (
 
 from lan_streamer import db
 from lan_streamer.system.config import config
-from lan_streamer.ui_views.controller import Controller
 from lan_streamer.ui_views.dialogs import SearchDialog, SettingsDialog
 from lan_streamer.ui_views.progress_widgets import LibraryScanProgressBar
 from lan_streamer.ui_views.proxy import QPixmap
+
+if TYPE_CHECKING:
+    from lan_streamer.ui_views.controller import Controller
 
 logger = logging.getLogger(__name__)
 
@@ -424,6 +426,12 @@ class LibraryGridView(QWidget):
         if self.controller.current_library_name == "Combined View":
             self.populate_combined_view()
             return
+        self._update_order_selector()
+        series_entries: list[dict[str, Any]] = self._build_series_entries()
+        sorted_entries: list[dict[str, Any]] = self._sort_series_entries(series_entries)
+        self._render_grid_items(sorted_entries)
+
+    def _update_order_selector(self) -> None:
         self.order_selector.blockSignals(True)
         current_sort_mode: str = self.controller.sort_mode
         logger.info(
@@ -457,7 +465,8 @@ class LibraryGridView(QWidget):
         else:
             self._last_order_mode = None
         self.order_selector.blockSignals(False)
-        # Build list of displayable series structured records
+
+    def _build_series_entries(self) -> list[dict[str, Any]]:
         series_entries: list[dict[str, Any]] = []
         for series_name, series_data in self.controller.cached_library_data.items():
             metrics_dictionary: dict[str, Any] = series_data.get("metrics", {})
@@ -511,8 +520,11 @@ class LibraryGridView(QWidget):
                     "is_next_up_candidate": is_next_up_candidate,
                 }
             )
+        return series_entries
 
-        # Apply sorting logic
+    def _sort_series_entries(
+        self, series_entries: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         sort_mode_value: str = self.controller.sort_mode
         sort_descending: bool = self.controller.sort_descending
         logger.debug(
@@ -549,7 +561,9 @@ class LibraryGridView(QWidget):
             series_entries.sort(
                 key=lambda entry: entry["name"].lower(), reverse=sort_descending
             )
+        return series_entries
 
+    def _render_grid_items(self, series_entries: list[dict[str, Any]]) -> None:
         current_item_count: int = self.series_list_widget.count()
         target_item_count: int = len(series_entries)
         poster_role: int = int(Qt.ItemDataRole.UserRole) + 1

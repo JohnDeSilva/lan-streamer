@@ -8,9 +8,8 @@ no ffprobe (uses ``get_stub_file_info()`` — just file path and size).
 import logging
 import os
 import re
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -21,6 +20,9 @@ from lan_streamer.scanner.parser import (
     _parse_multi_episode_numbers,
     find_video_files,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger("lan_streamer.scanner.pass1_file_discovery")
 
@@ -278,7 +280,53 @@ def scan_series_pass1(
 
     series_name = series_directory.name
 
-    # Bootstrap metadata from existing data.
+    series_data: dict[str, Any] = _build_pass1_series_data(
+        series_name, series_directory, existing_series_data
+    )
+
+    season_directories: list[tuple[str, Path, dict[str, Any] | None]] = (
+        _discover_season_directories(series_directory, existing_series_data)
+    )
+
+    # Process each season.
+    for season_name, season_directory_path, existing_season in season_directories:
+        _process_season_directory(
+            series_directory,
+            season_name,
+            season_directory_path,
+            existing_season,
+            series_data,
+            force_refresh,
+            detail_callback,
+        )
+
+    # Preserve seasons from existing data that no longer have directories.
+    if existing_series_data:
+        for old_name, old_data in existing_series_data.get("seasons", {}).items():
+            if old_name not in series_data["seasons"]:
+                logger.info(
+                    "Preserving missing season '%s' from existing data.", old_name
+                )
+                series_data["seasons"][old_name] = old_data
+
+    _save_directory_mtime(str(series_directory.absolute()), series_directory.name)
+
+    total_episodes = sum(len(s["episodes"]) for s in series_data["seasons"].values())
+    logger.info(
+        "Pass 1 complete for series '%s': %d seasons, %d episodes.",
+        series_directory.name,
+        len(series_data["seasons"]),
+        total_episodes,
+    )
+    return series_data
+
+
+def _build_pass1_series_data(
+    series_name: str,
+    series_directory: Path,
+    existing_series_data: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Bootstrap the stub series dict, copying known metadata from existing data."""
     metadata: dict[str, Any] = {
         "name": series_name,
         "overview": "",
@@ -314,7 +362,14 @@ def scan_series_pass1(
         if existing_series_data and existing_series_data.get(key):
             series_data[key] = existing_series_data[key]
 
-    # Discover season directories.
+    return series_data
+
+
+def _discover_season_directories(
+    series_directory: Path,
+    existing_series_data: dict[str, Any] | None,
+) -> list[tuple[str, Path, dict[str, Any] | None]]:
+    """List season directories, pairing each with any existing data."""
     season_directories: list[tuple[str, Path, dict[str, Any] | None]] = []
     try:
         with os.scandir(str(series_directory)) as scan_iterator:
@@ -335,121 +390,112 @@ def scan_series_pass1(
     except OSError:
         logger.exception("Error reading series directory '%s'", series_directory)
 
-    # Process each season.
-    for season_name, season_directory_path, existing_season in season_directories:
-        if detail_callback:
-            detail_callback(
-                "start_season", {"folder": series_directory.name, "season": season_name}
-            )
+    return season_directories
 
-        unchanged = (
-            not force_refresh
-            and existing_season is not None
-            and _check_season_unchanged(season_directory_path, existing_season)
+
+def _process_season_directory(
+    series_directory: Path,
+    season_name: str,
+    season_directory_path: Path,
+    existing_season: dict[str, Any] | None,
+    series_data: dict[str, Any],
+    force_refresh: bool,
+    detail_callback: Callable | None,
+) -> None:
+    """Scan a single season directory and store the resulting stub records."""
+    if detail_callback:
+        detail_callback(
+            "start_season", {"folder": series_directory.name, "season": season_name}
         )
 
-        if unchanged:
-            logger.debug(
-                "Season '%s' in '%s' is unchanged; reusing existing data.",
-                season_name,
-                series_directory.name,
-            )
-            assert existing_season is not None
-            episodes = list(existing_season.get("episodes", []))
-            is_changed = False
-        else:
-            episodes = _scan_season_files(season_directory_path)
-            is_changed = True
-            if existing_season:
-                existing_eps = existing_season.get("episodes", [])
-                existing_paths = set()
-                for ep in existing_eps:
-                    if ep.get("path"):
-                        existing_paths.add(ep["path"])
-                    for v in ep.get("versions", []):
-                        if v.get("path"):
-                            existing_paths.add(v["path"])
-                for ep in episodes:
-                    if ep.get("path") and ep["path"] not in existing_paths:
-                        series_data["_has_new_files"] = True
-                episodes = _link_existing_episodes(episodes, existing_eps)
-            elif episodes:
-                series_data["_has_new_files"] = True
-            if detail_callback:
-                for episode in episodes:
-                    ep_path = episode.get("path")
-                    if ep_path is None:
-                        continue
-                    detail_callback(
-                        "start_file",
-                        {
-                            "file": ep_path,
-                            "folder": series_directory.name,
-                            "season": season_name,
-                        },
-                    )
-                    detail_callback(
-                        "finish_file",
-                        {
-                            "file": ep_path,
-                            "folder": series_directory.name,
-                            "season": season_name,
-                        },
-                    )
-
-        try:
-            current_mtime = season_directory_path.stat().st_mtime
-        except OSError:
-            current_mtime = None
-
-        season_metadata: dict[str, Any] = {
-            "season_directory_path": str(season_directory_path.absolute()),
-            "last_scanned_mtime": current_mtime,
-        }
-        if existing_season is not None:
-            existing_meta = existing_season.get("metadata", {})
-            for key in (
-                "jellyfin_id",
-                "tmdb_identifier",
-                "poster_path",
-                "myanimelist_id",
-            ):
-                if existing_meta.get(key):
-                    season_metadata[key] = existing_meta[key]
-
-        series_data["seasons"][season_name] = {
-            "metadata": season_metadata,
-            "episodes": episodes,
-            "_changed": is_changed,
-        }
-        if current_mtime is not None:
-            series_data["_pass1_season_mtimes"][season_name] = current_mtime
-
-        if detail_callback:
-            detail_callback(
-                "finish_season",
-                {"folder": series_directory.name, "season": season_name},
-            )
-
-    # Preserve seasons from existing data that no longer have directories.
-    if existing_series_data:
-        for old_name, old_data in existing_series_data.get("seasons", {}).items():
-            if old_name not in series_data["seasons"]:
-                logger.info(
-                    "Preserving missing season '%s' from existing data.", old_name
-                )
-                series_data["seasons"][old_name] = old_data
-
-    _save_directory_mtime(str(series_directory.absolute()), series_directory.name)
-
-    total_episodes = sum(len(s["episodes"]) for s in series_data["seasons"].values())
-    logger.info(
-        "Pass 1 complete for series '%s': %d seasons, %d episodes.",
-        series_directory.name,
-        len(series_data["seasons"]),
-        total_episodes,
+    unchanged = (
+        not force_refresh
+        and existing_season is not None
+        and _check_season_unchanged(season_directory_path, existing_season)
     )
-    return series_data
+
+    if unchanged:
+        logger.debug(
+            "Season '%s' in '%s' is unchanged; reusing existing data.",
+            season_name,
+            series_directory.name,
+        )
+        assert existing_season is not None
+        episodes = list(existing_season.get("episodes", []))
+        is_changed = False
+    else:
+        episodes = _scan_season_files(season_directory_path)
+        is_changed = True
+        if existing_season:
+            existing_eps = existing_season.get("episodes", [])
+            existing_paths = set()
+            for ep in existing_eps:
+                if ep.get("path"):
+                    existing_paths.add(ep["path"])
+                for v in ep.get("versions", []):
+                    if v.get("path"):
+                        existing_paths.add(v["path"])
+            for ep in episodes:
+                if ep.get("path") and ep["path"] not in existing_paths:
+                    series_data["_has_new_files"] = True
+            episodes = _link_existing_episodes(episodes, existing_eps)
+        elif episodes:
+            series_data["_has_new_files"] = True
+        if detail_callback:
+            for episode in episodes:
+                ep_path = episode.get("path")
+                if ep_path is None:
+                    continue
+                detail_callback(
+                    "start_file",
+                    {
+                        "file": ep_path,
+                        "folder": series_directory.name,
+                        "season": season_name,
+                    },
+                )
+                detail_callback(
+                    "finish_file",
+                    {
+                        "file": ep_path,
+                        "folder": series_directory.name,
+                        "season": season_name,
+                    },
+                )
+
+    try:
+        current_mtime = season_directory_path.stat().st_mtime
+    except OSError:
+        current_mtime = None
+
+    season_metadata: dict[str, Any] = {
+        "season_directory_path": str(season_directory_path.absolute()),
+        "last_scanned_mtime": current_mtime,
+    }
+    if existing_season is not None:
+        existing_meta = existing_season.get("metadata", {})
+        for key in (
+            "jellyfin_id",
+            "tmdb_identifier",
+            "poster_path",
+            "myanimelist_id",
+        ):
+            if existing_meta.get(key):
+                season_metadata[key] = existing_meta[key]
+
+    series_data["seasons"][season_name] = {
+        "metadata": season_metadata,
+        "episodes": episodes,
+        "_changed": is_changed,
+    }
+    if current_mtime is not None:
+        series_data["_pass1_season_mtimes"][season_name] = current_mtime
+
+    if detail_callback:
+        detail_callback(
+            "finish_season",
+            {"folder": series_directory.name, "season": season_name},
+        )
 
 
 def scan_movie_pass1(

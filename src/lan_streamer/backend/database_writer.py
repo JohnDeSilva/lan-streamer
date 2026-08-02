@@ -4,10 +4,12 @@ import asyncio
 import contextlib
 import logging
 import threading
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import lan_streamer.db as database_module
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger("lan_streamer.backend")
 

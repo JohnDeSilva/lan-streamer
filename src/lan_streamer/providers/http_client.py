@@ -82,7 +82,7 @@ class AsyncHTTPClient:
         params: dict[str, Any] | None = None,
         json_data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
-        timeout: float | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109
     ) -> aiohttp.ClientResponse:
         """Make an HTTP request with rate limiting, concurrency limit, and retry."""
         from lan_streamer.system.async_utils import get_network_semaphore
@@ -154,7 +154,7 @@ class AsyncHTTPClient:
         url: str,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
-        timeout: float | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109
     ) -> dict[str, Any]:
         """GET request returning parsed JSON as a dict."""
         response = await self._request(
@@ -168,7 +168,7 @@ class AsyncHTTPClient:
         url: str,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
-        timeout: float | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109
     ) -> Any:
         """GET request returning raw parsed JSON (list or dict)."""
         response = await self._request(
@@ -181,7 +181,7 @@ class AsyncHTTPClient:
         self,
         url: str,
         headers: dict[str, str] | None = None,
-        timeout: float | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109
     ) -> bytes:
         """GET request returning raw bytes."""
         response = await self._request("GET", url, headers=headers, timeout=timeout)
@@ -193,7 +193,7 @@ class AsyncHTTPClient:
         url: str,
         json_data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
-        timeout: float | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109
     ) -> dict[str, Any]:
         """POST request returning parsed JSON."""
         response = await self._request(
@@ -206,7 +206,7 @@ class AsyncHTTPClient:
         self,
         url: str,
         headers: dict[str, str] | None = None,
-        timeout: float | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109
     ) -> dict[str, Any]:
         """DELETE request returning parsed JSON."""
         response = await self._request("DELETE", url, headers=headers, timeout=timeout)

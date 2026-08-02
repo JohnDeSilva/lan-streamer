@@ -254,7 +254,8 @@ def test_media_files_migration_data_flow(tmp_path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_media_files_orm_relationships_and_cascade(_db_setup) -> None:
+@pytest.mark.usefixtures("_db_setup")
+def test_media_files_orm_relationships_and_cascade() -> None:
     """Test ORM relationships & cascade deletes between Series, Season, Episode, Movie and MediaFile."""
 
     # 1. Test Episode -> MediaFiles relationship and cascade delete
@@ -401,7 +402,8 @@ def test_media_files_orm_relationships_and_cascade(_db_setup) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_episode_movie_properties_and_helpers(_db_setup) -> None:
+@pytest.mark.usefixtures("_db_setup")
+def test_episode_movie_properties_and_helpers() -> None:
     """Test properties (path, resolution, audio_tracks, subtitle_tracks, bit_rate) on Episode and Movie models."""
 
     with db_mod.get_session() as session:

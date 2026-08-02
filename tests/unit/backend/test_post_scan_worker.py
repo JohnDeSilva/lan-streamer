@@ -9,7 +9,7 @@ from lan_streamer.services.smart_row_service import SmartRowService
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 
-@pytest.fixture()
+@pytest.fixture
 def event_loop() -> asyncio.AbstractEventLoop:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

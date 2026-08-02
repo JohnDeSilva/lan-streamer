@@ -52,7 +52,7 @@ class CastDetailView(QWidget):
         scroll.setWidget(content)
         layout.addWidget(scroll)
 
-        # Header (photo + info)
+        # Header — photo and info
         header_layout = QVBoxLayout()
 
         self._photo_label = QLabel()

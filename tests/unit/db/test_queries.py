@@ -853,7 +853,7 @@ def test_get_combined_next_up_ignores_specials_and_uses_default_grouping(
         session.add_all([specials_season, season1])
         session.flush()
 
-        # Episode in Specials (watched, last_played_at is highest)
+        # Episode in Specials — watched, with the highest last_played_at
         spec_ep = Episode(
             season_id=specials_season.id,
             name="Special Episode.mkv",

@@ -2,12 +2,15 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 from urllib.parse import urlparse
 
 import pytest
 import requests
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Save the original request method for reference
 _original_request = requests.Session.request

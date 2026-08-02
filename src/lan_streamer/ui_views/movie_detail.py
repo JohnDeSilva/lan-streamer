@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QPoint, Qt, Signal, Slot
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPolygon
@@ -21,8 +21,10 @@ from sqlalchemy import select
 from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Movie
 from lan_streamer.system.config import config
-from lan_streamer.ui_views.controller import Controller
 from lan_streamer.ui_views.proxy import QPixmap
+
+if TYPE_CHECKING:
+    from lan_streamer.ui_views.controller import Controller
 
 logger = logging.getLogger(__name__)
 

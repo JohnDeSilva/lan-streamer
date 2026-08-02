@@ -1469,7 +1469,7 @@ def test_library_grid_view_additional_coverage(qtbot: Any, tmp_path: Any) -> Non
         # 6. sort_mode: Alphabetical / Default
         controller_instance.sort_mode = "Alphabetical"
         grid_view.populate_grid()
-        # Avatar (A) < Inception (I)
+        # Alphabetical — Avatar before Inception
         assert "Avatar" in grid_view.series_list_widget.item(0).text()
         assert "Inception" in grid_view.series_list_widget.item(1).text()
 
@@ -1890,13 +1890,13 @@ def test_library_grid_view_bidirectional_sorting(qtbot: Any) -> None:
         assert not grid_view.order_label.isHidden()
         assert not grid_view.order_selector.isHidden()
 
-        # Ascending (A-Z)
+        # Ascending order — A to Z
         grid_view.order_selector.setCurrentText("A-Z")
         assert controller_instance.sort_descending is False
         assert "A Series" in grid_view.series_list_widget.item(0).text()
         assert "Z Series" in grid_view.series_list_widget.item(1).text()
 
-        # Descending (Z-A)
+        # Descending order — Z to A
         grid_view.order_selector.setCurrentText("Z-A")
         assert controller_instance.sort_descending is True
         assert "Z Series" in grid_view.series_list_widget.item(0).text()

@@ -248,7 +248,7 @@ class UpdateCheckWorker(QThread):
             return
 
         logger.info(f"UpdateCheckWorker: found {len(releases)} releases in repository")
-        # best_release_per_version[base_version] = (is_prerelease, release_data)
+        # best_release_per_version maps base_version to (is_prerelease, release_data)
         best_release_per_version: dict[tuple[int, ...], tuple[bool, dict]] = {}
 
         for release in releases:

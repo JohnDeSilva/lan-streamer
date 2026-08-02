@@ -1,10 +1,13 @@
 import logging
+from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QApplication
-from pytestqt.qtbot import QtBot
 
 from lan_streamer.system.logging_handler import qt_log_handler
 from lan_streamer.ui_views import SettingsDialog
+
+if TYPE_CHECKING:
+    from pytestqt.qtbot import QtBot
 
 
 def test_qt_log_handler_buffer() -> None:

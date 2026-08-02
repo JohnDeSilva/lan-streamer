@@ -1,8 +1,7 @@
 import json
 import os
-from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -10,6 +9,10 @@ from sqlalchemy import create_engine, text
 
 from lan_streamer.system import backup
 from lan_streamer.system.config import config
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+    from pathlib import Path
 
 
 @pytest.fixture

@@ -134,7 +134,7 @@ class WakeLock:
     def _uninhibit_windows(self) -> None:
         import ctypes
 
-        # ES_CONTINUOUS = 0x80000000
+        # ES_CONTINUOUS flag (0x80000000) — release display sleep inhibition
         try:
             logger.info(
                 "Releasing Windows sleep inhibition via SetThreadExecutionState"
