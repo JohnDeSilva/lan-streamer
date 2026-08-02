@@ -289,10 +289,13 @@ def test_get_current_user_id_https_retry_error(mock_session) -> None:
         jellyfin_url="test.com",
         jellyfin_api_key="key",
     )
-    from requests.exceptions import ConnectionError
+    from requests.exceptions import ConnectionError as JellyfinConnectionError
 
     client.session.get = MagicMock(
-        side_effect=[ConnectionError("HTTPS fail"), Exception("HTTP fail")]
+        side_effect=[
+            JellyfinConnectionError("HTTPS fail"),
+            Exception("HTTP fail"),
+        ]
     )
     assert client.get_current_user_id() is None
 

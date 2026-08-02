@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -8,8 +8,10 @@ from lan_streamer import db
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.backend.database_writer import AsyncDatabaseWriter
 from lan_streamer.scanner.file_property_scanner import get_detailed_file_info
-from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.async_utils import get_subprocess_semaphore
+
+if TYPE_CHECKING:
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 logger = logging.getLogger("lan_streamer.backend")
 

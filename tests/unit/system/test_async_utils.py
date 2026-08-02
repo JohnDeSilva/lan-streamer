@@ -130,7 +130,7 @@ class TestAsyncSemaphore:
 
 
 # ---------------------------------------------------------------------------
-# FileSystemExecutor (get_fs_executor / shutdown_fs_executor)
+# FileSystemExecutor — get_fs_executor / shutdown_fs_executor
 # ---------------------------------------------------------------------------
 
 

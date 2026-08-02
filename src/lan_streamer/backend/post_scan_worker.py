@@ -6,15 +6,17 @@ in a background thread so the UI thread is not blocked after a scan completes.
 
 import asyncio
 import logging
-from typing import Any
-
-from PySide6.QtCore import QObject
+from typing import TYPE_CHECKING, Any
 
 from lan_streamer import db
 from lan_streamer.backend.async_worker_base import AsyncWorkerBase
-from lan_streamer.services.smart_row_service import SmartRowService
-from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.async_utils import run_in_executor
+
+if TYPE_CHECKING:
+    from PySide6.QtCore import QObject
+
+    from lan_streamer.services.smart_row_service import SmartRowService
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 logger = logging.getLogger("lan_streamer.backend")
 

@@ -184,14 +184,16 @@ def test_sync_watched_by_ids(mock_db_file) -> None:
             .filter(MediaFile.path == "/p1")
             .first()
         )
-        assert ep is not None and ep.watched is True
+        assert ep is not None
+        assert ep.watched is True
         ep2 = (
             session.query(Episode)
             .join(Episode.media_files)
             .filter(MediaFile.path == "/p2")
             .first()
         )
-        assert ep2 is not None and ep2.watched is False
+        assert ep2 is not None
+        assert ep2.watched is False
 
 
 def test_sync_watched_by_ids_empty(mock_db_file) -> None:
@@ -275,4 +277,5 @@ def test_sync_watched_by_names_unicode(mock_db_file) -> None:
         assert count == 1
 
         ep = session.get(Episode, ep.id)
-        assert ep is not None and ep.watched is True
+        assert ep is not None
+        assert ep.watched is True

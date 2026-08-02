@@ -1,8 +1,11 @@
 import shutil
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 from lan_streamer.scanner import scan_directories
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _MOCK_TMDB_PATHS = [
     "lan_streamer.services.metadata_series.tmdb_client",
@@ -292,7 +295,8 @@ def test_file_moved_between_roots_preserves_episode_and_watched(tmp_path: Path) 
     assert len(existing_eps) == 1
     assert existing_eps[0]["watched"] is True
     old_path = existing_eps[0]["path"]
-    assert old_path is not None and "RootA" in old_path
+    assert old_path is not None
+    assert "RootA" in old_path
 
     # ------------------------------------------------------------------
     #  Phase 2 — copy series to root_b, delete season from root_a

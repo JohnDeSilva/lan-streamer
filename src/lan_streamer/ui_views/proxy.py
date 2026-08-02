@@ -1,7 +1,6 @@
 import logging
 import sys
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtGui import QPixmap as QPixmap_real
 from PySide6.QtWidgets import (
@@ -37,6 +36,9 @@ from lan_streamer.providers.myanimelist import (
     myanimelist_client as myanimelist_client_real,
 )
 from lan_streamer.providers.tmdb import tmdb_client as tmdb_client_real
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 

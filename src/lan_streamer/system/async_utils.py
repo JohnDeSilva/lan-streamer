@@ -14,9 +14,11 @@ import functools
 import logging
 import subprocess
 import threading
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 
 async def run_in_executor[T](
-    callable: Callable[..., T],
+    callback: Callable[..., T],
     *args: Any,
     **kwargs: Any,
 ) -> T:
@@ -38,12 +40,12 @@ async def run_in_executor[T](
     database writes) does not block the asyncio event loop.
 
     Args:
-        callable: A synchronous callable to execute in a thread pool worker.
-        *args: Positional arguments forwarded to *callable*.
-        **kwargs: Keyword arguments forwarded to *callable*.
+        callback: A synchronous callable to execute in a thread pool worker.
+        *args: Positional arguments forwarded to *callback*.
+        **kwargs: Keyword arguments forwarded to *callback*.
 
     Returns:
-        The return value of *callable*.
+        The return value of *callback*.
 
     Example:
         .. code-block:: python
@@ -53,7 +55,7 @@ async def run_in_executor[T](
     loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         None,
-        functools.partial(callable, *args, **kwargs),
+        functools.partial(callback, *args, **kwargs),
     )
 
 
@@ -111,7 +113,7 @@ atexit.register(shutdown_fs_executor)
 
 
 async def run_in_fs_executor[T](
-    callable: Callable[..., T],
+    callback: Callable[..., T],
     *args: Any,
     **kwargs: Any,
 ) -> T:
@@ -124,17 +126,17 @@ async def run_in_fs_executor[T](
     directory walks).
 
     Args:
-        callable: A synchronous callable to execute.
-        *args: Positional arguments forwarded to *callable*.
-        **kwargs: Keyword arguments forwarded to *callable*.
+        callback: A synchronous callable to execute.
+        *args: Positional arguments forwarded to *callback*.
+        **kwargs: Keyword arguments forwarded to *callback*.
 
     Returns:
-        The return value of *callable*.
+        The return value of *callback*.
     """
     loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         get_fs_executor(),
-        functools.partial(callable, *args, **kwargs),
+        functools.partial(callback, *args, **kwargs),
     )
 
 
@@ -232,7 +234,7 @@ def get_subprocess_semaphore() -> asyncio.Semaphore:
 async def async_run_subprocess(
     command: list[str],
     stdin: bytes | None = None,
-    timeout: float | None = None,
+    timeout: float | None = None,  # noqa: ASYNC109
 ) -> subprocess.CompletedProcess[str]:
     """Run a subprocess asynchronously via ``asyncio.create_subprocess_exec``.
 

@@ -405,35 +405,23 @@ class TestResolveEpisodeJellyfinId:
 
     # Helper to reduce boilerplate
     @staticmethod
-    def _call(
-        episode_path: str = "/fake/ep.mkv",
-        episode_name: str = "S01E01.mkv",
-        episode_file: Path | None = None,
-        tmdb_episode_identifier: str | None = None,
-        tmdb_name: str | None = None,
-        tmdb_number: int | None = None,
-        season_name: str = "Season 1",
-        series_directory: Path | None = None,
-        series_data: dict | None = None,
-        season_metadata: dict | None = None,
-        tmdb_series: dict | None = None,
-        jellyfin_data: dict | None = None,
-    ) -> tuple[str, str, str]:
+    def _call(**kwargs: Any) -> tuple[str, str, str]:
         from lan_streamer.services.metadata_series import _resolve_episode_jellyfin_id
 
+        episode_path: str = kwargs.get("episode_path", "/fake/ep.mkv")
         return _resolve_episode_jellyfin_id(
             episode_path=episode_path,
-            episode_name=episode_name,
-            episode_file=episode_file or Path(episode_path),
-            tmdb_episode_identifier=tmdb_episode_identifier,
-            tmdb_name=tmdb_name,
-            tmdb_number=tmdb_number,
-            season_name=season_name,
-            series_directory=series_directory or Path("/fake/show"),
-            series_data=series_data or {"metadata": {"jellyfin_id": ""}},
-            season_metadata=season_metadata or {},
-            tmdb_series=tmdb_series,
-            jellyfin_data=jellyfin_data,
+            episode_name=kwargs.get("episode_name", "S01E01.mkv"),
+            episode_file=kwargs.get("episode_file") or Path(episode_path),
+            tmdb_episode_identifier=kwargs.get("tmdb_episode_identifier"),
+            tmdb_name=kwargs.get("tmdb_name"),
+            tmdb_number=kwargs.get("tmdb_number"),
+            season_name=kwargs.get("season_name", "Season 1"),
+            series_directory=kwargs.get("series_directory") or Path("/fake/show"),
+            series_data=kwargs.get("series_data") or {"metadata": {"jellyfin_id": ""}},
+            season_metadata=kwargs.get("season_metadata") or {},
+            tmdb_series=kwargs.get("tmdb_series"),
+            jellyfin_data=kwargs.get("jellyfin_data"),
         )
 
     def test_no_jellyfin_data(self) -> None:

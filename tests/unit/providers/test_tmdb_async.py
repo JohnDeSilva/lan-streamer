@@ -8,14 +8,16 @@ does not use ``pytest-asyncio``.
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from lan_streamer.providers.tmdb_async import AsyncTMDBClient
 from lan_streamer.system.config import Config
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture(autouse=True)

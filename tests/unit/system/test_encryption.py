@@ -1,6 +1,6 @@
 import base64
 import os
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 from cryptography.fernet import Fernet
@@ -11,6 +11,9 @@ from lan_streamer.system.encryption import (
     encrypt_secret,
     get_encryption_key,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_encrypt_decrypt_roundtrip() -> None:

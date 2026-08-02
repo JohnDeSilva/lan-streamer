@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 from lan_streamer.scanner.pass3_technical import (
@@ -13,6 +12,9 @@ from lan_streamer.scanner.pass3_technical import (
     scan_movie_pass3,
     scan_series_pass3,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # _upgrade_episode_metadata

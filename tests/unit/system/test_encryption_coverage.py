@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import base64
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -15,6 +15,9 @@ from lan_streamer.system.encryption import (
     encrypt_secret,
     get_encryption_key,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestKeyFileInvalidLength:

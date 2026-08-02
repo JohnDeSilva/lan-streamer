@@ -15,13 +15,15 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import text
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 # revision identifiers, used by Alembic.
 revision: str = "a1b2c3d4e5f6"

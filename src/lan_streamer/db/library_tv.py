@@ -212,140 +212,28 @@ def _save_episode_record(
 
     episode = None
     if path:
-        episode = existing_by_path.get(path)
-        if (
-            episode
-            and episode.tmdb_number is not None
-            and episode.tmdb_number != tmdb_num
-        ):
-            if processed_episodes is None or episode not in processed_episodes:
-                # File is being mapped to a different episode!
-                # Clear path from the old episode record to remove the old mapping.
-                logger.info(
-                    f"File '{path}' is being remapped from episode S{season.name} E{episode.tmdb_number} to E{tmdb_num or 'None'}. "
-                    f"Clearing path from the old episode record."
-                )
-                episode.path = None
-                for mf in list(episode.media_files):
-                    if mf.path == path:
-                        episode.media_files.remove(mf)
-                existing_by_path.pop(path, None)
-                if episode.tmdb_number is not None:
-                    existing_by_number[episode.tmdb_number] = episode
-                episode = None
-            else:
-                # Shared/multi-episode path. We don't clear the path of the processed episode,
-                # and we resolve episode to None so a new Episode is created/found.
-                episode = None
-
-        # If not found by path, check if there was a missing/future episode placeholder
-        if not episode and tmdb_num is not None:
-            episode = existing_by_number.get(tmdb_num)
-            if episode:
-                if episode.path:
-                    # Episode already has a path (another version) — merge existing
-                    # MediaFiles into episode_data so _sync_media_files preserves them.
-                    versions_val = episode_data.get("versions")
-                    if versions_val is None:
-                        new_versions = [
-                            {
-                                "path": episode_data.get("path"),
-                                "video_codec": episode_data.get("video_codec"),
-                                "resolution": episode_data.get("resolution"),
-                                "bit_rate": episode_data.get("bit_rate"),
-                                "audio_tracks": episode_data.get("audio_tracks"),
-                                "subtitle_tracks": episode_data.get("subtitle_tracks"),
-                            }
-                        ]
-                    else:
-                        new_versions = list(versions_val)
-                    incoming_paths = {
-                        v.get("path") for v in new_versions if v.get("path")
-                    }
-                    for media_file in list(episode.media_files):
-                        if (
-                            media_file.path
-                            and media_file.path not in incoming_paths
-                            and Path(media_file.path).exists()
-                            and (
-                                incoming_paths_in_season is None
-                                or media_file.path not in incoming_paths_in_season
-                            )
-                        ):
-                            new_versions.append({"path": media_file.path})
-                    episode_data["versions"] = new_versions
-                    logger.info(
-                        f"Linking additional file '{path}' to existing episode S{season.name} E{tmdb_num}"
-                    )
-                else:
-                    # Promote placeholder to local file
-                    logger.info(
-                        f"Promoting placeholder episode S{season.name} E{tmdb_num} to local path {path}"
-                    )
-                    episode.path = path
-                old_path = episode.path
-                if old_path and old_path in existing_by_path:
-                    existing_by_path.pop(old_path, None)
+        episode = _resolve_episode_by_path(
+            path,
+            tmdb_num,
+            season,
+            episode_data,
+            existing_by_path,
+            existing_by_number,
+            processed_episodes,
+            incoming_paths_in_season,
+        )
     elif tmdb_num is not None:
         episode = existing_by_number.get(tmdb_num)
 
-    # Fallback to name-based matching if still not found, to avoid UNIQUE constraint violation on name.
-    # The database appends counter suffixes like "TBA (1)" when multiple episodes
-    # share the same name, so we also try matching suffixed variants.
     if not episode and name:
-        episode = existing_by_name.get(name)
-        if episode:
-            logger.debug(
-                f"Matched existing episode by name fallback: S{season.name} '{name}'"
-            )
-        else:
-            # Try suffixed variants: "TBA (1)", "TBA (2)", etc.
-            # This handles the case where the exact name was already consumed
-            # by a previous episode and the DB stored it with a counter suffix.
-            candidate_keys = [
-                k
-                for k in existing_by_name
-                if _strip_counter_suffix(k) == name and k != name
-            ]
-            if candidate_keys:
-                episode = existing_by_name[candidate_keys[0]]
-                logger.debug(
-                    f"Matched existing episode by suffixed name fallback: "
-                    f"S{season.name} '{name}' -> '{episode.name}'"
-                )
-        if episode:
-            old_path = episode.path
-            if path and not episode.path:
-                episode.path = path
-            if tmdb_num is not None and episode.tmdb_number is None:
-                episode.tmdb_number = tmdb_num
-            if old_path and old_path != episode.path and old_path in existing_by_path:
-                existing_by_path.pop(old_path, None)
+        episode = _resolve_episode_by_name_fallback(
+            name, path, tmdb_num, season, existing_by_name, existing_by_path
+        )
 
-    # Cross-root dedup: match by tmdb_episode_identifier when the same episode
-    # exists in a different root directory with a different path.
-    tmdb_ep_id = episode_data.get("tmdb_episode_identifier")
-    if not episode and tmdb_ep_id:
-        for existing_ep in season.episodes:
-            if (
-                existing_ep.tmdb_episode_identifier == tmdb_ep_id
-                and existing_ep is not episode
-            ):
-                logger.info(
-                    f"Cross-root dedup: merging '{path}' into existing episode "
-                    f"'{existing_ep.name}' (tmdb_episode_identifier={tmdb_ep_id})"
-                )
-                episode = existing_ep
-                old_path = episode.path
-                if path and not episode.path:
-                    episode.path = path
-                if (
-                    old_path
-                    and old_path != episode.path
-                    and old_path in existing_by_path
-                ):
-                    existing_by_path.pop(old_path, None)
-                break
+    if not episode:
+        episode = _resolve_episode_cross_root(
+            episode_data, path, season, existing_by_path
+        )
 
     is_new = False
     if not episode:
@@ -371,7 +259,205 @@ def _save_episode_record(
 
     stats["episodes"] += 1
 
-    # Deduplicate/merge any pre-existing Episode records that represent versions of this episode
+    _merge_duplicate_episodes(
+        session,
+        episode,
+        episode_data,
+        existing_by_path,
+        existing_by_number,
+        existing_by_name,
+        stats,
+    )
+
+    target_name = _build_unique_target_name(
+        session, season, episode, episode_data["name"], stats
+    )
+
+    changed = _compute_episode_changed(
+        episode, episode_data, target_name, is_new_file, is_new
+    )
+
+    _apply_episode_fields(session, episode, episode_data, target_name)
+
+    if is_new_file:
+        episode.watched = False
+    watched = bool(episode_data.get("watched"))
+    if watched:
+        episode.watched = True
+    if processed_episodes is not None:
+        processed_episodes.add(episode)
+
+    if not is_new and changed:
+        stats["episodes_updated"] = stats.get("episodes_updated", 0) + 1
+
+    stats["episodes_scanned"] = stats.get("episodes_scanned", 0) + 1
+    return episode
+
+
+def _resolve_episode_by_path(
+    path: str,
+    tmdb_num: Any,
+    season: Season,
+    episode_data: dict[str, Any],
+    existing_by_path: dict[str, Episode],
+    existing_by_number: dict[int, Episode],
+    processed_episodes: set[Episode] | None,
+    incoming_paths_in_season: set[str] | None,
+) -> Episode | None:
+    """Resolve the target Episode for a path, handling remaps and placeholders."""
+    episode = existing_by_path.get(path)
+    if episode and episode.tmdb_number is not None and episode.tmdb_number != tmdb_num:
+        if processed_episodes is None or episode not in processed_episodes:
+            # File is being mapped to a different episode!
+            # Clear path from the old episode record to remove the old mapping.
+            logger.info(
+                f"File '{path}' is being remapped from episode S{season.name} E{episode.tmdb_number} to E{tmdb_num or 'None'}. "
+                f"Clearing path from the old episode record."
+            )
+            episode.path = None
+            for mf in list(episode.media_files):
+                if mf.path == path:
+                    episode.media_files.remove(mf)
+            existing_by_path.pop(path, None)
+            if episode.tmdb_number is not None:
+                existing_by_number[episode.tmdb_number] = episode
+            episode = None
+        else:
+            # Shared/multi-episode path. We don't clear the path of the processed episode,
+            # and we resolve episode to None so a new Episode is created/found.
+            episode = None
+
+    # If not found by path, check if there was a missing/future episode placeholder
+    if not episode and tmdb_num is not None:
+        episode = existing_by_number.get(tmdb_num)
+        if episode:
+            if episode.path:
+                # Episode already has a path (another version) — merge existing
+                # MediaFiles into episode_data so _sync_media_files preserves them.
+                versions_val = episode_data.get("versions")
+                if versions_val is None:
+                    new_versions = [
+                        {
+                            "path": episode_data.get("path"),
+                            "video_codec": episode_data.get("video_codec"),
+                            "resolution": episode_data.get("resolution"),
+                            "bit_rate": episode_data.get("bit_rate"),
+                            "audio_tracks": episode_data.get("audio_tracks"),
+                            "subtitle_tracks": episode_data.get("subtitle_tracks"),
+                        }
+                    ]
+                else:
+                    new_versions = list(versions_val)
+                incoming_paths = {v.get("path") for v in new_versions if v.get("path")}
+                for media_file in list(episode.media_files):
+                    if (
+                        media_file.path
+                        and media_file.path not in incoming_paths
+                        and Path(media_file.path).exists()
+                        and (
+                            incoming_paths_in_season is None
+                            or media_file.path not in incoming_paths_in_season
+                        )
+                    ):
+                        new_versions.append({"path": media_file.path})
+                episode_data["versions"] = new_versions
+                logger.info(
+                    f"Linking additional file '{path}' to existing episode S{season.name} E{tmdb_num}"
+                )
+            else:
+                # Promote placeholder to local file
+                logger.info(
+                    f"Promoting placeholder episode S{season.name} E{tmdb_num} to local path {path}"
+                )
+                episode.path = path
+            old_path = episode.path
+            if old_path and old_path in existing_by_path:
+                existing_by_path.pop(old_path, None)
+    return episode
+
+
+def _resolve_episode_by_name_fallback(
+    name: str,
+    path: Any,
+    tmdb_num: Any,
+    season: Season,
+    existing_by_name: dict[str, Episode],
+    existing_by_path: dict[str, Episode],
+) -> Episode | None:
+    """Fallback match by name (or counter-suffixed name variant)."""
+    episode = existing_by_name.get(name)
+    if episode:
+        logger.debug(
+            f"Matched existing episode by name fallback: S{season.name} '{name}'"
+        )
+    else:
+        # Try suffixed variants: "TBA (1)", "TBA (2)", etc.
+        candidate_keys = [
+            k
+            for k in existing_by_name
+            if _strip_counter_suffix(k) == name and k != name
+        ]
+        if candidate_keys:
+            episode = existing_by_name[candidate_keys[0]]
+            logger.debug(
+                f"Matched existing episode by suffixed name fallback: "
+                f"S{season.name} '{name}' -> '{episode.name}'"
+            )
+    if episode:
+        old_path = episode.path
+        if path and not episode.path:
+            episode.path = path
+        if tmdb_num is not None and episode.tmdb_number is None:
+            episode.tmdb_number = tmdb_num
+        if old_path and old_path != episode.path and old_path in existing_by_path:
+            existing_by_path.pop(old_path, None)
+    return episode
+
+
+def _resolve_episode_cross_root(
+    episode_data: dict[str, Any],
+    path: Any,
+    season: Season,
+    existing_by_path: dict[str, Episode],
+) -> Episode | None:
+    """Cross-root dedup: match by tmdb_episode_identifier when the same episode
+    exists in a different root directory with a different path."""
+    tmdb_ep_id = episode_data.get("tmdb_episode_identifier")
+    episode = None
+    if tmdb_ep_id:
+        for existing_ep in season.episodes:
+            if (
+                existing_ep.tmdb_episode_identifier == tmdb_ep_id
+                and existing_ep is not episode
+            ):
+                logger.info(
+                    f"Cross-root dedup: merging '{path}' into existing episode "
+                    f"'{existing_ep.name}' (tmdb_episode_identifier={tmdb_ep_id})"
+                )
+                episode = existing_ep
+                old_path = episode.path
+                if path and not episode.path:
+                    episode.path = path
+                if (
+                    old_path
+                    and old_path != episode.path
+                    and old_path in existing_by_path
+                ):
+                    existing_by_path.pop(old_path, None)
+                break
+    return episode
+
+
+def _merge_duplicate_episodes(
+    session: Session,
+    episode: Episode,
+    episode_data: dict[str, Any],
+    existing_by_path: dict[str, Episode],
+    existing_by_number: dict[int, Episode],
+    existing_by_name: dict[str, Episode],
+    stats: dict[str, Any],
+) -> None:
+    """Deduplicate/merge pre-existing Episode records that are versions of this one."""
     v_list = episode_data.get("versions")
     if v_list is None and episode_data.get("path"):
         v_list = [{"path": episode_data.get("path")}]
@@ -430,8 +516,15 @@ def _save_episode_record(
                     if dup_ep.name in existing_by_name:
                         existing_by_name.pop(dup_ep.name, None)
 
-    target_name = episode_data["name"]
-    # Ensure name is unique within the season to avoid UNIQUE constraint violation
+
+def _build_unique_target_name(
+    session: Session,
+    season: Season,
+    episode: Episode,
+    target_name: str,
+    stats: dict[str, Any],
+) -> str:
+    """Ensure the episode name is unique within the season to avoid UNIQUE violations."""
     existing_names = {
         ep.name
         for ep in season.episodes
@@ -462,7 +555,17 @@ def _save_episode_record(
                 "error": msg,
             }
         )
-    # Check for changes if not a new episode record
+    return target_name
+
+
+def _compute_episode_changed(
+    episode: Episode,
+    episode_data: dict[str, Any],
+    target_name: str,
+    is_new_file: bool,
+    is_new: bool,
+) -> bool:
+    """Determine whether an existing episode record has changed."""
     changed = False
     if not is_new:
         if episode.name != target_name:
@@ -506,7 +609,16 @@ def _save_episode_record(
         watched = bool(episode_data.get("watched"))
         if watched and not episode.watched:
             changed = True
+    return changed
 
+
+def _apply_episode_fields(
+    session: Session,
+    episode: Episode,
+    episode_data: dict[str, Any],
+    target_name: str,
+) -> None:
+    """Persist resolved fields onto the Episode record and sync media files."""
     episode.name = target_name
     episode.jellyfin_id = episode_data.get("jellyfin_id") or episode.jellyfin_id
     episode.tmdb_episode_identifier = (
@@ -543,20 +655,6 @@ def _save_episode_record(
         episode.default_path,
         episode_data.get("default_path") or episode_data.get("path"),
     )
-
-    if is_new_file:
-        episode.watched = False
-    watched = bool(episode_data.get("watched"))
-    if watched:
-        episode.watched = True
-    if processed_episodes is not None:
-        processed_episodes.add(episode)
-
-    if not is_new and changed:
-        stats["episodes_updated"] = stats.get("episodes_updated", 0) + 1
-
-    stats["episodes_scanned"] = stats.get("episodes_scanned", 0) + 1
-    return episode
 
 
 def save_library(library_name: str, library: dict[str, Any]) -> dict[str, Any]:

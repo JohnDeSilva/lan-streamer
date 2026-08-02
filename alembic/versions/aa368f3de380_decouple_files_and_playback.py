@@ -7,12 +7,15 @@ Create Date: 2026-06-12 16:44:32.903601
 """
 
 import uuid
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from alembic import op
 
 import lan_streamer.db.models
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 # revision identifiers, used by Alembic.
 revision: str = "aa368f3de380"

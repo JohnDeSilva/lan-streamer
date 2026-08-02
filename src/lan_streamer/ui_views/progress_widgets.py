@@ -58,7 +58,7 @@ class SegmentedProgressBar(QWidget):
         # {library_name: {"roots": [root_dir, ...], "root_totals": {root: int},
         #                  "root_done": {root: int}, "state": STATE_*}}
         self._libraries: dict[str, Any] = {}
-        # {root_dir: state}
+        # Maps each root_dir to its current scan state
         self._root_states: dict[str, int] = {}
         self._current_pass: int = 1
         self._pass3_fraction: float = 0.0

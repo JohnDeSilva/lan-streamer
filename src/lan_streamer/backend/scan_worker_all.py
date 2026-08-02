@@ -3,8 +3,9 @@ import concurrent.futures
 import logging
 import threading
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, Signal
 from sqlalchemy.exc import SQLAlchemyError
@@ -26,9 +27,11 @@ from lan_streamer.scanner import (
     has_video_files,
     scan_directories,
 )
-from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.async_utils import run_in_executor, run_in_fs_executor
 from lan_streamer.system.config import config
+
+if TYPE_CHECKING:
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 logger = logging.getLogger("lan_streamer.backend")
 
@@ -46,6 +49,27 @@ LIFECYCLE_EVENTS = frozenset(
         "unavailable_root",
     }
 )
+
+
+@dataclass
+class _ScanPassContext:
+    """Thread-local accumulation state shared across per-item scan callbacks.
+
+    Callbacks are invoked from thread-pool worker threads, so all mutable
+    accumulators are protected by a single per-library lock.
+    """
+
+    library_name: str
+    library_type: str
+    writer: AsyncDatabaseWriter
+    loop: asyncio.AbstractEventLoop
+    stats: dict[str, int] = field(default_factory=create_empty_stats)
+    problems: list[dict[str, Any]] = field(default_factory=list)
+    changed_season_ids: set[str] = field(default_factory=set)
+    changed_movie_ids: set[str] = field(default_factory=set)
+    series_scanned: set[str] = field(default_factory=set)
+    unavailable_directories: list[str] = field(default_factory=list)
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 class ScanAllLibrariesWorker(AsyncWorkerBase):
@@ -292,37 +316,26 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         assert writer is not None
         assert loop is not None
 
-        # Local accumulators (thread-local, protected by local_lock)
-        local_stats: dict[str, int] = create_empty_stats()
-        local_problems: list[dict[str, Any]] = []
-        local_changed_season_ids: set[str] = set()
-        local_changed_movie_ids: set[str] = set()
-        local_series_scanned: set[str] = set()
-        library_unavailable_directories: list[str] = []
-        # Local lock protects local_stats/local_problems because folder-level
-        # parallel scan (scan_directories) submits scan_series/scan_movie as
-        # futures to the global executor, and those futures invoke
-        # _season_callback/_movie_callback from folder-pool threads.
-        local_lock = threading.Lock()
+        # Thread-local accumulators shared by the callback helpers below.
+        # The lock protects them because folder-level parallel scan submits
+        # scan_series/scan_movie as futures to the global executor, and those
+        # futures invoke the callbacks from folder-pool threads.
+        context = _ScanPassContext(
+            library_name=library_name,
+            library_type=library_type,
+            writer=writer,
+            loop=loop,
+        )
 
         self.emit_detail_progress("start_library", {"library": library_name})
 
         # ------------------------------------------------------------------
-        # Callback closures — write to local accumulators
+        # Callback closures — delegate to thread-safe helper methods
         # ------------------------------------------------------------------
 
-        def _make_detail_callback(library_name_cb: str) -> Any:
-            """Create a detail-progress callback that enriches events with the
-            library name.
-
-            NOTE: This callback is invoked from thread-pool workers and MUST
-            remain thread-safe. It uses lock-buffered emit_detail_progress."""
-
-            def _detail_callback(event: str, payload: dict[str, Any]) -> None:
-                enriched: dict[str, Any] = {"library": library_name_cb, **payload}
-                self.emit_detail_progress(event, enriched)
-
-            return _detail_callback
+        def _detail_callback(event: str, payload: dict[str, Any]) -> None:
+            enriched: dict[str, Any] = {"library": library_name, **payload}
+            self.emit_detail_progress(event, enriched)
 
         def _season_callback(
             series_name: str,
@@ -330,277 +343,19 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             season_name: str,
             season_data: dict[str, Any],
         ) -> None:
-            """Process a single season during scanning, persisting it to the
-            database and accumulating local statistics."""
-            logger.info(
-                f"ScanAllLibrariesWorker writing season "
-                f"'{season_name}' of series '{series_name}' to database..."
+            self._process_season_callback(
+                context,
+                series_name,
+                series_data,
+                season_name,
+                season_data,
             )
-            try:
-                season_payload = {
-                    "library_name": library_name,
-                    "series_name": series_name,
-                    "series_data": series_data,
-                    "season_name": season_name,
-                    "season_data": season_data,
-                }
-                task = writer.sync_submit("save_season", season_payload, loop)
-                if task.error:
-                    raise task.error
-                stats = task.result
-                if stats:
-                    series_id = stats.get("series_id") or series_name
-                    is_new_series_scan = False
 
-                    with local_lock:
-                        if "issues" in stats:
-                            for issue in stats["issues"]:
-                                local_problems.append(issue)
-
-                        # Track series-level scan (first season encountered)
-                        if series_name not in local_series_scanned:
-                            local_series_scanned.add(series_name)
-                            local_stats["series_scanned"] += 1
-                            is_new_series_scan = True
-
-                            any_changed = any(
-                                season_data_item.get("_changed", True)
-                                for season_data_item in series_data.get(
-                                    "seasons", {}
-                                ).values()
-                            )
-                            if not any_changed:
-                                local_stats["series_skipped"] += 1
-
-                        local_stats["seasons_scanned"] += 1
-                        episode_count: int = len(season_data.get("episodes", []))
-                        local_stats["episodes_scanned"] += episode_count
-
-                        if not season_data.get("_changed", True):
-                            local_stats["seasons_skipped"] += 1
-                            local_stats["episodes_skipped"] += episode_count
-                        else:
-                            added = stats.get("episodes_added", 0)
-                            updated = stats.get("episodes_updated", 0)
-                            skipped = max(0, episode_count - added - updated)
-                            local_stats["episodes_skipped"] += skipped
-
-                        # Add/update/remove counts from db return value
-                        for key in local_stats:
-                            if key in stats and not (
-                                key.endswith(("_scanned", "_skipped"))
-                            ):
-                                local_stats[key] += stats[key]
-
-                        if season_data.get("_changed", True) and "season_id" in stats:
-                            local_changed_season_ids.add(stats["season_id"])
-
-                    # Fetch cast/crew and images for newly scanned series
-                    if is_new_series_scan and stats.get("series_id"):
-                        tmdb_id = series_data.get("metadata", {}).get("tmdb_identifier")
-                        if tmdb_id:
-                            try:
-                                has_cast = len(db.get_cast_for_series(series_id)) > 0
-                                if (
-                                    self.force_refresh
-                                    or stats.get("series_added", 0) > 0
-                                    or not has_cast
-                                ):
-                                    task_credits = writer.sync_submit(
-                                        "fetch_and_store_series_credits_and_images",
-                                        {
-                                            "series_id": series_id,
-                                            "tmdb_id": int(tmdb_id),
-                                        },
-                                        loop,
-                                    )
-                                    if task_credits.error:
-                                        raise task_credits.error
-                                    logger.info(
-                                        "Fetched cast and images for series '%s'",
-                                        series_name,
-                                    )
-                                else:
-                                    logger.info(
-                                        "Skipping cast/image fetch for series '%s' (cached)",
-                                        series_name,
-                                    )
-                            except (
-                                OSError,
-                                ValueError,
-                                TypeError,
-                                KeyError,
-                                RuntimeError,
-                                SQLAlchemyError,
-                            ) as fetch_error:
-                                logger.warning(
-                                    "Failed to fetch cast/images for series '%s': %s",
-                                    series_name,
-                                    fetch_error,
-                                )
-            except (
-                OSError,
-                ValueError,
-                TypeError,
-                KeyError,
-                RuntimeError,
-                SQLAlchemyError,
-            ) as error:
-                with local_lock:
-                    log_db_write_error(
-                        local_problems,
-                        f"Season '{season_name}' of series "
-                        f"'{series_name}' (Library: '{library_name}')",
-                        error,
-                        logger,
-                    )
-
-        # Callback invoked from thread-pool workers — must be thread-safe.
-        # It acquires self._lock for shared-state access.
         def _movie_callback(movie_name: str, movie_data: dict[str, Any]) -> None:
-            """Process a single movie during scanning, persisting it to the
-            database and accumulating local statistics."""
-            logger.info(
-                f"ScanAllLibrariesWorker writing movie '{movie_name}' to database..."
-            )
-            try:
-                movie_payload = {
-                    "library_name": library_name,
-                    "movie_name": movie_name,
-                    "movie_data": movie_data,
-                }
-                task = writer.sync_submit("save_movie", movie_payload, loop)
-                if task.error:
-                    raise task.error
-                stats = task.result
-                if stats:
-                    with local_lock:
-                        if "issues" in stats:
-                            for issue in stats["issues"]:
-                                local_problems.append(issue)
-
-                        local_stats["movies_scanned"] += 1
-
-                        if not movie_data.get("_changed", True):
-                            local_stats["movies_skipped"] += 1
-
-                        for key in local_stats:
-                            if key in stats and not (
-                                key.endswith(("_scanned", "_skipped"))
-                            ):
-                                local_stats[key] += stats[key]
-
-                        if movie_data.get("_changed", True) and "movie_id" in stats:
-                            local_changed_movie_ids.add(stats["movie_id"])
-
-                    # Fetch cast/crew and images for newly scanned movie
-                    if stats.get("movie_id"):
-                        tmdb_id = movie_data.get("tmdb_identifier")
-                        if not tmdb_id:
-                            tmdb_id = movie_data.get("metadata", {}).get(
-                                "tmdb_identifier"
-                            )
-                        if tmdb_id:
-                            try:
-                                movie_id = stats["movie_id"]
-                                has_cast = len(db.get_cast_for_movie(movie_id)) > 0
-                                if (
-                                    self.force_refresh
-                                    or stats.get("movies_added", 0) > 0
-                                    or not has_cast
-                                ):
-                                    task_credits = writer.sync_submit(
-                                        "fetch_and_store_movie_credits_and_images",
-                                        {
-                                            "movie_id": movie_id,
-                                            "tmdb_id": int(tmdb_id),
-                                        },
-                                        loop,
-                                    )
-                                    if task_credits.error:
-                                        raise task_credits.error
-                                    logger.info(
-                                        "Fetched cast and images for movie '%s'",
-                                        movie_name,
-                                    )
-                                else:
-                                    logger.info(
-                                        "Skipping cast/image fetch for movie '%s' (cached)",
-                                        movie_name,
-                                    )
-                            except (
-                                OSError,
-                                ValueError,
-                                TypeError,
-                                KeyError,
-                                RuntimeError,
-                                SQLAlchemyError,
-                            ) as fetch_error:
-                                logger.warning(
-                                    "Failed to fetch cast/images for movie '%s': %s",
-                                    movie_name,
-                                    fetch_error,
-                                )
-            except (
-                OSError,
-                ValueError,
-                TypeError,
-                KeyError,
-                RuntimeError,
-                SQLAlchemyError,
-            ) as error:
-                with local_lock:
-                    log_db_write_error(
-                        local_problems,
-                        f"Movie '{movie_name}' (Library: '{library_name}')",
-                        error,
-                        logger,
-                    )
+            self._process_movie_callback(context, movie_name, movie_data)
 
         def _save_library_data(library_data: dict[str, Any]) -> None:
-            """Persist the full library data to the database.
-
-            Only ``_removed`` and ``deleted`` keys from the return value are
-            counted here since additions/updates are already accounted for in
-            the per-item callbacks above.
-            """
-            try:
-                action = (
-                    "save_movie_library" if library_type == "movie" else "save_library"
-                )
-                library_payload = {
-                    "library_name": library_name,
-                    "library_data": library_data,
-                }
-                task = writer.sync_submit(action, library_payload, loop)
-                if task.error:
-                    raise task.error
-                stats = task.result
-                if stats:
-                    with local_lock:
-                        if "issues" in stats:
-                            for issue in stats["issues"]:
-                                local_problems.append(issue)
-                        for key in local_stats:
-                            if key in stats and (
-                                key.endswith("_removed") or key == "deleted"
-                            ):
-                                local_stats[key] += stats[key]
-            except (
-                OSError,
-                ValueError,
-                TypeError,
-                KeyError,
-                RuntimeError,
-                SQLAlchemyError,
-            ) as error:
-                with local_lock:
-                    log_db_write_error(
-                        local_problems,
-                        f"Library '{library_name}'",
-                        error,
-                        logger,
-                    )
+            self._process_save_library(context, library_data)
 
         # ------------------------------------------------------------------
         # Execute the scan
@@ -615,7 +370,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 existing_library=existing_library_data,
                 jellyfin_data=jellyfin_data if pass_number == 2 else None,
                 force_refresh=self.force_refresh,
-                detail_callback=_make_detail_callback(library_name),
+                detail_callback=_detail_callback,
                 show_future_episodes=show_future_episodes,
                 season_callback=_season_callback,
                 movie_callback=_movie_callback,
@@ -623,28 +378,9 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 tmdb_prefetch_executor=tmdb_prefetch_executor,
                 pass_number=pass_number,
             )
-            # Collect unavailable directories from this scan.
-            if updated_library_data.unavailable_directories:
-                for root in updated_library_data.unavailable_directories:
-                    library_unavailable_directories.append(root)
-                    # Only log unavailable directory issues once (in Pass 1)
-                    if pass_number == 1:
-                        error_message: str = (
-                            f"Root directory '{root}' in library "
-                            f"'{library_name}' is unavailable on filesystem."
-                        )
-                        logger.warning(
-                            "[SCAN_ISSUE] Type=Unavailable Directory | "
-                            f"Item={root} (Library: '{library_name}') | "
-                            f"Error={error_message}"
-                        )
-                        local_problems.append(
-                            {
-                                "type": "Unavailable Directory",
-                                "item": (f"{root} (Library: '{library_name}')"),
-                                "error": error_message,
-                            }
-                        )
+            self._record_unavailable_directories(
+                context, library_name, pass_number, updated_library_data
+            )
             if self.isInterruptionRequested():
                 raise InterruptedError("Scan interrupted.")
             _save_library_data(updated_library_data)
@@ -667,7 +403,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                     existing_library=current_library_data,
                     jellyfin_data=jellyfin_data if pass_number == 2 else None,
                     force_refresh=self.force_refresh,
-                    detail_callback=_make_detail_callback(library_name),
+                    detail_callback=_detail_callback,
                     show_future_episodes=show_future_episodes,
                     season_callback=_season_callback,
                     movie_callback=_movie_callback,
@@ -677,28 +413,9 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                 )
                 if self.isInterruptionRequested():
                     raise InterruptedError("Scan interrupted.")
-                # Collect unavailable directories from this root scan.
-                if updated_library_data.unavailable_directories:
-                    for root in updated_library_data.unavailable_directories:
-                        library_unavailable_directories.append(root)
-                        # Only log unavailable directory issues once (in Pass 1)
-                        if pass_number == 1:
-                            error_message = (
-                                f"Root directory '{root}' in library "
-                                f"'{library_name}' is unavailable on filesystem."
-                            )
-                            logger.warning(
-                                "[SCAN_ISSUE] Type=Unavailable Directory | "
-                                f"Item={root} (Library: '{library_name}') | "
-                                f"Error={error_message}"
-                            )
-                            local_problems.append(
-                                {
-                                    "type": "Unavailable Directory",
-                                    "item": (f"{root} (Library: '{library_name}')"),
-                                    "error": error_message,
-                                }
-                            )
+                self._record_unavailable_directories(
+                    context, library_name, pass_number, updated_library_data
+                )
                 current_library_data = updated_library_data
                 _save_library_data(updated_library_data)
 
@@ -712,12 +429,347 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         return {
             "library_name": library_name,
             "library_data": current_library_data,
-            "pass_stats": local_stats,
-            "problems": local_problems,
-            "unavailable_directories": library_unavailable_directories,
-            "changed_season_ids": local_changed_season_ids,
-            "changed_movie_ids": local_changed_movie_ids,
+            "pass_stats": context.stats,
+            "problems": context.problems,
+            "unavailable_directories": context.unavailable_directories,
+            "changed_season_ids": context.changed_season_ids,
+            "changed_movie_ids": context.changed_movie_ids,
         }
+
+    def _record_unavailable_directories(
+        self,
+        context: _ScanPassContext,
+        library_name: str,
+        pass_number: int,
+        updated_library_data: Any,
+    ) -> None:
+        """Collect unavailable directories from a scan result and, in Pass 1,
+        log them as scan issues once."""
+        for root in updated_library_data.unavailable_directories:
+            context.unavailable_directories.append(root)
+            if pass_number == 1:
+                error_message: str = (
+                    f"Root directory '{root}' in library "
+                    f"'{library_name}' is unavailable on filesystem."
+                )
+                logger.warning(
+                    "[SCAN_ISSUE] Type=Unavailable Directory | "
+                    f"Item={root} (Library: '{library_name}') | "
+                    f"Error={error_message}"
+                )
+                context.problems.append(
+                    {
+                        "type": "Unavailable Directory",
+                        "item": (f"{root} (Library: '{library_name}')"),
+                        "error": error_message,
+                    }
+                )
+
+    def _process_season_callback(
+        self,
+        context: _ScanPassContext,
+        series_name: str,
+        series_data: dict[str, Any],
+        season_name: str,
+        season_data: dict[str, Any],
+    ) -> None:
+        """Process a single season during scanning, persisting it to the
+        database and accumulating local statistics."""
+        logger.info(
+            f"ScanAllLibrariesWorker writing season "
+            f"'{season_name}' of series '{series_name}' to database..."
+        )
+        try:
+            season_payload = {
+                "library_name": context.library_name,
+                "series_name": series_name,
+                "series_data": series_data,
+                "season_name": season_name,
+                "season_data": season_data,
+            }
+            task = context.writer.sync_submit(
+                "save_season", season_payload, context.loop
+            )
+            if task.error:
+                raise task.error
+            stats = task.result
+            if stats:
+                series_id = stats.get("series_id") or series_name
+                is_new_series_scan = False
+
+                with context.lock:
+                    if "issues" in stats:
+                        for issue in stats["issues"]:
+                            context.problems.append(issue)
+
+                    # Track series-level scan (first season encountered)
+                    if series_name not in context.series_scanned:
+                        context.series_scanned.add(series_name)
+                        context.stats["series_scanned"] += 1
+                        is_new_series_scan = True
+
+                        any_changed = any(
+                            season_data_item.get("_changed", True)
+                            for season_data_item in series_data.get(
+                                "seasons", {}
+                            ).values()
+                        )
+                        if not any_changed:
+                            context.stats["series_skipped"] += 1
+
+                    context.stats["seasons_scanned"] += 1
+                    episode_count: int = len(season_data.get("episodes", []))
+                    context.stats["episodes_scanned"] += episode_count
+
+                    if not season_data.get("_changed", True):
+                        context.stats["seasons_skipped"] += 1
+                        context.stats["episodes_skipped"] += episode_count
+                    else:
+                        added = stats.get("episodes_added", 0)
+                        updated = stats.get("episodes_updated", 0)
+                        skipped = max(0, episode_count - added - updated)
+                        context.stats["episodes_skipped"] += skipped
+
+                    # Add/update/remove counts from db return value
+                    for key in context.stats:
+                        if key in stats and not (
+                            key.endswith(("_scanned", "_skipped"))
+                        ):
+                            context.stats[key] += stats[key]
+
+                    if season_data.get("_changed", True) and "season_id" in stats:
+                        context.changed_season_ids.add(stats["season_id"])
+
+                # Fetch cast/crew and images for newly scanned series
+                if is_new_series_scan and stats.get("series_id"):
+                    self._fetch_series_cast_images(
+                        context, series_name, series_data, series_id, stats
+                    )
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            RuntimeError,
+            SQLAlchemyError,
+        ) as error:
+            with context.lock:
+                log_db_write_error(
+                    context.problems,
+                    f"Season '{season_name}' of series "
+                    f"'{series_name}' (Library: '{context.library_name}')",
+                    error,
+                    logger,
+                )
+
+    def _fetch_series_cast_images(
+        self,
+        context: _ScanPassContext,
+        series_name: str,
+        series_data: dict[str, Any],
+        series_id: str,
+        stats: dict[str, Any],
+    ) -> None:
+        """Fetch cast/crew and images for a newly scanned series if needed."""
+        tmdb_id = series_data.get("metadata", {}).get("tmdb_identifier")
+        if not tmdb_id:
+            return
+        try:
+            has_cast = len(db.get_cast_for_series(series_id)) > 0
+            if self.force_refresh or stats.get("series_added", 0) > 0 or not has_cast:
+                task_credits = context.writer.sync_submit(
+                    "fetch_and_store_series_credits_and_images",
+                    {
+                        "series_id": series_id,
+                        "tmdb_id": int(tmdb_id),
+                    },
+                    context.loop,
+                )
+                if task_credits.error:
+                    raise task_credits.error
+                logger.info(
+                    "Fetched cast and images for series '%s'",
+                    series_name,
+                )
+            else:
+                logger.info(
+                    "Skipping cast/image fetch for series '%s' (cached)",
+                    series_name,
+                )
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            RuntimeError,
+            SQLAlchemyError,
+        ) as fetch_error:
+            logger.warning(
+                "Failed to fetch cast/images for series '%s': %s",
+                series_name,
+                fetch_error,
+            )
+
+    def _process_movie_callback(
+        self,
+        context: _ScanPassContext,
+        movie_name: str,
+        movie_data: dict[str, Any],
+    ) -> None:
+        """Process a single movie during scanning, persisting it to the
+        database and accumulating local statistics."""
+        logger.info(
+            f"ScanAllLibrariesWorker writing movie '{movie_name}' to database..."
+        )
+        try:
+            movie_payload = {
+                "library_name": context.library_name,
+                "movie_name": movie_name,
+                "movie_data": movie_data,
+            }
+            task = context.writer.sync_submit("save_movie", movie_payload, context.loop)
+            if task.error:
+                raise task.error
+            stats = task.result
+            if stats:
+                with context.lock:
+                    if "issues" in stats:
+                        for issue in stats["issues"]:
+                            context.problems.append(issue)
+
+                    context.stats["movies_scanned"] += 1
+
+                    if not movie_data.get("_changed", True):
+                        context.stats["movies_skipped"] += 1
+
+                    for key in context.stats:
+                        if key in stats and not (
+                            key.endswith(("_scanned", "_skipped"))
+                        ):
+                            context.stats[key] += stats[key]
+
+                    if movie_data.get("_changed", True) and "movie_id" in stats:
+                        context.changed_movie_ids.add(stats["movie_id"])
+
+                # Fetch cast/crew and images for newly scanned movie
+                if stats.get("movie_id"):
+                    self._fetch_movie_cast_images(
+                        context, movie_name, movie_data, stats
+                    )
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            RuntimeError,
+            SQLAlchemyError,
+        ) as error:
+            with context.lock:
+                log_db_write_error(
+                    context.problems,
+                    f"Movie '{movie_name}' (Library: '{context.library_name}')",
+                    error,
+                    logger,
+                )
+
+    def _fetch_movie_cast_images(
+        self,
+        context: _ScanPassContext,
+        movie_name: str,
+        movie_data: dict[str, Any],
+        stats: dict[str, Any],
+    ) -> None:
+        """Fetch cast/crew and images for a newly scanned movie if needed."""
+        tmdb_id = movie_data.get("tmdb_identifier")
+        if not tmdb_id:
+            tmdb_id = movie_data.get("metadata", {}).get("tmdb_identifier")
+        if not tmdb_id:
+            return
+        try:
+            movie_id = stats["movie_id"]
+            has_cast = len(db.get_cast_for_movie(movie_id)) > 0
+            if self.force_refresh or stats.get("movies_added", 0) > 0 or not has_cast:
+                task_credits = context.writer.sync_submit(
+                    "fetch_and_store_movie_credits_and_images",
+                    {
+                        "movie_id": movie_id,
+                        "tmdb_id": int(tmdb_id),
+                    },
+                    context.loop,
+                )
+                if task_credits.error:
+                    raise task_credits.error
+                logger.info(
+                    "Fetched cast and images for movie '%s'",
+                    movie_name,
+                )
+            else:
+                logger.info(
+                    "Skipping cast/image fetch for movie '%s' (cached)",
+                    movie_name,
+                )
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            RuntimeError,
+            SQLAlchemyError,
+        ) as fetch_error:
+            logger.warning(
+                "Failed to fetch cast/images for movie '%s': %s",
+                movie_name,
+                fetch_error,
+            )
+
+    def _process_save_library(
+        self, context: _ScanPassContext, library_data: dict[str, Any]
+    ) -> None:
+        """Persist the full library data to the database.
+
+        Only ``_removed`` and ``deleted`` keys from the return value are
+        counted here since additions/updates are already accounted for in
+        the per-item callbacks above.
+        """
+        try:
+            action = (
+                "save_movie_library"
+                if context.library_type == "movie"
+                else "save_library"
+            )
+            library_payload = {
+                "library_name": context.library_name,
+                "library_data": library_data,
+            }
+            task = context.writer.sync_submit(action, library_payload, context.loop)
+            if task.error:
+                raise task.error
+            stats = task.result
+            if stats:
+                with context.lock:
+                    if "issues" in stats:
+                        for issue in stats["issues"]:
+                            context.problems.append(issue)
+                    for key in context.stats:
+                        if key in stats and (
+                            key.endswith("_removed") or key == "deleted"
+                        ):
+                            context.stats[key] += stats[key]
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            RuntimeError,
+            SQLAlchemyError,
+        ) as error:
+            with context.lock:
+                log_db_write_error(
+                    context.problems,
+                    f"Library '{context.library_name}'",
+                    error,
+                    logger,
+                )
 
     # ------------------------------------------------------------------
     # Tree discovery
@@ -877,23 +929,11 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             await self._database_writer.start()
             logger.info("ScanAllLibrariesWorker starting global scan run")
             libraries_dictionary: dict[str, dict[str, Any]] = config.libraries
-            total_count: int = len(libraries_dictionary)
             self.unavailable_directories = []
 
             # Load existing library data from the database FIRST, so tree discovery
             # can use it to avoid redundant filesystem I/O.
-            library_data_by_name: dict[str, dict[str, Any]] = {}
-            for (
-                library_name,
-                library_configuration,
-            ) in libraries_dictionary.items():
-                library_type = library_configuration.get("type", "tv")
-                if library_type == "movie":
-                    library_data_by_name[library_name] = db.load_movie_library(
-                        library_name
-                    )
-                else:
-                    library_data_by_name[library_name] = db.load_library(library_name)
+            library_data_by_name = self._load_library_data(libraries_dictionary)
 
             # Pre-discover tree structure and tell the UI to initialise it.
             tree_structure = await self._discover_tree(library_data_by_name)
@@ -910,226 +950,33 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             if jellyfin_client.is_configured():
                 jellyfin_data = jellyfin_client.get_jellyfin_correlation_data()
 
-            failed_libraries: set = set()
+            failed_libraries: set[str] = set()
 
             # ------------------------------------------------------------------
             # PASS 1 — Offline file scan
             # ------------------------------------------------------------------
             if self.run_pass1:
-                self.current_pass = 1
-                logger.info("ScanAllLibrariesWorker starting Pass 1 (Offline Scan)")
-                self.emit_detail_progress("start_offline_scan", {})
-
-                library_task_map: dict[asyncio.Task, str] = {}
-                for (
-                    library_name,
-                    library_configuration,
-                ) in libraries_dictionary.items():
-                    coro = run_in_executor(
-                        self._scan_library_pass,
-                        library_name,
-                        library_configuration,
-                        library_data_by_name[library_name],
-                        None,  # jellyfin_data is None for Pass 1
-                        1,  # pass_number
-                        tmdb_prefetch_executor,
-                    )
-                    task = asyncio.create_task(coro)
-                    library_task_map[task] = library_name
-
-                pending = set(library_task_map.keys())
-                while pending:
-                    if self.isInterruptionRequested():
-                        logger.info(
-                            "ScanAllLibrariesWorker: interruption requested during Pass 1. Cancelling remaining tasks."
-                        )
-                        for t in pending:
-                            t.cancel()
-                        break
-
-                    done, pending = await asyncio.wait(
-                        pending, return_when=asyncio.FIRST_COMPLETED
-                    )
-                    for task in done:
-                        if task not in library_task_map:
-                            continue
-                        library_name = library_task_map[task]
-                        try:
-                            result = await task
-                        except asyncio.CancelledError:
-                            logger.info(
-                                f"ScanAllLibrariesWorker: scan for library "
-                                f"'{library_name}' was cancelled."
-                            )
-                            self.pass_stats_per_library.setdefault(library_name, {})[
-                                1
-                            ] = {"_skipped": True}
-                            continue
-                        except Exception as error:
-                            if isinstance(error, InterruptedError):
-                                logger.info(
-                                    f"ScanAllLibrariesWorker: scan for library '{library_name}' aborted due to interruption."
-                                )
-                            else:
-                                logger.exception(
-                                    f"ScanAllLibrariesWorker Pass 1 failed "
-                                    f"for library: {library_name}"
-                                )
-                                self.library_error.emit(library_name, str(error))
-                                self.emit_detail_progress(
-                                    "fail_library",
-                                    {"library": library_name},
-                                )
-                                failed_libraries.add(library_name)
-                            self.pass_stats_per_library.setdefault(library_name, {})[
-                                1
-                            ] = {"_skipped": True}
-                            continue
-
-                        # Merge per-library stats into combined totals.
-                        merge_stats_dicts(self.pass_stats[1], result["pass_stats"])
-                        self.pass_stats_per_library.setdefault(library_name, {})[1] = (
-                            result["pass_stats"]
-                        )
-                        pass_stats = result["pass_stats"]
-                        if (
-                            pass_stats.get("series_added", 0) > 0
-                            or pass_stats.get("movies_added", 0) > 0
-                            or pass_stats.get("series_updated", 0) > 0
-                            or pass_stats.get("movies_updated", 0) > 0
-                        ):
-                            self.changed_libraries.add(library_name)
-
-                        self.problems.extend(result["problems"])
-                        for root in result["unavailable_directories"]:
-                            if root not in self.unavailable_directories:
-                                self.unavailable_directories.append(root)
-                        self.changed_season_ids.update(result["changed_season_ids"])
-                        self.changed_movie_ids.update(result["changed_movie_ids"])
-
-                        library_data_by_name[library_name] = result["library_data"]
-
-                        self.emit_detail_progress(
-                            "finish_library",
-                            {"library": library_name},
-                        )
-                        self.flush_detail_progress()
-
-            self.flush_detail_progress()
+                await self._run_scan_pass(
+                    1,
+                    libraries_dictionary,
+                    library_data_by_name,
+                    None,  # jellyfin_data is None for Pass 1
+                    tmdb_prefetch_executor,
+                    failed_libraries,
+                )
 
             # ------------------------------------------------------------------
             # PASS 2 — Online metadata resolution
             # ------------------------------------------------------------------
             if self.run_pass2:
-                self.current_pass = 2
-                logger.info(
-                    "ScanAllLibrariesWorker starting Pass 2 "
-                    "(Online Metadata Resolution)"
+                await self._run_scan_pass(
+                    2,
+                    libraries_dictionary,
+                    library_data_by_name,
+                    jellyfin_data,
+                    tmdb_prefetch_executor,
+                    failed_libraries,
                 )
-                self.emit_detail_progress("start_metadata_resolution", {})
-
-                completed_count: int = 0
-                library_task_map_pass2: dict[asyncio.Task, str] = {}
-                for (
-                    library_name,
-                    library_configuration,
-                ) in libraries_dictionary.items():
-                    if library_name in failed_libraries:
-                        continue
-                    coro = run_in_executor(
-                        self._scan_library_pass,
-                        library_name,
-                        library_configuration,
-                        library_data_by_name[library_name],
-                        jellyfin_data,
-                        2,  # pass_number
-                        tmdb_prefetch_executor,
-                    )
-                    task = asyncio.create_task(coro)
-                    library_task_map_pass2[task] = library_name
-
-                pending_pass2 = set(library_task_map_pass2.keys())
-                while pending_pass2:
-                    if self.isInterruptionRequested():
-                        logger.info(
-                            "ScanAllLibrariesWorker: interruption requested during Pass 2. Cancelling remaining tasks."
-                        )
-                        for t in pending_pass2:
-                            t.cancel()
-                        break
-
-                    done_pass2, pending_pass2 = await asyncio.wait(
-                        pending_pass2, return_when=asyncio.FIRST_COMPLETED
-                    )
-                    for task in done_pass2:
-                        library_name = library_task_map_pass2[task]
-                        try:
-                            result = await task
-                        except asyncio.CancelledError:
-                            logger.info(
-                                f"ScanAllLibrariesWorker: scan for library "
-                                f"'{library_name}' was cancelled."
-                            )
-                            self.pass_stats_per_library.setdefault(library_name, {})[
-                                2
-                            ] = {"_skipped": True}
-                            continue
-                        except Exception as error:
-                            if isinstance(error, InterruptedError):
-                                logger.info(
-                                    f"ScanAllLibrariesWorker: scan for library '{library_name}' aborted due to interruption."
-                                )
-                            else:
-                                logger.exception(
-                                    f"ScanAllLibrariesWorker Pass 2 failed "
-                                    f"for library: {library_name}"
-                                )
-                                self.library_error.emit(library_name, str(error))
-                                self.emit_detail_progress(
-                                    "fail_library",
-                                    {"library": library_name},
-                                )
-                            self.pass_stats_per_library.setdefault(library_name, {})[
-                                2
-                            ] = {"_skipped": True}
-                            continue
-
-                        completed_count += 1
-
-                        merge_stats_dicts(self.pass_stats[2], result["pass_stats"])
-                        self.pass_stats_per_library.setdefault(library_name, {})[2] = (
-                            result["pass_stats"]
-                        )
-                        pass_stats = result["pass_stats"]
-                        if (
-                            pass_stats.get("series_added", 0) > 0
-                            or pass_stats.get("movies_added", 0) > 0
-                            or pass_stats.get("series_updated", 0) > 0
-                            or pass_stats.get("movies_updated", 0) > 0
-                        ):
-                            self.changed_libraries.add(library_name)
-
-                        self.problems.extend(result["problems"])
-                        for root in result["unavailable_directories"]:
-                            if root not in self.unavailable_directories:
-                                self.unavailable_directories.append(root)
-                        self.changed_season_ids.update(result["changed_season_ids"])
-                        self.changed_movie_ids.update(result["changed_movie_ids"])
-
-                        library_data_by_name[library_name] = result["library_data"]
-
-                        self.emit_detail_progress(
-                            "finish_library",
-                            {"library": library_name},
-                        )
-                        self.flush_detail_progress()
-                        self.library_progress.emit(
-                            library_name,
-                            completed_count,
-                            total_count,
-                        )
-
-            self.flush_detail_progress()
 
             # Compute self.stats as the union of both passes: max for scanned/skipped (unique entities),
             # sum for added/updated/removed (cumulative actions).
@@ -1164,3 +1011,166 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                     "ScanAllLibrariesWorker: shutting down TMDB pre-fetch executor."
                 )
                 tmdb_prefetch_executor.shutdown(wait=False)
+
+    def _load_library_data(
+        self, libraries_dictionary: dict[str, dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        """Load existing library data from the database for each library."""
+        library_data_by_name: dict[str, dict[str, Any]] = {}
+        for (
+            library_name,
+            library_configuration,
+        ) in libraries_dictionary.items():
+            library_type = library_configuration.get("type", "tv")
+            if library_type == "movie":
+                library_data_by_name[library_name] = db.load_movie_library(library_name)
+            else:
+                library_data_by_name[library_name] = db.load_library(library_name)
+        return library_data_by_name
+
+    async def _run_scan_pass(
+        self,
+        pass_number: int,
+        libraries_dictionary: dict[str, dict[str, Any]],
+        library_data_by_name: dict[str, dict[str, Any]],
+        jellyfin_data: dict[str, Any] | None,
+        tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None,
+        failed_libraries: set[str],
+    ) -> int:
+        """Run a single scan pass (1 = offline, 2 = metadata) across all
+        libraries in parallel, merging results into shared state."""
+        self.current_pass = pass_number
+        pass_label = (
+            "Offline Scan" if pass_number == 1 else "Online Metadata Resolution"
+        )
+        start_event = (
+            "start_offline_scan" if pass_number == 1 else "start_metadata_resolution"
+        )
+        logger.info(
+            f"ScanAllLibrariesWorker starting Pass {pass_number} ({pass_label})"
+        )
+        self.emit_detail_progress(start_event, {})
+
+        library_task_map: dict[asyncio.Task, str] = {}
+        for (
+            library_name,
+            library_configuration,
+        ) in libraries_dictionary.items():
+            if library_name in failed_libraries:
+                continue
+            coro = run_in_executor(
+                self._scan_library_pass,
+                library_name,
+                library_configuration,
+                library_data_by_name[library_name],
+                jellyfin_data,
+                pass_number,
+                tmdb_prefetch_executor,
+            )
+            task = asyncio.create_task(coro)
+            library_task_map[task] = library_name
+
+        completed_count: int = 0
+        pending = set(library_task_map.keys())
+        while pending:
+            if self.isInterruptionRequested():
+                logger.info(
+                    f"ScanAllLibrariesWorker: interruption requested during Pass {pass_number}. Cancelling remaining tasks."
+                )
+                for t in pending:
+                    t.cancel()
+                break
+
+            done, pending = await asyncio.wait(
+                pending, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done:
+                if task not in library_task_map:
+                    continue
+                library_name = library_task_map[task]
+                try:
+                    result = await task
+                except asyncio.CancelledError:
+                    logger.info(
+                        f"ScanAllLibrariesWorker: scan for library "
+                        f"'{library_name}' was cancelled."
+                    )
+                    self.pass_stats_per_library.setdefault(library_name, {})[
+                        pass_number
+                    ] = {"_skipped": True}
+                    continue
+                except Exception as error:
+                    if isinstance(error, InterruptedError):
+                        logger.info(
+                            f"ScanAllLibrariesWorker: scan for library '{library_name}' aborted due to interruption."
+                        )
+                    else:
+                        logger.exception(
+                            f"ScanAllLibrariesWorker Pass {pass_number} failed "
+                            f"for library: {library_name}"
+                        )
+                        self.library_error.emit(library_name, str(error))
+                        self.emit_detail_progress(
+                            "fail_library",
+                            {"library": library_name},
+                        )
+                        if pass_number == 1:
+                            failed_libraries.add(library_name)
+                    self.pass_stats_per_library.setdefault(library_name, {})[
+                        pass_number
+                    ] = {"_skipped": True}
+                    continue
+
+                if pass_number == 2:
+                    completed_count += 1
+                self._merge_pass_result(
+                    pass_number,
+                    library_name,
+                    result,
+                    library_data_by_name,
+                )
+                if pass_number == 2:
+                    self.library_progress.emit(
+                        library_name,
+                        completed_count,
+                        len(libraries_dictionary),
+                    )
+
+        self.flush_detail_progress()
+        return completed_count
+
+    def _merge_pass_result(
+        self,
+        pass_number: int,
+        library_name: str,
+        result: dict[str, Any],
+        library_data_by_name: dict[str, dict[str, Any]],
+    ) -> None:
+        """Merge one library's pass result into combined shared state."""
+        merge_stats_dicts(self.pass_stats[pass_number], result["pass_stats"])
+        self.pass_stats_per_library.setdefault(library_name, {})[pass_number] = result[
+            "pass_stats"
+        ]
+        pass_stats = result["pass_stats"]
+        if (
+            pass_stats.get("series_added", 0) > 0
+            or pass_stats.get("movies_added", 0) > 0
+            or pass_stats.get("series_updated", 0) > 0
+            or pass_stats.get("movies_updated", 0) > 0
+        ):
+            self.changed_libraries.add(library_name)
+
+        self.problems.extend(result["problems"])
+        for root in result["unavailable_directories"]:
+            if root not in self.unavailable_directories:
+                self.unavailable_directories.append(root)
+        self.changed_season_ids.update(result["changed_season_ids"])
+        self.changed_movie_ids.update(result["changed_movie_ids"])
+
+        library_data_by_name[library_name] = result["library_data"]
+
+        self.emit_detail_progress(
+            "finish_library",
+            {"library": library_name},
+        )
+        self.flush_detail_progress()

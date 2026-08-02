@@ -2,7 +2,10 @@
 
 import logging
 import re
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger("lan_streamer.services.file_discovery")
 

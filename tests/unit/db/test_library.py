@@ -1194,9 +1194,11 @@ class TestSeriesStructuralPermutations:
         assert loaded["No Seasons"]["seasons"] == {}
         assert loaded["Empty Season"]["seasons"]["Season 1"]["episodes"] == []
         ph_eps = loaded["All Placeholders"]["seasons"]["Season 1"]["episodes"]
-        assert len(ph_eps) == 1 and ph_eps[0]["path"] is None
+        assert len(ph_eps) == 1
+        assert ph_eps[0]["path"] is None
         real_eps = loaded["Has Real File"]["seasons"]["Season 1"]["episodes"]
-        assert len(real_eps) == 1 and real_eps[0]["path"] == "/tv/real/s01e01.mkv"
+        assert len(real_eps) == 1
+        assert real_eps[0]["path"] == "/tv/real/s01e01.mkv"
 
     # ------------------------------------------------------------------
     # cleanup_library permutations — structural survival rules
@@ -1605,8 +1607,10 @@ class TestMultiRootDirectoryCleanup:
         alpha_eps = loaded["Series Alpha"]["seasons"]["Season 1"]["episodes"]
         beta_eps = loaded["Series Beta"]["seasons"]["Season 1"]["episodes"]
 
-        assert len(alpha_eps) == 1 and alpha_eps[0]["path"] is None
-        assert len(beta_eps) == 1 and beta_eps[0]["path"] == str(ep_b)
+        assert len(alpha_eps) == 1
+        assert alpha_eps[0]["path"] is None
+        assert len(beta_eps) == 1
+        assert beta_eps[0]["path"] == str(ep_b)
 
     def test_no_roots_provided_deletes_all_series(self) -> None:
         """

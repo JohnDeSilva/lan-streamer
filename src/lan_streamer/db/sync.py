@@ -1,8 +1,8 @@
 import logging
 import time
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
 
 from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import (
@@ -14,6 +14,9 @@ from lan_streamer.db.models import (
     Season,
     Series,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 

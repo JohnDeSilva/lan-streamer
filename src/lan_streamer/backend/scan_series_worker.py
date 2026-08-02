@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -10,8 +10,10 @@ from lan_streamer.backend.async_worker_base import AsyncWorkerBase
 from lan_streamer.providers.jellyfin import jellyfin_client
 from lan_streamer.scanner.pass2_metadata import scan_movie_pass2, scan_series_pass2
 from lan_streamer.services.metadata_updates import clean_series_data
-from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.config import config
+
+if TYPE_CHECKING:
+    from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 logger = logging.getLogger("lan_streamer.backend")
 

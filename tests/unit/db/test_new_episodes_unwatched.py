@@ -24,7 +24,8 @@ def _isolated_db(tmp_path):
             db_mod._engine.dispose()
 
 
-def test_placeholder_promotion_resets_watched_status(_isolated_db) -> None:
+@pytest.mark.usefixtures("_isolated_db")
+def test_placeholder_promotion_resets_watched_status() -> None:
     # 1. Create a library with a placeholder episode (no path) that is marked as watched
     library_name = "Test TV Library"
     initial_lib = {
@@ -96,7 +97,8 @@ def test_placeholder_promotion_resets_watched_status(_isolated_db) -> None:
     assert episodes_updated[0]["watched"] is False
 
 
-def test_movie_new_file_resets_watched_status(_isolated_db) -> None:
+@pytest.mark.usefixtures("_isolated_db")
+def test_movie_new_file_resets_watched_status() -> None:
     from lan_streamer.db.library_movie import load_movie_library, save_movie_library
 
     library_name = "Test Movie Library"

@@ -124,7 +124,8 @@ def test_update_episode_watched_status_movie_path(mock_db_file) -> None:
         )
         assert m is not None
         assert m.watched is True
-        assert m.last_played_at is not None and m.last_played_at > 0
+        assert m.last_played_at is not None
+        assert m.last_played_at > 0
 
 
 def test_update_episode_watched_status_movie_unwatch(mock_db_file) -> None:

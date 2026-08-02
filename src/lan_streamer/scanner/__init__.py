@@ -1,8 +1,5 @@
-import concurrent.futures
 import logging
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from lan_streamer.providers.tmdb import tmdb_client
 from lan_streamer.scanner.renamer import get_rename_preview, perform_rename
@@ -58,6 +55,11 @@ from .pass2_metadata import scan_movie_pass2, scan_series_pass2
 from .pass3_technical import scan_movie_pass3, scan_series_pass3
 from .versioning import choose_active_version, get_version_score_key
 
+if TYPE_CHECKING:
+    import concurrent.futures
+    from collections.abc import Callable
+    from pathlib import Path
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,24 +67,29 @@ def scan_series(
     series_directory: Path,
     existing_series_data: dict[str, Any] | None = None,
     force_refresh: bool = False,
-    skip_metadata_resolution: bool = False,
     single_item_refresh: bool = False,
     jellyfin_data: dict[str, dict] | None = None,
     tmdb_series: dict[str, Any] | None = None,
     manual_jellyfin_id: str = "",
     show_future_episodes: bool = True,
-    detail_callback: Callable | None = None,
-    season_callback: Callable | None = None,
-    offline: bool = False,
-    metadata_only: bool = False,
-    tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None = None,
-    is_interrupted: Callable | None = None,
+    **scan_options: Any,
 ) -> dict[str, Any] | None:
     """Scan a single TV series directory through all 3 passes.
 
     Wraps the new 3-pass pipeline for backward compatibility with callers
     that previously used the old ``scan_tv.scan_series``.
+
+    ``scan_options`` accepts ``detail_callback``, ``season_callback`` and
+    ``tmdb_prefetch_executor`` for pass-through to the pipeline. The legacy
+    ``skip_metadata_resolution``, ``offline``, ``metadata_only`` and
+    ``is_interrupted`` options are accepted for backward compatibility but
+    have no effect on this pipeline.
     """
+    detail_callback: Callable | None = scan_options.pop("detail_callback", None)
+    season_callback: Callable | None = scan_options.pop("season_callback", None)
+    tmdb_prefetch_executor: concurrent.futures.ThreadPoolExecutor | None = (
+        scan_options.pop("tmdb_prefetch_executor", None)
+    )
     if manual_jellyfin_id and existing_series_data is None:
         existing_series_data = {"metadata": {}, "seasons": {}}
     if manual_jellyfin_id and existing_series_data is not None:

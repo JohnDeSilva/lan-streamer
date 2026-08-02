@@ -21,14 +21,16 @@ from lan_streamer.system.async_task_manager import AsyncTaskManager
 
 
 async def _wait_until(
-    condition: Any, timeout: float = 1.0, interval: float = 0.001
+    condition: Any,
+    timeout_seconds: float = 1.0,
+    interval: float = 0.001,
 ) -> None:
     """Wait until condition() returns True, raising TimeoutError otherwise."""
-    for _ in range(int(timeout / interval)):
+    for _ in range(int(timeout_seconds / interval)):
         if condition():
             return
         await asyncio.sleep(interval)
-    raise TimeoutError(f"Condition not met within {timeout}s")
+    raise TimeoutError(f"Condition not met within {timeout_seconds}s")
 
 
 # ---------------------------------------------------------------------------

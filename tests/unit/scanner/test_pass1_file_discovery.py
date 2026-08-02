@@ -7,10 +7,9 @@ discovery logic, episode linking, directory mtime caching, and layout validation
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
-import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
 from lan_streamer.scanner.pass1_file_discovery import (
@@ -22,6 +21,9 @@ from lan_streamer.scanner.pass1_file_discovery import (
     scan_movie_pass1,
     scan_series_pass1,
 )
+
+if TYPE_CHECKING:
+    import pytest
 
 # =========================================================================
 # Helpers

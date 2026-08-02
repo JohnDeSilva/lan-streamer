@@ -391,7 +391,7 @@ def test_scan_directories_merge_branches(tmp_path) -> None:
             {"season_number": 1, "id": "s1"},
             {"season_number": 2, "id": "s2"},
         ]
-        mock_tmdb.get_episodes.side_effect = lambda id, s: (
+        mock_tmdb.get_episodes.side_effect = lambda item_id, s: (
             [{"episode_number": 1, "id": "e1"}]
             if s == 1
             else [{"episode_number": 1, "id": "e2"}]
@@ -1725,7 +1725,9 @@ def test_resolve_episode_jellyfin_id_no_data() -> None:
         tmdb_series=None,
         jellyfin_data=None,
     )
-    assert jf_id == "" and s == "" and ss == ""
+    assert jf_id == ""
+    assert s == ""
+    assert ss == ""
 
 
 def test_resolve_episode_jellyfin_id_tmdb_map() -> None:

@@ -2,9 +2,9 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QProcess, Slot
-from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -19,6 +19,9 @@ from PySide6.QtWidgets import (
 
 from lan_streamer.system.updater import DownloadWorker, InstallWorker
 from lan_streamer.ui_views.proxy import QMessageBox
+
+if TYPE_CHECKING:
+    from PySide6.QtGui import QCloseEvent
 
 logger: logging.Logger = logging.getLogger(__name__)
 

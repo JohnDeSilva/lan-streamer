@@ -1,7 +1,7 @@
 import asyncio
+import datetime
 import logging
 import re
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,14 +32,30 @@ from lan_streamer.system.config import config
 from lan_streamer.ui_views.proxy import QPixmap
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from PySide6.QtWidgets import QMenu
 
     from lan_streamer.providers.tmdb import tmdb_client
+    from lan_streamer.ui_views.controller import Controller
 else:
     from lan_streamer.ui_views.proxy import QMenu, tmdb_client
-from lan_streamer.ui_views.controller import Controller
 
 logger = logging.getLogger(__name__)
+
+
+def _episode_sort_key(episode_item: dict[str, Any]) -> tuple[int, str]:
+    num = episode_item.get("tmdb_number")
+    if num is not None:
+        try:
+            return (int(num), episode_item.get("name", ""))
+        except TypeError, ValueError:
+            pass
+    name_str = episode_item.get("name", "")
+    parsed = re.search(r"[Ee](\d+)", name_str)
+    if parsed:
+        return (int(parsed.group(1)), name_str)
+    return (999999, name_str)
 
 
 class SeriesDetailView(QWidget):
@@ -659,22 +675,16 @@ class SeriesDetailView(QWidget):
         self._current_series_name = series_name
         self._season_tables = {}
 
-        # Save active tab text to restore it later and prevent tab jumping
         current_tab_name: str | None = None
         if self.seasons_tab_widget.count() > 0:
             current_tab_name = self.seasons_tab_widget.tabText(
                 self.seasons_tab_widget.currentIndex()
             )
-
-        # Clear and repopulate Season Tabs
         self.seasons_tab_widget.clear()
-
-        import datetime
 
         today_str = datetime.datetime.now(datetime.UTC).date().isoformat()
         library_config = config.libraries.get(self.controller.current_library_name, {})
         show_future_episodes = library_config.get("show_future_episodes", True)
-
         hide_missing_future = config.get_series_preference(
             self.controller.current_library_name,
             series_name,
@@ -682,82 +692,127 @@ class SeriesDetailView(QWidget):
             False,
         )
 
-        group_order_map = {}
-        seasons_dictionary: dict[str, Any] = series_record.get("seasons", {})
-        if group_details and "groups" in group_details:
-            # Re-group episodes from database seasons by matching on tmdb_episode_identifier
-            db_episodes_by_id = {}
-            db_episodes_by_number = {}
-            for season_name, season_data in seasons_dictionary.items():
-                season_number_match = re.search(r"\d+", season_name)
-                season_number = (
-                    int(season_number_match.group()) if season_number_match else 0
-                )
-                for episode in season_data.get("episodes", []):
-                    episode_identifier = episode.get(
-                        "tmdb_episode_identifier"
-                    ) or episode.get("tmdb_identifier")
-                    if episode_identifier:
-                        db_episodes_by_id[str(episode_identifier)] = episode
-                    episode_number = episode.get("tmdb_number")
-                    if episode_number is not None:
-                        db_episodes_by_number[(season_number, episode_number)] = episode
+        seasons_dictionary, group_order_map = self._build_grouped_seasons(
+            series_record.get("seasons", {}), group_details
+        )
+        self._populate_order_combo(available_groups, saved_group_identifier)
+        sorted_season_names = self._sort_and_filter_seasons(
+            seasons_dictionary, group_order_map
+        )
 
-            regrouped_seasons = {}
-            for index, group in enumerate(group_details["groups"]):
-                group_name = group.get("name") or f"Group {group.get('order', '')}"
-                group_order_map[group_name] = index
-                episodes_list = []
-                for group_episode in group.get("episodes", []):
-                    episode_identifier = str(group_episode.get("id", ""))
-                    db_episode = db_episodes_by_id.get(episode_identifier)
-                    if not db_episode:
-                        # Try matching by standard season/episode number
-                        db_episode = db_episodes_by_number.get(
-                            (
-                                group_episode.get("season_number"),
-                                group_episode.get("episode_number"),
-                            )
-                        )
+        (
+            next_episode_path,
+            next_episode_season_text,
+            next_episode_number_text,
+        ) = self._find_next_unwatched_episode(
+            seasons_dictionary,
+            sorted_season_names,
+            hide_missing_future,
+            show_future_episodes,
+            today_str,
+        )
+        self._update_play_next_button(
+            next_episode_path, next_episode_season_text, next_episode_number_text
+        )
 
-                    if db_episode:
-                        new_episode = db_episode.copy()
-                        new_episode["tmdb_number"] = group_episode.get("order") + 1
-                        if group_episode.get("name"):
-                            new_episode["tmdb_name"] = group_episode.get("name")
-                        episodes_list.append(new_episode)
-                    else:
-                        episode_name = group_episode.get("name") or "TBA"
-                        group_order = group_episode.get("order") + 1
-                        formatted_name = (
-                            f"{group_name} E{group_order:02d} - {episode_name}"
+        for season_name in sorted_season_names:
+            season_data = seasons_dictionary.get(season_name, {})
+            self._build_season_tab(
+                season_name,
+                season_data,
+                hide_missing_future,
+                show_future_episodes,
+                today_str,
+                series_name,
+            )
+
+        self._restore_or_select_season_tab(
+            is_opening, current_tab_name, sorted_season_names, seasons_dictionary
+        )
+        self._display_cast_section(cast_entries)
+
+    def _build_grouped_seasons(
+        self,
+        seasons_dictionary: dict[str, Any],
+        group_details: dict[str, Any] | None,
+    ) -> tuple[dict[str, Any], dict[str, int]]:
+        group_order_map: dict[str, int] = {}
+        if not group_details or "groups" not in group_details:
+            return seasons_dictionary, group_order_map
+
+        db_episodes_by_id: dict[str, dict[str, Any]] = {}
+        db_episodes_by_number: dict[tuple[int, int], dict[str, Any]] = {}
+        for season_name, season_data in seasons_dictionary.items():
+            season_number_match = re.search(r"\d+", season_name)
+            season_number = (
+                int(season_number_match.group()) if season_number_match else 0
+            )
+            for episode in season_data.get("episodes", []):
+                episode_identifier = episode.get(
+                    "tmdb_episode_identifier"
+                ) or episode.get("tmdb_identifier")
+                if episode_identifier:
+                    db_episodes_by_id[str(episode_identifier)] = episode
+                episode_number = episode.get("tmdb_number")
+                if episode_number is not None:
+                    db_episodes_by_number[(season_number, episode_number)] = episode
+
+        regrouped_seasons: dict[str, Any] = {}
+        for index, group in enumerate(group_details["groups"]):
+            group_name = group.get("name") or f"Group {group.get('order', '')}"
+            group_order_map[group_name] = index
+            episodes_list: list[dict[str, Any]] = []
+            for group_episode in group.get("episodes", []):
+                episode_identifier = str(group_episode.get("id", ""))
+                db_episode = db_episodes_by_id.get(episode_identifier)
+                if not db_episode:
+                    db_episode = db_episodes_by_number.get(
+                        (
+                            group_episode.get("season_number"),
+                            group_episode.get("episode_number"),
                         )
-                        episodes_list.append(
-                            {
-                                "name": formatted_name,
-                                "path": None,
-                                "tmdb_identifier": episode_identifier,
-                                "tmdb_episode_identifier": episode_identifier,
-                                "tmdb_name": episode_name,
-                                "tmdb_number": group_order,
-                                "air_date": group_episode.get("air_date") or "",
-                                "runtime": group_episode.get("runtime") or 0,
-                                "jellyfin_id": "",
-                                "watched": False,
-                                "date_added": 0,
-                            }
-                        )
-                if episodes_list:
-                    regrouped_seasons[group_name] = {
-                        "metadata": {
+                    )
+
+                if db_episode:
+                    new_episode = db_episode.copy()
+                    new_episode["tmdb_number"] = group_episode.get("order") + 1
+                    if group_episode.get("name"):
+                        new_episode["tmdb_name"] = group_episode.get("name")
+                    episodes_list.append(new_episode)
+                else:
+                    episode_name = group_episode.get("name") or "TBA"
+                    group_order = group_episode.get("order") + 1
+                    formatted_name = f"{group_name} E{group_order:02d} - {episode_name}"
+                    episodes_list.append(
+                        {
+                            "name": formatted_name,
+                            "path": None,
+                            "tmdb_identifier": episode_identifier,
+                            "tmdb_episode_identifier": episode_identifier,
+                            "tmdb_name": episode_name,
+                            "tmdb_number": group_order,
+                            "air_date": group_episode.get("air_date") or "",
+                            "runtime": group_episode.get("runtime") or 0,
                             "jellyfin_id": "",
-                            "poster_path": "",
-                        },
-                        "episodes": episodes_list,
-                    }
-            seasons_dictionary = regrouped_seasons
+                            "watched": False,
+                            "date_added": 0,
+                        }
+                    )
+            if episodes_list:
+                regrouped_seasons[group_name] = {
+                    "metadata": {
+                        "jellyfin_id": "",
+                        "poster_path": "",
+                    },
+                    "episodes": episodes_list,
+                }
+        return regrouped_seasons, group_order_map
 
-        # Populate order combobox
+    def _populate_order_combo(
+        self,
+        available_groups: list[dict[str, str]],
+        saved_group_identifier: str,
+    ) -> None:
         self.order_combo.blockSignals(True)
         self.order_combo.clear()
         for index, group in enumerate(available_groups):
@@ -766,6 +821,11 @@ class SeriesDetailView(QWidget):
                 self.order_combo.setCurrentIndex(index)
         self.order_combo.blockSignals(False)
 
+    def _sort_and_filter_seasons(
+        self,
+        seasons_dictionary: dict[str, Any],
+        group_order_map: dict[str, int],
+    ) -> list[str]:
         if group_order_map:
             sorted_season_names = sorted(
                 seasons_dictionary.keys(), key=lambda k: group_order_map.get(k, 999)
@@ -778,59 +838,73 @@ class SeriesDetailView(QWidget):
             except AttributeError, NameError:
                 sorted_season_names = sorted(seasons_dictionary.keys())
 
-        # Filter seasons to only those having 1 or more episodes (at least one local episode)
-        filtered_season_names = []
-        for season_name in sorted_season_names:
-            season_data = seasons_dictionary.get(season_name, {})
-            episodes_list = season_data.get("episodes", [])
-            if any(episode.get("path") for episode in episodes_list):
-                filtered_season_names.append(season_name)
-        sorted_season_names = filtered_season_names
+        return [
+            season_name
+            for season_name in sorted_season_names
+            if any(
+                episode.get("path")
+                for episode in seasons_dictionary.get(season_name, {}).get(
+                    "episodes", []
+                )
+            )
+        ]
 
-        # Determine next unwatched episode in natural order
+    def _filter_episodes_for_display(
+        self,
+        episodes_list: list[dict[str, Any]],
+        hide_missing_future: bool,
+        show_future_episodes: bool,
+        today_str: str,
+    ) -> list[dict[str, Any]]:
+        if hide_missing_future:
+            return [
+                episode_item
+                for episode_item in episodes_list
+                if episode_item.get("path")
+            ]
+        if not show_future_episodes:
+            return [
+                episode_item
+                for episode_item in episodes_list
+                if not (
+                    episode_item.get("path") is None
+                    and (
+                        not (air_date_value := episode_item.get("air_date"))
+                        or air_date_value > today_str
+                    )
+                )
+            ]
+        return episodes_list
+
+    def _sort_episodes_by_number(
+        self, episodes_list: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        try:
+            return sorted(episodes_list, key=_episode_sort_key)
+        except TypeError, ValueError:
+            return episodes_list
+
+    def _find_next_unwatched_episode(
+        self,
+        seasons_dictionary: dict[str, Any],
+        sorted_season_names: list[str],
+        hide_missing_future: bool,
+        show_future_episodes: bool,
+        today_str: str,
+    ) -> tuple[str | None, str | None, str | None]:
         next_episode_path: str | None = None
         next_episode_season_text: str | None = None
         next_episode_number_text: str | None = None
 
-        def episode_sort_key(episode_item: dict[str, Any]) -> tuple:
-            num = episode_item.get("tmdb_number")
-            if num is not None:
-                try:
-                    return (int(num), episode_item.get("name", ""))
-                except ValueError, TypeError:
-                    pass
-            name_str = episode_item.get("name", "")
-            parsed = re.search(r"[Ee](\d+)", name_str)
-            if parsed:
-                return (int(parsed.group(1)), name_str)
-            return (999999, name_str)
-
         for season_name in sorted_season_names:
             season_data = seasons_dictionary.get(season_name, {})
-            episodes_list = season_data.get("episodes", [])
-            if hide_missing_future:
-                episodes_list = [
-                    episode_item
-                    for episode_item in episodes_list
-                    if episode_item.get("path")
-                ]
-            elif not show_future_episodes:
-                episodes_list = [
-                    episode_item
-                    for episode_item in episodes_list
-                    if not (
-                        episode_item.get("path") is None
-                        and (
-                            not episode_item.get("air_date")
-                            or episode_item.get("air_date") > today_str
-                        )
-                    )
-                ]
-
-            try:
-                sorted_episodes = sorted(episodes_list, key=episode_sort_key)
-            except TypeError, ValueError:
-                sorted_episodes = episodes_list
+            episodes_list = self._filter_episodes_for_display(
+                season_data.get("episodes", []),
+                hide_missing_future,
+                show_future_episodes,
+                today_str,
+            )
+            sorted_episodes = self._sort_episodes_by_number(episodes_list)
 
             for index, episode_record in enumerate(sorted_episodes):
                 if not episode_record.get("watched", False) and episode_record.get(
@@ -854,6 +928,14 @@ class SeriesDetailView(QWidget):
             if next_episode_path:
                 break
 
+        return next_episode_path, next_episode_season_text, next_episode_number_text
+
+    def _update_play_next_button(
+        self,
+        next_episode_path: str | None,
+        next_episode_season_text: str | None,
+        next_episode_number_text: str | None,
+    ) -> None:
         if next_episode_path:
             self._next_episode_path = next_episode_path
             self.play_next_button.setText(
@@ -864,356 +946,359 @@ class SeriesDetailView(QWidget):
             self._next_episode_path = ""
             self.play_next_button.setVisible(False)
 
-        # Repopulate Season Tabs
-        for season_name in sorted_season_names:
-            season_data = seasons_dictionary.get(season_name, {})
-            episodes_list = season_data.get("episodes", [])
-            if hide_missing_future:
-                episodes_list = [
-                    episode for episode in episodes_list if episode.get("path")
-                ]
-            elif not show_future_episodes:
-                episodes_list = [
-                    episode
-                    for episode in episodes_list
-                    if not (
-                        episode.get("path") is None
-                        and (
-                            not episode.get("air_date")
-                            or episode.get("air_date") > today_str
-                        )
+    def _build_season_tab(
+        self,
+        season_name: str,
+        season_data: dict[str, Any],
+        hide_missing_future: bool,
+        show_future_episodes: bool,
+        today_str: str,
+        series_name: str,
+    ) -> None:
+        episodes_list = self._filter_episodes_for_display(
+            season_data.get("episodes", []),
+            hide_missing_future,
+            show_future_episodes,
+            today_str,
+        )
+        sorted_episodes = self._sort_episodes_by_number(episodes_list)
+
+        season_page = QWidget()
+        season_layout = QVBoxLayout(season_page)
+        season_layout.setContentsMargins(0, 5, 0, 0)
+        season_layout.setSpacing(10)
+
+        episode_table = QTableWidget()
+        self._season_tables[season_name] = episode_table
+        season_layout.addWidget(episode_table)
+
+        episode_table.setColumnCount(6)
+        episode_table.setHorizontalHeaderLabels(
+            ["#", "Episode Title", "Air Date", "Runtime", "Progress", "Details"]
+        )
+        episode_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        episode_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        episode_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents
+        )
+        episode_table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.ResizeToContents
+        )
+        episode_table.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.ResizeToContents
+        )
+        episode_table.horizontalHeader().setSectionResizeMode(
+            5, QHeaderView.ResizeMode.Interactive
+        )
+        episode_table.setColumnWidth(5, 90)
+        episode_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        episode_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        episode_table.verticalHeader().setVisible(False)
+        episode_table.verticalHeader().setDefaultSectionSize(32)
+        episode_table.setShowGrid(False)
+
+        episode_table.cellClicked.connect(self._make_cell_clicked_slot(sorted_episodes))
+
+        self._populate_episode_table(
+            episode_table, sorted_episodes, today_str, series_name
+        )
+        self._setup_context_menu(episode_table, sorted_episodes)
+
+        season_actions_layout = self._build_season_actions(
+            season_name, sorted_episodes, series_name
+        )
+        season_layout.addLayout(season_actions_layout)
+
+        self._season_tables[season_name] = episode_table
+        season_layout.addWidget(episode_table)
+
+        self.seasons_tab_widget.addTab(season_page, season_name)
+
+    def _make_cell_clicked_slot(
+        self, episode_list: list[dict[str, Any]]
+    ) -> Callable[[int, int], None]:
+        def slot(row: int, col: int) -> None:
+            if col == 1:  # Title column
+                target_path = episode_list[row].get("path", "")
+                if target_path:
+                    logger.info(
+                        f"Episode table row clicked to play: '{episode_list[row].get('name')}' (Path: {target_path})"
                     )
-                ]
+                    self.controller.playback_requested.emit(target_path)
 
-            season_page = QWidget()
-            season_layout = QVBoxLayout(season_page)
-            season_layout.setContentsMargins(0, 5, 0, 0)
-            season_layout.setSpacing(10)
+        return slot
 
-            # Build episode table
-            episode_table = QTableWidget()
-            self._season_tables[season_name] = episode_table
-            season_layout.addWidget(episode_table)
+    def _populate_episode_table(
+        self,
+        episode_table: QTableWidget,
+        sorted_episodes: list[dict[str, Any]],
+        today_str: str,
+        series_name: str,
+    ) -> None:
+        episode_table.setRowCount(len(sorted_episodes))
 
-            # Configure table
-            episode_table.setColumnCount(6)
-            episode_table.setHorizontalHeaderLabels(
-                ["#", "Episode Title", "Air Date", "Runtime", "Progress", "Details"]
+        for row_index, episode_record in enumerate(sorted_episodes):
+            tmdb_number_value: int | None = episode_record.get("tmdb_number")
+            number_string: str = (
+                str(tmdb_number_value)
+                if tmdb_number_value is not None
+                else str(row_index + 1)
             )
-            episode_table.horizontalHeader().setSectionResizeMode(
-                0, QHeaderView.ResizeMode.ResizeToContents
+
+            tmdb_name_value: str | None = episode_record.get("tmdb_name")
+            title_string: str = tmdb_name_value or episode_record.get("name", "Unknown")
+
+            absolute_path: str = episode_record.get("path") or ""
+            is_watched: bool = bool(episode_record.get("watched", False))
+            air_date_string: str = episode_record.get("air_date") or ""
+            runtime_value: int = (
+                episode_record.get("file_runtime") or episode_record.get("runtime") or 0
             )
-            episode_table.horizontalHeader().setSectionResizeMode(
-                1, QHeaderView.ResizeMode.Stretch
-            )
-            episode_table.horizontalHeader().setSectionResizeMode(
-                2, QHeaderView.ResizeMode.ResizeToContents
-            )
-            episode_table.horizontalHeader().setSectionResizeMode(
-                3, QHeaderView.ResizeMode.ResizeToContents
-            )
-            episode_table.horizontalHeader().setSectionResizeMode(
-                4, QHeaderView.ResizeMode.ResizeToContents
-            )
-            episode_table.horizontalHeader().setSectionResizeMode(
-                5, QHeaderView.ResizeMode.Interactive
-            )
-            episode_table.setColumnWidth(5, 90)
-            episode_table.setSelectionBehavior(
-                QTableWidget.SelectionBehavior.SelectRows
-            )
-            episode_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-            episode_table.verticalHeader().setVisible(False)
-            episode_table.verticalHeader().setDefaultSectionSize(32)
-            episode_table.setShowGrid(False)
+            runtime_string: str = f"{runtime_value} min" if runtime_value else ""
 
-            try:
-                sorted_episodes = sorted(episodes_list, key=episode_sort_key)
-            except TypeError, ValueError:
-                sorted_episodes = episodes_list
-
-            episode_table.setRowCount(len(sorted_episodes))
-
-            def make_cell_clicked_slot(
-                episode_list: list[dict[str, Any]],
-            ) -> Callable[[int, int], None]:
-                def slot(row: int, col: int) -> None:
-                    if col == 1:  # Title column
-                        target_path = episode_list[row].get("path", "")
-                        if target_path:
-                            logger.info(
-                                f"Episode table row clicked to play: '{episode_list[row].get('name')}' (Path: {target_path})"
-                            )
-                            self.controller.playback_requested.emit(target_path)
-
-                return slot
-
-            episode_table.cellClicked.connect(make_cell_clicked_slot(sorted_episodes))
-
-            for row_index, episode_record in enumerate(sorted_episodes):
-                tmdb_number_value: int | None = episode_record.get("tmdb_number")
-                number_string: str = (
-                    str(tmdb_number_value)
-                    if tmdb_number_value is not None
-                    else str(row_index + 1)
-                )
-
-                tmdb_name_value: str | None = episode_record.get("tmdb_name")
-                title_string: str = tmdb_name_value or episode_record.get(
-                    "name", "Unknown"
-                )
-
-                absolute_path: str = episode_record.get("path") or ""
-                is_watched: bool = bool(episode_record.get("watched", False))
-                air_date_string: str = episode_record.get("air_date") or ""
-                runtime_value: int = (
-                    episode_record.get("file_runtime")
-                    or episode_record.get("runtime")
-                    or 0
-                )
-                runtime_string: str = f"{runtime_value} min" if runtime_value else ""
-
-                # Determine styling and icons based on state
-                if absolute_path:
-                    if is_watched:
-                        text_color = QColor("#888888")
-                        icon_str = "✓  "
-                    else:
-                        text_color = QColor("#0e5296")
-                        icon_str = "●  "
-                else:
-                    is_missing = False
-                    if air_date_string:
-                        try:
-                            air_date_obj = datetime.date.fromisoformat(air_date_string)
-                            today_obj = datetime.datetime.now(datetime.UTC).date()
-                            if air_date_obj < today_obj:
-                                is_missing = True
-                        except ValueError:
-                            if air_date_string < today_str:
-                                is_missing = True
-
-                    if is_missing:
-                        text_color = QColor("#ef4444")  # Bright Red
-                        icon_str = "✕  "
-                    else:
-                        text_color = QColor("#a78bfa")  # Lavender/purple
-                        icon_str = "◊  "
-
-                display_title = f"{icon_str}{title_string}"
-
-                # Column 0: Details Button
-                details_button: QPushButton = QPushButton("...")
-                details_button.setToolTip("Details")
-                details_button.setObjectName(f"detailsEpisodeButton_{row_index}")
-                details_button.setStyleSheet("padding: 2px 8px; font-weight: bold;")
-
-                if absolute_path:
-
-                    def make_details_slot(
-                        target_series: str, target_path: str
-                    ) -> Callable[[], None]:
-                        return lambda: self.controller.episode_details_requested.emit(
-                            target_series, target_path
-                        )
-
-                    details_button.clicked.connect(
-                        make_details_slot(series_name, absolute_path)
-                    )
-                else:
-                    details_button.setEnabled(False)
-
-                details_container: QWidget = QWidget()
-                details_container.setStyleSheet("background-color: transparent;")
-                details_layout: QHBoxLayout = QHBoxLayout(details_container)
-                details_layout.setContentsMargins(2, 2, 2, 2)
-                details_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                details_layout.addWidget(details_button)
-                episode_table.setCellWidget(row_index, 5, details_container)
-
-                # Render table item entities cleanly
-                number_item: QTableWidgetItem = QTableWidgetItem(number_string)
-                number_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                number_item.setForeground(text_color)
-                episode_table.setItem(row_index, 0, number_item)
-
-                title_item: QTableWidgetItem = QTableWidgetItem(display_title)
-                title_item.setToolTip("Click to play episode" if absolute_path else "")
-                title_item.setForeground(text_color)
-                episode_table.setItem(row_index, 1, title_item)
-
-                air_date_item: QTableWidgetItem = QTableWidgetItem(air_date_string)
-                air_date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                air_date_item.setForeground(text_color)
-                episode_table.setItem(row_index, 2, air_date_item)
-
-                runtime_item: QTableWidgetItem = QTableWidgetItem(runtime_string)
-                runtime_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                runtime_item.setForeground(text_color)
-                episode_table.setItem(row_index, 3, runtime_item)
-
-                # Progress bar column
-                progress_value: int = 0
+            if absolute_path:
                 if is_watched:
-                    progress_value = 100
-                elif absolute_path:
-                    position = episode_record.get("last_played_position", 0)
-                    if position and position > 0:
-                        runtime_minutes = episode_record.get("runtime") or 0
-                        file_runtime_minutes = episode_record.get("file_runtime") or 0
-                        total_minutes = file_runtime_minutes or runtime_minutes
-                        if total_minutes > 0:
-                            total_seconds = total_minutes * 60
-                            progress_value = min(
-                                int(position / total_seconds * 100), 99
-                            )
+                    text_color = QColor("#888888")
+                    icon_str = "✓  "
+                else:
+                    text_color = QColor("#0e5296")
+                    icon_str = "●  "
+            else:
+                is_missing = False
+                if air_date_string:
+                    try:
+                        air_date_obj = datetime.date.fromisoformat(air_date_string)
+                        today_obj = datetime.datetime.now(datetime.UTC).date()
+                        if air_date_obj < today_obj:
+                            is_missing = True
+                    except ValueError:
+                        if air_date_string < today_str:
+                            is_missing = True
 
-                progress_bar = QProgressBar()
-                progress_bar.setRange(0, 100)
-                progress_bar.setValue(progress_value)
-                progress_bar.setTextVisible(True)
-                progress_bar.setFixedHeight(18)
-                progress_bar.setStyleSheet(
-                    "QProgressBar {"
-                    "  background-color: #1e1e24;"
-                    "  border: 1px solid #3d3d47;"
-                    "  border-radius: 4px;"
-                    "  text-align: center;"
-                    "  color: #E2E8F0;"
-                    "  font-size: 11px;"
-                    "}"
-                    "QProgressBar::chunk {"
-                    "  background-color: #2a82da;"
-                    "  border-radius: 3px;"
-                    "}"
+                if is_missing:
+                    text_color = QColor("#ef4444")  # Bright Red
+                    icon_str = "✕  "
+                else:
+                    text_color = QColor("#a78bfa")  # Lavender/purple
+                    icon_str = "◊  "
+
+            display_title = f"{icon_str}{title_string}"
+
+            details_button: QPushButton = QPushButton("...")
+            details_button.setToolTip("Details")
+            details_button.setObjectName(f"detailsEpisodeButton_{row_index}")
+            details_button.setStyleSheet("padding: 2px 8px; font-weight: bold;")
+
+            if absolute_path:
+                details_button.clicked.connect(
+                    self._make_details_slot(series_name, absolute_path)
                 )
-                progress_container = QWidget()
-                progress_container.setStyleSheet("background-color: transparent;")
-                progress_layout = QHBoxLayout(progress_container)
-                progress_layout.setContentsMargins(4, 2, 4, 2)
-                progress_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                progress_layout.addWidget(progress_bar)
-                episode_table.setCellWidget(row_index, 4, progress_container)
+            else:
+                details_button.setEnabled(False)
 
-            def make_context_menu_slot(
-                table: QTableWidget, season: str, episode_list: list[dict[str, Any]]
-            ) -> Callable[[QPoint], None]:
-                def show_context_menu(menu_position: QPoint) -> None:
-                    item: QTableWidgetItem | None = table.itemAt(menu_position)
-                    if not item:
-                        return
-                    row: int = item.row()
-                    episode: dict[str, Any] = episode_list[row]
-                    if not episode.get("path"):
-                        return
+            details_container: QWidget = QWidget()
+            details_container.setStyleSheet("background-color: transparent;")
+            details_layout: QHBoxLayout = QHBoxLayout(details_container)
+            details_layout.setContentsMargins(2, 2, 2, 2)
+            details_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            details_layout.addWidget(details_button)
+            episode_table.setCellWidget(row_index, 5, details_container)
 
-                    menu: QMenu = QMenu(table)
+            number_item: QTableWidgetItem = QTableWidgetItem(number_string)
+            number_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            number_item.setForeground(text_color)
+            episode_table.setItem(row_index, 0, number_item)
 
-                    is_watched: bool = bool(episode.get("watched", False))
-                    action_text: str = (
-                        "Mark as Unwatched" if is_watched else "Mark as Watched"
+            title_item: QTableWidgetItem = QTableWidgetItem(display_title)
+            title_item.setToolTip("Click to play episode" if absolute_path else "")
+            title_item.setForeground(text_color)
+            episode_table.setItem(row_index, 1, title_item)
+
+            air_date_item: QTableWidgetItem = QTableWidgetItem(air_date_string)
+            air_date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            air_date_item.setForeground(text_color)
+            episode_table.setItem(row_index, 2, air_date_item)
+
+            runtime_item: QTableWidgetItem = QTableWidgetItem(runtime_string)
+            runtime_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            runtime_item.setForeground(text_color)
+            episode_table.setItem(row_index, 3, runtime_item)
+
+            progress_value: int = 0
+            if is_watched:
+                progress_value = 100
+            elif absolute_path:
+                position = episode_record.get("last_played_position", 0)
+                if position and position > 0:
+                    runtime_minutes = episode_record.get("runtime") or 0
+                    file_runtime_minutes = episode_record.get("file_runtime") or 0
+                    total_minutes = file_runtime_minutes or runtime_minutes
+                    if total_minutes > 0:
+                        total_seconds = total_minutes * 60
+                        progress_value = min(int(position / total_seconds * 100), 99)
+
+            progress_bar = QProgressBar()
+            progress_bar.setRange(0, 100)
+            progress_bar.setValue(progress_value)
+            progress_bar.setTextVisible(True)
+            progress_bar.setFixedHeight(18)
+            progress_bar.setStyleSheet(
+                "QProgressBar {"
+                "  background-color: #1e1e24;"
+                "  border: 1px solid #3d3d47;"
+                "  border-radius: 4px;"
+                "  text-align: center;"
+                "  color: #E2E8F0;"
+                "  font-size: 11px;"
+                "}"
+                "QProgressBar::chunk {"
+                "  background-color: #2a82da;"
+                "  border-radius: 3px;"
+                "}"
+            )
+            progress_container = QWidget()
+            progress_container.setStyleSheet("background-color: transparent;")
+            progress_layout = QHBoxLayout(progress_container)
+            progress_layout.setContentsMargins(4, 2, 4, 2)
+            progress_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            progress_layout.addWidget(progress_bar)
+            episode_table.setCellWidget(row_index, 4, progress_container)
+
+    def _make_details_slot(
+        self, target_series: str, target_path: str
+    ) -> Callable[[], None]:
+        return lambda: self.controller.episode_details_requested.emit(
+            target_series, target_path
+        )
+
+    def _setup_context_menu(
+        self,
+        episode_table: QTableWidget,
+        sorted_episodes: list[dict[str, Any]],
+    ) -> None:
+        episode_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        episode_table.customContextMenuRequested.connect(
+            self._show_episode_context_menu(episode_table, sorted_episodes)
+        )
+
+    def _show_episode_context_menu(
+        self,
+        table: QTableWidget,
+        episode_list: list[dict[str, Any]],
+    ) -> Callable[[QPoint], None]:
+        def show_context_menu(menu_position: QPoint) -> None:
+            item: QTableWidgetItem | None = table.itemAt(menu_position)
+            if not item:
+                return
+            row: int = item.row()
+            episode: dict[str, Any] = episode_list[row]
+            if not episode.get("path"):
+                return
+
+            menu: QMenu = QMenu(table)
+
+            is_watched: bool = bool(episode.get("watched", False))
+            action_text: str = "Mark as Unwatched" if is_watched else "Mark as Watched"
+            toggle_action: QAction = QAction(action_text, table)
+
+            def handle_toggle() -> None:
+                target_path: str = episode.get("path", "")
+                if target_path:
+                    new_status: bool = not is_watched
+                    logger.info(
+                        f"Context menu toggle watched status for episode '{episode.get('name')}' to {new_status} (Path: {target_path})"
                     )
-                    toggle_action: QAction = QAction(action_text, table)
+                    self.controller.mark_episode_watched(target_path, new_status)
+                    self.populate_series_details(self._current_series_name)
 
-                    def handle_toggle() -> None:
-                        target_path: str = episode.get("path", "")
-                        if target_path:
-                            new_status: bool = not is_watched
-                            logger.info(
-                                f"Context menu toggle watched status for episode '{episode.get('name')}' to {new_status} (Path: {target_path})"
-                            )
-                            self.controller.mark_episode_watched(
-                                target_path, new_status
-                            )
-                            self.populate_series_details(self._current_series_name)
+            toggle_action.triggered.connect(handle_toggle)
+            menu.addAction(toggle_action)
 
-                    toggle_action.triggered.connect(handle_toggle)
-                    menu.addAction(toggle_action)
+            remove_action: QAction = QAction("Remove Episode", table)
 
-                    remove_action: QAction = QAction("Remove Episode", table)
+            def handle_delete() -> None:
+                target_path: str = episode.get("path", "")
+                if target_path:
+                    from PySide6.QtWidgets import QMessageBox
 
-                    def handle_delete() -> None:
-                        target_path: str = episode.get("path", "")
-                        if target_path:
-                            from PySide6.QtWidgets import QMessageBox
+                    confirm = QMessageBox.question(
+                        self,
+                        "Remove Episode",
+                        f"Are you sure you want to remove the episode '{Path(target_path).name}' from the library database? This is a nondestructive operation that only affects the database, and files will be picked up on the next scan.",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    )
+                    if confirm == QMessageBox.StandardButton.Yes:
+                        logger.info(
+                            f"User confirmed removal of episode: '{episode.get('name')}' (Path: {target_path})"
+                        )
+                        self.controller.delete_episode(target_path)
+                        self.populate_series_details(self._current_series_name)
 
-                            confirm = QMessageBox.question(
-                                self,
-                                "Remove Episode",
-                                f"Are you sure you want to remove the episode '{Path(target_path).name}' from the library database? This is a nondestructive operation that only affects the database, and files will be picked up on the next scan.",
-                                QMessageBox.StandardButton.Yes
-                                | QMessageBox.StandardButton.No,
-                            )
-                            if confirm == QMessageBox.StandardButton.Yes:
-                                logger.info(
-                                    f"User confirmed removal of episode: '{episode.get('name')}' (Path: {target_path})"
-                                )
-                                self.controller.delete_episode(target_path)
-                                self.populate_series_details(self._current_series_name)
+            remove_action.triggered.connect(handle_delete)
+            menu.addAction(remove_action)
 
-                    remove_action.triggered.connect(handle_delete)
-                    menu.addAction(remove_action)
+            menu.exec(table.viewport().mapToGlobal(menu_position))
 
-                    menu.exec(table.viewport().mapToGlobal(menu_position))
+        return show_context_menu
 
-                return show_context_menu
+    def _build_season_actions(
+        self,
+        season_name: str,
+        sorted_episodes: list[dict[str, Any]],
+        series_name: str,
+    ) -> QHBoxLayout:
+        season_actions_layout: QHBoxLayout = QHBoxLayout()
+        local_episodes = [ep for ep in sorted_episodes if ep.get("path")]
+        is_season_watched = len(local_episodes) > 0 and all(
+            ep.get("watched", False) for ep in local_episodes
+        )
+        button_text = (
+            "Mark season as unwatched"
+            if is_season_watched
+            else "Mark season as watched"
+        )
+        mark_season_button: QPushButton = QPushButton(button_text)
+        mark_season_button.setObjectName(f"markSeasonWatchedButton_{season_name}")
+        mark_season_button.clicked.connect(
+            self._make_season_watched_slot(season_name, not is_season_watched)
+        )
+        season_actions_layout.addWidget(mark_season_button)
 
-            episode_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            episode_table.customContextMenuRequested.connect(
-                make_context_menu_slot(episode_table, season_name, sorted_episodes)
-            )
+        season_detail_button: QPushButton = QPushButton("View Details")
+        season_detail_button.setObjectName(f"seasonDetailButton_{season_name}")
+        season_detail_button.clicked.connect(
+            self._make_season_detail_slot(series_name, season_name)
+        )
+        season_actions_layout.addWidget(season_detail_button)
 
-            season_actions_layout: QHBoxLayout = QHBoxLayout()
-            local_episodes = [ep for ep in sorted_episodes if ep.get("path")]
-            is_season_watched = len(local_episodes) > 0 and all(
-                ep.get("watched", False) for ep in local_episodes
-            )
-            button_text = (
-                "Mark season as unwatched"
-                if is_season_watched
-                else "Mark season as watched"
-            )
-            mark_season_button: QPushButton = QPushButton(button_text)
-            mark_season_button.setObjectName(f"markSeasonWatchedButton_{season_name}")
+        season_actions_layout.addStretch()
+        return season_actions_layout
 
-            def make_season_watched_slot(
-                target_season: str,
-                target_watched_state: bool,
-            ) -> Callable[[], None]:
-                return lambda: self._on_mark_season_watched(
-                    target_season, target_watched_state
-                )
+    def _make_season_watched_slot(
+        self,
+        target_season: str,
+        target_watched_state: bool,
+    ) -> Callable[[], None]:
+        return lambda: self._on_mark_season_watched(target_season, target_watched_state)
 
-            mark_season_button.clicked.connect(
-                make_season_watched_slot(season_name, not is_season_watched)
-            )
-            season_actions_layout.addWidget(mark_season_button)
+    def _make_season_detail_slot(
+        self, target_series: str, target_season: str
+    ) -> Callable[[], None]:
+        return lambda: self.controller.season_detail_requested.emit(
+            target_series, target_season
+        )
 
-            # Season detail button
-            season_detail_button: QPushButton = QPushButton("View Details")
-            season_detail_button.setObjectName(f"seasonDetailButton_{season_name}")
-
-            def make_season_detail_slot(
-                target_series: str, target_season: str
-            ) -> Callable[[], None]:
-                return lambda: self.controller.season_detail_requested.emit(
-                    target_series, target_season
-                )
-
-            season_detail_button.clicked.connect(
-                make_season_detail_slot(series_name, season_name)
-            )
-            season_actions_layout.addWidget(season_detail_button)
-
-            season_actions_layout.addStretch()
-            season_layout.addLayout(season_actions_layout)
-
-            self._season_tables[season_name] = episode_table
-            season_layout.addWidget(episode_table)
-
-            self.seasons_tab_widget.addTab(season_page, season_name)
-
-        # Restore previous tab if it exists, otherwise select first unwatched tab on first load
+    def _restore_or_select_season_tab(
+        self,
+        is_opening: bool,
+        current_tab_name: str | None,
+        sorted_season_names: list[str],
+        seasons_dictionary: dict[str, Any],
+    ) -> None:
         restored_tab = False
         if not is_opening and current_tab_name:
             for idx in range(self.seasons_tab_widget.count()):
@@ -1221,9 +1306,6 @@ class SeriesDetailView(QWidget):
                     self.seasons_tab_widget.setCurrentIndex(idx)
                     restored_tab = True
                     break
-
-        # Display cast section with preloaded data
-        self._display_cast_section(cast_entries)
 
         if not restored_tab and sorted_season_names:
             target_tab_index: int = 0

@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
-
-import pytest
 
 from lan_streamer.backend.scan_worker_base import (
     create_empty_stats,
@@ -18,6 +15,11 @@ from lan_streamer.backend.scan_worker_base import (
     merge_stats_dicts,
     series_belongs_to_root,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 class TestDiscoverWithExistingLibrary:

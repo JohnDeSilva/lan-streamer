@@ -3,12 +3,14 @@ Shared internal helpers used by both library_tv.py and library_movie.py.
 """
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from lan_streamer.db.models import MediaFile
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 def get_session() -> Any:

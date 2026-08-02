@@ -54,7 +54,8 @@ def _db_setup(mock_db_file):
     db_mod._db_initialized = old_init
 
 
-def test_readability_migration_and_data_preservation(mock_db_file, _db_setup) -> None:
+@pytest.mark.usefixtures("_db_setup")
+def test_readability_migration_and_data_preservation(mock_db_file) -> None:
     """Test that readability columns migration on all tables preserves existing data and triggers populating names/paths."""
     if mock_db_file.exists():
         mock_db_file.unlink()
