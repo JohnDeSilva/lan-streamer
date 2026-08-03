@@ -1,3 +1,13 @@
+## v0.48.2 (2026-08-03)
+
+### Fix
+
+- **lint**: add select rules for ruff linter
+- **dev-dependency**: bump pre-commit from 4.6.0 to 4.6.1
+- **dependency**: bump aiohttp from 3.14.1 to 3.14.3
+- **dev-dependency**: bump ruff from 0.15.22 to 0.16.0
+- **db**: add unicode-aware case-insensitive search and name matching
+
 ## v0.48.2rc3-3 (2026-08-02)
 
 ## v0.48.2rc3-2 (2026-08-01)
