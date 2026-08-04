@@ -34,6 +34,11 @@ from lan_streamer.system.config import config
 
 logger = logging.getLogger("lan_streamer.player_widget")
 
+#: VLC ``sub-margin`` value used to force subtitles to the top of the video.
+#: ``sub-margin`` is measured in video pixels; a value larger than any sane
+#: video height clamps the subpicture to the top edge.
+SUBTITLE_TOP_MARGIN = 10000
+
 
 class RotatedButton(QPushButton):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -177,62 +182,9 @@ class VideoPlayerWidget(QWidget):
 
     def __init__(self, parent: Any = None) -> None:
         super().__init__(parent)
-        if vlc:
-            # Base arguments for high quality and smooth playback
-            args = [
-                "--quiet",
-                "--no-video-title-show",
-                "--no-xlib",
-                "--disable-screensaver",
-                "--video-filter=deinterlace",
-                "--deinterlace=1",
-                "--deinterlace-mode=yadif",
-                # Caching to ensure smooth delivery
-                f"--file-caching={config.vlc_buffer_ms}",
-                f"--network-caching={config.vlc_buffer_ms}",
-                f"--live-caching={config.vlc_buffer_ms}",
-                # High quality scaling and decoding
-                "--swscale-mode=2",  # Lanczos
-                "--avcodec-skiploopfilter=0",
-                # Enable multi-threaded decoding
-                "--avcodec-threads=0",  # Auto-detect cores
-            ]
-
-            if config.enable_hw_accel:
-                # 'auto' or 'any' lets VLC choose the best hardware decoder
-                args.append("--avcodec-hw=auto")
-            else:
-                args.append("--avcodec-hw=none")
-
-            # Add any user-defined extra arguments
-            if config.vlc_extra_args:
-                args.extend(config.vlc_extra_args)
-
-            if sys.platform == "linux":
-                args.append("--aout=pulse")
-
-            logger.info(f"Initializing VLC Instance with args: {args}")
-            self.instance = vlc.Instance(args)
-
-            # Fallback for environments missing swscale plugin (e.g. PyInstaller executables)
-            if self.instance is None and "--swscale-mode=2" in args:
-                logger.warning(
-                    "VLC initialization failed. Retrying without --swscale-mode=2"
-                )
-                args.remove("--swscale-mode=2")
-                self.instance = vlc.Instance(args)
-
-            if self.instance is not None:
-                self.mediaplayer = self.instance.media_player_new()
-            else:
-                self.mediaplayer = None
-                logger.error(
-                    "VLC Instance could not be initialized even after fallback."
-                )
-
-        else:
-            self.instance = None
-            self.mediaplayer = None
+        self.instance: Any = None
+        self.mediaplayer: Any = None
+        self._initialize_vlc()
         self.async_task_manager = AsyncTaskManager(parent=self)
         self.current_media_path: str | None = None
         self.cached_file_path: str | None = None
@@ -259,6 +211,117 @@ class VideoPlayerWidget(QWidget):
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.update_ui)
+
+    def _build_vlc_args(self) -> list[str]:
+        """Build the VLC instance argument list based on the current config."""
+        args = [
+            "--quiet",
+            "--no-video-title-show",
+            "--no-xlib",
+            "--disable-screensaver",
+            "--video-filter=deinterlace",
+            "--deinterlace=1",
+            "--deinterlace-mode=yadif",
+            # Caching to ensure smooth delivery
+            f"--file-caching={config.vlc_buffer_ms}",
+            f"--network-caching={config.vlc_buffer_ms}",
+            f"--live-caching={config.vlc_buffer_ms}",
+            # High quality scaling and decoding
+            "--swscale-mode=2",  # Lanczos
+            "--avcodec-skiploopfilter=0",
+            # Enable multi-threaded decoding
+            "--avcodec-threads=0",  # Auto-detect cores
+        ]
+
+        if config.enable_hw_accel:
+            # 'auto' or 'any' lets VLC choose the best hardware decoder
+            args.append("--avcodec-hw=auto")
+        else:
+            args.append("--avcodec-hw=none")
+
+        # Add any user-defined extra arguments
+        if config.vlc_extra_args:
+            args.extend(config.vlc_extra_args)
+
+        if sys.platform == "linux":
+            args.append("--aout=pulse")
+
+        # Subtitle vertical placement is an instance-level VLC option, so it is
+        # baked into the argument list and applied whenever the instance is
+        # (re)created.
+        subtitle_position = getattr(config, "subtitle_position", "Bottom")
+        if subtitle_position == "Top":
+            args.append(f"--sub-margin={SUBTITLE_TOP_MARGIN}")
+
+        return args
+
+    def _initialize_vlc(self) -> None:
+        """Create the VLC instance and media player using the current config."""
+        if not vlc:
+            self.instance = None
+            self.mediaplayer = None
+            return
+
+        args = self._build_vlc_args()
+        logger.info(f"Initializing VLC Instance with args: {args}")
+        self.instance = vlc.Instance(args)
+
+        # Fallback for environments missing swscale plugin (e.g. PyInstaller executables)
+        if self.instance is None and "--swscale-mode=2" in args:
+            logger.warning(
+                "VLC initialization failed. Retrying without --swscale-mode=2"
+            )
+            args.remove("--swscale-mode=2")
+            self.instance = vlc.Instance(args)
+
+        if self.instance is not None:
+            self.mediaplayer = self.instance.media_player_new()
+        else:
+            self.mediaplayer = None
+            logger.error("VLC Instance could not be initialized even after fallback.")
+
+    def set_subtitle_position(self, position: str) -> None:
+        """Change subtitle placement and apply it to the current playback.
+
+        Subtitles are positioned with an instance-level VLC option, so the
+        change requires recreating the VLC instance.  The current media is
+        restarted from its current position afterwards.
+        """
+        if position not in ("Bottom", "Top"):
+            logger.warning(f"Ignoring invalid subtitle position: {position}")
+            return
+        if getattr(config, "subtitle_position", "Bottom") == position:
+            return
+
+        logger.info(f"Changing subtitle position to: {position}")
+        config.subtitle_position = position
+        config.save_to_db()
+        self._reinitialize_vlc_for_playback()
+
+    def _reinitialize_vlc_for_playback(self) -> None:
+        """Recreate the VLC instance and resume the current media if playing."""
+        resume_position = 0
+        current_path = self.current_media_path
+        if self.mediaplayer and current_path:
+            current_time = self.mediaplayer.get_time() // 1000
+            if current_time > 5:
+                resume_position = current_time
+
+        # Suppress fullscreen exit while restarting the media, mirroring the
+        # behaviour of play_next_episode.
+        was_transitioning = self.is_transitioning_to_next
+        self.is_transitioning_to_next = True
+        try:
+            self.stop()
+        finally:
+            self.is_transitioning_to_next = was_transitioning
+
+        self._initialize_vlc()
+        if current_path and self.instance and self.mediaplayer:
+            self.pending_resume_position = resume_position
+            self._load_and_play(current_path)
+        else:
+            self._update_subtitles_audio_pane_text()
 
     def _apply_fullscreen_styles(self) -> None:
         """Applies styling to fullscreen overlay based on config."""
@@ -541,6 +604,20 @@ class VideoPlayerWidget(QWidget):
                 return lambda: self._select_subtitle_track_from_menu(i)
 
             action.triggered.connect(make_sub_slot(idx))
+
+        # Subtitle vertical placement toggle
+        position_menu = menu.addMenu("Subtitle Position")
+        position_menu.setStyleSheet(menu.styleSheet())
+        current_position = getattr(config, "subtitle_position", "Bottom")
+        for position in ("Bottom", "Top"):
+            position_action = position_menu.addAction(position)
+            position_action.setCheckable(True)
+            position_action.setChecked(current_position == position)
+
+            def make_position_slot(pos: str) -> Any:
+                return lambda checked=False: self.set_subtitle_position(pos)
+
+            position_action.triggered.connect(make_position_slot(position))
 
         # Audio Output Devices
         device_menu = menu.addMenu("Audio Devices")

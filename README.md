@@ -15,6 +15,7 @@ LAN Streamer is built to play your media files directly and natively without any
 ### 🎬 Playing Videos
 *   **📺 Embedded Playback**: Uses **VLC** for playback directly within the application. Supports audio and subtitle track selection, seeking, volume controls, and playback speed/rate controls (1.0x, 1.5x, 2.0x). Automatically resolves and defaults to English audio and subtitle tracks when available in media containers.
 *   **🔊 Audio Output Device Selector**: Support for enumerating, selecting, and persisting preferred audio output devices (with native Linux PulseAudio support) directly from the player interface.
+*   **📄 Configurable Subtitle Position**: Place subtitles at the **Bottom** or **Top** of the video frame, switchable from the player's Subtitles & Audio menu or the Video Player settings tab.
 *   **🎭 Theatre Mode**: Hides UI elements during fullscreen playback for an unobstructed view. A minimal control bar provides essential playback actions, dynamically hiding the previous/next episode navigation buttons (`⏮` / `⏭`) when playing a movie.
 *   **🧠 Progress Tracking**: Automatically marks media as watched based on a configurable threshold, supports resuming playback from saved positions, and displays an on-screen overlay to automatically play the next episode in a series once the completion threshold is reached.
 *   **💾 Local Caching**: Optional pre-playback caching of media files to local storage to eliminate network-related buffering.
@@ -204,6 +205,14 @@ Configures VLC's internal caching buffer size (in milliseconds) to absorb tempor
 - **Behavior:**
   - Configurable under the **Video Player** settings tab in the UI.
   - Controls VLC's cache buffer sizes dynamically.
+
+#### Subtitle Position
+Controls the vertical placement of subtitles within the video frame.
+- **Configuration Keys:**
+  - `subtitle_position`: Where subtitles are displayed. `Bottom` (default) or `Top`.
+- **Behavior:**
+  - Configurable under the **Video Player** settings tab in the UI and from the player's **Subtitles & Audio** menu.
+  - Because subtitle placement is a VLC instance-level option, changing it recreates the VLC engine and restarts the current media from its current playback position.
 
 ### MyAnimeList Integration
 Allows synchronization of anime watch history with MyAnimeList. Configurable in **Settings > Remote API's**.
