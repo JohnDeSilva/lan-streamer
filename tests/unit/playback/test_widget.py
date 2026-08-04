@@ -399,6 +399,107 @@ def test_vlc_instance_args_no_hw(qtbot) -> None:
         assert "--avcodec-hw=auto" not in args
 
 
+def test_vlc_instance_args_subtitle_position_bottom(qtbot) -> None:
+    """Bottom subtitle position must not force a VLC sub-margin."""
+    with patch("vlc.Instance") as mock_vlc:
+        config.subtitle_position = "Bottom"
+
+        VideoPlayerWidget()
+
+        args = mock_vlc.call_args[0][0]
+        assert not any(arg.startswith("--sub-margin") for arg in args)
+
+
+def test_vlc_instance_args_subtitle_position_top(qtbot) -> None:
+    """Top subtitle position must set a large VLC sub-margin."""
+    from lan_streamer.playback.widget import SUBTITLE_TOP_MARGIN
+
+    with patch("vlc.Instance") as mock_vlc:
+        config.subtitle_position = "Top"
+
+        VideoPlayerWidget()
+
+        args = mock_vlc.call_args[0][0]
+        assert f"--sub-margin={SUBTITLE_TOP_MARGIN}" in args
+
+
+def test_set_subtitle_position_updates_config_and_reinitializes(player_widget) -> None:
+    """Changing subtitle position persists the setting and resumes playback."""
+    config.subtitle_position = "Bottom"
+    player_widget.current_media_path = "/path/to/video.mp4"
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.get_time.return_value = 120000  # 2 minutes in ms
+    player_widget.mediaplayer.get_length.return_value = 0
+
+    with (
+        patch.object(config, "save_to_db") as mock_save,
+        patch.object(player_widget, "_initialize_vlc") as mock_initialize_vlc,
+        patch.object(player_widget, "_load_and_play") as mock_load,
+    ):
+        player_widget.set_subtitle_position("Top")
+
+    assert config.subtitle_position == "Top"
+    mock_save.assert_called_once()
+    mock_initialize_vlc.assert_called_once()
+    mock_load.assert_called_once_with("/path/to/video.mp4")
+    assert player_widget.pending_resume_position == 120
+
+
+def test_set_subtitle_position_same_position_is_noop(player_widget) -> None:
+    """Selecting the already-active position must not restart playback."""
+    config.subtitle_position = "Top"
+    with (
+        patch.object(config, "save_to_db") as mock_save,
+        patch.object(player_widget, "_reinitialize_vlc_for_playback") as mock_reinit,
+    ):
+        player_widget.set_subtitle_position("Top")
+    mock_save.assert_not_called()
+    mock_reinit.assert_not_called()
+
+
+def test_set_subtitle_position_invalid_ignored(player_widget) -> None:
+    """Unknown positions must be rejected without touching the config."""
+    config.subtitle_position = "Bottom"
+    with (
+        patch.object(config, "save_to_db") as mock_save,
+        patch.object(player_widget, "_reinitialize_vlc_for_playback") as mock_reinit,
+    ):
+        player_widget.set_subtitle_position("Middle")
+    mock_save.assert_not_called()
+    mock_reinit.assert_not_called()
+    assert config.subtitle_position == "Bottom"
+
+
+def test_show_subtitles_audio_menu_includes_subtitle_position(player_widget) -> None:
+    """The subtitles/audio menu exposes the Subtitle Position submenu."""
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_output_device_enum.return_value = None
+    player_widget.mediaplayer.audio_get_track_description.return_value = []
+    player_widget.mediaplayer.video_get_spu_description.return_value = []
+    player_widget.mediaplayer.audio_get_track.return_value = -1
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+    config.subtitle_position = "Bottom"
+
+    with patch("lan_streamer.playback.widget.QMenu") as MockQMenu:
+        mock_menu_instance = MagicMock()
+        MockQMenu.return_value = mock_menu_instance
+        mock_sub_menu = MagicMock()
+        mock_menu_instance.addMenu.return_value = mock_sub_menu
+
+        player_widget._show_subtitles_audio_menu()
+
+        menu_names = [
+            call.args[0] for call in mock_menu_instance.addMenu.call_args_list
+        ]
+        assert "Subtitle Position" in menu_names
+
+        added_actions = [
+            call.args[0] for call in mock_sub_menu.addAction.call_args_list
+        ]
+        assert "Bottom" in added_actions
+        assert "Top" in added_actions
+
+
 def test_load_and_play_platforms(player_widget) -> None:
     player_widget.instance = MagicMock()
     player_widget.mediaplayer = MagicMock()

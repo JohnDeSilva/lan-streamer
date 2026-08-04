@@ -844,3 +844,42 @@ class TestDisconnectSignals:
             event = QCloseEvent()
             dialog.closeEvent(event)
             mock_disconnect.assert_called_once()
+
+
+# ── subtitle_position selector ────────────────────────────────────────
+
+
+class TestSubtitlePositionSelector:
+    def test_loads_current_config_value(self, qtbot: Any) -> None:
+        """The Subtitle Position dropdown reflects the config value on load."""
+        config.subtitle_position = "Top"
+        controller = MagicMock()
+        controller.scheduled_scan_service = MagicMock()
+        with (
+            patch("lan_streamer.ui_views.dialogs.settings.config", config),
+            patch(
+                "lan_streamer.system.logging_handler.qt_log_handler"
+            ) as mock_log_handler,
+        ):
+            mock_log_handler.buffer = []
+            mock_log_handler.emitter = MagicMock()
+            dialog = SettingsDialog(controller_instance=controller)
+            qtbot.addWidget(dialog)
+        assert dialog.subtitle_position_selector.currentText() == "Top"
+
+    def test_save_writes_selected_value(self, make_dialog: SettingsDialog) -> None:
+        """Selecting a position and saving persists it to the config."""
+        dialog = make_dialog
+        config.subtitle_position = "Bottom"
+        dialog.subtitle_position_selector.setCurrentText("Top")
+        dialog.database_backup_frequency_input.setText("0")
+        dialog.database_backup_retention_input.setText("0")
+        dialog.config_backup_frequency_input.setText("0")
+        dialog.config_backup_retention_input.setText("0")
+        with (
+            patch.object(config, "save"),
+            patch.object(config, "save_to_db"),
+            patch("lan_streamer.system.logging_handler.set_application_log_level"),
+        ):
+            dialog.save_config()
+        assert config.subtitle_position == "Top"

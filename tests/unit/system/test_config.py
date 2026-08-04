@@ -25,6 +25,7 @@ def test_config_initialization(mock_config_file) -> None:
     assert config.sort_mode == "Alphabetical"
     assert config.max_cache_size_gb == 15.0
     assert config.vlc_buffer_ms == 3000
+    assert config.subtitle_position == "Bottom"
     assert config.backup_directory.endswith("backups")
     assert config.config_backup_frequency == 1
     assert config.database_backup_frequency == 1
@@ -148,6 +149,19 @@ def test_config_divide_logs_by_service(mock_config_file) -> None:
     loaded = Config()
     loaded.load_from_db()
     assert loaded.divide_logs_by_service is True
+
+
+def test_config_subtitle_position_roundtrip(mock_config_file) -> None:
+    config = Config()
+    config.load_from_db()
+    assert config.subtitle_position == "Bottom"
+
+    config.subtitle_position = "Top"
+    config.save_to_db()
+
+    loaded = Config()
+    loaded.load_from_db()
+    assert loaded.subtitle_position == "Top"
 
 
 def test_config_backup_settings(mock_config_file) -> None:

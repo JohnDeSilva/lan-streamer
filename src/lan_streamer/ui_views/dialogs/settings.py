@@ -133,6 +133,7 @@ class SettingsDialog(QDialog):
         self.max_cache_size_input: QLineEdit = QLineEdit()
         self.vlc_buffer_input: QLineEdit = QLineEdit()
         self.fullscreen_control_bar_position_selector: QComboBox = QComboBox()
+        self.subtitle_position_selector: QComboBox = QComboBox()
 
         self.db_path_input: QLineEdit = QLineEdit()
         self.log_dir_input: QLineEdit = QLineEdit()
@@ -592,6 +593,14 @@ class SettingsDialog(QDialog):
         position_layout.addStretch()
         player_layout.addLayout(position_layout)
 
+        self.subtitle_position_selector.addItems(["Bottom", "Top"])
+        subtitle_position_layout: QHBoxLayout = QHBoxLayout()
+        subtitle_position_layout.addWidget(QLabel("Subtitle Position:"))
+        self.subtitle_position_selector.setFixedWidth(120)
+        subtitle_position_layout.addWidget(self.subtitle_position_selector)
+        subtitle_position_layout.addStretch()
+        player_layout.addLayout(subtitle_position_layout)
+
         player_layout.addStretch()
         return player_tab
 
@@ -979,6 +988,7 @@ class SettingsDialog(QDialog):
         self.fullscreen_control_bar_position_selector.setCurrentText(
             config.fullscreen_control_bar_position
         )
+        self.subtitle_position_selector.setCurrentText(config.subtitle_position)
 
         self.db_path_input.setText(config.database_path)
         self.log_dir_input.setText(config.log_directory)
@@ -1485,6 +1495,7 @@ class SettingsDialog(QDialog):
         config.fullscreen_control_bar_position = (
             self.fullscreen_control_bar_position_selector.currentText()
         )
+        config.subtitle_position = self.subtitle_position_selector.currentText()
 
         if self.db_path_input.text().strip():
             config.database_path = self.db_path_input.text().strip()
