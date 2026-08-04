@@ -1,3 +1,9 @@
+## v0.48.3rc0 (2026-08-04)
+
+### Fix
+
+- **dev-dependency**: bump ruff from 0.16.0 to 0.16.1
+
 ## v0.48.2 (2026-08-03)
 
 ### Fix
