@@ -1,3 +1,13 @@
+## v0.49.0 (2026-08-05)
+
+### Feat
+
+- **playback**: add configurable subtitle position (bottom/top)
+
+### Fix
+
+- **dev-dependency**: bump ruff from 0.16.0 to 0.16.1
+
 ## v0.49.0rc0 (2026-08-05)
 
 ### Feat
