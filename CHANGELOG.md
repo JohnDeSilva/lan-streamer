@@ -1,3 +1,9 @@
+## v0.49.0rc0 (2026-08-05)
+
+### Feat
+
+- **playback**: add configurable subtitle position (bottom/top)
+
 ## v0.48.3rc0 (2026-08-04)
 
 ### Fix
