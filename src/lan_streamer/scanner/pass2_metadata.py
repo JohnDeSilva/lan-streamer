@@ -411,6 +411,7 @@ def scan_series_pass2(
                     existing_series_data=existing_series_data,
                     offline=False,
                     metadata_only=True,
+                    force_refresh=force_refresh,
                     hint_episode_number=ed.get("episode_number"),
                 )
             )

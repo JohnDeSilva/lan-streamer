@@ -1046,6 +1046,101 @@ def test_scan_series_auto_refresh_new_files(tmp_path) -> None:
     mock_tmdb.get_series_by_id.assert_called_once_with("old_id")
 
 
+def test_scan_series_refreshes_existing_episode_metadata_on_new_file(
+    tmp_path,
+) -> None:
+    """Adding a new episode file refreshes TMDB metadata for existing episodes.
+
+    A series whose existing episode carries stale TMDB data (name/air date/
+    runtime) must have that data re-pulled from TMDB when a new episode file
+    triggers the automatic series refresh. Watched state and versions survive.
+    """
+    series_dir = tmp_path / "RefreshShow"
+    season_dir = series_dir / "Season 1"
+    season_dir.mkdir(parents=True)
+    ep1 = season_dir / "S01E01.mkv"
+    ep2 = season_dir / "S01E02.mkv"
+    ep1.touch()
+    ep2.touch()
+
+    existing_library = {
+        "RefreshShow": {
+            "metadata": {
+                "tmdb_identifier": "refresh_id",
+                "tmdb_name": "Old Title",
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "S01E01.mkv",
+                            "path": str(ep1.absolute()),
+                            "tmdb_identifier": "ep_old",
+                            "tmdb_episode_identifier": "ep_old",
+                            "tmdb_name": "Stale Episode Name",
+                            "tmdb_number": 1,
+                            "air_date": "2022-01-01",
+                            "runtime": 25,
+                            "watched": True,
+                            "versions": [{"path": str(ep1.absolute())}],
+                        }
+                    ]
+                }
+            },
+        }
+    }
+
+    mock_tmdb = MagicMock()
+    mock_tmdb.get_series_by_id.return_value = {
+        "id": "refresh_id",
+        "name": "Fresh Title",
+        "overview": "Fresh overview",
+    }
+    mock_tmdb.get_seasons.return_value = []
+    mock_tmdb.get_episodes.return_value = [
+        {
+            "id": "ep_1",
+            "episode_number": 1,
+            "name": "Fresh Episode 1",
+            "air_date": "2023-01-01",
+            "runtime": 45,
+        },
+        {
+            "id": "ep_2",
+            "episode_number": 2,
+            "name": "Episode 2",
+            "air_date": "2023-01-08",
+            "runtime": 46,
+        },
+    ]
+
+    with (
+        patch("lan_streamer.services.metadata_series.tmdb_client", mock_tmdb),
+        patch("lan_streamer.services.metadata_episode.tmdb_client", mock_tmdb),
+        patch("lan_streamer.scanner.pass2_metadata.tmdb_client", mock_tmdb),
+    ):
+        res = scanner.scan_directories(
+            [str(tmp_path)], existing_library=existing_library, force_refresh=False
+        )
+
+    season_episodes = res["RefreshShow"]["seasons"]["Season 1"]["episodes"]
+    ep1_result = next(
+        ep for ep in season_episodes if ep.get("path") == str(ep1.absolute())
+    )
+    assert ep1_result["tmdb_name"] == "Fresh Episode 1"
+    assert ep1_result["air_date"] == "2023-01-01"
+    assert ep1_result["runtime"] == 45
+    assert ep1_result["tmdb_episode_identifier"] == "ep_1"
+    assert ep1_result["watched"] is True
+    assert len(ep1_result.get("versions", [])) == 1
+
+    ep2_result = next(
+        ep for ep in season_episodes if ep.get("path") == str(ep2.absolute())
+    )
+    assert ep2_result["tmdb_name"] == "Episode 2"
+    assert ep2_result["tmdb_number"] == 2
+
+
 def test_scan_movie_preserves_existing_metadata(tmp_path) -> None:
     """Verify that Pass 2 preserves existing movie metadata when no new file is detected."""
     movie_dir = tmp_path / "Avatar (2009)"
