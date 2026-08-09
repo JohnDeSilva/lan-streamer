@@ -1,3 +1,10 @@
+## v0.49.1 (2026-08-09)
+
+### Fix
+
+- **dev-dependency**: bump commitizen from 4.16.5 to 4.17.0
+- **metadata**: refresh existing episode metadata on new file addition
+
 ## v0.49.1rc3 (2026-08-09)
 
 ### Fix
