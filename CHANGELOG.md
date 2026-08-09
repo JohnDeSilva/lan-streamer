@@ -1,3 +1,9 @@
+## v0.49.1rc3 (2026-08-09)
+
+### Fix
+
+- **dev-dependency**: bump commitizen from 4.16.5 to 4.17.0
+
 ## v0.49.1rc2 (2026-08-09)
 
 ## v0.49.1rc1 (2026-08-09)
