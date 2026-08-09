@@ -260,6 +260,7 @@ def _process_episode_file(
     offline: bool = episode_options.pop("offline", False)
     metadata_only: bool = episode_options.pop("metadata_only", False)
     hint_episode_number: int | None = episode_options.pop("hint_episode_number", None)
+    force_refresh: bool = episode_options.pop("force_refresh", False)
     episode_path = str(episode_file.absolute())
     episode_name = episode_file.name
 
@@ -287,6 +288,7 @@ def _process_episode_file(
             tmdb_episodes,
             hint_episode_number,
             cached_tmdb_episode_identifier,
+            force_refresh,
         )
     else:
         (
@@ -418,14 +420,30 @@ def _match_existing_episode_metadata(
     tmdb_episodes: list[Any],
     hint_episode_number: int | None,
     cached_tmdb_episode_identifier: Any,
+    force_refresh: bool = False,
 ) -> tuple[Any, Any, Any, Any, Any, str]:
-    """Reuse cached metadata for an existing episode, filling gaps from TMDB."""
+    """Reuse cached metadata for an existing episode, filling gaps from TMDB.
+
+    When ``force_refresh`` is ``True`` (new episode added, manual refresh, or
+    manual metadata match), cached episode name/air date/runtime are re-pulled
+    from the freshly fetched TMDB episode list instead of being preserved.
+    """
+    jellyfin_id = existing_episode.get("jellyfin_id", "")
+    if force_refresh:
+        return _refresh_existing_episode_metadata(
+            existing_episode,
+            episode_name,
+            episode_file,
+            tmdb_episodes,
+            hint_episode_number,
+            cached_tmdb_episode_identifier,
+            jellyfin_id,
+        )
     tmdb_episode_identifier = cached_tmdb_episode_identifier or ""
     tmdb_name = existing_episode.get("tmdb_name")
     tmdb_number = existing_episode.get("tmdb_number")
     air_date = existing_episode.get("air_date", "")
     runtime = existing_episode.get("runtime", 0)
-    jellyfin_id = existing_episode.get("jellyfin_id", "")
     logger.debug(f"Reusing existing metadata for '{episode_name}'")
     # Fill in missing tmdb_name from TMDB episode list when we have
     # a tmdb_number but no cached name.
@@ -487,6 +505,99 @@ def _match_existing_episode_metadata(
                             f"'{tmdb_episode_name}' -> TMDB Name: '{tmdb_name}'"
                         )
                         break
+    return (
+        tmdb_episode_identifier,
+        tmdb_name,
+        tmdb_number,
+        air_date,
+        runtime,
+        jellyfin_id,
+    )
+
+
+def _find_matching_tmdb_episode(
+    existing_episode: dict[str, Any],
+    episode_name: str,
+    episode_file: Path,
+    tmdb_episodes: list[Any],
+    hint_episode_number: int | None,
+    cached_tmdb_episode_identifier: Any,
+) -> Any | None:
+    """Locate the TMDB episode that corresponds to an existing local file.
+
+    Match priority: cached episode number, cached TMDB identifier, hint number,
+    parsed SxxExx number, then substring match on the episode name.
+    """
+    tmdb_number = existing_episode.get("tmdb_number")
+    for candidate in tmdb_episodes:
+        if tmdb_number is not None and candidate.get("episode_number") == tmdb_number:
+            return candidate
+    if cached_tmdb_episode_identifier:
+        for candidate in tmdb_episodes:
+            if str(candidate.get("id")) == str(cached_tmdb_episode_identifier):
+                return candidate
+    if hint_episode_number is not None and hint_episode_number > 0:
+        for candidate in tmdb_episodes:
+            if candidate.get("episode_number") == hint_episode_number:
+                return candidate
+    parsed = _parse_episode_number(episode_name)
+    if parsed:
+        _, parsed_number = parsed
+        for candidate in tmdb_episodes:
+            if candidate.get("episode_number") == parsed_number:
+                return candidate
+    lookup_name = episode_file.stem.lower()
+    for candidate in tmdb_episodes:
+        candidate_name = str(candidate.get("name") or "").lower()
+        if candidate_name and candidate_name in lookup_name:
+            return candidate
+    return None
+
+
+def _refresh_existing_episode_metadata(
+    existing_episode: dict[str, Any],
+    episode_name: str,
+    episode_file: Path,
+    tmdb_episodes: list[Any],
+    hint_episode_number: int | None,
+    cached_tmdb_episode_identifier: Any,
+    jellyfin_id: str,
+) -> tuple[Any, Any, Any, Any, Any, str]:
+    """Overwrite cached episode fields from a fresh TMDB episode lookup.
+
+    Used when the series metadata is being refreshed (new episode detected,
+    manual single-item refresh, or manual metadata match). Preserves cached
+    values only when no matching TMDB episode is available (e.g. no episode
+    list was fetched for a locked/offline series).
+    """
+    tmdb_episode_identifier = cached_tmdb_episode_identifier or ""
+    tmdb_name = existing_episode.get("tmdb_name")
+    tmdb_number = existing_episode.get("tmdb_number")
+    air_date = existing_episode.get("air_date", "")
+    runtime = existing_episode.get("runtime", 0)
+    matched = _find_matching_tmdb_episode(
+        existing_episode,
+        episode_name,
+        episode_file,
+        tmdb_episodes,
+        hint_episode_number,
+        cached_tmdb_episode_identifier,
+    )
+    if matched is not None:
+        matched_identifier = str(matched.get("id", "") or "")
+        if matched_identifier:
+            tmdb_episode_identifier = matched_identifier
+        if matched.get("name"):
+            tmdb_name = matched.get("name")
+        if matched.get("episode_number") is not None:
+            tmdb_number = matched.get("episode_number")
+        if matched.get("air_date"):
+            air_date = matched.get("air_date")
+        if matched.get("runtime"):
+            runtime = matched.get("runtime")
+        logger.info(
+            f"Refreshed existing episode '{episode_name}' from TMDB: '{tmdb_name}'"
+        )
     return (
         tmdb_episode_identifier,
         tmdb_name,
