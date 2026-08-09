@@ -1402,6 +1402,115 @@ class TestProcessEpisodeFile:
         assert result["runtime"] == 25
         assert result["watched"] is True
 
+    def test_existing_episode_refreshes_from_tmdb_on_force_refresh(
+        self, tmp_path: Path
+    ) -> None:
+        """With ``force_refresh=True``, an existing episode's name, air date,
+        runtime, and TMDB identifier are re-pulled from the TMDB episode list."""
+        from lan_streamer.services.metadata_episode import _process_episode_file
+
+        ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
+        series_dir = ep.parent.parent
+        ep_path = str(ep.absolute())
+
+        existing_ep = {
+            "path": ep_path,
+            "tmdb_episode_identifier": "ep_old",
+            "tmdb_name": "Stale Name",
+            "tmdb_number": 1,
+            "air_date": "2022-01-01",
+            "runtime": 25,
+            "jellyfin_id": "jf_old",
+            "watched": True,
+        }
+        existing_by_path = {ep_path: existing_ep}
+
+        season_meta: dict[str, Any] = {}
+        series_data: dict[str, Any] = {
+            "metadata": {},
+            "_tmdb_series_id": "",
+        }
+        tmdb_episodes = [
+            {
+                "id": "ep_fresh",
+                "episode_number": 1,
+                "name": "Fresh Episode 1",
+                "air_date": "2023-01-01",
+                "runtime": 45,
+            },
+        ]
+
+        result = _process_episode_file(
+            episode_file=ep,
+            season_name="Season 1",
+            series_directory=series_dir,
+            series_data=series_data,
+            season_metadata=season_meta,
+            tmdb_episodes=tmdb_episodes,
+            tmdb_series=None,
+            jellyfin_data=None,
+            existing_episodes_by_path=existing_by_path,
+            force_refresh=True,
+        )
+        assert result["tmdb_name"] == "Fresh Episode 1"
+        assert result["air_date"] == "2023-01-01"
+        assert result["runtime"] == 45
+        assert result["tmdb_episode_identifier"] == "ep_fresh"
+        assert result["tmdb_number"] == 1
+        assert result["watched"] is True
+
+    def test_existing_episode_preserves_cache_without_force_refresh(
+        self, tmp_path: Path
+    ) -> None:
+        """Without ``force_refresh``, a matching TMDB episode never clobbers
+        cached episode metadata."""
+        from lan_streamer.services.metadata_episode import _process_episode_file
+
+        ep = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
+        series_dir = ep.parent.parent
+        ep_path = str(ep.absolute())
+
+        existing_ep = {
+            "path": ep_path,
+            "tmdb_episode_identifier": "ep_old",
+            "tmdb_name": "Cached Name",
+            "tmdb_number": 1,
+            "air_date": "2022-01-01",
+            "runtime": 25,
+        }
+        existing_by_path = {ep_path: existing_ep}
+
+        season_meta: dict[str, Any] = {}
+        series_data: dict[str, Any] = {
+            "metadata": {},
+            "_tmdb_series_id": "",
+        }
+        tmdb_episodes = [
+            {
+                "id": "ep_fresh",
+                "episode_number": 1,
+                "name": "Fresh Episode 1",
+                "air_date": "2023-01-01",
+                "runtime": 45,
+            },
+        ]
+
+        result = _process_episode_file(
+            episode_file=ep,
+            season_name="Season 1",
+            series_directory=series_dir,
+            series_data=series_data,
+            season_metadata=season_meta,
+            tmdb_episodes=tmdb_episodes,
+            tmdb_series=None,
+            jellyfin_data=None,
+            existing_episodes_by_path=existing_by_path,
+        )
+        assert result["tmdb_name"] == "Cached Name"
+        assert result["air_date"] == "2022-01-01"
+        assert result["runtime"] == 25
+        assert result["tmdb_episode_identifier"] == "ep_old"
+
     def test_existing_episode_update_from_tmdb_when_number_missing(
         self, tmp_path: Path
     ) -> None:
