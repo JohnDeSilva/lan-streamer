@@ -1,3 +1,9 @@
+## v0.49.1rc0 (2026-08-09)
+
+### Fix
+
+- **metadata**: refresh existing episode metadata on new file addition
+
 ## v0.49.0 (2026-08-05)
 
 ### Feat
