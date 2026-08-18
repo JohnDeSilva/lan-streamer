@@ -1,3 +1,9 @@
+## v0.49.2rc0 (2026-08-18)
+
+### Fix
+
+- uncomments windows executables build
+
 ## v0.49.1 (2026-08-09)
 
 ### Fix
