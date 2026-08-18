@@ -1,3 +1,9 @@
+## v0.49.2rc1 (2026-08-18)
+
+### Fix
+
+- **dependency**: bump cryptography from 49.0.0 to 50.0.0
+
 ## v0.49.2rc0 (2026-08-18)
 
 ### Fix
