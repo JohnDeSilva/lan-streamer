@@ -1,3 +1,13 @@
+## v0.49.2rc3 (2026-08-18)
+
+### Fix
+
+- **dev-dependency**: bump mypy from 2.3.0 to 2.3.1
+- **dev-dependency**: bump pyinstaller from 6.21.0 to 6.22.0
+- **dependency**: bump alembic from 1.18.5 to 1.19.1
+- **dependency**: update sqlalchemy[asyncio] requirement
+- **dev-dependency**: bump ruff from 0.16.1 to 0.16.3
+
 ## v0.49.2rc2 (2026-08-18)
 
 ### Fix
