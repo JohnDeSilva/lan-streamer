@@ -1,3 +1,16 @@
+## v0.49.2 (2026-08-19)
+
+### Fix
+
+- **dev-dependency**: bump mypy from 2.3.0 to 2.3.1
+- **dev-dependency**: bump pyinstaller from 6.21.0 to 6.22.0
+- **dependency**: bump alembic from 1.18.5 to 1.19.1
+- **dependency**: update sqlalchemy[asyncio] requirement
+- **dev-dependency**: bump ruff from 0.16.1 to 0.16.3
+- **dev-dependency**: bump pre-commit from 4.6.1 to 4.6.2
+- **dependency**: bump cryptography from 49.0.0 to 50.0.0
+- uncomments windows executables build
+
 ## v0.49.2rc3 (2026-08-18)
 
 ### Fix
