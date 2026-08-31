@@ -94,6 +94,7 @@ class Config:
         "auto_scan_enabled": True,
         "enable_async_scan": True,
         "scan_concurrency": 4,
+        "default_video_aspect_mode": "fit",
     }
 
     def __init__(self) -> None:
@@ -313,6 +314,9 @@ class Config:
             self.scan_interval_hours = int(config_dict["scan_interval_hours"])
             self.auto_scan_enabled = bool(config_dict["auto_scan_enabled"])
             self.scan_concurrency = int(config_dict.get("scan_concurrency", 4))
+            self.default_video_aspect_mode = str(
+                config_dict.get("default_video_aspect_mode", "fit")
+            )
 
             # 3. After going through all the settings take the fully populated dictionary and write the contents back to the database
             bulk_set_app_configs(config_dict)

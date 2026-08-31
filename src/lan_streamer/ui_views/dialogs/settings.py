@@ -149,6 +149,7 @@ class SettingsDialog(QDialog):
         self.vlc_buffer_input: QLineEdit = QLineEdit()
         self.fullscreen_control_bar_position_selector: QComboBox = QComboBox()
         self.subtitle_position_selector: QComboBox = QComboBox()
+        self.default_aspect_mode_selector: QComboBox = QComboBox()
 
         self.db_path_input: QLineEdit = QLineEdit()
         self.log_dir_input: QLineEdit = QLineEdit()
@@ -623,6 +624,24 @@ class SettingsDialog(QDialog):
         subtitle_position_layout.addStretch()
         player_layout.addLayout(subtitle_position_layout)
 
+        self.default_aspect_mode_selector.addItem("Fit (Original / Letterbox)", "fit")
+        self.default_aspect_mode_selector.addItem(
+            "Fill Screen (Crop to Fit / Zoom)", "fill"
+        )
+        self.default_aspect_mode_selector.addItem("Stretch to Fit", "stretch")
+        self.default_aspect_mode_selector.addItem("16:9 (Widescreen)", "16:9")
+        self.default_aspect_mode_selector.addItem("21:9 (Ultrawide)", "21:9")
+        self.default_aspect_mode_selector.addItem("4:3 (Standard)", "4:3")
+        self.default_aspect_mode_selector.addItem("16:10", "16:10")
+        self.default_aspect_mode_selector.addItem("2.35:1 (Cinemascope)", "2.35:1")
+
+        aspect_mode_layout: QHBoxLayout = QHBoxLayout()
+        aspect_mode_layout.addWidget(QLabel("Default Aspect Ratio / Zoom:"))
+        self.default_aspect_mode_selector.setFixedWidth(240)
+        aspect_mode_layout.addWidget(self.default_aspect_mode_selector)
+        aspect_mode_layout.addStretch()
+        player_layout.addLayout(aspect_mode_layout)
+
         player_layout.addStretch()
         return player_tab
 
@@ -1018,6 +1037,11 @@ class SettingsDialog(QDialog):
             config.fullscreen_control_bar_position
         )
         self.subtitle_position_selector.setCurrentText(config.subtitle_position)
+        aspect_mode_index = self.default_aspect_mode_selector.findData(
+            getattr(config, "default_video_aspect_mode", "fit")
+        )
+        if aspect_mode_index >= 0:
+            self.default_aspect_mode_selector.setCurrentIndex(aspect_mode_index)
 
         self.db_path_input.setText(config.database_path)
         self.log_dir_input.setText(config.log_directory)
@@ -1574,6 +1598,9 @@ class SettingsDialog(QDialog):
             self.fullscreen_control_bar_position_selector.currentText()
         )
         config.subtitle_position = self.subtitle_position_selector.currentText()
+        config.default_video_aspect_mode = (
+            self.default_aspect_mode_selector.currentData() or "fit"
+        )
 
         if self.db_path_input.text().strip():
             config.database_path = self.db_path_input.text().strip()

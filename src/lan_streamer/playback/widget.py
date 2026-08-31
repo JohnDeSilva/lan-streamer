@@ -3,7 +3,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from PySide6.QtCore import QEvent, QRect, QRectF, QSize, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter
@@ -180,6 +180,26 @@ class VideoPlayerWidget(QWidget):
     watched_marked = Signal(str)  # path
     fullscreen_changed = Signal(bool)
 
+    ASPECT_MODES: ClassVar[list[tuple[str, str]]] = [
+        ("fit", "Fit (Original / Letterbox)"),
+        ("fill", "Fill Screen (Crop / Zoom)"),
+        ("stretch", "Stretch to Fit"),
+        ("16:9", "16:9 (Widescreen)"),
+        ("21:9", "21:9 (Ultrawide)"),
+        ("4:3", "4:3 (Standard)"),
+        ("16:10", "16:10"),
+        ("2.35:1", "2.35:1 (Cinemascope)"),
+        ("2.39:1", "2.39:1"),
+    ]
+
+    ZOOM_SCALES: ClassVar[list[tuple[float, str]]] = [
+        (1.0, "100% (1.0x)"),
+        (1.1, "110% (1.1x)"),
+        (1.25, "125% (1.25x)"),
+        (1.5, "150% (1.5x)"),
+        (2.0, "200% (2.0x)"),
+    ]
+
     def __init__(self, parent: Any = None) -> None:
         super().__init__(parent)
         self.instance: Any = None
@@ -197,6 +217,9 @@ class VideoPlayerWidget(QWidget):
         self.next_episode_popup_shown: bool = False
         self.next_episode_info: dict[str, Any] | None = None
         self.is_transitioning_to_next: bool = False
+        self.current_aspect_mode: str = (
+            getattr(config, "default_video_aspect_mode", "fit") or "fit"
+        )
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         # Timer for auto-hiding fullscreen controls
@@ -297,6 +320,71 @@ class VideoPlayerWidget(QWidget):
         config.subtitle_position = position
         config.save_to_db()
         self._reinitialize_vlc_for_playback()
+
+    def set_video_aspect_mode(self, mode: str, show_osd: bool = True) -> None:
+        """Set the video aspect ratio / zoom mode."""
+        self.current_aspect_mode = mode
+        self._apply_current_aspect_geometry()
+
+        if show_osd:
+            display_name = mode
+            for mode_key, label in self.ASPECT_MODES:
+                if mode_key == mode:
+                    display_name = label
+                    break
+            self._show_osd(f"Aspect: {display_name}")
+
+    def set_video_zoom_scale(self, scale: float, show_osd: bool = True) -> None:
+        """Set manual video zoom scale multiplier."""
+        self.current_aspect_mode = f"zoom:{scale}"
+        self._apply_current_aspect_geometry()
+
+        if show_osd:
+            self._show_osd(f"Zoom: {int(scale * 100)}%")
+
+    def cycle_video_aspect_mode(self) -> None:
+        """Cycle through the common aspect ratio and zoom modes."""
+        cycle_modes = ["fit", "fill", "stretch", "16:9", "21:9", "4:3"]
+        try:
+            current_index = cycle_modes.index(self.current_aspect_mode)
+            next_index = (current_index + 1) % len(cycle_modes)
+        except ValueError:
+            next_index = 0
+        self.set_video_aspect_mode(cycle_modes[next_index], show_osd=True)
+
+    def _apply_current_aspect_geometry(self) -> None:
+        """Apply the aspect ratio, crop geometry, or scale to the underlying mediaplayer."""
+        if not self.mediaplayer:
+            return
+
+        frame_width = max(1, self.video_frame.width())
+        frame_height = max(1, self.video_frame.height())
+
+        mode = self.current_aspect_mode
+        if mode == "fit":
+            self.mediaplayer.video_set_aspect_ratio(None)
+            self.mediaplayer.video_set_crop_geometry(None)
+            self.mediaplayer.video_set_scale(0.0)
+        elif mode == "fill":
+            self.mediaplayer.video_set_aspect_ratio(None)
+            self.mediaplayer.video_set_crop_geometry(f"{frame_width}:{frame_height}")
+            self.mediaplayer.video_set_scale(0.0)
+        elif mode == "stretch":
+            self.mediaplayer.video_set_crop_geometry(None)
+            self.mediaplayer.video_set_aspect_ratio(f"{frame_width}:{frame_height}")
+            self.mediaplayer.video_set_scale(0.0)
+        elif mode.startswith("zoom:"):
+            try:
+                scale_factor = float(mode.split(":", 1)[1])
+            except ValueError:
+                scale_factor = 1.0
+            self.mediaplayer.video_set_aspect_ratio(None)
+            self.mediaplayer.video_set_crop_geometry(None)
+            self.mediaplayer.video_set_scale(scale_factor)
+        else:  # Fixed aspect ratios like "16:9", "21:9", "4:3", "16:10", "2.35:1", "2.39:1"
+            self.mediaplayer.video_set_crop_geometry(None)
+            self.mediaplayer.video_set_aspect_ratio(mode)
+            self.mediaplayer.video_set_scale(0.0)
 
     def _reinitialize_vlc_for_playback(self) -> None:
         """Recreate the VLC instance and resume the current media if playing."""
@@ -618,6 +706,50 @@ class VideoPlayerWidget(QWidget):
                 return lambda checked=False: self.set_subtitle_position(pos)
 
             position_action.triggered.connect(make_position_slot(position))
+
+        # Video Aspect Ratio & Zoom
+        aspect_menu = menu.addMenu("Aspect Ratio & Zoom")
+        aspect_menu.setStyleSheet(menu.styleSheet())
+
+        for mode_key, label in (
+            ("fit", "Fit (Original / Letterbox)"),
+            ("fill", "Fill Screen (Crop to Fit / Zoom)"),
+            ("stretch", "Stretch to Screen"),
+        ):
+            mode_action = aspect_menu.addAction(label)
+            mode_action.setCheckable(True)
+            mode_action.setChecked(self.current_aspect_mode == mode_key)
+
+            def make_aspect_slot(target_mode: str) -> Any:
+                return lambda checked=False: self.set_video_aspect_mode(target_mode)
+
+            mode_action.triggered.connect(make_aspect_slot(mode_key))
+
+        aspect_menu.addSeparator()
+
+        ratios_submenu = aspect_menu.addMenu("Aspect Ratios")
+        ratios_submenu.setStyleSheet(menu.styleSheet())
+        for ratio in ("16:9", "21:9", "4:3", "16:10", "2.35:1", "2.39:1"):
+            ratio_action = ratios_submenu.addAction(ratio)
+            ratio_action.setCheckable(True)
+            ratio_action.setChecked(self.current_aspect_mode == ratio)
+
+            def make_ratio_slot(target_ratio: str) -> Any:
+                return lambda checked=False: self.set_video_aspect_mode(target_ratio)
+
+            ratio_action.triggered.connect(make_ratio_slot(ratio))
+
+        zoom_submenu = aspect_menu.addMenu("Zoom Levels")
+        zoom_submenu.setStyleSheet(menu.styleSheet())
+        for scale_value, scale_label in self.ZOOM_SCALES:
+            zoom_action = zoom_submenu.addAction(scale_label)
+            zoom_action.setCheckable(True)
+            zoom_action.setChecked(self.current_aspect_mode == f"zoom:{scale_value}")
+
+            def make_zoom_slot(target_scale: float) -> Any:
+                return lambda checked=False: self.set_video_zoom_scale(target_scale)
+
+            zoom_action.triggered.connect(make_zoom_slot(scale_value))
 
         # Audio Output Devices
         device_menu = menu.addMenu("Audio Devices")
@@ -1217,6 +1349,8 @@ class VideoPlayerWidget(QWidget):
             self.toggle_mute()
         elif event.key() == Qt.Key.Key_I:
             self.toggle_stats()
+        elif event.key() == Qt.Key.Key_Z:
+            self.cycle_video_aspect_mode()
         else:
             super().keyPressEvent(event)
 
@@ -1364,6 +1498,10 @@ class VideoPlayerWidget(QWidget):
 
         # Position Stats Overlay at top-left
         self.stats_overlay.move(v_geom.x() + 20, v_geom.y() + 20)
+
+        # Update dynamic crop / aspect geometry if in fill or stretch mode
+        if self.current_aspect_mode in {"fill", "stretch"}:
+            self._apply_current_aspect_geometry()
 
     def resizeEvent(self, event: Any) -> None:
         super().resizeEvent(event)
@@ -1520,8 +1658,9 @@ class VideoPlayerWidget(QWidget):
                 None, config.preferred_audio_device
             )
 
-        # Schedule playback resumption seek and track refresh
+        # Schedule playback resumption seek, aspect geometry, and track refresh
         QTimer.singleShot(500, self._apply_pending_resume)
+        QTimer.singleShot(600, self._apply_current_aspect_geometry)
         QTimer.singleShot(1000, self._refresh_tracks)
 
     def _apply_pending_resume(self) -> None:
