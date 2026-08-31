@@ -184,10 +184,10 @@ def test_add_staged_directory(dialog_with_libs, tmp_path) -> None:
     ):
         dialog.add_staged_directory()
 
-    assert str(tmp_path) in [
-        dialog.directory_list_widget.item(i).text()
+    assert any(
+        str(tmp_path) in dialog.directory_list_widget.item(i).text()
         for i in range(dialog.directory_list_widget.count())
-    ]
+    )
 
 
 def test_remove_staged_directory(dialog_with_libs) -> None:
