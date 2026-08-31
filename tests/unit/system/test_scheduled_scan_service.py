@@ -185,6 +185,7 @@ class TestScanNow:
             run_pass2=True,
             chain_pass3=True,
             chain_cleanup=False,
+            scan_archive_roots=True,
         )
         assert service.scan_in_progress is True
         service._controller.scan_completed.emit()
@@ -213,6 +214,7 @@ class TestScanNow:
             run_pass2=True,
             chain_pass3=True,
             chain_cleanup=False,
+            scan_archive_roots=True,
         )
         service._controller.scan_completed.emit()
 
@@ -232,6 +234,7 @@ class TestScheduledScan:
             run_pass2=True,
             chain_pass3=True,
             chain_cleanup=False,
+            scan_archive_roots=False,
         )
 
     def test_scheduled_scan_sets_flag(

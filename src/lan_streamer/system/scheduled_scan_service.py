@@ -91,7 +91,11 @@ class ScheduledScanService(QObject):
         self._controller.task_manager.cancel_task("scheduled_scan")
         logger.info("ScheduledScanService stopped.")
 
-    async def scan_now(self, force_refresh: bool = False) -> None:
+    async def scan_now(
+        self,
+        force_refresh: bool = False,
+        scan_archive_roots: bool = True,
+    ) -> None:
         """Manually trigger an immediate scan."""
         if self._scan_in_progress:
             logger.warning("scan_now skipped: scan already in progress.")
@@ -106,6 +110,7 @@ class ScheduledScanService(QObject):
                 run_pass2=True,
                 chain_pass3=True,
                 chain_cleanup=False,
+                scan_archive_roots=scan_archive_roots,
             )
         except Exception as error:
             self._scan_in_progress = False
@@ -127,6 +132,7 @@ class ScheduledScanService(QObject):
                 run_pass2=True,
                 chain_pass3=True,
                 chain_cleanup=False,
+                scan_archive_roots=False,
             )
         except Exception as error:
             self._scan_in_progress = False

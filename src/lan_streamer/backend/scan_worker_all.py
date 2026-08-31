@@ -93,6 +93,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         force_refresh: bool = False,
         run_pass1: bool = True,
         run_pass2: bool = True,
+        scan_archive_roots: bool = True,
         parent: QObject | None = None,
     ) -> None:
         """Initialise the scan-all-libraries worker."""
@@ -100,6 +101,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         self.force_refresh: bool = force_refresh
         self.run_pass1: bool = run_pass1
         self.run_pass2: bool = run_pass2
+        self.scan_archive_roots: bool = scan_archive_roots
 
         # Shared mutable state — protected by _lock when accessed from threads.
         self._lock = threading.Lock()
@@ -304,7 +306,18 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             ``library_name``, ``library_data``, ``pass_stats``, ``problems``,
             ``unavailable_directories``, ``changed_season_ids``, ``changed_movie_ids``.
         """
-        root_directories: list[str] = list(library_configuration.get("paths", []))
+        all_root_directories: list[str] = list(library_configuration.get("paths", []))
+        archive_root_directories: set[str] = set(
+            library_configuration.get("archive_paths", [])
+        )
+        if not self.scan_archive_roots:
+            root_directories: list[str] = [
+                path
+                for path in all_root_directories
+                if path not in archive_root_directories
+            ]
+        else:
+            root_directories = all_root_directories
         library_type: str = library_configuration.get("type", "tv")
         show_future_episodes: bool = library_configuration.get(
             "show_future_episodes", True
@@ -791,7 +804,18 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         Returns:
             A dictionary containing library type and its roots.
         """
-        root_directories: list[str] = list(library_configuration.get("paths", []))
+        all_root_directories: list[str] = list(library_configuration.get("paths", []))
+        archive_root_directories: set[str] = set(
+            library_configuration.get("archive_paths", [])
+        )
+        if not self.scan_archive_roots:
+            root_directories: list[str] = [
+                path
+                for path in all_root_directories
+                if path not in archive_root_directories
+            ]
+        else:
+            root_directories = all_root_directories
         library_type: str = library_configuration.get("type", "tv")
         # Build the detailed tree structure (with seasons/episodes) from the
         # existing library data if available; otherwise fall back to filesystem.
