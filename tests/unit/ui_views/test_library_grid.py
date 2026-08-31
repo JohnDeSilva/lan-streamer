@@ -761,7 +761,48 @@ class TestTriggerCombinedScan:
         view, controller = grid_view
         with patch.object(controller, "trigger_scan_all") as mock_scan:
             view.trigger_combined_scan()
-            mock_scan.assert_called_once_with(False)
+            mock_scan.assert_called_once_with(
+                force_refresh=False, scan_archive_roots=False
+            )
+
+
+# ---------------------------------------------------------------------------
+# Scan & Full Scan Action Buttons
+# ---------------------------------------------------------------------------
+
+
+class TestScanButtons:
+    def test_scan_library_button_calls_trigger_scan_and_update_without_archive(
+        self, grid_view
+    ) -> None:
+        view, controller = grid_view
+        scan_buttons = [
+            button
+            for button in view.actions_toolbar_widget.findChildren(QPushButton)
+            if button.text() == "Scan Library"
+        ]
+        assert len(scan_buttons) == 1
+        with patch.object(controller, "trigger_scan_and_update") as mock_trigger:
+            scan_buttons[0].click()
+            mock_trigger.assert_called_once_with(
+                force_refresh=False, scan_archive_roots=False
+            )
+
+    def test_full_scan_button_calls_trigger_scan_and_update_with_archive(
+        self, grid_view
+    ) -> None:
+        view, controller = grid_view
+        full_scan_buttons = [
+            button
+            for button in view.actions_toolbar_widget.findChildren(QPushButton)
+            if button.text() == "Full Scan"
+        ]
+        assert len(full_scan_buttons) == 1
+        with patch.object(controller, "trigger_scan_and_update") as mock_trigger:
+            full_scan_buttons[0].click()
+            mock_trigger.assert_called_once_with(
+                force_refresh=False, scan_archive_roots=True
+            )
 
 
 # ---------------------------------------------------------------------------
