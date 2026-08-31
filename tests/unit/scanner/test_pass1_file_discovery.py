@@ -206,18 +206,18 @@ class TestCheckSeasonUnchanged:
             result = _check_season_unchanged(season_dir, {"episodes": []})
         assert result is False
 
-    def test_changed_when_episode_file_missing(self, tmp_path: Path) -> None:
-        """Returns False when an episode file no longer exists."""
+    def test_changed_when_cached_mtime_differs(self, tmp_path: Path) -> None:
+        """Returns False when cached mtime differs from directory mtime."""
         season_dir = tmp_path / "Season 1"
         season_dir.mkdir()
 
         existing_season: dict[str, Any] = {
-            "episodes": [{"path": str(season_dir / "missing.mkv")}]
+            "episodes": [{"path": str(season_dir / "episode.mkv")}]
         }
 
         with patch(
             "lan_streamer.db.get_directory_mtime",
-            return_value=season_dir.stat().st_mtime,
+            return_value=season_dir.stat().st_mtime - 100.0,
         ):
             result = _check_season_unchanged(season_dir, existing_season)
         assert result is False
@@ -1256,31 +1256,34 @@ class TestScanMoviePass1:
         assert result.get("tmdb_identifier") == "tmdb_123"
         assert result.get("watched") is True
 
-    def test_unchanged_path_check_fails_when_path_missing(self, tmp_path: Path) -> None:
-        """When existing path doesn't exist on disk, fall through to normal scan."""
+    def test_unchanged_movie_check_fails_when_cached_mtime_differs(
+        self, tmp_path: Path
+    ) -> None:
+        """When cached mtime differs from disk mtime, fall through to normal scan."""
         movie_dir = _create_movie_structure(tmp_path)
         time.sleep(0.01)
 
         current_mtime = movie_dir.stat().st_mtime
 
-        # This existing data has a path that doesn't exist on disk
         existing_data: dict[str, Any] = {
-            "path": "/nonexistent/path.mkv",
+            "path": str((movie_dir / "test_movie.mkv").absolute()),
             "name": "Test Movie (2024)",
             "tmdb_identifier": "tmdb_123",
             "watched": True,
         }
 
         with (
-            patch("lan_streamer.db.get_directory_mtime", return_value=current_mtime),
+            patch(
+                "lan_streamer.db.get_directory_mtime",
+                return_value=current_mtime - 100.0,
+            ),
             patch("lan_streamer.db.save_directory_mtime"),
         ):
             result = scan_movie_pass1(movie_dir, existing_movie_data=existing_data)
 
         assert result is not None
-        # Should be a fresh scan because existing path doesn't exist
+        # Should be a fresh scan because mtime differed
         assert result["_changed"] is True
-        assert result["path"] != "/nonexistent/path.mkv"
 
     def test_unchanged_mtime_check_fails_on_stat_error(self, tmp_path: Path) -> None:
         """When stat fails during unchanged check, fall through to scan."""

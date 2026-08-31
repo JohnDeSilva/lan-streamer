@@ -68,8 +68,12 @@ class SettingsDialog(QDialog):
         self.scan_interval_spinbox: QSpinBox = QSpinBox()
         self.scan_interval_spinbox.setRange(1, 168)
         self.scan_interval_spinbox.setSuffix(" hours")
-        self.scan_interval_spinbox.setToolTip(
-            "How often to automatically scan libraries for new or changed files"
+        self.scan_concurrency_spinbox: QSpinBox = QSpinBox()
+        self.scan_concurrency_spinbox.setRange(1, 16)
+        self.scan_concurrency_spinbox.setSuffix(" threads")
+        self.scan_concurrency_spinbox.setToolTip(
+            "Number of concurrent worker threads used during scanning. "
+            "Lower values (2-4) prevent mechanical drive head thrashing and network bottlenecks over SMB/NFS."
         )
 
         self.force_refresh_checkbox: QCheckBox = QCheckBox(
@@ -873,6 +877,12 @@ class SettingsDialog(QDialog):
         interval_row.addStretch()
         scheduled_scan_layout.addLayout(interval_row)
 
+        concurrency_row: QHBoxLayout = QHBoxLayout()
+        concurrency_row.addWidget(QLabel("Scanner concurrency:"))
+        concurrency_row.addWidget(self.scan_concurrency_spinbox)
+        concurrency_row.addStretch()
+        scheduled_scan_layout.addLayout(concurrency_row)
+
         management_layout.addWidget(self.scheduled_scan_frame)
 
         # Watch history sync buttons
@@ -1019,6 +1029,9 @@ class SettingsDialog(QDialog):
 
         self.auto_scan_checkbox.setChecked(config.auto_scan_enabled)
         self.scan_interval_spinbox.setValue(config.scan_interval_hours)
+        self.scan_concurrency_spinbox.setValue(
+            getattr(config, "scan_concurrency", 4) or 4
+        )
 
         self.staged_libraries = {
             library_name: {
@@ -1588,6 +1601,7 @@ class SettingsDialog(QDialog):
 
         config.auto_scan_enabled = self.auto_scan_checkbox.isChecked()
         config.scan_interval_hours = self.scan_interval_spinbox.value()
+        config.scan_concurrency = self.scan_concurrency_spinbox.value()
 
         config.libraries = self.staged_libraries
         config.enable_combined_view = self.enable_combined_view_checkbox.isChecked()
