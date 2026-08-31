@@ -72,8 +72,19 @@ class SettingsDialog(QDialog):
         self.scan_concurrency_spinbox.setRange(1, 16)
         self.scan_concurrency_spinbox.setSuffix(" threads")
         self.scan_concurrency_spinbox.setToolTip(
-            "Number of concurrent worker threads used during scanning. "
-            "Lower values (2-4) prevent mechanical drive head thrashing and network bottlenecks over SMB/NFS."
+            "Number of concurrent worker threads used during library scanning.\n\n"
+            "• Too high (8+): Causes severe mechanical hard drive thrashing and saturates network share (SMB/NFS) queues, leading to timeouts.\n"
+            "• Too low (1): Significantly increases scan duration by processing everything sequentially.\n"
+            "• Recommended: 2-4 threads for network drives (NAS/SMB/NFS) and mechanical HDDs; 4-8 threads for fast local SSDs."
+        )
+        self.scan_concurrency_warning_label: QLabel = QLabel(
+            "⚠️ Concurrency Advice: Setting too high (8+) can cause severe mechanical HDD thrashing "
+            "and saturate network share (SMB/NFS) request queues. Setting too low (1) results in slower sequential scans. "
+            "2-4 threads recommended for network drives/HDDs; 4-8 threads for fast local SSDs."
+        )
+        self.scan_concurrency_warning_label.setWordWrap(True)
+        self.scan_concurrency_warning_label.setStyleSheet(
+            "font-size: 11px; color: #94a3b8; border: none; padding-top: 2px;"
         )
 
         self.force_refresh_checkbox: QCheckBox = QCheckBox(
@@ -882,6 +893,7 @@ class SettingsDialog(QDialog):
         concurrency_row.addWidget(self.scan_concurrency_spinbox)
         concurrency_row.addStretch()
         scheduled_scan_layout.addLayout(concurrency_row)
+        scheduled_scan_layout.addWidget(self.scan_concurrency_warning_label)
 
         management_layout.addWidget(self.scheduled_scan_frame)
 
