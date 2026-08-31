@@ -432,7 +432,11 @@ class Controller(QObject):
         if not self.is_video_playing:
             self.library_loaded.emit()
 
-    def trigger_scan(self, force_refresh: bool = False) -> None:
+    def trigger_scan(
+        self,
+        force_refresh: bool = False,
+        scan_archive_roots: bool = True,
+    ) -> None:
         if not self.current_library_name:
             self.status_changed.emit("Select a library first.")
             return
@@ -446,6 +450,15 @@ class Controller(QObject):
         self._config.load()
         library_config = self._config.libraries.get(self.current_library_name, {})
         root_directories: list[str] = library_config.get("paths", [])
+        if not scan_archive_roots:
+            archive_root_directories: set[str] = set(
+                library_config.get("archive_paths", [])
+            )
+            root_directories = [
+                path
+                for path in root_directories
+                if path not in archive_root_directories
+            ]
         library_type: str = library_config.get("type", "tv")
         self.status_changed.emit(
             f"Scanning library '{self.current_library_name}' (force={force_refresh})...."
@@ -463,6 +476,7 @@ class Controller(QObject):
                 force_refresh=force_refresh,
                 cleanup=False,
                 library_name=self.current_library_name,
+                scan_archive_roots=scan_archive_roots,
             ),
             finished=self._on_scan_finished,
             partial_result=self._on_scan_partial,
@@ -640,7 +654,7 @@ class Controller(QObject):
     def trigger_scan_and_update(
         self,
         force_refresh: bool = False,
-        scan_archive_roots: bool = True,
+        scan_archive_roots: bool = False,
     ) -> None:
         """
         Combines a library scan (discovers new files, updates paths) with a

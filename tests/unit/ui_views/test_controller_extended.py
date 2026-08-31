@@ -371,6 +371,30 @@ def test_trigger_scan_and_update_starts_worker(ctrl) -> None:
         mock_cls.return_value.start.assert_called_once()
 
 
+def test_trigger_scan_and_update_archive_roots_filtering(ctrl) -> None:
+    ctrl._config.libraries[ctrl.current_library_name]["paths"] = [
+        "/tv/active",
+        "/tv/archive",
+    ]
+    ctrl._config.libraries[ctrl.current_library_name]["archive_paths"] = ["/tv/archive"]
+
+    with patch("lan_streamer.ui_views.controller.AsyncScanWorker") as mock_cls:
+        # Default / scan_archive_roots=False filters out archive roots
+        ctrl.trigger_scan_and_update(False, scan_archive_roots=False)
+        mock_cls.assert_called_once()
+        _, kwargs = mock_cls.call_args
+        assert kwargs["root_directories"] == ["/tv/active"]
+        assert kwargs["scan_archive_roots"] is False
+
+    with patch("lan_streamer.ui_views.controller.AsyncScanWorker") as mock_cls:
+        # scan_archive_roots=True retains all roots
+        ctrl.trigger_scan_and_update(False, scan_archive_roots=True)
+        mock_cls.assert_called_once()
+        _, kwargs = mock_cls.call_args
+        assert kwargs["root_directories"] == ["/tv/active", "/tv/archive"]
+        assert kwargs["scan_archive_roots"] is True
+
+
 def test_trigger_scan_and_update_skips_if_already_running(ctrl) -> None:
     mock_worker = MagicMock()
     mock_worker._is_async_worker = True
