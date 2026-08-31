@@ -1,3 +1,16 @@
+## v0.50.0rc0 (2026-08-31)
+
+### Feat
+
+- **ui**: add full scan button and restrict standard and combined scans to active roots
+- **playback**: add video aspect ratio, zoom fill-screen, and crop controls
+- **ui**: add scanner concurrency warning note in settings
+- **scanner**: add per-root active and archive scan modes
+
+### Perf
+
+- **scanner**: optimize network IO with mtime fast-bypass and concurrency throttling
+
 ## v0.49.2 (2026-08-19)
 
 ### Fix
