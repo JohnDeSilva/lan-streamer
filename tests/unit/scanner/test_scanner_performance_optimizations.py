@@ -141,7 +141,7 @@ def test_get_scan_executor_concurrency_configured() -> None:
 
 
 def test_settings_dialog_scan_concurrency(qtbot) -> None:
-    """Verify SettingsDialog loads and saves scan_concurrency."""
+    """Verify SettingsDialog loads, displays warning note, and saves scan_concurrency."""
     from lan_streamer.ui_views.dialogs.settings import SettingsDialog
 
     with patch.object(config, "scan_concurrency", 6):
@@ -149,6 +149,23 @@ def test_settings_dialog_scan_concurrency(qtbot) -> None:
         qtbot.addWidget(dialog)
 
         assert dialog.scan_concurrency_spinbox.value() == 6
+
+        # Check that warning/note label exists and provides guidance on setting too high/low
+        assert hasattr(dialog, "scan_concurrency_warning_label")
+        warning_label_text = dialog.scan_concurrency_warning_label.text()
+        assert (
+            "thrashing" in warning_label_text.lower()
+            or "too high" in warning_label_text.lower()
+        )
+        assert (
+            "too low" in warning_label_text.lower()
+            or "slower" in warning_label_text.lower()
+        )
+
+        # Check tooltip guidance
+        tooltip_text = dialog.scan_concurrency_spinbox.toolTip()
+        assert "too high" in tooltip_text.lower()
+        assert "too low" in tooltip_text.lower()
 
         dialog.scan_concurrency_spinbox.setValue(2)
         with patch.object(config, "save"), patch.object(config, "save_to_db"):
