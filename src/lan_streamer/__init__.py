@@ -1,2 +1,2 @@
 # Lan Streamer Package
-__version__ = "0.50.0rc1"
+__version__ = "0.50.0rc2"
