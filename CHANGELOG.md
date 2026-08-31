@@ -1,3 +1,9 @@
+## v0.50.0rc2 (2026-08-31)
+
+### Fix
+
+- **dev-dependency**: bump pyinstaller from 6.22.0 to 6.22.2
+
 ## v0.50.0rc1 (2026-08-31)
 
 ### Fix
