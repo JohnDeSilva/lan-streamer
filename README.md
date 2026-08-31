@@ -15,6 +15,7 @@ LAN Streamer is built to play your media files directly and natively without any
 ### 🎬 Playing Videos
 *   **📺 Embedded Playback**: Uses **VLC** for playback directly within the application. Supports audio and subtitle track selection, seeking, volume controls, and playback speed/rate controls (1.0x, 1.5x, 2.0x). Automatically resolves and defaults to English audio and subtitle tracks when available in media containers.
 *   **🔊 Audio Output Device Selector**: Support for enumerating, selecting, and persisting preferred audio output devices (with native Linux PulseAudio support) directly from the player interface.
+*   **📐 Aspect Ratio & Zoom (Fill Screen)**: Dynamically adjust framing with Fit (original aspect ratio), Fill Screen (crop to fill/zoom, removing black bars), Stretch to Fit, fixed ratios (`16:9`, `21:9`, `4:3`, `16:10`, `2.35:1`), and zoom scale factors. Accessible via the in-player quick menu, hotkey `Z`, or configurable in settings.
 *   **📄 Configurable Subtitle Position**: Place subtitles at the **Bottom** or **Top** of the video frame, switchable from the player's Subtitles & Audio menu or the Video Player settings tab.
 *   **🎭 Theatre Mode**: Hides UI elements during fullscreen playback for an unobstructed view. A minimal control bar provides essential playback actions, dynamically hiding the previous/next episode navigation buttons (`⏮` / `⏭`) when playing a movie.
 *   **🧠 Progress Tracking**: Automatically marks media as watched based on a configurable threshold, supports resuming playback from saved positions, and displays an on-screen overlay to automatically play the next episode in a series once the completion threshold is reached.
@@ -136,6 +137,7 @@ make run
 | **`←`** or **`J`** | Skip backward 10 seconds |
 | **`→`** or **`L`** | Skip forward 10 seconds |
 | **`S`** | Cycle playback speed (1.0x, 1.5x, 2.0x) |
+| **`Z`** | Cycle video aspect ratio & zoom modes (Fit, Fill/Zoom, Stretch, etc.) |
 | **`I`** | Toggle playback statistics overlay |
 | **`Backspace`** | Stop playback and return to details view |
 
