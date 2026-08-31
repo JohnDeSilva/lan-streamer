@@ -93,6 +93,7 @@ class Config:
         "scan_interval_hours": 1,
         "auto_scan_enabled": True,
         "enable_async_scan": True,
+        "scan_concurrency": 4,
     }
 
     def __init__(self) -> None:
@@ -311,6 +312,7 @@ class Config:
             self.database_write_timeout = float(config_dict["database_write_timeout"])
             self.scan_interval_hours = int(config_dict["scan_interval_hours"])
             self.auto_scan_enabled = bool(config_dict["auto_scan_enabled"])
+            self.scan_concurrency = int(config_dict.get("scan_concurrency", 4))
 
             # 3. After going through all the settings take the fully populated dictionary and write the contents back to the database
             bulk_set_app_configs(config_dict)

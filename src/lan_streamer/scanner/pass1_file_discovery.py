@@ -75,7 +75,7 @@ def _validate_series_file_layout(series_directory: Path) -> None:
 def _check_season_unchanged(
     season_directory: Path, existing_season: dict[str, Any]
 ) -> bool:
-    """Return True if mtime matches cached value and all existing files still exist."""
+    """Return True if mtime matches cached value."""
     from lan_streamer import db
 
     try:
@@ -83,13 +83,9 @@ def _check_season_unchanged(
     except OSError:
         return False
     cached_mtime = db.get_directory_mtime(str(season_directory.absolute()))
-    if cached_mtime is None or current_mtime != cached_mtime or current_mtime <= 0:
-        return False
-    for episode in existing_season.get("episodes", []):
-        episode_path = episode.get("path")
-        if episode_path is not None and not Path(episode_path).exists():
-            return False
-    return True
+    return (
+        cached_mtime is not None and current_mtime == cached_mtime and current_mtime > 0
+    )
 
 
 def _scan_season_files(season_directory: Path) -> list[dict[str, Any]]:
@@ -276,7 +272,27 @@ def scan_series_pass1(
         and minimal metadata keys.
     """
     logger.info("Pass 1 file discovery for series '%s'", series_directory.name)
-    _validate_series_file_layout(series_directory)
+    from lan_streamer import db
+
+    try:
+        current_series_mtime = series_directory.stat().st_mtime
+    except OSError:
+        current_series_mtime = None
+
+    cached_series_mtime = (
+        db.get_directory_mtime(str(series_directory.absolute()))
+        if current_series_mtime is not None
+        else None
+    )
+    is_series_dir_changed = (
+        force_refresh
+        or existing_series_data is None
+        or cached_series_mtime is None
+        or current_series_mtime != cached_series_mtime
+    )
+
+    if is_series_dir_changed:
+        _validate_series_file_layout(series_directory)
 
     series_name = series_directory.name
 
@@ -531,14 +547,12 @@ def scan_movie_pass1(
         if current_mtime is not None and current_mtime > 0:
             cached_mtime = db.get_directory_mtime(str(movie_directory.absolute()))
             if cached_mtime is not None and current_mtime == cached_mtime:
-                existing_path = existing_movie_data.get("path")
-                if existing_path and Path(existing_path).exists():
-                    logger.debug(
-                        "Movie '%s' is unchanged; reusing existing data.",
-                        movie_directory.name,
-                    )
-                    existing_movie_data["_changed"] = False
-                    return existing_movie_data
+                logger.debug(
+                    "Movie '%s' is unchanged; reusing existing data.",
+                    movie_directory.name,
+                )
+                existing_movie_data["_changed"] = False
+                return existing_movie_data
 
     # Find video files.
     video_files = find_video_files(movie_directory)

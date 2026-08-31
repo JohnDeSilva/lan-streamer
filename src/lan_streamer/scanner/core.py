@@ -32,13 +32,16 @@ _global_scan_executor: ThreadPoolExecutor | None = None
 _global_scan_executor_lock = threading.Lock()
 
 
-def get_scan_executor() -> ThreadPoolExecutor:
+def get_scan_executor(max_workers: int | None = None) -> ThreadPoolExecutor:
     """Return the global shared ThreadPoolExecutor instance."""
     global _global_scan_executor  # noqa: PLW0603
     if _global_scan_executor is None:
         with _global_scan_executor_lock:
             if _global_scan_executor is None:
-                max_workers = min(12, (os.cpu_count() or 4) * 2)
+                if max_workers is None:
+                    from lan_streamer.system.config import config
+
+                    max_workers = getattr(config, "scan_concurrency", 4) or 4
                 _global_scan_executor = ThreadPoolExecutor(
                     max_workers=max_workers,
                     thread_name_prefix="scan_worker",
@@ -420,7 +423,13 @@ def _scan_pass2(
                 )
             else:
                 # Find the actual series directory.
-                actual_dir = _find_series_dir(series_name, root_directories)
+                actual_dir = None
+                if existing and existing.get("path"):
+                    candidate_path = Path(existing["path"])
+                    if candidate_path.exists() and candidate_path.is_dir():
+                        actual_dir = candidate_path
+                if actual_dir is None:
+                    actual_dir = _find_series_dir(series_name, root_directories)
                 if actual_dir is None:
                     logger.warning(
                         "Pass 2: could not find directory for series '%s'", series_name
