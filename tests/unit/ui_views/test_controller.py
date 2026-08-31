@@ -427,6 +427,7 @@ def test_controller_global_triggers() -> None:
             force_refresh=True,
             run_pass1=True,
             run_pass2=True,
+            scan_archive_roots=True,
         )
         mock_scan_all.return_value.start.assert_called_once()
 

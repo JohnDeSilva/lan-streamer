@@ -59,14 +59,27 @@ class AsyncScanWorker(AsyncWorkerBase):
         cleanup: bool = False,
         parent: QObject | None = None,
         library_name: str = "",
+        scan_archive_roots: bool = True,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
-        self.root_directories: list[str] = root_directories
+        self.scan_archive_roots: bool = scan_archive_roots
         self.library_type: str = library_type
         self.existing_library: dict[str, Any] = existing_library
         self.force_refresh: bool = force_refresh
         self.cleanup: bool = cleanup
         self.library_name: str = library_name
+
+        if not scan_archive_roots and library_name and library_name in config.libraries:
+            archive_root_directories: set[str] = set(
+                config.libraries[library_name].get("archive_paths", [])
+            )
+            self.root_directories: list[str] = [
+                path
+                for path in root_directories
+                if path not in archive_root_directories
+            ]
+        else:
+            self.root_directories = root_directories
 
         # Result state — readable after finished signal.
         self.unavailable_directories: list[str] = []

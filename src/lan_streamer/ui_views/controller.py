@@ -637,7 +637,11 @@ class Controller(QObject):
         logger.error(f"Global cleanup step worker error: {error_message}")
         QTimer.singleShot(0, self, self._run_next_global_cleanup)
 
-    def trigger_scan_and_update(self, force_refresh: bool = False) -> None:
+    def trigger_scan_and_update(
+        self,
+        force_refresh: bool = False,
+        scan_archive_roots: bool = True,
+    ) -> None:
         """
         Combines a library scan (discovers new files, updates paths) with a
         cleanup pass (nulls paths for files that have gone missing).
@@ -656,6 +660,15 @@ class Controller(QObject):
         self._config.load()
         library_config = self._config.libraries.get(self.current_library_name, {})
         root_directories: list[str] = library_config.get("paths", [])
+        if not scan_archive_roots:
+            archive_root_directories: set[str] = set(
+                library_config.get("archive_paths", [])
+            )
+            root_directories = [
+                path
+                for path in root_directories
+                if path not in archive_root_directories
+            ]
         library_type: str = library_config.get("type", "tv")
         self.status_changed.emit(
             f"Scanning & updating library '{self.current_library_name}'..."
@@ -673,6 +686,7 @@ class Controller(QObject):
                 force_refresh=force_refresh,
                 cleanup=False,
                 library_name=self.current_library_name,
+                scan_archive_roots=scan_archive_roots,
             ),
             finished=self._on_scan_and_update_scan_finished,
             partial_result=self._on_scan_partial,
@@ -805,6 +819,7 @@ class Controller(QObject):
         run_pass2: bool = True,
         chain_pass3: bool = True,
         chain_cleanup: bool = False,
+        scan_archive_roots: bool = True,
     ) -> None:
         if self.worker_manager.scan_all.is_running:
             logger.info("ScanAllLibrariesWorker is already running.")
@@ -820,6 +835,7 @@ class Controller(QObject):
                 force_refresh=force_refresh,
                 run_pass1=run_pass1,
                 run_pass2=run_pass2,
+                scan_archive_roots=scan_archive_roots,
             ),
             library_progress=self.global_progress_updated.emit,
             detail_progress_batch=self._on_scan_all_detail_progress_batch,

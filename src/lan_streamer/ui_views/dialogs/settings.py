@@ -424,6 +424,13 @@ class SettingsDialog(QDialog):
         add_dir_button.clicked.connect(self.add_staged_directory)
         dir_buttons_layout.addWidget(add_dir_button)
 
+        toggle_archive_button: QPushButton = QPushButton("Toggle Active / Archive")
+        toggle_archive_button.setToolTip(
+            "Toggle between Active (frequently scanned) and Archive (rarely changing / skipped during periodic scans) mode."
+        )
+        toggle_archive_button.clicked.connect(self.toggle_staged_directory_archive_mode)
+        dir_buttons_layout.addWidget(toggle_archive_button)
+
         remove_dir_button: QPushButton = QPushButton("Remove Selected Directory")
         remove_dir_button.clicked.connect(self.remove_staged_directory)
         dir_buttons_layout.addWidget(remove_dir_button)
@@ -1017,6 +1024,7 @@ class SettingsDialog(QDialog):
             library_name: {
                 "type": library_config.get("type", "tv"),
                 "paths": list(library_config.get("paths", [])),
+                "archive_paths": list(library_config.get("archive_paths", [])),
                 "show_future_episodes": library_config.get(
                     "show_future_episodes", True
                 ),
@@ -1314,9 +1322,41 @@ class SettingsDialog(QDialog):
         self.directory_list_widget.clear()
         selected_library: str = self.library_selector.currentText()
         if selected_library in self.staged_libraries:
-            self.directory_list_widget.addItems(
-                self.staged_libraries[selected_library].get("paths", [])
+            paths: list[str] = self.staged_libraries[selected_library].get("paths", [])
+            archive_paths: list[str] = self.staged_libraries[selected_library].get(
+                "archive_paths", []
             )
+            for directory_path in paths:
+                mode_label = (
+                    "[Archive]" if directory_path in archive_paths else "[Active]"
+                )
+                item = QListWidgetItem(f"{mode_label}  {directory_path}")
+                item.setData(Qt.ItemDataRole.UserRole, directory_path)
+                self.directory_list_widget.addItem(item)
+
+    @Slot()
+    def toggle_staged_directory_archive_mode(self) -> None:
+        selected_library: str = self.library_selector.currentText()
+        selected_item: QListWidgetItem | None = self.directory_list_widget.currentItem()
+        if not selected_library or selected_item is None:
+            return
+
+        directory_path: str = selected_item.data(Qt.ItemDataRole.UserRole) or (
+            selected_item.text().split("  ", 1)[-1]
+            if "  " in selected_item.text()
+            else selected_item.text()
+        )
+        library_configuration = self.staged_libraries[selected_library]
+        archive_paths: list[str] = library_configuration.setdefault("archive_paths", [])
+        if directory_path in archive_paths:
+            archive_paths.remove(directory_path)
+        else:
+            archive_paths.append(directory_path)
+
+        current_row = self.directory_list_widget.currentRow()
+        self._refresh_directory_list()
+        if 0 <= current_row < self.directory_list_widget.count():
+            self.directory_list_widget.setCurrentRow(current_row)
 
     @Slot()
     def add_staged_library(self) -> None:
@@ -1339,6 +1379,7 @@ class SettingsDialog(QDialog):
         self.staged_libraries[new_library_name] = {
             "type": new_library_type,
             "paths": [],
+            "archive_paths": [],
             "show_future_episodes": True,
         }
         self.library_name_input.clear()
@@ -1380,12 +1421,24 @@ class SettingsDialog(QDialog):
         if not selected_library or selected_item is None:
             return
 
-        directory_path: str = selected_item.text()
+        directory_path: str = selected_item.data(Qt.ItemDataRole.UserRole) or (
+            selected_item.text().split("  ", 1)[-1]
+            if "  " in selected_item.text()
+            else selected_item.text()
+        )
         paths: list[str] = self.staged_libraries[selected_library].get("paths", [])
         if directory_path in paths:
             paths.remove(directory_path)
             self.staged_libraries[selected_library]["paths"] = paths
-            self._refresh_directory_list()
+
+        archive_paths: list[str] = self.staged_libraries[selected_library].get(
+            "archive_paths", []
+        )
+        if directory_path in archive_paths:
+            archive_paths.remove(directory_path)
+            self.staged_libraries[selected_library]["archive_paths"] = archive_paths
+
+        self._refresh_directory_list()
 
     @Slot()
     def browse_database_path(self) -> None:
