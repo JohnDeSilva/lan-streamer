@@ -1,3 +1,9 @@
+## v0.50.0rc1 (2026-08-31)
+
+### Fix
+
+- **dependency**: bump pyside6 from 6.11.1 to 6.11.2
+
 ## v0.50.0rc0 (2026-08-31)
 
 ### Feat
