@@ -117,12 +117,25 @@ class LibraryGridView(QWidget):
 
         scan_button: QPushButton = QPushButton("Scan Library")
         scan_button.setToolTip(
-            "Scan for new files and update paths for moved or deleted episodes"
+            "Scan for new files and update paths for moved or deleted episodes (active roots only)"
         )
         scan_button.clicked.connect(
-            lambda: self.controller.trigger_scan_and_update(False)
+            lambda: self.controller.trigger_scan_and_update(
+                force_refresh=False, scan_archive_roots=False
+            )
         )
         actions_toolbar_layout.addWidget(scan_button)
+
+        full_scan_button: QPushButton = QPushButton("Full Scan")
+        full_scan_button.setToolTip(
+            "Scan for new files and update paths across all roots, including archive directories"
+        )
+        full_scan_button.clicked.connect(
+            lambda: self.controller.trigger_scan_and_update(
+                force_refresh=False, scan_archive_roots=True
+            )
+        )
+        actions_toolbar_layout.addWidget(full_scan_button)
 
         refresh_all_button: QPushButton = QPushButton("Refresh Metadata")
         refresh_all_button.clicked.connect(lambda: self.controller.trigger_scan(True))
@@ -149,7 +162,7 @@ class LibraryGridView(QWidget):
 
         combined_scan_button: QPushButton = QPushButton("Scan Library")
         combined_scan_button.setToolTip(
-            "Scan for new files and update paths for moved or deleted episodes"
+            "Scan for new files and update paths for moved or deleted episodes across active roots"
         )
         combined_scan_button.clicked.connect(self.trigger_combined_scan)
         combined_actions_toolbar_layout.addWidget(combined_scan_button)
@@ -404,7 +417,7 @@ class LibraryGridView(QWidget):
 
     @Slot()
     def trigger_combined_scan(self) -> None:
-        self.controller.trigger_scan_all(False)
+        self.controller.trigger_scan_all(force_refresh=False, scan_archive_roots=False)
 
     @Slot(str)
     def on_order_changed(self, text: str) -> None:
