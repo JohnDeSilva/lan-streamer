@@ -443,22 +443,26 @@ class ScanProgressTree(QWidget):
                                 self._file_nodes[ep_path] = ep_item
 
         # Expand libraries, roots, and series folders, but leave seasons collapsed
-        for i in range(self._tree.topLevelItemCount()):
-            item = self._tree.topLevelItem(i)
-            if item is not None:
-                item.setExpanded(True)
-                for j in range(item.childCount()):
-                    root_item = item.child(j)
-                    if root_item is not None:
-                        root_item.setExpanded(True)
-                        for k in range(root_item.childCount()):
-                            folder_item = root_item.child(k)
-                            if folder_item is not None:
-                                folder_item.setExpanded(True)
-                                for m in range(folder_item.childCount()):
-                                    season_item = folder_item.child(m)
-                                    if season_item is not None:
-                                        season_item.setExpanded(False)
+        for library_index in range(self._tree.topLevelItemCount()):
+            tree_library_item = self._tree.topLevelItem(library_index)
+            if tree_library_item is not None:
+                tree_library_item.setExpanded(True)
+                for root_index in range(tree_library_item.childCount()):
+                    tree_root_item = tree_library_item.child(root_index)
+                    if tree_root_item is not None:
+                        tree_root_item.setExpanded(True)
+                        for folder_index in range(tree_root_item.childCount()):
+                            tree_folder_item = tree_root_item.child(folder_index)
+                            if tree_folder_item is not None:
+                                tree_folder_item.setExpanded(True)
+                                for season_index in range(
+                                    tree_folder_item.childCount()
+                                ):
+                                    tree_season_item = tree_folder_item.child(
+                                        season_index
+                                    )
+                                    if tree_season_item is not None:
+                                        tree_season_item.setExpanded(False)
 
     # ------------------------------------------------------------------
     # Library-level state

@@ -315,21 +315,25 @@ class RenamePreviewDialog(QDialog):
             # If a parent item (Season) checkstate changes, sync all its child items
             if item.parent() is None:
                 state = item.checkState(0)
-                for i in range(item.childCount()):
-                    item.child(i).setCheckState(0, state)
+                for child_index in range(item.childCount()):
+                    child_item = item.child(child_index)
+                    if child_item is not None:
+                        child_item.setCheckState(0, state)
             else:
                 # If a child item (Episode) checkstate changes, update the parent's checkstate
                 parent = item.parent()
-                if parent:
+                if parent is not None:
                     checked_count = 0
                     unchecked_count = 0
                     child_count = parent.childCount()
-                    for i in range(child_count):
-                        child_state = parent.child(i).checkState(0)
-                        if child_state == Qt.CheckState.Checked:
-                            checked_count += 1
-                        elif child_state == Qt.CheckState.Unchecked:
-                            unchecked_count += 1
+                    for child_index in range(child_count):
+                        child_item = parent.child(child_index)
+                        if child_item is not None:
+                            child_state = child_item.checkState(0)
+                            if child_state == Qt.CheckState.Checked:
+                                checked_count += 1
+                            elif child_state == Qt.CheckState.Unchecked:
+                                unchecked_count += 1
 
                     if checked_count == child_count:
                         parent.setCheckState(0, Qt.CheckState.Checked)
@@ -407,14 +411,21 @@ class RenamePreviewDialog(QDialog):
         # Collect checked video paths from the tree view
         checked_video_paths = set()
         root = self.preview_tree.invisibleRootItem()
-        for i in range(root.childCount()):
-            season_item = root.child(i)
-            for j in range(season_item.childCount()):
-                child_item = season_item.child(j)
-                if child_item.checkState(0) == Qt.CheckState.Checked:
-                    video_dict = child_item.data(0, Qt.ItemDataRole.UserRole)
-                    if video_dict and "old_path" in video_dict:
-                        checked_video_paths.add(video_dict["old_path"])
+        if root is not None:
+            for season_index in range(root.childCount()):
+                season_item = root.child(season_index)
+                if season_item is not None:
+                    for child_index in range(season_item.childCount()):
+                        child_item = season_item.child(child_index)
+                        if (
+                            child_item is not None
+                            and child_item.checkState(0) == Qt.CheckState.Checked
+                        ):
+                            video_dictionary = child_item.data(
+                                0, Qt.ItemDataRole.UserRole
+                            )
+                            if video_dictionary and "old_path" in video_dictionary:
+                                checked_video_paths.add(video_dictionary["old_path"])
 
         if not checked_video_paths:
             QMessageBox.warning(
