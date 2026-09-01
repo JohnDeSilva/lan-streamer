@@ -1,3 +1,23 @@
+## v0.50.0 (2026-09-01)
+
+### Feat
+
+- **ui**: add full scan button and restrict standard and combined scans to active roots
+- **playback**: add video aspect ratio, zoom fill-screen, and crop controls
+- **ui**: add scanner concurrency warning note in settings
+- **scanner**: add per-root active and archive scan modes
+
+### Fix
+
+- **dependency**: bump cryptography from 50.0.0 to 50.0.1
+- **ui**: resolve mypy typecheck errors in progress tree and rename preview dialog
+- **dev-dependency**: bump pyinstaller from 6.22.0 to 6.22.2
+- **dependency**: bump pyside6 from 6.11.1 to 6.11.2
+
+### Perf
+
+- **scanner**: optimize network IO with mtime fast-bypass and concurrency throttling
+
 ## v0.50.0rc3 (2026-09-01)
 
 ### Fix
