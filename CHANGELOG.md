@@ -1,3 +1,9 @@
+## v0.50.0rc2-1 (2026-09-01)
+
+### Fix
+
+- **ui**: Resolve mypy typecheck errors in progress tree and rename preview dialog
+
 ## v0.50.0rc2 (2026-08-31)
 
 ### Fix
