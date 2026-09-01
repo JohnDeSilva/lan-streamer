@@ -1,3 +1,10 @@
+## v0.50.0rc3 (2026-09-01)
+
+### Fix
+
+- **dependency**: bump cryptography from 50.0.0 to 50.0.1
+- **ui**: resolve mypy typecheck errors in progress tree and rename preview dialog
+
 ## v0.50.0rc2-1 (2026-09-01)
 
 ### Fix
