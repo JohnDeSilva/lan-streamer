@@ -1,4 +1,4 @@
-.PHONY: run lint check-lint reformat test test-local load-test build validate-executable clean revision migrate release build-test-image
+.PHONY: run lint check-lint reformat test test-local load-test build validate-executable clean revision migrate release build-test-image agent-test agent-lint agent-run
 
 UNAME_S := $(shell uname -s)
 
@@ -134,3 +134,12 @@ release:
 	@echo "Merge rc into main to trigger the Commitizen release and tag publish workflow."
 	@false
 	@exit 1
+
+agent-test:
+	$(MAKE) -C agent test
+
+agent-lint:
+	$(MAKE) -C agent lint
+
+agent-run:
+	$(MAKE) -C agent run

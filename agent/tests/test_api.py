@@ -1,0 +1,628 @@
+"""End-to-end REST API tests for the scan agent."""
+
+from __future__ import annotations
+
+import threading
+import time
+from typing import TYPE_CHECKING, Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+from scan_agent.db.connection import create_engine_for_database, init_database
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    from fastapi import FastAPI
+
+    from scan_agent.config import AgentConfig
+
+
+@pytest.fixture
+def api_app(
+    agent_config: AgentConfig,
+    tmdb_mock: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[FastAPI]:
+    """Build a FastAPI app bound to a fresh tmp database with TMDB mocked."""
+    init_database(create_engine_for_database(agent_config.database_path))
+    from tests.conftest import _install_and_patch_tmdb
+
+    _install_and_patch_tmdb(agent_config, tmdb_mock, monkeypatch)
+    from scan_agent.api.main import create_app
+
+    application = create_app(agent_config=agent_config)
+    yield application
+    application.state.engine.dispose()
+
+
+@pytest.fixture
+def api_client(api_app: FastAPI) -> Iterator[TestClient]:
+    """Yield a TestClient wrapping the API app."""
+    with TestClient(api_app) as client:
+        yield client
+
+
+def _start_scan_and_wait(api_app: FastAPI, **payload: Any) -> None:
+    """Start a scan and poll until the orchestrator reports idle."""
+    orchestrator = api_app.state.orchestrator
+    orchestrator.start_scan(**payload)
+    _wait_for_idle(api_app)
+
+
+def _wait_for_idle(api_app: FastAPI) -> None:
+    """Poll the orchestrator until no scan is running."""
+    orchestrator = api_app.state.orchestrator
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline:
+        if orchestrator.status()["running"] is None:
+            return
+        time.sleep(0.05)
+    raise AssertionError("Scan did not finish within timeout")
+
+
+def test_health_reports_providers(api_client: TestClient) -> None:
+    response = api_client.get("/api/v1/health")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["tmdb_configured"] is True
+    assert isinstance(body["libraries"], int)
+
+
+def test_config_get_masks_password(api_app: FastAPI, api_client: TestClient) -> None:
+    api_app.state.agent_config.opensubtitles_password = "hunter2"
+    body = api_client.get("/api/v1/config").json()
+    assert body["opensubtitles_password"] == "*****"
+
+
+def test_config_put_keeps_password_when_blank_or_masked(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    config = api_app.state.agent_config
+    config.opensubtitles_password = "old-secret"
+    for blank_value in ("", "*****"):
+        response = api_client.put(
+            "/api/v1/config", json={"opensubtitles_password": blank_value}
+        )
+        assert response.status_code == 200
+        assert config.opensubtitles_password == "old-secret"
+    response = api_client.put(
+        "/api/v1/config", json={"opensubtitles_password": "new-secret"}
+    )
+    assert response.json()["opensubtitles_password"] == "*****"
+    assert config.opensubtitles_password == "new-secret"
+
+
+def test_config_put_updates_other_keys(api_client: TestClient) -> None:
+    response = api_client.put(
+        "/api/v1/config", json={"scan_concurrency": 4, "tmdb_api_key": "abc123"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scan_concurrency"] == 4
+    assert body["tmdb_api_key"] == "abc123"
+
+
+def test_libraries_crud(api_client: TestClient) -> None:
+    listing = api_client.get("/api/v1/libraries").json()
+    assert {entry["id"] for entry in listing} == {"tv", "movie"}
+
+    created = api_client.post(
+        "/api/v1/libraries",
+        json={
+            "name": "Anime",
+            "media_type": "anime",
+            "root_path": "/srv/anime",
+            "enabled": True,
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["id"] == "anime"
+    assert body["media_type"] == "anime"
+    assert body["counts"]["series"] == 0
+
+    patched = api_client.patch(
+        "/api/v1/libraries/anime", json={"root_path": "/srv/renamed-anime"}
+    )
+    assert patched.status_code == 200
+    assert patched.json()["root_path"] == "/srv/renamed-anime"
+
+    response = api_client.delete("/api/v1/libraries/anime")
+    assert response.status_code == 204
+    detail = api_client.patch("/api/v1/libraries/anime", json={"name": "gone"})
+    assert detail.status_code == 404
+
+
+def test_scan_unknown_library_returns_404(
+    api_client: TestClient, api_app: FastAPI
+) -> None:
+    response = api_client.post("/api/v1/scan", json={"library_id": "does-not-exist"})
+    assert response.status_code == 404
+
+
+def test_scan_conflict_when_already_running(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_app.state.orchestrator._running_job_id = 999
+    response = api_client.post("/api/v1/scan", json={"library_id": "tv"})
+    assert response.status_code == 409
+
+
+def test_scan_cancel_returns_accepted(api_app: FastAPI, api_client: TestClient) -> None:
+    response = api_client.post("/api/v1/scan/cancel")
+    assert response.status_code == 202
+    assert response.json()["status"] == "cancellation_requested"
+
+
+def test_scan_jobs_and_browse_after_scan(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    job_id = api_client.post(
+        "/api/v1/scan", json={"library_id": "tv", "pass_number": 1}
+    ).json()["job"]["id"]
+    _wait_for_idle(api_app)
+
+    jobs = api_client.get("/api/v1/scan/jobs").json()
+    assert len(jobs) == 1
+    assert jobs[0]["id"] == job_id
+
+    series = api_client.get("/api/v1/library/series").json()
+    assert len(series) == 1
+    assert series[0]["folder_name"] == "Test Show"
+
+    series_identifier = series[0]["id"]
+    detail = api_client.get(f"/api/v1/library/series/{series_identifier}").json()
+    assert len(detail["seasons"]) == 1
+    episodes = detail["seasons"][0]["episodes"]
+    assert len(episodes) == 2
+    assert len(episodes[0]["versions"]) == 2
+
+    flattened = api_client.get(
+        f"/api/v1/library/series/{series_identifier}/episodes"
+    ).json()
+    assert len(flattened) == 2
+    assert flattened[0]["season_number"] == 1
+    assert len(flattened[0]["versions"]) == 2
+
+
+def test_browse_movies_and_query_filter(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "movie", "pass_number": 1})
+    _wait_for_idle(api_app)
+
+    movies = api_client.get("/api/v1/library/movies").json()
+    assert len(movies) == 1
+    assert movies[0]["folder_name"] == "Some Movie (2020)"
+
+    movies_identifier = movies[0]["id"]
+    detail = api_client.get(f"/api/v1/library/movie/{movies_identifier}").json()
+    assert len(detail["versions"]) == 1
+    detail_plural = api_client.get(f"/api/v1/library/movies/{movies_identifier}").json()
+    assert len(detail_plural["versions"]) == 1
+
+    filtered = api_client.get(
+        "/api/v1/library/movies", params={"query": "Some Movie"}
+    ).json()
+    assert len(filtered) == 1
+    filtered = api_client.get("/api/v1/library/movies", params={"query": "Nope"}).json()
+    assert filtered == []
+
+
+def test_watch_state_and_events(api_app: FastAPI, api_client: TestClient) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    episode_identifier = api_client.get("/api/v1/library/series").json()[0]["seasons"][
+        0
+    ]["episodes"][0]["id"]
+
+    created = api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "episode",
+            "media_id": episode_identifier,
+            "event": "complete",
+            "position_seconds": 1234.5,
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["event"] == "complete"
+
+    state = api_client.get(f"/api/v1/watch/episode/{episode_identifier}/state").json()
+    assert state["watched"] is True
+    assert state["position_seconds"] == 1234.5
+
+    events = api_client.get(f"/api/v1/watch/episode/{episode_identifier}/events").json()
+    assert events[0]["event"] == "complete"
+
+
+def test_watch_event_updates_movie_watched_flag(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "movie", "pass_number": 1})
+    _wait_for_idle(api_app)
+    movie_identifier = api_client.get("/api/v1/library/movies").json()[0]["id"]
+    created = api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "movie",
+            "media_id": movie_identifier,
+            "event": "complete",
+        },
+    )
+    assert created.status_code == 201
+    state = api_client.get(f"/api/v1/watch/movie/{movie_identifier}/state").json()
+    assert state["watched"] is True
+
+
+def test_metadata_search_and_match(api_client: TestClient) -> None:
+    response = api_client.get(
+        "/api/v1/services/metadata/search",
+        params={"type": "series", "query": "Test"},
+    )
+    assert response.status_code == 200
+    matches = response.json()["matches"]
+    assert matches[0]["name"] == "Test Show"
+
+    # Also test media_type param and "tv" alias normalization
+    response_tv = api_client.get(
+        "/api/v1/services/metadata/search",
+        params={"media_type": "tv", "query": "Test"},
+    )
+    assert response_tv.status_code == 200
+    assert response_tv.json()["type"] == "series"
+
+    # Missing media_type/type parameter returns 422
+    response_missing = api_client.get(
+        "/api/v1/services/metadata/search",
+        params={"query": "Test"},
+    )
+    assert response_missing.status_code == 422
+
+    response = api_client.get(
+        "/api/v1/services/metadata/search",
+        params={"type": "movie", "query": "Some Movie"},
+    )
+    assert response.status_code == 200
+    assert response.json()["matches"][0]["title"] == "Some Movie"
+
+
+def test_metadata_match_updates_series(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    series_identifier = api_client.get("/api/v1/library/series").json()[0]["id"]
+
+    response = api_client.post(
+        f"/api/v1/services/metadata/series/{series_identifier}/match",
+        json={"tmdb_identifier": "999"},
+    )
+    assert response.status_code == 202
+    assert response.json()["rescan_required"] is True
+    assert response.json()["media"]["tmdb_identifier"] == "999"
+
+    detail = api_client.get(f"/api/v1/library/series/{series_identifier}").json()
+    assert detail["tmdb_identifier"] == "999"
+    assert detail["locked_metadata"] is False
+    assert detail["name"] == "Test Show"
+    assert detail["year"] == 2024
+
+    # Also test "tv" alias in path
+    response_tv_match = api_client.post(
+        f"/api/v1/services/metadata/tv/{series_identifier}/match",
+        json={"tmdb_identifier": "888"},
+    )
+    assert response_tv_match.status_code == 202
+    assert response_tv_match.json()["media"]["tmdb_identifier"] == "888"
+
+
+def test_metadata_match_unknown_media_returns_404(
+    api_client: TestClient,
+) -> None:
+    response = api_client.post(
+        "/api/v1/services/metadata/series/424242/match",
+        json={"tmdb_identifier": "999"},
+    )
+    assert response.status_code == 404
+
+
+def test_rename_preview_and_apply(api_app: FastAPI, api_client: TestClient) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    series_identifier = api_client.get("/api/v1/library/series").json()[0]["id"]
+
+    preview_response = api_client.get(
+        "/api/v1/services/rename/preview",
+        params={
+            "media_type": "series",
+            "media_id": series_identifier,
+            "template": "{SeriesTitle} - S{SeasonNumber:02d}E{EpisodeNumber:02d}",
+        },
+    )
+    assert preview_response.status_code == 200
+    previews = preview_response.json()
+    assert len(previews) == 3
+    assert all(item["safe"] is True for item in previews)
+    assert any("Test Show - S01E01" in item["new_name"] for item in previews)
+
+    dry_run = api_client.post(
+        "/api/v1/services/rename/apply",
+        json={
+            "media_type": "series",
+            "media_id": series_identifier,
+            "template": "{SeriesTitle} - S{SeasonNumber:02d}E{EpisodeNumber:02d}",
+            "dry_run": True,
+        },
+    )
+    assert dry_run.status_code == 200
+    assert dry_run.json()["dry_run"] is True
+    assert len(dry_run.json()["previews"]) == 3
+
+
+def test_rename_movie_returns_501(api_client: TestClient) -> None:
+    response = api_client.get(
+        "/api/v1/services/rename/preview",
+        params={"media_type": "movie", "media_id": 1},
+    )
+    assert response.status_code == 501
+    response = api_client.post(
+        "/api/v1/services/rename/apply",
+        json={"media_type": "movie", "media_id": 1, "dry_run": True},
+    )
+    assert response.status_code == 501
+
+
+def test_rename_preview_unknown_series_returns_404(
+    api_client: TestClient,
+) -> None:
+    response = api_client.get(
+        "/api/v1/services/rename/preview",
+        params={"media_type": "series", "media_id": 424242},
+    )
+    assert response.status_code == 404
+
+
+def test_subtitle_search_and_download(
+    api_app: FastAPI,
+    api_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeOpenSubtitlesClient:
+        def login(self) -> bool:
+            return True
+
+        def get_download_link(self, file_identifier: int) -> str:
+            return "http://127.0.0.1/subtitles/test.srt"
+
+        def download_subtitle(self, download_url: str) -> bytes:
+            return b"WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.000\nHello"
+
+        def search_subtitles(self, **kwargs: Any) -> list[dict[str, Any]]:
+            return [{"file_id": 7, "language": kwargs.get("languages")}]
+
+    monkeypatch.setattr(
+        "lan_streamer.providers.opensubtitles.OpenSubtitlesClient",
+        FakeOpenSubtitlesClient,
+    )
+    import shutil
+
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda command: None if command == "ffprobe" else shutil.which(command),
+    )
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 0})
+    _wait_for_idle(api_app)
+    series = api_client.get("/api/v1/library/series").json()[0]
+    assert series["tmdb_identifier"] == "100"
+    episode_identifier = series["seasons"][0]["episodes"][0]["id"]
+
+    response = api_client.get(
+        "/api/v1/services/subtitles",
+        params={"media_type": "episode", "media_id": episode_identifier},
+    )
+    assert response.status_code == 200
+    assert response.json() == []
+
+    search = api_client.get(
+        "/api/v1/services/subtitles/search",
+        params={"media_type": "episode", "media_id": episode_identifier},
+    )
+    assert search.status_code == 200
+    assert search.json()[0]["file_id"] == 7
+
+    downloaded = api_client.post(
+        "/api/v1/services/subtitles/7/download",
+        json={
+            "media_type": "episode",
+            "media_id": episode_identifier,
+            "language": "en",
+        },
+    )
+    assert downloaded.status_code == 200, (
+        f"Expected 200 but got {downloaded.status_code}: {downloaded.text}"
+    )
+    body = downloaded.json()
+    assert body["language"] == "en"
+    assert body["path"].endswith(".en.srt")
+
+    stored = api_client.get(
+        "/api/v1/services/subtitles",
+        params={"media_type": "episode", "media_id": episode_identifier},
+    ).json()
+    assert len(stored) == 1
+    subtitle_path = stored[0]["path"]
+    with open(subtitle_path, encoding="utf-8") as subtitle_file:
+        assert subtitle_file.read().startswith("WEBVTT")
+
+
+def test_subtitle_download_rejects_no_file_on_disk(
+    api_client: TestClient,
+) -> None:
+    response = api_client.post(
+        "/api/v1/services/subtitles/7/download",
+        json={"media_type": "episode", "media_id": 424242, "language": "en"},
+    )
+    assert response.status_code == 404
+
+
+def test_sse_resumes_history_and_finishes_on_scan_done(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    _start_scan_and_wait(api_app, library_identifier="tv", pass_number=1)
+
+    with api_client.stream("GET", "/api/v1/events?until_finished=1") as response:
+        assert response.status_code == 200
+        payload = list(response.iter_lines())
+    payload_text = "\n".join(payload)
+    assert "event: scan.log" in payload_text
+    assert "event: scan.finished" in payload_text
+    assert (
+        f'"sequence": {api_app.state.progress_broker.latest_sequence}' in payload_text
+    )
+
+
+def test_sse_live_event_and_sequence_resume(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    broker = api_app.state.progress_broker
+
+    # Publish an event followed by scan.finished to close the stream cleanly
+    broker.publish("test.first", {"val": 1})
+    broker.publish("scan.finished", {"job_id": 1, "status": "done"})
+
+    with api_client.stream("GET", "/api/v1/events?until_finished=1") as response:
+        assert response.status_code == 200
+        first_payload = list(response.iter_lines())
+
+    first_text = "\n".join(first_payload)
+    assert "event: test.first" in first_text
+    assert "event: scan.finished" in first_text
+
+    # Record sequence before publishing second batch
+    resume_sequence = broker.latest_sequence
+
+    # Publish a second event followed by scan.finished
+    broker.publish("test.second", {"val": 2})
+    broker.publish("scan.finished", {"job_id": 2, "status": "done"})
+
+    # Connect with Last-Event-ID header to resume after resume_sequence
+    headers = {"last-event-id": str(resume_sequence)}
+    with api_client.stream(
+        "GET", "/api/v1/events?until_finished=1", headers=headers
+    ) as response:
+        assert response.status_code == 200
+        resumed_payload = list(response.iter_lines())
+
+    resumed_text = "\n".join(resumed_payload)
+    # The resumed stream must contain the fresh event but NOT the prior event
+    assert "event: test.second" in resumed_text
+    assert "event: test.first" not in resumed_text
+
+    # 3. Test live queue event dispatch during an active stream
+    def _publish_live() -> None:
+        time.sleep(0.05)
+        broker.publish("test.live", {"live": True})
+        time.sleep(0.05)
+        broker.publish("scan.finished", {"job_id": 3, "status": "done"})
+
+    live_thread = threading.Thread(target=_publish_live, daemon=True)
+    live_thread.start()
+
+    with api_client.stream(
+        "GET",
+        "/api/v1/events?until_finished=1",
+        headers={"last-event-id": str(broker.latest_sequence)},
+    ) as response:
+        assert response.status_code == 200
+        live_payload = list(response.iter_lines())
+
+    live_thread.join(timeout=1.0)
+    live_text = "\n".join(live_payload)
+    assert "event: test.live" in live_text
+    assert "event: scan.finished" in live_text
+
+
+def test_count_items_per_library_endpoint(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    libraries = api_client.get("/api/v1/libraries").json()
+    by_name = {entry["name"]: entry["counts"] for entry in libraries}
+    assert by_name["TV Shows"]["series"] == 0
+    assert all(value == 0 for counts in by_name.values() for value in counts.values())
+
+
+def test_static_files_served(api_client: TestClient) -> None:
+    response = api_client.get("/")
+    assert response.status_code == 200
+    assert "LAN Streamer" in response.text
+
+    for filename in ["style.css", "api.js", "app.js", "index.html"]:
+        static_response = api_client.get(f"/static/{filename}")
+        assert static_response.status_code == 200
+
+
+def test_serve_entrypoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import MagicMock
+
+    import uvicorn
+
+    from scan_agent import serve
+
+    serve._ensure_import_path()
+    mock_run = MagicMock()
+    monkeypatch.setattr(uvicorn, "run", mock_run)
+    monkeypatch.setattr("scan_agent.api.main.create_app", MagicMock())
+    serve.main()
+    assert mock_run.called
+
+
+def test_filesystem_browse_default(api_client: TestClient) -> None:
+    response = api_client.get("/api/v1/filesystem/browse")
+    assert response.status_code == 200
+    payload = response.json()
+    assert "current_path" in payload
+    assert "directories" in payload
+    assert "shortcuts" in payload
+    assert isinstance(payload["directories"], list)
+    assert isinstance(payload["shortcuts"], list)
+
+
+def test_filesystem_browse_custom_path(api_client: TestClient, tmp_path: Path) -> None:
+    first_folder = tmp_path / "SubfolderA"
+    second_folder = tmp_path / "SubfolderB"
+    hidden_folder = tmp_path / ".hidden_folder"
+    regular_file = tmp_path / "video.mkv"
+
+    first_folder.mkdir()
+    second_folder.mkdir()
+    hidden_folder.mkdir()
+    regular_file.write_text("dummy video content")
+
+    response = api_client.get(
+        "/api/v1/filesystem/browse", params={"path": str(tmp_path)}
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["current_path"] == str(tmp_path.resolve())
+
+    directory_names = [entry["name"] for entry in payload["directories"]]
+    assert "SubfolderA" in directory_names
+    assert "SubfolderB" in directory_names
+    assert ".hidden_folder" not in directory_names
+    assert "video.mkv" not in directory_names
+
+
+def test_filesystem_browse_nonexistent_path(api_client: TestClient) -> None:
+    response = api_client.get(
+        "/api/v1/filesystem/browse",
+        params={"path": "/nonexistent/directory/path/that/does/not/exist"},
+    )
+    assert response.status_code == 404
+    assert "Directory does not exist" in response.json()["detail"]

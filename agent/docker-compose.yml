@@ -1,0 +1,21 @@
+services:
+  scan-agent:
+    build:
+      context: ..
+      dockerfile: agent/Dockerfile
+    container_name: lan-streamer-scan-agent
+    restart: unless-stopped
+    ports:
+      - "8800:8800"
+    environment:
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+      - HOME=/data
+      - SCAN_AGENT_CONFIG=/data/config.json
+    volumes:
+      - ${MEDIA_ROOT:-/mnt/media}:/media:ro
+      - ${DATA_ROOT:-./data}:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8800/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
