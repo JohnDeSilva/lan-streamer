@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LAN Streamer — Scan Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="brand">
+            <h1>LAN Streamer</h1>
+            <span class="badge">Scan Agent</span>
+        </div>
+        <nav>
+            <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
+            <button class="nav-tab" data-tab="libraries">Libraries</button>
+            <button class="nav-tab" data-tab="scan">Scan Monitor</button>
+            <button class="nav-tab" data-tab="browse">Browse</button>
+            <button class="nav-tab" data-tab="config">Configuration</button>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Alert Box -->
+        <div id="globalAlert" style="display: none;"></div>
+
+        <!-- 1. Dashboard Tab -->
+        <section id="tab-dashboard" class="tab-pane active">
+            <h2>System Overview</h2>
+            <div class="card-grid">
+                <div class="card stat-card">
+                    <span class="stat-label">Agent Status</span>
+                    <span id="healthStatus" class="stat-value">Connecting...</span>
+                </div>
+                <div class="card stat-card">
+                    <span class="stat-label">Active Libraries</span>
+                    <span id="librariesCount" class="stat-value">0</span>
+                </div>
+                <div class="card stat-card">
+                    <span class="stat-label">TV Series</span>
+                    <span id="seriesCount" class="stat-value">0</span>
+                </div>
+                <div class="card stat-card">
+                    <span class="stat-label">Movies</span>
+                    <span id="moviesCount" class="stat-value">0</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Latest Scan Job</h3>
+                <div id="lastJobSummary" style="color: var(--text-secondary);">No scan recorded yet.</div>
+                <div style="margin-top: 1rem;">
+                    <button id="btnQuickScan" class="btn btn-primary">Scan All Libraries</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Configured Libraries</h3>
+                <div class="table-container">
+                    <table id="dashboardLibrariesTable">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Path</th>
+                                <th>Series / Movies</th>
+                                <th>Episodes / Files</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Libraries Tab -->
+        <section id="tab-libraries" class="tab-pane">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <h2>Media Libraries</h2>
+                <button id="btnOpenAddLibrary" class="btn btn-primary">+ Add Library</button>
+            </div>
+            <div class="card">
+                <div class="table-container">
+                    <table id="librariesTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Root Path</th>
+                                <th>Enabled</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. Scan Monitor Tab -->
+        <section id="tab-scan" class="tab-pane">
+            <h2>Scan Operations</h2>
+            <div class="card">
+                <h3>Trigger Scan</h3>
+                <div class="form-row">
+                    <div class="form-group" style="flex: 2;">
+                        <label for="scanLibrarySelect">Target Library</label>
+                        <select id="scanLibrarySelect" class="form-control">
+                            <option value="">All Libraries</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex: 2;">
+                        <label for="scanPassSelect">Pipeline Pass</label>
+                        <select id="scanPassSelect" class="form-control">
+                            <option value="0">All Passes (Full Scan: 1 + 2 + 3)</option>
+                            <option value="1">Pass 1 — File Discovery only</option>
+                            <option value="2">Pass 2 — Metadata Resolution only</option>
+                            <option value="3">Pass 3 — Technical Probing (ffprobe)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex: 1; padding-bottom: 0.6rem;">
+                        <label>
+                            <input type="checkbox" id="scanForceRefresh"> Force Refresh
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <button id="btnStartScan" class="btn btn-primary">Start Scan</button>
+                        <button id="btnCancelScan" class="btn btn-danger" disabled>Cancel Scan</button>
+                    </div>
+                </div>
+
+                <div id="activeScanStatus" style="margin-top: 1rem; display: none;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span id="scanProgressLabel" style="font-weight: 500;">Scanning in progress...</span>
+                        <span id="scanStatusBadge" class="status-tag status-running">Running</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div id="scanProgressBar" class="progress-bar"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Live Scanner Event Log</h3>
+                <div id="logConsole" class="log-console">Waiting for events...</div>
+            </div>
+
+            <div class="card">
+                <h3>Recent Scan Jobs</h3>
+                <div class="table-container">
+                    <table id="scanJobsTable">
+                        <thead>
+                            <tr>
+                                <th>Job ID</th>
+                                <th>Library</th>
+                                <th>Pass</th>
+                                <th>Status</th>
+                                <th>Started</th>
+                                <th>Finished</th>
+                                <th>Stats</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. Browse Tab -->
+        <section id="tab-browse" class="tab-pane">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <h2>Library Browser</h2>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button id="browseTypeSeries" class="btn btn-primary">TV Series</button>
+                    <button id="browseTypeMovies" class="btn btn-secondary">Movies</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="form-row">
+                    <div class="form-group" style="flex: 2;">
+                        <label for="browseSearch">Search</label>
+                        <input type="text" id="browseSearch" class="form-control" placeholder="Filter by title...">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label for="browseSort">Sort By</label>
+                        <select id="browseSort" class="form-control">
+                            <option value="name">Name (A-Z)</option>
+                            <option value="name_desc">Name (Z-A)</option>
+                            <option value="date_added_desc">Date Added (Newest)</option>
+                            <option value="year_desc">Year (Newest)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="mediaGrid" class="media-grid"></div>
+            </div>
+        </section>
+
+        <!-- 5. Config Tab -->
+        <section id="tab-config" class="tab-pane">
+            <h2>Agent Configuration</h2>
+            <div class="card" style="max-width: 700px;">
+                <form id="configForm">
+                    <div class="form-group">
+                        <label for="cfgTmdbApiKey">TheMovieDB (TMDB) API Key</label>
+                        <input type="text" id="cfgTmdbApiKey" class="form-control" placeholder="Paste TMDB v3 API Key">
+                    </div>
+                    <div class="form-group">
+                        <label for="cfgScanConcurrency">Scan Concurrency (Worker Threads: 1-32)</label>
+                        <input type="number" id="cfgScanConcurrency" class="form-control" min="1" max="32" value="8">
+                    </div>
+                    <div class="form-group">
+                        <label for="cfgOpenSubtitlesUsername">OpenSubtitles Username</label>
+                        <input type="text" id="cfgOpenSubtitlesUsername" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="cfgOpenSubtitlesPassword">OpenSubtitles Password</label>
+                        <input type="password" id="cfgOpenSubtitlesPassword" class="form-control" placeholder="Leave blank to keep current">
+                    </div>
+                    <div class="form-group">
+                        <label for="cfgOpenSubtitlesApiKey">OpenSubtitles API Key (Optional)</label>
+                        <input type="text" id="cfgOpenSubtitlesApiKey" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="cfgCacheDirectory">Image Cache Directory</label>
+                        <input type="text" id="cfgCacheDirectory" class="form-control">
+                    </div>
+                    <div style="margin-top: 1.5rem;">
+                        <button type="submit" class="btn btn-primary">Save Configuration</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal: Add / Edit Library -->
+    <div id="libraryModal" class="modal-backdrop">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 id="libraryModalTitle">Add Library</h3>
+                <button class="close-btn" data-close="libraryModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="libraryForm">
+                    <input type="hidden" id="libId">
+                    <div class="form-group">
+                        <label for="libName">Library Name</label>
+                        <input type="text" id="libName" class="form-control" required placeholder="e.g. TV Shows, Anime, Movies">
+                    </div>
+                    <div class="form-group">
+                        <label for="libMediaType">Media Type</label>
+                        <select id="libMediaType" class="form-control">
+                            <option value="tv">TV Shows (Series)</option>
+                            <option value="anime">Anime (Series)</option>
+                            <option value="movie">Movies</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="libRootPath">Storage Root Path</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="libRootPath" class="form-control" required placeholder="/media/tv">
+                            <button type="button" id="btnBrowseFolder" class="btn btn-secondary" style="white-space: nowrap;">📁 Browse...</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="libEnabled" checked> Enabled for scanning
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-close="libraryModal">Cancel</button>
+                <button id="btnSaveLibrary" class="btn btn-primary">Save Library</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Media Item Detail -->
+    <div id="mediaDetailModal" class="modal-backdrop">
+        <div class="modal-dialog" style="max-width: 950px;">
+            <div class="modal-header">
+                <h3 id="detailTitle">Media Details</h3>
+                <button class="close-btn" data-close="mediaDetailModal">&times;</button>
+            </div>
+            <div class="modal-body" id="detailContent">
+                <!-- Injected via app.js -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-close="mediaDetailModal">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: TMDB Search & Match -->
+    <div id="tmdbMatchModal" class="modal-backdrop">
+        <div class="modal-dialog" style="max-width: 750px;">
+            <div class="modal-header">
+                <h3>Match TMDB Metadata</h3>
+                <button class="close-btn" data-close="tmdbMatchModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row" style="margin-bottom: 1rem;">
+                    <div class="form-group" style="flex: 3;">
+                        <input type="text" id="tmdbSearchQuery" class="form-control" placeholder="Search TMDB title...">
+                    </div>
+                    <div class="form-group">
+                        <button id="btnTmdbSearch" class="btn btn-primary">Search</button>
+                    </div>
+                </div>
+                <div id="tmdbSearchResults" class="table-container" style="max-height: 400px; overflow-y: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>TMDB ID</th>
+                                <th>Title</th>
+                                <th>Year</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tmdbSearchResultsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-close="tmdbMatchModal">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Rename Preview & Apply -->
+    <div id="renameModal" class="modal-backdrop">
+        <div class="modal-dialog" style="max-width: 850px;">
+            <div class="modal-header">
+                <h3>File Renaming</h3>
+                <button class="close-btn" data-close="renameModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="renameTemplate">Naming Template</label>
+                    <input type="text" id="renameTemplate" class="form-control" value="{SeriesTitle} - S{SeasonNumber:02d}E{EpisodeNumber:02d} - {EpisodeTitle}">
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <button id="btnPreviewRename" class="btn btn-secondary">Refresh Preview</button>
+                </div>
+                <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                    <table id="renameTable">
+                        <thead>
+                            <tr>
+                                <th>Original Path</th>
+                                <th>New Name / Path</th>
+                            </tr>
+                        </thead>
+                        <tbody id="renameTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-close="renameModal">Cancel</button>
+                <button id="btnApplyRename" class="btn btn-primary">Apply Changes to Disk</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Folder Finder / Browser -->
+    <div id="folderBrowserModal" class="modal-backdrop">
+        <div class="modal-dialog" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3>Choose Storage Folder</h3>
+                <button class="close-btn" data-close="folderBrowserModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 0.75rem;">
+                    <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.35rem;">Quick Locations</div>
+                    <div id="folderShortcuts" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+                </div>
+                <div style="display: flex; gap: 8px; margin-bottom: 0.75rem; align-items: center;">
+                    <button type="button" id="btnFolderUp" class="btn btn-secondary btn-sm" title="Go up one directory" style="padding: 0.4rem 0.75rem;">⬆️ Up</button>
+                    <input type="text" id="folderCurrentPath" class="form-control" style="flex: 1;" placeholder="/">
+                    <button type="button" id="btnFolderGo" class="btn btn-secondary btn-sm" style="padding: 0.4rem 0.75rem;">Go</button>
+                </div>
+                <div id="folderListContainer" style="max-height: 320px; min-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-surface);">
+                    <ul id="folderList" style="list-style: none; padding: 0; margin: 0;">
+                        <!-- Dynamically populated folder items -->
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                <div id="selectedFolderDisplay" style="font-size: 0.85rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px;"></div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary" data-close="folderBrowserModal">Cancel</button>
+                    <button id="btnSelectFolder" class="btn btn-primary">Choose This Folder</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/static/app.js"></script>
+</body>
+</html>

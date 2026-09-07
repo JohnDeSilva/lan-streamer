@@ -33,6 +33,15 @@ This document establishes the repository-wide standards, architectural constrain
   - [system/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/system): Config manager, logging handler, backups, and updater.
   - [ui_views/](file:///home/sadmin/antigravity/lan-streamer/src/lan_streamer/ui_views): Desktop PySide6 QtWidgets view screens, stylesheet themes, and controllers.
 - [tests/](file:///home/sadmin/antigravity/lan-streamer/tests): Structured unit, integration, and end-to-end tests (minimum 90% code coverage target).
+- [agent/](file:///home/sadmin/Code/lan-streamer/agent): Remote Scan Agent package (FastAPI, SQLite, web UI, background scanning orchestration, Docker packaging).
+  - [src/scan_agent/](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent): Agent backend and API services.
+    - [api/](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/api): FastAPI REST routes (health, libraries, scan, browse, metadata, rename, subtitles, watch) and SSE event stream.
+    - [config.py](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/config.py): Agent configuration and desktop singleton bridge.
+    - [db/](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/db): Standalone agent models, connection, and repository.
+    - [scan/](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/scan): Scanning orchestrator and progress broker.
+    - [static/](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/static): Single-page web dashboard and management interface.
+  - [tests/](file:///home/sadmin/Code/lan-streamer/agent/tests): Unit and integration tests for scan agent.
+  - [Dockerfile](file:///home/sadmin/Code/lan-streamer/agent/Dockerfile), [docker-compose.yml](file:///home/sadmin/Code/lan-streamer/agent/docker-compose.yml): Container deployment configuration.
 
 ---
 

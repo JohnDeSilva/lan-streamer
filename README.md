@@ -486,5 +486,37 @@ These status badges show the build status of the pre-compiled, standalone execut
 
 [![RC Windows](https://img.shields.io/github/actions/workflow/status/JohnDeSilva/lan-streamer/executable.yml?label=RC%20Executable%20Windows)](https://github.com/JohnDeSilva/lan-streamer/actions/workflows/executable.yml)
 
+---
+
+## 🤖 Remote Scan Agent (Docker / Headless)
+
+LAN Streamer includes a standalone, remote scanning agent (`agent/`) designed to run directly on your storage server / NAS within a Docker container.
+
+### Highlights
+- **Storage-Colocated Scanning**: Runs filesystem discovery, TMDB metadata resolution, OpenSubtitles downloading, media file renaming, and technical analysis (`ffprobe`) locally on your storage server without loading the desktop client.
+- **Web Interface**: Includes a responsive web management SPA (port `8800`) with tabs for Dashboard, Libraries, Real-Time Scan Monitor (with live Server-Sent Events log streaming), Library Browser, and Configuration.
+- **REST API (`/api/v1`)**: Exposes typed endpoints for health checks, multi-library configuration, background scan management, TMDB metadata searching & matching, filename preview & renaming, subtitles, and desktop client watch-state sync.
+- **Streaming Compatibility**: Preserves original media streaming behavior — media files remain accessible at predictable paths over SMB/NFS mounts for direct VLC playback by the desktop client.
+
+### Quick Start with Docker
+```bash
+cd agent
+# Run with docker compose (mounts storage at /media and persistent data at /data)
+MEDIA_ROOT=/mnt/media TMDB_API_KEY=your_key docker compose up -d
+```
+Access the web dashboard at `http://<server-ip>:8800`.
+
+### Running & Testing Locally
+```bash
+# Run agent locally
+make agent-run
+
+# Run agent unit & integration test suite (enforces >=90% code coverage)
+make agent-test
+
+# Run agent linting & type checks
+make agent-lint
+```
+
 ## 📜 License
 MIT License. See [LICENSE](LICENSE) for details.
