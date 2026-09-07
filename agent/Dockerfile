@@ -20,14 +20,14 @@ WORKDIR /app
 
 # Copy dependency files and install agent dependencies
 COPY agent/pyproject.toml agent/uv.lock* /app/agent/
-RUN cd /app/agent && (uv sync --frozen --no-install-project 2>/dev/null || uv sync --no-install-project)
+RUN uv --directory /app/agent sync --frozen --no-install-project 2>/dev/null || uv --directory /app/agent sync --no-install-project
 
 # Copy source trees
 COPY src/ /app/src/
 COPY agent/src/ /app/agent/src/
 
 # Install the agent project itself
-RUN cd /app/agent && uv pip install --no-deps -e .
+RUN uv --directory /app/agent pip install --no-deps -e .
 
 EXPOSE 8800
 
@@ -35,6 +35,6 @@ EXPOSE 8800
 VOLUME ["/media", "/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8800/api/v1/health || exit 1
+    CMD ["curl", "-f", "http://localhost:8800/api/v1/health"]
 
 ENTRYPOINT ["uv", "run", "--project", "/app/agent", "python", "-m", "scan_agent.serve"]

@@ -48,6 +48,7 @@ class Config:
     # load_from_db (to fill in missing rows on first run).
     _DB_DEFAULTS: ClassVar[dict[str, Any]] = {
         "libraries": {},
+        "scan_agents": {},
         "sync_history_on_start": True,
         "filter_out_watched": False,
         "sort_mode": "Alphabetical",
@@ -279,7 +280,15 @@ class Config:
                     )
 
             # Assign general settings from the fully populated dictionary
-            self.libraries = config_dict["libraries"]
+            raw_libraries = config_dict.get("libraries", {})
+            normalized_libraries: dict[str, dict[str, Any]] = {}
+            for library_name, library_configuration in raw_libraries.items():
+                normalized_configuration = dict(library_configuration)
+                if "management_type" not in normalized_configuration:
+                    normalized_configuration["management_type"] = "local"
+                normalized_libraries[library_name] = normalized_configuration
+            self.libraries = normalized_libraries
+            self.scan_agents = config_dict.get("scan_agents", {})
             self.sync_history_on_start = config_dict["sync_history_on_start"]
             self.filter_out_watched = config_dict["filter_out_watched"]
             self.sort_mode = config_dict["sort_mode"]
@@ -363,6 +372,7 @@ class Config:
 
             # General settings
             set_app_config("libraries", self.libraries)
+            set_app_config("scan_agents", self.scan_agents)
             set_app_config("sync_history_on_start", self.sync_history_on_start)
             set_app_config("filter_out_watched", self.filter_out_watched)
             set_app_config("sort_mode", self.sort_mode)
@@ -472,6 +482,22 @@ class Config:
     @backup_directory.setter
     def backup_directory(self, val: str) -> None:
         self._backup_directory = str(Path(val).expanduser().absolute())
+
+    def get_local_libraries(self) -> dict[str, dict[str, Any]]:
+        """Return subset of libraries that are locally managed."""
+        return {
+            library_name: library_configuration
+            for library_name, library_configuration in self.libraries.items()
+            if library_configuration.get("management_type", "local") == "local"
+        }
+
+    def get_remote_libraries(self) -> dict[str, dict[str, Any]]:
+        """Return subset of libraries that are remotely managed by a scan agent."""
+        return {
+            library_name: library_configuration
+            for library_name, library_configuration in self.libraries.items()
+            if library_configuration.get("management_type", "local") == "remote"
+        }
 
 
 config = Config()
