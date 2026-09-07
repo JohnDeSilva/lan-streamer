@@ -1,0 +1,81 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "scan-agent"
+version = "0.1.0"
+description = "Remote scan agent for lan-streamer — scanning, metadata resolution, and library database"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "sqlalchemy>=2.0.52",
+    "pydantic>=2.0.0",
+    "requests>=2.34.2",
+    "aiohttp>=3.14.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.28.0",
+    "ruff>=0.16.3",
+    "mypy>=2.3.0",
+    "types-requests>=2.33.0.20260712",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["../src", "src"]
+addopts = "--cov=scan_agent --cov-report=term-missing"
+filterwarnings = [
+    "error",
+    "ignore::ResourceWarning",
+    "ignore::starlette.exceptions.StarletteDeprecationWarning",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated.*:DeprecationWarning",
+]
+testpaths = ["tests"]
+
+[tool.mypy]
+ignore_missing_imports = true
+warn_unused_ignores = true
+strict_optional = true
+check_untyped_defs = true
+disable_error_code = ["method-assign", "return-value", "var-annotated", "no-redef"]
+
+[[tool.mypy.overrides]]
+module = "scan_agent.*"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[tool.ruff]
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "SIM", "BLE", "TRY400", "TRY401", "TRY201", "TRY002", "TRY203", "DTZ", "S110", "S112", "RUF", "PLC0206", "PLC0207", "PLR0402", "PLR1714", "PLR1730", "PLR5501", "PLW0108", "PLW0603", "PLW1510", "PLW2901", "B", "C4", "PIE", "RSE", "FURB", "ASYNC109", "ASYNC110", "ASYNC230", "ASYNC240", "LOG", "PYI", "RET", "W", "ISC", "PGH", "TID", "T10", "A", "C90", "ERA", "EXE", "FA", "FLY", "IC", "INP", "INT", "NPY", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR0917", "PT", "Q", "SLOT", "TCH", "TD", "TYP", "YTT"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
+
+[tool.ruff.lint.pylint]
+max-args = 10
+max-branches = 30
+max-positional-args = 10
+max-returns = 8
+max-statements = 100
+
+[tool.ruff.lint.mccabe]
+max-complexity = 30
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**/*.py" = ["INP001"]
+"src/scan_agent/api/deps.py" = ["TC002"]
+"src/scan_agent/api/routes_*.py" = ["TC001"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scan_agent"]
