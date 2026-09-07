@@ -895,7 +895,17 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         """
         libraries_dictionary: dict[str, dict[str, Any]] = config.libraries
         tasks = []
+        tree: dict[str, Any] = {}
         for library_name, library_configuration in libraries_dictionary.items():
+            if library_configuration.get("management_type", "local") == "remote":
+                logger.info(
+                    f"Skipping local filesystem scan for remote library '{library_name}' (managed by scan agent)."
+                )
+                tree[library_name] = {
+                    "type": library_configuration.get("type", "tv"),
+                    "roots": {},
+                }
+                continue
             existing_data = library_data_by_name.get(library_name, {})
             coro = run_in_fs_executor(
                 self._discover_single_library_tree,
@@ -905,7 +915,6 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             )
             tasks.append((asyncio.create_task(coro), library_name))
 
-        tree: dict[str, Any] = {}
         for task, library_name in tasks:
             try:
                 tree[library_name] = await task
@@ -1081,6 +1090,8 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
             library_configuration,
         ) in libraries_dictionary.items():
             if library_name in failed_libraries:
+                continue
+            if library_configuration.get("management_type", "local") == "remote":
                 continue
             coro = run_in_executor(
                 self._scan_library_pass,

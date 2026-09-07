@@ -312,9 +312,11 @@ This keeps the desktop code byte-for-byte untouched in Phase 1.
 
 Order matters — the desktop must remain fully functional each step:
 
-1. **Phase A (read-only adoption):** Desktop reads library/browse data from the
-   agent REST API while keeping its own DB as cache/fallback. Scanner still
-   available locally.
+1. **Phase A (Local vs Remote Library Architecture & Read-Only Adoption):**
+   - **Library `management_type`**: Each library configured on the desktop is explicitly designated as `"local"` (managed and scanned by the desktop filesystem scanner) or `"remote"` (managed by an agent). Existing libraries default to `"local"`.
+   - **Multiple Scan Agents**: Desktop Settings ("Remote API's" tab) allows configuring 1 or more Scan Agent URLs, testing connectivity (`GET /api/v1/health`), and querying remote libraries (`GET /api/v1/libraries`).
+   - **Path & Mount Point Mapping**: Remote libraries keep local mount paths (`paths` in SMB/NFS mount points) so local VLC playback continues without changing the streaming model.
+   - **Decoupled Local Scanning**: Desktop scanner (`ScanAllLibrariesWorker`) skips local filesystem walks on remote libraries, preventing spurious inotify alerts and redundant local scans.
 2. **Phase B (agent-authoritative scan):** Desktop defers all scans to the agent;
    local `scanner/` removed from the desktop path.
 3. **Phase C (stream via agent):** optional HTTP range streaming from the agent
