@@ -80,6 +80,7 @@ def test_config_load_existing(mock_config_file) -> None:
     assert config2.libraries == {
         "TestLib": {
             "type": "tv",
+            "management_type": "local",
             "paths": ["/path/to/test"],
             "show_future_episodes": True,
         }
@@ -330,3 +331,63 @@ def test_config_initialization_with_custom_file(tmp_path) -> None:
         # Save config file, verifying it generates the file in the new location
         config.save()
         assert custom_config_path.exists()
+
+
+def test_config_library_management_type_default(mock_config_file) -> None:
+    config = Config()
+    config.libraries = {
+        "LocalSeries": {
+            "type": "tv",
+            "paths": ["/media/tv"],
+            "show_future_episodes": True,
+        }
+    }
+    config.save_to_db()
+
+    reloaded_config = Config()
+    reloaded_config.load_from_db()
+    assert reloaded_config.libraries["LocalSeries"]["management_type"] == "local"
+
+
+def test_config_library_management_type_remote_and_scan_agents(
+    mock_config_file,
+) -> None:
+    config = Config()
+    config.scan_agents = {
+        "http://127.0.0.1:8800": {
+            "name": "NAS Storage Agent",
+            "url": "http://127.0.0.1:8800",
+            "api_key": "secret-agent-key",
+        }
+    }
+    config.libraries = {
+        "LocalSeries": {
+            "type": "tv",
+            "management_type": "local",
+            "paths": ["/local/media/tv"],
+        },
+        "RemoteSeries": {
+            "type": "tv",
+            "management_type": "remote",
+            "agent_url": "http://127.0.0.1:8800",
+            "remote_library_id": "lib-tv-01",
+            "remote_root_path": "/storage/tv",
+            "paths": ["/mnt/nas/tv"],
+        },
+    }
+    config.save_to_db()
+
+    reloaded_config = Config()
+    reloaded_config.load_from_db()
+
+    assert "http://127.0.0.1:8800" in reloaded_config.scan_agents
+    assert (
+        reloaded_config.scan_agents["http://127.0.0.1:8800"]["name"]
+        == "NAS Storage Agent"
+    )
+    assert reloaded_config.libraries["LocalSeries"]["management_type"] == "local"
+    assert reloaded_config.libraries["RemoteSeries"]["management_type"] == "remote"
+    assert (
+        reloaded_config.libraries["RemoteSeries"]["remote_root_path"] == "/storage/tv"
+    )
+    assert reloaded_config.libraries["RemoteSeries"]["paths"] == ["/mnt/nas/tv"]

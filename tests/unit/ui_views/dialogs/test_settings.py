@@ -201,3 +201,55 @@ def test_settings_dialog_scan_report_view(qtbot) -> None:
     assert "*** SCAN COMPLETED ***" in dialog.scan_report_display.toPlainText()
 
     dialog.reject()
+
+
+def test_settings_dialog_add_local_and_remote_library(qtbot) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    # 1. Create a local library
+    dialog.library_name_input.setText("Local Anime")
+    dialog.library_type_input.setCurrentText("Anime")
+    dialog.library_management_type_input.setCurrentText("Local")
+    dialog.add_staged_library()
+
+    assert "Local Anime" in dialog.staged_libraries
+    assert dialog.staged_libraries["Local Anime"]["type"] == "anime"
+    assert dialog.staged_libraries["Local Anime"]["management_type"] == "local"
+
+    # 2. Create a remote library
+    dialog.library_name_input.setText("NAS TV")
+    dialog.library_type_input.setCurrentText("TV Shows")
+    dialog.library_management_type_input.setCurrentText("Remote (Agent)")
+    dialog.add_staged_library()
+
+    assert "NAS TV" in dialog.staged_libraries
+    assert dialog.staged_libraries["NAS TV"]["type"] == "tv"
+    assert dialog.staged_libraries["NAS TV"]["management_type"] == "remote"
+
+    dialog.reject()
+
+
+def test_settings_dialog_scan_agents_management(qtbot) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    # Add a scan agent
+    dialog.scan_agent_name_input.setText("Primary NAS Agent")
+    dialog.scan_agent_url_input.setText("http://127.0.0.1:8800")
+    dialog.add_staged_scan_agent()
+
+    assert "http://127.0.0.1:8800" in dialog.staged_scan_agents
+    assert (
+        dialog.staged_scan_agents["http://127.0.0.1:8800"]["name"]
+        == "Primary NAS Agent"
+    )
+
+    # Remove scan agent
+    dialog.scan_agent_selector.setCurrentText(
+        "Primary NAS Agent (http://127.0.0.1:8800)"
+    )
+    dialog.remove_staged_scan_agent()
+    assert "http://127.0.0.1:8800" not in dialog.staged_scan_agents
+
+    dialog.reject()

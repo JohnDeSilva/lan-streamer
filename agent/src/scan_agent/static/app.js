@@ -88,7 +88,7 @@ async function loadDashboard() {
             const job = jobs[0];
             const stats = job.stats || {};
             lastJobSummary.innerHTML = `
-                <div><strong>Status:</strong> <span class="status-tag status-${job.status}">${job.status}</span> &nbsp;|&nbsp; 
+                <div><strong>Status:</strong> <span class="status-tag status-${job.status}">${job.status}</span> &nbsp;|&nbsp;
                 <strong>Pass:</strong> ${job.pass_number} &nbsp;|&nbsp;
                 <strong>Finished:</strong> ${job.finished_at || "In progress"}</div>
                 <div style="margin-top: 0.5rem; font-size: 0.85rem;">
