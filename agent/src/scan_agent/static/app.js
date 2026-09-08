@@ -2,6 +2,7 @@
  * Main Single Page Application controller for LAN Streamer Scan Agent.
  */
 import { api } from "./api.js";
+import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep } from "./logic.js";
 
 // State
 let currentTab = "dashboard";
@@ -36,17 +37,6 @@ function closeModal(modalId) {
     if (modal) {
         modal.classList.remove("open");
     }
-}
-
-function getPosterUrl(posterPath) {
-    if (!posterPath) return "";
-    if (posterPath.startsWith("http://") || posterPath.startsWith("https://")) {
-        return posterPath;
-    }
-    if (posterPath.startsWith("/") && !posterPath.includes("/", 1)) {
-        return `https://image.tmdb.org/t/p/w500${posterPath}`;
-    }
-    return `/api/v1/images/poster?path=${encodeURIComponent(posterPath)}`;
 }
 
 // Tab Switching
@@ -234,28 +224,16 @@ function initSSE() {
 
     activeEventSource.addEventListener("scan.progress", (event) => {
         try {
-            const payload = JSON.parse(event.data);
             const progressLabel = document.getElementById("scanProgressLabel");
             const progressBar = document.getElementById("scanProgressBar");
-            if (payload.type === "library_start") {
-                progressLabel.textContent = `Scanning library: ${payload.library}...`;
-                progressBar.style.width = "10%";
-            } else if (payload.type === "start_offline_scan" || (payload.type === "pass_start" && payload.pass === 1)) {
-                progressLabel.textContent = `Pass 1: Discovering files...`;
-                progressBar.style.width = "30%";
-            } else if (payload.type === "start_metadata_resolution" || (payload.type === "pass_start" && payload.pass === 2)) {
-                progressLabel.textContent = `Pass 2: Resolving metadata...`;
-                progressBar.style.width = "60%";
-            } else if (payload.type === "start_technical_probe" || (payload.type === "pass_start" && payload.pass === 3)) {
-                progressLabel.textContent = `Pass 3: Probing technical properties (ffprobe)...`;
-                progressBar.style.width = "85%";
-            } else if (payload.type === "season_finished") {
-                progressLabel.textContent = `Scanned ${payload.series} - ${payload.season}`;
-            } else if (payload.type === "movie_finished") {
-                progressLabel.textContent = `Scanned ${payload.movie}`;
-            } else if (payload.type === "library_finished") {
-                progressLabel.textContent = `Finished library: ${payload.library}`;
-                progressBar.style.width = "100%";
+            const step = parseScanProgressStep(event.data);
+            if (step) {
+                if (step.label !== null) {
+                    progressLabel.textContent = step.label;
+                }
+                if (step.widthPercent !== null) {
+                    progressBar.style.width = `${step.widthPercent}%`;
+                }
             }
         } catch {
             // Ignore parse errors
@@ -739,11 +717,6 @@ async function saveConfig(event) {
 // -------------------------------------------------------------
 // Initialization & Global Event Listeners
 // -------------------------------------------------------------
-function escapeHtml(str) {
-    if (!str) return "";
-    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
 document.addEventListener("DOMContentLoaded", () => {
     // Navigation
     document.querySelectorAll(".nav-tab").forEach((btn) => {
@@ -925,11 +898,3 @@ document.addEventListener("DOMContentLoaded", () => {
     // Initial load
     loadDashboard();
 });
-
-function debounce(func, wait) {
-    let timeout;
-    return function (...args) {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(this, args), wait);
-    };
-}

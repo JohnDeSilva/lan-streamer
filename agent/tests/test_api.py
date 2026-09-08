@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from pathlib import Path
@@ -585,7 +586,7 @@ def test_static_files_served(api_client: TestClient) -> None:
     assert response.status_code == 200
     assert "LAN Streamer" in response.text
 
-    for filename in ["style.css", "api.js", "app.js", "index.html"]:
+    for filename in ["style.css", "logic.js", "api.js", "app.js", "index.html"]:
         static_response = api_client.get(f"/static/{filename}")
         assert static_response.status_code == 200
 
@@ -598,6 +599,7 @@ def test_serve_entrypoint(monkeypatch: pytest.MonkeyPatch) -> None:
     from scan_agent import serve
 
     serve._ensure_import_path()
+    monkeypatch.setattr(sys, "argv", ["scan-agent"])
     mock_run = MagicMock()
     monkeypatch.setattr(uvicorn, "run", mock_run)
     monkeypatch.setattr("scan_agent.api.main.create_app", MagicMock())
