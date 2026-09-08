@@ -877,19 +877,226 @@ def test_controller_sync_remote_library(mock_controller) -> None:
         }
     }
     remote_data = {"Show A": {"name": "Show A", "seasons": {}}}
+    from lan_streamer.backend.remote_sync_worker import (
+        sync_remote_library_from_agent,
+    )
+
     with patch(
         "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
         return_value=remote_data,
     ) as mock_fetch:
         mock_controller._db.save_library = MagicMock()
-        mock_controller._db.load_library = MagicMock(return_value=remote_data)
-        success = mock_controller.sync_remote_library("Remote TV")
-        assert success is True
+        result = sync_remote_library_from_agent(
+            "Remote TV",
+            mock_controller._config.libraries["Remote TV"],
+            mock_controller._db,
+        )
+        assert result["success"] is True
+        assert result["items"] == 1
         mock_fetch.assert_called_once_with("http://127.0.0.1:8800", "remote-tv-1")
         mock_controller._db.save_library.assert_called_once_with(
             "Remote TV", remote_data
         )
-        assert "Show A" in mock_controller.cached_library_data
+
+
+def test_controller_sync_remote_library_missing_agent_url(mock_controller) -> None:
+    from lan_streamer.backend.remote_sync_worker import (
+        sync_remote_library_from_agent,
+    )
+
+    result = sync_remote_library_from_agent("Remote TV", {}, mock_controller._db)
+    assert result["success"] is False
+    assert result["error"] == "No agent URL configured"
+
+
+def test_controller_sync_remote_library_fetch_failure(mock_controller) -> None:
+    mock_controller._config.libraries = {
+        "Remote TV": {
+            "management_type": "remote",
+            "type": "tv",
+            "agent_url": "http://127.0.0.1:8800",
+        }
+    }
+    from lan_streamer.backend.remote_sync_worker import (
+        sync_remote_library_from_agent,
+    )
+    from lan_streamer.services.scan_agent_client import ScanAgentConnectionError
+
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+        side_effect=ScanAgentConnectionError("agent unreachable"),
+    ):
+        result = sync_remote_library_from_agent(
+            "Remote TV",
+            mock_controller._config.libraries["Remote TV"],
+            mock_controller._db,
+        )
+    assert result["success"] is False
+    assert "agent unreachable" in result["error"]
+    mock_controller._db.save_library.assert_not_called()
+
+
+def test_controller_sync_remote_library_downloads_movie_and_season_posters(
+    mock_controller,
+) -> None:
+    mock_controller._config.libraries = {
+        "Remote TV": {
+            "management_type": "remote",
+            "type": "tv",
+            "agent_url": "http://127.0.0.1:8800",
+        },
+        "Remote Movies": {
+            "management_type": "remote",
+            "type": "movie",
+            "agent_url": "http://127.0.0.1:8800",
+        },
+    }
+    remote_tv_content = {
+        "Show A": {
+            "name": "Show A",
+            "metadata": {"poster_path": "/remote/show.jpg"},
+            "seasons": {
+                "Season 1": {"metadata": {"poster_path": "/remote/season.jpg"}}
+            },
+        }
+    }
+    remote_movie_content = {
+        "Movie A": {"name": "Movie A", "poster_path": "/remote/movie.jpg"}
+    }
+    from lan_streamer.backend.remote_sync_worker import (
+        sync_remote_library_from_agent,
+    )
+
+    with (
+        patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            side_effect=lambda agent_url, identifier: (
+                remote_tv_content if identifier == "Remote TV" else remote_movie_content
+            ),
+        ),
+        patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.download_poster",
+            side_effect=lambda agent_url, poster_path: f"/local-cache{poster_path}",
+        ),
+    ):
+        tv_result = sync_remote_library_from_agent(
+            "Remote TV",
+            mock_controller._config.libraries["Remote TV"],
+            mock_controller._db,
+        )
+        assert tv_result["success"] is True
+        assert (
+            remote_tv_content["Show A"]["metadata"]["poster_path"]
+            == "/local-cache/remote/show.jpg"
+        )
+        assert (
+            remote_tv_content["Show A"]["seasons"]["Season 1"]["metadata"][
+                "poster_path"
+            ]
+            == "/local-cache/remote/season.jpg"
+        )
+
+        movie_result = sync_remote_library_from_agent(
+            "Remote Movies",
+            mock_controller._config.libraries["Remote Movies"],
+            mock_controller._db,
+        )
+        assert movie_result["success"] is True
+        assert (
+            remote_movie_content["Movie A"]["poster_path"]
+            == "/local-cache/remote/movie.jpg"
+        )
+    mock_controller._db.save_library.assert_called_once()
+    mock_controller._db.save_movie_library.assert_called_once()
+
+
+def test_controller_sync_remote_library_queues_background_worker(
+    mock_controller,
+) -> None:
+    mock_controller._config.libraries = {
+        "Remote TV": {
+            "management_type": "remote",
+            "type": "tv",
+            "agent_url": "http://127.0.0.1:8800",
+            "remote_library_id": "remote-tv-1",
+        }
+    }
+    with patch.object(mock_controller, "_queue_remote_sync") as mock_queue:
+        assert (
+            mock_controller.sync_remote_library("Remote TV", emit_signal=False) is True
+        )
+        mock_queue.assert_called_once_with("Remote TV", emit_signal=False)
+
+
+def test_controller_sync_remote_library_non_remote_returns_false(
+    mock_controller,
+) -> None:
+    mock_controller._config.libraries = {
+        "Local TV": {"management_type": "local", "type": "tv", "paths": []}
+    }
+    with patch.object(mock_controller, "_queue_remote_sync") as mock_queue:
+        assert mock_controller.sync_remote_library("Local TV") is False
+        mock_queue.assert_not_called()
+
+
+def test_controller_remote_sync_queues_deduplicate(mock_controller) -> None:
+    mock_controller._config.libraries = {
+        "Remote TV": {
+            "management_type": "remote",
+            "type": "tv",
+            "agent_url": "http://127.0.0.1:8800",
+        }
+    }
+    with patch.object(mock_controller, "_drain_remote_sync_queue") as mock_drain:
+        mock_controller._queue_remote_sync("Remote TV", emit_signal=False)
+        mock_controller._queue_remote_sync("Remote TV", emit_signal=True)
+        mock_drain.assert_called_once()
+    assert list(mock_controller._remote_sync_queue) == ["Remote TV"]
+    assert mock_controller._remote_sync_emit_signal["Remote TV"] is False
+    assert "Remote TV" in mock_controller._remote_sync_scheduled
+
+
+def test_controller_remote_sync_finished_success_reloads_tab(
+    mock_controller,
+) -> None:
+    mock_controller.current_tab_name = "Remote TV"
+    mock_controller._config.get_tab_libraries = MagicMock(return_value=["Remote TV"])
+    mock_controller._config.libraries = {
+        "Remote TV": {
+            "management_type": "remote",
+            "type": "tv",
+            "agent_url": "http://127.0.0.1:8800",
+        }
+    }
+    loaded_signal_received: list[bool] = []
+    mock_controller.library_loaded.connect(lambda: loaded_signal_received.append(True))
+    mock_controller._queue_remote_sync("Remote TV", emit_signal=True)
+
+    with patch.object(mock_controller, "_load_tab_library_data") as mock_load:
+        mock_controller._on_remote_sync_finished(
+            {"library_name": "Remote TV", "success": True, "items": 3},
+            "Remote TV",
+        )
+    mock_load.assert_called_once_with(["Remote TV"], trigger_remote_sync=False)
+    assert loaded_signal_received == [True]
+    assert "Remote TV" not in mock_controller._remote_sync_scheduled
+
+
+def test_controller_remote_sync_finished_failure_no_reload(mock_controller) -> None:
+    mock_controller.current_tab_name = "Remote TV"
+    mock_controller._config.get_tab_libraries = MagicMock(return_value=["Remote TV"])
+    with patch.object(mock_controller, "_reload_current_tab_data") as mock_reload:
+        mock_controller._on_remote_sync_finished(
+            {
+                "library_name": "Remote TV",
+                "success": False,
+                "items": 0,
+                "error": "boom",
+            },
+            "Remote TV",
+        )
+    mock_reload.assert_not_called()
+    assert "Remote TV" not in mock_controller._remote_sync_scheduled
 
 
 def test_controller_switch_library_auto_syncs_remote_when_empty(
@@ -904,9 +1111,9 @@ def test_controller_switch_library_auto_syncs_remote_when_empty(
         }
     }
     mock_controller._db.load_library = MagicMock(return_value={})
-    with patch.object(mock_controller, "sync_remote_library") as mock_sync:
+    with patch.object(mock_controller, "_queue_remote_sync") as mock_queue:
         mock_controller.select_library("Remote TV")
-        mock_sync.assert_called_once_with("Remote TV", emit_signal=False)
+        mock_queue.assert_called_once_with("Remote TV", emit_signal=True)
 
 
 def test_controller_trigger_scan_remote_library(mock_controller) -> None:
@@ -919,11 +1126,15 @@ def test_controller_trigger_scan_remote_library(mock_controller) -> None:
         }
     }
     mock_controller.current_library_name = "Remote TV"
-    with patch.object(
-        mock_controller, "sync_remote_library", return_value=True
-    ) as mock_sync:
+    with patch.object(mock_controller, "_queue_remote_sync") as mock_queue:
         mock_controller.trigger_scan()
-        mock_sync.assert_called_once_with("Remote TV")
+        mock_queue.assert_called_once_with(
+            "Remote TV",
+            emit_signal=True,
+            success_message=("Remote library 'Remote TV' synced successfully."),
+            failure_message=("Failed to sync remote library 'Remote TV'."),
+            emit_scan_completed=True,
+        )
 
 
 def test_controller_select_tab_consolidates_multiple_libraries(
@@ -1152,23 +1363,41 @@ def test_controller_select_tab_syncs_remote_movie_library(mock_controller) -> No
     mock_controller._db.load_movie_library = MagicMock(side_effect=mock_load_movie)
     mock_controller._db.save_movie_library = MagicMock(side_effect=mock_save_movie)
 
-    with patch(
-        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
-        return_value=remote_movie_content,
-    ) as mock_fetch_items:
+    from lan_streamer.backend.remote_sync_worker import (
+        sync_remote_library_from_agent,
+    )
+
+    with (
+        patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            return_value=remote_movie_content,
+        ) as mock_fetch_items,
+        patch.object(mock_controller, "_drain_remote_sync_queue") as mock_drain,
+    ):
         loaded_signal_received: list[bool] = []
         mock_controller.library_loaded.connect(
             lambda: loaded_signal_received.append(True)
         )
 
         mock_controller.select_tab("Remote Movies")
+        # The sync is queued, not fetched synchronously on the UI thread.
+        mock_fetch_items.assert_not_called()
+        mock_drain.assert_called_once()
+        assert "Inception" not in mock_controller.cached_library_data
 
-        assert mock_fetch_items.called
+        sync_result = sync_remote_library_from_agent(
+            "Remote Movies",
+            mock_controller._config.libraries["Remote Movies"],
+            mock_controller._db,
+        )
+        assert sync_result["success"] is True
+        mock_controller._on_remote_sync_finished(sync_result, "Remote Movies")
+
         assert "Inception" in mock_controller.cached_library_data
         inception_data = mock_controller.cached_library_data["Inception"]
         assert inception_data["metrics"]["total_episodes"] == 1
         assert "seasons" not in inception_data
-        assert len(loaded_signal_received) == 1
+        assert len(loaded_signal_received) == 2
 
 
 def test_controller_select_tab_syncs_remote_tv_library(mock_controller) -> None:
@@ -1214,20 +1443,38 @@ def test_controller_select_tab_syncs_remote_tv_library(mock_controller) -> None:
     mock_controller._db.load_library = MagicMock(side_effect=mock_load_tv)
     mock_controller._db.save_library = MagicMock(side_effect=mock_save_tv)
 
-    with patch(
-        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
-        return_value=remote_tv_content,
-    ) as mock_fetch_items:
+    from lan_streamer.backend.remote_sync_worker import (
+        sync_remote_library_from_agent,
+    )
+
+    with (
+        patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            return_value=remote_tv_content,
+        ) as mock_fetch_items,
+        patch.object(mock_controller, "_drain_remote_sync_queue") as mock_drain,
+    ):
         loaded_signal_received: list[bool] = []
         mock_controller.library_loaded.connect(
             lambda: loaded_signal_received.append(True)
         )
 
         mock_controller.select_tab("Remote TV")
+        # The sync is queued, not fetched synchronously on the UI thread.
+        mock_fetch_items.assert_not_called()
+        mock_drain.assert_called_once()
+        assert "Steins;Gate" not in mock_controller.cached_library_data
 
-        assert mock_fetch_items.called
+        sync_result = sync_remote_library_from_agent(
+            "Remote TV",
+            mock_controller._config.libraries["Remote TV"],
+            mock_controller._db,
+        )
+        assert sync_result["success"] is True
+        mock_controller._on_remote_sync_finished(sync_result, "Remote TV")
+
         assert "Steins;Gate" in mock_controller.cached_library_data
         series_data = mock_controller.cached_library_data["Steins;Gate"]
         assert series_data["metrics"]["total_episodes"] == 1
         assert "seasons" in series_data
-        assert len(loaded_signal_received) == 1
+        assert len(loaded_signal_received) == 2
