@@ -564,6 +564,9 @@ Start the container:
 docker compose up -d
 ```
 
+> [!TIP]
+> **Testing Pre-releases**: Replace `:latest` with `:rc` to run the latest Release Candidate build (`image: ghcr.io/johndesilva/lan-streamer-agent:rc`), or specify a pinned pre-release version tag (e.g., `:1.5.0rc1`).
+
 #### Build from Source with Docker Compose
 From the repository root, build and run the agent container:
 ```bash
