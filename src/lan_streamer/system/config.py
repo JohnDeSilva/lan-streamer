@@ -1,6 +1,7 @@
 import copy
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -373,24 +374,7 @@ class Config:
                     "Split %d multi-root libraries into separate single-root libraries",
                     len(split_records),
                 )
-                try:
-                    from lan_streamer.db.library import (
-                        reassign_library_items_by_root_path,
-                    )
-
-                    for old_name, new_name, root_path in split_records:
-                        reassign_library_items_by_root_path(
-                            old_name, new_name, root_path
-                        )
-                        for tab_entry in self.tabs:
-                            if old_name in tab_entry.get(
-                                "libraries", []
-                            ) and new_name not in tab_entry.get("libraries", []):
-                                tab_entry["libraries"].append(new_name)
-                except Exception:
-                    logger.exception(
-                        "Database reassignment during library split failed"
-                    )
+                self._reassign_split_libraries(split_records)
             self.scan_agents = config_dict.get("scan_agents", {})
             self.sync_history_on_start = config_dict["sync_history_on_start"]
             self.filter_out_watched = config_dict["filter_out_watched"]
@@ -476,6 +460,50 @@ class Config:
         except Exception:
             logger.exception("Error loading DB-backed config settings")
 
+    def _reassign_split_libraries(
+        self, split_records: list[tuple[str, str, str]]
+    ) -> None:
+        """Handle a multi-root library split after config load or save.
+
+        In-memory tab membership is updated synchronously (cheap), while the
+        actual database record reassignment — which scans every series/movie
+        row and rebuilds the smart-row cache — runs on a background daemon
+        thread so the UI thread is never blocked by this one-time migration.
+        """
+        for old_name, new_name, _root_path in split_records:
+            for tab_entry in self.tabs:
+                if old_name in tab_entry.get(
+                    "libraries", []
+                ) and new_name not in tab_entry.get("libraries", []):
+                    tab_entry["libraries"].append(new_name)
+
+        def _perform_reassignment() -> None:
+            try:
+                from lan_streamer.db.library import (
+                    reassign_library_items_by_root_path,
+                )
+
+                for old_name, new_name, root_path in split_records:
+                    reassignment_counts = reassign_library_items_by_root_path(
+                        old_name, new_name, root_path
+                    )
+                    logger.info(
+                        "Reassigned records for library split '%s' -> '%s' at '%s': %s",
+                        old_name,
+                        new_name,
+                        root_path,
+                        reassignment_counts,
+                    )
+            except Exception:
+                logger.exception("Database reassignment during library split failed")
+
+        reassignment_thread = threading.Thread(
+            target=_perform_reassignment,
+            name="library-split-reassignment",
+            daemon=True,
+        )
+        reassignment_thread.start()
+
     def save_to_db(self) -> None:
         """Persist all DB-backed attributes to the database.
 
@@ -495,24 +523,7 @@ class Config:
             )
             self.libraries = normalized_libraries
             if split_records:
-                try:
-                    from lan_streamer.db.library import (
-                        reassign_library_items_by_root_path,
-                    )
-
-                    for old_name, new_name, root_path in split_records:
-                        reassign_library_items_by_root_path(
-                            old_name, new_name, root_path
-                        )
-                        for tab_entry in self.tabs:
-                            if old_name in tab_entry.get(
-                                "libraries", []
-                            ) and new_name not in tab_entry.get("libraries", []):
-                                tab_entry["libraries"].append(new_name)
-                except Exception:
-                    logger.exception(
-                        "Database reassignment during save_to_db split failed"
-                    )
+                self._reassign_split_libraries(split_records)
 
             # General settings
             set_app_config("libraries", self.libraries)
