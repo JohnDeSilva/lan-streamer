@@ -107,7 +107,7 @@ The library scanner uses a 3-pass pipeline for clean separation of concerns:
 - `scan_directories()` accepts `pass_number` parameter (0 = all 3 passes, 1, 2, or 3 for individual passes).
 - Each pass is implemented in a separate `_scan_pass{N}` function.
 - Results flow sequentially: Pass 1 → Pass 2 → Pass 3.
-- `_merge_series_data()` handles series spanning multiple root directories (combines seasons from different roots).
+- `merge_series_data()` handles series spanning multiple root directories (combines seasons from different roots).
 - Existing library entries not found on disk are preserved (non-destructive).
 
 **Pattern for tests**: When testing Pass 2 metadata resolution, three TMDB client paths must be patched:
@@ -137,12 +137,22 @@ When multiple video files exist for the same episode (e.g. `S01E01.mkv` + `S01E0
 - `services/metadata_episode.py:_process_episode_file()`: Returns an episode dict **without** a `versions` key by default. When the existing episode has a `versions` list, it **must** be carried forward explicitly: `res["versions"] = list(existing_episode["versions"])`. This is the most commonly missed path.
 - `scanner/pass2_metadata.py:scan_series_pass2()`: Iterates existing episodes by path and calls `_process_episode_file()`. The returned `matched` list replaces the season's episodes — versions from pre-merge data must survive through `_process_episode_file()`.
 - `db/library_tv.py:_save_episode_record()`: Calls `_sync_media_files(session, episode, versions)`. When `versions` is `None`, it falls back to a single-entry list from top-level fields, silently dropping multi-file data. The fallback is a safety net, **not** a substitute for passing the real versions list.
-- `scanner/core.py:_merge_series_data()`: **Must** use `_merge_episodes_by_number()` (never `{**existing_seasons, **incoming_seasons}`) to merge episodes within same-named seasons across root directories, combining their `versions` lists.
+- `scanner/core.py:merge_series_data()`: **Must** use `_merge_episodes_by_number()` (never `{**existing_seasons, **incoming_seasons}`) to merge episodes within same-named seasons across root directories, combining their `versions` lists.
 - `scanner/core.py:_merge_episodes_by_number()`: Merges version lists by deduplicating on path. When the same episode number exists in both inputs, version dicts with new paths are appended to the existing entry's versions list.
 
 **Testing invariant:** Any change to the scan pipeline must be verified with a test that creates 2+ files for one episode number and asserts 2+ versions survive to the final library dict and/or DB.
 
-### 8. Testing URL Constraints (Strict Mock URL Rule)
+### 8. Remote Scan-Agent Library Sync & Watch-State Preservation
+
+Remote (`management_type == 'remote'`) libraries are synced from the desktop app's configured scan agent:
+
+- **Off-thread sync** (`backend/remote_sync_worker.py`): `sync_remote_library_from_agent(library_name, library_configuration, database)` performs all blocking work (fetch items → download posters → DB write) and must run on a background thread via the `RemoteSyncWorker(AsyncWorkerBase)` worker. The controller (`ui_views/controller.py`) serializes syncs through `worker_manager.remote_sync` (`WorkerSlot`) and a `deque` queue (`_drain_remote_sync_queue`). Poster paths are rewritten to local cached files; series/season/movie `metadata.poster_path` may all be rewritten.
+- **Never call agent APIs on the UI thread.** `select_tab`/`select_library`/`trigger_scan` on a remote library only *queue* the sync (`_queue_remote_sync`, deduplicated); the actual fetch is backgrounded, and `_on_remote_sync_finished` reloads the tab only on success (a failure emits a status message but no reload, avoiding an empty-library retry loop).
+- **Agent watch-state preservation** (`agent/scan/scan/orchestrator.py` + `agent/src/scan_agent/db/repository.py`): `preserve_live_watch_state(session, library_row, scan_result)` is called immediately before `upsert_library` inside the same write session. It reloads the current DB state (`load_library_dict`) and overlays `watched`/`last_played_at`/`last_played_position` onto the freshly scanned items so a long scan never clobbers playback state changed meanwhile. Matching favours the episode `path`, then `episode_number`.
+- **Agent versions preservation** (`_apply_episode_fields`/`_apply_movie_fields`): when a scanned item has no `versions` key, the existing media files are preserved (never collapsed); a single synthesized `[{"path": <path>}]` entry is only created when no media files exist yet.
+- **Bounded SSE queue** (`agent/src/scan_agent/api/routes_scan.py`): each `/events` client gets an `asyncio.Queue(maxsize=200)`; `_put_message_on_queue` drops the oldest event when full so a slow consumer never accumulates an unbounded backlog. `_enqueue_after_loop_close_safe` swallows `RuntimeError` from `call_soon_threadsafe` when the loop closed.
+
+### 9. Testing URL Constraints (Strict Mock URL Rule)
 - Do not use actual, live external URLs in unit, integration, or e2e tests.
 - Always use mock/local domains (e.g. `example.invalid`, `localhost`, `127.0.0.1`, or `jellyfin.local`) to avoid external network dependencies and prevent accidental network request execution during test runs.
 
