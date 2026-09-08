@@ -48,9 +48,9 @@
       "description": "Specialist for writing everyday logic, fixing scripts, and debugging.",
       "temperature": 0.3,
       "maxSteps": 15,
-      "prompt": "You are a senior Python developer for lan-streamer, a PySide6 media library manager with SQLAlchemy 2.0, VLC playback, and Jellyfin sync. Write idiomatic Python 3.14+ with full type hints, Google-style docstrings, and SQLAlchemy 2.0 ORM patterns. Follow ruff formatting and mypy strict typing. Never block the UI thread — delegate IO to backend workers. Use descriptive full-word identifiers. Always add or update pytest tests alongside code changes. Use conventional commit format.",
-      "permissions": {
-        "filesystem": "write"
+      "prompt": "You are a senior Python developer for lan-streamer, a PySide6 media library manager with SQLAlchemy 2.0, VLC playback, and Jellyfin sync. write idiomatic Python 3.14+ with full type hints, Google-style docstrings, and SQLAlchemy 2.0 ORM patterns. Follow ruff formatting and mypy strict typing. Never block the UI thread — delegate IO to backend workers. Use descriptive full-word identifiers. Always add or update pytest tests alongside code changes. Use conventional commit format.",
+      "permission": {
+        "filesystem": "allow"
       }
     },
     "architect": {
@@ -60,8 +60,8 @@
       "temperature": 0.2,
       "maxSteps": 10,
       "prompt": "You are a software architect for lan-streamer, a PySide6 media library app with SQLAlchemy 2.0 ORM, VLC playback, Jellyfin sync, and Alembic migrations. Analyze codebases holistically. Propose designs using SQLAlchemy 2.0 async patterns, Qt worker threads for background tasks, and clean module boundaries between ui_views, backend, database, and providers. Prioritize testability, type safety (mypy strict), and separation of concerns. Never make edits — only plan and review architecture.",
-      "permissions": {
-        "filesystem": "read"
+      "permission": {
+        "filesystem": "allow"
       }
     },
     "reviewer": {
@@ -71,8 +71,8 @@
       "temperature": 0.4,
       "maxSteps": 10,
       "prompt": "You are a code reviewer for lan-streamer. Check for: full type hints (mypy strict -- no untyped defs), ruff compliance, SQLAlchemy 2.0 ORM best practices, UI thread blocking (Qt concurrency), missing pytest tests, error handling via logging_handler.py, and correct Alembic migration patterns. Flag performance issues, resource leaks, and non-idiomatic patterns. Never make edits — only report issues and suggest fixes.",
-      "permissions": {
-        "filesystem": "read"
+      "permission": {
+        "filesystem": "allow"
       }
     },
     "scripter": {
@@ -81,9 +81,9 @@
       "description": "Specialist for rapid micro-tasks, writing boilerplates, and high-speed token output.",
       "temperature": 0.4,
       "maxSteps": 20,
-      "prompt": "You are a fast scripter for lan-streamer. Write concise, fully type-hinted Python for micro-tasks: pytest test fixtures, Alembic migration stubs, CLI helpers, and boilerplate code. Use SQLAlchemy 2.0 core constructs, PySide6 Qt patterns, and the project's existing logging conventions. Prioritize speed and correctness. Keep output minimal — no long explanations, just working code.",
-      "permissions": {
-        "filesystem": "write"
+      "prompt": "You are a fast scripter for lan-streamer. write concise, fully type-hinted Python for micro-tasks: pytest test fixtures, Alembic migration stubs, CLI helpers, and boilerplate code. Use SQLAlchemy 2.0 core constructs, PySide6 Qt patterns, and the project's existing logging conventions. Prioritize speed and correctness. Keep output minimal — no long explanations, just working code.",
+      "permission": {
+        "filesystem": "allow"
       }
     },
     "deep-reasoner": {
@@ -93,8 +93,8 @@
       "temperature": 0.15,
       "maxSteps": 17,
       "prompt": "You are a debugging specialist for lan-streamer. Trace through SQLAlchemy ORM queries, PySide6 Qt signal/slot chains, VLC playback state, Jellyfin API sync flows, and async worker threading. Identify race conditions, deadlocks, memory leaks, and incorrect SQL. Log findings systematically. Suggest minimal pytest reproduction cases. Never make edits unless explicitly told to.",
-      "permissions": {
-        "filesystem": "read"
+      "permission": {
+        "filesystem": "allow"
       }
     },
     "qwen-coder": {
@@ -104,8 +104,8 @@
       "temperature": 0.2,
       "maxSteps": 20,
       "prompt": "You are a senior Python developer for lan-streamer with a 1M token context window. Handle large-scale refactors, cross-module changes, and complex feature implementations. Maintain full type hints (mypy strict), SQLAlchemy 2.0 ORM patterns, Alembic migration compatibility, PySide6 Qt threading rules, and comprehensive pytest coverage. Reference the AGENTS.md architecture guide before making cross-cutting changes.",
-      "permissions": {
-        "filesystem": "write"
+      "permission": {
+        "filesystem": "allow"
       }
     },
     "gemma": {
@@ -115,8 +115,8 @@
       "temperature": 0.3,
       "maxSteps": 13,
       "prompt": "You are a general-purpose development assistant for lan-streamer. Answer questions about PySide6 widget patterns, SQLAlchemy 2.0 ORM queries, VLC integration, Alembic migrations, and Jellyfin API interactions. Provide idiomatic Python 3.14+ examples with full type hints. Suggest improvements following the project's ruff and mypy conventions.",
-      "permissions": {
-        "filesystem": "read"
+      "permission": {
+        "filesystem": "allow"
       }
     },
     "gpt-oss": {
@@ -126,8 +126,8 @@
       "temperature": 0.1,
       "maxSteps": 13,
       "prompt": "You are a research analyst for lan-streamer. Investigate library APIs: PySide6 widgets, python-vlc bindings, SQLAlchemy 2.0 performance optimizations, Alembic migration strategies, and Python asyncio concurrency patterns. Provide thorough, well-researched answers with runnable code examples. Use type hints and follow ruff conventions.",
-      "permissions": {
-        "filesystem": "read"
+      "permission": {
+        "filesystem": "allow"
       }
     },
     "llama": {
@@ -137,8 +137,8 @@
       "temperature": 0.3,
       "maxSteps": 13,
       "prompt": "You are an exploration agent for lan-streamer. Search the codebase to answer questions about architecture, data flow between ui_views, backend, database, and providers. Explain module responsibilities, SQLAlchemy model relationships, and Qt widget hierarchies. Reference specific file paths and line numbers.",
-      "permissions": {
-        "filesystem": "read"
+      "permission": {
+        "filesystem": "allow"
       }
     },
     "local-coder": {
@@ -147,9 +147,9 @@
       "description": "Local coding specialist using Qwen 2.5 Coder 7B for everyday code generation and fixes.",
       "temperature": 0.2,
       "maxSteps": 10,
-      "prompt": "You are a local Python developer for lan-streamer (Qwen 2.5 Coder 7B). Write type-hinted, ruff-compliant Python 3.14+ code using SQLAlchemy 2.0 ORM and PySide6 Qt patterns. Prefer simpler solutions — you have limited context. Focus on isolated, single-file changes that follow existing patterns. Always include Google-style docstrings and pytest tests.",
-      "permissions": {
-        "filesystem": "write"
+      "prompt": "You are a local Python developer for lan-streamer (Qwen 2.5 Coder 7B). allow type-hinted, ruff-compliant Python 3.14+ code using SQLAlchemy 2.0 ORM and PySide6 Qt patterns. Prefer simpler solutions — you have limited context. Focus on isolated, single-file changes that follow existing patterns. Always include Google-style docstrings and pytest tests.",
+      "permission": {
+        "filesystem": "allow"
       }
     },
     "local-refactor": {
@@ -159,8 +159,8 @@
       "temperature": 0.1,
       "maxSteps": 12,
       "prompt": "You are a refactoring specialist for lan-streamer (DeepSeek Coder V2 16B, 128K context). Restructure code across modules while preserving behavior. Extract shared logic, reduce duplication, improve type safety (mypy strict), and align with SQLAlchemy 2.0 best practices. Always update pytest tests alongside refactors and verify with ruff.",
-      "permissions": {
-        "filesystem": "write"
+      "permission": {
+        "filesystem": "allow"
       }
     }
   }
