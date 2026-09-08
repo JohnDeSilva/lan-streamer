@@ -87,7 +87,7 @@ Every single change or task implemented on this codebase MUST strictly adhere to
 
 ### Step 2: Verification Sequence
 After **every change**, run:
-1. `make test` (or `make test-local` on non-Linux) to verify tests pass and check coverage.
+1. `make test` (or `make test-local` on non-Linux) to verify tests pass and check coverage. Run the agent suites with `make test-agent` (or `make test-agent-back` / `make test-agent-front` to target one half). On Linux all suites run inside containers (`docker/Dockerfile.fedora`/`ubuntu` for desktop, `docker/Dockerfile.agent-test` for agent); CI runs each suite in a dedicated containerized job.
 2. `make lint` as the **FINAL** step to check style, Ruff format/rules, MyPy typechecking, and pre-commit conformity. Resolving all warnings and errors is mandatory.
 
 ### Step 3: Documentation Synchronicity

@@ -361,9 +361,15 @@ protect the driver context):
 4. **Web UI** — static SPA pages (Section 4.5) wired to the API; minimal unit
    test (page loads, key fetch calls) or manual smoke via TestClient.
 5. **Packaging + docs** — Dockerfile, compose, agent `Makefile` targets
-   (`agent-test`, `agent-lint`, `agent-run`), `Makefile` top-level hooks, AGENTS.md
-   and README updates describing the agent and deprecation plan.
-6. **Verification** — agent tests green + coverage ≥90% (scoped to `scan_agent`);
+   (`test-front`, `test-back`, `run-local`, `run`), `Makefile` top-level hooks
+   (`run-agent`, `run-desktop`, `test-agent`, `test-agent-front`,
+   `test-agent-back`), AGENTS.md and README updates describing the agent and
+   deprecation plan.
+6. **Containerized execution** — agent `test-front` / `test-back` / JSDOM-less
+   V8 suite run inside `docker/Dockerfile.agent-test` (lean Python image with
+   FFprobe + uv-synced agent deps + desktop `src/` via `PYTHONPATH`); CI runs
+   agent suites in their own container jobs. Non-Linux hosts fall back to `uv`.
+7. **Verification** — agent tests green + coverage ≥90% (scoped to `scan_agent`);
    `make lint` clean across the repo; desktop suite still green (reuse did not
    alter desktop source).
 
