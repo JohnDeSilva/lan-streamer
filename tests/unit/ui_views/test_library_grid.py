@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import QDialog, QListWidgetItem, QPushButton
 
 from lan_streamer.system.config import config
@@ -978,6 +979,48 @@ class TestOnSearchResultSelected:
             mock_select_library.assert_not_called()
             mock_select_series.assert_not_called()
             mock_select_movie.assert_not_called()
+
+    def test_assign_item_icon_resolves_from_cache_directory(
+        self, grid_view, tmp_path
+    ) -> None:
+        view, _controller = grid_view
+        images_directory = tmp_path / "images"
+        images_directory.mkdir(parents=True, exist_ok=True)
+        image_file = images_directory / "test_poster.png"
+        pixmap = QPixmap(10, 10)
+        pixmap.fill(QColor(255, 0, 0))
+        pixmap.save(str(image_file))
+
+        original_cache_directory = config.cache_directory
+        try:
+            config.cache_directory = str(tmp_path)
+            item = QListWidgetItem()
+            view._assign_item_icon(item, "/remote/container/path/test_poster.png")
+            assert not item.icon().isNull()
+        finally:
+            config.cache_directory = original_cache_directory
+
+    def test_assign_item_icon_with_size_resolves_from_cache_directory(
+        self, grid_view, tmp_path
+    ) -> None:
+        view, _controller = grid_view
+        images_directory = tmp_path / "images"
+        images_directory.mkdir(parents=True, exist_ok=True)
+        image_file = images_directory / "test_poster_size.png"
+        pixmap = QPixmap(10, 10)
+        pixmap.fill(QColor(0, 255, 0))
+        pixmap.save(str(image_file))
+
+        original_cache_directory = config.cache_directory
+        try:
+            config.cache_directory = str(tmp_path)
+            item = QListWidgetItem()
+            view._assign_item_icon_with_size(
+                item, "/remote/container/path/test_poster_size.png", 100, 150
+            )
+            assert not item.icon().isNull()
+        finally:
+            config.cache_directory = original_cache_directory
 
 
 # ---------------------------------------------------------------------------

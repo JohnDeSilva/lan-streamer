@@ -640,6 +640,12 @@ class LibraryGridView(QWidget):
         icon_assigned: bool = False
         if poster_path_value:
             poster_path_object = Path(poster_path_value)
+            if not poster_path_object.is_file():
+                cached_candidate_path = (
+                    Path(config.cache_directory) / "images" / poster_path_object.name
+                )
+                if cached_candidate_path.is_file():
+                    poster_path_object = cached_candidate_path
             if poster_path_object.is_file():
                 pixmap_instance = QPixmap(str(poster_path_object))
                 if not pixmap_instance.isNull():
@@ -946,6 +952,12 @@ class LibraryGridView(QWidget):
         icon_assigned: bool = False
         if poster_path_value:
             poster_path_object = Path(poster_path_value)
+            if not poster_path_object.is_file():
+                cached_candidate_path = (
+                    Path(config.cache_directory) / "images" / poster_path_object.name
+                )
+                if cached_candidate_path.is_file():
+                    poster_path_object = cached_candidate_path
             if poster_path_object.is_file():
                 pixmap_instance = QPixmap(str(poster_path_object))
                 if not pixmap_instance.isNull():

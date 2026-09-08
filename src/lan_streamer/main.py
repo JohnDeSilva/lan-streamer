@@ -365,20 +365,28 @@ def _wire_navigation_signals(
     movie_detail_view.back_requested.connect(on_grid_back_requested)
 
     def on_playback_requested(file_path: str) -> None:
+        resolved_path = file_path
+        if hasattr(controller, "resolve_playback_path"):
+            path_result = controller.resolve_playback_path(file_path)
+            if isinstance(path_result, str):
+                resolved_path = path_result
+
         logger.info(
-            f"Playback requested for: '{file_path}' (Embedded Player: {config.use_embedded_player})"
+            f"Playback requested for: '{file_path}' (Resolved: '{resolved_path}', Embedded Player: {config.use_embedded_player})"
         )
         if config.use_embedded_player:
             if hasattr(controller, "set_video_playing"):
                 controller.set_video_playing(True)
             previous_layout_index[0] = stacked_layout.currentIndex()
-            player_view.play_video(file_path)
+            player_view.play_video(resolved_path)
             stacked_layout.setCurrentIndex(5)
         else:
             try:
-                play_video(file_path)
+                play_video(resolved_path)
             except Exception:
-                logger.exception(f"Failed to launch external player for '{file_path}'")
+                logger.exception(
+                    f"Failed to launch external player for '{resolved_path}'"
+                )
 
     controller.playback_requested.connect(on_playback_requested)
 

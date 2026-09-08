@@ -847,3 +847,80 @@ class TestControllerSearchMedia:
         controller.search_media("Any")
 
         controller._db.search_media_names.assert_called_once_with("Any", None)
+
+
+def test_controller_resolve_playback_path(mock_controller, tmp_path) -> None:
+    local_mount = tmp_path / "mount_tv"
+    local_mount.mkdir()
+    video_file = local_mount / "episode.mkv"
+    video_file.write_text("dummy")
+
+    mock_controller._config.libraries = {
+        "NAS TV": {
+            "management_type": "remote",
+            "mount_mappings": {"/storage/tv": str(local_mount)},
+        }
+    }
+    mock_controller.current_library_name = "NAS TV"
+
+    resolved = mock_controller.resolve_playback_path("/storage/tv/episode.mkv")
+    assert resolved == str(video_file)
+
+
+def test_controller_sync_remote_library(mock_controller) -> None:
+    mock_controller._config.libraries = {
+        "Remote TV": {
+            "management_type": "remote",
+            "type": "tv",
+            "agent_url": "http://127.0.0.1:8800",
+            "remote_library_id": "remote-tv-1",
+        }
+    }
+    remote_data = {"Show A": {"name": "Show A", "seasons": {}}}
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+        return_value=remote_data,
+    ) as mock_fetch:
+        mock_controller._db.save_library = MagicMock()
+        mock_controller._db.load_library = MagicMock(return_value=remote_data)
+        success = mock_controller.sync_remote_library("Remote TV")
+        assert success is True
+        mock_fetch.assert_called_once_with("http://127.0.0.1:8800", "remote-tv-1")
+        mock_controller._db.save_library.assert_called_once_with(
+            "Remote TV", remote_data
+        )
+        assert "Show A" in mock_controller.cached_library_data
+
+
+def test_controller_switch_library_auto_syncs_remote_when_empty(
+    mock_controller,
+) -> None:
+    mock_controller._config.libraries = {
+        "Remote TV": {
+            "management_type": "remote",
+            "type": "tv",
+            "agent_url": "http://127.0.0.1:8800",
+            "remote_library_id": "remote-tv-1",
+        }
+    }
+    mock_controller._db.load_library = MagicMock(return_value={})
+    with patch.object(mock_controller, "sync_remote_library") as mock_sync:
+        mock_controller.select_library("Remote TV")
+        mock_sync.assert_called_once_with("Remote TV")
+
+
+def test_controller_trigger_scan_remote_library(mock_controller) -> None:
+    mock_controller._config.libraries = {
+        "Remote TV": {
+            "management_type": "remote",
+            "type": "tv",
+            "agent_url": "http://127.0.0.1:8800",
+            "remote_library_id": "remote-tv-1",
+        }
+    }
+    mock_controller.current_library_name = "Remote TV"
+    with patch.object(
+        mock_controller, "sync_remote_library", return_value=True
+    ) as mock_sync:
+        mock_controller.trigger_scan()
+        mock_sync.assert_called_once_with("Remote TV")
