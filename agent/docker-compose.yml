@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       dockerfile: agent/Dockerfile
-    container_name: lan-streamer-scan-agent
+    container_name: lan-streamer-remote-agent
     restart: unless-stopped
     ports:
       - "8800:8800"
