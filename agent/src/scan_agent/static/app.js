@@ -113,15 +113,15 @@ async function loadDashboard() {
         // Table
         const tbody = document.querySelector("#dashboardLibrariesTable tbody");
         tbody.innerHTML = "";
-        libraries.forEach((lib) => {
-            const counts = lib.counts || {};
+        libraries.forEach((libraryItem) => {
+            const counts = libraryItem.counts || {};
             const row = document.createElement("tr");
             row.innerHTML = `
-                <td><strong>${escapeHtml(lib.name)}</strong></td>
-                <td><span class="status-tag status-${lib.media_type === "movie" ? "done" : "running"}">${lib.media_type.toUpperCase()}</span></td>
-                <td><code>${escapeHtml(lib.root_path)}</code></td>
-                <td>${lib.media_type === "movie" ? (counts.movies || 0) : (counts.series || 0)}</td>
-                <td>${lib.media_type === "movie" ? (counts.media_files || 0) : (counts.episodes || 0)}</td>
+                <td><strong>${escapeHtml(libraryItem.name)}</strong></td>
+                <td><span class="status-tag status-${libraryItem.media_type === "movie" ? "done" : "running"}">${libraryItem.media_type.toUpperCase()}</span></td>
+                <td><code>${escapeHtml(libraryItem.root_path)}</code></td>
+                <td>${libraryItem.media_type === "movie" ? (counts.movies || 0) : (counts.series || 0)}</td>
+                <td>${libraryItem.media_type === "movie" ? (counts.media_files || 0) : (counts.episodes || 0)}</td>
             `;
             tbody.appendChild(row);
         });
@@ -139,18 +139,18 @@ async function loadLibraries() {
         const tbody = document.querySelector("#librariesTable tbody");
         tbody.innerHTML = "";
 
-        libraries.forEach((lib) => {
+        libraries.forEach((libraryItem) => {
             const row = document.createElement("tr");
             row.innerHTML = `
-                <td>${lib.id}</td>
-                <td><strong>${escapeHtml(lib.name)}</strong></td>
-                <td>${lib.media_type.toUpperCase()}</td>
-                <td><code>${escapeHtml(lib.root_path)}</code></td>
-                <td>${lib.enabled ? "✅" : "❌"}</td>
+                <td>${libraryItem.id}</td>
+                <td><strong>${escapeHtml(libraryItem.name)}</strong></td>
+                <td>${libraryItem.media_type.toUpperCase()}</td>
+                <td><code>${escapeHtml(libraryItem.root_path)}</code></td>
+                <td>${libraryItem.enabled ? "✅" : "❌"}</td>
                 <td>
-                    <button class="btn btn-secondary btn-sm" data-action="scan" data-id="${lib.id}">Scan</button>
-                    <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${lib.id}">Edit</button>
-                    <button class="btn btn-danger btn-sm" data-action="delete" data-id="${lib.id}">Delete</button>
+                    <button class="btn btn-secondary btn-sm" data-action="scan" data-id="${libraryItem.id}">Scan</button>
+                    <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${libraryItem.id}">Edit</button>
+                    <button class="btn btn-danger btn-sm" data-action="delete" data-id="${libraryItem.id}">Delete</button>
                 </td>
             `;
             tbody.appendChild(row);
@@ -173,10 +173,10 @@ async function loadScanMonitor() {
 
         const select = document.getElementById("scanLibrarySelect");
         select.innerHTML = '<option value="">All Libraries</option>';
-        libraries.forEach((lib) => {
+        libraries.forEach((libraryItem) => {
             const option = document.createElement("option");
-            option.value = lib.id;
-            option.textContent = `${lib.name} (${lib.media_type})`;
+            option.value = libraryItem.id;
+            option.textContent = `${libraryItem.name} (${libraryItem.media_type})`;
             select.appendChild(option);
         });
 
@@ -897,13 +897,13 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (action === "edit") {
             try {
                 const libraries = await api.getLibraries();
-                const lib = libraries.find((item) => item.id === id);
-                if (!lib) return;
-                document.getElementById("libId").value = lib.id;
-                document.getElementById("libName").value = lib.name;
-                document.getElementById("libMediaType").value = lib.media_type;
-                document.getElementById("libRootPath").value = lib.root_path || "";
-                document.getElementById("libEnabled").checked = lib.enabled !== false;
+                const libraryItem = libraries.find((item) => item.id === id);
+                if (!libraryItem) return;
+                document.getElementById("libId").value = libraryItem.id;
+                document.getElementById("libName").value = libraryItem.name;
+                document.getElementById("libMediaType").value = libraryItem.media_type;
+                document.getElementById("libRootPath").value = libraryItem.root_path || "";
+                document.getElementById("libEnabled").checked = libraryItem.enabled !== false;
                 document.getElementById("libraryModalTitle").textContent = "Edit Library";
                 openModal("libraryModal");
             } catch (error) {

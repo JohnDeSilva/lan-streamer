@@ -523,6 +523,10 @@ class Config:
             )
             self.libraries = normalized_libraries
             if split_records:
+                logger.info(
+                    "Split %d multi-root libraries into separate single-root libraries during config save",
+                    len(split_records),
+                )
                 self._reassign_split_libraries(split_records)
 
             # General settings
