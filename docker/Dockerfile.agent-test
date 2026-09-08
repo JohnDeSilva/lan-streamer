@@ -1,0 +1,44 @@
+# Scan agent test image.
+#
+# Containerised test execution target for `make test-agent`, `make test-agent-front`,
+# and `make test-agent-back`. The agent suites are pure Python under pytest:
+#   * backend  -> `PYTHONPATH=../src:src uv run pytest tests --ignore=tests/frontend`
+#   * frontend -> `PYTHONPATH=../src:src uv run pytest --no-cov tests/frontend`
+# (SPA JavaScript executed through the bundled V8 engine, py-mini-racer).
+#
+# The desktop `src/lan_streamer` scan pipeline is reused via PYTHONPATH, so this
+# image ships that source tree without the Qt/VLC stack required by the desktop app.
+FROM python:3.14-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HOME=/root
+
+# ffprobe backs scanner Pass 3 technical probing; make drives the test Makefile.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    make \
+    git \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv package manager
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+WORKDIR /app
+
+# Copy the agent package, its test suite, and the desktop src tree it extends.
+COPY agent/pyproject.toml agent/uv.lock* /app/agent/
+COPY agent/src/ /app/agent/src/
+COPY agent/tests/ /app/agent/tests/
+COPY agent/Makefile /app/agent/Makefile
+
+# Main Makefile drives the top-level targets from inside the container.
+COPY Makefile /app/Makefile
+
+# Desktop `lan_streamer` package (scanner, services, providers) reused by the agent.
+COPY src/ /app/src/
+
+# Pre-sync the agent environment (runtime + dev/test dependencies) so runs are offline.
+RUN uv --directory /app/agent sync
