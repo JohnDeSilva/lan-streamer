@@ -2128,17 +2128,15 @@ def test_combined_view_scan_button(qtbot: Any) -> None:
         assert grid_view.combined_actions_toolbar_widget.isHidden() is False
         assert grid_view.actions_toolbar_widget.isHidden() is True
 
-        # 2. Click the Scan New Files button in Combined View
-        with patch.object(controller_instance, "trigger_scan_all") as mock_scan_all:
-            combined_scan_button = grid_view.combined_actions_toolbar_widget.findChild(
+        # 2. Verify scan buttons are removed from toolbars (scanning moved to Settings)
+        combined_scan_buttons = [
+            button
+            for button in grid_view.combined_actions_toolbar_widget.findChildren(
                 QPushButton
             )
-            assert combined_scan_button is not None
-            assert combined_scan_button.text() == "Scan Library"
-            combined_scan_button.click()
-            mock_scan_all.assert_called_once_with(
-                force_refresh=False, scan_archive_roots=False
-            )
+            if "Scan" in button.text()
+        ]
+        assert len(combined_scan_buttons) == 0
 
         # 3. Simulate scan progress signals
         tree_payload = {

@@ -486,3 +486,48 @@ def test_config_load_automatically_splits_multi_root_libraries(
     assert "Shows (two)" in reloaded.libraries
     assert reloaded.libraries["Shows"]["paths"] == ["/path/one"]
     assert reloaded.libraries["Shows (two)"]["paths"] == ["/path/two"]
+
+
+def test_config_tabs_default_generation(mock_config_file) -> None:
+    """When no tabs are saved, load_from_db should generate default 1:1 tabs from libraries."""
+    config = Config()
+    config.libraries = {
+        "Anime": {"type": "tv", "paths": ["/anime"]},
+        "Movies": {"type": "movie", "paths": ["/movies"]},
+    }
+    config.save_to_db()
+
+    reloaded = Config()
+    reloaded.load_from_db()
+
+    assert len(reloaded.tabs) == 2
+    tab_names = reloaded.get_tab_names()
+    assert "Anime" in tab_names
+    assert "Movies" in tab_names
+    assert reloaded.get_tab_libraries("Anime") == ["Anime"]
+    assert reloaded.get_tab_libraries("Movies") == ["Movies"]
+
+
+def test_config_tabs_custom_save_and_load(mock_config_file) -> None:
+    """Custom tabs grouping multiple libraries should persist and reload correctly."""
+    config = Config()
+    config.libraries = {
+        "Anime TV": {"type": "tv", "paths": ["/anime/tv"]},
+        "Anime OVAs": {"type": "tv", "paths": ["/anime/ovas"]},
+        "Cinema": {"type": "movie", "paths": ["/movies"]},
+    }
+    config.tabs = [
+        {"name": "All Anime", "libraries": ["Anime TV", "Anime OVAs"]},
+        {"name": "Movies", "libraries": ["Cinema"]},
+    ]
+    config.save_to_db()
+
+    reloaded = Config()
+    reloaded.load_from_db()
+
+    assert len(reloaded.tabs) == 2
+    assert reloaded.get_tab_names() == ["All Anime", "Movies"]
+    assert reloaded.get_tab_libraries("All Anime") == ["Anime TV", "Anime OVAs"]
+    assert reloaded.get_tab_libraries("Movies") == ["Cinema"]
+    # Fallback for unconfigured tab name
+    assert reloaded.get_tab_libraries("NonExistent") == []

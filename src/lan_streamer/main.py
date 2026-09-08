@@ -127,7 +127,7 @@ async def main() -> None:
     controller.status_changed.connect(main_window.statusBar().showMessage)
 
     # Initialize library dropdown entries
-    library_names_list = list(config.libraries.keys())
+    library_names_list = config.get_tab_names()
     logger.debug(f"Populating Library Grid View libraries: {library_names_list}")
     library_grid_view.populate_libraries(library_names_list)
 

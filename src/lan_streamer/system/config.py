@@ -167,6 +167,7 @@ class Config:
         "enable_async_scan": True,
         "scan_concurrency": 4,
         "default_video_aspect_mode": "fit",
+        "tabs": [],
     }
 
     def __init__(self) -> None:
@@ -184,6 +185,8 @@ class Config:
         # --- DB-backed (seeded from _DB_DEFAULTS so the object is usable
         # before load_from_db() is called after DB initialisation) ---
         self.database_write_timeout: float = 60.0
+        self.libraries: dict[str, dict[str, Any]] = {}
+        self.tabs: list[dict[str, Any]] = []
         for key, value in copy.deepcopy(self._DB_DEFAULTS).items():
             setattr(self, key, value)
 
@@ -375,6 +378,11 @@ class Config:
                         reassign_library_items_by_root_path(
                             old_name, new_name, root_path
                         )
+                        for tab_entry in self.tabs:
+                            if old_name in tab_entry.get(
+                                "libraries", []
+                            ) and new_name not in tab_entry.get("libraries", []):
+                                tab_entry["libraries"].append(new_name)
                 except Exception:
                     logger.exception(
                         "Database reassignment during library split failed"
@@ -417,6 +425,23 @@ class Config:
             self.default_video_aspect_mode = str(
                 config_dict.get("default_video_aspect_mode", "fit")
             )
+
+            loaded_tabs = config_dict.get("tabs")
+            if loaded_tabs is None or not loaded_tabs:
+                self.tabs = [
+                    {"name": library_name, "libraries": [library_name]}
+                    for library_name in self.libraries
+                ]
+            else:
+                self.tabs = [
+                    {
+                        "name": str(tab_entry.get("name", "")),
+                        "libraries": list(tab_entry.get("libraries", [])),
+                    }
+                    for tab_entry in loaded_tabs
+                    if isinstance(tab_entry, dict) and tab_entry.get("name")
+                ]
+            config_dict["tabs"] = self.tabs
 
             # 3. After going through all the settings take the fully populated dictionary and write the contents back to the database
             bulk_set_app_configs(config_dict)
@@ -475,6 +500,11 @@ class Config:
                         reassign_library_items_by_root_path(
                             old_name, new_name, root_path
                         )
+                        for tab_entry in self.tabs:
+                            if old_name in tab_entry.get(
+                                "libraries", []
+                            ) and new_name not in tab_entry.get("libraries", []):
+                                tab_entry["libraries"].append(new_name)
                 except Exception:
                     logger.exception(
                         "Database reassignment during save_to_db split failed"
@@ -482,6 +512,7 @@ class Config:
 
             # General settings
             set_app_config("libraries", self.libraries)
+            set_app_config("tabs", self.tabs)
             set_app_config("scan_agents", self.scan_agents)
             set_app_config("sync_history_on_start", self.sync_history_on_start)
             set_app_config("filter_out_watched", self.filter_out_watched)
@@ -608,6 +639,25 @@ class Config:
             for library_name, library_configuration in self.libraries.items()
             if library_configuration.get("management_type", "local") == "remote"
         }
+
+    def get_tab_libraries(self, tab_name: str) -> list[str]:
+        """Return the list of library names associated with a tab."""
+        for tab_entry in self.tabs:
+            if tab_entry.get("name") == tab_name:
+                return list(tab_entry.get("libraries", []))
+        if tab_name in self.libraries:
+            return [tab_name]
+        return []
+
+    def get_tab_names(self) -> list[str]:
+        """Return all configured tab names, or library names if no tabs are defined."""
+        if self.tabs:
+            return [
+                str(tab_entry["name"])
+                for tab_entry in self.tabs
+                if tab_entry.get("name")
+            ]
+        return list(self.libraries.keys())
 
 
 config = Config()
