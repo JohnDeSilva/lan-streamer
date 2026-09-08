@@ -1,3 +1,10 @@
+## v0.51.0rc2 (2026-09-08)
+
+### Fix
+
+- **dev-dependency**: bump ruff from 0.16.3 to 0.16.6
+- **dev-dependency**: bump commitizen from 4.17.0 to 4.18.0
+
 ## v0.51.0rc1 (2026-09-08)
 
 ### Fix
