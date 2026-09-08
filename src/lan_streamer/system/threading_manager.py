@@ -210,6 +210,7 @@ class WorkerManager(QObject):
         self.metadata_apply: WorkerSlot = WorkerSlot(self)
         self.refresh: WorkerSlot = WorkerSlot(self)
         self.scan_series: WorkerSlot = WorkerSlot(self)
+        self.remote_sync: WorkerSlot = WorkerSlot(self)
 
         self._all_slots: list[WorkerSlot] = [
             self.scan,
@@ -225,6 +226,7 @@ class WorkerManager(QObject):
             self.metadata_apply,
             self.refresh,
             self.scan_series,
+            self.remote_sync,
         ]
 
     def stop_all(self) -> None:
