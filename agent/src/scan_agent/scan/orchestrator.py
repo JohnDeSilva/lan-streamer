@@ -165,10 +165,25 @@ class ScanOrchestrator:
         """Execute the scan pipeline for every target library."""
         self._mark_job_running(job_id)
         log_handler = _BrokerLogHandler(self._progress_broker)
-        logging.getLogger("lan_streamer").addHandler(log_handler)
-        logging.getLogger("scan_agent").addHandler(log_handler)
+        lan_streamer_logger = logging.getLogger("lan_streamer")
+        scan_agent_logger = logging.getLogger("scan_agent")
+        lan_streamer_logger.addHandler(log_handler)
+        scan_agent_logger.addHandler(log_handler)
+        if (
+            lan_streamer_logger.level > logging.INFO
+            or lan_streamer_logger.level == logging.NOTSET
+        ):
+            lan_streamer_logger.setLevel(logging.INFO)
+        if (
+            scan_agent_logger.level > logging.INFO
+            or scan_agent_logger.level == logging.NOTSET
+        ):
+            scan_agent_logger.setLevel(logging.INFO)
+        pass_description = (
+            "all passes (1+2+3)" if pass_number == 0 else f"pass {pass_number}"
+        )
         self._progress_broker.publish_log(
-            f"Scan job {job_id} started for {len(target_libraries)} libraries (pass {pass_number})"
+            f"Scan job #{job_id} started for {len(target_libraries)} libraries ({pass_description})"
         )
         try:
             if pass_number in (0, 3) and shutil.which("ffprobe") is None:
@@ -252,6 +267,9 @@ class ScanOrchestrator:
                 "root": root_path,
             },
         )
+        self._progress_broker.publish_log(
+            f"Scanning library '{library_name}' ({media_type}) at {root_path}..."
+        )
         result = scan_directories(
             root_directories=[root_path],
             library_type=media_type,
@@ -284,6 +302,10 @@ class ScanOrchestrator:
                 "stats": stats,
             },
         )
+        self._progress_broker.publish_log(
+            f"Library '{library_name}' finished: {stats.get('series', 0)} series, "
+            f"{stats.get('episodes', 0)} episodes, {stats.get('movies', 0)} movies."
+        )
         return stats
 
     # ------------------------------------------------------------------
@@ -291,16 +313,33 @@ class ScanOrchestrator:
     # ------------------------------------------------------------------
 
     def _detail_callback(self, event_type: str, event_data: dict[str, Any]) -> None:
-        """Bridge scanner detail events into ``scan.progress`` events."""
+        """Bridge scanner detail events into ``scan.progress`` events and logs."""
         self._progress_broker.publish(
             "scan.progress", {"type": event_type, **event_data}
         )
+        if event_type == "start_offline_scan" or (
+            event_type == "pass_start" and event_data.get("pass") == 1
+        ):
+            self._progress_broker.publish_log("--- Starting Pass 1: File Discovery ---")
+        elif event_type == "start_metadata_resolution" or (
+            event_type == "pass_start" and event_data.get("pass") == 2
+        ):
+            self._progress_broker.publish_log(
+                "--- Starting Pass 2: TMDB Metadata Resolution ---"
+            )
+        elif event_type == "start_technical_probe" or (
+            event_type == "pass_start" and event_data.get("pass") == 3
+        ):
+            self._progress_broker.publish_log(
+                "--- Starting Pass 3: Technical Probing (ffprobe) ---"
+            )
 
     def _movie_callback(self, movie_name: str, movie_data: dict[str, Any]) -> None:
         """Bridge scanner movie completion into a progress event."""
         self._progress_broker.publish(
             "scan.progress", {"type": "movie_finished", "movie": movie_name}
         )
+        self._progress_broker.publish_log(f"Processed movie: '{movie_name}'")
 
     def _season_callback(
         self,
@@ -317,6 +356,9 @@ class ScanOrchestrator:
                 "series": series_name,
                 "season": season_name,
             },
+        )
+        self._progress_broker.publish_log(
+            f"Processed season '{season_name}' of series '{series_name}'"
         )
 
     # ------------------------------------------------------------------

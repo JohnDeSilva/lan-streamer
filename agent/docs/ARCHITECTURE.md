@@ -246,6 +246,9 @@ Watch state (foundation for desktop sync):
 - `GET /api/v1/watch/{media_type}/{media_id}`
 - `POST /api/v1/watch` `{media_type, media_id, event, position_seconds, client_id}`
 
+Images / Artwork:
+- `GET /api/v1/images/poster?path=` (serves poster artwork from agent filesystem or cache directory)
+
 ### 4.5 Web UI (static vanilla JS SPA)
 
 Pages (nav tabs; single `app.js` + `api.js` + `style.css`):

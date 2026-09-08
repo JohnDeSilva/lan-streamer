@@ -9,11 +9,11 @@ services:
       - "8800:8800"
     environment:
       - TMDB_API_KEY=${TMDB_API_KEY:-}
-      - HOME=/data
+      - HOME=/root
       - SCAN_AGENT_CONFIG=/data/config.json
     volumes:
-      - ${MEDIA_ROOT:-/mnt/media}:/media:ro
-      - ${DATA_ROOT:-./data}:/data
+      - ${MEDIA_ROOT:-./media}:/media:ro,z
+      - ${DATA_ROOT:-./data}:/data:Z
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8800/api/v1/health"]
       interval: 30s

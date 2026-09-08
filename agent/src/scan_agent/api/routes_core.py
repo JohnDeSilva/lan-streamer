@@ -10,7 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from scan_agent.api.deps import get_database_session
 from scan_agent.api.schemas import ConfigUpdate, LibraryPatch, LibraryWrite
-from scan_agent.db.repository import count_items_per_library
+from scan_agent.db.repository import (
+    count_items_per_library,
+    get_library,
+    load_library_dict,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -167,3 +171,24 @@ def delete_library(request: Request, library_identifier: str) -> None:
     logger.info(
         "API removed library '%s' (%s)", deleted.get("name"), library_identifier
     )
+
+
+@libraries_router.get("/libraries/{library_identifier}/items")
+def export_library_items(
+    request: Request,
+    library_identifier: str,
+    session: Session = Depends(get_database_session),
+) -> dict[str, Any]:
+    """Return full scanner-shaped library items dict for desktop sync."""
+    config = request.app.state.agent_config
+    library_name = library_identifier
+    if library_identifier in config.libraries:
+        library_name = config.libraries[library_identifier].get(
+            "name", library_identifier
+        )
+    library_row = get_library(session, library_name)
+    if library_row is None and library_identifier != library_name:
+        library_row = get_library(session, library_identifier)
+    if library_row is None:
+        raise HTTPException(status_code=404, detail="Unknown library identifier")
+    return load_library_dict(session, library_row.id)
