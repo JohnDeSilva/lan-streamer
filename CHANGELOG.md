@@ -1,3 +1,30 @@
+## v0.51.0 (2026-09-08)
+
+### Feat
+
+- **remote**: sync remote libraries off the UI thread
+- **tabs**: support multi-library tabs, series consolidation, and settings-only per-library scanning
+- **config**: split multi-root libraries and enforce single root directory
+- **ui**: integrate remote library setup, agent path mapping, and poster sync
+- **scanner**: enhance pass 3 probing, local poster discovery, and scan logging
+- **agent**: support single root path, remote image serving, and live scan logging
+- **desktop**: add local vs remote library management type and scan agent connection
+- **agent**: colocate configs, databases, and caches in data directory and add filesystem finder for libraries
+
+### Fix
+
+- **dev-dependency**: bump ruff from 0.16.3 to 0.16.6
+- **dev-dependency**: bump commitizen from 4.17.0 to 4.18.0
+- **dependency**: bump alembic from 1.19.1 to 1.19.2
+- **agent**: preserve watched state, media versions, and bound SSE events
+- **config**: reassign split-library records off the UI thread
+- **remote**: ensure remote libraries sync and display on library tabs
+
+### Refactor
+
+- adhere to variable naming standards and update setup documentation
+- **scanner**: rename merge_series_data for multi-root series
+
 ## v0.51.0rc3-1 (2026-09-08)
 
 ## v0.51.0rc3 (2026-09-08)
