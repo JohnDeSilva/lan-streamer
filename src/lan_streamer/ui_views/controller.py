@@ -210,7 +210,7 @@ class Controller(QObject):
                 single_library_config.get("management_type") == "remote"
                 and not single_library_data
             ):
-                self.sync_remote_library(single_library_name)
+                self.sync_remote_library(single_library_name, emit_signal=False)
                 if single_library_config.get("type", "tv") == "movie":
                     single_library_data = self._db.load_movie_library(
                         single_library_name
@@ -236,7 +236,7 @@ class Controller(QObject):
     def select_library(self, library_name: str, reset_selection: bool = True) -> None:
         self.select_tab(library_name, reset_selection=reset_selection)
 
-    def sync_remote_library(self, library_name: str) -> bool:
+    def sync_remote_library(self, library_name: str, emit_signal: bool = True) -> bool:
         """Synchronizes items for a remote library from the scan agent into local DB and cache."""
         library_configuration = self._config.libraries.get(library_name, {})
         if library_configuration.get("management_type") != "remote":
@@ -308,15 +308,17 @@ class Controller(QObject):
                 len(self.cached_library_data),
                 agent_url,
             )
-            self.library_loaded.emit()
+            if emit_signal:
+                self.library_loaded.emit()
             return True
         except (
-            ScanAgentConnectionError,
             requests.RequestException,
             SQLAlchemyError,
-            OSError,
-            ValueError,
+            ScanAgentConnectionError,
             KeyError,
+            ValueError,
+            TypeError,
+            OSError,
         ) as error_instance:
             logger.warning(
                 "Could not synchronize remote library '%s' from agent %s: %s",

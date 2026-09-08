@@ -906,7 +906,7 @@ def test_controller_switch_library_auto_syncs_remote_when_empty(
     mock_controller._db.load_library = MagicMock(return_value={})
     with patch.object(mock_controller, "sync_remote_library") as mock_sync:
         mock_controller.select_library("Remote TV")
-        mock_sync.assert_called_once_with("Remote TV")
+        mock_sync.assert_called_once_with("Remote TV", emit_signal=False)
 
 
 def test_controller_trigger_scan_remote_library(mock_controller) -> None:
@@ -1115,3 +1115,119 @@ def test_controller_trigger_cleanup_target_library(mock_controller) -> None:
     mock_controller.trigger_cleanup(library_name="Anime Local")
 
     mock_controller.worker_manager.cleanup_global.start.assert_called_once()
+
+
+def test_controller_select_tab_syncs_remote_movie_library(mock_controller) -> None:
+    mock_controller._config.get_tab_libraries = MagicMock(
+        return_value=["Remote Movies"]
+    )
+    mock_controller._config.libraries = {
+        "Remote Movies": {
+            "management_type": "remote",
+            "type": "movie",
+            "agent_url": "http://127.0.0.1:8800",
+            "remote_library_id": "remote-movies-1",
+        }
+    }
+
+    remote_movie_content = {
+        "Inception": {
+            "name": "Inception",
+            "path": "/media/remote/inception.mkv",
+            "year": 2010,
+            "watched": False,
+            "versions": [{"path": "/media/remote/inception.mkv"}],
+        }
+    }
+
+    # Initially empty in local database
+    db_contents: dict[str, Any] = {}
+
+    def mock_load_movie(name: str) -> dict[str, Any]:
+        return dict(db_contents)
+
+    def mock_save_movie(name: str, payload: dict[str, Any]) -> None:
+        db_contents.update(payload)
+
+    mock_controller._db.load_movie_library = MagicMock(side_effect=mock_load_movie)
+    mock_controller._db.save_movie_library = MagicMock(side_effect=mock_save_movie)
+
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+        return_value=remote_movie_content,
+    ) as mock_fetch_items:
+        loaded_signal_received: list[bool] = []
+        mock_controller.library_loaded.connect(
+            lambda: loaded_signal_received.append(True)
+        )
+
+        mock_controller.select_tab("Remote Movies")
+
+        assert mock_fetch_items.called
+        assert "Inception" in mock_controller.cached_library_data
+        inception_data = mock_controller.cached_library_data["Inception"]
+        assert inception_data["metrics"]["total_episodes"] == 1
+        assert "seasons" not in inception_data
+        assert len(loaded_signal_received) == 1
+
+
+def test_controller_select_tab_syncs_remote_tv_library(mock_controller) -> None:
+    mock_controller._config.get_tab_libraries = MagicMock(return_value=["Remote TV"])
+    mock_controller._config.libraries = {
+        "Remote TV": {
+            "management_type": "remote",
+            "type": "tv",
+            "agent_url": "http://127.0.0.1:8800",
+            "remote_library_id": "remote-tv-1",
+        }
+    }
+
+    remote_tv_content = {
+        "Steins;Gate": {
+            "name": "Steins;Gate",
+            "metadata": {"tmdb_identifier": 9999},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/media/remote/s01e01.mkv",
+                            "episode_number": 1,
+                            "tmdb_number": 1,
+                            "watched": False,
+                            "versions": [{"path": "/media/remote/s01e01.mkv"}],
+                        }
+                    ]
+                }
+            },
+        }
+    }
+
+    db_contents: dict[str, Any] = {}
+
+    def mock_load_tv(name: str) -> dict[str, Any]:
+        return dict(db_contents)
+
+    def mock_save_tv(name: str, payload: dict[str, Any]) -> None:
+        db_contents.update(payload)
+
+    mock_controller._db.load_library = MagicMock(side_effect=mock_load_tv)
+    mock_controller._db.save_library = MagicMock(side_effect=mock_save_tv)
+
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+        return_value=remote_tv_content,
+    ) as mock_fetch_items:
+        loaded_signal_received: list[bool] = []
+        mock_controller.library_loaded.connect(
+            lambda: loaded_signal_received.append(True)
+        )
+
+        mock_controller.select_tab("Remote TV")
+
+        assert mock_fetch_items.called
+        assert "Steins;Gate" in mock_controller.cached_library_data
+        series_data = mock_controller.cached_library_data["Steins;Gate"]
+        assert series_data["metrics"]["total_episodes"] == 1
+        assert "seasons" in series_data
+        assert len(loaded_signal_received) == 1

@@ -120,9 +120,8 @@ class ScanAgentClient:
     ) -> dict[str, Any]:
         """Fetch full library scanner items dictionary from the remote scan agent."""
         normalized_url = normalize_agent_url(agent_url)
-        target_endpoint = (
-            f"{normalized_url}/api/v1/libraries/{library_identifier}/items"
-        )
+        quoted_identifier = quote(str(library_identifier), safe="")
+        target_endpoint = f"{normalized_url}/api/v1/libraries/{quoted_identifier}/items"
 
         try:
             response = requests.get(

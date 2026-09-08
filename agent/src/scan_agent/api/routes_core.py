@@ -180,15 +180,20 @@ def export_library_items(
     session: Session = Depends(get_database_session),
 ) -> dict[str, Any]:
     """Return full scanner-shaped library items dict for desktop sync."""
-    config = request.app.state.agent_config
+    agent_config = request.app.state.agent_config
     library_name = library_identifier
-    if library_identifier in config.libraries:
-        library_name = config.libraries[library_identifier].get(
+    if library_identifier in agent_config.libraries:
+        library_name = agent_config.libraries[library_identifier].get(
             "name", library_identifier
         )
     library_row = get_library(session, library_name)
     if library_row is None and library_identifier != library_name:
         library_row = get_library(session, library_identifier)
     if library_row is None:
+        if library_identifier in agent_config.libraries or any(
+            configured_library.get("name") == library_name
+            for configured_library in agent_config.libraries.values()
+        ):
+            return {}
         raise HTTPException(status_code=404, detail="Unknown library identifier")
     return load_library_dict(session, library_row.id)
