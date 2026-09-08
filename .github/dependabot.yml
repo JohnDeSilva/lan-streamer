@@ -30,3 +30,13 @@ updates:
       - "pre-commit hooks"
     commit-message:
       prefix: "chore(pre-commit): "
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "dependabot-base"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "github-actions"
+    commit-message:
+      prefix: "chore(ci): "
