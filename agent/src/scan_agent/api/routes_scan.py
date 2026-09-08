@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -33,6 +34,32 @@ def _format_sse_event(message: dict[str, Any]) -> str:
     payload_dict.setdefault("sequence", message["sequence"])
     payload = json.dumps(payload_dict, default=str)
     return f"id: {message['sequence']}\nevent: {message['event']}\ndata: {payload}\n\n"
+
+
+def _put_message_on_queue(
+    queue: asyncio.Queue[dict[str, Any]], message: dict[str, Any]
+) -> None:
+    """Push a broker message onto the SSE client's bounded queue.
+
+    Drops the oldest event when the consumer is behind so a slow or
+    disconnected SSE client cannot accumulate an unbounded backlog.
+    """
+    if queue.full():
+        with contextlib.suppress(asyncio.QueueEmpty):
+            queue.get_nowait()
+    with contextlib.suppress(asyncio.QueueFull):
+        queue.put_nowait(message)
+
+
+def _enqueue_after_loop_close_safe(
+    loop: asyncio.AbstractEventLoop,
+    queue: asyncio.Queue[dict[str, Any]],
+    message: dict[str, Any],
+) -> None:
+    """Schedule *message* onto *queue* from any thread, ignoring closed loops."""
+    with contextlib.suppress(RuntimeError):
+        # Event loop already closed (client disconnected) — ignore.
+        loop.call_soon_threadsafe(_put_message_on_queue, queue, message)
 
 
 @scan_router.post("/scan", status_code=status.HTTP_202_ACCEPTED)
@@ -102,12 +129,11 @@ async def events_stream(
     end_on_finished = request.query_params.get("until_finished", "0") == "1"
 
     loop = asyncio.get_running_loop()
-    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
 
-    def _enqueue(message: dict[str, Any]) -> None:
-        loop.call_soon_threadsafe(queue.put_nowait, message)
-
-    subscription_id = broker.subscribe(_enqueue)
+    subscription_id = broker.subscribe(
+        lambda message: _enqueue_after_loop_close_safe(loop, queue, message)
+    )
 
     async def _event_generator() -> Any:
         nonlocal last_sequence
