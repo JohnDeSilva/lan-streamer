@@ -666,7 +666,13 @@ class LibraryGridView(QWidget):
             library_config = config.libraries.get(
                 self.controller.current_library_name, {}
             )
-            if library_config.get("type") == "movie":
+            cached_item = self.controller.cached_library_data.get(title, {})
+            is_movie = library_config.get("type") == "movie" or (
+                isinstance(cached_item, dict)
+                and "seasons" not in cached_item
+                and ("path" in cached_item or cached_item.get("media_type") == "movie")
+            )
+            if is_movie:
                 self.controller.select_movie(title)
             else:
                 self.controller.select_series(title)

@@ -206,6 +206,11 @@ def test_library_items_export_endpoint(
     not_found = api_client.get("/api/v1/libraries/nonexistent_lib/items")
     assert not_found.status_code == 404
 
+    # Configured but unscanned library should return empty dict rather than 404
+    empty_response = api_client.get("/api/v1/libraries/movie/items")
+    assert empty_response.status_code == 200
+    assert empty_response.json() == {}
+
 
 def test_browse_movies_and_query_filter(
     api_app: FastAPI, api_client: TestClient

@@ -563,3 +563,103 @@ def test_settings_dialog_per_library_scanning_controls(qtbot) -> None:
 
     dialog_instance.trigger_garbage_cleanup()
     controller_mock.trigger_cleanup.assert_called_with(library_name="Movies")
+
+
+def test_settings_dialog_remote_library_uses_media_type(qtbot) -> None:
+    from PySide6.QtCore import Qt
+
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.staged_scan_agents = {
+        "http://127.0.0.1:8800": {
+            "name": "Scan Agent",
+            "url": "http://127.0.0.1:8800",
+            "reachable": True,
+            "discovered_libraries": [
+                {
+                    "id": "remote-cinema",
+                    "name": "Remote Cinema",
+                    "media_type": "movie",
+                    "root_path": "/remote/movies",
+                }
+            ],
+        }
+    }
+
+    dialog._populate_remote_agents_tree()
+
+    # Find the library item in the tree
+    agent_item = dialog.remote_agents_tree_widget.topLevelItem(0)
+    assert agent_item is not None
+    assert agent_item.childCount() == 1
+    library_item = agent_item.child(0)
+    assert library_item is not None
+    assert "Remote Cinema [MOVIE]" in library_item.text(0)
+
+    # Check the item to enable it
+    library_item.setCheckState(0, Qt.CheckState.Checked)
+    dialog._on_remote_tree_item_changed(library_item, 0)
+
+    assert "Remote Cinema" in dialog.staged_libraries
+    staged_config = dialog.staged_libraries["Remote Cinema"]
+    assert staged_config["type"] == "movie"
+    assert staged_config["management_type"] == "remote"
+    assert staged_config["remote_library_id"] == "remote-cinema"
+
+    dialog.reject()
+
+
+def test_settings_dialog_scan_selected_remote_library(qtbot) -> None:
+    from unittest.mock import MagicMock
+
+    controller_mock = MagicMock()
+    controller_mock._config = config
+    dialog = SettingsDialog(controller_instance=controller_mock)
+    qtbot.addWidget(dialog)
+
+    dialog.staged_libraries["Remote TV"] = {
+        "type": "tv",
+        "management_type": "remote",
+        "agent_url": "http://127.0.0.1:8800",
+        "remote_library_id": "remote-tv-1",
+        "paths": [],
+        "archive_paths": [],
+        "show_future_episodes": True,
+    }
+
+    dialog.staged_scan_agents = {
+        "http://127.0.0.1:8800": {
+            "name": "Scan Agent",
+            "url": "http://127.0.0.1:8800",
+            "reachable": True,
+            "discovered_libraries": [
+                {
+                    "id": "remote-tv-1",
+                    "name": "Remote TV",
+                    "media_type": "tv",
+                    "root_path": "/remote/tv",
+                }
+            ],
+        }
+    }
+
+    dialog._populate_remote_agents_tree()
+    agent_item = dialog.remote_agents_tree_widget.topLevelItem(0)
+    assert agent_item is not None
+    library_item = agent_item.child(0)
+    assert library_item is not None
+
+    dialog.remote_agents_tree_widget.setCurrentItem(library_item)
+    dialog.scan_selected_remote_library()
+
+    controller_mock.trigger_scan.assert_called_once_with(
+        force_refresh=False,
+        library_name="Remote TV",
+        run_pass1=True,
+        run_pass2=True,
+        chain_pass3=True,
+        chain_cleanup=True,
+    )
+
+    dialog.reject()
