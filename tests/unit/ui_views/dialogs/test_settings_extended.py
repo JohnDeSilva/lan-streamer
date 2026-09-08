@@ -175,12 +175,20 @@ def test_remove_staged_library_none_selected(dialog) -> None:
 
 
 def test_add_staged_directory(dialog_with_libs, tmp_path) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
     dialog = dialog_with_libs
     dialog.library_selector.setCurrentText("TV Shows")
 
-    with patch(
-        "lan_streamer.ui_views.proxy.QFileDialog.getExistingDirectory",
-        return_value=str(tmp_path),
+    with (
+        patch(
+            "lan_streamer.ui_views.proxy.QFileDialog.getExistingDirectory",
+            return_value=str(tmp_path),
+        ),
+        patch(
+            "lan_streamer.ui_views.dialogs.settings.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
     ):
         dialog.add_staged_directory()
 

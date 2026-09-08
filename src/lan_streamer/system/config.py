@@ -26,6 +26,77 @@ CONFIG_FILE = _parse_config_path()
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+def split_multi_root_libraries(
+    libraries_dictionary: dict[str, dict[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], list[tuple[str, str, str]]]:
+    """Splits any library with multiple root directories into separate libraries.
+
+    Each resulting library has at most one root directory in its 'paths' list.
+    The first root directory keeps the original library name.
+    Subsequent root directories are assigned separate libraries named:
+    '{library_name} ({folder_name})' based on the directory folder name,
+    falling back to '{library_name} ({number})' if collisions occur.
+
+    Returns:
+        A tuple of (normalized_libraries, split_records), where each split_record
+        is a tuple of (old_library_name, new_library_name, root_path).
+    """
+    normalized_libraries: dict[str, dict[str, Any]] = {}
+    split_records: list[tuple[str, str, str]] = []
+
+    for library_name, library_configuration in libraries_dictionary.items():
+        configuration_copy = dict(library_configuration)
+        raw_paths = configuration_copy.get("paths", [])
+        # Deduplicate paths while preserving order
+        unique_paths: list[str] = list(dict.fromkeys(raw_paths))
+        archive_paths: list[str] = configuration_copy.get("archive_paths", [])
+
+        if len(unique_paths) <= 1:
+            configuration_copy["paths"] = unique_paths
+            normalized_libraries[library_name] = configuration_copy
+            continue
+
+        # Keep first path for original library
+        first_path = unique_paths[0]
+        configuration_copy["paths"] = [first_path]
+        configuration_copy["archive_paths"] = [
+            path for path in archive_paths if path == first_path
+        ]
+        normalized_libraries[library_name] = configuration_copy
+
+        # Split remaining paths into separate libraries
+        for index, path in enumerate(unique_paths[1:], start=2):
+            folder_name = Path(path).name.strip()
+            candidate_name = (
+                f"{library_name} ({folder_name})"
+                if folder_name
+                else f"{library_name} ({index})"
+            )
+            if (
+                candidate_name in normalized_libraries
+                or candidate_name in libraries_dictionary
+            ):
+                candidate_name = f"{library_name} ({index})"
+
+            counter = index
+            while (
+                candidate_name in normalized_libraries
+                or candidate_name in libraries_dictionary
+            ):
+                counter += 1
+                candidate_name = f"{library_name} ({counter})"
+
+            new_configuration = dict(library_configuration)
+            new_configuration["paths"] = [path]
+            new_configuration["archive_paths"] = [
+                archive_path for archive_path in archive_paths if archive_path == path
+            ]
+            normalized_libraries[candidate_name] = new_configuration
+            split_records.append((library_name, candidate_name, path))
+
+    return normalized_libraries, split_records
+
+
 class Config:
     """Manages system configuration.
 
@@ -281,13 +352,33 @@ class Config:
 
             # Assign general settings from the fully populated dictionary
             raw_libraries = config_dict.get("libraries", {})
-            normalized_libraries: dict[str, dict[str, Any]] = {}
-            for library_name, library_configuration in raw_libraries.items():
-                normalized_configuration = dict(library_configuration)
-                if "management_type" not in normalized_configuration:
-                    normalized_configuration["management_type"] = "local"
-                normalized_libraries[library_name] = normalized_configuration
+            normalized_libraries, split_records = split_multi_root_libraries(
+                raw_libraries
+            )
+            for library_configuration in normalized_libraries.values():
+                if "management_type" not in library_configuration:
+                    library_configuration["management_type"] = "local"
             self.libraries = normalized_libraries
+
+            # Reassign DB records if any library had multiple roots and was split
+            if split_records:
+                logger.info(
+                    "Split %d multi-root libraries into separate single-root libraries",
+                    len(split_records),
+                )
+                try:
+                    from lan_streamer.db.library import (
+                        reassign_library_items_by_root_path,
+                    )
+
+                    for old_name, new_name, root_path in split_records:
+                        reassign_library_items_by_root_path(
+                            old_name, new_name, root_path
+                        )
+                except Exception:
+                    logger.exception(
+                        "Database reassignment during library split failed"
+                    )
             self.scan_agents = config_dict.get("scan_agents", {})
             self.sync_history_on_start = config_dict["sync_history_on_start"]
             self.filter_out_watched = config_dict["filter_out_watched"]
@@ -369,6 +460,25 @@ class Config:
         try:
             from lan_streamer.db.models import SecretType
             from lan_streamer.db.queries_config import set_app_config, set_secret
+
+            normalized_libraries, split_records = split_multi_root_libraries(
+                self.libraries
+            )
+            self.libraries = normalized_libraries
+            if split_records:
+                try:
+                    from lan_streamer.db.library import (
+                        reassign_library_items_by_root_path,
+                    )
+
+                    for old_name, new_name, root_path in split_records:
+                        reassign_library_items_by_root_path(
+                            old_name, new_name, root_path
+                        )
+                except Exception:
+                    logger.exception(
+                        "Database reassignment during save_to_db split failed"
+                    )
 
             # General settings
             set_app_config("libraries", self.libraries)

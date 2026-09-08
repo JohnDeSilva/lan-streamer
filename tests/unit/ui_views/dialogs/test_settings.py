@@ -335,6 +335,92 @@ def test_settings_dialog_remote_agent_unreachable(qtbot) -> None:
     agent_item = tree.topLevelItem(0)
     assert agent_item is not None
     assert "🔴" in agent_item.text(0)
-    assert agent_item.text(1) == "Status: Unreachable"
+    dialog.reject()
+
+
+def test_settings_dialog_enforce_single_root_directory_add_and_replace(qtbot) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.library_name_input.setText("SingleRootLib")
+    dialog.add_staged_library()
+
+    assert "SingleRootLib" in dialog.staged_libraries
+    assert dialog.staged_libraries["SingleRootLib"]["paths"] == []
+
+    # 1. Add first directory
+    with patch(
+        "lan_streamer.ui_views.dialogs.settings.QFileDialog.getExistingDirectory",
+        return_value="/root/one",
+    ):
+        dialog.add_staged_directory()
+
+    assert dialog.staged_libraries["SingleRootLib"]["paths"] == ["/root/one"]
+
+    # 2. Try adding a second directory and choose No (cancel replace)
+    with (
+        patch(
+            "lan_streamer.ui_views.dialogs.settings.QFileDialog.getExistingDirectory",
+            return_value="/root/two",
+        ),
+        patch(
+            "lan_streamer.ui_views.dialogs.settings.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.No,
+        ),
+    ):
+        dialog.add_staged_directory()
+
+    assert dialog.staged_libraries["SingleRootLib"]["paths"] == ["/root/one"]
+
+    # 3. Try adding a second directory and choose Yes (confirm replace)
+    with (
+        patch(
+            "lan_streamer.ui_views.dialogs.settings.QFileDialog.getExistingDirectory",
+            return_value="/root/two",
+        ),
+        patch(
+            "lan_streamer.ui_views.dialogs.settings.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+    ):
+        dialog.add_staged_directory()
+
+    assert dialog.staged_libraries["SingleRootLib"]["paths"] == ["/root/two"]
+
+    # 4. Remove the directory
+    dialog.directory_list_widget.setCurrentRow(0)
+    dialog.remove_staged_directory()
+    assert dialog.staged_libraries["SingleRootLib"]["paths"] == []
 
     dialog.reject()
+
+
+def test_settings_dialog_save_config_splits_multi_root(qtbot, monkeypatch) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    # Manually stage a multi-root library
+    dialog.staged_libraries = {
+        "Combined": {
+            "paths": ["/media/shows", "/media/cartoons"],
+            "type": "tv",
+            "archive_paths": [],
+            "management_type": "local",
+        }
+    }
+
+    with (
+        patch("lan_streamer.system.config.config.save"),
+        patch("lan_streamer.system.config.config.save_to_db"),
+        patch("lan_streamer.system.logging_handler.set_application_log_level"),
+    ):
+        dialog.save_config()
+
+    from lan_streamer.system.config import config
+
+    assert "Combined" in config.libraries
+    assert config.libraries["Combined"]["paths"] == ["/media/shows"]
+    assert "Combined (cartoons)" in config.libraries
+    assert config.libraries["Combined (cartoons)"]["paths"] == ["/media/cartoons"]

@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from lan_streamer import __version__
-from lan_streamer.system.config import config
+from lan_streamer.system.config import config, split_multi_root_libraries
 from lan_streamer.system.updater import UpdateCheckWorker
 from lan_streamer.ui_views.dialogs.update_dialog import UpdateDialog
 from lan_streamer.ui_views.progress_widgets import (
@@ -149,7 +149,7 @@ class SettingsDialog(QDialog):
         self.library_management_mode_label: QLabel = QLabel("Management: Local")
         self.show_future_episodes_checkbox: QCheckBox = QCheckBox()
         self.anime_library_checkbox: QCheckBox = QCheckBox()
-        self.directory_list_label: QLabel = QLabel("Mapped Root Directories:")
+        self.directory_list_label: QLabel = QLabel("Root Directory:")
         self.directory_list_widget: QListWidget = QListWidget()
         self.library_order_list_widget: QListWidget = QListWidget()
 
@@ -477,7 +477,7 @@ class SettingsDialog(QDialog):
         libraries_layout.addWidget(self.anime_library_checkbox)
 
         # Mapped Directories List
-        self.directory_list_label.setText("Mapped Root Directories:")
+        self.directory_list_label.setText("Root Directory:")
         libraries_layout.addWidget(self.directory_list_label)
         libraries_layout.addWidget(self.directory_list_widget)
 
@@ -1484,7 +1484,7 @@ class SettingsDialog(QDialog):
         if selected_library in self.staged_libraries:
             lib_config = self.staged_libraries[selected_library]
             lib_type = lib_config.get("type", "tv")
-            self.directory_list_label.setText("Mapped Root Directories:")
+            self.directory_list_label.setText("Root Directory:")
 
             if lib_type in ("tv", "anime"):
                 self.show_future_episodes_checkbox.setVisible(True)
@@ -2138,12 +2138,29 @@ class SettingsDialog(QDialog):
         chosen_directory: str = QFileDialog.getExistingDirectory(
             self, "Select Root Directory"
         )
-        if chosen_directory:
-            paths: list[str] = self.staged_libraries[selected_library].get("paths", [])
-            if chosen_directory not in paths:
-                paths.append(chosen_directory)
-                self.staged_libraries[selected_library]["paths"] = paths
-                self._refresh_directory_list()
+        if not chosen_directory:
+            return
+
+        existing_paths: list[str] = self.staged_libraries[selected_library].get(
+            "paths", []
+        )
+        if existing_paths:
+            if chosen_directory in existing_paths:
+                return
+            confirmation_result = QMessageBox.question(
+                self,
+                "Replace Root Directory?",
+                f"This library already has a root directory configured:\n\n{existing_paths[0]}\n\n"
+                f"Libraries only support a single root directory. Would you like to replace it with:\n\n{chosen_directory}?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirmation_result != QMessageBox.StandardButton.Yes:
+                return
+            self.staged_libraries[selected_library]["archive_paths"] = []
+
+        self.staged_libraries[selected_library]["paths"] = [chosen_directory]
+        self._refresh_directory_list()
 
     @Slot()
     def remove_staged_directory(self) -> None:
@@ -2157,10 +2174,14 @@ class SettingsDialog(QDialog):
             if "  " in selected_item.text()
             else selected_item.text()
         )
-        paths: list[str] = self.staged_libraries[selected_library].get("paths", [])
-        if directory_path in paths:
-            paths.remove(directory_path)
-            self.staged_libraries[selected_library]["paths"] = paths
+        configured_paths: list[str] = self.staged_libraries[selected_library].get(
+            "paths", []
+        )
+        if directory_path in configured_paths:
+            configured_paths.remove(directory_path)
+            self.staged_libraries[selected_library]["paths"] = configured_paths
+        else:
+            self.staged_libraries[selected_library]["paths"] = []
 
         archive_paths: list[str] = self.staged_libraries[selected_library].get(
             "archive_paths", []
@@ -2168,6 +2189,8 @@ class SettingsDialog(QDialog):
         if directory_path in archive_paths:
             archive_paths.remove(directory_path)
             self.staged_libraries[selected_library]["archive_paths"] = archive_paths
+        else:
+            self.staged_libraries[selected_library]["archive_paths"] = []
 
         self._refresh_directory_list()
 
@@ -2324,7 +2347,8 @@ class SettingsDialog(QDialog):
         config.scan_interval_hours = self.scan_interval_spinbox.value()
         config.scan_concurrency = self.scan_concurrency_spinbox.value()
 
-        config.libraries = self.staged_libraries
+        normalized_libraries, _ = split_multi_root_libraries(self.staged_libraries)
+        config.libraries = normalized_libraries
         config.scan_agents = self.staged_scan_agents
         config.enable_combined_view = self.enable_combined_view_checkbox.isChecked()
         config.combined_views = self.staged_combined_views

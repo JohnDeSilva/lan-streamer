@@ -13,31 +13,42 @@ def test_settings_dialog_displays_and_toggles_archive_mode(qtbot) -> None:
     initial_libraries = {
         "TV Shows": {
             "type": "tv",
-            "paths": ["/media/current_tv", "/media/archive_tv"],
+            "paths": ["/media/current_tv"],
+            "archive_paths": [],
+            "show_future_episodes": True,
+        },
+        "Archive TV": {
+            "type": "tv",
+            "paths": ["/media/archive_tv"],
             "archive_paths": ["/media/archive_tv"],
             "show_future_episodes": True,
-        }
+        },
     }
 
     with patch.dict(config.libraries, initial_libraries, clear=True):
         dialog = SettingsDialog()
         qtbot.addWidget(dialog)
 
-        # Select the library
+        # Select the TV Shows library
         dialog.library_selector.setCurrentText("TV Shows")
 
         list_widget = dialog.directory_list_widget
-        assert list_widget.count() == 2
+        assert list_widget.count() == 1
 
-        # Item 0 is current (Active), Item 1 is archive (Archive)
+        # TV Shows is Active
         item0 = list_widget.item(0)
-        item1 = list_widget.item(1)
         assert "[Active]" in item0.text()
         assert "/media/current_tv" in item0.text()
-        assert "[Archive]" in item1.text()
-        assert "/media/archive_tv" in item1.text()
 
-        # Select item 0 and toggle to Archive
+        # Switch to Archive TV
+        dialog.library_selector.setCurrentText("Archive TV")
+        assert list_widget.count() == 1
+        archive_item = list_widget.item(0)
+        assert "[Archive]" in archive_item.text()
+        assert "/media/archive_tv" in archive_item.text()
+
+        # Switch back to TV Shows, select item 0 and toggle to Archive
+        dialog.library_selector.setCurrentText("TV Shows")
         list_widget.setCurrentRow(0)
         dialog.toggle_staged_directory_archive_mode()
 
@@ -56,11 +67,15 @@ def test_settings_dialog_displays_and_toggles_archive_mode(qtbot) -> None:
             not in dialog.staged_libraries["TV Shows"]["archive_paths"]
         )
 
-        # Verify save_config persists archive_paths to config.libraries
-        with patch.object(config, "save"):
+        # Toggle back to Archive and verify save_config persists archive_paths
+        dialog.toggle_staged_directory_archive_mode()
+        with (
+            patch.object(config, "save"),
+            patch.object(config, "save_to_db"),
+        ):
             dialog.save_config()
             assert config.libraries["TV Shows"]["archive_paths"] == [
-                "/media/archive_tv"
+                "/media/current_tv"
             ]
 
         dialog.reject()
@@ -69,9 +84,9 @@ def test_settings_dialog_displays_and_toggles_archive_mode(qtbot) -> None:
 def test_settings_dialog_remove_directory_cleans_archive_paths(qtbot) -> None:
     """Verify removing a directory also removes it from archive_paths."""
     initial_libraries = {
-        "TV Shows": {
+        "Archive TV": {
             "type": "tv",
-            "paths": ["/media/current_tv", "/media/archive_tv"],
+            "paths": ["/media/archive_tv"],
             "archive_paths": ["/media/archive_tv"],
             "show_future_episodes": True,
         }
@@ -81,19 +96,19 @@ def test_settings_dialog_remove_directory_cleans_archive_paths(qtbot) -> None:
         dialog = SettingsDialog()
         qtbot.addWidget(dialog)
 
-        dialog.library_selector.setCurrentText("TV Shows")
+        dialog.library_selector.setCurrentText("Archive TV")
         list_widget = dialog.directory_list_widget
-        assert list_widget.count() == 2
+        assert list_widget.count() == 1
 
-        # Select archive_tv (row 1) and remove it
-        list_widget.setCurrentRow(1)
+        # Select archive_tv and remove it
+        list_widget.setCurrentRow(0)
         dialog.remove_staged_directory()
 
-        assert list_widget.count() == 1
-        assert "/media/archive_tv" not in dialog.staged_libraries["TV Shows"]["paths"]
+        assert list_widget.count() == 0
+        assert "/media/archive_tv" not in dialog.staged_libraries["Archive TV"]["paths"]
         assert (
             "/media/archive_tv"
-            not in dialog.staged_libraries["TV Shows"]["archive_paths"]
+            not in dialog.staged_libraries["Archive TV"]["archive_paths"]
         )
 
         dialog.reject()

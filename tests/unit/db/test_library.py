@@ -2036,3 +2036,75 @@ def test_save_library_multi_root_scan_preserves_versions() -> None:
     paths = {v["path"] for v in eps_after[0]["versions"]}
     assert "/root1/Show M/Season 1/ep1_v1.mkv" in paths
     assert "/root2/Show M/Season 1/ep1_v2.mkv" in paths
+
+
+def test_reassign_library_items_by_root_path_tv(mock_db_file) -> None:
+    from lan_streamer.db.library import reassign_library_items_by_root_path
+
+    library_data = {
+        "Show In Root 1": {
+            "metadata": {"overview": "Show 1"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {"name": "E1", "path": "/root1/Show In Root 1/S01E01.mkv"}
+                    ],
+                }
+            },
+        },
+        "Show In Root 2": {
+            "metadata": {"overview": "Show 2"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {"name": "E1", "path": "/root2/Show In Root 2/S01E01.mkv"}
+                    ],
+                }
+            },
+        },
+    }
+    db.save_library("MixedLib", library_data)
+
+    counts = reassign_library_items_by_root_path("MixedLib", "SplitLib2", "/root2")
+    assert counts["series"] == 1
+
+    loaded_original = db.load_library("MixedLib")
+    assert "Show In Root 1" in loaded_original
+    assert "Show In Root 2" not in loaded_original
+
+    loaded_split = db.load_library("SplitLib2")
+    assert "Show In Root 2" in loaded_split
+    assert "Show In Root 1" not in loaded_split
+
+
+def test_reassign_library_items_by_root_path_movies(mock_db_file) -> None:
+    from lan_streamer.db.library import reassign_library_items_by_root_path
+
+    movie_data = {
+        "Movie In Root 1": {
+            "overview": "Movie 1",
+            "default_path": "/root1/movies/Movie1.mkv",
+            "media_files": [{"path": "/root1/movies/Movie1.mkv"}],
+        },
+        "Movie In Root 2": {
+            "overview": "Movie 2",
+            "default_path": "/root2/movies/Movie2.mkv",
+            "media_files": [{"path": "/root2/movies/Movie2.mkv"}],
+        },
+    }
+    db.save_movie_library("MixedMovies", movie_data)
+
+    counts = reassign_library_items_by_root_path(
+        "MixedMovies", "SplitMovies2", "/root2"
+    )
+    assert counts["movies"] == 1
+
+    loaded_original = db.load_movie_library("MixedMovies")
+    assert "Movie In Root 1" in loaded_original
+    assert "Movie In Root 2" not in loaded_original
+
+    loaded_split = db.load_movie_library("SplitMovies2")
+    assert "Movie In Root 2" in loaded_split
+    assert "Movie In Root 1" not in loaded_split
