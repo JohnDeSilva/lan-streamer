@@ -1,4 +1,4 @@
-.PHONY: run lint check-lint reformat test test-local load-test build validate-executable clean revision migrate release build-test-image agent-test agent-lint agent-run
+.PHONY: run run-desktop run-agent lint check-lint reformat test test-desktop test-local test-agent test-agent-front test-agent-back load-test build validate-executable clean revision migrate release build-test-image build-agent-test-image agent-test agent-lint agent-run agent-down
 
 UNAME_S := $(shell uname -s)
 
@@ -33,7 +33,14 @@ VERSION := $(shell python3 -c "import re; print(re.search(r'__version__\s*=\s*[\
 DOCKERFILE := $(shell if [ -f docker/Dockerfile.$(TEST_OS)-$(TEST_OS_VERSION) ]; then echo docker/Dockerfile.$(TEST_OS)-$(TEST_OS_VERSION); else echo docker/Dockerfile.$(TEST_OS); fi)
 
 run: migrate
+	$(MAKE) -C agent up
 	PYTHONPATH=src $(QT_PLATFORM) $(PYTHON) -m lan_streamer.main --config ./dev_run/config.json
+
+run-desktop: migrate
+	PYTHONPATH=src $(QT_PLATFORM) $(PYTHON) -m lan_streamer.main --config ./dev_run/config.json
+
+run-agent:
+	$(MAKE) -C agent run
 
 typecheck:
 	$(MYPY) src/
@@ -67,8 +74,15 @@ build-test-image:
 		echo "Image lan-streamer-test-$(TEST_OS):$(GIT_HASH) already exists and workspace is clean. Skipping build."; \
 	fi
 
+build-agent-test-image:
+	@if [ -z "$$($(CONTAINER_ENGINE) images -q lan-streamer-agent-test:$(GIT_HASH) 2>/dev/null)" ] || [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
+		$(CONTAINER_ENGINE) build -t lan-streamer-agent-test:$(GIT_HASH) -f docker/Dockerfile.agent-test . ; \
+	else \
+		echo "Image lan-streamer-agent-test:$(GIT_HASH) already exists and workspace is clean. Skipping build."; \
+	fi
+
 ifeq ($(UNAME_S),Linux)
-test: build-test-image
+test-desktop: build-test-image
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-run || true
 	$(CONTAINER_ENGINE) run --name lan-streamer-test-$(TEST_OS)-run lan-streamer-test-$(TEST_OS):$(GIT_HASH) make test-local; \
 	EXIT_CODE=$$?; \
@@ -77,7 +91,43 @@ test: build-test-image
 	$(CONTAINER_ENGINE) rm -f lan-streamer-test-$(TEST_OS)-run; \
 	exit $$EXIT_CODE
 else
-test: test-local
+test-desktop: test-local
+endif
+
+test: test-desktop test-agent-front test-agent-back
+
+ifeq ($(UNAME_S),Linux)
+test-agent: build-agent-test-image
+	$(CONTAINER_ENGINE) rm -f lan-streamer-agent-run || true
+	$(CONTAINER_ENGINE) run --name lan-streamer-agent-run lan-streamer-agent-test:$(GIT_HASH) make -C agent test; \
+	EXIT_CODE=$$?; \
+	$(CONTAINER_ENGINE) rm -f lan-streamer-agent-run; \
+	exit $$EXIT_CODE
+
+test-agent-front: build-agent-test-image
+	$(CONTAINER_ENGINE) rm -f lan-streamer-agent-front-run || true
+	$(CONTAINER_ENGINE) run --name lan-streamer-agent-front-run lan-streamer-agent-test:$(GIT_HASH) make -C agent test-front; \
+	EXIT_CODE=$$?; \
+	$(CONTAINER_ENGINE) rm -f lan-streamer-agent-front-run; \
+	exit $$EXIT_CODE
+
+test-agent-back: build-agent-test-image
+	$(CONTAINER_ENGINE) rm -f lan-streamer-agent-back-run || true
+	$(CONTAINER_ENGINE) run --name lan-streamer-agent-back-run lan-streamer-agent-test:$(GIT_HASH) make -C agent test-back; \
+	EXIT_CODE=$$?; \
+	mkdir -p ./coverage-results; \
+	$(CONTAINER_ENGINE) cp lan-streamer-agent-back-run:/app/agent/.coverage ./coverage-results/agent.coverage || true; \
+	$(CONTAINER_ENGINE) rm -f lan-streamer-agent-back-run; \
+	exit $$EXIT_CODE
+else
+test-agent:
+	$(MAKE) -C agent test
+
+test-agent-front:
+	$(MAKE) -C agent test-front
+
+test-agent-back:
+	$(MAKE) -C agent test-back
 endif
 
 load-test:
@@ -135,11 +185,12 @@ release:
 	@false
 	@exit 1
 
-agent-test:
-	$(MAKE) -C agent test
+agent-test: test-agent
 
 agent-lint:
 	$(MAKE) -C agent lint
 
-agent-run:
-	$(MAKE) -C agent run
+agent-run: run-agent
+
+agent-down:
+	$(MAKE) -C agent down
