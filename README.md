@@ -501,7 +501,21 @@ LAN Streamer includes a standalone, remote scanning agent (`agent/`) designed to
 - **REST API (`/api/v1`)**: Exposes typed endpoints for health checks, multi-library configuration, background scan management, TMDB metadata searching & matching, filename preview & renaming, subtitles, and desktop client watch-state sync.
 - **Streaming Compatibility & Mount Mapping**: Preserves original media streaming behavior. Remote storage paths (e.g., `/media/movies`) are mapped to local SMB/NFS filesystem mount points in the desktop client's **Remote Libraries Setup** tab, allowing instant VLC playback without transcoding.
 
-### Running with Docker Compose
+### Running with Docker
+
+#### Pull from GitHub Container Registry
+```bash
+docker run -d \
+  --name lan-streamer-scan-agent \
+  -p 8800:8800 \
+  -e TMDB_API_KEY=your_key \
+  -v /path/to/media:/media:ro \
+  -v /path/to/data:/data \
+  --restart unless-stopped \
+  ghcr.io/johndesilva/lan-streamer-agent:latest
+```
+
+#### Run with Docker Compose
 From the repository root, start the agent with Docker Compose:
 ```bash
 # Build and run the agent container in foreground
