@@ -126,6 +126,7 @@ class Controller(QObject):
         )
         self._tmdb_client = tmdb_client if tmdb_client is not None else _tmdb_default
         self.current_library_name: str = ""
+        self.current_tab_name: str = ""
         self.cached_library_data: dict[str, Any] = {}
         self.selected_series_name: str = ""
         self.sort_mode: str = self._config.sort_mode
@@ -170,34 +171,60 @@ class Controller(QObject):
         if self._config.auto_scan_enabled:
             self.scheduled_scan_service.start()
 
-    def select_library(self, library_name: str, reset_selection: bool = True) -> None:
-        logger.info(f"Controller loading library: {library_name}")
+    def select_tab(self, tab_name: str, reset_selection: bool = True) -> None:
+        logger.info("Controller loading tab: %s", tab_name)
         self._config.load()
-        self.current_library_name = library_name
-        self.status_changed.emit(f"Loading library: {library_name}...")
+        self.current_tab_name = tab_name
+        self.status_changed.emit(f"Loading tab: {tab_name}...")
 
-        library_config = self._config.libraries.get(library_name, {})
+        library_names: list[str] = []
+        if hasattr(self._config, "get_tab_libraries"):
+            configured_tab_libraries = self._config.get_tab_libraries(tab_name)
+            if isinstance(configured_tab_libraries, list) and configured_tab_libraries:
+                library_names = [
+                    name for name in configured_tab_libraries if isinstance(name, str)
+                ]
+        if not library_names:
+            library_names = [tab_name]
+
+        self.current_library_name = library_names[0] if library_names else tab_name
 
         existing_directories = self.file_system_watcher.directories()
         if existing_directories:
             self.file_system_watcher.removePaths(existing_directories)
 
-        root_directories: list[str] = library_config.get("paths", [])
-        for directory_path in root_directories:
-            if Path(directory_path).is_dir():
-                self.file_system_watcher.addPath(directory_path)
+        loaded_libraries: list[tuple[str, dict[str, Any]]] = []
+        for single_library_name in library_names:
+            single_library_config = self._config.libraries.get(single_library_name, {})
+            root_directories: list[str] = single_library_config.get("paths", [])
+            for directory_path in root_directories:
+                if Path(directory_path).is_dir():
+                    self.file_system_watcher.addPath(directory_path)
 
-        if library_config.get("type", "tv") == "movie":
-            self.cached_library_data = self._db.load_movie_library(library_name)
-        else:
-            self.cached_library_data = self._db.load_library(library_name)
+            if single_library_config.get("type", "tv") == "movie":
+                single_library_data = self._db.load_movie_library(single_library_name)
+            else:
+                single_library_data = self._db.load_library(single_library_name)
 
-        if (
-            library_config.get("management_type") == "remote"
-            and not self.cached_library_data
-        ):
-            self.sync_remote_library(library_name)
+            if (
+                single_library_config.get("management_type") == "remote"
+                and not single_library_data
+            ):
+                self.sync_remote_library(single_library_name)
+                if single_library_config.get("type", "tv") == "movie":
+                    single_library_data = self._db.load_movie_library(
+                        single_library_name
+                    )
+                else:
+                    single_library_data = self._db.load_library(single_library_name)
 
+            loaded_libraries.append((single_library_name, single_library_data))
+
+        from lan_streamer.services.tab_consolidation_service import (
+            consolidate_library_data,
+        )
+
+        self.cached_library_data = consolidate_library_data(loaded_libraries)
         self._cache_series_metrics()
 
         if reset_selection:
@@ -205,6 +232,9 @@ class Controller(QObject):
 
         self.status_changed.emit("Library loaded successfully.")
         self.library_loaded.emit()
+
+    def select_library(self, library_name: str, reset_selection: bool = True) -> None:
+        self.select_tab(library_name, reset_selection=reset_selection)
 
     def sync_remote_library(self, library_name: str) -> bool:
         """Synchronizes items for a remote library from the scan agent into local DB and cache."""
@@ -482,11 +512,15 @@ class Controller(QObject):
         logger.info(
             f"Controller marking season watched={watched} for series '{series_name}', season '{season_name}'"
         )
-        self._db.update_season_watched_status(
-            self.current_library_name, series_name, season_name, watched
-        )
-
         series_data: dict[str, Any] = self.cached_library_data.get(series_name, {})
+        target_libraries: list[str] = series_data.get("_origin_libraries") or (
+            [self.current_library_name] if self.current_library_name else []
+        )
+        for target_library_name in target_libraries:
+            self._db.update_season_watched_status(
+                target_library_name, series_name, season_name, watched
+            )
+
         season_data: dict[str, Any] = series_data.get("seasons", {}).get(
             season_name, {}
         )
@@ -496,9 +530,9 @@ class Controller(QObject):
 
         self._cache_series_metrics()
 
-        if self.current_library_name:
+        if target_libraries:
             changed_hashes = self._smart_row_service.rebuild_for_libraries(
-                [self.current_library_name]
+                target_libraries
             )
             if changed_hashes:
                 self.smart_rows_updated.emit(changed_hashes)
@@ -508,11 +542,15 @@ class Controller(QObject):
 
     def mark_series_watched(self, series_name: str) -> None:
         logger.info(f"Controller marking entire series watched: '{series_name}'")
-        self._db.update_series_watched_status(
-            self.current_library_name, series_name, True
-        )
-
         series_data: dict[str, Any] = self.cached_library_data.get(series_name, {})
+        target_libraries: list[str] = series_data.get("_origin_libraries") or (
+            [self.current_library_name] if self.current_library_name else []
+        )
+        for target_library_name in target_libraries:
+            self._db.update_series_watched_status(
+                target_library_name, series_name, True
+            )
+
         for season_data in series_data.get("seasons", {}).values():
             for episode_record in season_data.get("episodes", []):
                 if episode_record.get("path"):
@@ -520,9 +558,9 @@ class Controller(QObject):
 
         self._cache_series_metrics()
 
-        if self.current_library_name:
+        if target_libraries:
             changed_hashes = self._smart_row_service.rebuild_for_libraries(
-                [self.current_library_name]
+                target_libraries
             )
             if changed_hashes:
                 self.smart_rows_updated.emit(changed_hashes)
@@ -534,8 +572,15 @@ class Controller(QObject):
         self,
         force_refresh: bool = False,
         scan_archive_roots: bool = True,
+        run_pass1: bool = True,
+        run_pass2: bool = True,
+        run_pass3: bool = False,
+        chain_pass3: bool = True,
+        chain_cleanup: bool = False,
+        library_name: str | None = None,
     ) -> None:
-        if not self.current_library_name:
+        target_library_name = library_name or self.current_library_name
+        if not target_library_name:
             self.status_changed.emit("Select a library first.")
             return
 
@@ -546,20 +591,21 @@ class Controller(QObject):
             return
 
         self._config.load()
-        library_config = self._config.libraries.get(self.current_library_name, {})
+        library_config = self._config.libraries.get(target_library_name, {})
         if library_config.get("management_type") == "remote":
             self.status_changed.emit(
-                f"Syncing remote library '{self.current_library_name}' from scan agent..."
+                f"Syncing remote library '{target_library_name}' from scan agent..."
             )
-            sync_success = self.sync_remote_library(self.current_library_name)
+            sync_success = self.sync_remote_library(target_library_name)
             if sync_success:
                 self.status_changed.emit(
-                    f"Remote library '{self.current_library_name}' synced successfully."
+                    f"Remote library '{target_library_name}' synced successfully."
                 )
             else:
                 self.status_changed.emit(
-                    f"Failed to sync remote library '{self.current_library_name}'."
+                    f"Failed to sync remote library '{target_library_name}'."
                 )
+            self.scan_completed.emit()
             return
 
         root_directories: list[str] = library_config.get("paths", [])
@@ -575,22 +621,31 @@ class Controller(QObject):
             ]
         library_type: str = library_config.get("type", "tv")
         self.status_changed.emit(
-            f"Scanning library '{self.current_library_name}' (force={force_refresh})...."
+            f"Scanning library '{target_library_name}' (force={force_refresh})...."
         )
 
-        self._running_pass3_after_scan = True
+        if library_type == "movie":
+            existing_library = self._db.load_movie_library(target_library_name)
+        else:
+            existing_library = self._db.load_library(target_library_name)
+
+        self._running_pass3_after_scan = chain_pass3
+        self._running_cleanup_after_scan = chain_cleanup
         self._doing_scan_and_update = False
 
         self.worker_manager.scan.start(
             lambda: AsyncScanWorker(
                 root_directories=root_directories,
                 library_type=library_type,
-                existing_library=self.cached_library_data,
+                existing_library=existing_library,
                 async_task_manager=self.async_task_manager,
                 force_refresh=force_refresh,
                 cleanup=False,
-                library_name=self.current_library_name,
+                library_name=target_library_name,
                 scan_archive_roots=scan_archive_roots,
+                run_pass1=run_pass1,
+                run_pass2=run_pass2,
+                run_pass3=run_pass3,
             ),
             finished=self._on_scan_finished,
             partial_result=self._on_scan_partial,
@@ -616,13 +671,32 @@ class Controller(QObject):
         changed_season_ids = getattr(scan_worker, "changed_season_ids", None)
         changed_movie_ids = getattr(scan_worker, "changed_movie_ids", None)
         unavailable_directories = getattr(scan_worker, "unavailable_directories", [])
-        scanned_library_name = self.current_library_name
+        scanned_library_name = (
+            getattr(scan_worker, "library_name", "") or self.current_library_name
+        )
 
-        # Update cached data on the main thread (cheap operation)
+        # Update cached data on the main thread
         if scanned_library_name:
-            if self.current_library_name == scanned_library_name:
-                self.cached_library_data = updated_library
-                self._cache_series_metrics()
+            active_tab_libraries: list[str] = []
+            if self.current_tab_name and hasattr(self._config, "get_tab_libraries"):
+                tab_libraries_result = self._config.get_tab_libraries(
+                    self.current_tab_name
+                )
+                if isinstance(tab_libraries_result, list):
+                    active_tab_libraries = [
+                        library_item
+                        for library_item in tab_libraries_result
+                        if isinstance(library_item, str)
+                    ]
+            if not active_tab_libraries:
+                active_tab_libraries = [self.current_library_name]
+
+            if scanned_library_name in active_tab_libraries:
+                if len(active_tab_libraries) > 1:
+                    self.select_library(self.current_tab_name, reset_selection=False)
+                elif self.current_library_name == scanned_library_name:
+                    self.cached_library_data = updated_library
+                    self._cache_series_metrics()
 
             if unavailable_directories:
                 for directory_name in unavailable_directories:
@@ -636,7 +710,7 @@ class Controller(QObject):
                 )
 
             if (
-                self.current_library_name == scanned_library_name
+                scanned_library_name in active_tab_libraries
                 and not self.is_video_playing
             ):
                 self.library_loaded.emit()
@@ -715,12 +789,38 @@ class Controller(QObject):
         logger.info("Controller: PostScanWorker for finished scan released.")
 
     def _on_cleanup_finished(self, statistics: dict[str, Any]) -> None:
-        self.select_library(self.current_library_name, reset_selection=False)
+        self.select_library(
+            self.current_tab_name or self.current_library_name, reset_selection=False
+        )
         series_removed: int = statistics.get("series", 0)
         seasons_removed: int = statistics.get("seasons", 0)
         episodes_removed: int = statistics.get("episodes", 0)
         self.status_changed.emit(
             f"Cleanup finished: removed {series_removed} series, {seasons_removed} seasons, {episodes_removed} episodes."
+        )
+        self.scan_completed.emit()
+
+    def trigger_cleanup(self, library_name: str | None = None) -> None:
+        target_library_name = library_name or self.current_library_name
+        if not target_library_name:
+            self.trigger_global_cleanup()
+            return
+
+        self._config.load()
+        library_config = self._config.libraries.get(target_library_name, {})
+        root_directories: list[str] = library_config.get("paths", [])
+        self.status_changed.emit(
+            f"Cleaning up missing files in '{target_library_name}'..."
+        )
+
+        self.worker_manager.cleanup_global.start(
+            lambda: CleanupWorker(
+                library_name=target_library_name,
+                root_directories=root_directories,
+                async_task_manager=self.async_task_manager,
+            ),
+            finished=self._on_cleanup_finished,
+            error=self._on_worker_error,
         )
 
     def trigger_global_cleanup(self) -> None:
@@ -769,13 +869,15 @@ class Controller(QObject):
         self,
         force_refresh: bool = False,
         scan_archive_roots: bool = False,
+        library_name: str | None = None,
     ) -> None:
         """
         Combines a library scan (discovers new files, updates paths) with a
         cleanup pass (nulls paths for files that have gone missing).
         The cleanup runs automatically once the scan has completed.
         """
-        if not self.current_library_name:
+        target_library_name = library_name or self.current_library_name
+        if not target_library_name:
             self.status_changed.emit("Select a library first.")
             return
 
@@ -786,19 +888,19 @@ class Controller(QObject):
             return
 
         self._config.load()
-        library_config = self._config.libraries.get(self.current_library_name, {})
+        library_config = self._config.libraries.get(target_library_name, {})
         if library_config.get("management_type") == "remote":
             self.status_changed.emit(
-                f"Syncing remote library '{self.current_library_name}' from scan agent..."
+                f"Syncing remote library '{target_library_name}' from scan agent..."
             )
-            sync_success = self.sync_remote_library(self.current_library_name)
+            sync_success = self.sync_remote_library(target_library_name)
             if sync_success:
                 self.status_changed.emit(
-                    f"Remote library '{self.current_library_name}' synced successfully."
+                    f"Remote library '{target_library_name}' synced successfully."
                 )
             else:
                 self.status_changed.emit(
-                    f"Failed to sync remote library '{self.current_library_name}'."
+                    f"Failed to sync remote library '{target_library_name}'."
                 )
             self.scan_completed.emit()
             return
@@ -815,8 +917,13 @@ class Controller(QObject):
             ]
         library_type: str = library_config.get("type", "tv")
         self.status_changed.emit(
-            f"Scanning & updating library '{self.current_library_name}'..."
+            f"Scanning & updating library '{target_library_name}'..."
         )
+
+        if library_type == "movie":
+            existing_library = self._db.load_movie_library(target_library_name)
+        else:
+            existing_library = self._db.load_library(target_library_name)
 
         self._running_pass3_after_scan = True
         self._doing_scan_and_update = True
@@ -825,11 +932,11 @@ class Controller(QObject):
             lambda: AsyncScanWorker(
                 root_directories=root_directories,
                 library_type=library_type,
-                existing_library=self.cached_library_data,
+                existing_library=existing_library,
                 async_task_manager=self.async_task_manager,
                 force_refresh=force_refresh,
                 cleanup=False,
-                library_name=self.current_library_name,
+                library_name=target_library_name,
                 scan_archive_roots=scan_archive_roots,
             ),
             finished=self._on_scan_and_update_scan_finished,
@@ -846,8 +953,11 @@ class Controller(QObject):
             updated_library, _skip_scan_completed=True
         )
 
-        # Now chain into cleanup
-        if not self.current_library_name:
+        scan_worker = self.worker_manager.scan.instance
+        target_library_name = (
+            getattr(scan_worker, "library_name", "") or self.current_library_name
+        )
+        if not target_library_name:
             return
 
         unavailable_directories = getattr(
@@ -856,13 +966,16 @@ class Controller(QObject):
         if unavailable_directories:
             logger.warning(
                 "Skipping cleanup for library '%s' because root directories are unavailable: %s",
-                self.current_library_name,
+                target_library_name,
                 unavailable_directories,
             )
             self.status_changed.emit(
                 "Scan complete. Cleanup skipped because root directories are unavailable."
             )
-            self.select_library(self.current_library_name, reset_selection=False)
+            self.select_library(
+                self.current_tab_name or self.current_library_name,
+                reset_selection=False,
+            )
             self._doing_scan_and_update = False
             if self._running_pass3_after_scan:
                 self.trigger_runtime_extraction(changed_season_ids, changed_movie_ids)
@@ -870,14 +983,14 @@ class Controller(QObject):
                 self.scan_completed.emit()
             return
 
-        library_config = self._config.libraries.get(self.current_library_name, {})
+        library_config = self._config.libraries.get(target_library_name, {})
         root_directories: list[str] = library_config.get("paths", [])
         self.status_changed.emit(
-            f"Scan complete. Updating paths in '{self.current_library_name}'..."
+            f"Scan complete. Updating paths in '{target_library_name}'..."
         )
         self.worker_manager.cleanup_scan_update.start(
             lambda: CleanupWorker(
-                library_name=self.current_library_name,
+                library_name=target_library_name,
                 root_directories=root_directories,
                 async_task_manager=self.async_task_manager,
             ),
@@ -894,7 +1007,9 @@ class Controller(QObject):
         changed_movie_ids: set[str] | None = None,
     ) -> None:
         """Called when the cleanup phase of scan_and_update completes."""
-        self.select_library(self.current_library_name, reset_selection=False)
+        self.select_library(
+            self.current_tab_name or self.current_library_name, reset_selection=False
+        )
         series_removed: int = statistics.get("series", 0)
         episodes_nulled: int = statistics.get("episodes", 0)
         self.status_changed.emit(

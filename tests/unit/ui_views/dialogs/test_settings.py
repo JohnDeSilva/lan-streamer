@@ -424,3 +424,142 @@ def test_settings_dialog_save_config_splits_multi_root(qtbot, monkeypatch) -> No
     assert config.libraries["Combined"]["paths"] == ["/media/shows"]
     assert "Combined (cartoons)" in config.libraries
     assert config.libraries["Combined (cartoons)"]["paths"] == ["/media/cartoons"]
+
+
+def test_settings_dialog_tabs_management_workflow(qtbot) -> None:
+    from unittest.mock import MagicMock, patch
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QInputDialog
+
+    from lan_streamer.system.config import config
+
+    controller_mock = MagicMock()
+    dialog_instance = SettingsDialog(controller_instance=controller_mock)
+    qtbot.addWidget(dialog_instance)
+
+    dialog_instance.staged_libraries = {
+        "Anime": {"type": "tv", "paths": ["/anime"], "management_type": "local"},
+        "Movies": {"type": "movie", "paths": ["/movies"], "management_type": "local"},
+        "TV Shows": {"type": "tv", "paths": ["/tv"], "management_type": "local"},
+    }
+    dialog_instance.staged_tabs = [
+        {"name": "Anime", "libraries": ["Anime"]},
+        {"name": "General", "libraries": ["Movies", "TV Shows"]},
+    ]
+    dialog_instance._refresh_tabs_list()
+
+    assert dialog_instance.tabs_list_widget.count() == 2
+
+    # 1. Select tab and verify checkable libraries
+    dialog_instance.tabs_list_widget.setCurrentRow(1)
+    assert dialog_instance.tab_libraries_list_widget.count() == 3
+
+    # Find item for Anime and check it
+    for row_index in range(dialog_instance.tab_libraries_list_widget.count()):
+        item = dialog_instance.tab_libraries_list_widget.item(row_index)
+        if item.text() == "Anime":
+            item.setCheckState(Qt.CheckState.Checked)
+
+    assert "Anime" in dialog_instance.staged_tabs[1]["libraries"]
+
+    # 2. Add tab
+    with patch.object(QInputDialog, "getText", return_value=("Cartoons", True)):
+        dialog_instance.add_tab()
+
+    assert len(dialog_instance.staged_tabs) == 3
+    assert dialog_instance.staged_tabs[2]["name"] == "Cartoons"
+
+    # 3. Rename tab
+    dialog_instance.tabs_list_widget.setCurrentRow(2)
+    with patch.object(QInputDialog, "getText", return_value=("Kids", True)):
+        dialog_instance.rename_tab()
+
+    assert dialog_instance.staged_tabs[2]["name"] == "Kids"
+
+    # 4. Move tab up
+    dialog_instance.tabs_list_widget.setCurrentRow(2)
+    dialog_instance.move_tab_up()
+    assert dialog_instance.staged_tabs[1]["name"] == "Kids"
+    assert dialog_instance.staged_tabs[2]["name"] == "General"
+
+    # 5. Move tab down
+    dialog_instance.move_tab_down()
+    assert dialog_instance.staged_tabs[2]["name"] == "Kids"
+
+    # 6. Remove tab
+    dialog_instance.tabs_list_widget.setCurrentRow(2)
+    dialog_instance.remove_tab()
+    assert len(dialog_instance.staged_tabs) == 2
+
+    # 7. Save config
+    with (
+        patch("lan_streamer.system.config.config.save"),
+        patch("lan_streamer.system.config.config.save_to_db"),
+        patch("lan_streamer.system.logging_handler.set_application_log_level"),
+    ):
+        dialog_instance.save_config()
+
+    assert len(config.tabs) == 2
+
+
+def test_settings_dialog_per_library_scanning_controls(qtbot) -> None:
+    from unittest.mock import MagicMock
+
+    controller_mock = MagicMock()
+    dialog_instance = SettingsDialog(controller_instance=controller_mock)
+    qtbot.addWidget(dialog_instance)
+
+    dialog_instance.staged_libraries = {
+        "Anime": {"type": "tv", "paths": ["/anime"], "management_type": "local"},
+        "Movies": {"type": "movie", "paths": ["/movies"], "management_type": "local"},
+    }
+    dialog_instance._refresh_library_selector()
+
+    # Local Libraries Setup: Scan Library button
+    dialog_instance.library_selector.setCurrentText("Anime")
+    dialog_instance.scan_selected_local_library()
+    controller_mock.trigger_scan.assert_called_with(
+        force_refresh=False,
+        library_name="Anime",
+        run_pass1=True,
+        run_pass2=True,
+        chain_pass3=True,
+        chain_cleanup=True,
+    )
+
+    # Management tab: Target Library combobox
+    dialog_instance.scan_target_library_combobox.setCurrentText("Movies")
+
+    dialog_instance.trigger_full_scan_files()
+    controller_mock.trigger_scan.assert_called_with(
+        force_refresh=False,
+        library_name="Movies",
+        run_pass1=True,
+        run_pass2=True,
+        chain_pass3=True,
+        chain_cleanup=True,
+    )
+
+    dialog_instance.trigger_pass1_scan()
+    controller_mock.trigger_scan.assert_called_with(
+        force_refresh=False,
+        library_name="Movies",
+        run_pass1=True,
+        run_pass2=False,
+        chain_pass3=False,
+        chain_cleanup=False,
+    )
+
+    dialog_instance.trigger_pass2_scan()
+    controller_mock.trigger_scan.assert_called_with(
+        force_refresh=False,
+        library_name="Movies",
+        run_pass1=False,
+        run_pass2=True,
+        chain_pass3=False,
+        chain_cleanup=False,
+    )
+
+    dialog_instance.trigger_garbage_cleanup()
+    controller_mock.trigger_cleanup.assert_called_with(library_name="Movies")

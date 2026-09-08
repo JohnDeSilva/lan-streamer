@@ -924,3 +924,194 @@ def test_controller_trigger_scan_remote_library(mock_controller) -> None:
     ) as mock_sync:
         mock_controller.trigger_scan()
         mock_sync.assert_called_once_with("Remote TV")
+
+
+def test_controller_select_tab_consolidates_multiple_libraries(
+    mock_controller,
+) -> None:
+    mock_controller._config.get_tab_libraries = MagicMock(
+        return_value=["Local Anime", "Remote Anime"]
+    )
+    mock_controller._config.libraries = {
+        "Local Anime": {"type": "tv", "paths": []},
+        "Remote Anime": {"type": "tv", "paths": []},
+    }
+
+    local_library_content = {
+        "Steins;Gate": {
+            "metadata": {"tmdb_id": 9999, "title": "Steins;Gate"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "episode_number": 1,
+                            "path": "/media/local/s01e01.mkv",
+                            "watched": False,
+                            "versions": [{"path": "/media/local/s01e01.mkv"}],
+                        }
+                    ]
+                }
+            },
+        }
+    }
+    remote_library_content = {
+        "Steins;Gate": {
+            "metadata": {"tmdb_id": 9999, "title": "Steins;Gate"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "Episode 2",
+                            "episode_number": 2,
+                            "path": "/media/remote/s01e02.mkv",
+                            "watched": True,
+                            "versions": [{"path": "/media/remote/s01e02.mkv"}],
+                        }
+                    ]
+                }
+            },
+        }
+    }
+
+    def mock_load(library_name: str) -> dict[str, Any]:
+        if library_name == "Local Anime":
+            return local_library_content
+        if library_name == "Remote Anime":
+            return remote_library_content
+        return {}
+
+    mock_controller._db.load_library = MagicMock(side_effect=mock_load)
+
+    mock_controller.select_tab("Anime")
+
+    assert mock_controller.current_tab_name == "Anime"
+    assert "Steins;Gate" in mock_controller.cached_library_data
+    steins_gate = mock_controller.cached_library_data["Steins;Gate"]
+    season_one_episodes = steins_gate["seasons"]["Season 1"]["episodes"]
+    assert len(season_one_episodes) == 2
+    assert set(steins_gate["_origin_libraries"]) == {"Local Anime", "Remote Anime"}
+
+
+def test_controller_mark_series_watched_with_origin_libraries(
+    mock_controller,
+) -> None:
+    series_record = {
+        "_origin_libraries": ["Anime Local", "Anime Remote"],
+        "seasons": {
+            "Season 1": {
+                "episodes": [
+                    {
+                        "name": "Ep1",
+                        "path": "/path/ep1.mkv",
+                        "watched": False,
+                        "versions": [],
+                    },
+                    {
+                        "name": "Ep2",
+                        "path": "/path/ep2.mkv",
+                        "watched": False,
+                        "versions": [],
+                    },
+                ]
+            }
+        },
+    }
+    mock_controller.cached_library_data = {"Steins;Gate": series_record}
+    mock_controller._db.update_series_watched_status = MagicMock()
+    mock_controller._smart_row_service.rebuild_for_libraries = MagicMock(
+        return_value=[]
+    )
+
+    mock_controller.mark_series_watched("Steins;Gate")
+
+    assert mock_controller._db.update_series_watched_status.call_count == 2
+    called_library_names = [
+        call_argument[0][0]
+        for call_argument in mock_controller._db.update_series_watched_status.call_args_list
+    ]
+    assert "Anime Local" in called_library_names
+    assert "Anime Remote" in called_library_names
+    assert series_record["seasons"]["Season 1"]["episodes"][0]["watched"] is True
+
+
+def test_controller_mark_season_watched_with_origin_libraries(
+    mock_controller,
+) -> None:
+    series_record = {
+        "_origin_libraries": ["Anime Local", "Anime Remote"],
+        "seasons": {
+            "Season 1": {
+                "episodes": [
+                    {
+                        "name": "Ep1",
+                        "path": "/path/ep1.mkv",
+                        "watched": False,
+                        "versions": [],
+                    },
+                ]
+            }
+        },
+    }
+    mock_controller.cached_library_data = {"Steins;Gate": series_record}
+    mock_controller._db.update_season_watched_status = MagicMock()
+    mock_controller._smart_row_service.rebuild_for_libraries = MagicMock(
+        return_value=[]
+    )
+
+    mock_controller.mark_season_watched("Steins;Gate", "Season 1", watched=True)
+
+    assert mock_controller._db.update_season_watched_status.call_count == 2
+    called_library_names = [
+        call_argument[0][0]
+        for call_argument in mock_controller._db.update_season_watched_status.call_args_list
+    ]
+    assert "Anime Local" in called_library_names
+    assert "Anime Remote" in called_library_names
+    assert series_record["seasons"]["Season 1"]["episodes"][0]["watched"] is True
+
+
+def test_controller_trigger_scan_target_library(mock_controller) -> None:
+    mock_controller._config.libraries = {
+        "Anime Local": {
+            "management_type": "local",
+            "type": "tv",
+            "paths": ["/media/anime"],
+        }
+    }
+    mock_controller.worker_manager.scan.start = MagicMock()
+
+    mock_controller.trigger_scan(library_name="Anime Local")
+
+    mock_controller.worker_manager.scan.start.assert_called_once()
+
+
+def test_controller_trigger_scan_and_update_target_library(mock_controller) -> None:
+    mock_controller._config.libraries = {
+        "Anime Local": {
+            "management_type": "local",
+            "type": "tv",
+            "paths": ["/media/anime"],
+        }
+    }
+    mock_controller._db.load_library = MagicMock(return_value={})
+    mock_controller.worker_manager.scan.start = MagicMock()
+
+    mock_controller.trigger_scan_and_update(library_name="Anime Local")
+
+    mock_controller.worker_manager.scan.start.assert_called_once()
+
+
+def test_controller_trigger_cleanup_target_library(mock_controller) -> None:
+    mock_controller._config.libraries = {
+        "Anime Local": {
+            "management_type": "local",
+            "type": "tv",
+            "paths": ["/media/anime"],
+        }
+    }
+    mock_controller.worker_manager.cleanup_global.start = MagicMock()
+
+    mock_controller.trigger_cleanup(library_name="Anime Local")
+
+    mock_controller.worker_manager.cleanup_global.start.assert_called_once()
