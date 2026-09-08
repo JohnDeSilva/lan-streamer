@@ -1,3 +1,27 @@
+## v0.51.0rc0 (2026-09-08)
+
+### Feat
+
+- **remote**: sync remote libraries off the UI thread
+- **tabs**: support multi-library tabs, series consolidation, and settings-only per-library scanning
+- **config**: split multi-root libraries and enforce single root directory
+- **ui**: integrate remote library setup, agent path mapping, and poster sync
+- **scanner**: enhance pass 3 probing, local poster discovery, and scan logging
+- **agent**: support single root path, remote image serving, and live scan logging
+- **desktop**: add local vs remote library management type and scan agent connection
+- **agent**: colocate configs, databases, and caches in data directory and add filesystem finder for libraries
+
+### Fix
+
+- **agent**: preserve watched state, media versions, and bound SSE events
+- **config**: reassign split-library records off the UI thread
+- **remote**: ensure remote libraries sync and display on library tabs
+
+### Refactor
+
+- adhere to variable naming standards and update setup documentation
+- **scanner**: rename merge_series_data for multi-root series
+
 ## v0.50.0 (2026-09-01)
 
 ### Feat
