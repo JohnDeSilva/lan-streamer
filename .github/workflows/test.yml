@@ -21,8 +21,9 @@ jobs:
             exit 1
           fi
 
-  test-ubuntu:
-    name: Test (Ubuntu)
+  # Desktop (containerized) test suites -------------------------------------------------
+  test-desktop-ubuntu:
+    name: Test Desktop (Ubuntu)
     runs-on: ubuntu-latest
     if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
 
@@ -30,15 +31,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run unit tests with coverage check
-        run: TEST_OS=ubuntu make test
+      - name: Run desktop unit tests with coverage check
+        run: TEST_OS=ubuntu make test-desktop
 
       - name: Validate executable runs
         run: TEST_OS=ubuntu make validate-executable
 
-
-  test-fedora:
-    name: Test (Fedora)
+  test-desktop-fedora:
+    name: Test Desktop (Fedora)
     runs-on: ubuntu-latest
     if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
 
@@ -46,8 +46,33 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run unit tests
-        run: TEST_OS=fedora make test
+      - name: Run desktop unit tests
+        run: TEST_OS=fedora make test-desktop
 
       - name: Validate executable runs
         run: TEST_OS=fedora make validate-executable
+
+  # Agent (containerized) test suites ---------------------------------------------------
+  test-agent-back:
+    name: Test Agent Backend
+    runs-on: ubuntu-latest
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run agent backend tests with coverage check (containerized)
+        run: make test-agent-back
+
+  test-agent-front:
+    name: Test Agent Frontend (SPA JavaScript)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run agent frontend JS tests (containerized)
+        run: make test-agent-front

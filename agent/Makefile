@@ -1,9 +1,16 @@
-.PHONY: test lint format check-lint run run-local up down build
+.PHONY: test test-front test-back lint format check-lint run run-local up down build
 
 DOCKER_COMPOSE ?= $(shell if command -v docker-compose >/dev/null 2>&1; then echo docker-compose; elif command -v podman-compose >/dev/null 2>&1; then echo podman-compose; else echo "docker compose"; fi)
 
 test:
-	PYTHONPATH=../src:src uv run pytest
+	$(MAKE) test-front
+	$(MAKE) test-back
+
+test-front:
+	PYTHONPATH=../src:src uv run pytest --no-cov tests/frontend
+
+test-back:
+	PYTHONPATH=../src:src uv run pytest tests --ignore=tests/frontend
 
 format:
 	uv run ruff format .
