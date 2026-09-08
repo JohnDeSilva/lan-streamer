@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-from lan_streamer.scanner.core import _merge_series_data
+from lan_streamer.scanner.core import merge_series_data
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ def consolidate_library_data(
                 if deduplication_key in key_to_item_name:
                     primary_name = key_to_item_name[deduplication_key]
                     existing_series = consolidated_items[primary_name]
-                    merged_series = _merge_series_data(existing_series, item_data)
+                    merged_series = merge_series_data(existing_series, item_data)
                     origin_libraries = list(
                         existing_series.get("_origin_libraries", [])
                     )
