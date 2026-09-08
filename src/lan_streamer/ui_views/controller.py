@@ -2,6 +2,7 @@ import contextlib
 import logging
 import re
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
         JellyfinPullWorker,
         JellyfinPushWorker,
         MetadataApplyWorker,
+        RemoteSyncWorker,
         ScanAllLibrariesWorker,
     )
     from lan_streamer.providers.jellyfin import (
@@ -34,7 +36,7 @@ if TYPE_CHECKING:
     )
     from lan_streamer.providers.tmdb import tmdb_client as _tmdb_default
 else:
-    from lan_streamer.backend import AsyncScanWorker
+    from lan_streamer.backend import AsyncScanWorker, RemoteSyncWorker
     from lan_streamer.ui_views.proxy import (
         CleanupWorker,
         FilePropertyExtractionWorker,
@@ -144,6 +146,14 @@ class Controller(QObject):
         # parent=self provides only a Qt object-tree reference, not a Python reference.
         self._post_scan_workers: list[Any] = []
 
+        # Remote-library sync queue processed by RemoteSyncWorker on background
+        # threads so the UI thread never performs blocking HTTP/DB work.
+        self._remote_sync_queue: deque[str] = deque()
+        self._remote_sync_scheduled: set[str] = set()
+        self._remote_sync_emit_signal: dict[str, bool] = {}
+        self._remote_sync_scan_completed: dict[str, bool] = {}
+        self._remote_sync_status_messages: dict[str, tuple[str, str]] = {}
+
         self.file_system_watcher = QFileSystemWatcher(self)
 
         self.worker_manager = WorkerManager(parent=self)
@@ -193,7 +203,6 @@ class Controller(QObject):
         if existing_directories:
             self.file_system_watcher.removePaths(existing_directories)
 
-        loaded_libraries: list[tuple[str, dict[str, Any]]] = []
         for single_library_name in library_names:
             single_library_config = self._config.libraries.get(single_library_name, {})
             root_directories: list[str] = single_library_config.get("paths", [])
@@ -201,30 +210,9 @@ class Controller(QObject):
                 if Path(directory_path).is_dir():
                     self.file_system_watcher.addPath(directory_path)
 
-            if single_library_config.get("type", "tv") == "movie":
-                single_library_data = self._db.load_movie_library(single_library_name)
-            else:
-                single_library_data = self._db.load_library(single_library_name)
-
-            if (
-                single_library_config.get("management_type") == "remote"
-                and not single_library_data
-            ):
-                self.sync_remote_library(single_library_name, emit_signal=False)
-                if single_library_config.get("type", "tv") == "movie":
-                    single_library_data = self._db.load_movie_library(
-                        single_library_name
-                    )
-                else:
-                    single_library_data = self._db.load_library(single_library_name)
-
-            loaded_libraries.append((single_library_name, single_library_data))
-
-        from lan_streamer.services.tab_consolidation_service import (
-            consolidate_library_data,
+        self.cached_library_data = self._load_tab_library_data(
+            library_names, trigger_remote_sync=True
         )
-
-        self.cached_library_data = consolidate_library_data(loaded_libraries)
         self._cache_series_metrics()
 
         if reset_selection:
@@ -233,100 +221,170 @@ class Controller(QObject):
         self.status_changed.emit("Library loaded successfully.")
         self.library_loaded.emit()
 
+    def _load_tab_library_data(
+        self, library_names: list[str], trigger_remote_sync: bool = True
+    ) -> dict[str, Any]:
+        """Load and consolidate the libraries backing the current tab.
+
+        Remote libraries still empty in the local database are queued for a
+        background synchronization when *trigger_remote_sync* is True.  The
+        refresh path that runs after a finished sync passes ``False`` so a
+        failed sync never re-queues itself in an infinite loop.
+        """
+        loaded_libraries: list[tuple[str, dict[str, Any]]] = []
+        for single_library_name in library_names:
+            single_library_config = self._config.libraries.get(single_library_name, {})
+            if single_library_config.get("type", "tv") == "movie":
+                single_library_data = self._db.load_movie_library(single_library_name)
+            else:
+                single_library_data = self._db.load_library(single_library_name)
+
+            if (
+                trigger_remote_sync
+                and single_library_config.get("management_type") == "remote"
+                and not single_library_data
+            ):
+                self._queue_remote_sync(single_library_name, emit_signal=True)
+
+            loaded_libraries.append((single_library_name, single_library_data))
+
+        from lan_streamer.services.tab_consolidation_service import (
+            consolidate_library_data,
+        )
+
+        return consolidate_library_data(loaded_libraries)
+
     def select_library(self, library_name: str, reset_selection: bool = True) -> None:
         self.select_tab(library_name, reset_selection=reset_selection)
 
     def sync_remote_library(self, library_name: str, emit_signal: bool = True) -> bool:
-        """Synchronizes items for a remote library from the scan agent into local DB and cache."""
+        """Queue a background synchronization of a remote library.
+
+        Returns True when the sync was queued (or is already pending/running),
+        and False when the library is not remote or has no agent URL.  The
+        network and database work happens on a background worker; completion
+        is reported through :meth:`_on_remote_sync_finished`.
+        """
         library_configuration = self._config.libraries.get(library_name, {})
         if library_configuration.get("management_type") != "remote":
             return False
         agent_url = library_configuration.get("agent_url", "")
-        remote_library_identifier = (
-            library_configuration.get("remote_library_id") or library_name
-        )
         if not agent_url:
             return False
-        try:
-            import requests
-            from sqlalchemy.exc import SQLAlchemyError
+        self._queue_remote_sync(library_name, emit_signal=emit_signal)
+        return True
 
-            from lan_streamer.services.scan_agent_client import (
-                ScanAgentConnectionError,
-                scan_agent_client,
-            )
-
-            remote_items = scan_agent_client.fetch_library_items(
-                agent_url, str(remote_library_identifier)
-            )
-            library_type = library_configuration.get("type", "tv")
-            for item_dictionary in remote_items.values():
-                if library_type == "movie":
-                    remote_poster_path = item_dictionary.get("poster_path")
-                    if remote_poster_path and not Path(remote_poster_path).is_file():
-                        local_poster_path = scan_agent_client.download_poster(
-                            agent_url, remote_poster_path
-                        )
-                        if local_poster_path:
-                            item_dictionary["poster_path"] = local_poster_path
-                else:
-                    series_metadata_dict = item_dictionary.get("metadata", {})
-                    remote_poster_path = series_metadata_dict.get("poster_path")
-                    if remote_poster_path and not Path(remote_poster_path).is_file():
-                        local_poster_path = scan_agent_client.download_poster(
-                            agent_url, remote_poster_path
-                        )
-                        if local_poster_path:
-                            series_metadata_dict["poster_path"] = local_poster_path
-                    for season_dictionary in item_dictionary.get(
-                        "seasons", {}
-                    ).values():
-                        season_metadata_dict = season_dictionary.get("metadata", {})
-                        remote_season_poster = season_metadata_dict.get("poster_path")
-                        if (
-                            remote_season_poster
-                            and not Path(remote_season_poster).is_file()
-                        ):
-                            local_season_poster = scan_agent_client.download_poster(
-                                agent_url, remote_season_poster
-                            )
-                            if local_season_poster:
-                                season_metadata_dict["poster_path"] = (
-                                    local_season_poster
-                                )
-
-            if library_type == "movie":
-                self._db.save_movie_library(library_name, remote_items)
-                self.cached_library_data = self._db.load_movie_library(library_name)
-            else:
-                self._db.save_library(library_name, remote_items)
-                self.cached_library_data = self._db.load_library(library_name)
-            self._cache_series_metrics()
+    def _queue_remote_sync(
+        self,
+        library_name: str,
+        emit_signal: bool = True,
+        success_message: str | None = None,
+        failure_message: str | None = None,
+        emit_scan_completed: bool = False,
+    ) -> None:
+        """Queue one remote library sync, deduplicating per library."""
+        if library_name in self._remote_sync_scheduled:
             logger.info(
-                "Successfully synchronized remote library '%s' (%d items) from agent %s",
+                "Remote sync for library '%s' already queued or running; "
+                "skipping duplicate.",
                 library_name,
-                len(self.cached_library_data),
-                agent_url,
             )
+            return
+        self._remote_sync_scheduled.add(library_name)
+        self._remote_sync_emit_signal[library_name] = emit_signal
+        if success_message is not None:
+            self._remote_sync_status_messages[library_name] = (
+                success_message,
+                failure_message or f"Failed to sync remote library '{library_name}'.",
+            )
+        if emit_scan_completed:
+            self._remote_sync_scan_completed[library_name] = True
+        self._remote_sync_queue.append(library_name)
+        self._drain_remote_sync_queue()
+
+    def _drain_remote_sync_queue(self) -> None:
+        """Start the next queued remote sync when no sync is running."""
+        while (
+            not self.worker_manager.remote_sync.is_running and self._remote_sync_queue
+        ):
+            library_name = self._remote_sync_queue.popleft()
+            library_configuration = self._config.libraries.get(library_name, {})
+            logger.info(
+                "Starting background sync of remote library '%s'.", library_name
+            )
+
+            def _build_remote_worker(
+                name: str = library_name,
+                library_configuration: dict[str, Any] = library_configuration,
+            ) -> RemoteSyncWorker:
+                return RemoteSyncWorker(
+                    name,
+                    library_configuration,
+                    self._db,
+                    async_task_manager=self.async_task_manager,
+                    parent=self,
+                )
+
+            self.worker_manager.remote_sync.start(
+                _build_remote_worker,
+                finished=lambda result, name=library_name: (
+                    self._on_remote_sync_finished(result, name)
+                ),
+            )
+
+    def _on_remote_sync_finished(
+        self, result: dict[str, Any], library_name: str
+    ) -> None:
+        """Handle completion of one remote library synchronization."""
+        self._remote_sync_scheduled.discard(library_name)
+        emit_signal = self._remote_sync_emit_signal.pop(library_name, True)
+        emit_scan_completed = self._remote_sync_scan_completed.pop(library_name, False)
+        success_message, failure_message = self._remote_sync_status_messages.pop(
+            library_name, ("", "")
+        )
+
+        if result.get("success"):
+            logger.info(
+                "Remote library '%s' synced successfully (%d items).",
+                library_name,
+                result.get("items", 0),
+            )
+            if success_message:
+                self.status_changed.emit(success_message)
             if emit_signal:
-                self.library_loaded.emit()
-            return True
-        except (
-            requests.RequestException,
-            SQLAlchemyError,
-            ScanAgentConnectionError,
-            KeyError,
-            ValueError,
-            TypeError,
-            OSError,
-        ) as error_instance:
+                self._reload_current_tab_data()
+        else:
+            error_message = result.get("error") or "Unknown error"
             logger.warning(
-                "Could not synchronize remote library '%s' from agent %s: %s",
-                library_name,
-                agent_url,
-                error_instance,
+                "Remote library '%s' sync failed: %s", library_name, error_message
             )
-            return False
+            if failure_message:
+                self.status_changed.emit(failure_message)
+        if emit_scan_completed:
+            self.scan_completed.emit()
+        self._drain_remote_sync_queue()
+
+    def _reload_current_tab_data(self) -> None:
+        """Reload the current tab's data after a remote library sync."""
+        if not self.current_tab_name:
+            return
+        self._config.load()
+        library_names: list[str] = []
+        if hasattr(self._config, "get_tab_libraries"):
+            configured_tab_libraries = self._config.get_tab_libraries(
+                self.current_tab_name
+            )
+            if isinstance(configured_tab_libraries, list) and configured_tab_libraries:
+                library_names = [
+                    name for name in configured_tab_libraries if isinstance(name, str)
+                ]
+        if not library_names:
+            library_names = [self.current_tab_name]
+        self.cached_library_data = self._load_tab_library_data(
+            library_names, trigger_remote_sync=False
+        )
+        self._cache_series_metrics()
+        self.library_loaded.emit()
 
     def _on_directory_changed(self, path_string: str) -> None:
         logger.info(
@@ -598,16 +656,17 @@ class Controller(QObject):
             self.status_changed.emit(
                 f"Syncing remote library '{target_library_name}' from scan agent..."
             )
-            sync_success = self.sync_remote_library(target_library_name)
-            if sync_success:
-                self.status_changed.emit(
+            self._queue_remote_sync(
+                target_library_name,
+                emit_signal=True,
+                success_message=(
                     f"Remote library '{target_library_name}' synced successfully."
-                )
-            else:
-                self.status_changed.emit(
+                ),
+                failure_message=(
                     f"Failed to sync remote library '{target_library_name}'."
-                )
-            self.scan_completed.emit()
+                ),
+                emit_scan_completed=True,
+            )
             return
 
         root_directories: list[str] = library_config.get("paths", [])
@@ -895,16 +954,17 @@ class Controller(QObject):
             self.status_changed.emit(
                 f"Syncing remote library '{target_library_name}' from scan agent..."
             )
-            sync_success = self.sync_remote_library(target_library_name)
-            if sync_success:
-                self.status_changed.emit(
+            self._queue_remote_sync(
+                target_library_name,
+                emit_signal=True,
+                success_message=(
                     f"Remote library '{target_library_name}' synced successfully."
-                )
-            else:
-                self.status_changed.emit(
+                ),
+                failure_message=(
                     f"Failed to sync remote library '{target_library_name}'."
-                )
-            self.scan_completed.emit()
+                ),
+                emit_scan_completed=True,
+            )
             return
 
         root_directories: list[str] = library_config.get("paths", [])

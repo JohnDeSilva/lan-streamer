@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 from lan_streamer import __version__
 from lan_streamer.system.config import config, split_multi_root_libraries
 from lan_streamer.system.updater import UpdateCheckWorker
+from lan_streamer.ui_views.dialogs.agent_probe_worker import AgentProbeWorker
 from lan_streamer.ui_views.dialogs.update_dialog import UpdateDialog
 from lan_streamer.ui_views.progress_widgets import (
     ScanProgressTree,
@@ -190,6 +191,10 @@ class SettingsDialog(QDialog):
         self.remote_library_selector: QComboBox = QComboBox()
         self.remote_root_path_label: QLabel = QLabel("Remote Path: None")
         self.remote_library_container: QWidget = QWidget()
+
+        # Background probe workers for agent connectivity checks
+        self._probe_worker: AgentProbeWorker | None = None
+        self._refresh_agent_workers: list[AgentProbeWorker] = []
 
     def _init_playback_widgets(self) -> None:
         self.use_embedded_checkbox: QCheckBox = QCheckBox(
@@ -1935,11 +1940,7 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "Invalid URL", "Please enter an Agent URL.")
             return
 
-        from lan_streamer.services.scan_agent_client import (
-            ScanAgentConnectionError,
-            normalize_agent_url,
-            scan_agent_client,
-        )
+        from lan_streamer.services.scan_agent_client import normalize_agent_url
 
         try:
             normalized_agent_url = normalize_agent_url(raw_agent_url)
@@ -1947,76 +1948,82 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "Invalid URL", str(validation_error))
             return
 
-        is_reachable = False
-        agent_name = f"Scan Agent ({normalized_agent_url})"
-        discovered_libraries: list[dict[str, Any]] = []
-
-        try:
-            health_data = scan_agent_client.check_agent_health(
-                normalized_agent_url, timeout=4.0
+        self.remote_agent_url_input.setEnabled(False)
+        self.remote_agent_url_input.clear()
+        self.scan_agent_status_label.setText(
+            f"Status: Connecting to {normalized_agent_url}..."
+        )
+        self._probe_worker = AgentProbeWorker(normalized_agent_url, parent=self)
+        self._probe_worker.probe_finished.connect(
+            lambda agent_url, result: self._on_agent_probe_finished(
+                agent_url, result, from_connect=True
             )
-            is_reachable = True
+        )
+        self._probe_worker.finished.connect(self._probe_worker.deleteLater)
+        self._probe_worker.start()
+
+    def _on_agent_probe_finished(
+        self, agent_url: str, result: dict[str, Any], from_connect: bool = False
+    ) -> None:
+        """Apply a finished scan-agent probe to the staged configuration."""
+        self.remote_agent_url_input.setEnabled(True)
+        self.scan_agent_status_label.setText("Status: Ready")
+
+        health_data = result.get("health")
+        discovered_library_dict = result.get("libraries", {})
+        discovered_libraries: list[dict[str, Any]] = list(
+            discovered_library_dict.values()
+        )
+
+        is_reachable = health_data is not None
+        agent_name = f"Scan Agent ({agent_url})"
+        if health_data is not None:
             service_name = health_data.get("service")
             if service_name:
                 agent_name = service_name
-        except (
-            ScanAgentConnectionError,
-            OSError,
-            ValueError,
-            RuntimeError,
-        ) as connection_error:
+
+        if not is_reachable:
             logger.warning(
-                "Could not connect to scan agent at %s: %s",
-                normalized_agent_url,
-                connection_error,
+                "Could not connect to scan agent at %s during probe.", agent_url
             )
 
-        if is_reachable:
-            try:
-                discovered_libraries = scan_agent_client.fetch_agent_libraries(
-                    normalized_agent_url, timeout=5.0
-                )
-            except (
-                ScanAgentConnectionError,
-                OSError,
-                ValueError,
-                RuntimeError,
-            ) as library_fetch_error:
-                logger.warning(
-                    "Failed to fetch libraries from agent %s: %s",
-                    normalized_agent_url,
-                    library_fetch_error,
-                )
-
-        existing_agent_data = self.staged_scan_agents.get(normalized_agent_url, {})
+        existing_agent_data = self.staged_scan_agents.get(agent_url, {})
         merged_libraries = list(discovered_libraries)
         if not merged_libraries and existing_agent_data.get("discovered_libraries"):
             merged_libraries = existing_agent_data["discovered_libraries"]
 
-        self.staged_scan_agents[normalized_agent_url] = {
+        self.staged_scan_agents[agent_url] = {
             "name": agent_name,
-            "url": normalized_agent_url,
+            "url": agent_url,
             "api_key": existing_agent_data.get("api_key", ""),
             "reachable": is_reachable,
             "discovered_libraries": merged_libraries,
         }
 
-        self.remote_agent_url_input.clear()
         self._populate_remote_agents_tree()
         self._refresh_scan_agent_selectors()
 
-        if not is_reachable:
-            QMessageBox.warning(
-                self,
-                "Scan Agent Unreachable",
-                f"Could not connect to Scan Agent at:\n{normalized_agent_url}\n\n"
-                "The agent has been added, but is currently marked unreachable.",
-            )
+        if from_connect:
+            if not is_reachable:
+                QMessageBox.warning(
+                    self,
+                    "Scan Agent Unreachable",
+                    f"Could not connect to Scan Agent at:\n{agent_url}\n\n"
+                    "The agent has been added, but is currently marked unreachable.",
+                )
+            else:
+                logger.info(
+                    "Successfully connected to scan agent '%s' at %s with %d libraries",
+                    agent_name,
+                    agent_url,
+                    len(discovered_libraries),
+                )
         else:
             logger.info(
-                "Successfully connected to scan agent '%s' at %s with %d libraries",
+                "Refreshed scan agent '%s' at %s: reachable=%s, %d libraries",
                 agent_name,
-                normalized_agent_url,
+                agent_url,
+                is_reachable,
                 len(discovered_libraries),
             )
 
@@ -2352,37 +2359,25 @@ class SettingsDialog(QDialog):
 
     @Slot()
     def refresh_remote_agents(self) -> None:
-        """Pings all configured scan agents and re-queries their library listings."""
-        from lan_streamer.services.scan_agent_client import (
-            ScanAgentConnectionError,
-            scan_agent_client,
-        )
+        """Pings all configured scan agents and re-queries their library listings.
 
+        Probes run on background :class:`AgentProbeWorker` threads so the UI
+        thread stays responsive.  Tree and selector widgets are refreshed as
+        each probe completes.
+        """
         logger.info(
             "Refreshing reachability and libraries for all configured scan agents"
         )
-        for agent_url, agent_data in list(self.staged_scan_agents.items()):
-            try:
-                health_data = scan_agent_client.check_agent_health(
-                    agent_url, timeout=3.0
+        for agent_url, _agent_data in list(self.staged_scan_agents.items()):
+            worker = AgentProbeWorker(agent_url, parent=self)
+            worker.probe_finished.connect(
+                lambda url, result: self._on_agent_probe_finished(
+                    url, result, from_connect=False
                 )
-                agent_data["reachable"] = True
-                service_name = health_data.get("service")
-                if service_name:
-                    agent_data["name"] = service_name
-                agent_data["discovered_libraries"] = (
-                    scan_agent_client.fetch_agent_libraries(agent_url, timeout=4.0)
-                )
-            except (
-                ScanAgentConnectionError,
-                OSError,
-                ValueError,
-                RuntimeError,
-            ):
-                agent_data["reachable"] = False
-
-        self._populate_remote_agents_tree()
-        self._refresh_scan_agent_selectors()
+            )
+            worker.finished.connect(worker.deleteLater)
+            self._refresh_agent_workers.append(worker)
+            worker.start()
 
     @Slot()
     def add_staged_scan_agent(self) -> None:

@@ -255,6 +255,10 @@ def test_settings_dialog_remote_libraries_tab_flow(qtbot) -> None:
     ):
         dialog.remote_agent_url_input.setText("http://127.0.0.1:8800")
         dialog.connect_to_agent()
+        qtbot.waitUntil(
+            lambda: "http://127.0.0.1:8800" in dialog.staged_scan_agents,
+            timeout=5000,
+        )
 
     # Agent node assertions
     tree = dialog.remote_agents_tree_widget
@@ -323,11 +327,19 @@ def test_settings_dialog_remote_agent_unreachable(qtbot) -> None:
             side_effect=ScanAgentConnectionError("Connection refused"),
         ),
         patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_agent_libraries",
+            return_value=[],
+        ),
+        patch(
             "lan_streamer.ui_views.dialogs.settings.QMessageBox.warning"
         ) as mock_warn,
     ):
         dialog.remote_agent_url_input.setText("http://127.0.0.1:8800")
         dialog.connect_to_agent()
+        qtbot.waitUntil(
+            lambda: "http://127.0.0.1:8800" in dialog.staged_scan_agents,
+            timeout=5000,
+        )
         mock_warn.assert_called_once()
 
     tree = dialog.remote_agents_tree_widget

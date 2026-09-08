@@ -12,6 +12,7 @@ from lan_streamer.backend.metadata_worker_property import FilePropertyExtraction
 from lan_streamer.backend.metadata_worker_refresh import RefreshSeriesWorker
 from lan_streamer.backend.metadata_worker_subtitle import SubtitleMergeWorker
 from lan_streamer.backend.post_scan_worker import PostScanWorker
+from lan_streamer.backend.remote_sync_worker import RemoteSyncWorker
 from lan_streamer.backend.scan_series_worker import ScanSingleSeriesWorker
 from lan_streamer.backend.scan_worker_all import ScanAllLibrariesWorker
 from lan_streamer.backend.scan_worker_async import AsyncScanWorker
