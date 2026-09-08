@@ -24,6 +24,7 @@ dev = [
     "ruff>=0.16.3",
     "mypy>=2.3.0",
     "types-requests>=2.33.0.20260712",
+    "py-mini-racer>=0.6.0",
 ]
 
 [tool.pytest.ini_options]

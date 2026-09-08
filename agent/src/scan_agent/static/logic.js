@@ -1,0 +1,85 @@
+/**
+ * Pure, DOM-free client logic for the LAN Streamer Scan Agent SPA.
+ *
+ * These helpers intentionally avoid browser globals (document, fetch,
+ * EventSource) so they can be unit-tested in isolation through the bundled V8
+ * engine (see agent/tests/test_javascript.py).
+ */
+
+export function getPosterUrl(posterPath) {
+    if (!posterPath) return "";
+    if (posterPath.startsWith("http://") || posterPath.startsWith("https://")) {
+        return posterPath;
+    }
+    if (posterPath.startsWith("/") && !posterPath.includes("/", 1)) {
+        return `https://image.tmdb.org/t/p/w500${posterPath}`;
+    }
+    return `/api/v1/images/poster?path=${encodeURIComponent(posterPath)}`;
+}
+
+export function escapeHtml(str) {
+    if (!str) return "";
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+
+export function debounce(func, wait) {
+    let timeout;
+    return function (...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
+
+/**
+ * Map an SSE "scan.progress" payload to a UI update step.
+ *
+ * Returns `{ label, widthPercent }` where `label` is the text to show and
+ * `widthPercent` is the progress-bar width (or `null` to leave it unchanged),
+ * or `null` when the event type is not handled.
+ */
+export function progressStepForEvent(payload) {
+    if (!payload) {
+        return null;
+    }
+    const pass = payload.pass;
+    if (payload.type === "library_start") {
+        return { label: `Scanning library: ${payload.library}...`, widthPercent: 10 };
+    }
+    if (payload.type === "start_offline_scan" || (payload.type === "pass_start" && pass === 1)) {
+        return { label: "Pass 1: Discovering files...", widthPercent: 30 };
+    }
+    if (payload.type === "start_metadata_resolution" || (payload.type === "pass_start" && pass === 2)) {
+        return { label: "Pass 2: Resolving metadata...", widthPercent: 60 };
+    }
+    if (payload.type === "start_technical_probe" || (payload.type === "pass_start" && pass === 3)) {
+        return { label: "Pass 3: Probing technical properties (ffprobe)...", widthPercent: 85 };
+    }
+    if (payload.type === "season_finished") {
+        return { label: `Scanned ${payload.series} - ${payload.season}`, widthPercent: null };
+    }
+    if (payload.type === "movie_finished") {
+        return { label: `Scanned ${payload.movie}`, widthPercent: null };
+    }
+    if (payload.type === "library_finished") {
+        return { label: `Finished library: ${payload.library}`, widthPercent: 100 };
+    }
+    return null;
+}
+
+/**
+ * Parse a raw SSE "scan.progress" event payload into a UI update step,
+ * returning `null` for unparseable or unhandled payloads.
+ */
+export function parseScanProgressStep(rawData) {
+    let payload;
+    try {
+        payload = JSON.parse(rawData);
+    } catch {
+        return null;
+    }
+    return progressStepForEvent(payload);
+}
