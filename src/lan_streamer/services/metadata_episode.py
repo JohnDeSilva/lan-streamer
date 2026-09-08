@@ -352,6 +352,17 @@ def _process_episode_file(
             str(series_data["_tmdb_series_id"]), ""
         )
 
+    parsed_episode_info = _parse_episode_number(episode_name)
+    resolved_episode_number: int | None
+    if tmdb_number is not None:
+        resolved_episode_number = tmdb_number
+    elif hint_episode_number is not None and hint_episode_number > 0:
+        resolved_episode_number = hint_episode_number
+    elif parsed_episode_info is not None:
+        resolved_episode_number = parsed_episode_info[1]
+    else:
+        resolved_episode_number = None
+
     res = {
         "name": tmdb_name
         or (
@@ -361,6 +372,7 @@ def _process_episode_file(
             else episode_name
         ),
         "path": episode_path,
+        "episode_number": resolved_episode_number,
         "tmdb_identifier": tmdb_episode_identifier,
         "tmdb_episode_identifier": tmdb_episode_identifier,
         "tmdb_name": tmdb_name,

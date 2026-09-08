@@ -93,6 +93,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         force_refresh: bool = False,
         run_pass1: bool = True,
         run_pass2: bool = True,
+        run_pass3: bool = False,
         scan_archive_roots: bool = True,
         parent: QObject | None = None,
     ) -> None:
@@ -101,6 +102,7 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         self.force_refresh: bool = force_refresh
         self.run_pass1: bool = run_pass1
         self.run_pass2: bool = run_pass2
+        self.run_pass3: bool = run_pass3
         self.scan_archive_roots: bool = scan_archive_roots
 
         # Shared mutable state — protected by _lock when accessed from threads.
@@ -899,8 +901,44 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         for library_name, library_configuration in libraries_dictionary.items():
             if library_configuration.get("management_type", "local") == "remote":
                 logger.info(
-                    f"Skipping local filesystem scan for remote library '{library_name}' (managed by scan agent)."
+                    f"Syncing remote library '{library_name}' from scan agent..."
                 )
+                agent_url = library_configuration.get("agent_url", "")
+                remote_library_identifier = (
+                    library_configuration.get("remote_library_id") or library_name
+                )
+                if agent_url:
+                    try:
+                        import requests
+
+                        from lan_streamer.services.scan_agent_client import (
+                            ScanAgentConnectionError,
+                            scan_agent_client,
+                        )
+
+                        remote_items = scan_agent_client.fetch_library_items(
+                            agent_url, str(remote_library_identifier)
+                        )
+                        if remote_items:
+                            if library_configuration.get("type", "tv") == "movie":
+                                db.save_movie_library(library_name, remote_items)
+                            else:
+                                db.save_library(library_name, remote_items)
+                            library_data_by_name[library_name] = remote_items
+                    except (
+                        ScanAgentConnectionError,
+                        requests.RequestException,
+                        SQLAlchemyError,
+                        OSError,
+                        ValueError,
+                        KeyError,
+                    ) as error_instance:
+                        logger.warning(
+                            "Failed to sync remote library '%s' from agent during scan: %s",
+                            library_name,
+                            error_instance,
+                        )
+
                 tree[library_name] = {
                     "type": library_configuration.get("type", "tv"),
                     "roots": {},
@@ -935,7 +973,11 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         start_time = time.time()
         self.problems = []
         self.stats = create_empty_stats()
-        self.pass_stats = {1: create_empty_stats(), 2: create_empty_stats()}
+        self.pass_stats = {
+            1: create_empty_stats(),
+            2: create_empty_stats(),
+            3: create_empty_stats(),
+        }
         self.pass_stats_per_library = {}
         self.changed_libraries = set()
         self.changed_season_ids = set()
@@ -1011,10 +1053,23 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
                     failed_libraries,
                 )
 
-            # Compute self.stats as the union of both passes: max for scanned/skipped (unique entities),
+            # ------------------------------------------------------------------
+            # PASS 3 — Technical metadata (ffprobe)
+            # ------------------------------------------------------------------
+            if self.run_pass3:
+                await self._run_scan_pass(
+                    3,
+                    libraries_dictionary,
+                    library_data_by_name,
+                    None,
+                    None,
+                    failed_libraries,
+                )
+
+            # Compute self.stats as the union of all passes: max for scanned/skipped (unique entities),
             # sum for added/updated/removed (cumulative actions).
             self.stats = create_empty_stats()
-            for pass_num in [1, 2]:
+            for pass_num in [1, 2, 3]:
                 if pass_num in self.pass_stats:
                     for key, value in self.pass_stats[pass_num].items():
                         if key.endswith(("_scanned", "_skipped")):
@@ -1072,13 +1127,15 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
     ) -> int:
         """Run a single scan pass (1 = offline, 2 = metadata) across all
         libraries in parallel, merging results into shared state."""
-        self.current_pass = pass_number
-        pass_label = (
-            "Offline Scan" if pass_number == 1 else "Online Metadata Resolution"
-        )
-        start_event = (
-            "start_offline_scan" if pass_number == 1 else "start_metadata_resolution"
-        )
+        if pass_number == 1:
+            pass_label = "Offline Scan"
+            start_event = "start_offline_scan"
+        elif pass_number == 2:
+            pass_label = "Online Metadata Resolution"
+            start_event = "start_metadata_resolution"
+        else:
+            pass_label = "Technical Metadata Probing"
+            start_event = "start_technical_probe"
         logger.info(
             f"ScanAllLibrariesWorker starting Pass {pass_number} ({pass_label})"
         )

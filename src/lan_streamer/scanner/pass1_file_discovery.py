@@ -337,6 +337,28 @@ def scan_series_pass1(
     return series_data
 
 
+_POSTER_FILENAMES: tuple[str, ...] = (
+    "poster.jpg",
+    "poster.jpeg",
+    "poster.png",
+    "folder.jpg",
+    "folder.jpeg",
+    "folder.png",
+    "cover.jpg",
+    "cover.jpeg",
+    "cover.png",
+)
+
+
+def _find_local_poster_image(directory: Path) -> str:
+    """Find a local poster image file in the directory if one exists."""
+    for filename in _POSTER_FILENAMES:
+        candidate_file = directory / filename
+        if candidate_file.is_file():
+            return str(candidate_file.resolve())
+    return ""
+
+
 def _build_pass1_series_data(
     series_name: str,
     series_directory: Path,
@@ -365,6 +387,11 @@ def _build_pass1_series_data(
         for key in metadata:
             if existing_meta.get(key):
                 metadata[key] = existing_meta[key]
+
+    if not metadata.get("poster_path"):
+        local_poster_file = _find_local_poster_image(series_directory)
+        if local_poster_file:
+            metadata["poster_path"] = local_poster_file
 
     series_data: dict[str, Any] = {
         "name": series_name,
@@ -499,6 +526,11 @@ def _process_season_directory(
             if existing_meta.get(key):
                 season_metadata[key] = existing_meta[key]
 
+    if not season_metadata.get("poster_path") and season_directory_path is not None:
+        local_season_poster = _find_local_poster_image(season_directory_path)
+        if local_season_poster:
+            season_metadata["poster_path"] = local_season_poster
+
     series_data["seasons"][season_name] = {
         "metadata": season_metadata,
         "episodes": episodes,
@@ -615,6 +647,11 @@ def scan_movie_pass1(
             movie_data[key] = existing_movie_data[key]
         else:
             movie_data[key] = default_value
+
+    if not movie_data.get("poster_path"):
+        local_movie_poster = _find_local_poster_image(movie_directory)
+        if local_movie_poster:
+            movie_data["poster_path"] = local_movie_poster
 
     _save_directory_mtime(str(movie_directory.absolute()), movie_directory.name)
 

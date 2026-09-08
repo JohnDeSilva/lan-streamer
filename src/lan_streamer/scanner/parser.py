@@ -13,6 +13,18 @@ SUBTITLE_EXTENSIONS = {".srt", ".ass", ".vtt", ".sub", ".idx"}
 
 # Regex to extract S01E02 style episode numbers from filenames
 _EPISODE_REGEX = re.compile(r"[Ss](\d+)[Ee](\d+)")
+# Regex to extract 1x02 style episode numbers
+_SEASON_EPISODE_X_REGEX = re.compile(
+    r"(?:^|\D)(\d{1,2})x(\d{1,3})(?:\D|$)", re.IGNORECASE
+)
+# Regex to extract Episode 02 or Ep 02 style episode numbers
+_EPISODE_WORD_REGEX = re.compile(
+    r"(?:^|[\s_.-])(?:episode|ep)[\s_.-]*(\d{1,3})(?:\D|$)", re.IGNORECASE
+)
+# Regex to extract delimiter-separated numbers like "Show - 01" or "[Sub] Show - 01 [1080p]"
+_EPISODE_DASH_REGEX = re.compile(
+    r"(?:[-_]|\s-\s)\s*(\d{1,3})(?:\s*[-_.\s\[]|$)", re.IGNORECASE
+)
 # Regex to capture additional E## groups after the first match (for multi-episode files)
 _EXTRA_EPISODE_REGEX = re.compile(r"[Ee](\d+)")
 # Regex to extract season number from folder names (e.g. "Season 1")
@@ -27,6 +39,36 @@ def _parse_episode_number(filename: str) -> tuple[int, int] | None:
             f"Parsed episode S{match.group(1)}E{match.group(2)} from '{filename}'"
         )
         return int(match.group(1)), int(match.group(2))
+
+    match_x = _SEASON_EPISODE_X_REGEX.search(filename)
+    if match_x:
+        logger.debug(
+            f"Parsed episode {match_x.group(1)}x{match_x.group(2)} from '{filename}'"
+        )
+        return int(match_x.group(1)), int(match_x.group(2))
+
+    base_name, _ = os.path.splitext(filename)
+
+    # Standalone number like "01" or "09"
+    if re.match(r"^\d{1,3}$", base_name.strip()):
+        episode_num = int(base_name.strip())
+        logger.debug(
+            f"Parsed standalone episode number {episode_num} from '{filename}'"
+        )
+        return 1, episode_num
+
+    match_word = _EPISODE_WORD_REGEX.search(base_name)
+    if match_word:
+        episode_num = int(match_word.group(1))
+        logger.debug(f"Parsed episode word number {episode_num} from '{filename}'")
+        return 1, episode_num
+
+    match_dash = _EPISODE_DASH_REGEX.search(base_name)
+    if match_dash:
+        episode_num = int(match_dash.group(1))
+        logger.debug(f"Parsed delimiter episode number {episode_num} from '{filename}'")
+        return 1, episode_num
+
     return None
 
 
