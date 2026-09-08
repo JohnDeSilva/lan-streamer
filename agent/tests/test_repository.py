@@ -270,3 +270,85 @@ def test_record_missing_files_marks_removed_episodes(
     with get_session(database_engine) as session:
         episodes = session.scalars(select(Episode)).all()
         assert all(episode.is_missing for episode in episodes)
+
+
+def test_upsert_library_handles_nine_unnumbered_episodes_without_dropping_any(
+    database_engine, agent_config
+) -> None:
+    nine_episodes = [
+        {
+            "name": f"Show - {index:02d}",
+            "path": f"/media/tv/Test Show/Season 1/Show - {index:02d}.mkv",
+            "episode_number": None,
+            "tmdb_number": None,
+            "versions": [
+                {"path": f"/media/tv/Test Show/Season 1/Show - {index:02d}.mkv"}
+            ],
+        }
+        for index in range(1, 10)
+    ]
+    items = {
+        "Test Show": {
+            "name": "Test Show",
+            "path": "/media/tv/Test Show",
+            "metadata": {"name": "Test Show"},
+            "seasons": {
+                "Season 1": {
+                    "name": "Season 1",
+                    "metadata": {"season_number": 1},
+                    "episodes": nine_episodes,
+                }
+            },
+        }
+    }
+    payload = {
+        "name": agent_config.libraries["tv"]["name"],
+        "media_type": "tv",
+        "root_path": agent_config.libraries["tv"]["root_path"],
+        "items": items,
+    }
+    with get_session(database_engine) as session:
+        stats = upsert_library(session, payload)
+    assert stats["episodes"] == 9
+
+    with get_session(database_engine) as session:
+        series_list = list_series(session)
+        assert len(series_list) == 1
+        episodes = series_list[0]["seasons"][0]["episodes"]
+        assert len(episodes) == 9
+        saved_episodes = session.scalars(select(Episode)).all()
+        assert len(saved_episodes) == 9
+
+
+def test_merge_season_episodes_combines_versions_and_paths() -> None:
+    from scan_agent.db.repository import _merge_season_episodes
+
+    existing = [
+        {
+            "name": "Ep 1",
+            "path": "/media/tv/show/s1/ep1.mkv",
+            "episode_number": 1,
+            "versions": [{"path": "/media/tv/show/s1/ep1.mkv"}],
+            "watched": True,
+        }
+    ]
+    incoming = [
+        {
+            "name": "Ep 1 Renamed",
+            "path": "/media/tv/show/s1/ep1.mp4",
+            "episode_number": 1,
+            "versions": [{"path": "/media/tv/show/s1/ep1.mp4"}],
+            "watched": False,
+        },
+        {
+            "name": "Ep 2",
+            "path": "/media/tv/show/s1/ep2.mkv",
+            "episode_number": 2,
+            "versions": [{"path": "/media/tv/show/s1/ep2.mkv"}],
+        },
+    ]
+    merged = _merge_season_episodes(existing, incoming)
+    assert len(merged) == 2
+    ep1 = next(ep for ep in merged if ep["episode_number"] == 1)
+    assert len(ep1["versions"]) == 2
+    assert ep1["watched"] is False

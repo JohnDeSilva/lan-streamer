@@ -2,7 +2,8 @@ FROM python:3.14-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    HOME=/data \
+    HOME=/root \
+    UV_CACHE_DIR=/tmp/.cache/uv \
     SCAN_AGENT_CONFIG=/data/config.json \
     PYTHONPATH=/app/src:/app/agent/src
 
@@ -37,4 +38,4 @@ VOLUME ["/media", "/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD ["curl", "-f", "http://localhost:8800/api/v1/health"]
 
-ENTRYPOINT ["uv", "run", "--project", "/app/agent", "python", "-m", "scan_agent.serve"]
+ENTRYPOINT ["/app/agent/.venv/bin/python", "-m", "scan_agent.serve"]

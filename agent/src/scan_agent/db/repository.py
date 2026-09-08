@@ -183,32 +183,78 @@ def _upsert_episodes(
 
     Returns ``(episode_count, media_file_count)``.
     """
-    existing_episodes = {
-        episode.episode_number if episode.episode_number is not None else 0: episode
-        for episode in season.episodes
-    }
-    episode_rows: dict[int, Episode] = dict(existing_episodes)
-    processed_numbers: set[int] = set()
+    existing_by_id: dict[int, Episode] = {ep.id: ep for ep in season.episodes}
+    existing_by_path: dict[str, Episode] = {}
+    existing_by_number: dict[int, Episode] = {}
+    used_numbers: set[int] = set()
+
+    for ep in season.episodes:
+        if ep.path:
+            existing_by_path[ep.path] = ep
+        for mf in ep.media_files:
+            if mf.path:
+                existing_by_path[mf.path] = ep
+        if ep.episode_number is not None and ep.episode_number > 0:
+            existing_by_number[ep.episode_number] = ep
+            used_numbers.add(ep.episode_number)
+
+    processed_episode_ids: set[int] = set()
     media_file_count = 0
+
     for episode_data in episodes_data:
         episode_number = episode_data.get("episode_number") or episode_data.get(
             "tmdb_number"
         )
-        if episode_number is None:
-            episode_number = 0
-        episode = episode_rows.get(episode_number)
-        if episode is None:
-            episode = Episode(season_id=season.id, episode_number=episode_number)
-            connection.add(episode)
+        path = episode_data.get("path")
+
+        candidate: Episode | None = None
+        if path and path in existing_by_path:
+            candidate = existing_by_path[path]
+        elif (
+            episode_number is not None
+            and episode_number > 0
+            and episode_number in existing_by_number
+        ):
+            candidate = existing_by_number[episode_number]
+
+        if candidate is None:
+            if (
+                episode_number is None
+                or episode_number <= 0
+                or episode_number in used_numbers
+            ):
+                next_num = 1
+                while next_num in used_numbers:
+                    next_num += 1
+                episode_number = next_num
+
+            candidate = Episode(season_id=season.id, episode_number=episode_number)
+            connection.add(candidate)
             connection.flush()
-            season.episodes.append(episode)
-            episode_rows[episode_number] = episode
-        processed_numbers.add(episode_number)
-        media_file_count += _apply_episode_fields(connection, episode, episode_data)
+            season.episodes.append(candidate)
+            existing_by_id[candidate.id] = candidate
+        elif (
+            episode_number is not None
+            and episode_number > 0
+            and (candidate.episode_number is None or candidate.episode_number <= 0)
+            and (
+                episode_number not in used_numbers
+                or candidate.episode_number == episode_number
+            )
+        ):
+            candidate.episode_number = episode_number
+
+        if candidate.episode_number is not None and candidate.episode_number > 0:
+            used_numbers.add(candidate.episode_number)
+            existing_by_number[candidate.episode_number] = candidate
+        if path:
+            existing_by_path[path] = candidate
+
+        processed_episode_ids.add(candidate.id)
+        media_file_count += _apply_episode_fields(connection, candidate, episode_data)
+
     stale_episodes = [
-        episode
-        for episode_number, episode in existing_episodes.items()
-        if episode_number not in processed_numbers
+        ep for ep_id, ep in existing_by_id.items() if ep_id not in processed_episode_ids
     ]
     for stale_episode in stale_episodes:
         connection.execute(
@@ -231,28 +277,55 @@ def _merge_season_episodes(
     incoming_episodes: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Merge episodes from multiple representations of the same season number."""
+    merged_episodes: list[dict[str, Any]] = []
     episodes_by_number: dict[int, dict[str, Any]] = {}
-    for episode_item in existing_episodes:
-        number = (
-            episode_item.get("episode_number") or episode_item.get("tmdb_number") or 0
-        )
-        episodes_by_number[number] = dict(episode_item)
-    for episode_item in incoming_episodes:
-        number = (
-            episode_item.get("episode_number") or episode_item.get("tmdb_number") or 0
-        )
-        if number not in episodes_by_number:
-            episodes_by_number[number] = dict(episode_item)
+    episodes_by_path: dict[str, dict[str, Any]] = {}
+
+    def _add_or_merge(episode_item: dict[str, Any]) -> None:
+        item_copy = dict(episode_item)
+        number = item_copy.get("episode_number") or item_copy.get("tmdb_number")
+        path = item_copy.get("path")
+        target: dict[str, Any] | None = None
+
+        if number is not None and number > 0 and number in episodes_by_number:
+            target = episodes_by_number[number]
+        elif path and path in episodes_by_path:
+            target = episodes_by_path[path]
+
+        if target is not None:
+            for key, val in item_copy.items():
+                if val is not None and (
+                    target.get(key) is None
+                    or key in ("watched", "last_played_at", "last_played_position")
+                ):
+                    target[key] = val
+            existing_versions = target.get("versions") or []
+            incoming_versions = item_copy.get("versions") or []
+            existing_vpaths = {
+                v.get("path") for v in existing_versions if v.get("path")
+            }
+            for v in incoming_versions:
+                if v.get("path") and v["path"] not in existing_vpaths:
+                    existing_versions.append(v)
+                    existing_vpaths.add(v["path"])
+            if existing_versions:
+                target["versions"] = existing_versions
         else:
-            current_episode = episodes_by_number[number]
-            merged_episode = {**current_episode, **episode_item}
-            if current_episode.get("path") and not episode_item.get("path"):
-                merged_episode["path"] = current_episode["path"]
-                merged_episode["versions"] = current_episode.get("versions")
-            elif current_episode.get("versions") and not episode_item.get("versions"):
-                merged_episode["versions"] = current_episode.get("versions")
-            episodes_by_number[number] = merged_episode
-    return list(episodes_by_number.values())
+            merged_episodes.append(item_copy)
+            if number is not None and number > 0:
+                episodes_by_number[number] = item_copy
+            if path:
+                episodes_by_path[path] = item_copy
+            for v in item_copy.get("versions") or []:
+                if v.get("path"):
+                    episodes_by_path[v["path"]] = item_copy
+
+    for ep in existing_episodes:
+        _add_or_merge(ep)
+    for ep in incoming_episodes:
+        _add_or_merge(ep)
+
+    return merged_episodes
 
 
 def _upsert_seasons(

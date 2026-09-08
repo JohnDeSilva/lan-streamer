@@ -38,6 +38,17 @@ function closeModal(modalId) {
     }
 }
 
+function getPosterUrl(posterPath) {
+    if (!posterPath) return "";
+    if (posterPath.startsWith("http://") || posterPath.startsWith("https://")) {
+        return posterPath;
+    }
+    if (posterPath.startsWith("/") && !posterPath.includes("/", 1)) {
+        return `https://image.tmdb.org/t/p/w500${posterPath}`;
+    }
+    return `/api/v1/images/poster?path=${encodeURIComponent(posterPath)}`;
+}
+
 // Tab Switching
 function switchTab(tabName) {
     currentTab = tabName;
@@ -225,10 +236,26 @@ function initSSE() {
         try {
             const payload = JSON.parse(event.data);
             const progressLabel = document.getElementById("scanProgressLabel");
+            const progressBar = document.getElementById("scanProgressBar");
             if (payload.type === "library_start") {
                 progressLabel.textContent = `Scanning library: ${payload.library}...`;
+                progressBar.style.width = "10%";
+            } else if (payload.type === "start_offline_scan" || (payload.type === "pass_start" && payload.pass === 1)) {
+                progressLabel.textContent = `Pass 1: Discovering files...`;
+                progressBar.style.width = "30%";
+            } else if (payload.type === "start_metadata_resolution" || (payload.type === "pass_start" && payload.pass === 2)) {
+                progressLabel.textContent = `Pass 2: Resolving metadata...`;
+                progressBar.style.width = "60%";
+            } else if (payload.type === "start_technical_probe" || (payload.type === "pass_start" && payload.pass === 3)) {
+                progressLabel.textContent = `Pass 3: Probing technical properties (ffprobe)...`;
+                progressBar.style.width = "85%";
+            } else if (payload.type === "season_finished") {
+                progressLabel.textContent = `Scanned ${payload.series} - ${payload.season}`;
+            } else if (payload.type === "movie_finished") {
+                progressLabel.textContent = `Scanned ${payload.movie}`;
             } else if (payload.type === "library_finished") {
                 progressLabel.textContent = `Finished library: ${payload.library}`;
+                progressBar.style.width = "100%";
             }
         } catch {
             // Ignore parse errors
@@ -239,9 +266,12 @@ function initSSE() {
         try {
             const payload = JSON.parse(event.data);
             const line = document.createElement("div");
-            line.textContent = `[${payload.level || "INFO"}] ${payload.message || ""}`;
-            logConsole.appendChild(line);
-            logConsole.scrollTop = logConsole.scrollHeight;
+            const text = payload.line || payload.message || "";
+            if (text) {
+                line.textContent = text;
+                logConsole.appendChild(line);
+                logConsole.scrollTop = logConsole.scrollHeight;
+            }
         } catch {
             // Ignore parse errors
         }
@@ -278,8 +308,9 @@ async function loadBrowse() {
             items.forEach((item) => {
                 const card = document.createElement("div");
                 card.className = "media-card";
+                const posterUrl = getPosterUrl(item.poster_path);
                 card.innerHTML = `
-                    <div class="media-poster">${item.poster_path ? `<img src="${item.poster_path}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : "No Poster"}</div>
+                    <div class="media-poster">${posterUrl ? `<img src="${posterUrl}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : "No Poster"}</div>
                     <div class="media-info">
                         <div class="media-title">${escapeHtml(item.name || item.folder_name)}</div>
                         <div class="media-sub">${item.year ? item.year : ""} • ${item.seasons ? item.seasons.length : 0} Seasons</div>
@@ -298,8 +329,9 @@ async function loadBrowse() {
             items.forEach((item) => {
                 const card = document.createElement("div");
                 card.className = "media-card";
+                const posterUrl = getPosterUrl(item.poster_path);
                 card.innerHTML = `
-                    <div class="media-poster">${item.poster_path ? `<img src="${item.poster_path}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : "No Poster"}</div>
+                    <div class="media-poster">${posterUrl ? `<img src="${posterUrl}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : "No Poster"}</div>
                     <div class="media-info">
                         <div class="media-title">${escapeHtml(item.name || item.folder_name)}</div>
                         <div class="media-sub">${item.year ? item.year : ""} ${item.runtime_seconds ? `• ${Math.round(item.runtime_seconds / 60)}m` : ""}</div>
@@ -362,7 +394,7 @@ async function showSeriesDetail(seriesId) {
         document.getElementById("detailContent").innerHTML = `
             <div style="display: flex; gap: 1.5rem; margin-bottom: 1.5rem;">
                 <div style="width: 140px; height: 210px; background: var(--bg-tertiary); flex-shrink: 0; border-radius: var(--radius-md); overflow: hidden;">
-                    ${item.poster_path ? `<img src="${item.poster_path}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : ""}
+                    ${item.poster_path ? `<img src="${getPosterUrl(item.poster_path)}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : ""}
                 </div>
                 <div>
                     <h3>${escapeHtml(item.name || item.folder_name)}</h3>
@@ -405,7 +437,7 @@ async function showMovieDetail(movieId) {
         document.getElementById("detailContent").innerHTML = `
             <div style="display: flex; gap: 1.5rem; margin-bottom: 1.5rem;">
                 <div style="width: 140px; height: 210px; background: var(--bg-tertiary); flex-shrink: 0; border-radius: var(--radius-md); overflow: hidden;">
-                    ${item.poster_path ? `<img src="${item.poster_path}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : ""}
+                    ${item.poster_path ? `<img src="${getPosterUrl(item.poster_path)}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : ""}
                 </div>
                 <div>
                     <h3>${escapeHtml(item.name || item.folder_name)}</h3>
@@ -862,6 +894,21 @@ document.addEventListener("DOMContentLoaded", () => {
             switchTab("scan");
             document.getElementById("scanLibrarySelect").value = id;
             document.getElementById("btnStartScan").click();
+        } else if (action === "edit") {
+            try {
+                const libraries = await api.getLibraries();
+                const lib = libraries.find((item) => item.id === id);
+                if (!lib) return;
+                document.getElementById("libId").value = lib.id;
+                document.getElementById("libName").value = lib.name;
+                document.getElementById("libMediaType").value = lib.media_type;
+                document.getElementById("libRootPath").value = lib.root_path || "";
+                document.getElementById("libEnabled").checked = lib.enabled !== false;
+                document.getElementById("libraryModalTitle").textContent = "Edit Library";
+                openModal("libraryModal");
+            } catch (error) {
+                showAlert(`Failed loading library for edit: ${error.message}`, "error");
+            }
         } else if (action === "delete") {
             if (confirm(`Are you sure you want to delete library "${id}"?`)) {
                 try {

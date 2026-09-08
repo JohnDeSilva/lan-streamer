@@ -52,9 +52,9 @@ class ProgressBroker:
                 logger.exception("Progress subscriber raised for event '%s'", event)
         return message
 
-    def publish_log(self, line: str) -> dict[str, Any]:
+    def publish_log(self, line: str, level: str = "INFO") -> dict[str, Any]:
         """Publish a single log line as a ``scan.log`` event."""
-        return self.publish("scan.log", {"line": line})
+        return self.publish("scan.log", {"line": line, "message": line, "level": level})
 
     def subscribe(self, subscriber: ProgressSubscriber) -> int:
         """Register *subscriber* and return a subscription handle."""
