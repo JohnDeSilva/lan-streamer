@@ -391,3 +391,98 @@ def test_config_library_management_type_remote_and_scan_agents(
         reloaded_config.libraries["RemoteSeries"]["remote_root_path"] == "/storage/tv"
     )
     assert reloaded_config.libraries["RemoteSeries"]["paths"] == ["/mnt/nas/tv"]
+
+
+def test_split_multi_root_libraries_single_path_unchanged() -> None:
+    from lan_streamer.system.config import split_multi_root_libraries
+
+    input_libraries = {
+        "Movies": {
+            "type": "movie",
+            "paths": ["/media/movies"],
+            "archive_paths": [],
+        }
+    }
+    result_libraries, split_records = split_multi_root_libraries(input_libraries)
+    assert len(result_libraries) == 1
+    assert result_libraries["Movies"]["paths"] == ["/media/movies"]
+    assert split_records == []
+
+
+def test_split_multi_root_libraries_multi_paths() -> None:
+    from lan_streamer.system.config import split_multi_root_libraries
+
+    input_libraries = {
+        "Anime": {
+            "type": "tv",
+            "paths": ["/media/anime1", "/media/anime2", "/media/anime3"],
+            "archive_paths": ["/media/anime3"],
+            "show_future_episodes": True,
+        }
+    }
+    result_libraries, split_records = split_multi_root_libraries(input_libraries)
+
+    assert len(result_libraries) == 3
+    assert "Anime" in result_libraries
+    assert "Anime (anime2)" in result_libraries
+    assert "Anime (anime3)" in result_libraries
+
+    assert result_libraries["Anime"]["paths"] == ["/media/anime1"]
+    assert result_libraries["Anime"]["archive_paths"] == []
+    assert result_libraries["Anime"]["show_future_episodes"] is True
+
+    assert result_libraries["Anime (anime2)"]["paths"] == ["/media/anime2"]
+    assert result_libraries["Anime (anime2)"]["archive_paths"] == []
+
+    assert result_libraries["Anime (anime3)"]["paths"] == ["/media/anime3"]
+    assert result_libraries["Anime (anime3)"]["archive_paths"] == ["/media/anime3"]
+
+    assert split_records == [
+        ("Anime", "Anime (anime2)", "/media/anime2"),
+        ("Anime", "Anime (anime3)", "/media/anime3"),
+    ]
+
+
+def test_split_multi_root_libraries_collision_handling() -> None:
+    from lan_streamer.system.config import split_multi_root_libraries
+
+    input_libraries = {
+        "Anime": {
+            "type": "tv",
+            "paths": ["/disk1/shows", "/disk2/shows"],
+        },
+        "Anime (shows)": {
+            "type": "tv",
+            "paths": ["/disk3/other"],
+        },
+    }
+    result_libraries, split_records = split_multi_root_libraries(input_libraries)
+
+    # Since "Anime (shows)" already exists in input_libraries, the second path of "Anime"
+    # should fall back to an indexed name like "Anime (2)"
+    assert "Anime" in result_libraries
+    assert "Anime (shows)" in result_libraries
+    assert "Anime (2)" in result_libraries
+    assert result_libraries["Anime (2)"]["paths"] == ["/disk2/shows"]
+    assert ("Anime", "Anime (2)", "/disk2/shows") in split_records
+
+
+def test_config_load_automatically_splits_multi_root_libraries(
+    mock_config_file,
+) -> None:
+    config = Config()
+    config.libraries = {
+        "Shows": {
+            "type": "tv",
+            "paths": ["/path/one", "/path/two"],
+        }
+    }
+    config.save_to_db()
+
+    reloaded = Config()
+    reloaded.load_from_db()
+
+    assert "Shows" in reloaded.libraries
+    assert "Shows (two)" in reloaded.libraries
+    assert reloaded.libraries["Shows"]["paths"] == ["/path/one"]
+    assert reloaded.libraries["Shows (two)"]["paths"] == ["/path/two"]

@@ -196,12 +196,142 @@ def cleanup_library(library_name: str, root_directories: list[str]) -> dict[str,
     return stats
 
 
+def reassign_library_items_by_root_path(
+    old_library_name: str, new_library_name: str, root_path: str
+) -> dict[str, int]:
+    """Reassigns Series and Movie records whose files reside under root_path
+    from old_library_name to new_library_name.
+
+    Returns:
+        A dictionary with counts of reassigned series and movies.
+    """
+    from sqlalchemy.orm import selectinload
+
+    from lan_streamer.db.models import (
+        Episode as EpisodeModel,
+    )
+    from lan_streamer.db.models import (
+        Movie as MovieModel,
+    )
+    from lan_streamer.db.models import (
+        Season as SeasonModel,
+    )
+    from lan_streamer.db.models import (
+        Series as SeriesModel,
+    )
+
+    resolved_root_path = Path(root_path).resolve()
+    reassigned_counts = {"series": 0, "movies": 0}
+
+    with get_session() as session:
+        # 1. TV Series
+        series_records = session.scalars(
+            select(SeriesModel)
+            .where(SeriesModel.library_name == old_library_name)
+            .options(
+                selectinload(SeriesModel.seasons)
+                .selectinload(SeasonModel.episodes)
+                .selectinload(EpisodeModel.media_files)
+            )
+        ).all()
+
+        for series_item in series_records:
+            matches_root = False
+            for season in series_item.seasons:
+                for episode in season.episodes:
+                    for media_file in episode.media_files:
+                        if media_file.path:
+                            try:
+                                if (
+                                    Path(media_file.path)
+                                    .resolve()
+                                    .is_relative_to(resolved_root_path)
+                                ):
+                                    matches_root = True
+                                    break
+                            except ValueError, OSError:
+                                pass
+                    if matches_root:
+                        break
+                if matches_root:
+                    break
+
+            if matches_root:
+                series_item.library_name = new_library_name
+                reassigned_counts["series"] += 1
+                logger.info(
+                    "Reassigned series '%s' from library '%s' to '%s'",
+                    series_item.name,
+                    old_library_name,
+                    new_library_name,
+                )
+
+        # 2. Movies
+        movie_records = session.scalars(
+            select(MovieModel)
+            .where(MovieModel.library_name == old_library_name)
+            .options(selectinload(MovieModel.media_files))
+        ).all()
+
+        for movie_item in movie_records:
+            matches_root = False
+            if movie_item.default_path:
+                try:
+                    if (
+                        Path(movie_item.default_path)
+                        .resolve()
+                        .is_relative_to(resolved_root_path)
+                    ):
+                        matches_root = True
+                except ValueError, OSError:
+                    pass
+            if not matches_root:
+                for media_file in movie_item.media_files:
+                    if media_file.path:
+                        try:
+                            if (
+                                Path(media_file.path)
+                                .resolve()
+                                .is_relative_to(resolved_root_path)
+                            ):
+                                matches_root = True
+                                break
+                        except ValueError, OSError:
+                            pass
+
+            if matches_root:
+                movie_item.library_name = new_library_name
+                reassigned_counts["movies"] += 1
+                logger.info(
+                    "Reassigned movie '%s' from library '%s' to '%s'",
+                    movie_item.name,
+                    old_library_name,
+                    new_library_name,
+                )
+
+        session.commit()
+
+    # Rebuild smart row cache if items were reassigned
+    if reassigned_counts["series"] > 0 or reassigned_counts["movies"] > 0:
+        try:
+            from lan_streamer.db.smart_row_cache import rebuild_all_cache
+
+            rebuild_all_cache()
+        except Exception:
+            logger.exception(
+                "Could not rebuild smart row cache during library reassign"
+            )
+
+    return reassigned_counts
+
+
 __all__ = [
     "cleanup_library",
     "get_directory_mtime",
     "get_session",
     "load_library",
     "load_movie_library",
+    "reassign_library_items_by_root_path",
     "save_directory_mtime",
     "save_library",
     "save_movie_data",
