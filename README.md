@@ -503,7 +503,7 @@ LAN Streamer includes a standalone, remote scanning agent (`agent/`) designed to
 
 ### Running with Docker
 
-#### Pull from GitHub Container Registry
+#### Pull and Run with Docker CLI
 ```bash
 docker run -d \
   --name lan-streamer-scan-agent \
@@ -515,8 +515,30 @@ docker run -d \
   ghcr.io/johndesilva/lan-streamer-agent:latest
 ```
 
-#### Run with Docker Compose
-From the repository root, start the agent with Docker Compose:
+#### Example `docker-compose.yml`
+Save the following as `docker-compose.yml` on your server:
+```yaml
+services:
+  scan-agent:
+    image: ghcr.io/johndesilva/lan-streamer-agent:latest
+    container_name: lan-streamer-scan-agent
+    restart: unless-stopped
+    ports:
+      - "8800:8800"
+    environment:
+      - TMDB_API_KEY=your_key
+      - SCAN_AGENT_CONFIG=/data/config.json
+    volumes:
+      - /path/to/media:/media:ro
+      - /path/to/data:/data
+```
+Start the container:
+```bash
+docker compose up -d
+```
+
+#### Build from Source with Docker Compose
+From the repository root, build and run the agent container:
 ```bash
 # Build and run the agent container in foreground
 make agent-run
