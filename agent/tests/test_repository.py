@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from scan_agent.db.connection import get_session
-from scan_agent.db.models import Episode, MediaFile, Series
+from scan_agent.db.models import Episode, MediaFile, Movie, Series
 from scan_agent.db.repository import (
     count_library_items,
     get_library,
@@ -18,6 +18,7 @@ from scan_agent.db.repository import (
     list_scan_jobs,
     list_series,
     load_library_dict,
+    preserve_live_watch_state,
     record_missing_files,
     upsert_library,
     upsert_series_scan,
@@ -352,3 +353,124 @@ def test_merge_season_episodes_combines_versions_and_paths() -> None:
     ep1 = next(ep for ep in merged if ep["episode_number"] == 1)
     assert len(ep1["versions"]) == 2
     assert ep1["watched"] is False
+
+
+def test_preserve_live_watch_state_overlays_tv_episode_watched(
+    database_engine, agent_config, scanned_series_data
+) -> None:
+    """A rescan must not clobber watched/playback fields touched meanwhile."""
+    payload = _tv_library_payload(agent_config, scanned_series_data)
+    with get_session(database_engine) as session:
+        upsert_library(session, payload)
+        library_row = get_library(session, agent_config.libraries["tv"]["name"])
+        assert library_row is not None
+        episode_row = session.scalars(
+            select(Episode).where(Episode.episode_number == 1)
+        ).first()
+        assert episode_row is not None
+        episode_row.watched = True
+        episode_row.last_played_at = 1735743845.0
+        episode_row.resume_position_seconds = 42
+        session.commit()
+
+    result_copy = copy.deepcopy(scanned_series_data)
+    # Simulate a stale rescan whose episode dicts carry no live fields.
+    season = next(iter(result_copy["Test Show"]["seasons"].values()))
+    for episode in season["episodes"]:
+        episode.pop("watched", None)
+        episode.pop("last_played_position", None)
+
+    with get_session(database_engine) as session:
+        library_row = get_library(session, agent_config.libraries["tv"]["name"])
+        assert library_row is not None
+        preserve_live_watch_state(session, library_row, result_copy)
+
+    season_data = next(iter(result_copy["Test Show"]["seasons"].values()))
+    first_episode = next(
+        episode
+        for episode in season_data["episodes"]
+        if episode.get("episode_number") == 1
+    )
+    assert first_episode["watched"] is True
+    assert first_episode["last_played_position"] == 42
+    assert first_episode["last_played_at"] == 1735743845.0
+
+    with get_session(database_engine) as session:
+        library_row = get_library(session, agent_config.libraries["tv"]["name"])
+        assert library_row is not None
+        stats = upsert_library(session, {**payload, "items": result_copy})
+        assert stats["episodes"] == 2
+        episode_row = session.scalars(
+            select(Episode).where(Episode.episode_number == 1)
+        ).first()
+        assert episode_row is not None
+        assert episode_row.watched is True
+        assert episode_row.resume_position_seconds == 42
+
+
+def test_preserve_live_watch_state_overlays_movie_watched(
+    database_engine, agent_config, scanned_movie_data
+) -> None:
+    payload = _movie_library_payload(agent_config, scanned_movie_data)
+    with get_session(database_engine) as session:
+        upsert_library(session, payload)
+        movie_row = session.scalars(select(Movie)).first()
+        assert movie_row is not None
+        movie_row.watched = True
+        movie_row.resume_position_seconds = 60
+        session.commit()
+
+    result_copy = copy.deepcopy(scanned_movie_data)
+    movie_item = next(iter(result_copy.values()))
+    movie_item.pop("watched", None)
+    movie_item.pop("last_played_position", None)
+
+    with get_session(database_engine) as session:
+        library_row = get_library(session, agent_config.libraries["movie"]["name"])
+        assert library_row is not None
+        preserve_live_watch_state(session, library_row, result_copy)
+
+    restored_item = next(iter(result_copy.values()))
+    assert restored_item["watched"] is True
+    assert restored_item["last_played_position"] == 60
+
+
+def test_versions_none_preserves_existing_multi_version_episode(
+    database_engine, agent_config, scanned_series_data
+) -> None:
+    """Episode dicts without a versions key must keep existing media files."""
+    payload = _tv_library_payload(agent_config, scanned_series_data)
+    with get_session(database_engine) as session:
+        stats = upsert_library(session, payload)
+    assert stats["media_files"] == 3
+
+    reduced = copy.deepcopy(scanned_series_data)
+    season = next(iter(reduced["Test Show"]["seasons"].values()))
+    for episode in season["episodes"]:
+        if episode.get("episode_number") == 1:
+            version_paths = [
+                version["path"] for version in (episode.get("versions") or [])
+            ]
+            episode.pop("versions", None)
+            episode["path"] = next(
+                path for path in version_paths if path.endswith(".mkv")
+            )
+
+    with get_session(database_engine) as session:
+        stats = upsert_library(session, {**payload, "items": reduced})
+    assert stats["media_files"] == 3
+
+    with get_session(database_engine) as session:
+        series_row = session.scalars(select(Series)).first()
+        assert series_row is not None
+        first_episode = next(
+            episode
+            for episode in series_row.seasons[0].episodes
+            if episode.episode_number == 1
+        )
+        media_paths = sorted(
+            media_file.path for media_file in first_episode.media_files
+        )
+        assert len(media_paths) == 2
+        assert any(path.endswith(".mkv") for path in media_paths)
+        assert any(path.endswith(".mp4") for path in media_paths)

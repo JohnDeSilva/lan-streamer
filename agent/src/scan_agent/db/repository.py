@@ -167,11 +167,15 @@ def _apply_episode_fields(
         episode.resume_position_seconds = episode_data.get("last_played_position")
 
     versions = episode_data.get("versions")
-    if versions is None and episode_path:
-        versions = [{"path": episode_path}]
-    if versions is not None or episode_path:
-        return _sync_media_files(connection, "episode", episode.id, versions)
-    return len(episode.media_files)
+    if versions is None:
+        if not episode.media_files and episode_path:
+            versions = [{"path": episode_path}]
+        else:
+            # Multiple video files may map to this episode. Without an explicit
+            # versions list, preserve the existing media files rather than
+            # collapsing the episode back to a single synthesized version.
+            return len(episode.media_files)
+    return _sync_media_files(connection, "episode", episode.id, versions)
 
 
 def _upsert_episodes(
@@ -448,8 +452,13 @@ def _apply_movie_fields(
     movie.last_played_at = movie_data.get("last_played_at")
     movie.resume_position_seconds = movie_data.get("last_played_position")
     versions = movie_data.get("versions")
-    if versions is None and movie_path:
-        versions = [{"path": movie_path}]
+    if versions is None:
+        if not movie.media_files and movie_path:
+            versions = [{"path": movie_path}]
+        else:
+            # Preserve existing media files when the scan did not provide an
+            # explicit versions list (multiple files can map to one movie).
+            return len(movie.media_files)
     return _sync_media_files(connection, "movie", movie.id, versions)
 
 
@@ -917,6 +926,76 @@ def _episode_to_scanner_dict(episode: Episode) -> dict[str, Any]:
         "versions": versions,
         "default_path": episode.path or "",
     }
+
+
+def _overlay_watch_fields(
+    target_item: dict[str, Any], live_item: dict[str, Any]
+) -> None:
+    """Copy live watch/playback fields onto a scanned item's fields."""
+    if "watched" in live_item:
+        target_item["watched"] = bool(live_item.get("watched", False))
+    if "last_played_at" in live_item:
+        target_item["last_played_at"] = live_item.get("last_played_at")
+    if "last_played_position" in live_item:
+        target_item["last_played_position"] = live_item.get("last_played_position")
+
+
+def _find_live_episode(
+    scanned_episode: dict[str, Any], live_episodes: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Locate the live DB episode matching a scanned episode.
+
+    Matching prefers the primary file path, then falls back to the episode
+    number (covering TMDB-only placeholders whose file is missing).
+    """
+    scanned_path = scanned_episode.get("path")
+    for live_episode in live_episodes:
+        if scanned_path and live_episode.get("path") == scanned_path:
+            return live_episode
+    scanned_number = scanned_episode.get("episode_number")
+    if scanned_number is not None:
+        for live_episode in live_episodes:
+            if live_episode.get("episode_number") == scanned_number:
+                return live_episode
+    return None
+
+
+def preserve_live_watch_state(
+    connection: Session,
+    library: Library,
+    scan_result: dict[str, Any],
+) -> None:
+    """Overlay live watch/playback state onto a freshly scanned library.
+
+    A scan can run for a long time; watched/playback fields may change between
+    the baseline load and the upsert that follows.  This reloads the current
+    database state and copies the volatile fields onto the scan result so they
+    are never clobbered by (possibly stale) scan output.
+    """
+    live_items = load_library_dict(connection, library.id)
+    for folder_name, item_data in scan_result.items():
+        if not isinstance(item_data, dict):
+            continue
+        live_item = live_items.get(folder_name)
+        if not isinstance(live_item, dict):
+            continue
+        if "seasons" in live_item:
+            live_seasons = live_item.get("seasons", {})
+            for season_name, season_data in item_data.get("seasons", {}).items():
+                if not isinstance(season_data, dict):
+                    continue
+                live_season = live_seasons.get(season_name)
+                if not isinstance(live_season, dict):
+                    continue
+                live_episodes = live_season.get("episodes", [])
+                for scanned_episode in season_data.get("episodes", []):
+                    if not isinstance(scanned_episode, dict):
+                        continue
+                    live_episode = _find_live_episode(scanned_episode, live_episodes)
+                    if live_episode is not None:
+                        _overlay_watch_fields(scanned_episode, live_episode)
+        else:
+            _overlay_watch_fields(item_data, live_item)
 
 
 def _movie_to_scanner_dict(movie: Movie) -> dict[str, Any]:

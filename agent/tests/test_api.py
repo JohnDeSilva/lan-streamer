@@ -725,3 +725,35 @@ def test_images_poster_from_tmdb_cached(
     )
     assert response.status_code == 200
     assert response.content == b"tmdb_mock_bytes"
+
+
+def test_sse_queue_drops_oldest_when_full() -> None:
+    """The per-client SSE queue is bounded and drops the oldest event."""
+    import asyncio
+
+    from scan_agent.api.routes_scan import _put_message_on_queue
+
+    async def run() -> None:
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=2)
+        await queue.put({"sequence": 1})
+        await queue.put({"sequence": 2})
+        _put_message_on_queue(queue, {"sequence": 3})
+        _put_message_on_queue(queue, {"sequence": 4})
+        remaining = [await queue.get() for _ in range(queue.qsize())]
+        assert [entry["sequence"] for entry in remaining] == [3, 4]
+
+    asyncio.run(run())
+
+
+def test_sse_enqueue_ignores_closed_event_loop() -> None:
+    """Enqueueing after the loop closed must not raise."""
+    import asyncio
+
+    from scan_agent.api.routes_scan import _enqueue_after_loop_close_safe
+
+    loop = asyncio.new_event_loop()
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    loop.close()
+    _enqueue_after_loop_close_safe(
+        loop, queue, {"sequence": 1, "event": "ping", "payload": {}}
+    )

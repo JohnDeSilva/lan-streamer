@@ -15,6 +15,7 @@ from scan_agent.db.models import ScanJob
 from scan_agent.db.repository import (
     get_or_create_library,
     load_library_dict,
+    preserve_live_watch_state,
     record_missing_files,
     upsert_library,
 )
@@ -282,6 +283,7 @@ class ScanOrchestrator:
             is_interrupted=self._is_interrupted.is_set,
         )
         with get_session(self._engine) as session:
+            preserve_live_watch_state(session, library_row, result)
             stats = upsert_library(
                 session,
                 {
