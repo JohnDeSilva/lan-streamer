@@ -132,32 +132,56 @@ def scan_directories(
     existing_library = existing_library or {}
 
     if pass_number == 0:
-        lib = _scan_pass1(
+        logger.info(
+            "=== Scan Pass 1/3 Starting: File Discovery for %d roots ===",
+            len(root_directories),
+        )
+        library_discovered = _scan_pass1(
             root_directories=root_directories,
             library_type=library_type,
             existing_library=existing_library,
             force_refresh=force_refresh,
             scan_context=scan_context,
         )
-        unavailable = list(lib.unavailable_directories)
-        lib = _scan_pass2(
+        logger.info(
+            "=== Scan Pass 1/3 Complete: Discovered %d items ===",
+            len(library_discovered),
+        )
+        unavailable = list(library_discovered.unavailable_directories)
+        logger.info(
+            "=== Scan Pass 2/3 Starting: Metadata Resolution for %d items ===",
+            len(library_discovered),
+        )
+        library_resolved = _scan_pass2(
             root_directories=root_directories,
             library_type=library_type,
-            existing_library=lib,
+            existing_library=library_discovered,
             jellyfin_data=jellyfin_data,
             force_refresh=force_refresh,
             single_item_refresh=single_item_refresh,
             show_future_episodes=show_future_episodes,
             scan_context=scan_context,
         )
+        logger.info(
+            "=== Scan Pass 2/3 Complete: Metadata resolved for %d items ===",
+            len(library_resolved),
+        )
+        logger.info(
+            "=== Scan Pass 3/3 Starting: Technical Metadata Probing for %d items ===",
+            len(library_resolved),
+        )
         result = _scan_pass3(
             root_directories=root_directories,
             library_type=library_type,
-            existing_library=lib,
+            existing_library=library_resolved,
             force_refresh=force_refresh,
             scan_context=scan_context,
         )
         result.unavailable_directories = unavailable
+        logger.info(
+            "=== Scan Pass 3/3 Complete: Technical probing complete for %d items ===",
+            len(result),
+        )
         return result
     if pass_number == 1:
         return _scan_pass1(
@@ -520,12 +544,20 @@ def _scan_pass3(
         )
         items_by_root.setdefault(m_root, []).append((series_name, existing_series))
 
+    detail_callback = scan_context.detail_callback
+    if detail_callback:
+        detail_callback("pass_start", {"pass": 3, "items_count": len(existing_library)})
+
     for _m_root, items in items_by_root.items():
         if is_interrupted and is_interrupted():
             break
         for series_name, existing in items:
             if is_interrupted and is_interrupted():
                 break
+            if detail_callback:
+                detail_callback(
+                    "start_folder", {"root": _m_root, "folder": series_name}
+                )
             if library_type == "movie":
                 result = scan_movie_pass3(
                     Path(series_name),
@@ -543,10 +575,18 @@ def _scan_pass3(
                 )
             if result is not None:
                 library[series_name] = result
+            if detail_callback:
+                detail_callback(
+                    "finish_folder",
+                    {"root": _m_root, "folder": series_name, "skipped": False},
+                )
 
     for old_name, old_data in existing_library.items():
         if old_name not in library:
             library[old_name] = old_data
+
+    if detail_callback:
+        detail_callback("pass_finished", {"pass": 3, "items_count": len(library)})
 
     return library
 

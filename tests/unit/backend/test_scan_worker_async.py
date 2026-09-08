@@ -271,3 +271,116 @@ class TestAsyncScanWorker:
         assert "unavailable" in caplog.text.lower()
         assert len(worker.problems) == 1
         assert worker.problems[0]["item"] == "/missing/path"
+
+    def test_run_async_default_executes_pass1_and_pass2(
+        self, event_loop: asyncio.AbstractEventLoop, task_manager: AsyncTaskManager
+    ) -> None:
+        worker = AsyncScanWorker(
+            root_directories=["/tmp/test"],
+            library_type="tv",
+            existing_library={},
+            async_task_manager=task_manager,
+            library_name="TestLib",
+        )
+        called_passes: list[int] = []
+
+        def mock_scan(*args: Any, **kwargs: Any) -> LibraryDict:
+            called_passes.append(kwargs.get("pass_number", 0))
+            return LibraryDict()
+
+        with (
+            patch(
+                "lan_streamer.backend.scan_worker_async.scan_directories",
+                side_effect=mock_scan,
+            ),
+            patch.object(worker, "_flush_detail_progress"),
+        ):
+            result = _run(worker.run_async(), event_loop)
+            assert isinstance(result, dict)
+            assert called_passes == [1, 2]
+
+    def test_run_async_executes_all_three_passes(
+        self, event_loop: asyncio.AbstractEventLoop, task_manager: AsyncTaskManager
+    ) -> None:
+        worker = AsyncScanWorker(
+            root_directories=["/tmp/test"],
+            library_type="tv",
+            existing_library={},
+            async_task_manager=task_manager,
+            library_name="TestLib",
+            run_pass3=True,
+        )
+        called_passes: list[int] = []
+
+        def mock_scan(*args: Any, **kwargs: Any) -> LibraryDict:
+            called_passes.append(kwargs.get("pass_number", 0))
+            return LibraryDict()
+
+        with (
+            patch(
+                "lan_streamer.backend.scan_worker_async.scan_directories",
+                side_effect=mock_scan,
+            ),
+            patch.object(worker, "_flush_detail_progress"),
+        ):
+            result = _run(worker.run_async(), event_loop)
+            assert isinstance(result, dict)
+            assert called_passes == [1, 2, 3]
+            assert 3 in worker.pass_stats
+
+    def test_run_async_respects_pass_flags(
+        self, event_loop: asyncio.AbstractEventLoop, task_manager: AsyncTaskManager
+    ) -> None:
+        worker = AsyncScanWorker(
+            root_directories=["/tmp/test"],
+            library_type="tv",
+            existing_library={},
+            async_task_manager=task_manager,
+            library_name="TestLib",
+            run_pass1=False,
+            run_pass2=True,
+            run_pass3=False,
+        )
+        called_passes: list[int] = []
+
+        def mock_scan(*args: Any, **kwargs: Any) -> LibraryDict:
+            called_passes.append(kwargs.get("pass_number", 0))
+            return LibraryDict()
+
+        with (
+            patch(
+                "lan_streamer.backend.scan_worker_async.scan_directories",
+                side_effect=mock_scan,
+            ),
+            patch.object(worker, "_flush_detail_progress"),
+        ):
+            result = _run(worker.run_async(), event_loop)
+            assert isinstance(result, dict)
+            assert called_passes == [2]
+
+    def test_cancelled_during_pass3(
+        self, event_loop: asyncio.AbstractEventLoop, task_manager: AsyncTaskManager
+    ) -> None:
+        worker = AsyncScanWorker(
+            root_directories=["/tmp/test"],
+            library_type="tv",
+            existing_library={},
+            async_task_manager=task_manager,
+            library_name="TestLib",
+            run_pass3=True,
+        )
+
+        def mock_scan(*args: Any, **kwargs: Any) -> LibraryDict:
+            if kwargs.get("pass_number") == 3:
+                worker.stop()
+            return LibraryDict()
+
+        with (
+            patch(
+                "lan_streamer.backend.scan_worker_async.scan_directories",
+                side_effect=mock_scan,
+            ),
+            patch.object(worker, "_flush_detail_progress"),
+        ):
+            result = _run(worker.run_async(), event_loop)
+            assert result == {}
