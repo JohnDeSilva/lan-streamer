@@ -506,7 +506,7 @@ LAN Streamer includes a standalone, remote scanning agent (`agent/`) designed to
 #### Pull and Run with Docker CLI
 ```bash
 docker run -d \
-  --name lan-streamer-scan-agent \
+  --name lan-streamer-remote-agent \
   -p 8800:8800 \
   -e TMDB_API_KEY=your_key \
   -v /path/to/media:/media:ro \
@@ -521,7 +521,7 @@ Save the following as `docker-compose.yml` on your server:
 services:
   scan-agent:
     image: ghcr.io/johndesilva/lan-streamer-agent:latest
-    container_name: lan-streamer-scan-agent
+    container_name: lan-streamer-remote-agent
     restart: unless-stopped
     ports:
       - "8800:8800"
