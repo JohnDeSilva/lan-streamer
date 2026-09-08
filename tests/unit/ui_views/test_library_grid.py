@@ -438,6 +438,24 @@ class TestOnItemClicked:
             view.on_item_clicked(item)
             mock_select.assert_called_once_with("Avatar")
 
+    def test_click_movie_on_consolidated_tab(self, grid_view) -> None:
+        view, controller = grid_view
+        controller.current_library_name = "Watch Everything"
+        controller.cached_library_data = {
+            "Avatar": {
+                "name": "Avatar",
+                "path": "/movies/Avatar.mkv",
+                "watched": False,
+            }
+        }
+
+        item = QListWidgetItem("Avatar")
+        item.setData(Qt.ItemDataRole.UserRole, "Avatar")
+
+        with patch.object(controller, "select_movie") as mock_select:
+            view.on_item_clicked(item)
+            mock_select.assert_called_once_with("Avatar")
+
     def test_click_item_with_no_data(self, grid_view) -> None:
         view, controller = grid_view
         item = QListWidgetItem("Item")

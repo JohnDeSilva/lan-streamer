@@ -531,3 +531,41 @@ def test_config_tabs_custom_save_and_load(mock_config_file) -> None:
     assert reloaded.get_tab_libraries("Movies") == ["Cinema"]
     # Fallback for unconfigured tab name
     assert reloaded.get_tab_libraries("NonExistent") == []
+
+
+def test_split_multi_root_libraries_skips_remote_libraries() -> None:
+    from lan_streamer.system.config import split_multi_root_libraries
+
+    input_libraries = {
+        "Remote Shows": {
+            "type": "tv",
+            "management_type": "remote",
+            "agent_url": "http://127.0.0.1:8800",
+            "remote_library_id": "remote-tv",
+            "paths": ["/local/mount1", "/local/mount2"],
+            "mount_mappings": {
+                "/remote/shows1": "/local/mount1",
+                "/remote/shows2": "/local/mount2",
+            },
+        },
+        "Local TV": {
+            "type": "tv",
+            "management_type": "local",
+            "paths": ["/local/tv1", "/local/tv2"],
+        },
+    }
+    result_libraries, split_records = split_multi_root_libraries(input_libraries)
+
+    # Remote library should NOT be split despite having 2 paths
+    assert "Remote Shows" in result_libraries
+    assert "Remote Shows (mount2)" not in result_libraries
+    assert result_libraries["Remote Shows"]["paths"] == [
+        "/local/mount1",
+        "/local/mount2",
+    ]
+
+    # Local TV library SHOULD be split
+    assert "Local TV" in result_libraries
+    assert "Local TV (tv2)" in result_libraries
+    assert len(split_records) == 1
+    assert split_records[0] == ("Local TV", "Local TV (tv2)", "/local/tv2")

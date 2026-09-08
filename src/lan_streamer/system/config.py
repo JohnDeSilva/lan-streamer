@@ -46,6 +46,10 @@ def split_multi_root_libraries(
 
     for library_name, library_configuration in libraries_dictionary.items():
         configuration_copy = dict(library_configuration)
+        if configuration_copy.get("management_type") == "remote":
+            normalized_libraries[library_name] = configuration_copy
+            continue
+
         raw_paths = configuration_copy.get("paths", [])
         # Deduplicate paths while preserving order
         unique_paths: list[str] = list(dict.fromkeys(raw_paths))

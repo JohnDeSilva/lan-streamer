@@ -219,3 +219,21 @@ def test_download_poster_failure(tmp_path) -> None:
             local_destination_directory=str(destination_dir),
         )
         assert result_path == ""
+
+
+def test_fetch_library_items_quotes_identifier() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
+
+    with patch("requests.get", return_value=mock_response) as mock_get:
+        client.fetch_library_items("http://127.0.0.1:8800", "Anime & Cartoons")
+        mock_get.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/libraries/Anime%20%26%20Cartoons/items",
+            timeout=30.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )

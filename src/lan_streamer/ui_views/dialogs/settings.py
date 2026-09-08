@@ -861,10 +861,21 @@ class SettingsDialog(QDialog):
                 "Please select a remote library from the tree to sync or scan.",
             )
             return
-        library_name = selected_item.data(0, Qt.ItemDataRole.UserRole + 1)
+        item_data = selected_item.data(0, Qt.ItemDataRole.UserRole)
+        library_name = ""
+        if isinstance(item_data, dict) and item_data.get("item_type") in (
+            "library",
+            "root_directory",
+        ):
+            library_name = item_data.get("library_name", "")
         if not library_name:
-            library_name = selected_item.text(0)
+            library_name = selected_item.data(
+                0, Qt.ItemDataRole.UserRole + 1
+            ) or selected_item.text(0)
         if library_name and library_name in self.staged_libraries:
+            self.controller._config.libraries[library_name] = dict(
+                self.staged_libraries[library_name]
+            )
             self._show_scan_progress_widgets()
             self.controller.trigger_scan(
                 force_refresh=False,
@@ -1904,6 +1915,7 @@ class SettingsDialog(QDialog):
         }
         self.library_name_input.clear()
         self._refresh_library_selector()
+        self._refresh_tabs_list()
         if new_management_type == "local":
             self.library_selector.setCurrentText(new_library_name)
         else:
@@ -2069,7 +2081,9 @@ class SettingsDialog(QDialog):
                 if not isinstance(library_info, dict):
                     continue
                 library_name = library_info.get("name") or "Unnamed Library"
-                library_type = library_info.get("type") or "tv"
+                library_type = (
+                    library_info.get("media_type") or library_info.get("type") or "tv"
+                )
                 library_identifier = library_info.get("id") or ""
 
                 is_enabled = (
@@ -2220,6 +2234,8 @@ class SettingsDialog(QDialog):
                 )
 
         self._refresh_library_order_list()
+        self._refresh_tabs_list()
+        self._refresh_library_selector()
 
     def map_local_mount_for_item(
         self, item: QTreeWidgetItem, local_mount_directory: str
