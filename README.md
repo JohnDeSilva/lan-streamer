@@ -118,8 +118,9 @@ make run
 2.  **Configure Jellyfin (Optional)**: In **Settings... > Remote API's**, enter your Jellyfin Server URL and API Key.
 3.  **Configure OpenSubtitles (Optional)**: In **Settings... > Remote API's**, enter your OpenSubtitles credentials and API Key.
 4.  **Configure MyAnimeList (Optional)**: In **Settings... > Remote API's**, enter your MyAnimeList Client ID and Client Secret, and click **Link MAL Account...** to link your account using the browser-based OAuth flow.
-5.  **Add Libraries**: Click **Settings...** and go to **Libraries Setup** to define your media library roots and settings. Make sure to check **Anime Mode** for libraries containing anime series you want to map to MyAnimeList.
-6.  **Scan Library**: Click the **Scan Library** button at the bottom of the main window to scan active roots for files, click **Full Scan** to include archive directories, or click **Refresh Metadata** to force a full update from TMDB.
+5.  **Add Local Libraries**: Click **Settings...** and go to **Local Libraries Setup** to define your local media library roots and settings. Make sure to check **Anime Mode** for libraries containing anime series you want to map to MyAnimeList.
+6.  **Connect Remote Scan Agents (Optional)**: In **Settings... > Remote Libraries Setup**, enter your Scan Agent URL (e.g., `http://192.168.1.100:8800`) and click **Connect to Agent**. Enable the libraries you want to track and map each remote root directory to its local mount path on your machine.
+7.  **Scan Library**: Click the **Scan Library** button at the bottom of the main window to scan active roots for files, click **Full Scan** to include archive directories, or click **Refresh Metadata** to force a full update from TMDB.
 
 ---
 
@@ -496,20 +497,24 @@ LAN Streamer includes a standalone, remote scanning agent (`agent/`) designed to
 - **Storage-Colocated Scanning**: Runs filesystem discovery, TMDB metadata resolution, OpenSubtitles downloading, media file renaming, and technical analysis (`ffprobe`) locally on your storage server without loading the desktop client.
 - **Web Interface**: Includes a responsive web management SPA (port `8800`) with tabs for Dashboard, Libraries, Real-Time Scan Monitor (with live Server-Sent Events log streaming), Library Browser, and Configuration.
 - **REST API (`/api/v1`)**: Exposes typed endpoints for health checks, multi-library configuration, background scan management, TMDB metadata searching & matching, filename preview & renaming, subtitles, and desktop client watch-state sync.
-- **Streaming Compatibility**: Preserves original media streaming behavior — media files remain accessible at predictable paths over SMB/NFS mounts for direct VLC playback by the desktop client.
+- **Streaming Compatibility & Mount Mapping**: Preserves original media streaming behavior. Remote storage paths (e.g., `/media/movies`) are mapped to local SMB/NFS filesystem mount points in the desktop client's **Remote Libraries Setup** tab, allowing instant VLC playback without transcoding.
 
-### Quick Start with Docker
+### Running with Docker Compose
+From the repository root, start the agent with Docker Compose:
 ```bash
+# Build and run the agent container in foreground
+make agent-run
+
+# Or run detached from the agent/ directory
 cd agent
-# Run with docker compose (mounts storage at /media and persistent data at /data)
-MEDIA_ROOT=/mnt/media TMDB_API_KEY=your_key docker compose up -d
+MEDIA_ROOT=/mnt/media TMDB_API_KEY=your_key docker compose up -d --build
 ```
 Access the web dashboard at `http://<server-ip>:8800`.
 
-### Running & Testing Locally
+### Development & Testing
 ```bash
-# Run agent locally
-make agent-run
+# Run agent locally without containers
+make -C agent run-local
 
 # Run agent unit & integration test suite (enforces >=90% code coverage)
 make agent-test

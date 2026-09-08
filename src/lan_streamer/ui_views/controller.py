@@ -12,6 +12,7 @@ from typing import (
 from PySide6.QtCore import QFileSystemWatcher, QObject, QTimer, Signal
 
 from lan_streamer import db as _db_default
+from lan_streamer.services.path_mapping_service import resolve_playback_path
 from lan_streamer.services.smart_row_service import SmartRowService
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.config import config as _config_default
@@ -190,6 +191,13 @@ class Controller(QObject):
             self.cached_library_data = self._db.load_movie_library(library_name)
         else:
             self.cached_library_data = self._db.load_library(library_name)
+
+        if (
+            library_config.get("management_type") == "remote"
+            and not self.cached_library_data
+        ):
+            self.sync_remote_library(library_name)
+
         self._cache_series_metrics()
 
         if reset_selection:
@@ -197,6 +205,96 @@ class Controller(QObject):
 
         self.status_changed.emit("Library loaded successfully.")
         self.library_loaded.emit()
+
+    def sync_remote_library(self, library_name: str) -> bool:
+        """Synchronizes items for a remote library from the scan agent into local DB and cache."""
+        library_configuration = self._config.libraries.get(library_name, {})
+        if library_configuration.get("management_type") != "remote":
+            return False
+        agent_url = library_configuration.get("agent_url", "")
+        remote_library_identifier = (
+            library_configuration.get("remote_library_id") or library_name
+        )
+        if not agent_url:
+            return False
+        try:
+            import requests
+            from sqlalchemy.exc import SQLAlchemyError
+
+            from lan_streamer.services.scan_agent_client import (
+                ScanAgentConnectionError,
+                scan_agent_client,
+            )
+
+            remote_items = scan_agent_client.fetch_library_items(
+                agent_url, str(remote_library_identifier)
+            )
+            library_type = library_configuration.get("type", "tv")
+            for item_dictionary in remote_items.values():
+                if library_type == "movie":
+                    remote_poster_path = item_dictionary.get("poster_path")
+                    if remote_poster_path and not Path(remote_poster_path).is_file():
+                        local_poster_path = scan_agent_client.download_poster(
+                            agent_url, remote_poster_path
+                        )
+                        if local_poster_path:
+                            item_dictionary["poster_path"] = local_poster_path
+                else:
+                    series_metadata_dict = item_dictionary.get("metadata", {})
+                    remote_poster_path = series_metadata_dict.get("poster_path")
+                    if remote_poster_path and not Path(remote_poster_path).is_file():
+                        local_poster_path = scan_agent_client.download_poster(
+                            agent_url, remote_poster_path
+                        )
+                        if local_poster_path:
+                            series_metadata_dict["poster_path"] = local_poster_path
+                    for season_dictionary in item_dictionary.get(
+                        "seasons", {}
+                    ).values():
+                        season_metadata_dict = season_dictionary.get("metadata", {})
+                        remote_season_poster = season_metadata_dict.get("poster_path")
+                        if (
+                            remote_season_poster
+                            and not Path(remote_season_poster).is_file()
+                        ):
+                            local_season_poster = scan_agent_client.download_poster(
+                                agent_url, remote_season_poster
+                            )
+                            if local_season_poster:
+                                season_metadata_dict["poster_path"] = (
+                                    local_season_poster
+                                )
+
+            if library_type == "movie":
+                self._db.save_movie_library(library_name, remote_items)
+                self.cached_library_data = self._db.load_movie_library(library_name)
+            else:
+                self._db.save_library(library_name, remote_items)
+                self.cached_library_data = self._db.load_library(library_name)
+            self._cache_series_metrics()
+            logger.info(
+                "Successfully synchronized remote library '%s' (%d items) from agent %s",
+                library_name,
+                len(self.cached_library_data),
+                agent_url,
+            )
+            self.library_loaded.emit()
+            return True
+        except (
+            ScanAgentConnectionError,
+            requests.RequestException,
+            SQLAlchemyError,
+            OSError,
+            ValueError,
+            KeyError,
+        ) as error_instance:
+            logger.warning(
+                "Could not synchronize remote library '%s' from agent %s: %s",
+                library_name,
+                agent_url,
+                error_instance,
+            )
+            return False
 
     def _on_directory_changed(self, path_string: str) -> None:
         logger.info(
@@ -449,7 +547,23 @@ class Controller(QObject):
 
         self._config.load()
         library_config = self._config.libraries.get(self.current_library_name, {})
+        if library_config.get("management_type") == "remote":
+            self.status_changed.emit(
+                f"Syncing remote library '{self.current_library_name}' from scan agent..."
+            )
+            sync_success = self.sync_remote_library(self.current_library_name)
+            if sync_success:
+                self.status_changed.emit(
+                    f"Remote library '{self.current_library_name}' synced successfully."
+                )
+            else:
+                self.status_changed.emit(
+                    f"Failed to sync remote library '{self.current_library_name}'."
+                )
+            return
+
         root_directories: list[str] = library_config.get("paths", [])
+
         if not scan_archive_roots:
             archive_root_directories: set[str] = set(
                 library_config.get("archive_paths", [])
@@ -673,6 +787,22 @@ class Controller(QObject):
 
         self._config.load()
         library_config = self._config.libraries.get(self.current_library_name, {})
+        if library_config.get("management_type") == "remote":
+            self.status_changed.emit(
+                f"Syncing remote library '{self.current_library_name}' from scan agent..."
+            )
+            sync_success = self.sync_remote_library(self.current_library_name)
+            if sync_success:
+                self.status_changed.emit(
+                    f"Remote library '{self.current_library_name}' synced successfully."
+                )
+            else:
+                self.status_changed.emit(
+                    f"Failed to sync remote library '{self.current_library_name}'."
+                )
+            self.scan_completed.emit()
+            return
+
         root_directories: list[str] = library_config.get("paths", [])
         if not scan_archive_roots:
             archive_root_directories: set[str] = set(
@@ -1710,3 +1840,14 @@ class Controller(QObject):
 
         if self.current_library_name:
             self.select_library(self.current_library_name, reset_selection=False)
+
+    def resolve_playback_path(self, file_path: str) -> str:
+        """Resolves a playback path, mapping remote agent paths to local mounts if applicable."""
+        libraries_configuration: dict[str, dict[str, Any]] = getattr(
+            self._config, "libraries", {}
+        )
+        return resolve_playback_path(
+            file_path=file_path,
+            libraries_configuration=libraries_configuration,
+            current_library_name=self.current_library_name,
+        )

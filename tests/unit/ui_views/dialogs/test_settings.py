@@ -203,53 +203,138 @@ def test_settings_dialog_scan_report_view(qtbot) -> None:
     dialog.reject()
 
 
-def test_settings_dialog_add_local_and_remote_library(qtbot) -> None:
+def test_settings_dialog_add_local_library(qtbot) -> None:
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
 
     # 1. Create a local library
     dialog.library_name_input.setText("Local Anime")
     dialog.library_type_input.setCurrentText("Anime")
-    dialog.library_management_type_input.setCurrentText("Local")
     dialog.add_staged_library()
 
     assert "Local Anime" in dialog.staged_libraries
     assert dialog.staged_libraries["Local Anime"]["type"] == "anime"
     assert dialog.staged_libraries["Local Anime"]["management_type"] == "local"
 
-    # 2. Create a remote library
-    dialog.library_name_input.setText("NAS TV")
-    dialog.library_type_input.setCurrentText("TV Shows")
-    dialog.library_management_type_input.setCurrentText("Remote (Agent)")
-    dialog.add_staged_library()
-
-    assert "NAS TV" in dialog.staged_libraries
-    assert dialog.staged_libraries["NAS TV"]["type"] == "tv"
-    assert dialog.staged_libraries["NAS TV"]["management_type"] == "remote"
+    # Verify it is listed in the local library selector
+    selector_items = [
+        dialog.library_selector.itemText(i)
+        for i in range(dialog.library_selector.count())
+    ]
+    assert "Local Anime" in selector_items
 
     dialog.reject()
 
 
-def test_settings_dialog_scan_agents_management(qtbot) -> None:
+def test_settings_dialog_remote_libraries_tab_flow(qtbot) -> None:
+    from PySide6.QtCore import Qt
+
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
 
-    # Add a scan agent
-    dialog.scan_agent_name_input.setText("Primary NAS Agent")
-    dialog.scan_agent_url_input.setText("http://127.0.0.1:8800")
-    dialog.add_staged_scan_agent()
+    mock_health = {"status": "ok", "service": "Storage NAS Agent", "libraries": 1}
+    mock_libraries = [
+        {
+            "id": "lib-nas-1",
+            "name": "NAS TV",
+            "type": "tv",
+            "root_path": "/storage/tv",
+            "root_paths": ["/storage/tv"],
+        }
+    ]
 
-    assert "http://127.0.0.1:8800" in dialog.staged_scan_agents
-    assert (
-        dialog.staged_scan_agents["http://127.0.0.1:8800"]["name"]
-        == "Primary NAS Agent"
-    )
+    with (
+        patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.check_agent_health",
+            return_value=mock_health,
+        ),
+        patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_agent_libraries",
+            return_value=mock_libraries,
+        ),
+    ):
+        dialog.remote_agent_url_input.setText("http://127.0.0.1:8800")
+        dialog.connect_to_agent()
 
-    # Remove scan agent
-    dialog.scan_agent_selector.setCurrentText(
-        "Primary NAS Agent (http://127.0.0.1:8800)"
-    )
-    dialog.remove_staged_scan_agent()
+    # Agent node assertions
+    tree = dialog.remote_agents_tree_widget
+    assert tree.topLevelItemCount() == 1
+    agent_item = tree.topLevelItem(0)
+    assert agent_item is not None
+    assert "🟢" in agent_item.text(0)
+    assert "Storage NAS Agent" in agent_item.text(0)
+    assert agent_item.text(1) == "Status: Reachable"
+
+    # Library node assertions
+    assert agent_item.childCount() == 1
+    library_item = agent_item.child(0)
+    assert library_item is not None
+    assert "NAS TV" in library_item.text(0)
+    assert library_item.text(1) == "Disabled"
+    assert library_item.checkState(0) == Qt.CheckState.Unchecked
+
+    # Root directory node assertions
+    assert library_item.childCount() == 1
+    root_item = library_item.child(0)
+    assert root_item is not None
+    assert "📁 /storage/tv" in root_item.text(0)
+
+    # Enable library via checkbox
+    library_item.setCheckState(0, Qt.CheckState.Checked)
+    assert "NAS TV" in dialog.staged_libraries
+    assert dialog.staged_libraries["NAS TV"]["management_type"] == "remote"
+    assert library_item.text(1) == "Enabled"
+
+    # Map local mount
+    dialog.map_local_mount_for_item(root_item, "/mnt/nas/tv")
+    assert root_item.text(1) == "/mnt/nas/tv"
+    assert dialog.staged_libraries["NAS TV"]["mount_mappings"] == {
+        "/storage/tv": "/mnt/nas/tv"
+    }
+
+    # Disable library via checkbox
+    library_item.setCheckState(0, Qt.CheckState.Unchecked)
+    assert "NAS TV" not in dialog.staged_libraries
+    assert library_item.text(1) == "Disabled"
+
+    # Re-enable library
+    library_item.setCheckState(0, Qt.CheckState.Checked)
+    assert "NAS TV" in dialog.staged_libraries
+
+    # Remove agent
+    tree.setCurrentItem(agent_item)
+    dialog.remove_selected_remote_agent()
+    assert tree.topLevelItemCount() == 0
     assert "http://127.0.0.1:8800" not in dialog.staged_scan_agents
+    assert "NAS TV" not in dialog.staged_libraries
+
+    dialog.reject()
+
+
+def test_settings_dialog_remote_agent_unreachable(qtbot) -> None:
+    from lan_streamer.services.scan_agent_client import ScanAgentConnectionError
+
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    with (
+        patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.check_agent_health",
+            side_effect=ScanAgentConnectionError("Connection refused"),
+        ),
+        patch(
+            "lan_streamer.ui_views.dialogs.settings.QMessageBox.warning"
+        ) as mock_warn,
+    ):
+        dialog.remote_agent_url_input.setText("http://127.0.0.1:8800")
+        dialog.connect_to_agent()
+        mock_warn.assert_called_once()
+
+    tree = dialog.remote_agents_tree_widget
+    assert tree.topLevelItemCount() == 1
+    agent_item = tree.topLevelItem(0)
+    assert agent_item is not None
+    assert "🔴" in agent_item.text(0)
+    assert agent_item.text(1) == "Status: Unreachable"
 
     dialog.reject()

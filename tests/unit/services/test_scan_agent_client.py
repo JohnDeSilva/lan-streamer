@@ -103,3 +103,119 @@ def test_fetch_agent_libraries_success() -> None:
                 "User-Agent": "LanStreamer-Desktop/1.0",
             },
         )
+
+
+def test_fetch_library_items_success() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "Test Show": {
+            "name": "Test Show",
+            "seasons": {},
+        }
+    }
+
+    with patch("requests.get", return_value=mock_response) as mock_get:
+        items = client.fetch_library_items("http://127.0.0.1:8800", "lib-tv-01")
+        assert "Test Show" in items
+        mock_get.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/libraries/lib-tv-01/items",
+            timeout=30.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )
+
+
+def test_fetch_library_items_connection_error() -> None:
+    client = ScanAgentClient()
+    with (
+        patch("requests.get", side_effect=requests.RequestException("boom")),
+        pytest.raises(ScanAgentConnectionError, match="Could not fetch library items"),
+    ):
+        client.fetch_library_items("http://127.0.0.1:8800", "lib-tv-01")
+
+
+def test_fetch_library_items_bad_status_code() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.text = "Not Found"
+
+    with (
+        patch("requests.get", return_value=mock_response),
+        pytest.raises(ScanAgentConnectionError, match="returned HTTP 404"),
+    ):
+        client.fetch_library_items("http://127.0.0.1:8800", "lib-tv-01")
+
+
+def test_fetch_library_items_invalid_payload() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = ["not", "a", "dict"]
+
+    with (
+        patch("requests.get", return_value=mock_response),
+        pytest.raises(ScanAgentConnectionError, match="Expected dictionary"),
+    ):
+        client.fetch_library_items("http://127.0.0.1:8800", "lib-tv-01")
+
+
+def test_download_poster_empty() -> None:
+    client = ScanAgentClient()
+    assert client.download_poster("http://127.0.0.1:8800", "") == ""
+    assert client.download_poster("http://127.0.0.1:8800", "   ") == ""
+
+
+def test_download_poster_local_file_exists(tmp_path) -> None:
+    client = ScanAgentClient()
+    local_image = tmp_path / "poster.jpg"
+    local_image.write_bytes(b"existing_bytes")
+
+    with patch("requests.get") as mock_get:
+        result_path = client.download_poster(
+            "http://127.0.0.1:8800", str(local_image), str(tmp_path)
+        )
+        assert result_path == str(local_image)
+        mock_get.assert_not_called()
+
+
+def test_download_poster_success(tmp_path) -> None:
+    client = ScanAgentClient()
+    destination_dir = tmp_path / "cache_images"
+    destination_dir.mkdir()
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.content = b"fake_image_bytes"
+
+    with patch("requests.get", return_value=mock_response) as mock_get:
+        result_path = client.download_poster(
+            "http://127.0.0.1:8800",
+            "/agent/cache/images/tmdb_series_42.jpg",
+            local_destination_directory=str(destination_dir),
+        )
+        expected_saved_file = destination_dir / "tmdb_series_42.jpg"
+        assert result_path == str(expected_saved_file)
+        assert expected_saved_file.read_bytes() == b"fake_image_bytes"
+        assert mock_get.called
+
+
+def test_download_poster_failure(tmp_path) -> None:
+    client = ScanAgentClient()
+    destination_dir = tmp_path / "cache_images"
+    destination_dir.mkdir()
+
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+
+    with patch("requests.get", return_value=mock_response):
+        result_path = client.download_poster(
+            "http://127.0.0.1:8800",
+            "/agent/cache/images/missing.jpg",
+            local_destination_directory=str(destination_dir),
+        )
+        assert result_path == ""
