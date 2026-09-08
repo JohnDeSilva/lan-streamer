@@ -49,7 +49,7 @@ class AsyncScanWorker(AsyncWorkerBase):
     detail_progress = Signal(str, dict)
     detail_progress_batch = Signal(list)
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917
         self,
         root_directories: list[str],
         library_type: str,
@@ -60,6 +60,9 @@ class AsyncScanWorker(AsyncWorkerBase):
         parent: QObject | None = None,
         library_name: str = "",
         scan_archive_roots: bool = True,
+        run_pass1: bool = True,
+        run_pass2: bool = True,
+        run_pass3: bool = False,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
         self.scan_archive_roots: bool = scan_archive_roots
@@ -68,6 +71,9 @@ class AsyncScanWorker(AsyncWorkerBase):
         self.force_refresh: bool = force_refresh
         self.cleanup: bool = cleanup
         self.library_name: str = library_name
+        self.run_pass1: bool = run_pass1
+        self.run_pass2: bool = run_pass2
+        self.run_pass3: bool = run_pass3
 
         if not scan_archive_roots and library_name and library_name in config.libraries:
             archive_root_directories: set[str] = set(
@@ -105,11 +111,15 @@ class AsyncScanWorker(AsyncWorkerBase):
     # ------------------------------------------------------------------
 
     async def run_async(self) -> dict[str, Any]:
-        """Execute the two-pass scan (offline + metadata resolution)."""
+        """Execute the scan passes (offline + metadata resolution + technical probe)."""
         start_time = time.time()
         self.problems = []
         self.stats = create_empty_stats()
-        self.pass_stats = {1: create_empty_stats(), 2: create_empty_stats()}
+        self.pass_stats = {
+            1: create_empty_stats(),
+            2: create_empty_stats(),
+            3: create_empty_stats(),
+        }
         self.changed_season_ids = set()
         self.changed_movie_ids = set()
         self.current_pass = 1
@@ -234,83 +244,121 @@ class AsyncScanWorker(AsyncWorkerBase):
                         logger,
                     )
 
+            library: LibraryDict = LibraryDict(self.existing_library)
+
             # ------------------------------------------------------------------
             # Pass 1: Offline local file scanner
             # ------------------------------------------------------------------
-            self.current_pass = 1
-            logger.info(
-                "AsyncScanWorker Pass 1 starting for library '%s'",
-                self.library_name,
-            )
-            self._emit_detail_progress(
-                "start_offline_scan", {"library": self.library_name}
-            )
+            if self.run_pass1:
+                self.current_pass = 1
+                logger.info(
+                    "AsyncScanWorker Pass 1 starting for library '%s'",
+                    self.library_name,
+                )
+                self._emit_detail_progress(
+                    "start_offline_scan", {"library": self.library_name}
+                )
 
-            library: LibraryDict = await run_in_fs_executor(
-                scan_directories,
-                self.root_directories,
-                library_type=self.library_type,
-                existing_library=self.existing_library,
-                jellyfin_data=None,
-                force_refresh=self.force_refresh,
-                detail_callback=_detail_callback,
-                show_future_episodes=show_future,
-                season_callback=_season_callback,
-                movie_callback=_movie_callback,
-                is_interrupted=lambda: self._cancelled,
-                pass_number=1,
-            )
-            if self._cancelled:
-                logger.info("AsyncScanWorker cancelled during Pass 1.")
-                return {}
+                library = await run_in_fs_executor(
+                    scan_directories,
+                    self.root_directories,
+                    library_type=self.library_type,
+                    existing_library=self.existing_library,
+                    jellyfin_data=None,
+                    force_refresh=self.force_refresh,
+                    detail_callback=_detail_callback,
+                    show_future_episodes=show_future,
+                    season_callback=_season_callback,
+                    movie_callback=_movie_callback,
+                    is_interrupted=lambda: self._cancelled,
+                    pass_number=1,
+                )
+                if self._cancelled:
+                    logger.info("AsyncScanWorker cancelled during Pass 1.")
+                    return {}
 
-            logger.info(
-                "Pass 1 finished for '%s': %d entries.",
-                self.library_name,
-                len(library),
-            )
-            self.partial_result.emit(library)
-            self._flush_detail_progress()
+                logger.info(
+                    "Pass 1 finished for '%s': %d entries.",
+                    self.library_name,
+                    len(library),
+                )
+                self.partial_result.emit(library)
+                self._flush_detail_progress()
 
             # ------------------------------------------------------------------
             # Pass 2: Online metadata resolution
             # ------------------------------------------------------------------
-            self.current_pass = 2
-            logger.info(
-                "AsyncScanWorker Pass 2 starting for library '%s'",
-                self.library_name,
-            )
-            self._emit_detail_progress(
-                "start_metadata_resolution", {"library": self.library_name}
-            )
+            if self.run_pass2:
+                self.current_pass = 2
+                logger.info(
+                    "AsyncScanWorker Pass 2 starting for library '%s'",
+                    self.library_name,
+                )
+                self._emit_detail_progress(
+                    "start_metadata_resolution", {"library": self.library_name}
+                )
 
-            library = await run_in_fs_executor(
-                scan_directories,
-                self.root_directories,
-                library_type=self.library_type,
-                existing_library=library,
-                jellyfin_data=jellyfin_data,
-                force_refresh=self.force_refresh,
-                detail_callback=_detail_callback,
-                show_future_episodes=show_future,
-                season_callback=_season_callback,
-                movie_callback=_movie_callback,
-                is_interrupted=lambda: self._cancelled,
-                pass_number=2,
-            )
-            if self._cancelled:
-                logger.info("AsyncScanWorker cancelled during Pass 2.")
-                return {}
+                library = await run_in_fs_executor(
+                    scan_directories,
+                    self.root_directories,
+                    library_type=self.library_type,
+                    existing_library=library,
+                    jellyfin_data=jellyfin_data,
+                    force_refresh=self.force_refresh,
+                    detail_callback=_detail_callback,
+                    show_future_episodes=show_future,
+                    season_callback=_season_callback,
+                    movie_callback=_movie_callback,
+                    is_interrupted=lambda: self._cancelled,
+                    pass_number=2,
+                )
+                if self._cancelled:
+                    logger.info("AsyncScanWorker cancelled during Pass 2.")
+                    return {}
+
+                self._flush_detail_progress()
+
+            # ------------------------------------------------------------------
+            # Pass 3: Technical probe (ffprobe) & missing-file cleanup
+            # ------------------------------------------------------------------
+            if self.run_pass3:
+                self.current_pass = 3
+                logger.info(
+                    "AsyncScanWorker Pass 3 starting for library '%s'",
+                    self.library_name,
+                )
+                self._emit_detail_progress(
+                    "start_technical_probe", {"library": self.library_name}
+                )
+
+                library = await run_in_fs_executor(
+                    scan_directories,
+                    self.root_directories,
+                    library_type=self.library_type,
+                    existing_library=library,
+                    force_refresh=self.force_refresh,
+                    detail_callback=_detail_callback,
+                    show_future_episodes=show_future,
+                    season_callback=_season_callback,
+                    movie_callback=_movie_callback,
+                    is_interrupted=lambda: self._cancelled,
+                    pass_number=3,
+                )
+                if self._cancelled:
+                    logger.info("AsyncScanWorker cancelled during Pass 3.")
+                    return {}
+
+                self._flush_detail_progress()
 
             self.unavailable_directories = library.unavailable_directories
             self._log_unavailable_directories()
 
             self._flush_detail_progress()
 
-            # Compute self.stats as the union of both passes: max for scanned/skipped (unique entities),
+            # Compute self.stats as the union of all passes: max for scanned/skipped (unique entities),
             # sum for added/updated/removed (cumulative actions).
             self.stats = create_empty_stats()
-            for pass_num in [1, 2]:
+            for pass_num in [1, 2, 3]:
                 if pass_num in self.pass_stats:
                     for key, value in self.pass_stats[pass_num].items():
                         if key.endswith(("_scanned", "_skipped")):
@@ -467,6 +515,12 @@ class AsyncScanWorker(AsyncWorkerBase):
         log_stats_breakdown(
             "PASS 2: ONLINE METADATA RESOLUTION BREAKDOWN",
             self.pass_stats.get(2, {}),
+            logger,
+        )
+        logger.info("[SCAN_REPORT] ---------------------------------------------------")
+        log_stats_breakdown(
+            "PASS 3: TECHNICAL METADATA BREAKDOWN",
+            self.pass_stats.get(3, {}),
             logger,
         )
         logger.info("[SCAN_REPORT] ---------------------------------------------------")

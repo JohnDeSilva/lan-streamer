@@ -284,7 +284,13 @@ def test_parse_episode_number() -> None:
 
     assert _parse_episode_number("Show.S01E05.mkv") == (1, 5)
     assert _parse_episode_number("s02e10.mp4") == (2, 10)
+    assert _parse_episode_number("Show.1x05.mkv") == (1, 5)
+    assert _parse_episode_number("Show - 01.mkv") == (1, 1)
+    assert _parse_episode_number("Episode 03.mkv") == (1, 3)
+    assert _parse_episode_number("09.mkv") == (1, 9)
+    assert _parse_episode_number("[SubGroup] Show - 04 [1080p].mkv") == (1, 4)
     assert _parse_episode_number("no_episode.mkv") is None
+    assert _parse_episode_number("random_file.mkv") is None
 
 
 def test_scan_tmdb_no_merge_differently_named_folders(tmp_path) -> None:

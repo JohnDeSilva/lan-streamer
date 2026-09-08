@@ -220,3 +220,34 @@ def test_scan_all_libraries_pass2_exception_with_good_pass1() -> None:
         assert any(name == "Lib2" for name, _ in library_error_events)
         assert all("Pass 2 failure" in msg for _, msg in library_error_events)
         assert call_count[0] == 4  # 2 libs x 2 passes
+
+
+def test_scan_all_libraries_worker_syncs_remote_library() -> None:
+    from lan_streamer.backend.scan_worker_all import ScanAllLibrariesWorker
+
+    remote_items = {"Remote Show": {"name": "Remote Show", "seasons": {}}}
+    with (
+        patch("lan_streamer.backend.scan_worker_all.config") as mock_config,
+        patch(
+            "lan_streamer.backend.scan_worker_all.jellyfin_client.is_configured",
+            return_value=False,
+        ),
+        patch("lan_streamer.backend.scan_worker_all.db.load_library", return_value={}),
+        patch("lan_streamer.backend.scan_worker_all.db.save_library") as mock_save,
+        patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            return_value=remote_items,
+        ) as mock_fetch,
+    ):
+        mock_config.libraries = {
+            "RemoteLib": {
+                "management_type": "remote",
+                "type": "tv",
+                "agent_url": "http://127.0.0.1:8800",
+                "remote_library_id": "remote-tv-1",
+            }
+        }
+        worker = ScanAllLibrariesWorker()
+        worker.run()
+        mock_fetch.assert_called_once_with("http://127.0.0.1:8800", "remote-tv-1")
+        mock_save.assert_called_once_with("RemoteLib", remote_items)
