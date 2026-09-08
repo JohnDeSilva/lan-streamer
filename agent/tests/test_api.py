@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -13,7 +14,6 @@ from scan_agent.db.connection import create_engine_for_database, init_database
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
     from unittest.mock import MagicMock
 
     from fastapi import FastAPI
@@ -178,6 +178,7 @@ def test_scan_jobs_and_browse_after_scan(
     series_identifier = series[0]["id"]
     detail = api_client.get(f"/api/v1/library/series/{series_identifier}").json()
     assert len(detail["seasons"]) == 1
+
     episodes = detail["seasons"][0]["episodes"]
     assert len(episodes) == 2
     assert len(episodes[0]["versions"]) == 2
@@ -188,6 +189,22 @@ def test_scan_jobs_and_browse_after_scan(
     assert len(flattened) == 2
     assert flattened[0]["season_number"] == 1
     assert len(flattened[0]["versions"]) == 2
+
+
+def test_library_items_export_endpoint(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+
+    items_response = api_client.get("/api/v1/libraries/tv/items")
+    assert items_response.status_code == 200
+    items = items_response.json()
+    assert "Test Show" in items
+    assert "seasons" in items["Test Show"]
+
+    not_found = api_client.get("/api/v1/libraries/nonexistent_lib/items")
+    assert not_found.status_code == 404
 
 
 def test_browse_movies_and_query_filter(
@@ -626,3 +643,80 @@ def test_filesystem_browse_nonexistent_path(api_client: TestClient) -> None:
     )
     assert response.status_code == 404
     assert "Directory does not exist" in response.json()["detail"]
+
+
+def test_images_poster_empty_path(api_client: TestClient) -> None:
+    response = api_client.get("/api/v1/images/poster", params={"path": ""})
+    assert response.status_code == 400
+
+
+def test_images_poster_not_found(api_client: TestClient) -> None:
+    response = api_client.get(
+        "/api/v1/images/poster", params={"path": "/nonexistent/poster.jpg"}
+    )
+    assert response.status_code == 404
+
+
+def test_images_poster_direct_file(api_client: TestClient, tmp_path: Path) -> None:
+    image_file = tmp_path / "poster.jpg"
+    image_file.write_bytes(b"\xff\xd8\xff\xe0\x00\x10JFIFfakejpeg")
+
+    response = api_client.get("/api/v1/images/poster", params={"path": str(image_file)})
+    assert response.status_code == 200
+    assert response.content == b"\xff\xd8\xff\xe0\x00\x10JFIFfakejpeg"
+
+
+def test_images_poster_from_cache(
+    api_client: TestClient, api_app: FastAPI, tmp_path: Path
+) -> None:
+    cache_dir = Path(api_app.state.agent_config.cache_directory)
+    images_dir = cache_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    cached_image = images_dir / "tmdb_series_test99.jpg"
+    cached_image.write_bytes(b"cached_poster_bytes")
+
+    response = api_client.get(
+        "/api/v1/images/poster",
+        params={"path": "/remote/agent/path/tmdb_series_test99.jpg"},
+    )
+    assert response.status_code == 200
+    assert response.content == b"cached_poster_bytes"
+
+
+def test_images_poster_from_direct_cache_directory(
+    api_client: TestClient, api_app: FastAPI, tmp_path: Path
+) -> None:
+    cache_dir = Path(api_app.state.agent_config.cache_directory)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    direct_image = cache_dir / "direct_poster_test.jpg"
+    direct_image.write_bytes(b"direct_cached_poster")
+
+    response = api_client.get(
+        "/api/v1/images/poster",
+        params={"path": "direct_poster_test.jpg"},
+    )
+    assert response.status_code == 200
+    assert response.content == b"direct_cached_poster"
+
+
+def test_images_poster_from_tmdb_cached(
+    api_client: TestClient,
+    api_app: FastAPI,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cached_tmdb_file = tmp_path / "tmdb_mocked_poster.jpg"
+    cached_tmdb_file.write_bytes(b"tmdb_mock_bytes")
+
+    from lan_streamer.providers.tmdb import tmdb_client
+
+    monkeypatch.setattr(
+        tmdb_client, "get_cached_image", lambda stem: str(cached_tmdb_file)
+    )
+
+    response = api_client.get(
+        "/api/v1/images/poster",
+        params={"path": "tmdb_mocked_poster.jpg"},
+    )
+    assert response.status_code == 200
+    assert response.content == b"tmdb_mock_bytes"
