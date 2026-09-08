@@ -345,7 +345,7 @@ def _scan_pass1(
 
             # Merge with existing entry when a series spans multiple root directories
             if series_name in library:
-                series_data = _merge_series_data(library[series_name], series_data)
+                series_data = merge_series_data(library[series_name], series_data)
             library[series_name] = series_data
 
             if library_type == "movie":
@@ -367,7 +367,7 @@ def _scan_pass1(
         for series_name in list(library.keys()):
             existing_data = existing_library.get(series_name)
             if existing_data and existing_data.get("seasons"):
-                library[series_name] = _merge_series_data(
+                library[series_name] = merge_series_data(
                     existing_data, library[series_name]
                 )
 
@@ -701,7 +701,7 @@ def _merge_episodes_by_number(
     return list(by_key.values())
 
 
-def _merge_series_data(
+def merge_series_data(
     existing: dict[str, Any], incoming: dict[str, Any]
 ) -> dict[str, Any]:
     """Merge two series data dicts, combining seasons and episodes from both.

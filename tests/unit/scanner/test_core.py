@@ -3604,7 +3604,7 @@ def test_scan_directories_cooperative_cancellation() -> None:
 
 
 # =========================================================================
-# Tests for _merge_episodes_by_number and _merge_series_data
+# Tests for _merge_episodes_by_number and merge_series_data
 # =========================================================================
 
 
@@ -3666,9 +3666,9 @@ def test_merge_episodes_by_number_different_numbers_kept_separate() -> None:
     assert len(merged) == 2
 
 
-def test_merge_series_data_combines_seasons_and_episodes() -> None:
-    """_merge_series_data merges episodes within same-named seasons across roots."""
-    from lan_streamer.scanner.core import _merge_series_data
+def testmerge_series_data_combines_seasons_and_episodes() -> None:
+    """merge_series_data merges episodes within same-named seasons across roots."""
+    from lan_streamer.scanner.core import merge_series_data
 
     root1_data: dict[str, Any] = {
         "name": "Series",
@@ -3703,7 +3703,7 @@ def test_merge_series_data_combines_seasons_and_episodes() -> None:
         },
     }
 
-    merged = _merge_series_data(root1_data, root2_data)
+    merged = merge_series_data(root1_data, root2_data)
     assert "Season 1" in merged["seasons"]
     season1 = merged["seasons"]["Season 1"]
     assert len(season1["episodes"]) == 1
@@ -3711,9 +3711,9 @@ def test_merge_series_data_combines_seasons_and_episodes() -> None:
     assert season1.get("_changed") is True
 
 
-def test_merge_series_data_different_seasons_both_preserved() -> None:
+def testmerge_series_data_different_seasons_both_preserved() -> None:
     """Seasons with different names from different roots are all preserved."""
-    from lan_streamer.scanner.core import _merge_series_data
+    from lan_streamer.scanner.core import merge_series_data
 
     existing: dict[str, Any] = {
         "name": "Series",
@@ -3728,7 +3728,7 @@ def test_merge_series_data_different_seasons_both_preserved() -> None:
         },
     }
 
-    merged = _merge_series_data(existing, incoming)
+    merged = merge_series_data(existing, incoming)
     assert "Season 1" in merged["seasons"]
     assert "Season 2" in merged["seasons"]
 
