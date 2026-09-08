@@ -115,32 +115,6 @@ class LibraryGridView(QWidget):
         actions_toolbar_layout.setContentsMargins(0, 0, 0, 0)
         actions_toolbar_layout.setSpacing(10)
 
-        scan_button: QPushButton = QPushButton("Scan Library")
-        scan_button.setToolTip(
-            "Scan for new files and update paths for moved or deleted episodes (active roots only)"
-        )
-        scan_button.clicked.connect(
-            lambda: self.controller.trigger_scan_and_update(
-                force_refresh=False, scan_archive_roots=False
-            )
-        )
-        actions_toolbar_layout.addWidget(scan_button)
-
-        full_scan_button: QPushButton = QPushButton("Full Scan")
-        full_scan_button.setToolTip(
-            "Scan for new files and update paths across all roots, including archive directories"
-        )
-        full_scan_button.clicked.connect(
-            lambda: self.controller.trigger_scan_and_update(
-                force_refresh=False, scan_archive_roots=True
-            )
-        )
-        actions_toolbar_layout.addWidget(full_scan_button)
-
-        refresh_all_button: QPushButton = QPushButton("Refresh Metadata")
-        refresh_all_button.clicked.connect(lambda: self.controller.trigger_scan(True))
-        actions_toolbar_layout.addWidget(refresh_all_button)
-
         pull_history_button: QPushButton = QPushButton("Pull Watch History")
         pull_history_button.clicked.connect(self.controller.trigger_jellyfin_pull)
         actions_toolbar_layout.addWidget(pull_history_button)
@@ -159,14 +133,6 @@ class LibraryGridView(QWidget):
         )
         combined_actions_toolbar_layout.setContentsMargins(0, 0, 0, 0)
         combined_actions_toolbar_layout.setSpacing(10)
-
-        combined_scan_button: QPushButton = QPushButton("Scan Library")
-        combined_scan_button.setToolTip(
-            "Scan for new files and update paths for moved or deleted episodes across active roots"
-        )
-        combined_scan_button.clicked.connect(self.trigger_combined_scan)
-        combined_actions_toolbar_layout.addWidget(combined_scan_button)
-
         combined_actions_toolbar_layout.addStretch()
         self.combined_actions_toolbar_widget.setVisible(False)
         main_layout.addWidget(self.combined_actions_toolbar_widget)
@@ -319,23 +285,30 @@ class LibraryGridView(QWidget):
             self.library_selector.blockSignals(False)
             self.on_library_changed(library_name)
 
-    def populate_libraries(self, library_names: list[str]) -> None:
+    def populate_libraries(self, library_names: list[str] | None = None) -> None:
         self.library_selector.blockSignals(True)
         self.library_selector.clear()
         self.library_tab_bar.blockSignals(True)
         while self.library_tab_bar.count() > 0:
             self.library_tab_bar.removeTab(0)
 
+        tabs_to_display = (
+            config.get_tab_names() if library_names is None else library_names
+        )
+
         self.library_names_list = []
         if config.enable_combined_view:
             self.library_names_list.append("Combined View")
-        self.library_names_list.extend(library_names)
+        self.library_names_list.extend(tabs_to_display)
 
         for name in self.library_names_list:
             self.library_tab_bar.addTab(name)
             self.library_selector.addItem(name)
 
-        current = self.controller.current_library_name
+        current = (
+            getattr(self.controller, "current_tab_name", "")
+            or self.controller.current_library_name
+        )
         if current and current in self.library_names_list:
             idx = self.library_names_list.index(current)
             self.library_tab_bar.setCurrentIndex(idx)
@@ -352,33 +325,39 @@ class LibraryGridView(QWidget):
     def open_settings_dialog(self) -> None:
         config.load()
         old_library_paths = {
-            lib_name: list(lib_info.get("paths", []))
-            for lib_name, lib_info in config.libraries.items()
+            single_library_name: list(single_library_info.get("paths", []))
+            for single_library_name, single_library_info in config.libraries.items()
         }
         dialog_instance = SettingsDialog(self.controller, self)
         if dialog_instance.exec() == QDialog.DialogCode.Accepted:
             new_library_paths = {
-                lib_name: list(lib_info.get("paths", []))
-                for lib_name, lib_info in config.libraries.items()
+                single_library_name: list(single_library_info.get("paths", []))
+                for single_library_name, single_library_info in config.libraries.items()
             }
-            new_paths_added = False
-            current_library_paths_added = False
-            current_library = self.controller.current_library_name
+            new_paths_added: bool = False
+            current_library_paths_added: bool = False
+            current_library_name = self.controller.current_library_name
 
-            for lib_name, new_paths in new_library_paths.items():
-                old_paths = old_library_paths.get(lib_name, [])
-                added_for_this_lib = any(path not in old_paths for path in new_paths)
-                if added_for_this_lib:
+            for single_library_name, new_paths in new_library_paths.items():
+                old_paths = old_library_paths.get(single_library_name, [])
+                added_for_this_library = any(
+                    path not in old_paths for path in new_paths
+                )
+                if added_for_this_library:
                     new_paths_added = True
-                    if lib_name == current_library:
+                    if single_library_name == current_library_name:
                         current_library_paths_added = True
 
-            self.populate_libraries(list(config.libraries.keys()))
+            self.populate_libraries(config.get_tab_names())
 
             if new_paths_added:
-                if current_library_paths_added and current_library != "Combined View":
+                if (
+                    current_library_paths_added
+                    and current_library_name != "Combined View"
+                ):
                     logger.info(
-                        f"New path added to current library '{current_library}'. Triggering auto-scan..."
+                        "New path added to current library '%s'. Triggering auto-scan...",
+                        current_library_name,
                     )
                     self.controller.trigger_scan_and_update(False)
                 else:
@@ -388,12 +367,13 @@ class LibraryGridView(QWidget):
                     self.controller.trigger_scan_all(False)
         else:
             config.load()
-            self.populate_libraries(list(config.libraries.keys()))
+            self.populate_libraries(config.get_tab_names())
 
     @Slot(str)
     def on_library_changed(self, library_name: str) -> None:
         if library_name == "Combined View":
             self.controller.current_library_name = "Combined View"
+            self.controller.current_tab_name = "Combined View"
             self.series_list_widget.setVisible(False)
             if hasattr(self, "actions_toolbar_widget"):
                 self.actions_toolbar_widget.setVisible(False)
