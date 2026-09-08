@@ -1,3 +1,9 @@
+## v0.51.0rc1 (2026-09-08)
+
+### Fix
+
+- **dependency**: bump alembic from 1.19.1 to 1.19.2
+
 ## v0.51.0rc0 (2026-09-08)
 
 ### Feat
