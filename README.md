@@ -100,7 +100,9 @@ uv sync
 
 ### Running the App
 ```bash
-make run
+make run          # Desktop app + remote scan agent (agent via Docker Compose)
+make run-desktop  # Desktop app only
+make run-agent    # Scan agent only (foreground via Docker Compose)
 ```
 
 > [!NOTE]
@@ -393,8 +395,14 @@ For developers and AI coding assistants, the repository architecture, package la
 ### Local Testing & Linting
 Run unit tests with coverage validation (90% minimum threshold):
 ```bash
-make test
+make test                       # Desktop + agent backend + agent frontend
+make test-desktop               # Desktop suite only (containerized on Linux)
+make test-agent                 # Agent backend + frontend
+make test-agent-back            # Agent backend (pytest) only
+make test-agent-front           # Agent frontend (SPA JavaScript via V8) only
 ```
+
+Each target is a separate GitHub Actions job so failures are easy to locate.
 
 Check formatting, lint rules, types, and validate all non-Python files (YAML, Dockerfiles, etc) via `pre-commit`:
 ```bash
@@ -418,22 +426,37 @@ The repository includes pre-commit hooks to automate quality checks before commi
     -   **`pre-push`**: Ensures type-checking, style checks, and commit range conformity (`commitizen check branch`) pass before pushing remote branches.
 
 ### 🐳 Local Containerized Testing
-To ensure binary build stability and dependency compatibility across different Linux distributions, all Linux testing is centralized via Docker/Podman using the `TEST_OS` and `TEST_OS_VERSION` environment variables.
+To ensure binary build stability and dependency compatibility across different Linux distributions, **all** Linux test suites are centralized via Docker/Podman. Each suite runs inside its own container, so no host-side Python environment is required.
 
-*   **Test in Container**: Builds the container for the specified OS and runs the test suite inside it. Defaults to `fedora:latest`.
+We use two dedicated test images:
+
+-   `docker/Dockerfile.fedora` / `docker/Dockerfile.ubuntu` — **desktop suite** (Qt/VLC/FFmpeg stack + PyInstaller build for executable validation).
+-   `docker/Dockerfile.agent-test` — **agent backend + frontend suites** (lean Python image with FFprobe, uv-synced agent deps, and the desktop `src/` tree reused via `PYTHONPATH`).
+
+*   **Test Desktop**: Builds the container for the specified OS and runs the desktop suite inside it. Defaults to `fedora:latest`.
     ```bash
-    make test                                      # Runs fedora:latest
-    TEST_OS=ubuntu make test                       # Runs ubuntu:latest
-    TEST_OS=ubuntu TEST_OS_VERSION=22.04 make test # Runs ubuntu:22.04
+    make test-desktop                              # Runs fedora:latest
+    TEST_OS=ubuntu make test-desktop               # Runs ubuntu:latest
+    TEST_OS=ubuntu TEST_OS_VERSION=22.04 make test-desktop # Runs ubuntu:22.04
     ```
     > [!TIP]
     > When testing non-latest OS versions, the `TEST_OS_VERSION` argument is passed dynamically to the base Dockerfile. If the older OS version requires significantly different system dependencies or package names, you can create a version-specific Dockerfile (e.g., `docker/Dockerfile.ubuntu-22.04`), and the `Makefile` will automatically detect and use it instead!
+
+*   **Test Agent** (statically-built `lan-streamer-agent-test:<git-hash>` image; rebuilt only when the working tree is dirty):
+    ```bash
+    make test-agent                 # Agent backend + frontend in one container
+    make test-agent-back            # Agent backend (pytest) with coverage gate only
+    make test-agent-front           # Agent frontend (SPA JavaScript via V8) only
+    ```
 
 *   **Validate Executable**: Builds the container, tests the compiled PyInstaller executable within the container, and extracts the binary to your host machine's `./dist/` directory.
     ```bash
     make validate-executable
     TEST_OS=ubuntu make validate-executable
     ```
+
+> [!NOTE]
+> On non-Linux hosts (macOS), the agent and desktop suites fall back to running on the host via `uv` so the repository remains developer-friendly; CI (Linux runners) always runs them inside containers.
 
 ---
 
@@ -446,13 +469,13 @@ All code pushed or submitted via Pull Request is automatically validated through
     -   Triggered on push and pull requests targeting `main` and `rc`.
     -   Automatically checks formatting, executes Ruff linting, runs Mypy type-checking, and verifies commit message compliance for branch revisions.
     -   Executes all `pre-commit` hooks (`hadolint`, `yamllint`, `actionlint`, etc.) across the entire codebase.
-2.  **Cross-Platform Verification (`test.yml`)**:
+2.  **Test Suites (`test.yml`)**:
     -   Triggered on push and pull requests targeting `main` and `rc`.
     -   Includes a gate check ensuring pull requests targeting `main` must originate from the `rc` branch.
-    -   Runs a multi-operating system matrix validating all code paths:
-        -   **Linux (Ubuntu/Fedora)**: Leverages Docker containers via `TEST_OS` in the `Makefile` to securely build, test, and validate binaries without requiring system-level dependencies on the GitHub runner.
-        -   **macOS**: Configures macOS-latest with brew-installed VLC, runs tests, and compiles/validates the executable with target-specific VLC library pathing.
-        -   **Windows**: Deploys Windows-latest, installs VLC/FFmpeg, applies schema migrations, runs tests, and compiles/verifies the executable.
+    -   Runs each suite in its own job so failures are easy to locate:
+        -   **Desktop (Ubuntu/Fedora)**: Docker containers via `TEST_OS` in the `Makefile` to securely build and validate binaries without requiring system-level dependencies on the GitHub runner.
+        -   **Agent Backend**: the scan-agent Python pytest suite (API, repository, orchestrator) with a 90% coverage gate, running inside the `lan-streamer-agent-test` container.
+        -   **Agent Frontend**: the scan-agent SPA JavaScript logic tests executed through the bundled V8 engine (py-mini-racer), running inside the same container.
 3.  **RC Executables (`executable.yml`)**:
     -   Triggered on pull requests targeting `rc` and `main` branches.
     -   Compiles and packages standalone applications for **Ubuntu**, **Fedora**, **macOS** (as a `.app` bundle), and **Windows** to verify that release candidate binaries build and run correctly prior to merge.
@@ -545,7 +568,7 @@ docker compose up -d
 From the repository root, build and run the agent container:
 ```bash
 # Build and run the agent container in foreground
-make agent-run
+make run-agent
 
 # Or run detached from the agent/ directory
 cd agent
@@ -554,12 +577,17 @@ MEDIA_ROOT=/mnt/media TMDB_API_KEY=your_key docker compose up -d --build
 Access the web dashboard at `http://<server-ip>:8800`.
 
 ### Development & Testing
+On Linux the agent suites run inside the `lan-streamer-agent-test` container (built from `docker/Dockerfile.agent-test`); on macOS they fall back to the local `uv` environment.
 ```bash
 # Run agent locally without containers
 make -C agent run-local
 
 # Run agent unit & integration test suite (enforces >=90% code coverage)
-make agent-test
+make test-agent
+
+# Run agent backend (pytest) or frontend (SPA JavaScript) suites separately
+make test-agent-back
+make test-agent-front
 
 # Run agent linting & type checks
 make agent-lint
