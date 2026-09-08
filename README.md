@@ -120,9 +120,13 @@ make run
 2.  **Configure Jellyfin (Optional)**: In **Settings... > Remote API's**, enter your Jellyfin Server URL and API Key.
 3.  **Configure OpenSubtitles (Optional)**: In **Settings... > Remote API's**, enter your OpenSubtitles credentials and API Key.
 4.  **Configure MyAnimeList (Optional)**: In **Settings... > Remote API's**, enter your MyAnimeList Client ID and Client Secret, and click **Link MAL Account...** to link your account using the browser-based OAuth flow.
-5.  **Add Local Libraries**: Click **Settings...** and go to **Local Libraries Setup** to define your local media library roots and settings. Make sure to check **Anime Mode** for libraries containing anime series you want to map to MyAnimeList.
-6.  **Connect Remote Scan Agents (Optional)**: In **Settings... > Remote Libraries Setup**, enter your Scan Agent URL (e.g., `http://192.168.1.100:8800`) and click **Connect to Agent**. Enable the libraries you want to track and map each remote root directory to its local mount path on your machine.
-7.  **Scan Library**: Click the **Scan Library** button at the bottom of the main window to scan active roots for files, click **Full Scan** to include archive directories, or click **Refresh Metadata** to force a full update from TMDB.
+5.  **Add Local Libraries**: In **Settings... > Local Libraries Setup**, define single root directories for your local media libraries (and optional archive directories). Check **Anime Mode** for libraries containing anime series you want to map to MyAnimeList.
+6.  **Connect Remote Scan Agents (Optional)**: In **Settings... > Remote Libraries Setup**, enter your Scan Agent URL (e.g., `http://192.168.1.100:8800`) and click **Connect to Agent**. Enable the libraries you want to track and map each remote storage root directory to its local SMB/NFS mount point.
+7.  **Organize Library Tabs**: In **Settings... > Library Tabs**, create and configure tabs grouping any combination of local and remote libraries. Media items spanning multiple libraries on the same tab are automatically consolidated into single unified entries.
+8.  **Scan Libraries**: Scanning is managed per-library within **Settings...**:
+    - **Local Libraries Setup**: Click **Scan Library** to scan active roots, archive paths, or refresh metadata for the selected library.
+    - **Remote Libraries Setup**: Click **Sync / Scan Library** to trigger a remote agent scan and sync metadata.
+    - **Library Management**: Click **Scan Files** to run a quick scan across all active local libraries.
 
 ---
 

@@ -1778,9 +1778,9 @@ class SettingsDialog(QDialog):
         self.library_selector.blockSignals(True)
         self.library_selector.clear()
         local_libraries = [
-            name
-            for name, lib in self.staged_libraries.items()
-            if lib.get("management_type", "local") != "remote"
+            library_name
+            for library_name, library_configuration in self.staged_libraries.items()
+            if library_configuration.get("management_type", "local") != "remote"
         ]
         self.library_selector.addItems(sorted(local_libraries))
         self.library_selector.blockSignals(False)
