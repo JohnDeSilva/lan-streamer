@@ -1,3 +1,18 @@
+## v0.52.0 (2026-09-09)
+
+### Feat
+
+- **agent**: add running log page and anime episode browsing filter
+
+### Fix
+
+- **agent**: support live source mounting and compose teardown on interrupt
+- enhance media file handling and error resilience in library scans
+
+### Refactor
+
+- **agent**: rename anime episodes selector to anime in scanner UI and logic
+
 ## v0.52.0rc0 (2026-09-09)
 
 ### Feat
