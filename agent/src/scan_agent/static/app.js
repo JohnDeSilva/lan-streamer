@@ -316,7 +316,7 @@ async function loadLogs() {
 }
 
 // -------------------------------------------------------------
-// 5. Browse (Series, Movies & Anime Episodes)
+// 5. Browse (Series, Movies & Anime)
 // -------------------------------------------------------------
 async function populateBrowseLibraries() {
     const select = document.getElementById("browseLibrary");
@@ -348,7 +348,7 @@ async function loadBrowse() {
 
         const watchedGroup = document.getElementById("browseWatchedGroup");
         if (watchedGroup) {
-            watchedGroup.style.display = currentBrowseType === "anime_episodes" ? "block" : "none";
+            watchedGroup.style.display = currentBrowseType === "anime" ? "block" : "none";
         }
 
         if (currentBrowseType === "series") {
@@ -399,7 +399,7 @@ async function loadBrowse() {
                 card.onclick = () => showMovieDetail(item.id);
                 grid.appendChild(card);
             });
-        } else if (currentBrowseType === "anime_episodes") {
+        } else if (currentBrowseType === "anime") {
             const params = { library_type: "anime", sort };
             if (query) params.query = query;
             if (libraryId) params.library_id = libraryId;
@@ -409,7 +409,7 @@ async function loadBrowse() {
             const items = await api.listEpisodes(params);
             grid.innerHTML = "";
             if (items.length === 0) {
-                grid.innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">No anime episodes found matching filter.</div>';
+                grid.innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">No anime found matching filter.</div>';
                 return;
             }
             items.forEach((item) => {
@@ -880,13 +880,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // Browse filters
     const btnTypeSeries = document.getElementById("browseTypeSeries");
     const btnTypeMovies = document.getElementById("browseTypeMovies");
-    const btnTypeAnime = document.getElementById("browseTypeAnimeEpisodes");
+    const btnTypeAnime = document.getElementById("browseTypeAnime");
 
     function updateBrowseTypeButtons(activeType) {
         currentBrowseType = activeType;
         if (btnTypeSeries) btnTypeSeries.className = activeType === "series" ? "btn btn-primary" : "btn btn-secondary";
         if (btnTypeMovies) btnTypeMovies.className = activeType === "movie" ? "btn btn-primary" : "btn btn-secondary";
-        if (btnTypeAnime) btnTypeAnime.className = activeType === "anime_episodes" ? "btn btn-primary" : "btn btn-secondary";
+        if (btnTypeAnime) btnTypeAnime.className = activeType === "anime" ? "btn btn-primary" : "btn btn-secondary";
         loadBrowse();
     }
 
@@ -897,7 +897,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btnTypeMovies.onclick = () => updateBrowseTypeButtons("movie");
     }
     if (btnTypeAnime) {
-        btnTypeAnime.onclick = () => updateBrowseTypeButtons("anime_episodes");
+        btnTypeAnime.onclick = () => updateBrowseTypeButtons("anime");
     }
 
     const browseSearch = document.getElementById("browseSearch");
