@@ -174,6 +174,16 @@
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
                 <h2>System & Scanner Logs</h2>
                 <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 0.4rem;">
+                        <label for="logLevelSelect" style="font-size: 0.85rem; margin-bottom: 0;">Log Level:</label>
+                        <select id="logLevelSelect" class="form-control" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.85rem;">
+                            <option value="ALL">ALL</option>
+                            <option value="DEBUG">DEBUG</option>
+                            <option value="INFO" selected>INFO</option>
+                            <option value="WARNING">WARNING</option>
+                            <option value="ERROR">ERROR</option>
+                        </select>
+                    </div>
                     <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
                         <input type="checkbox" id="chkAutoScrollLogs" checked> Auto-scroll
                     </label>
@@ -252,6 +262,15 @@
                     <div class="form-group">
                         <label for="cfgCacheDirectory">Image Cache Directory</label>
                         <input type="text" id="cfgCacheDirectory" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="cfgLogLevel">Agent Log Level</label>
+                        <select id="cfgLogLevel" class="form-control">
+                            <option value="DEBUG">DEBUG</option>
+                            <option value="INFO" selected>INFO</option>
+                            <option value="WARNING">WARNING</option>
+                            <option value="ERROR">ERROR</option>
+                        </select>
                     </div>
                     <div style="margin-top: 1.5rem;">
                         <button type="submit" class="btn btn-primary">Save Configuration</button>

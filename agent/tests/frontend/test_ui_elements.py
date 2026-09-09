@@ -208,6 +208,7 @@ def test_html_logs_tab_ui_elements() -> None:
     """Verify Logs tab UI controls exist."""
     collector = _parse_html_elements()
     expected_logs_elements = [
+        ("logLevelSelect", "select"),
         ("chkAutoScrollLogs", "input"),
         ("btnClearLogs", "button"),
         ("btnRefreshLogs", "button"),
@@ -220,6 +221,10 @@ def test_html_logs_tab_ui_elements() -> None:
         assert (
             collector.elements_by_identifier[element_identifier]["tag"] == expected_tag
         )
+
+    log_level_options = collector.select_options.get("logLevelSelect", [])
+    option_values = [option["value"] for option in log_level_options]
+    assert option_values == ["ALL", "DEBUG", "INFO", "WARNING", "ERROR"]
 
     auto_scroll_attributes = collector.elements_by_identifier["chkAutoScrollLogs"][
         "attributes"
@@ -275,6 +280,12 @@ def test_html_configuration_tab_ui_elements() -> None:
         )
         attributes = collector.elements_by_identifier[element_identifier]["attributes"]
         assert attributes.get("type") == expected_type
+
+    assert "cfgLogLevel" in collector.elements_by_identifier
+    assert collector.elements_by_identifier["cfgLogLevel"]["tag"] == "select"
+    config_log_level_options = collector.select_options.get("cfgLogLevel", [])
+    config_option_values = [option["value"] for option in config_log_level_options]
+    assert config_option_values == ["DEBUG", "INFO", "WARNING", "ERROR"]
 
 
 def test_html_all_modals_and_close_targets() -> None:
@@ -514,6 +525,9 @@ def test_forms_and_input_events_wired_in_app() -> None:
     assert re.search(r"folderCurrentPath\.onkeydown\s*=", app_source) or re.search(
         r'getElementById\(["\']folderCurrentPath["\']\)\.onkeydown\s*=', app_source
     )
+    assert re.search(r"logLevelSelect\.onchange\s*=", app_source) or re.search(
+        r'getElementById\(["\']logLevelSelect["\']\)\.onchange\s*=', app_source
+    )
 
 
 # ======================================================================
@@ -544,8 +558,15 @@ function getOrCreateElement(id, tag) {
                 contains: function(c) { return !!this.classes[c]; }
             },
             style: {},
+            _innerHTML: "",
+            get innerHTML() { return this._innerHTML; },
+            set innerHTML(val) {
+                this._innerHTML = val;
+                if (!val) {
+                    this.children = [];
+                }
+            },
             textContent: "",
-            innerHTML: "",
             value: "",
             checked: false,
             disabled: false,
@@ -611,17 +632,6 @@ function clearTimeout(id) {
 function setInterval() { return 0; }
 function clearInterval() {}
 
-function escapeHtml(s) { return String(s || ""); }
-function getPosterUrl(p) { return p || ""; }
-function debounce(fn) { return fn; }
-function parseScanProgressStep() { return null; }
-function buildBrowseParams() { return {}; }
-function filterLibrariesForBrowseType(libs, type) {
-    if (!Array.isArray(libs)) return [];
-    const target = type === "series" ? "tv" : type;
-    return libs.filter(function(l) { return l && l.media_type === target; });
-}
-
 const api = {
     getLibraries: async function() { return []; },
     listSeries: async function() { return []; },
@@ -639,8 +649,12 @@ def _load_app_in_v8(engine: MiniRacer, probe_code: str) -> dict[str, Any]:
     """Execute app.js with the DOM harness and run probe_code, returning the parsed JSON result."""
     app_source = _read_static_file("app.js")
     stripped_app = re.sub(r"^import [^\n]+;?\n?", "", app_source, flags=re.MULTILINE)
+    logic_source = _read_static_file("logic.js")
+    stripped_logic = re.sub(r"^export\s+", "", logic_source, flags=re.MULTILINE)
     program = (
         _DOM_HARNESS_PREAMBLE
+        + "\n"
+        + stripped_logic
         + "\n"
         + stripped_app
         + "\n"
@@ -887,6 +901,56 @@ def test_v8_clear_logs_button(engine: MiniRacer) -> None:
         """,
     )
     assert result["content"] == ""
+
+
+def test_v8_log_level_filter_and_display(engine: MiniRacer) -> None:
+    """Verify selecting a log level filters messages displayed in runningLogConsole."""
+    result = _load_app_in_v8(
+        engine,
+        """
+        const runningConsole = getOrCreateElement("runningLogConsole");
+        runningConsole.innerHTML = "";
+
+        appendLogLine("2026-09-09 DEBUG scan: probing file codec", "DEBUG");
+        appendLogLine("2026-09-09 INFO scan: started library scan", "INFO");
+        appendLogLine("2026-09-09 WARNING scan: missing poster", "WARNING");
+        appendLogLine("2026-09-09 ERROR scan: failed to open database", "ERROR");
+
+        const initialLinesCount = runningConsole.children.length;
+
+        const logLevelSelect = getOrCreateElement("logLevelSelect");
+        logLevelSelect.value = "WARNING";
+        logLevelSelect.onchange();
+
+        const warningFilteredLines = runningConsole.children.map(child => child.textContent);
+
+        logLevelSelect.value = "ERROR";
+        logLevelSelect.onchange();
+        const errorFilteredLines = runningConsole.children.map(child => child.textContent);
+
+        logLevelSelect.value = "ALL";
+        logLevelSelect.onchange();
+        const allFilteredLines = runningConsole.children.map(child => child.textContent);
+
+        return {
+            initialCount: initialLinesCount,
+            warningFiltered: warningFilteredLines,
+            errorFiltered: errorFilteredLines,
+            allFiltered: allFilteredLines,
+        };
+        """,
+    )
+    assert result["initialCount"] == 4
+    assert len(result["warningFiltered"]) == 2
+    assert any("WARNING" in line for line in result["warningFiltered"])
+    assert any("ERROR" in line for line in result["warningFiltered"])
+    assert not any("DEBUG" in line for line in result["warningFiltered"])
+    assert not any("INFO" in line for line in result["warningFiltered"])
+
+    assert len(result["errorFiltered"]) == 1
+    assert "ERROR" in result["errorFiltered"][0]
+
+    assert len(result["allFiltered"]) == 4
 
 
 def test_v8_folder_browser_select_folder_button(engine: MiniRacer) -> None:

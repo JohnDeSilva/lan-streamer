@@ -60,7 +60,17 @@ export const api = {
     cancelScan: () => request("/scan/cancel", { method: "POST" }),
     getScanStatus: () => request("/scan/status"),
     getScanJobs: (limit = 20) => request(`/scan/jobs?limit=${limit}`),
-    getLogs: (limit = 200) => request(`/scan/logs?limit=${limit}`),
+    getLogs: (limit = 200, level = null) => {
+        const queryParameters = {};
+        if (limit) {
+            queryParameters.limit = limit;
+        }
+        if (level) {
+            queryParameters.level = level;
+        }
+        const queryString = new URLSearchParams(queryParameters).toString();
+        return request(`/scan/logs${queryString ? "?" + queryString : ""}`);
+    },
 
     // Library Browser
     listSeries: (params = {}) => {
