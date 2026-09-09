@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import delete, func, or_, select, update
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from scan_agent.db.models import (
     Episode,
@@ -32,6 +32,7 @@ from scan_agent.db.models import (
     WatchEvent,
 )
 from scan_agent.db.serializers import (
+    episode_to_dict,
     movie_to_dict,
     scan_job_to_dict,
     series_to_dict,
@@ -692,6 +693,7 @@ def upsert_series_scan(
 def list_series(
     connection: Session,
     library_identifier: str | int | None = None,
+    library_type: str | None = None,
     query: str | None = None,
     sort: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -707,6 +709,10 @@ def list_series(
         if library is None:
             return []
         statement = statement.where(Series.library_id == library.id)
+    elif library_type is not None:
+        statement = statement.join(Series.library).where(
+            Library.media_type == library_type
+        )
     if query:
         pattern = f"%{query}%"
         statement = statement.where(
@@ -733,6 +739,96 @@ def get_series(connection: Session, series_identifier: int) -> dict[str, Any] | 
         )
     ).first()
     return series_to_dict(series) if series is not None else None
+
+
+def list_episodes(
+    connection: Session,
+    library_type: str | None = None,
+    library_identifier: str | int | None = None,
+    query: str | None = None,
+    watched: bool | None = None,
+    sort: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """List episodes, optionally filtered by library type, library ID, query, and watched state.
+
+    Includes parent series, season, and library metadata.
+    """
+    statement = (
+        select(Episode)
+        .join(Episode.season)
+        .join(Season.series)
+        .join(Series.library)
+        .options(
+            joinedload(Episode.season)
+            .joinedload(Season.series)
+            .joinedload(Series.library),
+            selectinload(Episode.media_files),
+        )
+    )
+    if library_type is not None:
+        statement = statement.where(Library.media_type == library_type)
+    if library_identifier is not None:
+        library = get_library(connection, library_identifier)
+        if library is None:
+            return []
+        statement = statement.where(Library.id == library.id)
+    if query:
+        pattern = f"%{query}%"
+        statement = statement.where(
+            or_(
+                Episode.name.ilike(pattern),
+                Episode.path.ilike(pattern),
+                Series.name.ilike(pattern),
+                Series.folder_name.ilike(pattern),
+            )
+        )
+    if watched is not None:
+        statement = statement.where(Episode.watched == watched)
+
+    if sort == "name_desc":
+        statement = statement.order_by(
+            Series.name.desc(),
+            Season.season_number.desc(),
+            Episode.episode_number.desc(),
+        )
+    elif sort in ("air_date_desc", "date_added_desc"):
+        statement = statement.order_by(
+            Episode.air_date.desc().nulls_last(),
+            Series.name.asc(),
+            Episode.episode_number.asc(),
+        )
+    else:
+        statement = statement.order_by(
+            Series.name.asc(),
+            Season.season_number.asc(),
+            Episode.episode_number.asc(),
+        )
+
+    statement = statement.limit(limit).offset(offset)
+    episodes = connection.scalars(statement).all()
+
+    results: list[dict[str, Any]] = []
+    for episode in episodes:
+        serialized_episode = episode_to_dict(episode)
+        season = episode.season
+        if season is not None:
+            serialized_episode["season_number"] = season.season_number
+            series = season.series
+            if series is not None:
+                serialized_episode["series_id"] = series.id
+                serialized_episode["series_name"] = series.name or series.folder_name
+                serialized_episode["poster_path"] = (
+                    season.poster_path or series.poster_path
+                )
+                library = series.library
+                if library is not None:
+                    serialized_episode["library_id"] = library.id
+                    serialized_episode["library_name"] = library.name
+                    serialized_episode["library_type"] = library.media_type
+        results.append(serialized_episode)
+    return results
 
 
 def list_movies(

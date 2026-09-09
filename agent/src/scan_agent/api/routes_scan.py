@@ -107,6 +107,24 @@ def scan_jobs(
     return list_scan_jobs(session, limit=limit)
 
 
+@scan_router.get("/scan/logs")
+def get_scan_logs(
+    request: Request,
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> list[dict[str, Any]]:
+    """Return recent scan log entries, newest last."""
+    broker: ProgressBroker = request.app.state.progress_broker
+    log_entries: list[dict[str, Any]] = []
+    for message in broker.pending_since(0):
+        if message.get("event") == "scan.log":
+            payload_dict = dict(message.get("payload", {}))
+            payload_dict.setdefault("sequence", message.get("sequence"))
+            log_entries.append(payload_dict)
+    if limit and len(log_entries) > limit:
+        log_entries = log_entries[-limit:]
+    return log_entries
+
+
 @events_router.get("/events")
 async def events_stream(
     request: Request,

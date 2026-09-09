@@ -14,6 +14,7 @@ from scan_agent.db.repository import (
     get_library,
     get_movie,
     get_series,
+    list_episodes,
     list_movies,
     list_scan_jobs,
     list_series,
@@ -567,3 +568,102 @@ def test_upsert_series_isolated_error_does_not_abort_library(
     with get_session(database_engine) as session:
         series_list = list_series(session)
         assert any(entry["folder_name"] == "Good Show" for entry in series_list)
+
+
+def test_list_episodes_filter_and_sort(
+    database_engine, agent_config, scanned_series_data
+) -> None:
+    tv_payload = _tv_library_payload(agent_config, scanned_series_data)
+    anime_series_data = {
+        "Frieren": {
+            "name": "Frieren: Beyond Journey's End",
+            "seasons": {
+                "Season 01": {
+                    "name": "Season 1",
+                    "episodes": [
+                        {
+                            "episode_number": 1,
+                            "name": "The Journey's End",
+                            "air_date": "2023-09-29",
+                            "path": "/fake/anime/Frieren/Season 01/Frieren.S01E01.mkv",
+                            "versions": [
+                                {
+                                    "path": "/fake/anime/Frieren/Season 01/Frieren.S01E01.mkv"
+                                }
+                            ],
+                        },
+                        {
+                            "episode_number": 2,
+                            "name": "It Didn't Have to Be Magic",
+                            "air_date": "2023-09-29",
+                            "path": "/fake/anime/Frieren/Season 01/Frieren.S01E02.mkv",
+                            "versions": [
+                                {
+                                    "path": "/fake/anime/Frieren/Season 01/Frieren.S01E02.mkv"
+                                }
+                            ],
+                        },
+                    ],
+                    "metadata": {},
+                }
+            },
+            "metadata": {},
+        }
+    }
+    anime_payload = {
+        "name": "Anime Collection",
+        "media_type": "anime",
+        "root_path": "/fake/anime",
+        "items": anime_series_data,
+    }
+
+    with get_session(database_engine) as session:
+        upsert_library(session, tv_payload)
+        upsert_library(session, anime_payload)
+
+        first_anime_episode = session.scalars(
+            select(Episode).where(Episode.name == "The Journey's End")
+        ).first()
+        assert first_anime_episode is not None
+        first_anime_episode.watched = True
+        session.flush()
+
+        all_episodes = list_episodes(session)
+        assert len(all_episodes) >= 4
+
+        anime_episodes = list_episodes(session, library_type="anime")
+        assert len(anime_episodes) == 2
+        assert all(episode["library_type"] == "anime" for episode in anime_episodes)
+        assert anime_episodes[0]["series_name"] == "Frieren: Beyond Journey's End"
+        assert anime_episodes[0]["season_number"] == 1
+
+        watched_anime = list_episodes(session, library_type="anime", watched=True)
+        assert len(watched_anime) == 1
+        assert watched_anime[0]["name"] == "The Journey's End"
+
+        unwatched_anime = list_episodes(session, library_type="anime", watched=False)
+        assert len(unwatched_anime) == 1
+        assert unwatched_anime[0]["name"] == "It Didn't Have to Be Magic"
+
+        query_results = list_episodes(session, library_type="anime", query="Magic")
+        assert len(query_results) == 1
+        assert query_results[0]["name"] == "It Didn't Have to Be Magic"
+
+        query_series = list_episodes(session, library_type="anime", query="Frieren")
+        assert len(query_series) == 2
+
+        anime_library = get_library(session, "Anime Collection")
+        assert anime_library is not None
+        library_episodes = list_episodes(session, library_identifier=anime_library.id)
+        assert len(library_episodes) == 2
+
+        assert list_episodes(session, library_identifier=99999) == []
+        assert (
+            list_episodes(session, library_type="anime", sort="name_desc")[0][
+                "episode_number"
+            ]
+            == 2
+        )
+        assert (
+            len(list_episodes(session, library_type="anime", sort="air_date_desc")) == 2
+        )
