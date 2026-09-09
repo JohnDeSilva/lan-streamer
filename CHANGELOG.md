@@ -1,3 +1,18 @@
+## v0.53.0 (2026-09-09)
+
+### Feat
+
+- **agent**: add HTTP access logging middleware and desktop sync request logging
+- **agent**: allow selecting log level in agent UI and backend
+- add episode matching and manual mapping functionalities
+- **agent**: implement library identifier resolution and filtering in browse routes
+
+### Fix
+
+- **agent**: omit series folders with no episode files from scan and browse
+- **agent**: refresh episode names and lock metadata on series tmdb match
+- **agent**: wire anime filter button to series library type filter in web UI
+
 ## v0.53.0rc0 (2026-09-09)
 
 ### Feat
