@@ -541,14 +541,59 @@ def test_app_imports_logic_helpers() -> None:
     logic_source = _read_static("logic.js")
 
     assert (
-        'import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep } from "./logic.js";'
+        'import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams } from "./logic.js";'
         in app_source
     )
 
-    for helper in ("getPosterUrl", "escapeHtml", "debounce", "parseScanProgressStep"):
+    for helper in (
+        "getPosterUrl",
+        "escapeHtml",
+        "debounce",
+        "parseScanProgressStep",
+        "buildBrowseParams",
+    ):
         assert re.search(rf"function {helper}\s*\(", logic_source)
         assert re.search(rf"\b{helper}\s*\(", app_source)
         assert not re.search(rf"function {helper}\s*\(", app_source)
+
+
+def test_logic_build_browse_params(engine: MiniRacer) -> None:
+    result = _logic_test(
+        engine,
+        "",
+        """
+        seriesParams: buildBrowseParams("series", "Breaking", "1", "name"),
+        animeParams: buildBrowseParams("anime", "Frieren", "2", "year_desc"),
+        movieParams: buildBrowseParams("movie", "", "", "date_added"),
+        seriesDefaults: buildBrowseParams("series"),
+        animeDefaults: buildBrowseParams("anime"),
+        movieDefaults: buildBrowseParams("movie"),
+        """,
+    )
+    assert result == {
+        "seriesParams": {
+            "library_type": "tv",
+            "query": "Breaking",
+            "library_id": "1",
+            "sort": "name",
+        },
+        "animeParams": {
+            "library_type": "anime",
+            "query": "Frieren",
+            "library_id": "2",
+            "sort": "year_desc",
+        },
+        "movieParams": {
+            "sort": "date_added",
+        },
+        "seriesDefaults": {
+            "library_type": "tv",
+        },
+        "animeDefaults": {
+            "library_type": "anime",
+        },
+        "movieDefaults": {},
+    }
 
 
 def test_app_module_loads_cleanly(engine: MiniRacer) -> None:

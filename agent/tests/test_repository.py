@@ -179,6 +179,24 @@ def test_list_series_filter_and_sort(
         assert len(list_series(session, query="Test")) == 1
         assert len(list_series(session, query="Missing")) == 0
         assert len(list_series(session, sort="date_added")) == 1
+        assert len(list_series(session, library_type="tv")) == 1
+        assert len(list_series(session, library_type="anime")) == 0
+        assert (
+            len(
+                list_series(
+                    session, library_identifier=payload["name"], library_type="tv"
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                list_series(
+                    session, library_identifier=payload["name"], library_type="anime"
+                )
+            )
+            == 0
+        )
 
 
 def test_list_scan_jobs(database_engine) -> None:
