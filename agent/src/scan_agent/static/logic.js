@@ -35,6 +35,31 @@ export function debounce(func, wait) {
 }
 
 /**
+ * Construct query parameters for browsing media.
+ *
+ * Maps UI browse type ("series", "anime", "movie") to API parameters.
+ * "series" maps to { library_type: "tv" }, while "anime" maps to { library_type: "anime" }.
+ */
+export function buildBrowseParams(browseType, query = "", libraryIdentifier = "", sort = "") {
+    const parameters = {};
+    if (browseType === "series") {
+        parameters.library_type = "tv";
+    } else if (browseType === "anime") {
+        parameters.library_type = "anime";
+    }
+    if (sort) {
+        parameters.sort = sort;
+    }
+    if (query) {
+        parameters.query = query;
+    }
+    if (libraryIdentifier) {
+        parameters.library_id = libraryIdentifier;
+    }
+    return parameters;
+}
+
+/**
  * Map an SSE "scan.progress" payload to a UI update step.
  *
  * Returns `{ label, widthPercent }` where `label` is the text to show and

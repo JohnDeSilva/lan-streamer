@@ -176,6 +176,17 @@ def test_scan_jobs_and_browse_after_scan(
     assert len(series) == 1
     assert series[0]["folder_name"] == "Test Show"
 
+    tv_series = api_client.get(
+        "/api/v1/library/series", params={"library_type": "tv"}
+    ).json()
+    assert len(tv_series) == 1
+    assert tv_series[0]["folder_name"] == "Test Show"
+
+    anime_series = api_client.get(
+        "/api/v1/library/series", params={"library_type": "anime"}
+    ).json()
+    assert len(anime_series) == 0
+
     series_identifier = series[0]["id"]
     detail = api_client.get(f"/api/v1/library/series/{series_identifier}").json()
     assert len(detail["seasons"]) == 1
