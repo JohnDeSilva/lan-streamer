@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from scan_agent.api.deps import get_database_session
 from scan_agent.api.schemas import ConfigUpdate, LibraryPatch, LibraryWrite
+from scan_agent.config import apply_agent_log_level
 from scan_agent.db.repository import (
     count_items_per_library,
     get_library,
@@ -49,6 +50,7 @@ def _serialize_config(config: AgentConfig) -> dict[str, Any]:
         "database_path": config.database_path,
         "log_directory": config.log_directory,
         "cache_directory": config.cache_directory,
+        "log_level": config.log_level,
         "libraries": config.libraries,
     }
 
@@ -89,6 +91,8 @@ def update_config(request: Request, update: ConfigUpdate) -> dict[str, Any]:
         changes.pop("opensubtitles_password", None)
     for key, value in changes.items():
         config.set(key, value)
+        if key == "log_level" and isinstance(value, str):
+            apply_agent_log_level(value)
         logger.info("API config key '%s' updated", key)
     return _serialize_config(config)
 

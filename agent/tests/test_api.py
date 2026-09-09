@@ -108,6 +108,18 @@ def test_config_put_updates_other_keys(api_client: TestClient) -> None:
     assert body["tmdb_api_key"] == "abc123"
 
 
+def test_config_get_and_put_log_level(api_client: TestClient) -> None:
+    initial_config = api_client.get("/api/v1/config").json()
+    assert initial_config["log_level"] == "INFO"
+
+    response = api_client.put("/api/v1/config", json={"log_level": "DEBUG"})
+    assert response.status_code == 200
+    assert response.json()["log_level"] == "DEBUG"
+
+    updated_config = api_client.get("/api/v1/config").json()
+    assert updated_config["log_level"] == "DEBUG"
+
+
 def test_libraries_crud(api_client: TestClient) -> None:
     listing = api_client.get("/api/v1/libraries").json()
     assert {entry["id"] for entry in listing} == {"tv", "movie"}
@@ -285,6 +297,49 @@ def test_browse_episodes_filter_and_scan_logs(
     logs = api_client.get("/api/v1/scan/logs").json()
     assert len(logs) >= 1
     assert any("Test runner log message" in log["message"] for log in logs)
+
+
+def test_scan_logs_level_filtering(api_app: FastAPI, api_client: TestClient) -> None:
+    broker = api_app.state.progress_broker
+    broker.publish_log("Debug detail line", level="DEBUG")
+    broker.publish_log("Standard info line", level="INFO")
+    broker.publish_log("Warning notice line", level="WARNING")
+    broker.publish_log("Error critical failure line", level="ERROR")
+
+    all_logs = api_client.get("/api/v1/scan/logs", params={"level": "ALL"}).json()
+    all_messages = [log["message"] for log in all_logs]
+    assert "Debug detail line" in all_messages
+    assert "Standard info line" in all_messages
+    assert "Warning notice line" in all_messages
+    assert "Error critical failure line" in all_messages
+
+    debug_logs = api_client.get("/api/v1/scan/logs", params={"level": "DEBUG"}).json()
+    debug_messages = [log["message"] for log in debug_logs]
+    assert "Debug detail line" in debug_messages
+    assert "Standard info line" in debug_messages
+
+    info_logs = api_client.get("/api/v1/scan/logs", params={"level": "INFO"}).json()
+    info_messages = [log["message"] for log in info_logs]
+    assert "Debug detail line" not in info_messages
+    assert "Standard info line" in info_messages
+    assert "Warning notice line" in info_messages
+    assert "Error critical failure line" in info_messages
+
+    warning_logs = api_client.get(
+        "/api/v1/scan/logs", params={"level": "WARNING"}
+    ).json()
+    warning_messages = [log["message"] for log in warning_logs]
+    assert "Debug detail line" not in warning_messages
+    assert "Standard info line" not in warning_messages
+    assert "Warning notice line" in warning_messages
+    assert "Error critical failure line" in warning_messages
+
+    error_logs = api_client.get("/api/v1/scan/logs", params={"level": "ERROR"}).json()
+    error_messages = [log["message"] for log in error_logs]
+    assert "Debug detail line" not in error_messages
+    assert "Standard info line" not in error_messages
+    assert "Warning notice line" not in error_messages
+    assert "Error critical failure line" in error_messages
 
 
 def test_library_items_export_endpoint(

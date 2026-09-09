@@ -67,6 +67,7 @@ class AgentConfig:
 
         self.tmdb_api_key: str = ""
         self.scan_concurrency: int = _DEFAULT_SCAN_CONCURRENCY
+        self.log_level: str = "INFO"
         self.opensubtitles_api_key: str = ""
         self.opensubtitles_username: str = ""
         self.opensubtitles_password: str = ""
@@ -85,6 +86,7 @@ class AgentConfig:
         return {
             "tmdb_api_key": "",
             "scan_concurrency": _DEFAULT_SCAN_CONCURRENCY,
+            "log_level": "INFO",
             "opensubtitles_api_key": "",
             "opensubtitles_username": "",
             "opensubtitles_password": "",
@@ -123,6 +125,7 @@ class AgentConfig:
         payload = {
             "tmdb_api_key": self.tmdb_api_key,
             "scan_concurrency": self.scan_concurrency,
+            "log_level": self.log_level,
             "opensubtitles_api_key": self.opensubtitles_api_key,
             "opensubtitles_username": self.opensubtitles_username,
             "opensubtitles_password": self.opensubtitles_password,
@@ -330,8 +333,16 @@ def install_into_lan_streamer(config: AgentConfig) -> None:
 
     os.environ["LAN_STREAMER_DB"] = config.database_path
     os.environ["HOME"] = str(config.data_directory)
+    apply_agent_log_level(config.log_level)
     logger.info(
         "Installed agent config into lan_streamer.system.config (database=%s, cache=%s)",
         config.database_path,
         config.cache_directory,
     )
+
+
+def apply_agent_log_level(level_name: str) -> None:
+    """Dynamically configure the log level across scan agent and lan_streamer loggers."""
+    resolved_level = getattr(logging, level_name.upper(), logging.INFO)
+    logging.getLogger("lan_streamer").setLevel(resolved_level)
+    logging.getLogger("scan_agent").setLevel(resolved_level)

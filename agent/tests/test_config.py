@@ -101,6 +101,7 @@ def test_installed_config_is_readable_by_reused_provider(tmp_path) -> None:
         "opensubtitles_username",
         "opensubtitles_password",
         "scan_concurrency",
+        "log_level",
     ],
 )
 def test_provider_required_attributes_exist(tmp_path, attribute_name) -> None:
@@ -213,3 +214,13 @@ def test_get_agent_config_accepts_data_directory(tmp_path) -> None:
     assert agent_config.database_path == str(custom_data_directory / "library.db")
     assert agent_config.cache_directory == str(custom_data_directory / "cache")
     reset_agent_config()
+
+
+def test_log_level_default_and_round_trip(tmp_path) -> None:
+    configuration_path = tmp_path / "config.json"
+    agent_config = AgentConfig(configuration_path)
+    assert agent_config.log_level == "INFO"
+
+    agent_config.set("log_level", "DEBUG")
+    reloaded_config = AgentConfig(configuration_path)
+    assert reloaded_config.log_level == "DEBUG"

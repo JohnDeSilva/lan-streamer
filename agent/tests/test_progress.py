@@ -69,6 +69,19 @@ def test_publish_log_uses_log_event() -> None:
     event = broker.publish_log("some log line")
     assert event["event"] == "scan.log"
     assert event["payload"]["line"] == "some log line"
+    assert event["payload"]["level"] == "INFO"
+
+
+def test_publish_log_preserves_or_detects_level() -> None:
+    broker = ProgressBroker()
+    event_debug = broker.publish_log("debug message", level="DEBUG")
+    assert event_debug["payload"]["level"] == "DEBUG"
+
+    event_error = broker.publish_log("ERROR: scan failed")
+    assert event_error["payload"]["level"] == "ERROR"
+
+    event_warning = broker.publish_log("WARNING: missing directory")
+    assert event_warning["payload"]["level"] == "WARNING"
 
 
 def test_thread_safety_smoke() -> None:

@@ -59,6 +59,7 @@ export function buildBrowseParams(browseType, query = "", libraryIdentifier = ""
     return parameters;
 }
 
+
 /**
  * Map an SSE "scan.progress" payload to a UI update step.
  *
@@ -179,4 +180,57 @@ export function buildManualMappingPayload(mappingRows) {
         });
     }
     return { episode_mappings: episodeMappings };
+}
+
+export const LOG_LEVEL_PRIORITIES = {
+    ALL: 0,
+    DEBUG: 10,
+    INFO: 20,
+    WARNING: 30,
+    ERROR: 40,
+    CRITICAL: 50,
+};
+
+/**
+ * Resolve log level string from a log line or log item.
+ */
+export function resolveLogLevel(item) {
+    if (!item) {
+        return "INFO";
+    }
+    if (typeof item === "object" && item.level) {
+        return String(item.level).toUpperCase();
+    }
+    const message = typeof item === "object" ? (item.message || item.line || "") : String(item);
+    const upperMessage = message.toUpperCase();
+    if (upperMessage.includes("ERROR:") || upperMessage.includes(" ERROR ")) {
+        return "ERROR";
+    }
+    if (upperMessage.includes("WARNING:") || upperMessage.includes(" WARNING ")) {
+        return "WARNING";
+    }
+    if (
+        upperMessage.includes("DEBUG:") ||
+        upperMessage.includes(" DEBUG ") ||
+        upperMessage.startsWith("[DEBUG]") ||
+        upperMessage.startsWith("DEBUG ")
+    ) {
+        return "DEBUG";
+    }
+    return "INFO";
+}
+
+/**
+ * Check if a log entry's level meets or exceeds the selected filter level.
+ */
+export function isLogLevelVisible(entryLogLevel, selectedFilterLogLevel) {
+    const filterLevelNormalized = String(selectedFilterLogLevel || "ALL").toUpperCase();
+    const filterThreshold = LOG_LEVEL_PRIORITIES[filterLevelNormalized] !== undefined
+        ? LOG_LEVEL_PRIORITIES[filterLevelNormalized]
+        : 0;
+    const entryLevelNormalized = String(entryLogLevel || "INFO").toUpperCase();
+    const entryThreshold = LOG_LEVEL_PRIORITIES[entryLevelNormalized] !== undefined
+        ? LOG_LEVEL_PRIORITIES[entryLevelNormalized]
+        : 20;
+    return entryThreshold >= filterThreshold;
 }

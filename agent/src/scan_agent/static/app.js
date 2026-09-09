@@ -2,7 +2,7 @@
  * Main Single Page Application controller for LAN Streamer Scan Agent.
  */
 import { api } from "./api.js";
-import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams, filterLibrariesForBrowseType, matchEpisodesSequentially, buildManualMappingPayload } from "./logic.js";
+import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams, filterLibrariesForBrowseType, matchEpisodesSequentially, buildManualMappingPayload, resolveLogLevel, isLogLevelVisible } from "./logic.js";
 
 
 // State
@@ -18,6 +18,7 @@ let manualMapperLocalFiles = [];
 let manualMapperLoadedEntries = [];
 let manualMapperSelectedTmdbIdentifier = null;
 let manualMapperSelectedTmdbTitle = "";
+let recordedLogs = [];
 
 
 // Helpers
@@ -225,7 +226,39 @@ function renderScanJobs(jobs) {
     });
 }
 
-function appendLogLine(text) {
+function renderRunningLogs() {
+    const runningConsole = document.getElementById("runningLogConsole");
+    if (!runningConsole) {
+        return;
+    }
+    runningConsole.innerHTML = "";
+    const logLevelSelect = document.getElementById("logLevelSelect");
+    const selectedLogLevel = logLevelSelect ? logLevelSelect.value : "ALL";
+    const visibleLogs = recordedLogs.filter((logEntry) =>
+        isLogLevelVisible(logEntry.level, selectedLogLevel)
+    );
+    if (visibleLogs.length === 0) {
+        runningConsole.textContent = recordedLogs.length === 0 ? "No logs recorded yet." : "No logs match the selected filter.";
+        return;
+    }
+    visibleLogs.forEach((logEntry) => {
+        const lineElement = document.createElement("div");
+        lineElement.textContent = logEntry.text;
+        runningConsole.appendChild(lineElement);
+    });
+    const autoScrollCheckbox = document.getElementById("chkAutoScrollLogs");
+    if (!autoScrollCheckbox || autoScrollCheckbox.checked) {
+        runningConsole.scrollTop = runningConsole.scrollHeight;
+    }
+}
+
+function appendLogLine(text, level = null) {
+    const entryLogLevel = level || resolveLogLevel(text);
+    recordedLogs.push({ text: text, level: entryLogLevel });
+    if (recordedLogs.length > 500) {
+        recordedLogs.shift();
+    }
+
     const logConsole = document.getElementById("logConsole");
     if (logConsole) {
         const line = document.createElement("div");
@@ -235,15 +268,23 @@ function appendLogLine(text) {
     }
     const runningConsole = document.getElementById("runningLogConsole");
     if (runningConsole) {
-        if (runningConsole.textContent === "Waiting for logs...") {
-            runningConsole.textContent = "";
-        }
-        const line = document.createElement("div");
-        line.textContent = text;
-        runningConsole.appendChild(line);
-        const autoScroll = document.getElementById("chkAutoScrollLogs");
-        if (!autoScroll || autoScroll.checked) {
-            runningConsole.scrollTop = runningConsole.scrollHeight;
+        const logLevelSelect = document.getElementById("logLevelSelect");
+        const selectedLogLevel = logLevelSelect ? logLevelSelect.value : "ALL";
+        if (isLogLevelVisible(entryLogLevel, selectedLogLevel)) {
+            if (
+                runningConsole.textContent === "Waiting for logs..." ||
+                runningConsole.textContent === "No logs recorded yet." ||
+                runningConsole.textContent === "No logs match the selected filter."
+            ) {
+                runningConsole.textContent = "";
+            }
+            const line = document.createElement("div");
+            line.textContent = text;
+            runningConsole.appendChild(line);
+            const autoScrollCheckbox = document.getElementById("chkAutoScrollLogs");
+            if (!autoScrollCheckbox || autoScrollCheckbox.checked) {
+                runningConsole.scrollTop = runningConsole.scrollHeight;
+            }
         }
     }
 }
@@ -276,8 +317,9 @@ function initSSE() {
         try {
             const payload = JSON.parse(event.data);
             const text = payload.line || payload.message || "";
+            const level = payload.level || null;
             if (text) {
-                appendLogLine(text);
+                appendLogLine(text, level);
             }
         } catch {
             // Ignore parse errors
@@ -302,22 +344,15 @@ async function loadLogs() {
     initSSE();
     try {
         const logs = await api.getLogs(300);
-        const runningConsole = document.getElementById("runningLogConsole");
-        if (!runningConsole) return;
-        runningConsole.innerHTML = "";
-        if (logs.length === 0) {
-            runningConsole.textContent = "No logs recorded yet.";
-            return;
-        }
+        recordedLogs = [];
         logs.forEach((item) => {
-            const line = document.createElement("div");
-            line.textContent = item.line || item.message || "";
-            runningConsole.appendChild(line);
+            const text = item.line || item.message || "";
+            if (text) {
+                const entryLogLevel = item.level ? String(item.level).toUpperCase() : resolveLogLevel(text);
+                recordedLogs.push({ text: text, level: entryLogLevel });
+            }
         });
-        const autoScroll = document.getElementById("chkAutoScrollLogs");
-        if (!autoScroll || autoScroll.checked) {
-            runningConsole.scrollTop = runningConsole.scrollHeight;
-        }
+        renderRunningLogs();
     } catch (error) {
         showAlert(`Failed loading logs: ${error.message}`, "error");
     }
@@ -1025,12 +1060,16 @@ async function loadDirectory(directoryPath) {
 // -------------------------------------------------------------
 async function loadConfig() {
     try {
-        const cfg = await api.getConfig();
-        document.getElementById("cfgTmdbApiKey").value = cfg.tmdb_api_key || "";
-        document.getElementById("cfgScanConcurrency").value = cfg.scan_concurrency || 8;
-        document.getElementById("cfgOpenSubtitlesUsername").value = cfg.opensubtitles_username || "";
-        document.getElementById("cfgOpenSubtitlesApiKey").value = cfg.opensubtitles_api_key || "";
-        document.getElementById("cfgCacheDirectory").value = cfg.cache_directory || "";
+        const configuration = await api.getConfig();
+        document.getElementById("cfgTmdbApiKey").value = configuration.tmdb_api_key || "";
+        document.getElementById("cfgScanConcurrency").value = configuration.scan_concurrency || 8;
+        document.getElementById("cfgOpenSubtitlesUsername").value = configuration.opensubtitles_username || "";
+        document.getElementById("cfgOpenSubtitlesApiKey").value = configuration.opensubtitles_api_key || "";
+        document.getElementById("cfgCacheDirectory").value = configuration.cache_directory || "";
+        const configurationLogLevel = document.getElementById("cfgLogLevel");
+        if (configurationLogLevel) {
+            configurationLogLevel.value = configuration.log_level || "INFO";
+        }
     } catch (error) {
         showAlert(`Failed loading configuration: ${error.message}`, "error");
     }
@@ -1045,6 +1084,10 @@ async function saveConfig(event) {
         opensubtitles_api_key: document.getElementById("cfgOpenSubtitlesApiKey").value.trim(),
         cache_directory: document.getElementById("cfgCacheDirectory").value.trim(),
     };
+    const configurationLogLevel = document.getElementById("cfgLogLevel");
+    if (configurationLogLevel) {
+        payload.log_level = configurationLogLevel.value;
+    }
     const password = document.getElementById("cfgOpenSubtitlesPassword").value;
     if (password) {
         payload.opensubtitles_password = password;
@@ -1140,9 +1183,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Logs controls
+    const logLevelSelect = document.getElementById("logLevelSelect");
+    if (logLevelSelect) {
+        logLevelSelect.onchange = () => renderRunningLogs();
+    }
     const btnClearLogs = document.getElementById("btnClearLogs");
     if (btnClearLogs) {
         btnClearLogs.onclick = () => {
+            recordedLogs = [];
             const runningConsole = document.getElementById("runningLogConsole");
             if (runningConsole) runningConsole.innerHTML = "";
         };

@@ -328,6 +328,7 @@ def test_api_endpoint_builders(engine: MiniRacer) -> None:
             getScanStatus: { url: "/api/v1/scan/status", call: () => api.getScanStatus() },
             getScanJobs: { url: "/api/v1/scan/jobs?limit=5", call: () => api.getScanJobs(5) },
             getLogs: { url: "/api/v1/scan/logs?limit=50", call: () => api.getLogs(50) },
+            getLogsWithLevel: { url: "/api/v1/scan/logs?limit=50&level=DEBUG", call: () => api.getLogs(50, "DEBUG") },
             listSeries: { url: "/api/v1/library/series?query=a&sort=year", call: () => api.listSeries({ query: "a", sort: "year" }) },
             listEpisodes: { url: "/api/v1/library/episodes?library_type=anime", call: () => api.listEpisodes({ library_type: "anime" }) },
             getSeriesDetail: { url: "/api/v1/library/series/42", call: () => api.getSeriesDetail(42) },
@@ -366,6 +367,7 @@ def test_api_endpoint_builders(engine: MiniRacer) -> None:
         "getScanStatus": ("/api/v1/scan/status", "GET"),
         "getScanJobs": ("/api/v1/scan/jobs?limit=5", "GET"),
         "getLogs": ("/api/v1/scan/logs?limit=50", "GET"),
+        "getLogsWithLevel": ("/api/v1/scan/logs?limit=50&level=DEBUG", "GET"),
         "listSeries": ("/api/v1/library/series?query=a&sort=year", "GET"),
         "listEpisodes": ("/api/v1/library/episodes?library_type=anime", "GET"),
         "getSeriesDetail": ("/api/v1/library/series/42", "GET"),
@@ -714,6 +716,76 @@ def test_logic_build_browse_params(engine: MiniRacer) -> None:
             "library_type": "anime",
         },
         "movieDefaults": {},
+    }
+
+
+def test_logic_resolve_log_level(engine: MiniRacer) -> None:
+    result = _logic_test(
+        engine,
+        "",
+        """
+        nullValue: resolveLogLevel(null),
+        plainString: resolveLogLevel("Just a regular message"),
+        stringError: resolveLogLevel("ERROR: something broke"),
+        stringWarning: resolveLogLevel("2026-09-09 WARNING scan: missing dir"),
+        stringDebug: resolveLogLevel("[DEBUG] detail trace"),
+        objectExplicitLevel: resolveLogLevel({ level: "WARNING", message: "Hello" }),
+        objectImplicitLevel: resolveLogLevel({ message: "ERROR: critical failure" }),
+        objectDefaultLevel: resolveLogLevel({ message: "just info" }),
+        """,
+    )
+    assert result == {
+        "nullValue": "INFO",
+        "plainString": "INFO",
+        "stringError": "ERROR",
+        "stringWarning": "WARNING",
+        "stringDebug": "DEBUG",
+        "objectExplicitLevel": "WARNING",
+        "objectImplicitLevel": "ERROR",
+        "objectDefaultLevel": "INFO",
+    }
+
+
+def test_logic_is_log_level_visible(engine: MiniRacer) -> None:
+    result = _logic_test(
+        engine,
+        "",
+        """
+        allFilterDebug: isLogLevelVisible("DEBUG", "ALL"),
+        allFilterInfo: isLogLevelVisible("INFO", "ALL"),
+        allFilterError: isLogLevelVisible("ERROR", "ALL"),
+
+        debugFilterDebug: isLogLevelVisible("DEBUG", "DEBUG"),
+        debugFilterInfo: isLogLevelVisible("INFO", "DEBUG"),
+
+        infoFilterDebug: isLogLevelVisible("DEBUG", "INFO"),
+        infoFilterInfo: isLogLevelVisible("INFO", "INFO"),
+        infoFilterWarning: isLogLevelVisible("WARNING", "INFO"),
+        infoFilterError: isLogLevelVisible("ERROR", "INFO"),
+
+        warningFilterInfo: isLogLevelVisible("INFO", "WARNING"),
+        warningFilterWarning: isLogLevelVisible("WARNING", "WARNING"),
+        warningFilterError: isLogLevelVisible("ERROR", "WARNING"),
+
+        errorFilterWarning: isLogLevelVisible("WARNING", "ERROR"),
+        errorFilterError: isLogLevelVisible("ERROR", "ERROR"),
+        """,
+    )
+    assert result == {
+        "allFilterDebug": True,
+        "allFilterInfo": True,
+        "allFilterError": True,
+        "debugFilterDebug": True,
+        "debugFilterInfo": True,
+        "infoFilterDebug": False,
+        "infoFilterInfo": True,
+        "infoFilterWarning": True,
+        "infoFilterError": True,
+        "warningFilterInfo": False,
+        "warningFilterWarning": True,
+        "warningFilterError": True,
+        "errorFilterWarning": False,
+        "errorFilterError": True,
     }
 
 
