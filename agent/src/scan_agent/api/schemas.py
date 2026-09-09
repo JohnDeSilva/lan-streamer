@@ -99,3 +99,28 @@ class WatchEventWrite(BaseModel):
     event: WatchEventName
     position_seconds: float | None = None
     client_id: str | None = None
+
+
+class ManualEpisodeMapping(BaseModel):
+    """Manual mapping of a local file to a TMDB episode."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    path: str = Field(min_length=1)
+    episode_identifier: int | None = None
+    tmdb_identifier: str | None = None
+    tmdb_episode_identifier: str | None = None
+    name: str | None = None
+    episode_number: int | None = None
+    season_number: int | None = None
+    air_date: str | None = None
+    overview: str | None = None
+    runtime_seconds: int | None = None
+
+
+class ManualMetadataMappingRequest(BaseModel):
+    """Request payload to manually map episodes for a series."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    episode_mappings: list[ManualEpisodeMapping]

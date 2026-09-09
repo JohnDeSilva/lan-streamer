@@ -101,4 +101,15 @@ export const api = {
         request(`/services/subtitles/search?media_type=${mediaType}&media_id=${mediaId}`),
     downloadSubtitle: (fileId, payload) =>
         request(`/services/subtitles/${fileId}/download`, { method: "POST", body: payload }),
+
+    // Manual Metadata Mapping
+    getTmdbSeriesSeasons: (tmdbIdentifier) =>
+        request(`/services/metadata/tmdb/series/${encodeURIComponent(tmdbIdentifier)}/seasons`),
+    getTmdbSeasonEpisodes: (tmdbIdentifier, seasonNumber = 1) =>
+        request(`/services/metadata/tmdb/series/${encodeURIComponent(tmdbIdentifier)}/episodes?season_number=${encodeURIComponent(seasonNumber)}`),
+    applyManualMetadataMappings: (seriesIdentifier, episodeMappings) =>
+        request(`/services/metadata/series/${encodeURIComponent(seriesIdentifier)}/manual-map`, {
+            method: "POST",
+            body: { episode_mappings: episodeMappings },
+        }),
 };

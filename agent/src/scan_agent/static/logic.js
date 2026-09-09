@@ -122,3 +122,61 @@ export function filterLibrariesForBrowseType(libraries, browseType) {
     const targetMediaType = browseType === "series" ? "tv" : browseType;
     return libraries.filter((library) => library && library.media_type === targetMediaType);
 }
+
+/**
+ * Auto-match TMDB episodes with local series files.
+ *
+ * Checks first whether a local file has a matching TMDB episode identifier,
+ * otherwise defaults sequentially by list index.
+ */
+export function matchEpisodesSequentially(tmdbEpisodes, localFiles) {
+    if (!Array.isArray(tmdbEpisodes)) {
+        return [];
+    }
+    const safeLocalFiles = Array.isArray(localFiles) ? localFiles : [];
+    return tmdbEpisodes.map((tmdbEpisode, index) => {
+        let matchedPath = null;
+        if (tmdbEpisode && tmdbEpisode.id) {
+            const matchingFile = safeLocalFiles.find(
+                (file) => file && String(file.tmdb_episode_identifier) === String(tmdbEpisode.id)
+            );
+            if (matchingFile && matchingFile.path) {
+                matchedPath = matchingFile.path;
+            }
+        }
+        if (!matchedPath && safeLocalFiles[index] && safeLocalFiles[index].path) {
+            matchedPath = safeLocalFiles[index].path;
+        }
+        return {
+            tmdbEpisode: tmdbEpisode,
+            mappedPath: matchedPath,
+        };
+    });
+}
+
+/**
+ * Build request payload for manual metadata mapping from UI table rows.
+ */
+export function buildManualMappingPayload(mappingRows) {
+    if (!Array.isArray(mappingRows)) {
+        return { episode_mappings: [] };
+    }
+    const episodeMappings = [];
+    for (const row of mappingRows) {
+        if (!row || !row.path) {
+            continue;
+        }
+        episodeMappings.push({
+            path: row.path,
+            tmdb_identifier: row.tmdbIdentifier ? String(row.tmdbIdentifier) : null,
+            tmdb_episode_identifier: row.tmdbEpisodeIdentifier ? String(row.tmdbEpisodeIdentifier) : null,
+            name: row.name || null,
+            episode_number: row.episodeNumber !== undefined && row.episodeNumber !== null ? Number(row.episodeNumber) : null,
+            season_number: row.seasonNumber !== undefined && row.seasonNumber !== null ? Number(row.seasonNumber) : null,
+            air_date: row.airDate || null,
+            overview: row.overview || null,
+            runtime_seconds: row.runtimeSeconds !== undefined && row.runtimeSeconds !== null ? Number(row.runtimeSeconds) : null,
+        });
+    }
+    return { episode_mappings: episodeMappings };
+}

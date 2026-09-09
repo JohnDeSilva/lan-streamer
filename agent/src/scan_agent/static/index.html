@@ -423,6 +423,70 @@
         </div>
     </div>
 
+    <!-- Modal: Manual Metadata Mapper -->
+    <div id="manualMapperModal" class="modal-backdrop">
+        <div class="modal-dialog" style="max-width: 950px;">
+            <div class="modal-header">
+                <h3>Manual Metadata Mapper</h3>
+                <button class="close-btn" data-close="manualMapperModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem;">
+                    Search for a TMDB series and manually map its episodes to local files.
+                </p>
+                <div class="form-row" style="margin-bottom: 0.75rem; flex-wrap: wrap;">
+                    <div class="form-group" style="flex: 3; min-width: 200px;">
+                        <input type="text" id="manualMapperSearchQuery" class="form-control" placeholder="Search TMDB series title...">
+                    </div>
+                    <div class="form-group">
+                        <button id="btnManualMapperSearch" class="btn btn-primary">Search</button>
+                    </div>
+                </div>
+                <div id="manualMapperSearchResults" class="table-container" style="max-height: 200px; overflow-y: auto; margin-bottom: 1rem; display: none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>TMDB ID</th>
+                                <th>Title</th>
+                                <th>Year</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="manualMapperSearchResultsBody"></tbody>
+                    </table>
+                </div>
+                <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <label for="manualMapperSeasonSelect" style="font-size: 0.85rem; font-weight: 600;">Season:</label>
+                        <select id="manualMapperSeasonSelect" class="form-control" style="width: auto; min-width: 140px;"></select>
+                    </div>
+                    <button id="btnManualMapperLoadSeason" class="btn btn-secondary btn-sm">Load Season</button>
+                    <button id="btnManualMapperAddEntry" class="btn btn-secondary btn-sm">+ Add Another TMDB Entry</button>
+                    <span id="manualMapperSelectedLabel" style="font-size: 0.85rem; color: var(--text-muted); margin-left: auto;">No TMDB entries loaded</span>
+                </div>
+                <div class="table-container" style="max-height: 420px; overflow-y: auto;">
+                    <table id="manualMapperTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px; text-align: center;">Status</th>
+                                <th style="min-width: 160px;">TMDB Entry</th>
+                                <th style="min-width: 200px;">Episode # &amp; Title</th>
+                                <th style="min-width: 250px;">Mapped Local File</th>
+                            </tr>
+                        </thead>
+                        <tbody id="manualMapperTableBody">
+                            <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No TMDB episode data loaded.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-close="manualMapperModal">Cancel</button>
+                <button id="btnApplyManualMappings" class="btn btn-primary">Apply Manual Mappings</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="/static/app.js"></script>
 </body>
 </html>
