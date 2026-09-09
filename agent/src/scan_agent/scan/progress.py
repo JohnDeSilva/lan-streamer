@@ -54,7 +54,18 @@ class ProgressBroker:
 
     def publish_log(self, line: str, level: str = "INFO") -> dict[str, Any]:
         """Publish a single log line as a ``scan.log`` event."""
-        return self.publish("scan.log", {"line": line, "message": line, "level": level})
+        resolved_level = level
+        if level == "INFO":
+            upper_line = line.upper()
+            if upper_line.startswith("ERROR:") or " ERROR " in upper_line:
+                resolved_level = "ERROR"
+            elif upper_line.startswith("WARNING:") or " WARNING " in upper_line:
+                resolved_level = "WARNING"
+            elif upper_line.startswith("DEBUG:") or " DEBUG " in upper_line:
+                resolved_level = "DEBUG"
+        return self.publish(
+            "scan.log", {"line": line, "message": line, "level": resolved_level}
+        )
 
     def subscribe(self, subscriber: ProgressSubscriber) -> int:
         """Register *subscriber* and return a subscription handle."""

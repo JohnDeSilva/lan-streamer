@@ -25,6 +25,7 @@ class ConfigUpdate(BaseModel):
     opensubtitles_password: str | None = None
     cache_directory: str | None = None
     log_directory: str | None = None
+    log_level: str | None = None
 
 
 class LibraryWrite(BaseModel):
