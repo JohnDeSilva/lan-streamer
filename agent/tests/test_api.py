@@ -494,6 +494,103 @@ def test_metadata_match_updates_movie(api_app: FastAPI, api_client: TestClient) 
     assert detail["runtime_seconds"] == 120 * 60
 
 
+def test_metadata_tmdb_series_seasons_and_episodes(api_client: TestClient) -> None:
+    seasons_response = api_client.get(
+        "/api/v1/services/metadata/tmdb/series/999/seasons"
+    )
+    assert seasons_response.status_code == 200
+    seasons = seasons_response.json()["seasons"]
+    assert len(seasons) >= 1
+    assert seasons[0]["season_number"] == 1
+
+    episodes_response = api_client.get(
+        "/api/v1/services/metadata/tmdb/series/999/episodes",
+        params={"season_number": 1},
+    )
+    assert episodes_response.status_code == 200
+    episodes = episodes_response.json()["episodes"]
+    assert len(episodes) >= 1
+    assert episodes[0]["name"] == "Pilot"
+
+
+def test_metadata_manual_map_updates_episodes(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    series_identifier = api_client.get("/api/v1/library/series").json()[0]["id"]
+
+    series_detail = api_client.get(f"/api/v1/library/series/{series_identifier}").json()
+    episode_target = series_detail["seasons"][0]["episodes"][0]
+    target_path = episode_target["path"]
+    assert target_path is not None
+
+    mapping_payload = {
+        "episode_mappings": [
+            {
+                "path": target_path,
+                "tmdb_identifier": "999",
+                "tmdb_episode_identifier": "1001",
+                "name": "Manually Mapped Episode",
+                "episode_number": 1,
+                "season_number": 1,
+                "air_date": "2024-01-01",
+                "overview": "Manually mapped overview description",
+                "runtime_seconds": 1800,
+            }
+        ]
+    }
+
+    response = api_client.post(
+        f"/api/v1/services/metadata/series/{series_identifier}/manual-map",
+        json=mapping_payload,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "applied"
+
+    updated_detail = api_client.get(
+        f"/api/v1/library/series/{series_identifier}"
+    ).json()
+    assert updated_detail["locked_metadata"] is True
+    updated_episode = updated_detail["seasons"][0]["episodes"][0]
+    assert updated_episode["name"] == "Manually Mapped Episode"
+    assert updated_episode["overview"] == "Manually mapped overview description"
+    assert updated_episode["runtime_seconds"] == 1800
+
+
+def test_metadata_manual_map_unknown_series_returns_404(
+    api_client: TestClient,
+) -> None:
+    response = api_client.post(
+        "/api/v1/services/metadata/series/999999/manual-map",
+        json={"episode_mappings": []},
+    )
+    assert response.status_code == 404
+
+
+def test_metadata_tmdb_series_seasons_and_episodes_error_cases(
+    api_client: TestClient,
+) -> None:
+    # Invalid non-numeric TMDB identifier for episodes returns 422
+    response_invalid = api_client.get(
+        "/api/v1/services/metadata/tmdb/series/invalid-id/episodes"
+    )
+    assert response_invalid.status_code == 422
+
+    # Unknown series for seasons returns 404 when get_series_by_id returns None
+    from lan_streamer.providers.tmdb import tmdb_client
+
+    original_get_series = tmdb_client.get_series_by_id
+    try:
+        tmdb_client.get_series_by_id = lambda identifier: None
+        response_not_found = api_client.get(
+            "/api/v1/services/metadata/tmdb/series/999999/seasons"
+        )
+        assert response_not_found.status_code == 404
+    finally:
+        tmdb_client.get_series_by_id = original_get_series
+
+
 def test_rename_preview_and_apply(api_app: FastAPI, api_client: TestClient) -> None:
     api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
     _wait_for_idle(api_app)
