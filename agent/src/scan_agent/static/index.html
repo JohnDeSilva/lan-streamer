@@ -16,6 +16,7 @@
             <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
             <button class="nav-tab" data-tab="libraries">Libraries</button>
             <button class="nav-tab" data-tab="scan">Scan Monitor</button>
+            <button class="nav-tab" data-tab="logs">Logs</button>
             <button class="nav-tab" data-tab="browse">Browse</button>
             <button class="nav-tab" data-tab="config">Configuration</button>
         </nav>
@@ -168,23 +169,55 @@
             </div>
         </section>
 
-        <!-- 4. Browse Tab -->
-        <section id="tab-browse" class="tab-pane">
+        <!-- 4. Logs Tab -->
+        <section id="tab-logs" class="tab-pane">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <h2>System & Scanner Logs</h2>
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+                        <input type="checkbox" id="chkAutoScrollLogs" checked> Auto-scroll
+                    </label>
+                    <button id="btnClearLogs" class="btn btn-secondary btn-sm">Clear</button>
+                    <button id="btnRefreshLogs" class="btn btn-secondary btn-sm">Refresh</button>
+                </div>
+            </div>
+            <div class="card">
+                <div id="runningLogConsole" class="log-console" style="height: 520px;">Waiting for logs...</div>
+            </div>
+        </section>
+
+        <!-- 5. Browse Tab -->
+        <section id="tab-browse" class="tab-pane">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem;">
                 <h2>Library Browser</h2>
                 <div style="display: flex; gap: 0.75rem;">
                     <button id="browseTypeSeries" class="btn btn-primary">TV Series</button>
                     <button id="browseTypeMovies" class="btn btn-secondary">Movies</button>
+                    <button id="browseTypeAnimeEpisodes" class="btn btn-secondary">Anime Episodes</button>
                 </div>
             </div>
 
             <div class="card">
-                <div class="form-row">
-                    <div class="form-group" style="flex: 2;">
+                <div class="form-row" style="flex-wrap: wrap;">
+                    <div class="form-group" style="flex: 2; min-width: 200px;">
                         <label for="browseSearch">Search</label>
                         <input type="text" id="browseSearch" class="form-control" placeholder="Filter by title...">
                     </div>
-                    <div class="form-group" style="flex: 1;">
+                    <div class="form-group" style="flex: 1.5; min-width: 160px;">
+                        <label for="browseLibrary">Library</label>
+                        <select id="browseLibrary" class="form-control">
+                            <option value="">All Libraries</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 140px;" id="browseWatchedGroup">
+                        <label for="browseWatched">Watch Status</label>
+                        <select id="browseWatched" class="form-control">
+                            <option value="">All Statuses</option>
+                            <option value="unwatched">Unwatched</option>
+                            <option value="watched">Watched</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 140px;">
                         <label for="browseSort">Sort By</label>
                         <select id="browseSort" class="form-control">
                             <option value="name">Name (A-Z)</option>

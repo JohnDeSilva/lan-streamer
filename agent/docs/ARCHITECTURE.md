@@ -221,11 +221,13 @@ Scanning:
 - `POST /api/v1/scan/cancel`
 - `GET /api/v1/events` (SSE: `scan.progress`, `scan.log`, `scan.finished`)
 - `GET /api/v1/scan/jobs`
+- `GET /api/v1/scan/logs?limit=`
 
 Library browser:
-- `GET /api/v1/library/series?library_id=&query=&sort=`
+- `GET /api/v1/library/series?library_id=&library_type=&query=&sort=`
 - `GET /api/v1/library/series/{series_id}` (+ seasons/episodes nested)
 - `GET /api/v1/library/series/{series_id}/episodes`
+- `GET /api/v1/library/episodes?library_type=&library_id=&query=&watched=&sort=`
 - `GET /api/v1/library/movies?library_id=&query=&sort=`
 - `GET /api/v1/library/movie/{movie_id}`
 

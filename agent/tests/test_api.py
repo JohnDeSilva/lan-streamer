@@ -192,6 +192,45 @@ def test_scan_jobs_and_browse_after_scan(
     assert len(flattened[0]["versions"]) == 2
 
 
+def test_browse_episodes_filter_and_scan_logs(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+
+    all_episodes = api_client.get("/api/v1/library/episodes").json()
+    assert len(all_episodes) == 2
+    assert all_episodes[0]["series_name"] == "Test Show"
+
+    tv_episodes = api_client.get(
+        "/api/v1/library/episodes", params={"library_type": "tv"}
+    ).json()
+    assert len(tv_episodes) == 2
+
+    anime_episodes = api_client.get(
+        "/api/v1/library/episodes", params={"library_type": "anime"}
+    ).json()
+    assert len(anime_episodes) == 0
+
+    query_episodes = api_client.get(
+        "/api/v1/library/episodes", params={"query": "S01E01"}
+    ).json()
+    assert len(query_episodes) == 1
+    assert query_episodes[0]["episode_number"] == 1
+
+    unwatched_episodes = api_client.get(
+        "/api/v1/library/episodes", params={"watched": False}
+    ).json()
+    assert len(unwatched_episodes) == 2
+
+    broker = api_app.state.progress_broker
+    broker.publish_log("Test runner log message", level="INFO")
+
+    logs = api_client.get("/api/v1/scan/logs").json()
+    assert len(logs) >= 1
+    assert any("Test runner log message" in log["message"] for log in logs)
+
+
 def test_library_items_export_endpoint(
     api_app: FastAPI, api_client: TestClient
 ) -> None:
