@@ -135,3 +135,33 @@ def test_scan_jobs_are_recorded(database_engine, agent_config) -> None:
         jobs = list_scan_jobs(session)
         assert len(jobs) == 1
         assert jobs[0]["status"] == "done"
+
+
+def test_batch_scan_continues_when_one_library_fails(
+    database_engine, agent_config, monkeypatch
+) -> None:
+    """If one library fails during a multi-library scan, other libraries must still be scanned."""
+    orchestrator = ScanOrchestrator(agent_config, database_engine, ProgressBroker())
+
+    original_scan_single = orchestrator._scan_single_library
+
+    def flaky_scan_single(library_definition, pass_number, force_refresh):
+        if library_definition["media_type"] == "movie":
+            raise RuntimeError("Simulated failure scanning movie library")
+        return original_scan_single(library_definition, pass_number, force_refresh)
+
+    monkeypatch.setattr(orchestrator, "_scan_single_library", flaky_scan_single)
+
+    orchestrator.start_scan(pass_number=1)
+    status = _wait_for_scan_finish(orchestrator)
+
+    assert status["last_job"]["status"] == "done"
+    import json
+
+    stats = json.loads(status["last_job"]["stats_json"])
+    assert "errors" in stats
+    assert any("movie" in error.lower() for error in stats["errors"])
+
+    with get_session(database_engine) as session:
+        series_list = list_series(session)
+        assert any(entry["folder_name"] == "Test Show" for entry in series_list)

@@ -474,3 +474,96 @@ def test_versions_none_preserves_existing_multi_version_episode(
         assert len(media_paths) == 2
         assert any(path.endswith(".mkv") for path in media_paths)
         assert any(path.endswith(".mp4") for path in media_paths)
+
+
+def test_upsert_library_handles_reassigned_or_duplicate_media_file_paths(
+    database_engine, agent_config, scanned_series_data
+) -> None:
+    """Reassigning a media file path across seasons or duplicate entries must not raise IntegrityError."""
+    payload = _tv_library_payload(agent_config, scanned_series_data)
+    with get_session(database_engine) as session:
+        upsert_library(session, payload)
+
+    # Modify payload so that a file previously belonging to Season 1 is now in Season 2,
+    # and add duplicate version paths to test deduplication.
+    reassigned_data = copy.deepcopy(scanned_series_data)
+    reassigned_data["Test Show"]["seasons"]["Season 02"] = {
+        "name": "Season 2",
+        "episodes": [
+            {
+                "episode_number": 1,
+                "name": "Moved Episode",
+                "path": "/fake/tv/Test Show/Season 01/Test.Show.S01E01.mkv",
+                "versions": [
+                    {"path": "/fake/tv/Test Show/Season 01/Test.Show.S01E01.mkv"},
+                    {
+                        "path": "/fake/tv/Test Show/Season 01/Test.Show.S01E01.mkv"
+                    },  # duplicate in versions
+                ],
+            }
+        ],
+        "metadata": {},
+    }
+
+    with get_session(database_engine) as session:
+        stats = upsert_library(session, {**payload, "items": reassigned_data})
+        assert stats["series"] == 1
+        assert stats["seasons"] == 2
+
+    # Verify that MediaFile uniqueness was maintained and the path exists once
+    with get_session(database_engine) as session:
+        matching_media_files = session.scalars(
+            select(MediaFile).where(
+                MediaFile.path == "/fake/tv/Test Show/Season 01/Test.Show.S01E01.mkv"
+            )
+        ).all()
+        assert len(matching_media_files) == 1
+
+
+def test_upsert_series_isolated_error_does_not_abort_library(
+    database_engine, agent_config, scanned_series_data, monkeypatch
+) -> None:
+    """An unhandled error in one series must not prevent other series in the library from upserting."""
+    import scan_agent.db.repository as repo
+
+    multi_series_data = copy.deepcopy(scanned_series_data)
+    multi_series_data["Good Show"] = {
+        "name": "Good Show",
+        "seasons": {
+            "Season 01": {
+                "name": "Season 1",
+                "episodes": [
+                    {
+                        "episode_number": 1,
+                        "name": "Good Episode",
+                        "path": "/fake/tv/Good Show/Season 01/Good.Show.S01E01.mkv",
+                        "versions": [
+                            {
+                                "path": "/fake/tv/Good Show/Season 01/Good.Show.S01E01.mkv"
+                            }
+                        ],
+                    }
+                ],
+                "metadata": {},
+            }
+        },
+        "metadata": {},
+    }
+
+    original_upsert_seasons = repo._upsert_seasons
+
+    def flaky_upsert_seasons(connection, series, seasons_data):
+        if series.folder_name == "Test Show":
+            raise RuntimeError("Corrupt metadata in Test Show")
+        return original_upsert_seasons(connection, series, seasons_data)
+
+    monkeypatch.setattr(repo, "_upsert_seasons", flaky_upsert_seasons)
+
+    payload = _tv_library_payload(agent_config, multi_series_data)
+    with get_session(database_engine) as session:
+        stats = upsert_library(session, payload)
+        assert stats["series"] >= 1
+
+    with get_session(database_engine) as session:
+        series_list = list_series(session)
+        assert any(entry["folder_name"] == "Good Show" for entry in series_list)

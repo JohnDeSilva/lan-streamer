@@ -202,28 +202,52 @@ class ScanOrchestrator:
                 "unavailable_directories": [],
                 "libraries": 0,
             }
+            library_errors: list[str] = []
             for library_definition in target_libraries:
                 if self._is_interrupted.is_set():
                     logger.info("Scan job %s interrupted; stopping", job_id)
                     break
-                library_stats = self._scan_single_library(
-                    library_definition, pass_number, force_refresh
-                )
-                for key in (
-                    "series",
-                    "seasons",
-                    "episodes",
-                    "movies",
-                    "media_files",
-                    "missing_files",
-                ):
-                    aggregate_stats[key] += int(library_stats.get(key, 0))
-                aggregate_stats["unavailable_directories"].extend(
-                    library_stats.get("unavailable_directories", [])
-                )
-                aggregate_stats["libraries"] += 1
+                library_name = str(library_definition.get("name", "Unknown"))
+                try:
+                    library_stats = self._scan_single_library(
+                        library_definition, pass_number, force_refresh
+                    )
+                    for key in (
+                        "series",
+                        "seasons",
+                        "episodes",
+                        "movies",
+                        "media_files",
+                        "missing_files",
+                    ):
+                        aggregate_stats[key] += int(library_stats.get(key, 0))
+                    aggregate_stats["unavailable_directories"].extend(
+                        library_stats.get("unavailable_directories", [])
+                    )
+                    aggregate_stats["libraries"] += 1
+                except Exception as library_error:
+                    logger.exception(
+                        "Scan of library '%s' failed during job %s",
+                        library_name,
+                        job_id,
+                    )
+                    self._progress_broker.publish_log(
+                        f"ERROR: Scan of library '{library_name}' failed: {library_error}"
+                    )
+                    library_errors.append(f"{library_name}: {library_error}")
+
+            if library_errors:
+                aggregate_stats["errors"] = library_errors
+
             if self._is_interrupted.is_set():
                 self._mark_job_finished(job_id, "cancelled", aggregate_stats)
+            elif library_errors and aggregate_stats["libraries"] == 0:
+                self._mark_job_failed(
+                    job_id,
+                    RuntimeError(
+                        f"All target libraries failed: {'; '.join(library_errors)}"
+                    ),
+                )
             else:
                 self._mark_job_finished(job_id, "done", aggregate_stats)
         except Exception as error:
