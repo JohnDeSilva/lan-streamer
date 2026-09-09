@@ -97,3 +97,34 @@ class ProgressBroker:
         """Return the highest sequence number published so far."""
         with self._lock:
             return self._sequence
+
+    def attach_to_logger(self, target_logger: logging.Logger) -> BrokerLogHandler:
+        """Attach a BrokerLogHandler to target_logger if not already attached."""
+        for existing_handler in target_logger.handlers:
+            if (
+                isinstance(existing_handler, BrokerLogHandler)
+                and existing_handler._broker is self
+            ):
+                return existing_handler
+        handler = BrokerLogHandler(self)
+        target_logger.addHandler(handler)
+        return handler
+
+
+class BrokerLogHandler(logging.Handler):
+    """Forward formatted log records from python logging to the progress broker."""
+
+    def __init__(self, broker: ProgressBroker) -> None:
+        """Initialise the handler at NOTSET level with a compact formatter."""
+        super().__init__(level=logging.NOTSET)
+        self._broker = broker
+        self.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Publish the formatted record as a scan.log event."""
+        try:
+            self._broker.publish_log(self.format(record), level=record.levelname)
+        except ValueError, TypeError, RuntimeError:
+            self.handleError(record)

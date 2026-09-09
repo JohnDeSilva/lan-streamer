@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -24,6 +26,73 @@ from scan_agent.scan.progress import ProgressBroker
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+http_access_logger = logging.getLogger("scan_agent.http")
+
+
+class HttpAccessLoggingMiddleware:
+    """ASGI middleware to log HTTP and HTTPS requests."""
+
+    def __init__(self, application: ASGIApp) -> None:
+        self.application = application
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.application(scope, receive, send)
+            return
+
+        start_time = time.perf_counter()
+        status_code = 200
+
+        async def send_wrapper(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message.get("status", 200)
+            await send(message)
+
+        try:
+            await self.application(scope, receive, send_wrapper)
+        finally:
+            duration_milliseconds = (time.perf_counter() - start_time) * 1000.0
+            method = scope.get("method", "GET")
+            path = scope.get("path", "/")
+
+            raw_headers = scope.get("headers", [])
+            headers_dictionary = {
+                header_name.decode("latin1").lower(): header_value.decode("latin1")
+                for header_name, header_value in raw_headers
+            }
+
+            forwarded_protocol = headers_dictionary.get("x-forwarded-proto")
+            if forwarded_protocol:
+                protocol = forwarded_protocol.split(",")[0].strip().upper()
+            else:
+                protocol = scope.get("scheme", "http").upper()
+
+            forwarded_client_address = headers_dictionary.get("x-forwarded-for")
+            if forwarded_client_address:
+                client_address = forwarded_client_address.split(",")[0].strip()
+            elif scope.get("client"):
+                client_address = scope["client"][0]
+            else:
+                client_address = "unknown"
+
+            if path not in ("/api/v1/scan/logs", "/api/v1/events"):
+                is_static_asset = path.startswith("/static/")
+                log_level = logging.DEBUG if is_static_asset else logging.INFO
+
+                http_access_logger.log(
+                    log_level,
+                    '%s - "%s %s %s" %d (%.1fms)',
+                    client_address,
+                    method,
+                    path,
+                    protocol,
+                    status_code,
+                    duration_milliseconds,
+                )
+
 
 _API_PREFIX = "/api/v1"
 
@@ -46,6 +115,9 @@ def create_app(
     install_into_lan_streamer(resolved_config)
 
     progress_broker = ProgressBroker()
+    progress_broker.attach_to_logger(logging.getLogger("scan_agent"))
+    progress_broker.attach_to_logger(logging.getLogger("lan_streamer"))
+
     orchestrator = ScanOrchestrator(resolved_config, resolved_engine, progress_broker)
 
     application = FastAPI(
@@ -54,6 +126,7 @@ def create_app(
         description="Remote scanning, metadata resolution, and library database "
         "for LAN Streamer.",
     )
+    application.add_middleware(HttpAccessLoggingMiddleware)
     application.state.agent_config = resolved_config
     application.state.engine = resolved_engine
     application.state.progress_broker = progress_broker

@@ -379,6 +379,48 @@ def test_library_items_export_endpoint(
     not_found = api_client.get("/api/v1/libraries/nonexistent_lib/items")
     assert not_found.status_code == 404
 
+
+def test_http_request_logging_middleware(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    health_response = api_client.get(
+        "/api/v1/health", headers={"X-Forwarded-Proto": "https"}
+    )
+    assert health_response.status_code == 200
+
+    logs = api_client.get("/api/v1/scan/logs", params={"level": "ALL"}).json()
+    log_messages = [log["message"] for log in logs]
+    assert any("GET /api/v1/health HTTPS" in message for message in log_messages)
+
+
+def test_desktop_sync_library_items_emits_log(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+
+    items_response = api_client.get("/api/v1/libraries/tv/items")
+    assert items_response.status_code == 200
+
+    logs = api_client.get("/api/v1/scan/logs", params={"level": "INFO"}).json()
+    log_messages = [log["message"] for log in logs]
+    assert any(
+        "Desktop sync" in message and "tv" in message for message in log_messages
+    )
+
+
+def test_logger_forwards_to_broker_outside_scan(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    import logging
+
+    agent_logger = logging.getLogger("scan_agent.test")
+    agent_logger.info("Out of band agent event message")
+
+    logs = api_client.get("/api/v1/scan/logs", params={"level": "INFO"}).json()
+    log_messages = [log["message"] for log in logs]
+    assert any("Out of band agent event message" in message for message in log_messages)
+
     # Configured but unscanned library should return empty dict rather than 404
     empty_response = api_client.get("/api/v1/libraries/movie/items")
     assert empty_response.status_code == 200

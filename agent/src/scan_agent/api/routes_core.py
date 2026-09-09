@@ -190,6 +190,14 @@ def export_library_items(
         library_name = agent_config.libraries[library_identifier].get(
             "name", library_identifier
         )
+    forwarded_client = request.headers.get("x-forwarded-for")
+    if forwarded_client:
+        client_address = forwarded_client.split(",")[0].strip()
+    elif request.client and request.client.host:
+        client_address = request.client.host
+    else:
+        client_address = "unknown"
+
     library_row = get_library(session, library_name)
     if library_row is None and library_identifier != library_name:
         library_row = get_library(session, library_identifier)
@@ -198,6 +206,19 @@ def export_library_items(
             configured_library.get("name") == library_name
             for configured_library in agent_config.libraries.values()
         ):
+            logger.info(
+                "Desktop sync: client '%s' requested unscanned library '%s' (served 0 items)",
+                client_address,
+                library_name,
+            )
             return {}
         raise HTTPException(status_code=404, detail="Unknown library identifier")
-    return load_library_dict(session, library_row.id)
+    items = load_library_dict(session, library_row.id)
+    logger.info(
+        "Desktop sync: exporting %d items for library '%s' (%s) to client '%s'",
+        len(items),
+        library_name,
+        library_identifier,
+        client_address,
+    )
+    return items
