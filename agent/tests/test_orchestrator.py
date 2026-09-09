@@ -165,3 +165,65 @@ def test_batch_scan_continues_when_one_library_fails(
     with get_session(database_engine) as session:
         series_list = list_series(session)
         assert any(entry["folder_name"] == "Test Show" for entry in series_list)
+
+
+def test_broker_log_handler_passes_record_level() -> None:
+    import logging
+
+    from scan_agent.scan.orchestrator import _BrokerLogHandler
+
+    broker = ProgressBroker()
+    received_logs: list[dict] = []
+    broker.subscribe(
+        lambda event: (
+            received_logs.append(event) if event["event"] == "scan.log" else None
+        )
+    )
+
+    handler = _BrokerLogHandler(broker)
+    test_logger = logging.getLogger("test_orchestrator_logger")
+    test_logger.addHandler(handler)
+    test_logger.setLevel(logging.DEBUG)
+
+    test_logger.debug("Test debug record")
+    test_logger.info("Test info record")
+    test_logger.warning("Test warning record")
+    test_logger.error("Test error record")
+
+    test_logger.removeHandler(handler)
+
+    assert len(received_logs) == 4
+    levels = [entry["payload"]["level"] for entry in received_logs]
+    assert levels == ["DEBUG", "INFO", "WARNING", "ERROR"]
+
+
+def test_scan_ignores_folders_with_no_episode_files(
+    database_engine, agent_config
+) -> None:
+    from pathlib import Path
+
+    tv_root_path = Path(agent_config.libraries["tv"]["root_path"])
+    empty_series_directory = tv_root_path / "Empty Show Folder"
+    empty_series_directory.mkdir(parents=True)
+
+    empty_season_directory = tv_root_path / "Empty Season Folder" / "Season 01"
+    empty_season_directory.mkdir(parents=True)
+
+    text_only_directory = tv_root_path / "Text Only Folder"
+    text_only_directory.mkdir(parents=True)
+    (text_only_directory / "notes.txt").write_text("not a video")
+
+    orchestrator = ScanOrchestrator(agent_config, database_engine, ProgressBroker())
+    orchestrator.start_scan(library_identifier="tv", pass_number=1)
+    status = _wait_for_scan_finish(orchestrator)
+
+    assert status["last_job"]["status"] == "done"
+
+    with get_session(database_engine) as session:
+        series_list = list_series(session)
+        folder_names = [series["folder_name"] for series in series_list]
+        assert "Test Show" in folder_names
+        assert "Empty Show Folder" not in folder_names
+        assert "Empty Season Folder" not in folder_names
+        assert "Text Only Folder" not in folder_names
+        assert len(series_list) == 1

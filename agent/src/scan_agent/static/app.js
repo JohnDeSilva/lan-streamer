@@ -2,7 +2,7 @@
  * Main Single Page Application controller for LAN Streamer Scan Agent.
  */
 import { api } from "./api.js";
-import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams, filterLibrariesForBrowseType, matchEpisodesSequentially, buildManualMappingPayload, resolveLogLevel, isLogLevelVisible } from "./logic.js";
+import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams, filterLibrariesForBrowseType, matchEpisodesSequentially, buildManualMappingPayload, resolveLogLevel, isLogLevelVisible, filterSeriesWithEpisodes } from "./logic.js";
 
 
 // State
@@ -404,12 +404,13 @@ async function loadBrowse() {
             const parameters = buildBrowseParams(currentBrowseType, query, libraryIdentifier, sort);
             const items = await api.listSeries(parameters);
             grid.innerHTML = "";
-            if (items.length === 0) {
+            const filteredItems = filterSeriesWithEpisodes(items);
+            if (filteredItems.length === 0) {
                 const label = currentBrowseType === "anime" ? "anime" : "TV series";
                 grid.innerHTML = `<div style="color: var(--text-secondary); padding: 1rem;">No ${label} found. Run a library scan!</div>`;
                 return;
             }
-            items.forEach((item) => {
+            filteredItems.forEach((item) => {
                 const card = document.createElement("div");
                 card.className = "media-card";
                 const posterUrl = getPosterUrl(item.poster_path);
