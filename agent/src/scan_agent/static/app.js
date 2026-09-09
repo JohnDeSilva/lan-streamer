@@ -570,7 +570,7 @@ async function applyTmdbMatch(tmdbId) {
     try {
         await api.matchMetadata(tmdbTargetItem.mediaType, tmdbTargetItem.mediaId, tmdbId);
         closeModal("tmdbMatchModal");
-        showAlert("Metadata matched! Run a rescan to fetch refreshed episodes/details.", "success");
+        showAlert("Metadata matched and episodes refreshed!", "success");
         if (currentDetailItem) {
             if (currentDetailItem.mediaType === "series") {
                 showSeriesDetail(currentDetailItem.id);

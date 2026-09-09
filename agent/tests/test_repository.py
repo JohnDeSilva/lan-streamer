@@ -10,6 +10,7 @@ from sqlalchemy import select
 from scan_agent.db.connection import get_session
 from scan_agent.db.models import Episode, MediaFile, Movie, Series
 from scan_agent.db.repository import (
+    _sync_series_tmdb_fallback,
     count_library_items,
     get_library,
     get_movie,
@@ -21,6 +22,8 @@ from scan_agent.db.repository import (
     load_library_dict,
     preserve_live_watch_state,
     record_missing_files,
+    set_movie_metadata_match,
+    set_series_metadata_match,
     upsert_library,
     upsert_series_scan,
 )
@@ -685,3 +688,102 @@ def test_list_episodes_filter_and_sort(
         assert (
             len(list_episodes(session, library_type="anime", sort="air_date_desc")) == 2
         )
+
+
+def test_set_metadata_match_not_found(database_engine) -> None:
+    with get_session(database_engine) as session:
+        assert set_series_metadata_match(session, 999999, "100", {"name": "X"}) is None
+        assert set_movie_metadata_match(session, 999999, "200", {"name": "Y"}) is None
+
+
+def test_set_series_metadata_match_fallback_sync(
+    database_engine, agent_config, scanned_series_data, tmdb_mock
+) -> None:
+    payload = _tv_library_payload(agent_config, scanned_series_data)
+    with get_session(database_engine) as session:
+        upsert_library(session, payload)
+        series_row = session.scalars(select(Series)).first()
+        assert series_row is not None
+        series_identifier = series_row.id
+
+        # Point path and folder_name to nonexistent so scanner pipeline falls back to in-memory sync
+        series_row.path = "/nonexistent/path/for/series"
+        series_row.folder_name = "Nonexistent Show"
+        session.flush()
+
+        result = set_series_metadata_match(
+            session,
+            series_identifier,
+            "100",
+            {
+                "name": "Fallback Test Show",
+                "overview": "Fallback overview",
+                "poster_path": "/fallback_poster.jpg",
+                "year": 2024,
+            },
+            tmdb_client=tmdb_mock,
+        )
+        assert result is not None
+        assert result["name"] == "Fallback Test Show"
+        assert result["locked_metadata"] is True
+
+        updated_series = session.get(Series, series_identifier)
+        assert updated_series is not None
+        assert updated_series.locked_metadata is True
+        episodes_by_number = {
+            episode.episode_number: episode.name
+            for season in updated_series.seasons
+            for episode in season.episodes
+        }
+        assert episodes_by_number[1] == "Pilot"
+        assert episodes_by_number[2] == "Second"
+
+
+def test_sync_series_tmdb_fallback_edge_cases(tmdb_mock) -> None:
+    series_record = {
+        "name": "Show",
+        "seasons": {
+            "Specials": {
+                "metadata": {},
+                "episodes": [
+                    {"name": "Show Special S00E01", "path": "/media/special1.mkv"},
+                    {"name": "Behind The Scenes", "path": "/media/bts.mkv"},
+                ],
+            },
+            "Invalid Season": {
+                "metadata": {},
+                "episodes": [],
+            },
+        },
+    }
+    special_episodes = [
+        {
+            "id": 10,
+            "episode_number": 1,
+            "name": "Special 1",
+            "air_date": "2024-01-01",
+            "runtime": 15,
+        },
+        {
+            "id": 11,
+            "episode_number": 2,
+            "name": "Behind The Scenes",
+            "air_date": "2024-01-02",
+            "runtime": 20,
+        },
+    ]
+    tmdb_mock.get_episodes.side_effect = lambda identifier, season_number: (
+        special_episodes if season_number == 0 else []
+    )
+
+    synced = _sync_series_tmdb_fallback(series_record, "100", tmdb_mock)
+    specials = synced["seasons"]["Specials"]["episodes"]
+    assert specials[0]["name"] == "Special 1"
+    assert specials[0]["episode_number"] == 1
+    assert specials[1]["name"] == "Behind The Scenes"
+    assert specials[1]["episode_number"] == 2
+
+    # Test error in client.get_episodes handled gracefully
+    tmdb_mock.get_episodes.side_effect = RuntimeError("TMDB error")
+    synced_error = _sync_series_tmdb_fallback(series_record, "100", tmdb_mock)
+    assert synced_error is not None
