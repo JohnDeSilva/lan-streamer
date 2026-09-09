@@ -174,8 +174,9 @@ def _apply_episode_fields(
         "tmdb_number"
     )
     episode.tmdb_number = episode_data.get("tmdb_number")
-    if episode_data.get("name"):
-        episode.name = episode_data.get("name")
+    target_name = episode_data.get("tmdb_name") or episode_data.get("name")
+    if target_name:
+        episode.name = target_name
     if episode_data.get("overview") is not None:
         episode.overview = episode_data.get("overview")
 
@@ -1057,6 +1058,7 @@ def _episode_to_scanner_dict(episode: Episode) -> dict[str, Any]:
     primary_path = episode.path or (versions[0]["path"] if versions else None)
     return {
         "name": episode.name,
+        "overview": episode.overview,
         "path": primary_path,
         "episode_number": episode.episode_number,
         "jellyfin_id": None,
@@ -1424,23 +1426,149 @@ def add_subtitle(
     return subtitle_to_dict(subtitle)
 
 
+def _sync_series_tmdb_fallback(
+    series_record: dict[str, Any],
+    tmdb_identifier: str,
+    tmdb_client: Any,
+) -> dict[str, Any]:
+    """Fallback in-memory synchronization matching episode dictionaries against TMDB.
+
+    Used when the series directory cannot be resolved or the scanner pipeline fails.
+    """
+    import copy
+
+    result_record = copy.deepcopy(series_record)
+    seasons_dictionary: dict[str, Any] = result_record.get("seasons", {})
+
+    for season_folder_name, season_data_dictionary in seasons_dictionary.items():
+        if season_folder_name.lower() == "specials":
+            target_season_number: int = 0
+        else:
+            parsed_season_match = re.search(r"\d+", season_folder_name)
+            target_season_number = (
+                int(parsed_season_match.group()) if parsed_season_match else -1
+            )
+
+        if target_season_number < 0:
+            continue
+
+        try:
+            fetched_episodes_list = tmdb_client.get_episodes(
+                tmdb_identifier, target_season_number
+            )
+            if not isinstance(fetched_episodes_list, list):
+                fetched_episodes_list = []
+        except Exception:
+            logger.exception(
+                "Failed to fetch TMDB episodes for season %s of series %s",
+                target_season_number,
+                tmdb_identifier,
+            )
+            fetched_episodes_list = []
+
+        if not fetched_episodes_list:
+            continue
+
+        for episode_item_dictionary in season_data_dictionary.get("episodes", []):
+            episode_filename: str = str(
+                episode_item_dictionary.get("name")
+                or Path(str(episode_item_dictionary.get("path", ""))).name
+            )
+            matched_tmdb_episode: dict[str, Any] | None = None
+
+            episode_number_match = re.search(r"[Ss]\d+[Ee](\d+)", episode_filename)
+            if episode_number_match:
+                target_episode_number: int = int(episode_number_match.group(1))
+                for candidate_episode in fetched_episodes_list:
+                    if candidate_episode.get("episode_number") == target_episode_number:
+                        matched_tmdb_episode = candidate_episode
+                        break
+            elif episode_item_dictionary.get("episode_number") is not None:
+                target_episode_number = int(episode_item_dictionary["episode_number"])
+                for candidate_episode in fetched_episodes_list:
+                    if candidate_episode.get("episode_number") == target_episode_number:
+                        matched_tmdb_episode = candidate_episode
+                        break
+
+            if matched_tmdb_episode is None:
+                stem_lower: str = Path(episode_filename).stem.lower()
+                for candidate_episode in fetched_episodes_list:
+                    candidate_name: str = str(
+                        candidate_episode.get("name") or ""
+                    ).lower()
+                    if candidate_name and candidate_name in stem_lower:
+                        matched_tmdb_episode = candidate_episode
+                        break
+
+            if matched_tmdb_episode:
+                matched_identifier_string: str = str(matched_tmdb_episode.get("id", ""))
+                episode_item_dictionary["tmdb_identifier"] = matched_identifier_string
+                episode_item_dictionary["tmdb_episode_identifier"] = (
+                    matched_identifier_string
+                )
+                if matched_tmdb_episode.get("name"):
+                    episode_item_dictionary["name"] = matched_tmdb_episode["name"]
+                    episode_item_dictionary["tmdb_name"] = matched_tmdb_episode["name"]
+                if matched_tmdb_episode.get("episode_number") is not None:
+                    episode_item_dictionary["episode_number"] = matched_tmdb_episode[
+                        "episode_number"
+                    ]
+                    episode_item_dictionary["tmdb_number"] = matched_tmdb_episode[
+                        "episode_number"
+                    ]
+                if matched_tmdb_episode.get("air_date"):
+                    episode_item_dictionary["air_date"] = matched_tmdb_episode[
+                        "air_date"
+                    ]
+                if matched_tmdb_episode.get("runtime"):
+                    episode_item_dictionary["runtime"] = matched_tmdb_episode["runtime"]
+                if matched_tmdb_episode.get("overview") is not None:
+                    episode_item_dictionary["overview"] = matched_tmdb_episode[
+                        "overview"
+                    ]
+
+        try:
+            from lan_streamer.scanner.pass2_metadata import (
+                _create_tmdb_placeholder_episodes,
+            )
+
+            season_metadata = season_data_dictionary.get("metadata", {})
+            placeholders = _create_tmdb_placeholder_episodes(
+                fetched_episodes_list,
+                season_data_dictionary.get("episodes", []),
+                season_folder_name,
+                season_metadata,
+                show_future_episodes=True,
+            )
+            season_data_dictionary["episodes"].extend(placeholders)
+        except ImportError, AttributeError, ValueError, KeyError, RuntimeError:
+            logger.debug(
+                "Could not create placeholder episodes in fallback sync for season %s",
+                season_folder_name,
+            )
+
+    return result_record
+
+
 def set_series_metadata_match(
     connection: Session,
     series_identifier: int,
     tmdb_identifier: str,
     enrichment: dict[str, Any],
+    tmdb_client: Any = None,
+    tmdb_details: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    """Apply a manual TMDB match to a series row.
+    """Apply a manual TMDB match to a series row and synchronize all episodes.
 
-    Locks are cleared (`locked_metadata=False`) so the next forced library
-    scan re-resolves episode metadata from TMDB for the freshly matched
-    series.
+    Matches desktop behavior: stubs are re-discovered and matched against the
+    fresh TMDB metadata so that correct episode names replace any previous names.
+    The series metadata is locked upon completion.
     """
     series = connection.get(Series, series_identifier)
     if series is None:
         return None
+
     series.tmdb_identifier = tmdb_identifier
-    series.locked_metadata = False
     series.name = enrichment.get("name", series.name)
     series.overview = enrichment.get("overview", series.overview)
     series.poster_path = enrichment.get("poster_path", series.poster_path)
@@ -1449,6 +1577,104 @@ def set_series_metadata_match(
     series.status = enrichment.get("status", series.status) or series.status
     series.air_date_first = enrichment.get("air_date_first", series.air_date_first)
     series.air_date_last = enrichment.get("air_date_last", series.air_date_last)
+
+    if tmdb_client is None:
+        try:
+            from lan_streamer.providers.tmdb import tmdb_client as default_tmdb_client
+
+            tmdb_client = default_tmdb_client
+        except ImportError, AttributeError:
+            tmdb_client = None
+
+    tmdb_series_data: dict[str, Any] | None = tmdb_details
+    if tmdb_series_data is None and tmdb_client is not None:
+        try:
+            tmdb_series_data = tmdb_client.get_series_by_id(tmdb_identifier)
+        except Exception:
+            logger.exception(
+                "Failed to fetch TMDB series data for series_id=%s tmdb_identifier=%s",
+                series_identifier,
+                tmdb_identifier,
+            )
+            tmdb_series_data = None
+
+    series_record = _series_to_scanner_dict(series)
+    target_metadata = series_record.get("metadata", series_record)
+    target_metadata["locked_metadata"] = False
+    target_metadata.pop("tmdb_episode_group_id", None)
+    for _season_name, season_data in list(series_record.get("seasons", {}).items()):
+        season_data.get("metadata", {}).pop("tmdb_identifier", None)
+        filtered_episodes: list[dict[str, Any]] = []
+        for single_episode in season_data.get("episodes", []):
+            if single_episode.get("path"):
+                for field_key in [
+                    "tmdb_name",
+                    "tmdb_identifier",
+                    "tmdb_episode_identifier",
+                    "tmdb_number",
+                    "air_date",
+                    "runtime",
+                ]:
+                    single_episode.pop(field_key, None)
+                filtered_episodes.append(single_episode)
+        season_data["episodes"] = filtered_episodes
+
+    series_directory: Path | None = None
+    if series.path and Path(series.path).is_dir():
+        series_directory = Path(series.path)
+    elif series.library and series.library.root_path:
+        candidate_directory = Path(series.library.root_path) / series.folder_name
+        if candidate_directory.is_dir():
+            series_directory = candidate_directory
+
+    synced_series_data: dict[str, Any] | None = None
+    if series_directory is not None and tmdb_series_data is not None:
+        try:
+            from lan_streamer.scanner.pass1_file_discovery import scan_series_pass1
+            from lan_streamer.scanner.pass2_metadata import scan_series_pass2
+            from lan_streamer.services.metadata_updates import clean_series_data
+
+            pass1_result = scan_series_pass1(
+                series_directory,
+                existing_series_data=series_record,
+                force_refresh=True,
+            )
+            if pass1_result is not None:
+                pass2_result = scan_series_pass2(
+                    series_directory,
+                    existing_series_data=pass1_result,
+                    tmdb_series=tmdb_series_data,
+                    force_refresh=True,
+                    single_item_refresh=True,
+                    show_future_episodes=True,
+                )
+                if pass2_result is not None:
+                    synced_series_data = clean_series_data(pass2_result) or pass2_result
+        except Exception:
+            logger.exception(
+                "Scanner pipeline execution failed for series %s; attempting fallback",
+                series.folder_name,
+            )
+            synced_series_data = None
+
+    if synced_series_data is None and tmdb_client is not None:
+        synced_series_data = _sync_series_tmdb_fallback(
+            series_record, tmdb_identifier, tmdb_client
+        )
+
+    if synced_series_data is not None:
+        _upsert_seasons(connection, series, synced_series_data.get("seasons", {}))
+        synced_metadata = synced_series_data.get("metadata", {})
+        if synced_metadata.get("name") and not enrichment.get("name"):
+            series.name = synced_metadata["name"]
+        if synced_metadata.get("overview") and not enrichment.get("overview"):
+            series.overview = synced_metadata["overview"]
+        if synced_metadata.get("poster_path") and not enrichment.get("poster_path"):
+            series.poster_path = synced_metadata["poster_path"]
+        if synced_metadata.get("backdrop_path") and not enrichment.get("backdrop_path"):
+            series.backdrop_path = synced_metadata["backdrop_path"]
+
+    series.locked_metadata = True
     connection.flush()
     logger.info(
         "Applied series metadata match series_id=%s tmdb_identifier=%s",
@@ -1469,7 +1695,7 @@ def set_movie_metadata_match(
     if movie is None:
         return None
     movie.tmdb_identifier = tmdb_identifier
-    movie.locked_metadata = False
+    movie.locked_metadata = True
     movie.name = enrichment.get("name", movie.name)
     movie.overview = enrichment.get("overview", movie.overview)
     movie.poster_path = enrichment.get("poster_path", movie.poster_path)

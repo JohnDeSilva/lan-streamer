@@ -372,19 +372,36 @@ def test_metadata_match_updates_series(
     _wait_for_idle(api_app)
     series_identifier = api_client.get("/api/v1/library/series").json()[0]["id"]
 
+    # Before match, episode names are from file discovery stubs
+    initial_detail = api_client.get(
+        f"/api/v1/library/series/{series_identifier}"
+    ).json()
+    assert initial_detail["seasons"][0]["episodes"][0]["name"] != "Pilot"
+
     response = api_client.post(
         f"/api/v1/services/metadata/series/{series_identifier}/match",
         json={"tmdb_identifier": "999"},
     )
     assert response.status_code == 202
-    assert response.json()["rescan_required"] is True
+    assert response.json()["rescan_required"] is False
     assert response.json()["media"]["tmdb_identifier"] == "999"
 
     detail = api_client.get(f"/api/v1/library/series/{series_identifier}").json()
     assert detail["tmdb_identifier"] == "999"
-    assert detail["locked_metadata"] is False
+    assert detail["locked_metadata"] is True
     assert detail["name"] == "Test Show"
     assert detail["year"] == 2024
+
+    # Assert episodes have their names updated to TMDB episode names
+    assert len(detail["seasons"]) >= 1
+    season_one = detail["seasons"][0]
+    episodes = season_one["episodes"]
+    assert len(episodes) >= 2
+    episode_by_number = {episode["episode_number"]: episode for episode in episodes}
+    assert episode_by_number[1]["name"] == "Pilot"
+    assert episode_by_number[2]["name"] == "Second"
+    # Verify versions are preserved on episode 1 (which had two files: .mkv and .mp4)
+    assert len(episode_by_number[1]["versions"]) == 2
 
     # Also test "tv" alias in path
     response_tv_match = api_client.post(
@@ -392,6 +409,7 @@ def test_metadata_match_updates_series(
         json={"tmdb_identifier": "888"},
     )
     assert response_tv_match.status_code == 202
+    assert response_tv_match.json()["rescan_required"] is False
     assert response_tv_match.json()["media"]["tmdb_identifier"] == "888"
 
 
@@ -403,6 +421,32 @@ def test_metadata_match_unknown_media_returns_404(
         json={"tmdb_identifier": "999"},
     )
     assert response.status_code == 404
+
+    response_movie = api_client.post(
+        "/api/v1/services/metadata/movie/424242/match",
+        json={"tmdb_identifier": "999"},
+    )
+    assert response_movie.status_code == 404
+
+
+def test_metadata_match_updates_movie(api_app: FastAPI, api_client: TestClient) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "movie", "pass_number": 1})
+    _wait_for_idle(api_app)
+    movie_identifier = api_client.get("/api/v1/library/movies").json()[0]["id"]
+
+    response = api_client.post(
+        f"/api/v1/services/metadata/movie/{movie_identifier}/match",
+        json={"tmdb_identifier": "200"},
+    )
+    assert response.status_code == 202
+    assert response.json()["rescan_required"] is False
+    assert response.json()["media"]["tmdb_identifier"] == "200"
+
+    detail = api_client.get(f"/api/v1/library/movies/{movie_identifier}").json()
+    assert detail["tmdb_identifier"] == "200"
+    assert detail["locked_metadata"] is True
+    assert detail["name"] == "Some Movie"
+    assert detail["runtime_seconds"] == 120 * 60
 
 
 def test_rename_preview_and_apply(api_app: FastAPI, api_client: TestClient) -> None:
