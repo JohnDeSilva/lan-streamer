@@ -20,6 +20,7 @@ from scan_agent.db.repository import (
     upsert_library,
 )
 from scan_agent.db.serializers import scan_job_to_dict
+from scan_agent.scan.progress import BrokerLogHandler
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -28,24 +29,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
-class _BrokerLogHandler(logging.Handler):
-    """Forward formatted log records from the scanner to the progress broker."""
-
-    def __init__(self, broker: ProgressBroker) -> None:
-        """Initialise the handler at NOTSET level with a compact formatter."""
-        super().__init__(level=logging.NOTSET)
-        self._broker = broker
-        self.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-        )
-
-    def emit(self, record: logging.LogRecord) -> None:
-        """Publish the formatted record as a ``scan.log`` event."""
-        try:
-            self._broker.publish_log(self.format(record), level=record.levelname)
-        except ValueError, TypeError, RuntimeError:
-            self.handleError(record)
+_BrokerLogHandler = BrokerLogHandler
 
 
 def _series_has_episode_files(series_data: dict[str, Any]) -> bool:
@@ -189,11 +173,25 @@ class ScanOrchestrator:
     ) -> None:
         """Execute the scan pipeline for every target library."""
         self._mark_job_running(job_id)
-        log_handler = _BrokerLogHandler(self._progress_broker)
         lan_streamer_logger = logging.getLogger("lan_streamer")
         scan_agent_logger = logging.getLogger("scan_agent")
-        lan_streamer_logger.addHandler(log_handler)
-        scan_agent_logger.addHandler(log_handler)
+        lan_streamer_has_handler = any(
+            isinstance(handler, _BrokerLogHandler)
+            and getattr(handler, "_broker", None) is self._progress_broker
+            for handler in lan_streamer_logger.handlers
+        )
+        scan_agent_has_handler = any(
+            isinstance(handler, _BrokerLogHandler)
+            and getattr(handler, "_broker", None) is self._progress_broker
+            for handler in scan_agent_logger.handlers
+        )
+        temporary_log_handler: _BrokerLogHandler | None = None
+        if not lan_streamer_has_handler or not scan_agent_has_handler:
+            temporary_log_handler = _BrokerLogHandler(self._progress_broker)
+            if not lan_streamer_has_handler:
+                lan_streamer_logger.addHandler(temporary_log_handler)
+            if not scan_agent_has_handler:
+                scan_agent_logger.addHandler(temporary_log_handler)
         target_log_level_name = getattr(self._agent_config, "log_level", "INFO").upper()
         target_log_level = getattr(logging, target_log_level_name, logging.INFO)
         lan_streamer_logger.setLevel(target_log_level)
@@ -272,8 +270,10 @@ class ScanOrchestrator:
             logger.exception("Scan job %s failed", job_id)
             self._mark_job_failed(job_id, error)
         finally:
-            logging.getLogger("lan_streamer").removeHandler(log_handler)
-            logging.getLogger("scan_agent").removeHandler(log_handler)
+            logger.info("Scan job %s finished", job_id)
+            if temporary_log_handler is not None:
+                logging.getLogger("lan_streamer").removeHandler(temporary_log_handler)
+                logging.getLogger("scan_agent").removeHandler(temporary_log_handler)
             with self._state_lock:
                 self._running_job_id = None
                 self._last_job_id = job_id
@@ -281,7 +281,6 @@ class ScanOrchestrator:
                 "scan.finished",
                 {"job_id": job_id, "status": self._load_job_status(job_id)},
             )
-            logger.info("Scan job %s finished", job_id)
 
     def _scan_single_library(
         self,
