@@ -708,6 +708,8 @@ def list_series(
         library = get_library(connection, library_identifier)
         if library is None:
             return []
+        if library_type is not None and library.media_type != library_type:
+            return []
         statement = statement.where(Series.library_id == library.id)
     elif library_type is not None:
         statement = statement.join(Series.library).where(

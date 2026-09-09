@@ -2,7 +2,7 @@
  * Main Single Page Application controller for LAN Streamer Scan Agent.
  */
 import { api } from "./api.js";
-import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep } from "./logic.js";
+import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams } from "./logic.js";
 
 // State
 let currentTab = "dashboard";
@@ -339,26 +339,18 @@ async function loadBrowse() {
     try {
         const query = document.getElementById("browseSearch").value.trim();
         const librarySelect = document.getElementById("browseLibrary");
-        const libraryId = librarySelect ? librarySelect.value : "";
-        const watchedSelect = document.getElementById("browseWatched");
-        const watchedValue = watchedSelect ? watchedSelect.value : "";
+        const libraryIdentifier = librarySelect ? librarySelect.value : "";
         const sort = document.getElementById("browseSort").value;
         const grid = document.getElementById("mediaGrid");
         grid.innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">Loading media...</div>';
 
-        const watchedGroup = document.getElementById("browseWatchedGroup");
-        if (watchedGroup) {
-            watchedGroup.style.display = currentBrowseType === "anime" ? "block" : "none";
-        }
-
-        if (currentBrowseType === "series") {
-            const params = { sort };
-            if (query) params.query = query;
-            if (libraryId) params.library_id = libraryId;
-            const items = await api.listSeries(params);
+        if (currentBrowseType === "series" || currentBrowseType === "anime") {
+            const parameters = buildBrowseParams(currentBrowseType, query, libraryIdentifier, sort);
+            const items = await api.listSeries(parameters);
             grid.innerHTML = "";
             if (items.length === 0) {
-                grid.innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">No series found. Run a library scan!</div>';
+                const label = currentBrowseType === "anime" ? "anime" : "TV series";
+                grid.innerHTML = `<div style="color: var(--text-secondary); padding: 1rem;">No ${label} found. Run a library scan!</div>`;
                 return;
             }
             items.forEach((item) => {
@@ -376,10 +368,8 @@ async function loadBrowse() {
                 grid.appendChild(card);
             });
         } else if (currentBrowseType === "movie") {
-            const params = { sort };
-            if (query) params.query = query;
-            if (libraryId) params.library_id = libraryId;
-            const items = await api.listMovies(params);
+            const parameters = buildBrowseParams(currentBrowseType, query, libraryIdentifier, sort);
+            const items = await api.listMovies(parameters);
             grid.innerHTML = "";
             if (items.length === 0) {
                 grid.innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">No movies found. Run a library scan!</div>';
@@ -397,45 +387,6 @@ async function loadBrowse() {
                     </div>
                 `;
                 card.onclick = () => showMovieDetail(item.id);
-                grid.appendChild(card);
-            });
-        } else if (currentBrowseType === "anime") {
-            const params = { library_type: "anime", sort };
-            if (query) params.query = query;
-            if (libraryId) params.library_id = libraryId;
-            if (watchedValue === "watched") params.watched = true;
-            if (watchedValue === "unwatched") params.watched = false;
-
-            const items = await api.listEpisodes(params);
-            grid.innerHTML = "";
-            if (items.length === 0) {
-                grid.innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">No anime found matching filter.</div>';
-                return;
-            }
-            items.forEach((item) => {
-                const card = document.createElement("div");
-                card.className = "media-card";
-                const posterUrl = getPosterUrl(item.poster_path);
-                const seasonEp = `S${item.season_number || 1}E${item.episode_number != null ? item.episode_number : "?"}`;
-                const epTitle = item.name ? escapeHtml(item.name) : seasonEp;
-                card.innerHTML = `
-                    <div class="media-poster">${posterUrl ? `<img src="${posterUrl}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : "No Poster"}</div>
-                    <div class="media-info">
-                        <div class="media-title" title="${escapeHtml(item.series_name || "")}">${escapeHtml(item.series_name || "Anime")}</div>
-                        <div style="font-weight: 500; font-size: 0.85rem; color: var(--text-primary); margin: 0.2rem 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                            ${seasonEp} - ${epTitle}
-                        </div>
-                        <div class="media-sub" style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.35rem;">
-                            <span>${item.air_date || (item.runtime_seconds ? Math.round(item.runtime_seconds / 60) + "m" : "")}</span>
-                            <span class="status-tag ${item.watched ? "status-done" : "status-cancelled"}" style="font-size: 0.7rem;">
-                                ${item.watched ? "Watched" : "Unwatched"}
-                            </span>
-                        </div>
-                    </div>
-                `;
-                if (item.series_id) {
-                    card.onclick = () => showSeriesDetail(item.series_id);
-                }
                 grid.appendChild(card);
             });
         }
@@ -887,6 +838,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (btnTypeSeries) btnTypeSeries.className = activeType === "series" ? "btn btn-primary" : "btn btn-secondary";
         if (btnTypeMovies) btnTypeMovies.className = activeType === "movie" ? "btn btn-primary" : "btn btn-secondary";
         if (btnTypeAnime) btnTypeAnime.className = activeType === "anime" ? "btn btn-primary" : "btn btn-secondary";
+        const librarySelect = document.getElementById("browseLibrary");
+        if (librarySelect) librarySelect.value = "";
         loadBrowse();
     }
 
@@ -911,10 +864,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const browseLibrary = document.getElementById("browseLibrary");
     if (browseLibrary) {
         browseLibrary.onchange = loadBrowse;
-    }
-    const browseWatched = document.getElementById("browseWatched");
-    if (browseWatched) {
-        browseWatched.onchange = loadBrowse;
     }
 
     // Logs controls
