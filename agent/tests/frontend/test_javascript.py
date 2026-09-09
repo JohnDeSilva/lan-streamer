@@ -541,7 +541,7 @@ def test_app_imports_logic_helpers() -> None:
     logic_source = _read_static("logic.js")
 
     assert (
-        'import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams } from "./logic.js";'
+        'import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams, filterLibrariesForBrowseType } from "./logic.js";'
         in app_source
     )
 
@@ -551,10 +551,46 @@ def test_app_imports_logic_helpers() -> None:
         "debounce",
         "parseScanProgressStep",
         "buildBrowseParams",
+        "filterLibrariesForBrowseType",
     ):
         assert re.search(rf"function {helper}\s*\(", logic_source)
         assert re.search(rf"\b{helper}\s*\(", app_source)
         assert not re.search(rf"function {helper}\s*\(", app_source)
+
+
+def test_logic_filter_libraries_for_browse_type(engine: MiniRacer) -> None:
+    result = _logic_test(
+        engine,
+        """
+        const allLibs = [
+            { id: "tv", name: "TV Shows", media_type: "tv" },
+            { id: "anime", name: "Anime Collection", media_type: "anime" },
+            { id: "movie", name: "Movies", media_type: "movie" },
+            { id: "docs", name: "Docuseries", media_type: "tv" },
+        ];
+        """,
+        """
+        seriesLibs: filterLibrariesForBrowseType(allLibs, "series"),
+        animeLibs: filterLibrariesForBrowseType(allLibs, "anime"),
+        movieLibs: filterLibrariesForBrowseType(allLibs, "movie"),
+        emptyInput: filterLibrariesForBrowseType([], "series"),
+        nullInput: filterLibrariesForBrowseType(null, "series"),
+        """,
+    )
+    assert result == {
+        "seriesLibs": [
+            {"id": "tv", "name": "TV Shows", "media_type": "tv"},
+            {"id": "docs", "name": "Docuseries", "media_type": "tv"},
+        ],
+        "animeLibs": [
+            {"id": "anime", "name": "Anime Collection", "media_type": "anime"},
+        ],
+        "movieLibs": [
+            {"id": "movie", "name": "Movies", "media_type": "movie"},
+        ],
+        "emptyInput": [],
+        "nullInput": [],
+    }
 
 
 def test_logic_build_browse_params(engine: MiniRacer) -> None:

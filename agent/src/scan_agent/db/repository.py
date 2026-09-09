@@ -522,14 +522,31 @@ def get_or_create_library(
 
 
 def get_library(connection: Session, library_identifier: str | int) -> Library | None:
-    """Return a :class:`Library` by numeric id or by name."""
+    """Return a :class:`Library` by numeric id, by name, or by config identifier."""
     if isinstance(library_identifier, int) or str(library_identifier).isdigit():
         library = connection.get(Library, int(library_identifier))
         if library is not None:
             return library
-    return connection.scalars(
-        select(Library).where(Library.name == str(library_identifier))
+    identifier_string = str(library_identifier)
+    found_library = connection.scalars(
+        select(Library).where(Library.name == identifier_string)
     ).first()
+    if found_library is not None:
+        return found_library
+
+    try:
+        from scan_agent.config import get_agent_config
+
+        agent_configuration = get_agent_config()
+        configured_library = agent_configuration.libraries.get(identifier_string)
+        if configured_library and "name" in configured_library:
+            configured_name = str(configured_library["name"])
+            return connection.scalars(
+                select(Library).where(Library.name == configured_name)
+            ).first()
+    except KeyError, AttributeError:
+        return None
+    return None
 
 
 def upsert_library(connection: Session, library: dict[str, Any]) -> dict[str, Any]:

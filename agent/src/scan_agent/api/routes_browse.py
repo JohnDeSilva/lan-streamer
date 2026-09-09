@@ -21,6 +21,23 @@ if TYPE_CHECKING:
 browse_router = APIRouter(tags=["browse"])
 
 
+def _resolve_library_identifier(
+    request: Request, library_identifier: str | None
+) -> str | None:
+    """Resolve a library identifier (config key, name, or id) to authoritative name if configured."""
+    if library_identifier is None:
+        return None
+    agent_configuration = getattr(request.app.state, "agent_config", None)
+    if (
+        agent_configuration is not None
+        and library_identifier in agent_configuration.libraries
+    ):
+        return agent_configuration.libraries[library_identifier].get(
+            "name", library_identifier
+        )
+    return library_identifier
+
+
 @browse_router.get("/library/series")
 def browse_series(
     request: Request,
@@ -42,9 +59,10 @@ def browse_series(
         "year": "year",
         "year_desc": "year",
     }.get(sort, "name")
+    resolved_library_identifier = _resolve_library_identifier(request, library_id)
     results = list_series(
         connection=session,
-        library_identifier=library_id,
+        library_identifier=resolved_library_identifier,
         library_type=library_type,
         query=query,
         sort=sort_column,
@@ -70,10 +88,11 @@ def browse_episodes(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict[str, Any]]:
     """List episodes, optionally filtered by library type, library ID, query, and watched state."""
+    resolved_library_identifier = _resolve_library_identifier(request, library_id)
     return list_episodes(
         connection=session,
         library_type=library_type,
-        library_identifier=library_id,
+        library_identifier=resolved_library_identifier,
         query=query,
         watched=watched,
         sort=sort,
@@ -131,7 +150,8 @@ def browse_movies(
         "year": "year",
         "year_desc": "year",
     }.get(sort, "name")
-    results = list_movies(session, library_id, query, sort_column)
+    resolved_library_identifier = _resolve_library_identifier(request, library_id)
+    results = list_movies(session, resolved_library_identifier, query, sort_column)
     if sort in ("name_desc", "date_added_desc", "year_desc"):
         results = list(reversed(results))
     return results
