@@ -1003,3 +1003,64 @@ def test_v8_manual_mapper_modal_interaction(engine: MiniRacer) -> None:
     assert result["modalOpen"] is True
     assert result["searchQuery"] == "Test Series"
     assert result["localFilesCount"] == 1
+
+
+def test_v8_load_browse_excludes_folders_with_no_episode_files(
+    engine: MiniRacer,
+) -> None:
+    """Verify loadBrowse filtering excludes series with no episode files."""
+    result = _load_app_in_v8(
+        engine,
+        """
+        const testSeriesList = [
+            {
+                id: 1,
+                name: "Valid Series",
+                folder_name: "Valid Series",
+                seasons: [
+                    {
+                        season_number: 1,
+                        episodes: [{ name: "Episode 1", path: "/media/tv/ep1.mkv" }]
+                    }
+                ]
+            },
+            {
+                id: 2,
+                name: "Empty Series",
+                folder_name: "Empty Series",
+                seasons: []
+            },
+            {
+                id: 3,
+                name: "Empty Season Series",
+                folder_name: "Empty Season Series",
+                seasons: [
+                    {
+                        season_number: 1,
+                        episodes: []
+                    }
+                ]
+            }
+        ];
+
+        const filteredSeries = filterSeriesWithEpisodes(testSeriesList);
+        const gridElement = getOrCreateElement("mediaGrid");
+        gridElement.innerHTML = "";
+        filteredSeries.forEach((item) => {
+            const card = document.createElement("div");
+            card.className = "media-card";
+            card.innerHTML = `<div class="media-title">${escapeHtml(item.name || item.folder_name)}</div>`;
+            gridElement.appendChild(card);
+        });
+
+        const cards = gridElement.children.filter((child) => child.className === "media-card");
+        return {
+            cardCount: cards.length,
+            cardHtml: cards.map((card) => card.innerHTML).join(" ")
+        };
+        """,
+    )
+    assert result["cardCount"] == 1
+    assert "Valid Series" in result["cardHtml"]
+    assert "Empty Series" not in result["cardHtml"]
+    assert "Empty Season Series" not in result["cardHtml"]

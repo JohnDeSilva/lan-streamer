@@ -59,6 +59,23 @@ export function buildBrowseParams(browseType, query = "", libraryIdentifier = ""
     return parameters;
 }
 
+/**
+ * Filter a list of series objects to only those that contain at least one episode.
+ *
+ * Folders with zero seasons or zero episodes are omitted.
+ */
+export function filterSeriesWithEpisodes(seriesList) {
+    if (!Array.isArray(seriesList)) {
+        return [];
+    }
+    return seriesList.filter((item) => {
+        if (!item || !Array.isArray(item.seasons) || item.seasons.length === 0) {
+            return false;
+        }
+        return item.seasons.some((season) => Array.isArray(season.episodes) && season.episodes.length > 0);
+    });
+}
+
 
 /**
  * Map an SSE "scan.progress" payload to a UI update step.

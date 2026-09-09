@@ -215,6 +215,28 @@ def test_scan_jobs_and_browse_after_scan(
     assert len(flattened[0]["versions"]) == 2
 
 
+def test_browse_series_excludes_folders_with_no_episode_files(
+    api_app: FastAPI, api_client: TestClient, agent_config: AgentConfig
+) -> None:
+    from pathlib import Path
+
+    tv_root_path = Path(agent_config.libraries["tv"]["root_path"])
+    empty_show_folder = tv_root_path / "Empty Show Folder"
+    empty_show_folder.mkdir(parents=True)
+    empty_season_folder = tv_root_path / "Empty Season Show" / "Season 01"
+    empty_season_folder.mkdir(parents=True)
+
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+
+    series_items = api_client.get("/api/v1/library/series").json()
+    folder_names = [series_item["folder_name"] for series_item in series_items]
+    assert "Test Show" in folder_names
+    assert "Empty Show Folder" not in folder_names
+    assert "Empty Season Show" not in folder_names
+    assert len(series_items) == 1
+
+
 def test_browse_library_id_filtering(api_app: FastAPI, api_client: TestClient) -> None:
     api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
     _wait_for_idle(api_app)

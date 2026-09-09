@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from scan_agent.db.models import (
@@ -587,6 +587,30 @@ def upsert_library(connection: Session, library: dict[str, Any]) -> dict[str, An
     return stats
 
 
+def _series_has_episode_files(series_data: dict[str, Any]) -> bool:
+    """Return True if the series data dictionary contains at least one episode file."""
+    if not isinstance(series_data, dict):
+        return False
+    seasons = series_data.get("seasons", {})
+    if not isinstance(seasons, dict) or not seasons:
+        return False
+    for season_data in seasons.values():
+        if not isinstance(season_data, dict):
+            continue
+        episodes = season_data.get("episodes", [])
+        if not isinstance(episodes, list):
+            continue
+        for episode in episodes:
+            if not isinstance(episode, dict):
+                continue
+            if episode.get("path"):
+                return True
+            for version in episode.get("versions", []):
+                if isinstance(version, dict) and version.get("path"):
+                    return True
+    return False
+
+
 def _upsert_series(
     connection: Session,
     library: Library,
@@ -600,6 +624,16 @@ def _upsert_series(
     episode_count = 0
     media_file_count = 0
     for folder_name, series_data in items.items():
+        if not _series_has_episode_files(series_data):
+            series = existing_series.get(folder_name)
+            if series is not None:
+                connection.delete(series)
+                logger.info(
+                    "Pruning series '%s' with no episode files from library '%s'",
+                    folder_name,
+                    library.name,
+                )
+            continue
         try:
             with connection.begin_nested():
                 series = existing_series.get(folder_name)
@@ -612,6 +646,15 @@ def _upsert_series(
                 season_count_delta, episode_count_delta, media_file_count_delta = (
                     _upsert_seasons(connection, series, series_data.get("seasons", {}))
                 )
+                if media_file_count_delta == 0:
+                    logger.info(
+                        "Pruning series '%s' with no episode files from library '%s'",
+                        folder_name,
+                        library.name,
+                    )
+                    connection.delete(series)
+                    continue
+
                 series.watched_count = sum(
                     1
                     for season in series.seasons
@@ -719,8 +762,19 @@ def list_series(
 
     *sort* is one of ``"name"`` (default), ``"date_added"`` or ``"year"``.
     """
-    statement = select(Series).options(
-        selectinload(Series.seasons).selectinload(Season.episodes)
+    statement = (
+        select(Series)
+        .options(selectinload(Series.seasons).selectinload(Season.episodes))
+        .where(
+            Series.seasons.any(
+                Season.episodes.any(
+                    or_(
+                        and_(Episode.path.isnot(None), Episode.path != ""),
+                        Episode.media_files.any(),
+                    )
+                )
+            )
+        )
     )
     if library_identifier is not None:
         library = get_library(connection, library_identifier)
