@@ -1839,3 +1839,80 @@ def get_movie_media_path(connection: Session, movie_identifier: int) -> Path | N
         return Path(media_file.path)
     movie = connection.get(Movie, movie_identifier)
     return Path(movie.path) if movie is not None and movie.path else None
+
+
+def apply_manual_metadata_mappings(
+    connection: Session,
+    series_identifier: int,
+    episode_mappings: list[Any],
+) -> dict[str, Any] | None:
+    """Apply manual metadata mappings to episodes in a series and lock metadata.
+
+    Matches desktop behavior: maps TMDB episode information onto local episode records
+    by matching file path or episode identifier, locks the series metadata, and updates
+    the series TMDB identifier if provided.
+    """
+    series = connection.get(Series, series_identifier)
+    if series is None:
+        return None
+
+    episode_by_path: dict[str, Episode] = {}
+    episode_by_identifier: dict[int, Episode] = {}
+    for season in series.seasons:
+        for episode in season.episodes:
+            episode_by_identifier[episode.id] = episode
+            if episode.path:
+                episode_by_path[episode.path] = episode
+            for media_file in episode.media_files:
+                if media_file.path:
+                    episode_by_path[media_file.path] = episode
+
+    mapped_series_tmdb_identifier: str | None = None
+    modified_count = 0
+
+    for mapping_data in episode_mappings:
+        mapping_dictionary = (
+            mapping_data.model_dump()
+            if hasattr(mapping_data, "model_dump")
+            else dict(mapping_data)
+        )
+        target_path = mapping_dictionary.get("path")
+        episode_identifier = mapping_dictionary.get("episode_identifier")
+
+        target_episode: Episode | None = None
+        if target_path and target_path in episode_by_path:
+            target_episode = episode_by_path[target_path]
+        elif episode_identifier and episode_identifier in episode_by_identifier:
+            target_episode = episode_by_identifier[episode_identifier]
+
+        if target_episode is None:
+            continue
+
+        if mapping_dictionary.get("name"):
+            target_episode.name = mapping_dictionary["name"]
+        if mapping_dictionary.get("episode_number") is not None:
+            target_episode.episode_number = mapping_dictionary["episode_number"]
+            target_episode.tmdb_number = mapping_dictionary["episode_number"]
+        if mapping_dictionary.get("overview") is not None:
+            target_episode.overview = mapping_dictionary["overview"]
+        if mapping_dictionary.get("air_date") is not None:
+            target_episode.air_date = mapping_dictionary["air_date"]
+        if mapping_dictionary.get("runtime_seconds") is not None:
+            target_episode.runtime_seconds = mapping_dictionary["runtime_seconds"]
+
+        if mapping_dictionary.get("tmdb_identifier"):
+            mapped_series_tmdb_identifier = str(mapping_dictionary["tmdb_identifier"])
+
+        modified_count += 1
+
+    if mapped_series_tmdb_identifier:
+        series.tmdb_identifier = mapped_series_tmdb_identifier
+
+    series.locked_metadata = True
+    connection.flush()
+    logger.info(
+        "Applied manual metadata mappings for series %s (%d episodes updated)",
+        series_identifier,
+        modified_count,
+    )
+    return series_to_dict(series)

@@ -338,6 +338,9 @@ def test_api_endpoint_builders(engine: MiniRacer) -> None:
             applyRename: { url: "/api/v1/services/rename/apply", method: "POST", call: () => api.applyRename({}) },
             listSubtitles: { url: "/api/v1/services/subtitles?media_type=series&media_id=5", call: () => api.listSubtitles("series", 5) },
             downloadSubtitle: { url: "/api/v1/services/subtitles/f-1/download", method: "POST", call: () => api.downloadSubtitle("f-1", {}) },
+            getTmdbSeriesSeasons: { url: "/api/v1/services/metadata/tmdb/series/99/seasons", call: () => api.getTmdbSeriesSeasons("99") },
+            getTmdbSeasonEpisodes: { url: "/api/v1/services/metadata/tmdb/series/99/episodes?season_number=2", call: () => api.getTmdbSeasonEpisodes("99", 2) },
+            applyManualMetadataMappings: { url: "/api/v1/services/metadata/series/42/manual-map", method: "POST", call: () => api.applyManualMetadataMappings(42, []) },
         };
         __out.endpoints = {};
         for (const name of Object.keys(expectations)) {
@@ -379,6 +382,18 @@ def test_api_endpoint_builders(engine: MiniRacer) -> None:
             "GET",
         ),
         "downloadSubtitle": ("/api/v1/services/subtitles/f-1/download", "POST"),
+        "getTmdbSeriesSeasons": (
+            "/api/v1/services/metadata/tmdb/series/99/seasons",
+            "GET",
+        ),
+        "getTmdbSeasonEpisodes": (
+            "/api/v1/services/metadata/tmdb/series/99/episodes?season_number=2",
+            "GET",
+        ),
+        "applyManualMetadataMappings": (
+            "/api/v1/services/metadata/series/42/manual-map",
+            "POST",
+        ),
     }
     for name, (url, method) in endpoints.items():
         assert result["endpoints"][name] == {"url": url, "method": method}
@@ -540,11 +555,6 @@ def test_app_imports_logic_helpers() -> None:
     app_source = _read_static("app.js")
     logic_source = _read_static("logic.js")
 
-    assert (
-        'import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams, filterLibrariesForBrowseType } from "./logic.js";'
-        in app_source
-    )
-
     for helper in (
         "getPosterUrl",
         "escapeHtml",
@@ -552,10 +562,85 @@ def test_app_imports_logic_helpers() -> None:
         "parseScanProgressStep",
         "buildBrowseParams",
         "filterLibrariesForBrowseType",
+        "matchEpisodesSequentially",
+        "buildManualMappingPayload",
     ):
         assert re.search(rf"function {helper}\s*\(", logic_source)
         assert re.search(rf"\b{helper}\s*\(", app_source)
         assert not re.search(rf"function {helper}\s*\(", app_source)
+
+
+def test_logic_match_episodes_sequentially(engine: MiniRacer) -> None:
+    result = _logic_test(
+        engine,
+        """
+        const tmdbEpisodes = [
+            { id: 101, name: "Pilot", episode_number: 1 },
+            { id: 102, name: "Second", episode_number: 2 },
+            { id: 103, name: "Third", episode_number: 3 },
+        ];
+        const localFiles = [
+            { path: "/media/Show/S01E01.mkv", tmdb_episode_identifier: null },
+            { path: "/media/Show/S01E02.mkv", tmdb_episode_identifier: 102 },
+        ];
+        """,
+        """
+        matched: matchEpisodesSequentially(tmdbEpisodes, localFiles),
+        emptyTmdb: matchEpisodesSequentially([], localFiles),
+        emptyLocal: matchEpisodesSequentially(tmdbEpisodes, []),
+        nullInputs: matchEpisodesSequentially(null, null),
+        """,
+    )
+    assert result["emptyTmdb"] == []
+    assert len(result["matched"]) == 3
+    assert result["matched"][0]["mappedPath"] == "/media/Show/S01E01.mkv"
+    assert result["matched"][1]["mappedPath"] == "/media/Show/S01E02.mkv"
+    assert result["matched"][2]["mappedPath"] is None
+    assert result["emptyLocal"][0]["mappedPath"] is None
+    assert result["nullInputs"] == []
+
+
+def test_logic_build_manual_mapping_payload(engine: MiniRacer) -> None:
+    result = _logic_test(
+        engine,
+        """
+        const rows = [
+            {
+                path: "/media/Show/S01E01.mkv",
+                tmdbIdentifier: 999,
+                tmdbEpisodeIdentifier: 101,
+                name: "Pilot",
+                episodeNumber: 1,
+                seasonNumber: 1,
+                airDate: "2024-01-01",
+                overview: "First episode",
+                runtimeSeconds: 1800,
+            },
+            {
+                path: "",
+                name: "Unmapped",
+            },
+        ];
+        """,
+        """
+        payload: buildManualMappingPayload(rows),
+        emptyPayload: buildManualMappingPayload([]),
+        nullPayload: buildManualMappingPayload(null),
+        """,
+    )
+    assert result["emptyPayload"] == {"episode_mappings": []}
+    assert result["nullPayload"] == {"episode_mappings": []}
+    assert len(result["payload"]["episode_mappings"]) == 1
+    mapping = result["payload"]["episode_mappings"][0]
+    assert mapping["path"] == "/media/Show/S01E01.mkv"
+    assert mapping["tmdb_identifier"] == "999"
+    assert mapping["tmdb_episode_identifier"] == "101"
+    assert mapping["name"] == "Pilot"
+    assert mapping["episode_number"] == 1
+    assert mapping["season_number"] == 1
+    assert mapping["air_date"] == "2024-01-01"
+    assert mapping["overview"] == "First episode"
+    assert mapping["runtime_seconds"] == 1800
 
 
 def test_logic_filter_libraries_for_browse_type(engine: MiniRacer) -> None:

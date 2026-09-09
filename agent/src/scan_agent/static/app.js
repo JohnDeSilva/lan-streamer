@@ -2,7 +2,8 @@
  * Main Single Page Application controller for LAN Streamer Scan Agent.
  */
 import { api } from "./api.js";
-import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams, filterLibrariesForBrowseType } from "./logic.js";
+import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams, filterLibrariesForBrowseType, matchEpisodesSequentially, buildManualMappingPayload } from "./logic.js";
+
 
 // State
 let currentTab = "dashboard";
@@ -12,6 +13,12 @@ let currentDetailItem = null;
 let renameTargetItem = null;
 let tmdbTargetItem = null;
 let browseLibrariesCache = null;
+let manualMapperCurrentSeries = null;
+let manualMapperLocalFiles = [];
+let manualMapperLoadedEntries = [];
+let manualMapperSelectedTmdbIdentifier = null;
+let manualMapperSelectedTmdbTitle = "";
+
 
 // Helpers
 function showAlert(message, type = "success", duration = 4000) {
@@ -468,6 +475,7 @@ async function showSeriesDetail(seriesId) {
                     <div style="margin-top: 1rem; display: flex; gap: 0.75rem;">
                         <button id="btnOpenTmdbMatch" class="btn btn-secondary btn-sm">Match TMDB</button>
                         <button id="btnOpenRename" class="btn btn-secondary btn-sm">Rename Files</button>
+                        <button id="btnOpenManualMapper" class="btn btn-secondary btn-sm">Manual Map</button>
                     </div>
                 </div>
             </div>
@@ -476,6 +484,7 @@ async function showSeriesDetail(seriesId) {
 
         document.getElementById("btnOpenTmdbMatch").onclick = () => openTmdbMatchModal("series", item.id, item.name || item.folder_name);
         document.getElementById("btnOpenRename").onclick = () => openRenameModal("series", item.id);
+        document.getElementById("btnOpenManualMapper").onclick = () => openManualMapperModal(item);
         openModal("mediaDetailModal");
     } catch (error) {
         showAlert(`Failed loading series details: ${error.message}`, "error");
@@ -656,6 +665,256 @@ async function applyRename() {
         }
     } catch (error) {
         showAlert(`Failed applying rename: ${error.message}`, "error");
+    }
+}
+
+// -------------------------------------------------------------
+// Manual Metadata Mapper Modal
+// -------------------------------------------------------------
+async function openManualMapperModal(seriesItem) {
+    manualMapperCurrentSeries = seriesItem;
+    const localFiles = [];
+    (seriesItem.seasons || []).forEach((seasonItem) => {
+        (seasonItem.episodes || []).forEach((episodeItem) => {
+            if (episodeItem.path) {
+                localFiles.push(episodeItem);
+            }
+        });
+    });
+    localFiles.sort((firstFile, secondFile) => {
+        const firstName = (firstFile.path || "").split("/").pop() || "";
+        const secondName = (secondFile.path || "").split("/").pop() || "";
+        return firstName.localeCompare(secondName, undefined, { numeric: true, sensitivity: "base" });
+    });
+    manualMapperLocalFiles = localFiles;
+    manualMapperLoadedEntries = [];
+
+    const searchInput = document.getElementById("manualMapperSearchQuery");
+    searchInput.value = seriesItem.name || seriesItem.folder_name || "";
+    document.getElementById("manualMapperSearchResults").style.display = "none";
+    document.getElementById("manualMapperSearchResultsBody").innerHTML = "";
+
+    const seasonSelect = document.getElementById("manualMapperSeasonSelect");
+    seasonSelect.innerHTML = "";
+
+    const tableBody = document.getElementById("manualMapperTableBody");
+    tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No TMDB episode data loaded.</td></tr>';
+    document.getElementById("manualMapperSelectedLabel").textContent = "No TMDB entries loaded";
+
+    openModal("manualMapperModal");
+
+    if (seriesItem.tmdb_identifier) {
+        await loadTmdbSeriesForMapper(seriesItem.tmdb_identifier, seriesItem.name || seriesItem.folder_name);
+    }
+}
+
+async function loadTmdbSeriesForMapper(tmdbIdentifier, seriesTitle) {
+    manualMapperSelectedTmdbIdentifier = String(tmdbIdentifier);
+    manualMapperSelectedTmdbTitle = seriesTitle || "";
+    try {
+        const seasonsResponse = await api.getTmdbSeriesSeasons(tmdbIdentifier);
+        const seasonSelect = document.getElementById("manualMapperSeasonSelect");
+        seasonSelect.innerHTML = "";
+        const seasonsList = seasonsResponse && seasonsResponse.seasons ? seasonsResponse.seasons : [];
+        seasonsList.forEach((seasonItem) => {
+            const seasonOption = document.createElement("option");
+            seasonOption.value = seasonItem.season_number;
+            seasonOption.textContent = `Season ${seasonItem.season_number} (${seasonItem.episode_count || 0} episodes)`;
+            seasonSelect.appendChild(seasonOption);
+        });
+        if (seasonsList.length > 0) {
+            const defaultSeason = seasonsList.find((seasonItem) => seasonItem.season_number === 1) || seasonsList[0];
+            seasonSelect.value = defaultSeason.season_number;
+            await loadSeasonEpisodesForMapper(defaultSeason.season_number, false);
+        }
+    } catch (error) {
+        showAlert(`Failed loading TMDB seasons: ${error.message}`, "error");
+    }
+}
+
+async function loadSeasonEpisodesForMapper(seasonNumber, appendToExisting = false) {
+    if (!manualMapperSelectedTmdbIdentifier) {
+        showAlert("Please search and select a TMDB series first", "error");
+        return;
+    }
+    try {
+        const episodesResponse = await api.getTmdbSeasonEpisodes(manualMapperSelectedTmdbIdentifier, seasonNumber);
+        const episodeList = episodesResponse && episodesResponse.episodes ? episodesResponse.episodes : [];
+        populateMapperEpisodes(
+            episodeList,
+            manualMapperSelectedTmdbIdentifier,
+            manualMapperSelectedTmdbTitle,
+            seasonNumber,
+            appendToExisting
+        );
+    } catch (error) {
+        showAlert(`Failed loading TMDB episodes: ${error.message}`, "error");
+    }
+}
+
+async function searchManualMapperTmdb() {
+    const query = document.getElementById("manualMapperSearchQuery").value.trim();
+    if (!query) return;
+    const resultsContainer = document.getElementById("manualMapperSearchResults");
+    const resultsTableBody = document.getElementById("manualMapperSearchResultsBody");
+    resultsTableBody.innerHTML = '<tr><td colspan="4">Searching TMDB...</td></tr>';
+    resultsContainer.style.display = "block";
+    try {
+        const searchResponse = await api.searchMetadata(query, "series");
+        resultsTableBody.innerHTML = "";
+        const candidateMatches = searchResponse && searchResponse.matches
+            ? searchResponse.matches
+            : (Array.isArray(searchResponse) ? searchResponse : []);
+        if (candidateMatches.length === 0) {
+            resultsTableBody.innerHTML = '<tr><td colspan="4">No matches found</td></tr>';
+            return;
+        }
+        candidateMatches.forEach((matchItem) => {
+            const candidateRow = document.createElement("tr");
+            candidateRow.innerHTML = `
+                <td>${matchItem.id}</td>
+                <td><strong>${escapeHtml(matchItem.name || matchItem.title)}</strong></td>
+                <td>${matchItem.first_air_date || "-"}</td>
+                <td><button class="btn btn-primary btn-sm">Select</button></td>
+            `;
+            candidateRow.querySelector("button").onclick = () => {
+                resultsContainer.style.display = "none";
+                loadTmdbSeriesForMapper(matchItem.id, matchItem.name || matchItem.title);
+            };
+            resultsTableBody.appendChild(candidateRow);
+        });
+    } catch (error) {
+        resultsTableBody.innerHTML = `<tr><td colspan="4" style="color: var(--accent-red);">${escapeHtml(error.message)}</td></tr>`;
+    }
+}
+
+function populateMapperEpisodes(episodesList, tmdbIdentifier, seriesTitle, seasonNumber, appendToExisting = false) {
+    const tableBody = document.getElementById("manualMapperTableBody");
+    if (!appendToExisting) {
+        tableBody.innerHTML = "";
+        manualMapperLoadedEntries = [];
+    }
+    manualMapperLoadedEntries.push({
+        tmdbIdentifier: tmdbIdentifier,
+        seriesTitle: seriesTitle,
+        seasonNumber: seasonNumber,
+        count: episodesList.length,
+    });
+    document.getElementById("manualMapperSelectedLabel").textContent = `${manualMapperLoadedEntries.length} TMDB entry/entries loaded`;
+
+    const usedFilePaths = new Set();
+    tableBody.querySelectorAll("select").forEach((existingSelect) => {
+        if (existingSelect.value) {
+            usedFilePaths.add(existingSelect.value);
+        }
+    });
+
+    const sequentialMatches = matchEpisodesSequentially(episodesList, manualMapperLocalFiles);
+
+    sequentialMatches.forEach((matchItem, episodeIndex) => {
+        const episodeData = matchItem.tmdbEpisode;
+        const episodeNumber = episodeData.episode_number || (episodeIndex + 1);
+        const episodeTitle = episodeData.name || "TBA";
+        const episodeAirDate = episodeData.air_date || "";
+        const episodeOverview = episodeData.overview || "";
+        const episodeRuntime = episodeData.runtime ? Number(episodeData.runtime) * 60 : null;
+
+        let selectedPath = "";
+        if (!appendToExisting && matchItem.mappedPath) {
+            selectedPath = matchItem.mappedPath;
+        } else if (appendToExisting) {
+            const candidateFile = manualMapperLocalFiles.find((fileItem) => !usedFilePaths.has(fileItem.path));
+            if (candidateFile) {
+                selectedPath = candidateFile.path;
+                usedFilePaths.add(selectedPath);
+            }
+        }
+
+        const tableRow = document.createElement("tr");
+        tableRow.dataset.tmdbIdentifier = String(tmdbIdentifier);
+        tableRow.dataset.tmdbEpisodeIdentifier = String(episodeData.id || "");
+        tableRow.dataset.name = episodeTitle;
+        tableRow.dataset.episodeNumber = String(episodeNumber);
+        tableRow.dataset.seasonNumber = String(seasonNumber);
+        tableRow.dataset.airDate = episodeAirDate;
+        tableRow.dataset.overview = episodeOverview;
+        if (episodeRuntime !== null) {
+            tableRow.dataset.runtimeSeconds = String(episodeRuntime);
+        }
+
+        let optionsMarkup = '<option value="">Unmapped / None</option>';
+        manualMapperLocalFiles.forEach((fileItem) => {
+            const filename = (fileItem.path || "").split("/").pop() || fileItem.path;
+            const isSelected = fileItem.path === selectedPath ? "selected" : "";
+            optionsMarkup += `<option value="${escapeHtml(fileItem.path)}" ${isSelected}>${escapeHtml(filename)}</option>`;
+        });
+
+        const statusDot = selectedPath
+            ? '<span style="color: var(--accent-green);">●</span>'
+            : '<span style="color: var(--text-muted);">○</span>';
+
+        tableRow.innerHTML = `
+            <td style="text-align: center;" class="manual-mapper-status-cell">${statusDot}</td>
+            <td>${escapeHtml(seriesTitle)} (S${seasonNumber})</td>
+            <td><strong>S${String(seasonNumber).padStart(2, "0")}E${String(episodeNumber).padStart(2, "0")}</strong> - ${escapeHtml(episodeTitle)}</td>
+            <td><select class="form-control manual-mapper-file-select" style="font-size: 0.85rem;">${optionsMarkup}</select></td>
+        `;
+
+        const selectElement = tableRow.querySelector("select");
+        selectElement.onchange = () => {
+            const statusCell = tableRow.querySelector(".manual-mapper-status-cell");
+            if (selectElement.value) {
+                statusCell.innerHTML = '<span style="color: var(--accent-green);">●</span>';
+            } else {
+                statusCell.innerHTML = '<span style="color: var(--text-muted);">○</span>';
+            }
+        };
+
+        tableBody.appendChild(tableRow);
+    });
+}
+
+async function applyManualMappingsFromModal() {
+    if (!manualMapperCurrentSeries) return;
+    const tableRows = document.getElementById("manualMapperTableBody").querySelectorAll("tr");
+    const mappingRows = [];
+    tableRows.forEach((tableRow) => {
+        const selectElement = tableRow.querySelector("select");
+        if (!selectElement) return;
+        const mappedPath = selectElement.value;
+        if (!mappedPath) return;
+        mappingRows.push({
+            path: mappedPath,
+            tmdbIdentifier: tableRow.dataset.tmdbIdentifier,
+            tmdbEpisodeIdentifier: tableRow.dataset.tmdbEpisodeIdentifier,
+            name: tableRow.dataset.name,
+            episodeNumber: tableRow.dataset.episodeNumber ? Number(tableRow.dataset.episodeNumber) : null,
+            seasonNumber: tableRow.dataset.seasonNumber ? Number(tableRow.dataset.seasonNumber) : null,
+            airDate: tableRow.dataset.airDate,
+            overview: tableRow.dataset.overview,
+            runtimeSeconds: tableRow.dataset.runtimeSeconds ? Number(tableRow.dataset.runtimeSeconds) : null,
+        });
+    });
+
+    const mappingPayload = buildManualMappingPayload(mappingRows);
+    if (mappingPayload.episode_mappings.length === 0) {
+        showAlert("No local files are mapped to TMDB episodes.", "warning");
+        return;
+    }
+
+    const submitButtonElement = document.getElementById("btnApplyManualMappings");
+    submitButtonElement.disabled = true;
+    submitButtonElement.textContent = "Applying Mappings...";
+    try {
+        await api.applyManualMetadataMappings(manualMapperCurrentSeries.id, mappingPayload.episode_mappings);
+        showAlert(`Successfully mapped ${mappingPayload.episode_mappings.length} episode file(s).`, "success");
+        closeModal("manualMapperModal");
+        await showSeriesDetail(manualMapperCurrentSeries.id);
+    } catch (error) {
+        showAlert(`Failed to apply manual mappings: ${error.message}`, "error");
+    } finally {
+        submitButtonElement.disabled = false;
+        submitButtonElement.textContent = "Apply Manual Mappings";
     }
 }
 
@@ -975,6 +1234,31 @@ document.addEventListener("DOMContentLoaded", () => {
             closeModal("folderBrowserModal");
         };
     }
+
+    // Manual Metadata Mapper Modal
+    // Manual Metadata Mapper Modal
+    document.getElementById("btnManualMapperSearch").onclick = searchManualMapperTmdb;
+    const manualMapperSearchQuery = document.getElementById("manualMapperSearchQuery");
+    if (manualMapperSearchQuery) {
+        manualMapperSearchQuery.onkeydown = (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                searchManualMapperTmdb();
+            }
+        };
+    }
+    document.getElementById("btnManualMapperLoadSeason").onclick = () => {
+        const seasonSelect = document.getElementById("manualMapperSeasonSelect");
+        const seasonNumber = Number(seasonSelect ? seasonSelect.value || 1 : 1);
+        loadSeasonEpisodesForMapper(seasonNumber, false);
+    };
+    document.getElementById("btnManualMapperAddEntry").onclick = () => {
+        const seasonSelect = document.getElementById("manualMapperSeasonSelect");
+        const seasonNumber = Number(seasonSelect ? seasonSelect.value || 1 : 1);
+        loadSeasonEpisodesForMapper(seasonNumber, true);
+    };
+    document.getElementById("btnApplyManualMappings").onclick = applyManualMappingsFromModal;
+
 
     document.querySelector("#librariesTable tbody").onclick = async (event) => {
         const button = event.target.closest("button");

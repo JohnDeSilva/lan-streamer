@@ -8,9 +8,15 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
 from scan_agent.api.deps import get_database_session
-from scan_agent.api.schemas import MetadataMatch, RenameRequest, SubtitleDownload
+from scan_agent.api.schemas import (
+    ManualMetadataMappingRequest,
+    MetadataMatch,
+    RenameRequest,
+    SubtitleDownload,
+)
 from scan_agent.db.repository import (
     add_subtitle,
+    apply_manual_metadata_mappings,
     get_episode_media_path,
     get_episode_meta,
     get_movie_media_path,
@@ -161,6 +167,60 @@ def metadata_match(
         "status": "accepted",
         "rescan_required": False,
         "media": result,
+    }
+
+
+@metadata_router.get("/services/metadata/tmdb/series/{tmdb_identifier}/seasons")
+def tmdb_series_seasons(
+    tmdb_identifier: str = Path(min_length=1),
+) -> dict[str, Any]:
+    """Return TMDB seasons for a series."""
+    client = _tmdb_client()
+    if not client.is_configured():
+        raise HTTPException(status_code=502, detail="TMDB API key is not configured")
+    series_details = client.get_series_by_id(tmdb_identifier)
+    if not series_details:
+        raise HTTPException(status_code=404, detail="TMDB series not found")
+    seasons = series_details.get("seasons", [])
+    return {"tmdb_identifier": tmdb_identifier, "seasons": seasons}
+
+
+@metadata_router.get("/services/metadata/tmdb/series/{tmdb_identifier}/episodes")
+def tmdb_series_episodes(
+    tmdb_identifier: str = Path(min_length=1),
+    season_number: int = Query(default=1, ge=0),
+) -> dict[str, Any]:
+    """Return TMDB episodes for a series and season number."""
+    client = _tmdb_client()
+    if not client.is_configured():
+        raise HTTPException(status_code=502, detail="TMDB API key is not configured")
+    try:
+        numeric_tmdb_identifier = int(tmdb_identifier)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid TMDB identifier") from None
+    episodes = client.get_episodes(numeric_tmdb_identifier, season_number)
+    return {
+        "tmdb_identifier": tmdb_identifier,
+        "season_number": season_number,
+        "episodes": episodes or [],
+    }
+
+
+@metadata_router.post("/services/metadata/series/{series_identifier}/manual-map")
+def manual_metadata_map(
+    series_identifier: int = Path(ge=1),
+    payload: ManualMetadataMappingRequest = ...,  # type: ignore[assignment]
+    session: Session = Depends(get_database_session),
+) -> dict[str, Any]:
+    """Apply manual episode mappings to a series and lock metadata."""
+    updated_series = apply_manual_metadata_mappings(
+        session, series_identifier, payload.episode_mappings
+    )
+    if updated_series is None:
+        raise HTTPException(status_code=404, detail="Unknown series identifier")
+    return {
+        "status": "applied",
+        "series": updated_series,
     }
 
 
