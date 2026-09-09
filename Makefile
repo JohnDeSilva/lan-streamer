@@ -33,7 +33,12 @@ VERSION := $(shell python3 -c "import re; print(re.search(r'__version__\s*=\s*[\
 DOCKERFILE := $(shell if [ -f docker/Dockerfile.$(TEST_OS)-$(TEST_OS_VERSION) ]; then echo docker/Dockerfile.$(TEST_OS)-$(TEST_OS_VERSION); else echo docker/Dockerfile.$(TEST_OS); fi)
 
 run: migrate
-	$(MAKE) -C agent up
+	@cleanup() { \
+		trap - EXIT INT TERM; \
+		$(MAKE) -C agent down; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	$(MAKE) -C agent up && \
 	PYTHONPATH=src $(QT_PLATFORM) $(PYTHON) -m lan_streamer.main --config ./dev_run/config.json
 
 run-desktop: migrate

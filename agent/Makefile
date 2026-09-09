@@ -32,7 +32,7 @@ run:
 
 up:
 	mkdir -p media data
-	$(DOCKER_COMPOSE) up -d --build
+	$(DOCKER_COMPOSE) up -d --build --force-recreate
 
 down:
 	$(DOCKER_COMPOSE) down

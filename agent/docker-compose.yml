@@ -1,5 +1,6 @@
 services:
   scan-agent:
+    image: lan-streamer-agent:latest
     build:
       context: ..
       dockerfile: agent/Dockerfile
@@ -12,6 +13,8 @@ services:
       - HOME=/root
       - SCAN_AGENT_CONFIG=/data/config.json
     volumes:
+      - ${SRC_ROOT:-../src}:/app/src:ro,z
+      - ${AGENT_SRC_ROOT:-./src}:/app/agent/src:ro,z
       - ${MEDIA_ROOT:-./media}:/media:ro,z
       - ${DATA_ROOT:-./data}:/data:Z
     healthcheck:
