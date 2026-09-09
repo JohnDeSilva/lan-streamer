@@ -55,6 +55,8 @@ function switchTab(tabName) {
         loadLibraries();
     } else if (tabName === "scan") {
         loadScanMonitor();
+    } else if (tabName === "logs") {
+        loadLogs();
     } else if (tabName === "browse") {
         loadBrowse();
     } else if (tabName === "config") {
@@ -215,11 +217,33 @@ function renderScanJobs(jobs) {
     });
 }
 
+function appendLogLine(text) {
+    const logConsole = document.getElementById("logConsole");
+    if (logConsole) {
+        const line = document.createElement("div");
+        line.textContent = text;
+        logConsole.appendChild(line);
+        logConsole.scrollTop = logConsole.scrollHeight;
+    }
+    const runningConsole = document.getElementById("runningLogConsole");
+    if (runningConsole) {
+        if (runningConsole.textContent === "Waiting for logs...") {
+            runningConsole.textContent = "";
+        }
+        const line = document.createElement("div");
+        line.textContent = text;
+        runningConsole.appendChild(line);
+        const autoScroll = document.getElementById("chkAutoScrollLogs");
+        if (!autoScroll || autoScroll.checked) {
+            runningConsole.scrollTop = runningConsole.scrollHeight;
+        }
+    }
+}
+
 function initSSE() {
     if (activeEventSource) {
         return;
     }
-    const logConsole = document.getElementById("logConsole");
     activeEventSource = new EventSource("/api/v1/events");
 
     activeEventSource.addEventListener("scan.progress", (event) => {
@@ -243,12 +267,9 @@ function initSSE() {
     activeEventSource.addEventListener("scan.log", (event) => {
         try {
             const payload = JSON.parse(event.data);
-            const line = document.createElement("div");
             const text = payload.line || payload.message || "";
             if (text) {
-                line.textContent = text;
-                logConsole.appendChild(line);
-                logConsole.scrollTop = logConsole.scrollHeight;
+                appendLogLine(text);
             }
         } catch {
             // Ignore parse errors
@@ -267,17 +288,74 @@ function initSSE() {
 }
 
 // -------------------------------------------------------------
-// 4. Browse (Series & Movies)
+// 4. Running Logs
 // -------------------------------------------------------------
+async function loadLogs() {
+    initSSE();
+    try {
+        const logs = await api.getLogs(300);
+        const runningConsole = document.getElementById("runningLogConsole");
+        if (!runningConsole) return;
+        runningConsole.innerHTML = "";
+        if (logs.length === 0) {
+            runningConsole.textContent = "No logs recorded yet.";
+            return;
+        }
+        logs.forEach((item) => {
+            const line = document.createElement("div");
+            line.textContent = item.line || item.message || "";
+            runningConsole.appendChild(line);
+        });
+        const autoScroll = document.getElementById("chkAutoScrollLogs");
+        if (!autoScroll || autoScroll.checked) {
+            runningConsole.scrollTop = runningConsole.scrollHeight;
+        }
+    } catch (error) {
+        showAlert(`Failed loading logs: ${error.message}`, "error");
+    }
+}
+
+// -------------------------------------------------------------
+// 5. Browse (Series, Movies & Anime Episodes)
+// -------------------------------------------------------------
+async function populateBrowseLibraries() {
+    const select = document.getElementById("browseLibrary");
+    if (!select || select.children.length > 1) return;
+    try {
+        const libraries = await api.getLibraries();
+        libraries.forEach((lib) => {
+            const option = document.createElement("option");
+            option.value = String(lib.id);
+            option.textContent = `${lib.name} (${lib.media_type})`;
+            select.appendChild(option);
+        });
+    } catch {
+        // Ignore failure to load libraries
+    }
+}
+
 async function loadBrowse() {
+    await populateBrowseLibraries();
     try {
         const query = document.getElementById("browseSearch").value.trim();
+        const librarySelect = document.getElementById("browseLibrary");
+        const libraryId = librarySelect ? librarySelect.value : "";
+        const watchedSelect = document.getElementById("browseWatched");
+        const watchedValue = watchedSelect ? watchedSelect.value : "";
         const sort = document.getElementById("browseSort").value;
         const grid = document.getElementById("mediaGrid");
         grid.innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">Loading media...</div>';
 
+        const watchedGroup = document.getElementById("browseWatchedGroup");
+        if (watchedGroup) {
+            watchedGroup.style.display = currentBrowseType === "anime_episodes" ? "block" : "none";
+        }
+
         if (currentBrowseType === "series") {
-            const items = await api.listSeries({ query, sort });
+            const params = { sort };
+            if (query) params.query = query;
+            if (libraryId) params.library_id = libraryId;
+            const items = await api.listSeries(params);
             grid.innerHTML = "";
             if (items.length === 0) {
                 grid.innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">No series found. Run a library scan!</div>';
@@ -297,8 +375,11 @@ async function loadBrowse() {
                 card.onclick = () => showSeriesDetail(item.id);
                 grid.appendChild(card);
             });
-        } else {
-            const items = await api.listMovies({ query, sort });
+        } else if (currentBrowseType === "movie") {
+            const params = { sort };
+            if (query) params.query = query;
+            if (libraryId) params.library_id = libraryId;
+            const items = await api.listMovies(params);
             grid.innerHTML = "";
             if (items.length === 0) {
                 grid.innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">No movies found. Run a library scan!</div>';
@@ -316,6 +397,45 @@ async function loadBrowse() {
                     </div>
                 `;
                 card.onclick = () => showMovieDetail(item.id);
+                grid.appendChild(card);
+            });
+        } else if (currentBrowseType === "anime_episodes") {
+            const params = { library_type: "anime", sort };
+            if (query) params.query = query;
+            if (libraryId) params.library_id = libraryId;
+            if (watchedValue === "watched") params.watched = true;
+            if (watchedValue === "unwatched") params.watched = false;
+
+            const items = await api.listEpisodes(params);
+            grid.innerHTML = "";
+            if (items.length === 0) {
+                grid.innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">No anime episodes found matching filter.</div>';
+                return;
+            }
+            items.forEach((item) => {
+                const card = document.createElement("div");
+                card.className = "media-card";
+                const posterUrl = getPosterUrl(item.poster_path);
+                const seasonEp = `S${item.season_number || 1}E${item.episode_number != null ? item.episode_number : "?"}`;
+                const epTitle = item.name ? escapeHtml(item.name) : seasonEp;
+                card.innerHTML = `
+                    <div class="media-poster">${posterUrl ? `<img src="${posterUrl}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : "No Poster"}</div>
+                    <div class="media-info">
+                        <div class="media-title" title="${escapeHtml(item.series_name || "")}">${escapeHtml(item.series_name || "Anime")}</div>
+                        <div style="font-weight: 500; font-size: 0.85rem; color: var(--text-primary); margin: 0.2rem 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            ${seasonEp} - ${epTitle}
+                        </div>
+                        <div class="media-sub" style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.35rem;">
+                            <span>${item.air_date || (item.runtime_seconds ? Math.round(item.runtime_seconds / 60) + "m" : "")}</span>
+                            <span class="status-tag ${item.watched ? "status-done" : "status-cancelled"}" style="font-size: 0.7rem;">
+                                ${item.watched ? "Watched" : "Unwatched"}
+                            </span>
+                        </div>
+                    </div>
+                `;
+                if (item.series_id) {
+                    card.onclick = () => showSeriesDetail(item.series_id);
+                }
                 grid.appendChild(card);
             });
         }
@@ -758,22 +878,57 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // Browse filters
-    document.getElementById("browseTypeSeries").onclick = () => {
-        currentBrowseType = "series";
-        document.getElementById("browseTypeSeries").className = "btn btn-primary";
-        document.getElementById("browseTypeMovies").className = "btn btn-secondary";
-        loadBrowse();
-    };
+    const btnTypeSeries = document.getElementById("browseTypeSeries");
+    const btnTypeMovies = document.getElementById("browseTypeMovies");
+    const btnTypeAnime = document.getElementById("browseTypeAnimeEpisodes");
 
-    document.getElementById("browseTypeMovies").onclick = () => {
-        currentBrowseType = "movie";
-        document.getElementById("browseTypeMovies").className = "btn btn-primary";
-        document.getElementById("browseTypeSeries").className = "btn btn-secondary";
+    function updateBrowseTypeButtons(activeType) {
+        currentBrowseType = activeType;
+        if (btnTypeSeries) btnTypeSeries.className = activeType === "series" ? "btn btn-primary" : "btn btn-secondary";
+        if (btnTypeMovies) btnTypeMovies.className = activeType === "movie" ? "btn btn-primary" : "btn btn-secondary";
+        if (btnTypeAnime) btnTypeAnime.className = activeType === "anime_episodes" ? "btn btn-primary" : "btn btn-secondary";
         loadBrowse();
-    };
+    }
 
-    document.getElementById("browseSearch").oninput = debounce(loadBrowse, 300);
-    document.getElementById("browseSort").onchange = loadBrowse;
+    if (btnTypeSeries) {
+        btnTypeSeries.onclick = () => updateBrowseTypeButtons("series");
+    }
+    if (btnTypeMovies) {
+        btnTypeMovies.onclick = () => updateBrowseTypeButtons("movie");
+    }
+    if (btnTypeAnime) {
+        btnTypeAnime.onclick = () => updateBrowseTypeButtons("anime_episodes");
+    }
+
+    const browseSearch = document.getElementById("browseSearch");
+    if (browseSearch) {
+        browseSearch.oninput = debounce(loadBrowse, 300);
+    }
+    const browseSort = document.getElementById("browseSort");
+    if (browseSort) {
+        browseSort.onchange = loadBrowse;
+    }
+    const browseLibrary = document.getElementById("browseLibrary");
+    if (browseLibrary) {
+        browseLibrary.onchange = loadBrowse;
+    }
+    const browseWatched = document.getElementById("browseWatched");
+    if (browseWatched) {
+        browseWatched.onchange = loadBrowse;
+    }
+
+    // Logs controls
+    const btnClearLogs = document.getElementById("btnClearLogs");
+    if (btnClearLogs) {
+        btnClearLogs.onclick = () => {
+            const runningConsole = document.getElementById("runningLogConsole");
+            if (runningConsole) runningConsole.innerHTML = "";
+        };
+    }
+    const btnRefreshLogs = document.getElementById("btnRefreshLogs");
+    if (btnRefreshLogs) {
+        btnRefreshLogs.onclick = () => loadLogs();
+    }
 
     // TMDB Match modal
     document.getElementById("btnTmdbSearch").onclick = searchTmdb;
@@ -896,5 +1051,6 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // Initial load
+    initSSE();
     loadDashboard();
 });

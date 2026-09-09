@@ -60,11 +60,16 @@ export const api = {
     cancelScan: () => request("/scan/cancel", { method: "POST" }),
     getScanStatus: () => request("/scan/status"),
     getScanJobs: (limit = 20) => request(`/scan/jobs?limit=${limit}`),
+    getLogs: (limit = 200) => request(`/scan/logs?limit=${limit}`),
 
     // Library Browser
     listSeries: (params = {}) => {
         const search = new URLSearchParams(params).toString();
         return request(`/library/series${search ? "?" + search : ""}`);
+    },
+    listEpisodes: (params = {}) => {
+        const search = new URLSearchParams(params).toString();
+        return request(`/library/episodes${search ? "?" + search : ""}`);
     },
     getSeriesDetail: (id) => request(`/library/series/${id}`),
     listMovies: (params = {}) => {
