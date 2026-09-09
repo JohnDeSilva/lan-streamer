@@ -126,8 +126,8 @@ def metadata_match(
 ) -> dict[str, Any]:
     """Point a series/movie at a TMDB identifier.
 
-    The locked-metadata flag is cleared so the next forced scan re-resolves
-    episode metadata from TMDB for the matched series.
+    The series and its episodes are immediately synchronized with the
+    matched TMDB metadata, and metadata is locked upon completion.
     """
     resolved_media_type = "series" if media_type == "tv" else media_type
     client = _tmdb_client()
@@ -139,7 +139,12 @@ def metadata_match(
         if details:
             enrichment = _series_enrichment(details)
         result = set_series_metadata_match(
-            session, media_identifier, payload.tmdb_identifier, enrichment
+            session,
+            media_identifier,
+            payload.tmdb_identifier,
+            enrichment,
+            tmdb_client=client,
+            tmdb_details=details,
         )
     elif resolved_media_type == "movie":
         details = client.get_movie_by_id(payload.tmdb_identifier)
@@ -154,7 +159,7 @@ def metadata_match(
         raise HTTPException(status_code=404, detail="Unknown media identifier")
     return {
         "status": "accepted",
-        "rescan_required": True,
+        "rescan_required": False,
         "media": result,
     }
 
