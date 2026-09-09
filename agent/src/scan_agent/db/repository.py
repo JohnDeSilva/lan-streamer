@@ -94,36 +94,70 @@ def _sync_media_files(
     media_id: int,
     versions: list[dict[str, Any]] | None,
 ) -> int:
-    """Replace the :class:`MediaFile` rows for one episode/movie.
+    """Replace or update the :class:`MediaFile` rows for one episode/movie.
 
-    Returns the number of active media files written. Versions without a
-    resolvable path are skipped (their files are gone; pass 3 handles
-    deactivation via :func:`record_missing_files`).
+    Handles deduplication and path re-assignment so that the unique
+    constraint on ``media_files.path`` is never violated when files are moved
+    or shared across items.
     """
-    connection.execute(
-        delete(MediaFile).where(
-            MediaFile.media_type == media_type, MediaFile.media_id == media_id
-        )
-    )
-    written_count = 0
+    incoming_versions_by_path: dict[str, dict[str, Any]] = {}
     for version in versions or []:
         version_path = version.get("path")
-        if not version_path:
-            continue
-        values = _version_to_media_file(version)
-        connection.add(
-            MediaFile(
-                media_type=media_type,
-                media_id=media_id,
-                path=version_path,
-                size_bytes=values["size_bytes"],
-                duration_seconds=values["duration_seconds"],
-                codec=values["codec"],
-                resolution=values["resolution"],
-                container=values["container"],
-                active=True,
-            )
+        if version_path and version_path not in incoming_versions_by_path:
+            incoming_versions_by_path[version_path] = version
+
+    # Remove any existing media files for this media item whose path is no longer present
+    existing_for_item = connection.scalars(
+        select(MediaFile).where(
+            MediaFile.media_type == media_type, MediaFile.media_id == media_id
         )
+    ).all()
+    for existing_item_file in existing_for_item:
+        if existing_item_file.path not in incoming_versions_by_path:
+            connection.delete(existing_item_file)
+
+    written_count = 0
+    for version_path, version in incoming_versions_by_path.items():
+        values = _version_to_media_file(version)
+
+        # Check if a MediaFile with this path already exists in session.new or DB
+        existing_media_file: MediaFile | None = None
+        for session_object in connection.new:
+            if (
+                isinstance(session_object, MediaFile)
+                and session_object.path == version_path
+            ):
+                existing_media_file = session_object
+                break
+
+        if existing_media_file is None:
+            existing_media_file = connection.scalars(
+                select(MediaFile).where(MediaFile.path == version_path)
+            ).first()
+
+        if existing_media_file is not None:
+            existing_media_file.media_type = media_type
+            existing_media_file.media_id = media_id
+            existing_media_file.size_bytes = values["size_bytes"]
+            existing_media_file.duration_seconds = values["duration_seconds"]
+            existing_media_file.codec = values["codec"]
+            existing_media_file.resolution = values["resolution"]
+            existing_media_file.container = values["container"]
+            existing_media_file.active = True
+        else:
+            connection.add(
+                MediaFile(
+                    media_type=media_type,
+                    media_id=media_id,
+                    path=version_path,
+                    size_bytes=values["size_bytes"],
+                    duration_seconds=values["duration_seconds"],
+                    codec=values["codec"],
+                    resolution=values["resolution"],
+                    container=values["container"],
+                    active=True,
+                )
+            )
         written_count += 1
     return written_count
 
@@ -547,26 +581,35 @@ def _upsert_series(
     episode_count = 0
     media_file_count = 0
     for folder_name, series_data in items.items():
-        series = existing_series.get(folder_name)
-        if series is None:
-            series = Series(library_id=library.id, folder_name=folder_name)
-            connection.add(series)
-            connection.flush()
-        processed_folders.add(folder_name)
-        _apply_series_fields(series, series_data)
-        season_count_delta, episode_count_delta, media_file_count_delta = (
-            _upsert_seasons(connection, series, series_data.get("seasons", {}))
-        )
-        series.watched_count = sum(
-            1
-            for season in series.seasons
-            for episode in season.episodes
-            if episode.watched
-        )
-        series_count += 1
-        season_count += season_count_delta
-        episode_count += episode_count_delta
-        media_file_count += media_file_count_delta
+        try:
+            with connection.begin_nested():
+                series = existing_series.get(folder_name)
+                if series is None:
+                    series = Series(library_id=library.id, folder_name=folder_name)
+                    connection.add(series)
+                    connection.flush()
+                processed_folders.add(folder_name)
+                _apply_series_fields(series, series_data)
+                season_count_delta, episode_count_delta, media_file_count_delta = (
+                    _upsert_seasons(connection, series, series_data.get("seasons", {}))
+                )
+                series.watched_count = sum(
+                    1
+                    for season in series.seasons
+                    for episode in season.episodes
+                    if episode.watched
+                )
+                series_count += 1
+                season_count += season_count_delta
+                episode_count += episode_count_delta
+                media_file_count += media_file_count_delta
+        except Exception:
+            processed_folders.add(folder_name)
+            logger.exception(
+                "Failed to upsert series '%s' in library '%s'",
+                folder_name,
+                library.name,
+            )
     stale_series = [
         series
         for folder_name, series in existing_series.items()
@@ -589,14 +632,23 @@ def _upsert_movies(
     movie_count = 0
     media_file_count = 0
     for folder_name, movie_data in items.items():
-        movie = existing_movies.get(folder_name)
-        if movie is None:
-            movie = Movie(library_id=library.id, folder_name=folder_name)
-            connection.add(movie)
-            connection.flush()
-        processed_folders.add(folder_name)
-        media_file_count += _apply_movie_fields(connection, movie, movie_data)
-        movie_count += 1
+        try:
+            with connection.begin_nested():
+                movie = existing_movies.get(folder_name)
+                if movie is None:
+                    movie = Movie(library_id=library.id, folder_name=folder_name)
+                    connection.add(movie)
+                    connection.flush()
+                processed_folders.add(folder_name)
+                media_file_count += _apply_movie_fields(connection, movie, movie_data)
+                movie_count += 1
+        except Exception:
+            processed_folders.add(folder_name)
+            logger.exception(
+                "Failed to upsert movie '%s' in library '%s'",
+                folder_name,
+                library.name,
+            )
     stale_movies = [
         movie
         for folder_name, movie in existing_movies.items()
