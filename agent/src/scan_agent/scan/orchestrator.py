@@ -33,8 +33,8 @@ class _BrokerLogHandler(logging.Handler):
     """Forward formatted log records from the scanner to the progress broker."""
 
     def __init__(self, broker: ProgressBroker) -> None:
-        """Initialise the handler at INFO level with a compact formatter."""
-        super().__init__(level=logging.INFO)
+        """Initialise the handler at NOTSET level with a compact formatter."""
+        super().__init__(level=logging.NOTSET)
         self._broker = broker
         self.setFormatter(
             logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -43,9 +43,33 @@ class _BrokerLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         """Publish the formatted record as a ``scan.log`` event."""
         try:
-            self._broker.publish_log(self.format(record))
+            self._broker.publish_log(self.format(record), level=record.levelname)
         except ValueError, TypeError, RuntimeError:
             self.handleError(record)
+
+
+def _series_has_episode_files(series_data: dict[str, Any]) -> bool:
+    """Return True if the series data dictionary contains at least one episode file."""
+    if not isinstance(series_data, dict):
+        return False
+    seasons = series_data.get("seasons", {})
+    if not isinstance(seasons, dict) or not seasons:
+        return False
+    for season_data in seasons.values():
+        if not isinstance(season_data, dict):
+            continue
+        episodes = season_data.get("episodes", [])
+        if not isinstance(episodes, list):
+            continue
+        for episode in episodes:
+            if not isinstance(episode, dict):
+                continue
+            if episode.get("path"):
+                return True
+            for version in episode.get("versions", []):
+                if isinstance(version, dict) and version.get("path"):
+                    return True
+    return False
 
 
 class ScanOrchestrator:
@@ -170,16 +194,10 @@ class ScanOrchestrator:
         scan_agent_logger = logging.getLogger("scan_agent")
         lan_streamer_logger.addHandler(log_handler)
         scan_agent_logger.addHandler(log_handler)
-        if (
-            lan_streamer_logger.level > logging.INFO
-            or lan_streamer_logger.level == logging.NOTSET
-        ):
-            lan_streamer_logger.setLevel(logging.INFO)
-        if (
-            scan_agent_logger.level > logging.INFO
-            or scan_agent_logger.level == logging.NOTSET
-        ):
-            scan_agent_logger.setLevel(logging.INFO)
+        target_log_level_name = getattr(self._agent_config, "log_level", "INFO").upper()
+        target_log_level = getattr(logging, target_log_level_name, logging.INFO)
+        lan_streamer_logger.setLevel(target_log_level)
+        scan_agent_logger.setLevel(target_log_level)
         pass_description = (
             "all passes (1+2+3)" if pass_number == 0 else f"pass {pass_number}"
         )
@@ -306,6 +324,19 @@ class ScanOrchestrator:
             season_callback=self._season_callback,
             is_interrupted=self._is_interrupted.is_set,
         )
+        if media_type != "movie":
+            empty_series_folders = [
+                folder_name
+                for folder_name, series_data in result.items()
+                if not _series_has_episode_files(series_data)
+            ]
+            for folder_name in empty_series_folders:
+                logger.info(
+                    "Omitting series folder with no episode files from scan results: '%s'",
+                    folder_name,
+                )
+                del result[folder_name]
+
         with get_session(self._engine) as session:
             preserve_live_watch_state(session, library_row, result)
             stats = upsert_library(

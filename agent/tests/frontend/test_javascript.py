@@ -792,3 +792,58 @@ def test_logic_is_log_level_visible(engine: MiniRacer) -> None:
 def test_app_module_loads_cleanly(engine: MiniRacer) -> None:
     result = _eval_js(engine, _app_load_program())
     assert result == {"loaded": True}
+
+
+def test_filter_series_with_episodes(engine: MiniRacer) -> None:
+    result = _logic_test(
+        engine,
+        setup_js="""
+        const testSeriesList = [
+            {
+                id: 1,
+                name: "Series With Episodes",
+                seasons: [
+                    {
+                        season_number: 1,
+                        episodes: [{ name: "Ep 1", path: "/media/tv/ep1.mkv" }]
+                    }
+                ]
+            },
+            {
+                id: 2,
+                name: "Empty Series (No Seasons)",
+                seasons: []
+            },
+            {
+                id: 3,
+                name: "Empty Season Series",
+                seasons: [
+                    {
+                        season_number: 1,
+                        episodes: []
+                    }
+                ]
+            },
+            {
+                id: 4,
+                name: "Null Seasons Series",
+                seasons: null
+            }
+        ];
+        const filtered = filterSeriesWithEpisodes(testSeriesList);
+        """,
+        probe_js="""
+        initialCount: testSeriesList.length,
+        filteredCount: filtered.length,
+        retainedName: filtered[0].name,
+        handlesEmptyInput: filterSeriesWithEpisodes([]).length,
+        handlesNullInput: filterSeriesWithEpisodes(null).length
+        """,
+    )
+    assert result == {
+        "initialCount": 4,
+        "filteredCount": 1,
+        "retainedName": "Series With Episodes",
+        "handlesEmptyInput": 0,
+        "handlesNullInput": 0,
+    }

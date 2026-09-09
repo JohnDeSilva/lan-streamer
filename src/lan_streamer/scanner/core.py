@@ -240,11 +240,6 @@ def _scan_pass1(
 
     library = LibraryDict()
 
-    # For TV libraries, also check directories that have season subdirectories.
-    from lan_streamer.services.file_discovery import (
-        has_season_subdirectories as _has_season_subdirs,
-    )
-
     for root_directory in root_directories:
         if is_interrupted and is_interrupted():
             logger.info("Pass 1: interruption detected, stopping.")
@@ -265,10 +260,7 @@ def _scan_pass1(
                 for entry in os.scandir(root_path)
                 if entry.is_dir()
                 and not entry.name.startswith(".")
-                and (
-                    has_video_files(Path(root_path / entry.name))
-                    or _has_season_subdirs(Path(root_path / entry.name))
-                )
+                and has_video_files(Path(root_path / entry.name))
             ],
             key=lambda d: d.stat().st_mtime,
             reverse=True,

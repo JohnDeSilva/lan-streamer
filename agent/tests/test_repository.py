@@ -787,3 +787,127 @@ def test_sync_series_tmdb_fallback_edge_cases(tmdb_mock) -> None:
     tmdb_mock.get_episodes.side_effect = RuntimeError("TMDB error")
     synced_error = _sync_series_tmdb_fallback(series_record, "100", tmdb_mock)
     assert synced_error is not None
+
+
+def test_upsert_library_omits_series_with_no_episode_files(
+    database_engine, agent_config
+) -> None:
+    empty_series_payload = {
+        "name": agent_config.libraries["tv"]["name"],
+        "media_type": "tv",
+        "root_path": agent_config.libraries["tv"]["root_path"],
+        "items": {
+            "Empty Show": {
+                "name": "Empty Show",
+                "seasons": {
+                    "Season 01": {
+                        "metadata": {},
+                        "episodes": [],
+                    }
+                },
+            },
+            "Placeholder Only Show": {
+                "name": "Placeholder Only Show",
+                "seasons": {
+                    "Season 01": {
+                        "metadata": {},
+                        "episodes": [
+                            {
+                                "name": "Placeholder Ep 1",
+                                "episode_number": 1,
+                                "path": None,
+                                "versions": [],
+                            }
+                        ],
+                    }
+                },
+            },
+        },
+    }
+    with get_session(database_engine) as session:
+        stats = upsert_library(session, empty_series_payload)
+        assert stats["series"] == 0
+        assert stats["episodes"] == 0
+
+        series_list = list_series(session)
+        assert len(series_list) == 0
+
+
+def test_list_series_excludes_series_without_episode_files(
+    database_engine, agent_config
+) -> None:
+    from scan_agent.db.models import Episode, Library, Season, Series
+
+    with get_session(database_engine) as session:
+        library = Library(
+            name="Manual Library",
+            media_type="tv",
+            root_path="/media/tv",
+        )
+        session.add(library)
+        session.flush()
+
+        empty_series = Series(
+            library_id=library.id,
+            folder_name="Empty Series Folder",
+            name="Empty Series Folder",
+        )
+        session.add(empty_series)
+        session.flush()
+
+        season_empty = Season(
+            series_id=empty_series.id,
+            season_number=1,
+            name="Season 1",
+        )
+        session.add(season_empty)
+        session.flush()
+
+        placeholder_episode = Episode(
+            season_id=season_empty.id,
+            episode_number=1,
+            name="Placeholder Ep",
+            path=None,
+        )
+        session.add(placeholder_episode)
+        session.commit()
+
+    with get_session(database_engine) as session:
+        series_results = list_series(session)
+        assert len(series_results) == 0
+
+
+def test_upsert_series_scan_deletes_series_when_files_removed(
+    database_engine, agent_config, scanned_series_data
+) -> None:
+    payload = _tv_library_payload(agent_config, scanned_series_data)
+    with get_session(database_engine) as session:
+        stats = upsert_library(session, payload)
+        assert stats["series"] == 1
+        tv_library = get_library(session, agent_config.libraries["tv"]["name"])
+        assert tv_library is not None
+        library_identifier = tv_library.id
+
+    with get_session(database_engine) as session:
+        series_results = list_series(session)
+        assert len(series_results) == 1
+
+    # Now simulate a scan where all episodes were deleted
+    empty_series_data = {
+        "name": "Test Show",
+        "seasons": {
+            "Season 01": {
+                "metadata": {},
+                "episodes": [],
+            }
+        },
+    }
+    with get_session(database_engine) as session:
+        stats = upsert_series_scan(
+            session, library_identifier, "Test Show", empty_series_data
+        )
+        assert stats["series"] == 0
+
+    with get_session(database_engine) as session:
+        series_results = list_series(session)
+        assert len(series_results) == 0
