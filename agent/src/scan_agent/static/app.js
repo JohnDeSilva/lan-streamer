@@ -2,7 +2,7 @@
  * Main Single Page Application controller for LAN Streamer Scan Agent.
  */
 import { api } from "./api.js";
-import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams } from "./logic.js";
+import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams, filterLibrariesForBrowseType } from "./logic.js";
 
 // State
 let currentTab = "dashboard";
@@ -11,6 +11,7 @@ let activeEventSource = null;
 let currentDetailItem = null;
 let renameTargetItem = null;
 let tmdbTargetItem = null;
+let browseLibrariesCache = null;
 
 // Helpers
 function showAlert(message, type = "success", duration = 4000) {
@@ -319,16 +320,29 @@ async function loadLogs() {
 // 5. Browse (Series, Movies & Anime)
 // -------------------------------------------------------------
 async function populateBrowseLibraries() {
-    const select = document.getElementById("browseLibrary");
-    if (!select || select.children.length > 1) return;
+    const selectElement = document.getElementById("browseLibrary");
+    if (!selectElement) return;
     try {
-        const libraries = await api.getLibraries();
-        libraries.forEach((lib) => {
-            const option = document.createElement("option");
-            option.value = String(lib.id);
-            option.textContent = `${lib.name} (${lib.media_type})`;
-            select.appendChild(option);
+        if (browseLibrariesCache === null) {
+            browseLibrariesCache = await api.getLibraries();
+        }
+        const previousSelectedValue = selectElement.value;
+        const matchingLibraries = filterLibrariesForBrowseType(browseLibrariesCache, currentBrowseType);
+        selectElement.innerHTML = '<option value="">All Libraries</option>';
+        let preservedSelection = false;
+        matchingLibraries.forEach((libraryItem) => {
+            const optionElement = document.createElement("option");
+            optionElement.value = String(libraryItem.id);
+            optionElement.textContent = `${libraryItem.name} (${libraryItem.media_type})`;
+            if (String(libraryItem.id) === previousSelectedValue) {
+                optionElement.selected = true;
+                preservedSelection = true;
+            }
+            selectElement.appendChild(optionElement);
         });
+        if (!preservedSelection && previousSelectedValue) {
+            selectElement.value = "";
+        }
     } catch {
         // Ignore failure to load libraries
     }
@@ -918,6 +932,7 @@ document.addEventListener("DOMContentLoaded", () => {
             } else {
                 await api.createLibrary({ name, media_type: mediaType, root_path: rootPath, enabled });
             }
+            browseLibrariesCache = null;
             closeModal("libraryModal");
             loadLibraries();
             showAlert("Library saved successfully", "success");
@@ -990,6 +1005,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (confirm(`Are you sure you want to delete library "${id}"?`)) {
                 try {
                     await api.deleteLibrary(id);
+                    browseLibrariesCache = null;
                     loadLibraries();
                     showAlert("Library deleted", "success");
                 } catch (error) {

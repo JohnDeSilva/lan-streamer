@@ -108,3 +108,17 @@ export function parseScanProgressStep(rawData) {
     }
     return progressStepForEvent(payload);
 }
+
+/**
+ * Filter an array of library definitions by the active browse type.
+ *
+ * "series" matches libraries with media_type "tv", "anime" matches "anime",
+ * and "movie" matches "movie".
+ */
+export function filterLibrariesForBrowseType(libraries, browseType) {
+    if (!Array.isArray(libraries)) {
+        return [];
+    }
+    const targetMediaType = browseType === "series" ? "tv" : browseType;
+    return libraries.filter((library) => library && library.media_type === targetMediaType);
+}

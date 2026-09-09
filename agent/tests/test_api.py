@@ -203,6 +203,51 @@ def test_scan_jobs_and_browse_after_scan(
     assert len(flattened[0]["versions"]) == 2
 
 
+def test_browse_library_id_filtering(api_app: FastAPI, api_client: TestClient) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    api_client.post("/api/v1/scan", json={"library_id": "movie", "pass_number": 1})
+    _wait_for_idle(api_app)
+
+    # Filter series by config key "tv"
+    series_results = api_client.get(
+        "/api/v1/library/series", params={"library_id": "tv"}
+    ).json()
+    assert len(series_results) == 1
+    assert series_results[0]["name"] == "Test Show"
+
+    # Filter series by non-matching library_id (e.g. "movie")
+    empty_series_results = api_client.get(
+        "/api/v1/library/series", params={"library_id": "movie"}
+    ).json()
+    assert len(empty_series_results) == 0
+
+    # Filter movies by config key "movie"
+    movie_results = api_client.get(
+        "/api/v1/library/movies", params={"library_id": "movie"}
+    ).json()
+    assert len(movie_results) == 1
+    assert movie_results[0]["name"] == "Some Movie (2020)"
+
+    # Filter movies by non-matching library_id (e.g. "tv")
+    empty_movie_results = api_client.get(
+        "/api/v1/library/movies", params={"library_id": "tv"}
+    ).json()
+    assert len(empty_movie_results) == 0
+
+    # Filter episodes by config key "tv"
+    episode_results = api_client.get(
+        "/api/v1/library/episodes", params={"library_id": "tv"}
+    ).json()
+    assert len(episode_results) >= 2
+
+    # Filter episodes by non-matching library_id (e.g. "movie")
+    empty_episode_results = api_client.get(
+        "/api/v1/library/episodes", params={"library_id": "movie"}
+    ).json()
+    assert len(empty_episode_results) == 0
+
+
 def test_browse_episodes_filter_and_scan_logs(
     api_app: FastAPI, api_client: TestClient
 ) -> None:
