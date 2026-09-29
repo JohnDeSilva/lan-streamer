@@ -98,6 +98,19 @@ def test_config_put_keeps_password_when_blank_or_masked(
     assert config.opensubtitles_password == "new-secret"
 
 
+def test_config_put_clears_password_when_flag_set(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    config = api_app.state.agent_config
+    config.opensubtitles_password = "existing-secret"
+    response = api_client.put(
+        "/api/v1/config", json={"clear_opensubtitles_password": True}
+    )
+    assert response.status_code == 200
+    assert response.json()["opensubtitles_password"] == ""
+    assert config.opensubtitles_password == ""
+
+
 def test_config_put_updates_other_keys(api_client: TestClient) -> None:
     response = api_client.put(
         "/api/v1/config", json={"scan_concurrency": 4, "tmdb_api_key": "abc123"}

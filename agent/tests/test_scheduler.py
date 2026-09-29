@@ -65,3 +65,14 @@ def test_scheduler_lifecycle_start_and_stop(agent_config) -> None:
     # Calling stop again is idempotent
     scheduler.stop()
     assert scheduler.is_running is False
+
+
+def test_scheduler_busy_retry_window(agent_config) -> None:
+    orchestrator = MagicMock()
+    orchestrator.start_scan.side_effect = RuntimeError("A scan is already running")
+    agent_config.scheduled_scan_interval_hours = 4
+    scheduler = ScanScheduler(agent_config, orchestrator)
+
+    # When trigger is called and orchestrator is busy, it should record that it's busy
+    success = scheduler._trigger_scheduled_scan()
+    assert success is False

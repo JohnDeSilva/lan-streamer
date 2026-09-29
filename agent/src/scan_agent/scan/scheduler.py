@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+RETRY_DELAY_ON_BUSY_SECONDS: float = 300.0
+
 
 class ScanScheduler:
     """Periodically triggers library scans at a configured interval.
@@ -69,16 +71,19 @@ class ScanScheduler:
         self._thread = None
         logger.info("Scheduled scan runner stopped")
 
-    def _trigger_scheduled_scan(self) -> None:
-        """Trigger a full pass scan across all configured libraries if enabled."""
+    def _trigger_scheduled_scan(self) -> bool:
+        """Trigger a full pass scan across all configured libraries if enabled.
+
+        Returns True if the scan was initiated, False otherwise.
+        """
         if not self._agent_config.scheduled_scan_enabled:
             logger.debug(
                 "Scheduled scan skipped because scheduled scanning is disabled"
             )
-            return
+            return False
         if not self._agent_config.libraries:
             logger.debug("Scheduled scan skipped because no libraries are configured")
-            return
+            return False
 
         logger.info("Triggering scheduled scan across all configured libraries")
         try:
@@ -88,12 +93,17 @@ class ScanScheduler:
                 force_refresh=False,
             )
             logger.info("Scheduled scan successfully initiated")
+            return True
         except RuntimeError as runtime_error:
             logger.info(
-                "Scheduled scan skipped (already in progress): %s", runtime_error
+                "Scheduled scan deferred (already in progress): %s. Will retry in %d seconds.",
+                runtime_error,
+                int(RETRY_DELAY_ON_BUSY_SECONDS),
             )
+            return False
         except ValueError, OSError:
             logger.exception("Failed to start scheduled scan")
+            return False
 
     def _run_loop(self) -> None:
         """Background loop sleeping in small increments until interval elapses."""
@@ -103,7 +113,13 @@ class ScanScheduler:
             elapsed = current_time - self._last_scan_timestamp
 
             if elapsed >= interval:
-                self._trigger_scheduled_scan()
-                self._last_scan_timestamp = time.monotonic()
+                initiated = self._trigger_scheduled_scan()
+                if initiated or not self._agent_config.scheduled_scan_enabled:
+                    self._last_scan_timestamp = time.monotonic()
+                else:
+                    # When busy, retry in 5 minutes rather than waiting another full interval
+                    self._last_scan_timestamp = (
+                        time.monotonic() - interval + RETRY_DELAY_ON_BUSY_SECONDS
+                    )
 
             self._stop_event.wait(timeout=1.0)
