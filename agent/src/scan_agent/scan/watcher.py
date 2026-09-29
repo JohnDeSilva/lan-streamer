@@ -98,14 +98,27 @@ def match_library_for_path(
 
 
 def _is_any_file_actively_writing(
-    paths: set[str], settling_threshold_seconds: float = 3.0
+    paths: set[str],
+    settling_threshold_seconds: float = 3.0,
+    max_paths_to_check: int = 50,
 ) -> bool:
-    """Return True if any of the given paths has a modification time within the threshold."""
+    """Return True if any of the given paths has a modification time within the threshold.
+
+    Samples at most ``max_paths_to_check`` items. Bounds the check between -2.0s
+    and ``settling_threshold_seconds`` to avoid infinite loops from future timestamps
+    or clock drift between host and container.
+    """
     current_wall_time = time.time()
-    for file_path in paths:
+    sample_paths = (
+        list(paths)[-max_paths_to_check:]
+        if len(paths) > max_paths_to_check
+        else list(paths)
+    )
+    for file_path in sample_paths:
         try:
             stat_result = os.stat(file_path)
-            if (current_wall_time - stat_result.st_mtime) < settling_threshold_seconds:
+            delta = current_wall_time - stat_result.st_mtime
+            if -2.0 <= delta < settling_threshold_seconds:
                 return True
         except OSError:
             continue
@@ -182,7 +195,8 @@ class FilesystemWatcher:
             )
             if library_identifier not in self._pending_paths:
                 self._pending_paths[library_identifier] = set()
-            self._pending_paths[library_identifier].add(path_string)
+            if len(self._pending_paths[library_identifier]) < 100:
+                self._pending_paths[library_identifier].add(path_string)
             logger.debug(
                 "Change recorded for library '%s' (%s). Debouncing for %d seconds",
                 library_identifier,
