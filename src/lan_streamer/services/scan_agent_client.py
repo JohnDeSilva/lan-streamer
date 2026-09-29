@@ -225,5 +225,297 @@ class ScanAgentClient:
 
         return ""
 
+    def fetch_agent_config(
+        self, agent_url: str, timeout: float = 10.0
+    ) -> dict[str, Any]:
+        """Fetch the full agent configuration from the remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/config"
+
+        try:
+            response = requests.get(
+                target_endpoint,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed fetching configuration from scan agent '%s': %s",
+                agent_url,
+                error,
+            )
+            raise ScanAgentConnectionError(
+                f"Could not fetch configuration from scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                return payload
+            raise ValueError("Expected dictionary of configuration from agent")
+        except ValueError as error:
+            raise ScanAgentConnectionError(
+                f"Invalid configuration response from scan agent at '{agent_url}': {error}"
+            ) from error
+
+    def update_agent_config(
+        self,
+        agent_url: str,
+        configuration_payload: dict[str, Any],
+        timeout: float = 10.0,
+    ) -> dict[str, Any]:
+        """Update configuration settings on the remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/config"
+
+        try:
+            response = requests.put(
+                target_endpoint,
+                json=configuration_payload,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed updating configuration on scan agent '%s': %s",
+                agent_url,
+                error,
+            )
+            raise ScanAgentConnectionError(
+                f"Could not update configuration on scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                return payload
+            raise ValueError("Expected dictionary response from agent config update")
+        except ValueError as error:
+            raise ScanAgentConnectionError(
+                f"Invalid response from scan agent at '{agent_url}': {error}"
+            ) from error
+
+    def fetch_scan_status(
+        self, agent_url: str, timeout: float = 10.0
+    ) -> dict[str, Any]:
+        """Fetch current scan status and last completed job details from the agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/scan/status"
+
+        try:
+            response = requests.get(
+                target_endpoint,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed fetching scan status from scan agent '%s': %s",
+                agent_url,
+                error,
+            )
+            raise ScanAgentConnectionError(
+                f"Could not fetch scan status from scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                return payload
+            raise ValueError("Expected dictionary response from agent scan status")
+        except ValueError as error:
+            raise ScanAgentConnectionError(
+                f"Invalid scan status response from scan agent at '{agent_url}': {error}"
+            ) from error
+
+    def trigger_agent_scan(
+        self,
+        agent_url: str,
+        library_identifier: str | None = None,
+        pass_number: int = 0,
+        force_refresh: bool = False,
+        timeout: float = 10.0,
+    ) -> dict[str, Any]:
+        """Initiate a background scan on the remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/scan"
+        request_body: dict[str, Any] = {
+            "library_id": library_identifier,
+            "pass_number": pass_number,
+            "force_refresh": force_refresh,
+        }
+
+        try:
+            response = requests.post(
+                target_endpoint,
+                json=request_body,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed triggering scan on scan agent '%s': %s", agent_url, error
+            )
+            raise ScanAgentConnectionError(
+                f"Could not trigger scan on scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code not in (200, 201, 202):
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                return payload
+            raise ValueError("Expected dictionary response from trigger scan")
+        except ValueError as error:
+            raise ScanAgentConnectionError(
+                f"Invalid response from scan agent at '{agent_url}': {error}"
+            ) from error
+
+    def cancel_agent_scan(
+        self, agent_url: str, timeout: float = 10.0
+    ) -> dict[str, Any]:
+        """Cancel a running scan on the remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/scan/cancel"
+
+        try:
+            response = requests.post(
+                target_endpoint,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed cancelling scan on scan agent '%s': %s", agent_url, error
+            )
+            raise ScanAgentConnectionError(
+                f"Could not cancel scan on scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code not in (200, 202):
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                return payload
+            raise ValueError("Expected dictionary response from cancel scan")
+        except ValueError as error:
+            raise ScanAgentConnectionError(
+                f"Invalid response from scan agent at '{agent_url}': {error}"
+            ) from error
+
+    def create_agent_library(
+        self,
+        agent_url: str,
+        name: str,
+        media_type: str,
+        root_path: str,
+        timeout: float = 10.0,
+    ) -> dict[str, Any]:
+        """Register a new library on the remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/libraries"
+        payload = {
+            "name": name,
+            "media_type": media_type,
+            "root_path": root_path,
+        }
+
+        try:
+            response = requests.post(
+                target_endpoint,
+                json=payload,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed creating library '%s' on agent '%s': %s",
+                name,
+                agent_url,
+                error,
+            )
+            raise ScanAgentConnectionError(
+                f"Could not create library on scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code not in (200, 201):
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            response_json = response.json()
+            if isinstance(response_json, dict):
+                return response_json
+            raise ValueError("Expected dictionary response from create library")
+        except ValueError as error:
+            raise ScanAgentConnectionError(
+                f"Invalid response from scan agent at '{agent_url}': {error}"
+            ) from error
+
+    def delete_agent_library(
+        self,
+        agent_url: str,
+        library_identifier: str,
+        timeout: float = 10.0,
+    ) -> dict[str, Any]:
+        """Delete a library from the remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        quoted_identifier = quote(str(library_identifier), safe="")
+        target_endpoint = f"{normalized_url}/api/v1/libraries/{quoted_identifier}"
+
+        try:
+            response = requests.delete(
+                target_endpoint,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed deleting library '%s' from agent '%s': %s",
+                library_identifier,
+                agent_url,
+                error,
+            )
+            raise ScanAgentConnectionError(
+                f"Could not delete library from scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code not in (200, 204):
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            response_json = response.json()
+            if isinstance(response_json, dict):
+                return response_json
+            return {"status": "deleted"}
+        except ValueError:
+            return {"status": "deleted"}
+
 
 scan_agent_client = ScanAgentClient()
