@@ -2372,8 +2372,11 @@ class SettingsDialog(QDialog):
             AgentControlDialog,
         )
 
-        dialog = AgentControlDialog(agent_url=agent_url, parent=self)
+        dialog = AgentControlDialog(
+            agent_url=agent_url, controller=self.controller, parent=self
+        )
         dialog.exec()
+        self.refresh_remote_agents()
 
     @Slot()
     def remove_selected_remote_agent(self) -> None:

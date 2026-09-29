@@ -110,6 +110,7 @@ def test_agent_control_dialog_saves_config(qtbot, mock_agent_data) -> None:
     # Modify values
     dialog.scheduled_scan_interval_spinbox.setValue(8)
     dialog.filesystem_watching_debounce_spinbox.setValue(60)
+    dialog.clear_opensubtitles_password_checkbox.setChecked(True)
 
     with (
         patch(
@@ -127,11 +128,18 @@ def test_agent_control_dialog_saves_config(qtbot, mock_agent_data) -> None:
         saved_payload = mock_update.call_args[0][1]
         assert saved_payload["scheduled_scan_interval_hours"] == 8
         assert saved_payload["filesystem_watching_debounce_seconds"] == 60
+        assert saved_payload["clear_opensubtitles_password"] is True
         dialog.close()
 
 
 def test_agent_control_dialog_trigger_and_cancel_scan(qtbot, mock_agent_data) -> None:
+    from unittest.mock import MagicMock
+
     agent_url = "http://127.0.0.1:8800"
+    mock_controller = MagicMock()
+    mock_controller._config.libraries = {
+        "TV Shows": {"management_type": "remote", "agent_url": agent_url}
+    }
 
     with (
         patch(
@@ -148,7 +156,7 @@ def test_agent_control_dialog_trigger_and_cancel_scan(qtbot, mock_agent_data) ->
         ),
         patch("lan_streamer.ui_views.dialogs.agent_control_dialog.QMessageBox.warning"),
     ):
-        dialog = AgentControlDialog(agent_url=agent_url)
+        dialog = AgentControlDialog(agent_url=agent_url, controller=mock_controller)
         qtbot.addWidget(dialog)
         qtbot.waitUntil(
             lambda: dialog.libraries_table.rowCount() == 1,
@@ -183,6 +191,8 @@ def test_agent_control_dialog_trigger_and_cancel_scan(qtbot, mock_agent_data) ->
         qtbot.waitUntil(lambda: mock_cancel.called, timeout=10000)
         assert mock_cancel.call_args[0][0] == agent_url
         dialog.close()
+
+    mock_controller._queue_remote_sync.assert_called_once_with("TV Shows")
 
 
 def test_add_remote_library_dialog(qtbot) -> None:
