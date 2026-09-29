@@ -97,6 +97,21 @@ def match_library_for_path(
     return None
 
 
+def _is_any_file_actively_writing(
+    paths: set[str], settling_threshold_seconds: float = 3.0
+) -> bool:
+    """Return True if any of the given paths has a modification time within the threshold."""
+    current_wall_time = time.time()
+    for file_path in paths:
+        try:
+            stat_result = os.stat(file_path)
+            if (current_wall_time - stat_result.st_mtime) < settling_threshold_seconds:
+                return True
+        except OSError:
+            continue
+    return False
+
+
 class FilesystemWatcher:
     """Monitors library root paths and triggers scans after a debounce delay."""
 
@@ -111,6 +126,7 @@ class FilesystemWatcher:
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self.pending_scans: dict[str, float] = {}
+        self._pending_paths: dict[str, set[str]] = {}
 
     @property
     def is_running(self) -> bool:
@@ -164,6 +180,9 @@ class FilesystemWatcher:
             self.pending_scans[library_identifier] = (
                 time.monotonic() + debounce_duration
             )
+            if library_identifier not in self._pending_paths:
+                self._pending_paths[library_identifier] = set()
+            self._pending_paths[library_identifier].add(path_string)
             logger.debug(
                 "Change recorded for library '%s' (%s). Debouncing for %d seconds",
                 library_identifier,
@@ -186,6 +205,21 @@ class FilesystemWatcher:
                             library_identifier,
                         )
                         continue
+
+                    # Check if any recorded file is still actively being written
+                    pending_files = self._pending_paths.get(library_identifier, set())
+                    if _is_any_file_actively_writing(pending_files):
+                        debounce_duration = self.debounce_seconds
+                        logger.debug(
+                            "Files in library '%s' are still actively being written. Extending debounce by %d seconds",
+                            library_identifier,
+                            debounce_duration,
+                        )
+                        self.pending_scans[library_identifier] = (
+                            current_monotonic + debounce_duration
+                        )
+                        continue
+
                     try:
                         self._orchestrator.start_scan(
                             library_identifier=library_identifier,
@@ -193,6 +227,7 @@ class FilesystemWatcher:
                             force_refresh=False,
                         )
                         del self.pending_scans[library_identifier]
+                        self._pending_paths.pop(library_identifier, None)
                         logger.info(
                             "Filesystem watcher initiated scan for library '%s'",
                             library_identifier,
@@ -209,6 +244,7 @@ class FilesystemWatcher:
                             library_identifier,
                         )
                         del self.pending_scans[library_identifier]
+                        self._pending_paths.pop(library_identifier, None)
 
     def _run_loop(self) -> None:
         """Background thread monitoring directories using watchfiles."""
@@ -259,10 +295,24 @@ class FilesystemWatcher:
                         or not self._agent_config.filesystem_watching_enabled
                     ):
                         break
-            except (OSError, RuntimeError) as watch_error:
+            except OSError as error:
+                if error.errno == 28 or "No space left on device" in str(error):
+                    logger.exception(
+                        "Filesystem watcher hit inotify watch limit (ENOSPC: No space left on device). "
+                        "Please increase system limit via 'sysctl fs.inotify.max_user_watches=524288'. "
+                        "Filesystem watching will pause for 15 minutes."
+                    )
+                    self._stop_event.wait(timeout=900.0)
+                else:
+                    logger.warning(
+                        "Filesystem watcher encountered an unexpected error: %s",
+                        error,
+                    )
+                    self._stop_event.wait(timeout=2.0)
+            except RuntimeError as runtime_error:
                 logger.warning(
-                    "Filesystem watcher encountered an unexpected error: %s",
-                    watch_error,
+                    "Filesystem watcher runtime error: %s",
+                    runtime_error,
                 )
                 self._stop_event.wait(timeout=2.0)
 

@@ -139,3 +139,52 @@ def test_watcher_lifecycle_start_and_stop(agent_config) -> None:
     # Idempotent stop
     watcher.stop()
     assert watcher.is_running is False
+
+
+def test_watcher_extends_debounce_for_actively_written_file(
+    agent_config, tmp_path
+) -> None:
+    orchestrator = MagicMock()
+    orchestrator.status.return_value = {"running": None}
+    agent_config.filesystem_watching_debounce_seconds = 2
+    watcher = FilesystemWatcher(agent_config, orchestrator)
+
+    tv_root = agent_config.libraries["tv"]["root_path"]
+    os.makedirs(tv_root, exist_ok=True)
+    active_file = os.path.join(tv_root, "Test Show", "S01E01.mkv")
+    os.makedirs(os.path.dirname(active_file), exist_ok=True)
+    with open(active_file, "wb") as file_handle:
+        file_handle.write(b"video data")
+
+    # Touch file with current time (actively writing)
+    os.utime(active_file, (time.time(), time.time()))
+
+    watcher.record_change(active_file)
+    assert "tv" in watcher.pending_scans
+
+    # Simulate debounce timer expired
+    watcher.pending_scans["tv"] = time.monotonic() - 1.0
+
+    # _process_pending_scans should detect file was touched within settling window (<3.0s)
+    # and extend the debounce rather than trigger the scan
+    watcher._process_pending_scans()
+    orchestrator.start_scan.assert_not_called()
+    assert "tv" in watcher.pending_scans
+    assert watcher.pending_scans["tv"] > time.monotonic()
+
+
+def test_watcher_handles_enospc_error(agent_config, monkeypatch) -> None:
+    orchestrator = MagicMock()
+    watcher = FilesystemWatcher(agent_config, orchestrator)
+
+    import watchfiles
+
+    def mock_watch(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(watchfiles, "watch", mock_watch)
+
+    # Calling _run_loop directly for one iteration should catch ENOSPC without crashing
+    # Set stop_event after 0.05 seconds so loop exits
+    watcher._stop_event.set()
+    watcher._run_loop()
