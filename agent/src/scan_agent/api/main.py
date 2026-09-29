@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -23,8 +24,12 @@ from scan_agent.config import AgentConfig, get_agent_config, install_into_lan_st
 from scan_agent.db.connection import create_engine_for_database, init_database
 from scan_agent.scan.orchestrator import ScanOrchestrator
 from scan_agent.scan.progress import ProgressBroker
+from scan_agent.scan.scheduler import ScanScheduler
+from scan_agent.scan.watcher import FilesystemWatcher
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from sqlalchemy.engine import Engine
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -119,18 +124,31 @@ def create_app(
     progress_broker.attach_to_logger(logging.getLogger("lan_streamer"))
 
     orchestrator = ScanOrchestrator(resolved_config, resolved_engine, progress_broker)
+    scheduler = ScanScheduler(resolved_config, orchestrator)
+    watcher = FilesystemWatcher(resolved_config, orchestrator)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        scheduler.start()
+        watcher.start()
+        yield
+        scheduler.stop()
+        watcher.stop()
 
     application = FastAPI(
         title="LAN Streamer Scan Agent",
         version="0.1.0",
         description="Remote scanning, metadata resolution, and library database "
         "for LAN Streamer.",
+        lifespan=lifespan,
     )
     application.add_middleware(HttpAccessLoggingMiddleware)
     application.state.agent_config = resolved_config
     application.state.engine = resolved_engine
     application.state.progress_broker = progress_broker
     application.state.orchestrator = orchestrator
+    application.state.scheduler = scheduler
+    application.state.watcher = watcher
 
     application.include_router(health_router, prefix=_API_PREFIX)
     application.include_router(config_router, prefix=_API_PREFIX)

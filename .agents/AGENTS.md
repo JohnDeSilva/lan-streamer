@@ -38,7 +38,7 @@ This document establishes the repository-wide standards, architectural constrain
     - [api/](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/api): FastAPI REST routes (health, libraries, scan, browse, metadata, rename, subtitles, watch) and SSE event stream.
     - [config.py](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/config.py): Agent configuration and desktop singleton bridge.
     - [db/](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/db): Standalone agent models, connection, and repository.
-    - [scan/](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/scan): Scanning orchestrator and progress broker.
+    - [scan/](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/scan): Scanning orchestrator, progress broker, scheduled scan runner ([scheduler.py](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/scan/scheduler.py)), and real-time filesystem watcher ([watcher.py](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/scan/watcher.py)).
     - [static/](file:///home/sadmin/Code/lan-streamer/agent/src/scan_agent/static): Single-page web dashboard and management interface.
   - [tests/](file:///home/sadmin/Code/lan-streamer/agent/tests): Unit and integration tests for scan agent.
   - [Dockerfile](file:///home/sadmin/Code/lan-streamer/agent/Dockerfile), [docker-compose.yml](file:///home/sadmin/Code/lan-streamer/agent/docker-compose.yml): Container deployment configuration.

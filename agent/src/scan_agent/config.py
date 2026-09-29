@@ -75,6 +75,10 @@ class AgentConfig:
         self.log_directory: str = str(self.data_directory / "logs")
         self.cache_directory: str = str(self.data_directory / "cache")
         self.libraries: dict[str, dict[str, Any]] = {}
+        self.scheduled_scan_enabled: bool = True
+        self.scheduled_scan_interval_hours: int = 4
+        self.filesystem_watching_enabled: bool = True
+        self.filesystem_watching_debounce_seconds: int = 30
         self._load()
 
     # ------------------------------------------------------------------
@@ -94,6 +98,10 @@ class AgentConfig:
             "log_directory": str(self.data_directory / "logs"),
             "cache_directory": str(self.data_directory / "cache"),
             "libraries": {},
+            "scheduled_scan_enabled": True,
+            "scheduled_scan_interval_hours": 4,
+            "filesystem_watching_enabled": True,
+            "filesystem_watching_debounce_seconds": 30,
         }
 
     def _load(self) -> None:
@@ -133,6 +141,10 @@ class AgentConfig:
             "log_directory": self.log_directory,
             "cache_directory": self.cache_directory,
             "libraries": self.libraries,
+            "scheduled_scan_enabled": self.scheduled_scan_enabled,
+            "scheduled_scan_interval_hours": self.scheduled_scan_interval_hours,
+            "filesystem_watching_enabled": self.filesystem_watching_enabled,
+            "filesystem_watching_debounce_seconds": self.filesystem_watching_debounce_seconds,
         }
         file_descriptor, temporary_name = tempfile.mkstemp(
             dir=self._path.parent, prefix=".config-", suffix=".tmp"

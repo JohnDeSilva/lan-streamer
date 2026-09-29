@@ -26,6 +26,12 @@ class ConfigUpdate(BaseModel):
     cache_directory: str | None = None
     log_directory: str | None = None
     log_level: str | None = None
+    scheduled_scan_enabled: bool | None = None
+    scheduled_scan_interval_hours: int | None = Field(default=None, ge=1, le=168)
+    filesystem_watching_enabled: bool | None = None
+    filesystem_watching_debounce_seconds: int | None = Field(
+        default=None, ge=1, le=3600
+    )
 
 
 class LibraryWrite(BaseModel):
