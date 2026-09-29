@@ -269,6 +269,10 @@ def test_html_configuration_tab_ui_elements() -> None:
     expected_config_inputs = [
         ("cfgTmdbApiKey", "text"),
         ("cfgScanConcurrency", "number"),
+        ("cfgScheduledScanIntervalHours", "number"),
+        ("cfgScheduledScanEnabled", "checkbox"),
+        ("cfgFilesystemWatchingEnabled", "checkbox"),
+        ("cfgFilesystemWatchingDebounceSeconds", "number"),
         ("cfgOpenSubtitlesUsername", "text"),
         ("cfgOpenSubtitlesPassword", "password"),
         ("cfgOpenSubtitlesApiKey", "text"),

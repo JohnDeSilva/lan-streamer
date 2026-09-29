@@ -52,6 +52,10 @@ def _serialize_config(config: AgentConfig) -> dict[str, Any]:
         "cache_directory": config.cache_directory,
         "log_level": config.log_level,
         "libraries": config.libraries,
+        "scheduled_scan_enabled": config.scheduled_scan_enabled,
+        "scheduled_scan_interval_hours": config.scheduled_scan_interval_hours,
+        "filesystem_watching_enabled": config.filesystem_watching_enabled,
+        "filesystem_watching_debounce_seconds": config.filesystem_watching_debounce_seconds,
     }
 
 

@@ -120,6 +120,38 @@ def test_config_get_and_put_log_level(api_client: TestClient) -> None:
     assert updated_config["log_level"] == "DEBUG"
 
 
+def test_config_get_and_put_scheduled_scan_and_watcher(
+    api_client: TestClient,
+) -> None:
+    initial_config = api_client.get("/api/v1/config").json()
+    assert initial_config["scheduled_scan_enabled"] is True
+    assert initial_config["scheduled_scan_interval_hours"] == 4
+    assert initial_config["filesystem_watching_enabled"] is True
+    assert initial_config["filesystem_watching_debounce_seconds"] == 30
+
+    response = api_client.put(
+        "/api/v1/config",
+        json={
+            "scheduled_scan_enabled": False,
+            "scheduled_scan_interval_hours": 8,
+            "filesystem_watching_enabled": False,
+            "filesystem_watching_debounce_seconds": 45,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scheduled_scan_enabled"] is False
+    assert body["scheduled_scan_interval_hours"] == 8
+    assert body["filesystem_watching_enabled"] is False
+    assert body["filesystem_watching_debounce_seconds"] == 45
+
+    updated_config = api_client.get("/api/v1/config").json()
+    assert updated_config["scheduled_scan_enabled"] is False
+    assert updated_config["scheduled_scan_interval_hours"] == 8
+    assert updated_config["filesystem_watching_enabled"] is False
+    assert updated_config["filesystem_watching_debounce_seconds"] == 45
+
+
 def test_libraries_crud(api_client: TestClient) -> None:
     listing = api_client.get("/api/v1/libraries").json()
     assert {entry["id"] for entry in listing} == {"tv", "movie"}
