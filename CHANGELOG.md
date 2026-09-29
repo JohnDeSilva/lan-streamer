@@ -1,3 +1,9 @@
+## v0.54.0rc4 (2026-09-29)
+
+### Fix
+
+- **dev-dependency**: bump commitizen from 4.18.0 to 4.18.1
+
 ## v0.54.0rc3 (2026-09-29)
 
 ### Fix
