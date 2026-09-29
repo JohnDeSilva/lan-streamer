@@ -302,16 +302,19 @@ class AgentControlDialog(QDialog):
     def __init__(
         self,
         agent_url: str,
+        controller: Any | None = None,
         parent: QWidget | None = None,
         auto_fetch: bool = True,
     ) -> None:
         super().__init__(parent)
         self.agent_url = agent_url
+        self.controller = controller
         self.setWindowTitle(f"Remote Scan Agent — {agent_url}")
         self.resize(740, 600)
 
         self._active_workers: list[QThread] = []
         self._cached_libraries: list[dict[str, Any]] = []
+        self._scan_triggered_during_session: bool = False
 
         self._init_ui()
         if auto_fetch:
@@ -418,7 +421,14 @@ class AgentControlDialog(QDialog):
         self.opensubtitles_password_input.setPlaceholderText(
             "Leave blank to keep unchanged"
         )
-        subtitles_layout.addRow("Password:", self.opensubtitles_password_input)
+        password_layout = QHBoxLayout()
+        password_layout.addWidget(self.opensubtitles_password_input, 1)
+        self.clear_opensubtitles_password_checkbox = QCheckBox("Clear Password")
+        self.clear_opensubtitles_password_checkbox.toggled.connect(
+            self._on_clear_password_toggled
+        )
+        password_layout.addWidget(self.clear_opensubtitles_password_checkbox)
+        subtitles_layout.addRow("Password:", password_layout)
 
         self.opensubtitles_api_key_input = QLineEdit()
         subtitles_layout.addRow("API Key (Optional):", self.opensubtitles_api_key_input)
@@ -682,6 +692,12 @@ class AgentControlDialog(QDialog):
     # Form configuration handlers
     # ------------------------------------------------------------------
 
+    @Slot(bool)
+    def _on_clear_password_toggled(self, checked: bool) -> None:
+        self.opensubtitles_password_input.setEnabled(not checked)
+        if checked:
+            self.opensubtitles_password_input.clear()
+
     @Slot()
     def save_configuration(self) -> None:
         """Collect form values and send PUT /config to agent off-thread."""
@@ -697,9 +713,12 @@ class AgentControlDialog(QDialog):
             "log_level": self.log_level_combobox.currentText(),
         }
 
-        password = self.opensubtitles_password_input.text()
-        if password:
-            payload["opensubtitles_password"] = password
+        if self.clear_opensubtitles_password_checkbox.isChecked():
+            payload["clear_opensubtitles_password"] = True
+        else:
+            password = self.opensubtitles_password_input.text()
+            if password:
+                payload["opensubtitles_password"] = password
 
         self.save_configuration_button.setEnabled(False)
         worker = AgentConfigSaveWorker(self.agent_url, payload, parent=self)
@@ -711,6 +730,8 @@ class AgentControlDialog(QDialog):
 
     def _on_config_save_completed(self, result: dict[str, Any]) -> None:
         self.save_configuration_button.setEnabled(True)
+        self.clear_opensubtitles_password_checkbox.setChecked(False)
+        self.opensubtitles_password_input.setEnabled(True)
         self.opensubtitles_password_input.clear()
         QMessageBox.information(
             self, "Configuration Saved", "Agent configuration updated successfully."
@@ -760,6 +781,7 @@ class AgentControlDialog(QDialog):
 
     def _on_scan_trigger_completed(self, result: dict[str, Any]) -> None:
         self.start_scan_button.setEnabled(True)
+        self._scan_triggered_during_session = True
         job_id = result.get("id")
         QMessageBox.information(
             self, "Scan Started", f"Scan Job #{job_id} initiated on agent."
@@ -877,9 +899,30 @@ class AgentControlDialog(QDialog):
             self._active_workers.remove(worker)
         worker.deleteLater()
 
+    def _queue_matching_remote_syncs(self) -> None:
+        """Trigger background remote sync on desktop for libraries hosted by this agent."""
+        if self.controller is None or not hasattr(self.controller, "_config"):
+            return
+        configured_libraries = getattr(self.controller._config, "libraries", {})
+        for library_name, library_data in configured_libraries.items():
+            if not isinstance(library_data, dict):
+                continue
+            if library_data.get("management_type") == "remote":
+                remote_url = str(library_data.get("agent_url", "")).rstrip("/")
+                if remote_url == self.agent_url and hasattr(
+                    self.controller, "_queue_remote_sync"
+                ):
+                    logger.info(
+                        "Triggering desktop remote sync for '%s' following agent scan",
+                        library_name,
+                    )
+                    self.controller._queue_remote_sync(library_name)
+
     def closeEvent(self, event: Any) -> None:
-        """Interrupt and wait for any active background workers when dialog closes."""
+        """Interrupt active background workers and trigger remote sync when dialog closes."""
         for worker in list(self._active_workers):
             worker.requestInterruption()
             worker.wait(500)
+        if self._scan_triggered_during_session:
+            self._queue_matching_remote_syncs()
         super().closeEvent(event)
