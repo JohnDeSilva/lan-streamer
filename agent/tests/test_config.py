@@ -224,3 +224,25 @@ def test_log_level_default_and_round_trip(tmp_path) -> None:
     agent_config.set("log_level", "DEBUG")
     reloaded_config = AgentConfig(configuration_path)
     assert reloaded_config.log_level == "DEBUG"
+
+
+def test_scheduled_scan_and_watcher_config_defaults_and_round_trip(
+    tmp_path,
+) -> None:
+    configuration_path = tmp_path / "config.json"
+    agent_config = AgentConfig(configuration_path)
+    assert agent_config.scheduled_scan_enabled is True
+    assert agent_config.scheduled_scan_interval_hours == 4
+    assert agent_config.filesystem_watching_enabled is True
+    assert agent_config.filesystem_watching_debounce_seconds == 30
+
+    agent_config.set("scheduled_scan_interval_hours", 2)
+    agent_config.set("scheduled_scan_enabled", False)
+    agent_config.set("filesystem_watching_enabled", False)
+    agent_config.set("filesystem_watching_debounce_seconds", 60)
+
+    reloaded_config = AgentConfig(configuration_path)
+    assert reloaded_config.scheduled_scan_interval_hours == 2
+    assert reloaded_config.scheduled_scan_enabled is False
+    assert reloaded_config.filesystem_watching_enabled is False
+    assert reloaded_config.filesystem_watching_debounce_seconds == 60

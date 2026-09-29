@@ -1064,6 +1064,22 @@ async function loadConfig() {
         const configuration = await api.getConfig();
         document.getElementById("cfgTmdbApiKey").value = configuration.tmdb_api_key || "";
         document.getElementById("cfgScanConcurrency").value = configuration.scan_concurrency || 8;
+        const cfgScheduledScanInterval = document.getElementById("cfgScheduledScanIntervalHours");
+        if (cfgScheduledScanInterval) {
+            cfgScheduledScanInterval.value = configuration.scheduled_scan_interval_hours ?? 4;
+        }
+        const cfgScheduledScanEnabled = document.getElementById("cfgScheduledScanEnabled");
+        if (cfgScheduledScanEnabled) {
+            cfgScheduledScanEnabled.checked = configuration.scheduled_scan_enabled ?? true;
+        }
+        const cfgFilesystemWatchingEnabled = document.getElementById("cfgFilesystemWatchingEnabled");
+        if (cfgFilesystemWatchingEnabled) {
+            cfgFilesystemWatchingEnabled.checked = configuration.filesystem_watching_enabled ?? true;
+        }
+        const cfgFilesystemWatchingDebounce = document.getElementById("cfgFilesystemWatchingDebounceSeconds");
+        if (cfgFilesystemWatchingDebounce) {
+            cfgFilesystemWatchingDebounce.value = configuration.filesystem_watching_debounce_seconds ?? 30;
+        }
         document.getElementById("cfgOpenSubtitlesUsername").value = configuration.opensubtitles_username || "";
         document.getElementById("cfgOpenSubtitlesApiKey").value = configuration.opensubtitles_api_key || "";
         document.getElementById("cfgCacheDirectory").value = configuration.cache_directory || "";
@@ -1085,6 +1101,22 @@ async function saveConfig(event) {
         opensubtitles_api_key: document.getElementById("cfgOpenSubtitlesApiKey").value.trim(),
         cache_directory: document.getElementById("cfgCacheDirectory").value.trim(),
     };
+    const cfgScheduledScanInterval = document.getElementById("cfgScheduledScanIntervalHours");
+    if (cfgScheduledScanInterval) {
+        payload.scheduled_scan_interval_hours = parseInt(cfgScheduledScanInterval.value, 10);
+    }
+    const cfgScheduledScanEnabled = document.getElementById("cfgScheduledScanEnabled");
+    if (cfgScheduledScanEnabled) {
+        payload.scheduled_scan_enabled = cfgScheduledScanEnabled.checked;
+    }
+    const cfgFilesystemWatchingEnabled = document.getElementById("cfgFilesystemWatchingEnabled");
+    if (cfgFilesystemWatchingEnabled) {
+        payload.filesystem_watching_enabled = cfgFilesystemWatchingEnabled.checked;
+    }
+    const cfgFilesystemWatchingDebounce = document.getElementById("cfgFilesystemWatchingDebounceSeconds");
+    if (cfgFilesystemWatchingDebounce) {
+        payload.filesystem_watching_debounce_seconds = parseInt(cfgFilesystemWatchingDebounce.value, 10);
+    }
     const configurationLogLevel = document.getElementById("cfgLogLevel");
     if (configurationLogLevel) {
         payload.log_level = configurationLogLevel.value;
