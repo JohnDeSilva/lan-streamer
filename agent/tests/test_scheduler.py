@@ -33,7 +33,8 @@ def test_scheduler_skips_when_disabled(agent_config) -> None:
     agent_config.scheduled_scan_enabled = False
     scheduler = ScanScheduler(agent_config, orchestrator)
 
-    scheduler._trigger_scheduled_scan()
+    result = scheduler._trigger_scheduled_scan()
+    assert result is None
     orchestrator.start_scan.assert_not_called()
 
 
@@ -73,6 +74,26 @@ def test_scheduler_busy_retry_window(agent_config) -> None:
     agent_config.scheduled_scan_interval_hours = 4
     scheduler = ScanScheduler(agent_config, orchestrator)
 
-    # When trigger is called and orchestrator is busy, it should record that it's busy
+    # When trigger is called and orchestrator is busy, it should return False
     success = scheduler._trigger_scheduled_scan()
     assert success is False
+
+
+def test_scheduler_skips_without_busy_retry_when_no_libraries(agent_config) -> None:
+    orchestrator = MagicMock()
+    agent_config.libraries = {}
+    scheduler = ScanScheduler(agent_config, orchestrator)
+
+    result = scheduler._trigger_scheduled_scan()
+    assert result is None
+    orchestrator.start_scan.assert_not_called()
+
+
+def test_scheduler_skips_when_disabled_returns_none(agent_config) -> None:
+    orchestrator = MagicMock()
+    agent_config.scheduled_scan_enabled = False
+    scheduler = ScanScheduler(agent_config, orchestrator)
+
+    result = scheduler._trigger_scheduled_scan()
+    assert result is None
+    orchestrator.start_scan.assert_not_called()

@@ -167,6 +167,29 @@ class AgentScanCancelWorker(QThread):
                 self.cancel_failed.emit(str(error))
 
 
+class AgentStatusFetchWorker(QThread):
+    """Fetches scan status and logs off the main UI thread."""
+
+    status_completed = Signal(dict)
+    status_failed = Signal(str)
+
+    def __init__(self, agent_url: str, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.agent_url = agent_url
+
+    def run(self) -> None:
+        try:
+            status_data = scan_agent_client.fetch_scan_status(self.agent_url)
+            if not self.isInterruptionRequested():
+                self.status_completed.emit(status_data)
+        except AGENT_CLIENT_EXCEPTIONS as error:
+            logger.warning(
+                "Failed fetching status from agent %s: %s", self.agent_url, error
+            )
+            if not self.isInterruptionRequested():
+                self.status_failed.emit(str(error))
+
+
 class AgentLibraryCreateWorker(QThread):
     """Registers a new library on the agent off-thread."""
 
@@ -307,14 +330,17 @@ class AgentControlDialog(QDialog):
         auto_fetch: bool = True,
     ) -> None:
         super().__init__(parent)
-        self.agent_url = agent_url
+        self.agent_url = agent_url.rstrip("/")
         self.controller = controller
-        self.setWindowTitle(f"Remote Scan Agent — {agent_url}")
+        self.setWindowTitle(f"Remote Scan Agent — {self.agent_url}")
         self.resize(740, 600)
 
         self._active_workers: list[QThread] = []
         self._cached_libraries: list[dict[str, Any]] = []
         self._scan_triggered_during_session: bool = False
+        self._current_status_worker: AgentStatusFetchWorker | None = None
+        self._last_status_data: dict[str, Any] = {}
+        self._cleaned_up: bool = False
 
         self._status_timer = QTimer(self)
         self._status_timer.setInterval(3000)
@@ -635,8 +661,13 @@ class AgentControlDialog(QDialog):
             )
 
     def _update_status_display(self, status_data: dict[str, Any]) -> None:
+        self._last_status_data = status_data
         running_job = status_data.get("running")
         last_job = status_data.get("last_job")
+
+        is_running = running_job is not None
+        self.start_scan_button.setEnabled(not is_running)
+        self.cancel_scan_button.setEnabled(is_running)
 
         if running_job:
             job_id = running_job.get("id")
@@ -755,12 +786,32 @@ class AgentControlDialog(QDialog):
 
     @Slot()
     def refresh_scan_status(self) -> None:
-        """Query agent scan status and update status label."""
-        try:
-            status_data = scan_agent_client.fetch_scan_status(self.agent_url)
-            self._update_status_display(status_data)
-        except AGENT_CLIENT_EXCEPTIONS as error:
-            logger.warning("Could not refresh scan status: %s", error)
+        """Query agent scan status asynchronously off-thread."""
+        if (
+            self._current_status_worker is not None
+            and self._current_status_worker.isRunning()
+        ):
+            return
+
+        worker = AgentStatusFetchWorker(self.agent_url, parent=self)
+        self._current_status_worker = worker
+        worker.status_completed.connect(self._on_status_fetch_completed)
+        worker.status_failed.connect(self._on_status_fetch_failed)
+        worker.finished.connect(lambda: self._on_status_worker_finished(worker))
+        self._active_workers.append(worker)
+        worker.start()
+
+    def _on_status_worker_finished(self, worker: AgentStatusFetchWorker) -> None:
+        if self._current_status_worker is worker:
+            self._current_status_worker = None
+        self._remove_worker(worker)
+
+    def _on_status_fetch_completed(self, status_data: dict[str, Any]) -> None:
+        self._last_status_data = status_data
+        self._update_status_display(status_data)
+
+    def _on_status_fetch_failed(self, error_message: str) -> None:
+        logger.debug("Background scan status poll failed: %s", error_message)
 
     @Slot()
     def start_scan_on_agent(self) -> None:
@@ -912,16 +963,13 @@ class AgentControlDialog(QDialog):
         """Trigger background remote sync on desktop for libraries hosted by this agent."""
         if self.controller is None or not hasattr(self.controller, "_config"):
             return
-        try:
-            status_data = scan_agent_client.fetch_scan_status(self.agent_url)
-            if status_data.get("running") is not None:
-                logger.info(
-                    "Agent scan still active for %s; remote sync will occur on tab access",
-                    self.agent_url,
-                )
-                return
-        except AGENT_CLIENT_EXCEPTIONS as error:
-            logger.warning("Could not check agent scan status before sync: %s", error)
+
+        if self._last_status_data.get("running") is not None:
+            logger.info(
+                "Agent scan still active for %s; remote sync will occur on tab access",
+                self.agent_url,
+            )
+            return
 
         configured_libraries = getattr(self.controller._config, "libraries", {})
         for library_name, library_data in configured_libraries.items():
@@ -938,12 +986,24 @@ class AgentControlDialog(QDialog):
                     )
                     self.controller._queue_remote_sync(library_name)
 
-    def closeEvent(self, event: Any) -> None:
+    def _cleanup_on_close(self) -> None:
         """Interrupt active background workers, stop polling, and trigger remote sync."""
+        if self._cleaned_up:
+            return
+        self._cleaned_up = True
         self._status_timer.stop()
         for worker in list(self._active_workers):
             worker.requestInterruption()
             worker.wait(500)
         if self._scan_triggered_during_session:
             self._queue_matching_remote_syncs()
+
+    def done(self, result: int) -> None:
+        """Ensure cleanup and remote sync triggers run on any dialog dismissal."""
+        self._cleanup_on_close()
+        super().done(result)
+
+    def closeEvent(self, event: Any) -> None:
+        """Interrupt active background workers, stop polling, and trigger remote sync."""
+        self._cleanup_on_close()
         super().closeEvent(event)
