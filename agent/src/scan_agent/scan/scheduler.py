@@ -71,19 +71,22 @@ class ScanScheduler:
         self._thread = None
         logger.info("Scheduled scan runner stopped")
 
-    def _trigger_scheduled_scan(self) -> bool:
+    def _trigger_scheduled_scan(self) -> bool | None:
         """Trigger a full pass scan across all configured libraries if enabled.
 
-        Returns True if the scan was initiated, False otherwise.
+        Returns:
+            True if the scan was initiated, False if deferred due to orchestrator
+            being busy (warranting a quick retry), or None if skipped (disabled,
+            no libraries configured, or failed).
         """
         if not self._agent_config.scheduled_scan_enabled:
             logger.debug(
                 "Scheduled scan skipped because scheduled scanning is disabled"
             )
-            return False
+            return None
         if not self._agent_config.libraries:
             logger.debug("Scheduled scan skipped because no libraries are configured")
-            return False
+            return None
 
         logger.info("Triggering scheduled scan across all configured libraries")
         try:
@@ -103,7 +106,7 @@ class ScanScheduler:
             return False
         except ValueError, OSError:
             logger.exception("Failed to start scheduled scan")
-            return False
+            return None
 
     def _run_loop(self) -> None:
         """Background loop sleeping in small increments until interval elapses."""
@@ -113,13 +116,13 @@ class ScanScheduler:
             elapsed = current_time - self._last_scan_timestamp
 
             if elapsed >= interval:
-                initiated = self._trigger_scheduled_scan()
-                if initiated or not self._agent_config.scheduled_scan_enabled:
-                    self._last_scan_timestamp = time.monotonic()
-                else:
+                result = self._trigger_scheduled_scan()
+                if result is False:
                     # When busy, retry in 5 minutes rather than waiting another full interval
                     self._last_scan_timestamp = (
                         time.monotonic() - interval + RETRY_DELAY_ON_BUSY_SECONDS
                     )
+                else:
+                    self._last_scan_timestamp = time.monotonic()
 
             self._stop_event.wait(timeout=1.0)
