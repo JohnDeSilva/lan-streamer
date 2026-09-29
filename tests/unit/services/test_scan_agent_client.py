@@ -237,3 +237,166 @@ def test_fetch_library_items_quotes_identifier() -> None:
                 "User-Agent": "LanStreamer-Desktop/1.0",
             },
         )
+
+
+def test_fetch_agent_config_success() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "scheduled_scan_interval_hours": 4,
+        "scheduled_scan_enabled": True,
+        "filesystem_watching_enabled": True,
+        "filesystem_watching_debounce_seconds": 30,
+    }
+
+    with patch("requests.get", return_value=mock_response) as mock_get:
+        payload = client.fetch_agent_config("http://127.0.0.1:8800")
+        assert payload["scheduled_scan_interval_hours"] == 4
+        mock_get.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/config",
+            timeout=10.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )
+
+
+def test_update_agent_config_success() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"scheduled_scan_interval_hours": 8}
+
+    with patch("requests.put", return_value=mock_response) as mock_put:
+        result = client.update_agent_config(
+            "http://127.0.0.1:8800", {"scheduled_scan_interval_hours": 8}
+        )
+        assert result["scheduled_scan_interval_hours"] == 8
+        mock_put.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/config",
+            json={"scheduled_scan_interval_hours": 8},
+            timeout=10.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )
+
+
+def test_fetch_scan_status_success() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"running": None, "last_job": {"id": 1}}
+
+    with patch("requests.get", return_value=mock_response) as mock_get:
+        status_payload = client.fetch_scan_status("http://127.0.0.1:8800")
+        assert status_payload["running"] is None
+        mock_get.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/scan/status",
+            timeout=10.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )
+
+
+def test_trigger_agent_scan_success() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"id": 12, "status": "pending"}
+
+    with patch("requests.post", return_value=mock_response) as mock_post:
+        result = client.trigger_agent_scan(
+            "http://127.0.0.1:8800",
+            library_identifier="tv",
+            pass_number=2,
+            force_refresh=True,
+        )
+        assert result["id"] == 12
+        mock_post.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/scan",
+            json={
+                "library_id": "tv",
+                "pass_number": 2,
+                "force_refresh": True,
+            },
+            timeout=10.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )
+
+
+def test_cancel_agent_scan_success() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"status": "cancelled"}
+
+    with patch("requests.post", return_value=mock_response) as mock_post:
+        result = client.cancel_agent_scan("http://127.0.0.1:8800")
+        assert result["status"] == "cancelled"
+        mock_post.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/scan/cancel",
+            timeout=10.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )
+
+
+def test_create_and_delete_agent_library() -> None:
+    client = ScanAgentClient()
+    post_response = MagicMock()
+    post_response.status_code = 200
+    post_response.json.return_value = {
+        "id": "anime",
+        "name": "Anime",
+        "media_type": "anime",
+        "root_path": "/media/anime",
+    }
+
+    with patch("requests.post", return_value=post_response) as mock_post:
+        create_result = client.create_agent_library(
+            "http://127.0.0.1:8800",
+            name="Anime",
+            media_type="anime",
+            root_path="/media/anime",
+        )
+        assert create_result["id"] == "anime"
+        mock_post.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/libraries",
+            json={
+                "name": "Anime",
+                "media_type": "anime",
+                "root_path": "/media/anime",
+            },
+            timeout=10.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )
+
+    delete_response = MagicMock()
+    delete_response.status_code = 200
+    delete_response.json.return_value = {"status": "deleted"}
+
+    with patch("requests.delete", return_value=delete_response) as mock_delete:
+        delete_result = client.delete_agent_library("http://127.0.0.1:8800", "anime")
+        assert delete_result["status"] == "deleted"
+        mock_delete.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/libraries/anime",
+            timeout=10.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )
