@@ -1,3 +1,18 @@
+## v0.54.0rc0 (2026-09-29)
+
+### Feat
+
+- **ui**: add live status polling timer and guard remote sync against running scans
+- **ui**: add remote agent configuration and control dialog
+- **agent**: add filesystem watching and configurable scheduled scans
+
+### Fix
+
+- **ui**: off-thread status polling, reliable dialog dismissal lifecycle, and scheduler skip handling
+- **agent**: guard active write settling check against clock drift and cap pending paths
+- **ui**: trigger remote sync after scan, auto-refresh tree, and support clearing password
+- **agent**: handle in-progress file writes, inotify backoff, and busy retries
+
 ## v0.53.0 (2026-09-09)
 
 ### Feat
