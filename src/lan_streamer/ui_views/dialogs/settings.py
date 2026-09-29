@@ -177,6 +177,7 @@ class SettingsDialog(QDialog):
         self.connect_agent_button: QPushButton = QPushButton("Connect to Agent")
         self.remote_agents_tree_widget: QTreeWidget = QTreeWidget()
         self.map_local_mount_button: QPushButton = QPushButton("Map Local Mount...")
+        self.manage_remote_agent_button: QPushButton = QPushButton("Manage Agent...")
         self.remove_remote_agent_button: QPushButton = QPushButton("Remove Agent")
         self.refresh_remote_agents_button: QPushButton = QPushButton("Refresh Agents")
 
@@ -612,6 +613,15 @@ class SettingsDialog(QDialog):
             self.map_local_mount_for_selected_item
         )
         actions_layout.addWidget(self.map_local_mount_button)
+
+        self.manage_remote_agent_button.setText("Manage Agent...")
+        self.manage_remote_agent_button.setToolTip(
+            "Configure agent settings (scheduled scans, file watching, TMDB, OpenSubtitles) and control scan actions."
+        )
+        self.manage_remote_agent_button.clicked.connect(
+            self.open_selected_agent_management_dialog
+        )
+        actions_layout.addWidget(self.manage_remote_agent_button)
 
         self.remove_remote_agent_button.setText("Remove Agent")
         self.remove_remote_agent_button.setToolTip(
@@ -2320,6 +2330,50 @@ class SettingsDialog(QDialog):
             )
             if local_directory:
                 self.map_local_mount_for_item(item, local_directory)
+        elif isinstance(item_data, dict) and item_data.get("item_type") == "agent":
+            agent_url = str(item_data.get("agent_url") or "")
+            if agent_url:
+                self.open_agent_management_dialog(agent_url)
+
+    @Slot()
+    def open_selected_agent_management_dialog(self) -> None:
+        """Open the AgentControlDialog for the currently selected agent in the tree."""
+        current_item = self.remote_agents_tree_widget.currentItem()
+        if not current_item:
+            QMessageBox.information(
+                self,
+                "Select Agent",
+                "Please select an agent from the tree widget to manage its settings and actions.",
+            )
+            return
+
+        target_item: QTreeWidgetItem | None = current_item
+        agent_url: str = ""
+        while target_item is not None:
+            item_data = target_item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(item_data, dict) and "agent_url" in item_data:
+                agent_url = str(item_data["agent_url"])
+                break
+            target_item = target_item.parent()
+
+        if not agent_url:
+            QMessageBox.information(
+                self,
+                "Select Agent",
+                "Please select an agent from the tree widget to manage its settings and actions.",
+            )
+            return
+
+        self.open_agent_management_dialog(agent_url)
+
+    def open_agent_management_dialog(self, agent_url: str) -> None:
+        """Instantiate and execute the AgentControlDialog for the given agent URL."""
+        from lan_streamer.ui_views.dialogs.agent_control_dialog import (
+            AgentControlDialog,
+        )
+
+        dialog = AgentControlDialog(agent_url=agent_url, parent=self)
+        dialog.exec()
 
     @Slot()
     def remove_selected_remote_agent(self) -> None:

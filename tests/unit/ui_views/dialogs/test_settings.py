@@ -280,8 +280,13 @@ def test_settings_dialog_remote_libraries_tab_flow(qtbot) -> None:
     # Root directory node assertions
     assert library_item.childCount() == 1
     root_item = library_item.child(0)
-    assert root_item is not None
     assert "📁 /storage/tv" in root_item.text(0)
+
+    # Manage agent dialog opening
+    with patch.object(dialog, "open_agent_management_dialog") as mock_dialog_open:
+        dialog.remote_agents_tree_widget.setCurrentItem(agent_item)
+        dialog.open_selected_agent_management_dialog()
+        mock_dialog_open.assert_called_once_with("http://127.0.0.1:8800")
 
     # Enable library via checkbox
     library_item.setCheckState(0, Qt.CheckState.Checked)
