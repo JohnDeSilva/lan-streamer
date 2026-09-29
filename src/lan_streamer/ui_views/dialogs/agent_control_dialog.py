@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 import requests
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -315,6 +315,10 @@ class AgentControlDialog(QDialog):
         self._active_workers: list[QThread] = []
         self._cached_libraries: list[dict[str, Any]] = []
         self._scan_triggered_during_session: bool = False
+
+        self._status_timer = QTimer(self)
+        self._status_timer.setInterval(3000)
+        self._status_timer.timeout.connect(self.refresh_scan_status)
 
         self._init_ui()
         if auto_fetch:
@@ -899,10 +903,26 @@ class AgentControlDialog(QDialog):
             self._active_workers.remove(worker)
         worker.deleteLater()
 
+    def showEvent(self, event: Any) -> None:
+        """Start auto-polling scan status when dialog is displayed."""
+        super().showEvent(event)
+        self._status_timer.start()
+
     def _queue_matching_remote_syncs(self) -> None:
         """Trigger background remote sync on desktop for libraries hosted by this agent."""
         if self.controller is None or not hasattr(self.controller, "_config"):
             return
+        try:
+            status_data = scan_agent_client.fetch_scan_status(self.agent_url)
+            if status_data.get("running") is not None:
+                logger.info(
+                    "Agent scan still active for %s; remote sync will occur on tab access",
+                    self.agent_url,
+                )
+                return
+        except AGENT_CLIENT_EXCEPTIONS as error:
+            logger.warning("Could not check agent scan status before sync: %s", error)
+
         configured_libraries = getattr(self.controller._config, "libraries", {})
         for library_name, library_data in configured_libraries.items():
             if not isinstance(library_data, dict):
@@ -919,7 +939,8 @@ class AgentControlDialog(QDialog):
                     self.controller._queue_remote_sync(library_name)
 
     def closeEvent(self, event: Any) -> None:
-        """Interrupt active background workers and trigger remote sync when dialog closes."""
+        """Interrupt active background workers, stop polling, and trigger remote sync."""
+        self._status_timer.stop()
         for worker in list(self._active_workers):
             worker.requestInterruption()
             worker.wait(500)
