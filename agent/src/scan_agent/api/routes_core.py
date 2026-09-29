@@ -90,6 +90,10 @@ def update_config(request: Request, update: ConfigUpdate) -> dict[str, Any]:
     """Update selectable config keys and persist them."""
     config = request.app.state.agent_config
     changes = update.model_dump(exclude_unset=True)
+    if changes.get("clear_opensubtitles_password"):
+        config.set("opensubtitles_password", "")
+        changes.pop("clear_opensubtitles_password", None)
+        logger.info("OpenSubtitles password cleared via API")
     password = changes.get("opensubtitles_password")
     if password in (None, "", _MASKED_PASSWORD):
         changes.pop("opensubtitles_password", None)

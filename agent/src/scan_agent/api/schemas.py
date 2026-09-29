@@ -23,6 +23,7 @@ class ConfigUpdate(BaseModel):
     opensubtitles_api_key: str | None = None
     opensubtitles_username: str | None = None
     opensubtitles_password: str | None = None
+    clear_opensubtitles_password: bool | None = None
     cache_directory: str | None = None
     log_directory: str | None = None
     log_level: str | None = None
