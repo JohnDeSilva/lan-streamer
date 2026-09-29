@@ -1,3 +1,10 @@
+## v0.54.0rc4-1 (2026-09-29)
+
+### Fix
+
+- **dev-dependency**: Bump ruff from 0.16.6 to 0.16.7
+- **dev-dependency**: Bump pyinstaller from 6.22.2 to 6.22.3
+
 ## v0.54.0rc4 (2026-09-29)
 
 ### Fix
