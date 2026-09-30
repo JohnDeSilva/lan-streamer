@@ -1,3 +1,23 @@
+## v0.54.0 (2026-09-30)
+
+### Feat
+
+- **ui**: add live status polling timer and guard remote sync against running scans
+- **ui**: add remote agent configuration and control dialog
+- **agent**: add filesystem watching and configurable scheduled scans
+
+### Fix
+
+- **dev-dependency**: bump ruff from 0.16.6 to 0.16.7
+- **dev-dependency**: bump pyinstaller from 6.22.2 to 6.22.3
+- **dev-dependency**: bump commitizen from 4.18.0 to 4.18.1
+- **dev-dependency**: bump types-requests
+- **dependency**: bump alembic from 1.19.2 to 1.20.0
+- **ui**: off-thread status polling, reliable dialog dismissal lifecycle, and scheduler skip handling
+- **agent**: guard active write settling check against clock drift and cap pending paths
+- **ui**: trigger remote sync after scan, auto-refresh tree, and support clearing password
+- **agent**: handle in-progress file writes, inotify backoff, and busy retries
+
 ## v0.54.0rc6 (2026-09-29)
 
 ## v0.54.0rc5 (2026-09-29)
