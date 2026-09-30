@@ -24,10 +24,12 @@ from lan_streamer.db.models import (
     Base,
     Episode,
     Movie,
+    MovieLibrary,
     ScannedDirectory,
     Season,
     SecretType,
     Series,
+    SeriesLibrary,
     SmartRowCache,
 )
 from lan_streamer.db.models_cast import (

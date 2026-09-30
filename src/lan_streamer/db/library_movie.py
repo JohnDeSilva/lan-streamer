@@ -16,7 +16,7 @@ from lan_streamer.db.library_shared import (
     _update_field_safely,
     get_session,
 )
-from lan_streamer.db.models import MediaFile, Movie
+from lan_streamer.db.models import MediaFile, Movie, MovieLibrary
 
 logger = logging.getLogger(__name__)
 
@@ -119,23 +119,49 @@ def _cleanup_movie_library(
     """Removes Movie records whose file path no longer exists on disk."""
     movie_list = session.scalars(
         select(Movie)
-        .where(Movie.library_name == library_name)
-        .options(selectinload(Movie.media_files))
+        .join(Movie.libraries, isouter=True)
+        .where(
+            (Movie.library_name == library_name)
+            | (MovieLibrary.library_name == library_name)
+        )
+        .distinct()
+        .options(
+            selectinload(Movie.libraries),
+            selectinload(Movie.media_files),
+        )
     ).all()
     for movie in movie_list:
         path = movie.default_path or (
             movie.media_files[0].path if movie.media_files else None
         )
         if path and not Path(path).exists():
+            other_libraries = [
+                movie_library
+                for movie_library in movie.libraries
+                if movie_library.library_name != library_name
+            ]
+            if other_libraries:
+                logger.info(
+                    f"Cleanup: Movie '{movie.name}' at '{path}' missing from '{library_name}', "
+                    f"but still associated with {len(other_libraries)} other libraries."
+                )
+                for movie_library in list(movie.libraries):
+                    if movie_library.library_name == library_name:
+                        session.delete(movie_library)
+                if movie.library_name == library_name:
+                    movie.library_name = other_libraries[0].library_name
+                continue
+
             logger.info(f"Cleanup: Removing missing movie '{movie.name}' at '{path}'")
             session.delete(movie)
             stats["movies"] += 1
             stats["movies_removed"] = stats.get("movies_removed", 0) + 1
 
 
-def load_movie_library(library_name: str) -> dict[str, Any]:
-    """
-    Loads the movie library from the database and constructs a dictionary structure.
+def load_movie_library(library_name: str | list[str]) -> dict[str, Any]:
+    """Loads the movie library from the database and constructs a dictionary structure.
+
+    Supports either a single library name or a list of library names.
     """
     from lan_streamer.db.orm_serialization import _build_movie_dict
 
@@ -143,13 +169,30 @@ def load_movie_library(library_name: str) -> dict[str, Any]:
     library_data = {}
     stats = {"movies": 0}
 
+    if library_name is None:
+        return {}
+    names = (
+        [library_name]
+        if isinstance(library_name, str)
+        else [single_name for single_name in library_name if single_name is not None]
+    )
+    if not names:
+        return {}
+
     try:
         with get_session() as session:
             movie_list = session.scalars(
                 select(Movie)
-                .where(Movie.library_name == library_name)
+                .join(Movie.libraries, isouter=True)
+                .where(
+                    (Movie.library_name.in_(names))
+                    | (MovieLibrary.library_name.in_(names))
+                )
+                .distinct()
                 .options(
-                    selectinload(Movie.media_files), selectinload(Movie.playback_state)
+                    selectinload(Movie.libraries),
+                    selectinload(Movie.media_files),
+                    selectinload(Movie.playback_state),
                 )
                 .order_by(Movie.name)
             ).all()
@@ -190,16 +233,15 @@ def save_movie_library(library_name: str, library: dict[str, Any]) -> dict[str, 
 
         with get_session() as session:
             existing_movies_by_name = {
-                m.name: m
-                for m in session.scalars(
-                    select(Movie)
-                    .where(Movie.library_name == library_name)
-                    .options(
+                movie_obj.name: movie_obj
+                for movie_obj in session.scalars(
+                    select(Movie).options(
+                        selectinload(Movie.libraries),
                         selectinload(Movie.media_files),
                         selectinload(Movie.playback_state),
                     )
                 ).all()
-                if m.name is not None
+                if movie_obj.name is not None
             }
             incoming_paths = [
                 data.get("path") for data in library.values() if data.get("path")
@@ -207,31 +249,24 @@ def save_movie_library(library_name: str, library: dict[str, Any]) -> dict[str, 
             existing_movies_by_path = {}
             if incoming_paths:
                 existing_movies_by_path = {
-                    m.path: m
-                    for m in session.scalars(
+                    movie_obj.path: movie_obj
+                    for movie_obj in session.scalars(
                         select(Movie)
                         .join(Movie.media_files)
                         .where(MediaFile.path.in_(incoming_paths))
                         .options(
+                            selectinload(Movie.libraries),
                             selectinload(Movie.media_files),
                             selectinload(Movie.playback_state),
                         )
                     ).all()
-                    if m.path is not None
+                    if movie_obj.path is not None
                 }
 
             existing_movies_by_tmdb = {}
-            for m in list(existing_movies_by_name.values()):
-                if m.tmdb_identifier:
-                    is_missing = False
-                    if m.path:
-                        try:
-                            if not Path(m.path).exists():
-                                is_missing = True
-                        except OSError:
-                            is_missing = True
-                    if is_missing:
-                        existing_movies_by_tmdb[m.tmdb_identifier] = m
+            for movie_obj in list(existing_movies_by_name.values()):
+                if movie_obj.tmdb_identifier:
+                    existing_movies_by_tmdb[str(movie_obj.tmdb_identifier)] = movie_obj
 
             touched_movie_names = set()
 
@@ -242,15 +277,18 @@ def save_movie_library(library_name: str, library: dict[str, Any]) -> dict[str, 
                 if path and path not in existing_movies_by_path:
                     is_new_file = True
 
+                tmdb_identifier = movie_data.get("tmdb_identifier") or movie_data.get(
+                    "tmdb_id"
+                )
                 movie = None
                 if path and path in existing_movies_by_path:
                     movie = existing_movies_by_path[path]
+                elif (
+                    tmdb_identifier and str(tmdb_identifier) in existing_movies_by_tmdb
+                ):
+                    movie = existing_movies_by_tmdb[str(tmdb_identifier)]
                 elif movie_name in existing_movies_by_name:
                     movie = existing_movies_by_name[movie_name]
-                else:
-                    tmdb_id = movie_data.get("tmdb_identifier")
-                    if tmdb_id and tmdb_id in existing_movies_by_tmdb:
-                        movie = existing_movies_by_tmdb[tmdb_id]
 
                 is_new = False
                 if not movie:
@@ -269,8 +307,19 @@ def save_movie_library(library_name: str, library: dict[str, Any]) -> dict[str, 
                             session.flush()
                             stats["movies_removed"] = stats.get("movies_removed", 0) + 1
                             del existing_movies_by_name[movie_name]
-                    movie.library_name = library_name
                     movie.name = movie_name
+
+                # Ensure MovieLibrary junction link exists
+                has_library_link = any(
+                    movie_library.library_name == library_name
+                    for movie_library in movie.libraries
+                )
+                if not has_library_link:
+                    new_movie_library = MovieLibrary(
+                        movie_id=movie.id, library_name=library_name
+                    )
+                    session.add(new_movie_library)
+                    movie.libraries.append(new_movie_library)
 
                 stats["movies"] += 1
 
@@ -290,7 +339,53 @@ def save_movie_library(library_name: str, library: dict[str, Any]) -> dict[str, 
                             "subtitle_tracks": movie_data.get("subtitle_tracks"),
                         }
                     ]
+                if versions is not None:
+                    versions = list(versions)
+                    from lan_streamer.system.config import config
+
+                    configured_paths = config.libraries.get(library_name, {}).get(
+                        "paths", []
+                    )
+                    resolved_roots = [
+                        str(Path(path_item).resolve()) for path_item in configured_paths
+                    ]
+                    existing_paths_in_versions = {
+                        version_item.get("path")
+                        for version_item in versions
+                        if version_item.get("path")
+                    }
+                    for existing_media_file in movie.media_files:
+                        if (
+                            existing_media_file.path
+                            and existing_media_file.path
+                            not in existing_paths_in_versions
+                        ):
+                            is_under_current_library = False
+                            if resolved_roots:
+                                try:
+                                    resolved_media_file = str(
+                                        Path(existing_media_file.path).resolve()
+                                    )
+                                    is_under_current_library = any(
+                                        resolved_media_file.startswith(root_path)
+                                        for root_path in resolved_roots
+                                    )
+                                except ValueError, OSError:
+                                    is_under_current_library = False
+                            if not is_under_current_library:
+                                versions.append(
+                                    {
+                                        "path": existing_media_file.path,
+                                        "video_codec": existing_media_file.video_codec,
+                                        "resolution": existing_media_file.resolution,
+                                        "bit_rate": existing_media_file.bit_rate,
+                                        "audio_tracks": existing_media_file.audio_tracks,
+                                        "subtitle_tracks": existing_media_file.subtitle_tracks,
+                                        "runtime": existing_media_file.runtime,
+                                    }
+                                )
                 _sync_media_files(session, movie, versions)
+
                 if is_new_file:
                     movie.watched = False
                 changed = _apply_movie_fields(movie, movie_data)
@@ -358,10 +453,11 @@ def save_movie_data(
         with get_session() as session:
             existing_movie = session.scalars(
                 select(Movie)
-                .where(Movie.library_name == library_name)
                 .where(Movie.name == movie_name)
                 .options(
-                    selectinload(Movie.media_files), selectinload(Movie.playback_state)
+                    selectinload(Movie.libraries),
+                    selectinload(Movie.media_files),
+                    selectinload(Movie.playback_state),
                 )
             ).first()
 
@@ -373,26 +469,29 @@ def save_movie_data(
                     .join(Movie.media_files)
                     .where(MediaFile.path == path)
                     .options(
+                        selectinload(Movie.libraries),
                         selectinload(Movie.media_files),
                         selectinload(Movie.playback_state),
                     )
                 ).first()
 
             if not movie:
-                movie = existing_movie
-
-            if not movie:
-                tmdb_id = movie_data.get("tmdb_identifier")
-                if tmdb_id:
+                tmdb_identifier = movie_data.get("tmdb_identifier") or movie_data.get(
+                    "tmdb_id"
+                )
+                if tmdb_identifier:
                     movie = session.scalars(
                         select(Movie)
-                        .where(Movie.library_name == library_name)
-                        .where(Movie.tmdb_identifier == tmdb_id)
+                        .where(Movie.tmdb_identifier == tmdb_identifier)
                         .options(
+                            selectinload(Movie.libraries),
                             selectinload(Movie.media_files),
                             selectinload(Movie.playback_state),
                         )
                     ).first()
+
+            if not movie:
+                movie = existing_movie
 
             is_new = False
             if not movie:
@@ -411,8 +510,19 @@ def save_movie_data(
                         session.flush()
                         stats["movies_removed"] = stats.get("movies_removed", 0) + 1
 
-                movie.library_name = library_name
                 movie.name = movie_name
+
+            # Ensure MovieLibrary junction link exists
+            has_library_link = any(
+                movie_library.library_name == library_name
+                for movie_library in movie.libraries
+            )
+            if not has_library_link:
+                new_movie_library = MovieLibrary(
+                    movie_id=movie.id, library_name=library_name
+                )
+                session.add(new_movie_library)
+                movie.libraries.append(new_movie_library)
 
             stats["movies"] += 1
 
@@ -428,7 +538,51 @@ def save_movie_data(
                         "subtitle_tracks": movie_data.get("subtitle_tracks"),
                     }
                 ]
-            _sync_media_files(session, movie, versions)
+            if versions is not None:
+                versions = list(versions)
+                from lan_streamer.system.config import config
+
+                configured_paths = config.libraries.get(library_name, {}).get(
+                    "paths", []
+                )
+                resolved_roots = [
+                    str(Path(path_item).resolve()) for path_item in configured_paths
+                ]
+                existing_paths_in_versions = {
+                    version_entry.get("path")
+                    for version_entry in versions
+                    if version_entry.get("path")
+                }
+                for existing_media_file in movie.media_files:
+                    if (
+                        existing_media_file.path
+                        and existing_media_file.path not in existing_paths_in_versions
+                    ):
+                        is_under_current_library = False
+                        if resolved_roots:
+                            try:
+                                resolved_media_file = str(
+                                    Path(existing_media_file.path).resolve()
+                                )
+                                is_under_current_library = any(
+                                    resolved_media_file.startswith(root_path)
+                                    for root_path in resolved_roots
+                                )
+                            except ValueError, OSError:
+                                is_under_current_library = False
+                        if not is_under_current_library:
+                            versions.append(
+                                {
+                                    "path": existing_media_file.path,
+                                    "video_codec": existing_media_file.video_codec,
+                                    "resolution": existing_media_file.resolution,
+                                    "bit_rate": existing_media_file.bit_rate,
+                                    "audio_tracks": existing_media_file.audio_tracks,
+                                    "subtitle_tracks": existing_media_file.subtitle_tracks,
+                                    "runtime": existing_media_file.runtime,
+                                }
+                            )
+                _sync_media_files(session, movie, versions)
             changed = _apply_movie_fields(movie, movie_data)
 
             # Save movie directory mtime to scanned_directories table

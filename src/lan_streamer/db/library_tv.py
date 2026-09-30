@@ -16,7 +16,7 @@ from lan_streamer.db.library_shared import (
     _update_field_safely,
     get_session,
 )
-from lan_streamer.db.models import Episode, Season, Series
+from lan_streamer.db.models import Episode, Season, Series, SeriesLibrary
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +34,10 @@ def _strip_counter_suffix(name: str) -> str:
     return _COUNTER_SUFFIX_RE.sub("", name)
 
 
-def load_library(library_name: str) -> dict[str, Any]:
-    """
-    Loads the library from the database and constructs a nested dictionary structure.
+def load_library(library_name: str | list[str]) -> dict[str, Any]:
+    """Loads the library from the database and constructs a nested dictionary structure.
+
+    Supports either a single library name or a list of library names.
     """
     from lan_streamer.db.orm_serialization import _build_series_dict
 
@@ -44,12 +45,28 @@ def load_library(library_name: str) -> dict[str, Any]:
     library_data = {}
     stats = {"series": 0, "seasons": 0, "episodes": 0}
 
+    if library_name is None:
+        return {}
+    library_names = (
+        [library_name]
+        if isinstance(library_name, str)
+        else [single_name for single_name in library_name if single_name is not None]
+    )
+    if not library_names:
+        return {}
+
     try:
         with get_session() as session:
             series_list = session.scalars(
                 select(Series)
-                .where(Series.library_name == library_name)
+                .join(Series.libraries, isouter=True)
+                .where(
+                    (Series.library_name.in_(library_names))
+                    | (SeriesLibrary.library_name.in_(library_names))
+                )
+                .distinct()
                 .options(
+                    selectinload(Series.libraries),
                     selectinload(Series.seasons)
                     .selectinload(Season.episodes)
                     .selectinload(Episode.media_files),
@@ -87,7 +104,17 @@ def _save_series_record(
     existing_series: dict[str, Series],
     stats: dict[str, Any],
 ) -> Series:
-    series = existing_series.get(series_name)
+    series_metadata = series_data.get("metadata", {})
+    tmdb_identifier = series_metadata.get("tmdb_identifier") or series_metadata.get(
+        "tmdb_id"
+    )
+
+    series: Series | None = None
+    if tmdb_identifier and f"tmdb:{tmdb_identifier}" in existing_series:
+        series = existing_series[f"tmdb:{tmdb_identifier}"]
+    elif series_name in existing_series:
+        series = existing_series[series_name]
+
     is_new = False
     if not series:
         series = Series(library_name=library_name, name=series_name)
@@ -97,13 +124,15 @@ def _save_series_record(
             f"New series record created: '{series_name}' in library '{library_name}'"
         )
         is_new = True
+        existing_series[series_name] = series
+        if tmdb_identifier:
+            existing_series[f"tmdb:{tmdb_identifier}"] = series
     stats["series"] += 1
     stats["series_scanned"] = stats.get("series_scanned", 0) + 1
 
-    series_metadata = series_data.get("metadata", {})
     changed = False
 
-    for attr, key in [
+    for attribute_name, metadata_key in [
         ("jellyfin_id", "jellyfin_id"),
         ("tmdb_identifier", "tmdb_identifier"),
         ("poster_path", "poster_path"),
@@ -112,16 +141,33 @@ def _save_series_record(
         ("first_air_date", "first_air_date"),
         ("tmdb_episode_group_id", "tmdb_episode_group_id"),
     ]:
-        val = series_metadata.get(key)
-        if val is not None and getattr(series, attr) != val:
-            setattr(series, attr, val)
+        metadata_value = series_metadata.get(metadata_key)
+        if (
+            metadata_value is not None
+            and getattr(series, attribute_name) != metadata_value
+        ):
+            setattr(series, attribute_name, metadata_value)
             changed = True
+            if attribute_name == "tmdb_identifier":
+                existing_series[f"tmdb:{metadata_value}"] = series
 
     if "locked_metadata" in series_metadata:
-        val = bool(series_metadata["locked_metadata"])
-        if series.locked_metadata != val:
-            series.locked_metadata = val
+        locked_value = bool(series_metadata["locked_metadata"])
+        if series.locked_metadata != locked_value:
+            series.locked_metadata = locked_value
             changed = True
+
+    # Ensure SeriesLibrary junction entry exists
+    has_library_link = any(
+        series_library.library_name == library_name
+        for series_library in series.libraries
+    )
+    if not has_library_link:
+        new_series_library = SeriesLibrary(
+            series_id=series.id, library_name=library_name
+        )
+        session.add(new_series_library)
+        series.libraries.append(new_series_library)
 
     if not is_new and changed:
         stats["series_updated"] = stats.get("series_updated", 0) + 1
@@ -687,22 +733,22 @@ def save_library(library_name: str, library: dict[str, Any]) -> dict[str, Any]:
         from lan_streamer.db.models import ScannedDirectory
 
         with get_session() as session:
-            existing_series = {
-                series_obj.name: series_obj
-                for series_obj in session.scalars(
-                    select(Series)
-                    .where(Series.library_name == library_name)
-                    .options(
-                        selectinload(Series.seasons)
-                        .selectinload(Season.episodes)
-                        .selectinload(Episode.media_files),
-                        selectinload(Series.seasons)
-                        .selectinload(Season.episodes)
-                        .selectinload(Episode.playback_state),
-                    )
-                ).all()
-                if series_obj.name is not None
-            }
+            existing_series: dict[str, Series] = {}
+            for series_obj in session.scalars(
+                select(Series).options(
+                    selectinload(Series.libraries),
+                    selectinload(Series.seasons)
+                    .selectinload(Season.episodes)
+                    .selectinload(Episode.media_files),
+                    selectinload(Series.seasons)
+                    .selectinload(Season.episodes)
+                    .selectinload(Episode.playback_state),
+                )
+            ).all():
+                if series_obj.name is not None:
+                    existing_series[series_obj.name] = series_obj
+                if series_obj.tmdb_identifier:
+                    existing_series[f"tmdb:{series_obj.tmdb_identifier}"] = series_obj
 
             for series_name, series_data in library.items():
                 series = _save_series_record(
@@ -870,11 +916,17 @@ def _cleanup_tv_library(
     """
     series_list = session.scalars(
         select(Series)
-        .where(Series.library_name == library_name)
+        .join(Series.libraries, isouter=True)
+        .where(
+            (Series.library_name == library_name)
+            | (SeriesLibrary.library_name == library_name)
+        )
+        .distinct()
         .options(
+            selectinload(Series.libraries),
             selectinload(Series.seasons)
             .selectinload(Season.episodes)
-            .selectinload(Episode.media_files)
+            .selectinload(Episode.media_files),
         )
     ).all()
 
@@ -884,7 +936,25 @@ def _cleanup_tv_library(
             for root in root_directories
         )
         if not series_path_exists:
+            other_libraries = [
+                series_library
+                for series_library in series.libraries
+                if series_library.library_name != library_name
+            ]
+            if other_libraries:
+                logger.info(
+                    f"Cleanup: Series '{series.name}' no longer in library '{library_name}', "
+                    f"but still associated with {len(other_libraries)} other libraries."
+                )
+                for series_library in list(series.libraries):
+                    if series_library.library_name == library_name:
+                        session.delete(series_library)
+                if series.library_name == library_name:
+                    series.library_name = other_libraries[0].library_name
+                continue
+
             logger.info(f"Cleanup: Removing missing series '{series.name}'")
+
             stats["seasons"] += len(series.seasons)
             stats["seasons_removed"] = stats.get("seasons_removed", 0) + len(
                 series.seasons
@@ -1001,23 +1071,23 @@ def save_season_data(
     }
     try:
         with get_session() as session:
-            existing_series = {
-                series_obj.name: series_obj
-                for series_obj in session.scalars(
-                    select(Series)
-                    .where(Series.library_name == library_name)
-                    .where(Series.name == series_name)
-                    .options(
-                        selectinload(Series.seasons)
-                        .selectinload(Season.episodes)
-                        .selectinload(Episode.media_files),
-                        selectinload(Series.seasons)
-                        .selectinload(Season.episodes)
-                        .selectinload(Episode.playback_state),
-                    )
-                ).all()
-                if series_obj.name is not None
-            }
+            existing_series: dict[str, Series] = {}
+            for series_obj in session.scalars(
+                select(Series).options(
+                    selectinload(Series.libraries),
+                    selectinload(Series.seasons)
+                    .selectinload(Season.episodes)
+                    .selectinload(Episode.media_files),
+                    selectinload(Series.seasons)
+                    .selectinload(Season.episodes)
+                    .selectinload(Episode.playback_state),
+                )
+            ).all():
+                if series_obj.name is not None:
+                    existing_series[series_obj.name] = series_obj
+                if series_obj.tmdb_identifier:
+                    existing_series[f"tmdb:{series_obj.tmdb_identifier}"] = series_obj
+
             series = _save_series_record(
                 session,
                 library_name,

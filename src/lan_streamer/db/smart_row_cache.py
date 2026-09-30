@@ -210,40 +210,45 @@ def _row_to_dict(row: SmartRowCache) -> dict[str, Any]:
 
 
 def _resolve_series_ids(items: list[dict[str, Any]]) -> dict[str, str]:
-    """Build a map of (library_name, name) → series.id for all items.
+    """Build a map of series identifiers for all items.
 
-    Uses a single bulk query with OR conditions to avoid N+1 lookups.
+    Maps (library_name|name), (junction_library|name), and name to series.id.
     """
-    names: set[tuple] = set()
+    names_to_lookup: set[str] = set()
     for item in items:
         item_type = item.get("type")
-        library = item.get("library_name", "")
         if item_type in ("series", "season"):
             key = item.get("name") or item.get("series_name") or ""
-            names.add((library, key))
+            if key:
+                names_to_lookup.add(key)
         elif item_type == "movie":
             key = item.get("name") or ""
-            names.add((library, key))
+            if key:
+                names_to_lookup.add(key)
 
-    if not names:
+    if not names_to_lookup:
         return {}
 
     result: dict[str, str] = {}
     try:
         with get_session() as session:
-            from sqlalchemy import or_
+            from sqlalchemy.orm import selectinload
 
-            name_pairs = [(lib, name) for lib, name in names if name]
-            if not name_pairs:
-                return result
-
-            conditions = [
-                (Series.library_name == lib) & (Series.name == name)
-                for lib, name in name_pairs
-            ]
-            series_list = session.scalars(select(Series).where(or_(*conditions))).all()
+            series_list = session.scalars(
+                select(Series)
+                .where(Series.name.in_(names_to_lookup))
+                .options(selectinload(Series.libraries))
+            ).all()
             for series in series_list:
-                result[f"{series.library_name}|{series.name}"] = series.id
+                if series.name:
+                    if series.library_name:
+                        result[f"{series.library_name}|{series.name}"] = series.id
+                    for series_library in series.libraries:
+                        result[f"{series_library.library_name}|{series.name}"] = (
+                            series.id
+                        )
+                    result[series.name] = series.id
+                    result[f"|{series.name}"] = series.id
     except Exception:
         logger.exception("Failed to resolve series IDs for cache rebuild")
 
@@ -251,36 +256,38 @@ def _resolve_series_ids(items: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def _resolve_movie_ids(items: list[dict[str, Any]]) -> dict[str, str]:
-    """Build a map of (library_name, name) → movie.id for all items.
+    """Build a map of movie identifiers for all items.
 
-    Uses a single bulk query with OR conditions to avoid N+1 lookups.
+    Maps (library_name|name), (junction_library|name), and name to movie.id.
     """
-    names: set[tuple] = set()
+    names_to_lookup: set[str] = set()
     for item in items:
         if item.get("type") == "movie":
-            library = item.get("library_name", "")
             key = item.get("name") or ""
-            names.add((library, key))
+            if key:
+                names_to_lookup.add(key)
 
-    if not names:
+    if not names_to_lookup:
         return {}
 
     result: dict[str, str] = {}
     try:
         with get_session() as session:
-            from sqlalchemy import or_
+            from sqlalchemy.orm import selectinload
 
-            name_pairs = [(lib, name) for lib, name in names if name]
-            if not name_pairs:
-                return result
-
-            conditions = [
-                (Movie.library_name == lib) & (Movie.name == name)
-                for lib, name in name_pairs
-            ]
-            movie_list = session.scalars(select(Movie).where(or_(*conditions))).all()
+            movie_list = session.scalars(
+                select(Movie)
+                .where(Movie.name.in_(names_to_lookup))
+                .options(selectinload(Movie.libraries))
+            ).all()
             for movie in movie_list:
-                result[f"{movie.library_name}|{movie.name}"] = movie.id
+                if movie.name:
+                    if movie.library_name:
+                        result[f"{movie.library_name}|{movie.name}"] = movie.id
+                    for movie_library in movie.libraries:
+                        result[f"{movie_library.library_name}|{movie.name}"] = movie.id
+                    result[movie.name] = movie.id
+                    result[f"|{movie.name}"] = movie.id
     except Exception:
         logger.exception("Failed to resolve movie IDs for cache rebuild")
 
@@ -293,9 +300,9 @@ def _lookup_series_id(
     """Look up the series ID for an item from the pre-built map."""
     if item_type == "movie":
         return None
-    library = item.get("library_name", "")
-    name = item.get("name") or item.get("series_name") or ""
-    return series_ids.get(f"{library}|{name}")
+    library_name = item.get("library_name", "")
+    item_name = item.get("name") or item.get("series_name") or ""
+    return series_ids.get(f"{library_name}|{item_name}") or series_ids.get(item_name)
 
 
 def _lookup_movie_id(
@@ -304,6 +311,6 @@ def _lookup_movie_id(
     """Look up the movie ID for an item from the pre-built map."""
     if item_type != "movie":
         return None
-    library = item.get("library_name", "")
-    name = item.get("name") or ""
-    return movie_ids.get(f"{library}|{name}")
+    library_name = item.get("library_name", "")
+    item_name = item.get("name") or ""
+    return movie_ids.get(f"{library_name}|{item_name}") or movie_ids.get(item_name)

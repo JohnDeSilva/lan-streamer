@@ -182,9 +182,16 @@ class Series(Base):
         passive_deletes=True,
         foreign_keys="MediaImage.series_id",
     )
+    libraries: Mapped[list[SeriesLibrary]] = relationship(
+        "SeriesLibrary",
+        back_populates="series",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     __table_args__ = (
-        UniqueConstraint("library_name", "name", name="uq_series_library_name_name"),
+        Index("ix_series_tmdb_identifier", "tmdb_identifier"),
+        Index("ix_series_name", "name"),
     )
 
 
@@ -522,9 +529,17 @@ class Movie(CompatibilityMixin, Base):
         overlaps="media_files",
     )
 
+    libraries: Mapped[list[MovieLibrary]] = relationship(
+        "MovieLibrary",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     __table_args__ = (
-        UniqueConstraint("library_name", "name", name="uq_movies_library_name_name"),
         Index("idx_movies_jellyfin_id", "jellyfin_id"),
+        Index("ix_movies_tmdb_identifier", "tmdb_identifier"),
+        Index("ix_movies_name", "name"),
     )
 
 
@@ -612,6 +627,54 @@ class MetadataFileMapping(Base):
         ),
         Index("idx_metadata_file_mappings_episode", "episode_id", "media_file_id"),
         Index("idx_metadata_file_mappings_movie", "movie_id", "media_file_id"),
+    )
+
+
+class SeriesLibrary(Base):
+    """Junction table mapping a television series to the libraries that contain its media files."""
+
+    __tablename__ = "series_libraries"
+
+    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
+    series_id: Mapped[str] = mapped_column(
+        UUIDBLOB,
+        ForeignKey("series.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    library_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+
+    series: Mapped[Series] = relationship("Series", back_populates="libraries")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "series_id",
+            "library_name",
+            name="uq_series_libraries_series_id_library_name",
+        ),
+    )
+
+
+class MovieLibrary(Base):
+    """Junction table mapping a movie to the libraries that contain its media files."""
+
+    __tablename__ = "movie_libraries"
+
+    id: Mapped[str] = mapped_column(UUIDBLOB, primary_key=True, default=_new_uuid_str)
+    movie_id: Mapped[str] = mapped_column(
+        UUIDBLOB,
+        ForeignKey("movies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    library_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+
+    movie: Mapped[Movie] = relationship("Movie", back_populates="libraries")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "movie_id", "library_name", name="uq_movie_libraries_movie_id_library_name"
+        ),
     )
 
 
