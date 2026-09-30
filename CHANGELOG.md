@@ -1,3 +1,13 @@
+## v0.55.0 (2026-09-30)
+
+### Feat
+
+- **db**: decouple libraries into relational junction tables and enable multi-root deduplication
+
+### Fix
+
+- **db**: resolve multi-library playback, cleanup boundaries, and query performance
+
 ## v0.55.0rc0 (2026-09-30)
 
 ### Feat
