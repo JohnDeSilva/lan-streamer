@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from lan_streamer.db.library_shared import (
@@ -212,6 +212,73 @@ def load_movie_library(library_name: str | list[str]) -> dict[str, Any]:
     return library_data
 
 
+def _load_existing_movies_for_save(
+    session: Session, library: dict[str, Any]
+) -> tuple[dict[str, Movie], dict[str, Movie], dict[str, Movie]]:
+    """Loads existing movies by name, path, and TMDB identifier for save."""
+    incoming_movie_names = [name for name in library if name]
+    incoming_tmdb_identifiers = [
+        str(
+            movie_dict.get("tmdb_identifier")
+            or movie_dict.get("tmdb_id")
+            or movie_dict.get("metadata", {}).get("tmdb_identifier")
+            or movie_dict.get("metadata", {}).get("tmdb_id")
+        )
+        for movie_dict in library.values()
+        if (
+            movie_dict.get("tmdb_identifier")
+            or movie_dict.get("tmdb_id")
+            or movie_dict.get("metadata", {}).get("tmdb_identifier")
+            or movie_dict.get("metadata", {}).get("tmdb_id")
+        )
+    ]
+    filter_predicates = []
+    if incoming_movie_names:
+        filter_predicates.append(Movie.name.in_(incoming_movie_names))
+    if incoming_tmdb_identifiers:
+        filter_predicates.append(Movie.tmdb_identifier.in_(incoming_tmdb_identifiers))
+
+    existing_movies_by_name: dict[str, Movie] = {}
+    if filter_predicates:
+        existing_movies_by_name = {
+            movie_obj.name: movie_obj
+            for movie_obj in session.scalars(
+                select(Movie)
+                .where(or_(*filter_predicates))
+                .options(
+                    selectinload(Movie.libraries),
+                    selectinload(Movie.media_files),
+                    selectinload(Movie.playback_state),
+                )
+            ).all()
+            if movie_obj.name is not None
+        }
+    incoming_paths = [data.get("path") for data in library.values() if data.get("path")]
+    existing_movies_by_path: dict[str, Movie] = {}
+    if incoming_paths:
+        existing_movies_by_path = {
+            movie_obj.path: movie_obj
+            for movie_obj in session.scalars(
+                select(Movie)
+                .join(Movie.media_files)
+                .where(MediaFile.path.in_(incoming_paths))
+                .options(
+                    selectinload(Movie.libraries),
+                    selectinload(Movie.media_files),
+                    selectinload(Movie.playback_state),
+                )
+            ).all()
+            if movie_obj.path is not None
+        }
+
+    existing_movies_by_tmdb = {}
+    for movie_obj in list(existing_movies_by_name.values()):
+        if movie_obj.tmdb_identifier:
+            existing_movies_by_tmdb[str(movie_obj.tmdb_identifier)] = movie_obj
+
+    return existing_movies_by_name, existing_movies_by_path, existing_movies_by_tmdb
+
+
 def save_movie_library(library_name: str, library: dict[str, Any]) -> dict[str, Any]:
     """
     Updates the database for the given movie library name using SQLAlchemy ORM.
@@ -232,41 +299,11 @@ def save_movie_library(library_name: str, library: dict[str, Any]) -> dict[str, 
         from lan_streamer.db.models import ScannedDirectory
 
         with get_session() as session:
-            existing_movies_by_name = {
-                movie_obj.name: movie_obj
-                for movie_obj in session.scalars(
-                    select(Movie).options(
-                        selectinload(Movie.libraries),
-                        selectinload(Movie.media_files),
-                        selectinload(Movie.playback_state),
-                    )
-                ).all()
-                if movie_obj.name is not None
-            }
-            incoming_paths = [
-                data.get("path") for data in library.values() if data.get("path")
-            ]
-            existing_movies_by_path = {}
-            if incoming_paths:
-                existing_movies_by_path = {
-                    movie_obj.path: movie_obj
-                    for movie_obj in session.scalars(
-                        select(Movie)
-                        .join(Movie.media_files)
-                        .where(MediaFile.path.in_(incoming_paths))
-                        .options(
-                            selectinload(Movie.libraries),
-                            selectinload(Movie.media_files),
-                            selectinload(Movie.playback_state),
-                        )
-                    ).all()
-                    if movie_obj.path is not None
-                }
-
-            existing_movies_by_tmdb = {}
-            for movie_obj in list(existing_movies_by_name.values()):
-                if movie_obj.tmdb_identifier:
-                    existing_movies_by_tmdb[str(movie_obj.tmdb_identifier)] = movie_obj
+            (
+                existing_movies_by_name,
+                existing_movies_by_path,
+                existing_movies_by_tmdb,
+            ) = _load_existing_movies_for_save(session, library)
 
             touched_movie_names = set()
 

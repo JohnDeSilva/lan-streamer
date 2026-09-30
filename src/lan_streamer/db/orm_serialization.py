@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from lan_streamer.db.connection import get_session
 from lan_streamer.db.models import Episode, Movie, Season, Series
@@ -326,7 +327,7 @@ def is_movie(path: str) -> bool:
 
 
 def delete_series_record(library_name: str, series_name: str) -> None:
-    """Deletes a series record from the database."""
+    """Deletes a series record from the database, or dissociates it from the library."""
     try:
         logger.debug(
             f"Executing DB delete_series_record: library={library_name}, series={series_name}"
@@ -335,16 +336,39 @@ def delete_series_record(library_name: str, series_name: str) -> None:
             f"Deleting series '{series_name}' from library '{library_name}' in database"
         )
         with get_session() as session:
+            from lan_streamer.db.models import SeriesLibrary
+
             series = session.scalars(
-                select(Series).where(
-                    Series.library_name == library_name, Series.name == series_name
+                select(Series)
+                .join(Series.libraries, isouter=True)
+                .where(
+                    (Series.library_name == library_name)
+                    | (SeriesLibrary.library_name == library_name),
+                    Series.name == series_name,
                 )
+                .options(selectinload(Series.libraries))
             ).first()
             if series:
-                session.delete(series)
-                logger.debug(
-                    f"Deleted series '{series_name}' from library '{library_name}' successfully"
-                )
+                other_libraries = [
+                    series_library
+                    for series_library in series.libraries
+                    if series_library.library_name != library_name
+                ]
+                if other_libraries:
+                    logger.info(
+                        f"Dissociating series '{series_name}' from library '{library_name}'; "
+                        f"it remains in {len(other_libraries)} other libraries"
+                    )
+                    for series_library in list(series.libraries):
+                        if series_library.library_name == library_name:
+                            session.delete(series_library)
+                    if series.library_name == library_name:
+                        series.library_name = other_libraries[0].library_name
+                else:
+                    session.delete(series)
+                    logger.debug(
+                        f"Deleted series '{series_name}' from library '{library_name}' successfully"
+                    )
             else:
                 logger.debug(
                     f"Series '{series_name}' not found for deletion in library '{library_name}'"

@@ -2,13 +2,14 @@
 TV library persistence functions — load, save, and cleanup of Series/Season/Episode records.
 """
 
+import contextlib
 import logging
 import re
 import time
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from lan_streamer.db.library_shared import (
@@ -703,6 +704,54 @@ def _apply_episode_fields(
     )
 
 
+def _load_existing_series_for_save(
+    session: Session, library: dict[str, Any]
+) -> dict[str, Series]:
+    """Pre-loads existing series matching incoming names or TMDB identifiers."""
+    incoming_series_names = [name for name in library if name]
+    incoming_tmdb_identifiers = [
+        str(
+            series_data.get("tmdb_identifier")
+            or series_data.get("tmdb_id")
+            or series_data.get("metadata", {}).get("tmdb_identifier")
+            or series_data.get("metadata", {}).get("tmdb_id")
+        )
+        for series_data in library.values()
+        if (
+            series_data.get("tmdb_identifier")
+            or series_data.get("tmdb_id")
+            or series_data.get("metadata", {}).get("tmdb_identifier")
+            or series_data.get("metadata", {}).get("tmdb_id")
+        )
+    ]
+    filter_predicates = []
+    if incoming_series_names:
+        filter_predicates.append(Series.name.in_(incoming_series_names))
+    if incoming_tmdb_identifiers:
+        filter_predicates.append(Series.tmdb_identifier.in_(incoming_tmdb_identifiers))
+
+    existing_series: dict[str, Series] = {}
+    if filter_predicates:
+        for series_obj in session.scalars(
+            select(Series)
+            .where(or_(*filter_predicates))
+            .options(
+                selectinload(Series.libraries),
+                selectinload(Series.seasons)
+                .selectinload(Season.episodes)
+                .selectinload(Episode.media_files),
+                selectinload(Series.seasons)
+                .selectinload(Season.episodes)
+                .selectinload(Episode.playback_state),
+            )
+        ).all():
+            if series_obj.name is not None:
+                existing_series[series_obj.name] = series_obj
+            if series_obj.tmdb_identifier:
+                existing_series[f"tmdb:{series_obj.tmdb_identifier}"] = series_obj
+    return existing_series
+
+
 def save_library(library_name: str, library: dict[str, Any]) -> dict[str, Any]:
     """
     Updates the database for the given library name using SQLAlchemy ORM.
@@ -733,22 +782,7 @@ def save_library(library_name: str, library: dict[str, Any]) -> dict[str, Any]:
         from lan_streamer.db.models import ScannedDirectory
 
         with get_session() as session:
-            existing_series: dict[str, Series] = {}
-            for series_obj in session.scalars(
-                select(Series).options(
-                    selectinload(Series.libraries),
-                    selectinload(Series.seasons)
-                    .selectinload(Season.episodes)
-                    .selectinload(Episode.media_files),
-                    selectinload(Series.seasons)
-                    .selectinload(Season.episodes)
-                    .selectinload(Episode.playback_state),
-                )
-            ).all():
-                if series_obj.name is not None:
-                    existing_series[series_obj.name] = series_obj
-                if series_obj.tmdb_identifier:
-                    existing_series[f"tmdb:{series_obj.tmdb_identifier}"] = series_obj
+            existing_series = _load_existing_series_for_save(session, library)
 
             for series_name, series_data in library.items():
                 series = _save_series_record(
@@ -901,6 +935,22 @@ def save_library(library_name: str, library: dict[str, Any]) -> dict[str, Any]:
     return stats
 
 
+def _get_other_library_roots(current_library_name: str) -> list[str]:
+    """Returns resolved paths of all other configured libraries to protect them from cleanup."""
+    other_library_roots: list[str] = []
+    try:
+        from lan_streamer.system.config import config
+
+        for other_library_name, other_library_config in config.libraries.items():
+            if other_library_name != current_library_name:
+                for path_item in other_library_config.get("paths", []):
+                    with contextlib.suppress(ValueError, OSError):
+                        other_library_roots.append(str(Path(path_item).resolve()))
+    except KeyError, AttributeError:
+        other_library_roots = []
+    return other_library_roots
+
+
 def _cleanup_tv_library(
     session: Session,
     library_name: str,
@@ -930,6 +980,20 @@ def _cleanup_tv_library(
         )
     ).all()
 
+    other_library_roots = _get_other_library_roots(library_name)
+
+    def _is_under_other_library_roots(path_string: str) -> bool:
+        if not other_library_roots:
+            return False
+        try:
+            resolved_path = str(Path(path_string).resolve())
+            return any(
+                resolved_path.startswith(other_root)
+                for other_root in other_library_roots
+            )
+        except ValueError, OSError:
+            return False
+
     for series in series_list:
         series_path_exists = any(
             series.name and (Path(root) / series.name).is_dir()
@@ -955,17 +1019,17 @@ def _cleanup_tv_library(
 
             logger.info(f"Cleanup: Removing missing series '{series.name}'")
 
-            stats["seasons"] += len(series.seasons)
+            stats["seasons"] = stats.get("seasons", 0) + len(series.seasons)
             stats["seasons_removed"] = stats.get("seasons_removed", 0) + len(
                 series.seasons
             )
             for season in series.seasons:
-                stats["episodes"] += len(season.episodes)
+                stats["episodes"] = stats.get("episodes", 0) + len(season.episodes)
                 stats["episodes_removed"] = stats.get("episodes_removed", 0) + len(
                     season.episodes
                 )
             session.delete(series)
-            stats["series"] += 1
+            stats["series"] = stats.get("series", 0) + 1
             stats["series_removed"] = stats.get("series_removed", 0) + 1
             continue
 
@@ -988,32 +1052,40 @@ def _cleanup_tv_library(
                     continue
 
                 # Remove stale MediaFile records whose files no longer exist on disk.
-                stale_mfs = [
-                    mf
-                    for mf in list(episode.media_files)
-                    if mf.path and not Path(mf.path).exists()
+                # Files residing under another library's configured paths are preserved.
+                stale_media_files = [
+                    media_file
+                    for media_file in list(episode.media_files)
+                    if media_file.path
+                    and not _is_under_other_library_roots(media_file.path)
+                    and not Path(media_file.path).exists()
                 ]
-                for stale_mf in stale_mfs:
+                for stale_media_file in stale_media_files:
                     logger.info(
                         "Cleanup: Removing stale MediaFile '%s' for episode '%s'.",
-                        stale_mf.path,
+                        stale_media_file.path,
                         episode.name,
                     )
-                    has_other_refs = any(
-                        ep != episode for ep in stale_mf.episodes
-                    ) or any(mv != episode for mv in stale_mf.movies)
-                    episode.media_files.remove(stale_mf)
-                    if not has_other_refs and stale_mf in session:
-                        session.delete(stale_mf)
+                    has_other_references = any(
+                        other_episode != episode
+                        for other_episode in stale_media_file.episodes
+                    ) or bool(stale_media_file.movies)
+                    episode.media_files.remove(stale_media_file)
+                    if not has_other_references and stale_media_file in session:
+                        session.delete(stale_media_file)
                         stats["episodes_removed"] = stats.get("episodes_removed", 0) + 1
 
-                changed = bool(stale_mfs)
+                changed = bool(stale_media_files)
 
-                if stale_mfs:
+                if stale_media_files:
                     session.flush()
 
-                # Update default_path if it points to a missing file.
-                if default_path and not Path(default_path).exists():
+                # Update default_path if it points to a missing file not managed by another library.
+                if (
+                    default_path
+                    and not _is_under_other_library_roots(default_path)
+                    and not Path(default_path).exists()
+                ):
                     changed = True
                     if episode.media_files:
                         valid_first = episode.media_files[0].path
@@ -1072,8 +1144,19 @@ def save_season_data(
     try:
         with get_session() as session:
             existing_series: dict[str, Series] = {}
+            incoming_tmdb_identifier = series_data.get("metadata", {}).get(
+                "tmdb_identifier"
+            )
+            filter_predicates = [Series.name == series_name]
+            if incoming_tmdb_identifier:
+                filter_predicates.append(
+                    Series.tmdb_identifier == incoming_tmdb_identifier
+                )
+
             for series_obj in session.scalars(
-                select(Series).options(
+                select(Series)
+                .where(or_(*filter_predicates))
+                .options(
                     selectinload(Series.libraries),
                     selectinload(Series.seasons)
                     .selectinload(Season.episodes)

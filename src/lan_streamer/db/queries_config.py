@@ -5,7 +5,13 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from lan_streamer.db.models import AppConfig, AppSecret, SecretType, Series
+from lan_streamer.db.models import (
+    AppConfig,
+    AppSecret,
+    SecretType,
+    Series,
+    SeriesLibrary,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -241,8 +247,11 @@ def get_series_pref(
         )
         with get_session() as session:
             series = session.scalars(
-                select(Series).where(
-                    Series.library_name == library_name,
+                select(Series)
+                .join(Series.libraries, isouter=True)
+                .where(
+                    (Series.library_name == library_name)
+                    | (SeriesLibrary.library_name == library_name),
                     Series.name == series_name,
                 )
             ).first()
@@ -275,8 +284,11 @@ def set_series_pref(library_name: str, series_name: str, key: str, value: Any) -
         )
         with get_session() as session:
             series = session.scalars(
-                select(Series).where(
-                    Series.library_name == library_name,
+                select(Series)
+                .join(Series.libraries, isouter=True)
+                .where(
+                    (Series.library_name == library_name)
+                    | (SeriesLibrary.library_name == library_name),
                     Series.name == series_name,
                 )
             ).first()

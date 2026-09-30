@@ -4,7 +4,7 @@ from unittest.mock import patch
 from sqlalchemy import text
 
 from lan_streamer.db.connection import get_session
-from lan_streamer.db.models import Episode, Movie, Season, Series
+from lan_streamer.db.models import Episode, Movie, MovieLibrary, Season, Series
 from lan_streamer.db.models_cast import MediaCast, Person
 from lan_streamer.ui_views import Controller, MovieDetailView
 
@@ -118,3 +118,66 @@ def test_movie_detail_cast_section(qtbot: Any) -> None:
 
     # Check that cast grid is populated
     assert view._cast_grid.count() > 0
+
+
+def test_movie_detail_cast_via_junction_library(qtbot: Any) -> None:
+    controller = Controller()
+    controller.current_library_name = "Secondary Movies"
+    controller.cached_library_data = {
+        "Shared Movie": {
+            "name": "Shared Movie",
+            "path": "/movies/Shared Movie/video.mkv",
+            "tmdb_name": "Shared Movie",
+            "year": 2021,
+            "overview": "A shared test movie.",
+            "poster_path": "/path/to/poster.jpg",
+        }
+    }
+
+    # Setup database
+    with get_session() as cleanup_session:
+        cleanup_session.execute(text("PRAGMA foreign_keys = OFF"))
+        cleanup_session.execute(MediaCast.__table__.delete())
+        cleanup_session.execute(Person.__table__.delete())
+        cleanup_session.execute(MovieLibrary.__table__.delete())
+        cleanup_session.execute(Episode.__table__.delete())
+        cleanup_session.execute(Season.__table__.delete())
+        cleanup_session.execute(Movie.__table__.delete())
+        cleanup_session.execute(Series.__table__.delete())
+        cleanup_session.execute(text("PRAGMA foreign_keys = ON"))
+
+    with get_session() as session:
+        movie = Movie(library_name="Primary Movies", name="Shared Movie")
+        session.add(movie)
+        session.flush()
+
+        junction_link = MovieLibrary(movie_id=movie.id, library_name="Secondary Movies")
+        session.add(junction_link)
+
+        person = Person(tmdb_identifier=65432, name="Junction Movie Actor")
+        session.add(person)
+        session.flush()
+
+        cast_entry = MediaCast(
+            person_id=person.id,
+            movie_id=movie.id,
+            role="actor",
+            character="Lead Role",
+            sort_order=1,
+        )
+        session.add(cast_entry)
+        session.commit()
+
+    view = MovieDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch("lan_streamer.ui_views.movie_detail.Path.is_file", return_value=True),
+        patch("lan_streamer.ui_views.movie_detail.QPixmap") as mock_pixmap,
+        patch.object(view.poster_label, "setPixmap"),
+    ):
+        mock_pixmap.return_value.isNull.return_value = False
+        view.populate_movie_details("Shared Movie")
+
+    assert view._cast_grid.count() > 0
+    assert view._lookup_movie_id() == movie.id
