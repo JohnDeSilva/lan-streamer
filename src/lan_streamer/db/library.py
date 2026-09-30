@@ -214,10 +214,16 @@ def reassign_library_items_by_root_path(
         Movie as MovieModel,
     )
     from lan_streamer.db.models import (
+        MovieLibrary as MovieLibraryModel,
+    )
+    from lan_streamer.db.models import (
         Season as SeasonModel,
     )
     from lan_streamer.db.models import (
         Series as SeriesModel,
+    )
+    from lan_streamer.db.models import (
+        SeriesLibrary as SeriesLibraryModel,
     )
 
     resolved_root_path = Path(root_path).resolve()
@@ -227,11 +233,22 @@ def reassign_library_items_by_root_path(
         # 1. TV Series
         series_records = session.scalars(
             select(SeriesModel)
-            .where(SeriesModel.library_name == old_library_name)
+            .where(
+                (SeriesModel.library_name == old_library_name)
+                | (
+                    SeriesModel.id.in_(
+                        select(SeriesLibraryModel.series_id).where(
+                            SeriesLibraryModel.library_name == old_library_name
+                        )
+                    )
+                )
+            )
+            .distinct()
             .options(
+                selectinload(SeriesModel.libraries),
                 selectinload(SeriesModel.seasons)
                 .selectinload(SeasonModel.episodes)
-                .selectinload(EpisodeModel.media_files)
+                .selectinload(EpisodeModel.media_files),
             )
         ).all()
 
@@ -258,6 +275,21 @@ def reassign_library_items_by_root_path(
 
             if matches_root:
                 series_item.library_name = new_library_name
+                for series_library_record in list(series_item.libraries):
+                    if series_library_record.library_name == old_library_name:
+                        session.delete(series_library_record)
+                existing_libraries = {
+                    record.library_name
+                    for record in series_item.libraries
+                    if record.library_name != old_library_name
+                }
+                if new_library_name not in existing_libraries:
+                    session.add(
+                        SeriesLibraryModel(
+                            series_id=series_item.id,
+                            library_name=new_library_name,
+                        )
+                    )
                 reassigned_counts["series"] += 1
                 logger.info(
                     "Reassigned series '%s' from library '%s' to '%s'",
@@ -269,8 +301,21 @@ def reassign_library_items_by_root_path(
         # 2. Movies
         movie_records = session.scalars(
             select(MovieModel)
-            .where(MovieModel.library_name == old_library_name)
-            .options(selectinload(MovieModel.media_files))
+            .where(
+                (MovieModel.library_name == old_library_name)
+                | (
+                    MovieModel.id.in_(
+                        select(MovieLibraryModel.movie_id).where(
+                            MovieLibraryModel.library_name == old_library_name
+                        )
+                    )
+                )
+            )
+            .distinct()
+            .options(
+                selectinload(MovieModel.libraries),
+                selectinload(MovieModel.media_files),
+            )
         ).all()
 
         for movie_item in movie_records:
@@ -301,6 +346,21 @@ def reassign_library_items_by_root_path(
 
             if matches_root:
                 movie_item.library_name = new_library_name
+                for movie_library_record in list(movie_item.libraries):
+                    if movie_library_record.library_name == old_library_name:
+                        session.delete(movie_library_record)
+                existing_movie_libraries = {
+                    record.library_name
+                    for record in movie_item.libraries
+                    if record.library_name != old_library_name
+                }
+                if new_library_name not in existing_movie_libraries:
+                    session.add(
+                        MovieLibraryModel(
+                            movie_id=movie_item.id,
+                            library_name=new_library_name,
+                        )
+                    )
                 reassigned_counts["movies"] += 1
                 logger.info(
                     "Reassigned movie '%s' from library '%s' to '%s'",

@@ -30,76 +30,25 @@ logger: logging.Logger = logging.getLogger(__name__)
 def split_multi_root_libraries(
     libraries_dictionary: dict[str, dict[str, Any]],
 ) -> tuple[dict[str, dict[str, Any]], list[tuple[str, str, str]]]:
-    """Splits any library with multiple root directories into separate libraries.
+    """Normalizes library configurations by deduplicating root paths.
 
-    Each resulting library has at most one root directory in its 'paths' list.
-    The first root directory keeps the original library name.
-    Subsequent root directories are assigned separate libraries named:
-    '{library_name} ({folder_name})' based on the directory folder name,
-    falling back to '{library_name} ({number})' if collisions occur.
+    Libraries natively support multiple root directories without artificial splitting.
 
     Returns:
-        A tuple of (normalized_libraries, split_records), where each split_record
-        is a tuple of (old_library_name, new_library_name, root_path).
+        A tuple of (normalized_libraries, split_records), where split_records is
+        empty as libraries are no longer split.
     """
     normalized_libraries: dict[str, dict[str, Any]] = {}
-    split_records: list[tuple[str, str, str]] = []
-
     for library_name, library_configuration in libraries_dictionary.items():
         configuration_copy = dict(library_configuration)
-        if configuration_copy.get("management_type") == "remote":
-            normalized_libraries[library_name] = configuration_copy
-            continue
-
         raw_paths = configuration_copy.get("paths", [])
-        # Deduplicate paths while preserving order
-        unique_paths: list[str] = list(dict.fromkeys(raw_paths))
-        archive_paths: list[str] = configuration_copy.get("archive_paths", [])
-
-        if len(unique_paths) <= 1:
-            configuration_copy["paths"] = unique_paths
-            normalized_libraries[library_name] = configuration_copy
-            continue
-
-        # Keep first path for original library
-        first_path = unique_paths[0]
-        configuration_copy["paths"] = [first_path]
-        configuration_copy["archive_paths"] = [
-            path for path in archive_paths if path == first_path
-        ]
+        configuration_copy["paths"] = list(dict.fromkeys(raw_paths))
+        if "archive_paths" in configuration_copy:
+            archive_paths = configuration_copy.get("archive_paths", [])
+            configuration_copy["archive_paths"] = list(dict.fromkeys(archive_paths))
         normalized_libraries[library_name] = configuration_copy
 
-        # Split remaining paths into separate libraries
-        for index, path in enumerate(unique_paths[1:], start=2):
-            folder_name = Path(path).name.strip()
-            candidate_name = (
-                f"{library_name} ({folder_name})"
-                if folder_name
-                else f"{library_name} ({index})"
-            )
-            if (
-                candidate_name in normalized_libraries
-                or candidate_name in libraries_dictionary
-            ):
-                candidate_name = f"{library_name} ({index})"
-
-            counter = index
-            while (
-                candidate_name in normalized_libraries
-                or candidate_name in libraries_dictionary
-            ):
-                counter += 1
-                candidate_name = f"{library_name} ({counter})"
-
-            new_configuration = dict(library_configuration)
-            new_configuration["paths"] = [path]
-            new_configuration["archive_paths"] = [
-                archive_path for archive_path in archive_paths if archive_path == path
-            ]
-            normalized_libraries[candidate_name] = new_configuration
-            split_records.append((library_name, candidate_name, path))
-
-    return normalized_libraries, split_records
+    return normalized_libraries, []
 
 
 class Config:
@@ -463,13 +412,10 @@ class Config:
     def _reassign_split_libraries(
         self, split_records: list[tuple[str, str, str]]
     ) -> None:
-        """Handle a multi-root library split after config load or save.
+        """Handle a multi-root library split after config load or save."""
+        if not split_records:
+            return
 
-        In-memory tab membership is updated synchronously (cheap), while the
-        actual database record reassignment — which scans every series/movie
-        row and rebuilds the smart-row cache — runs on a background daemon
-        thread so the UI thread is never blocked by this one-time migration.
-        """
         for old_name, new_name, _root_path in split_records:
             for tab_entry in self.tabs:
                 if old_name in tab_entry.get(

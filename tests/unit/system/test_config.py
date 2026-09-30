@@ -422,25 +422,16 @@ def test_split_multi_root_libraries_multi_paths() -> None:
     }
     result_libraries, split_records = split_multi_root_libraries(input_libraries)
 
-    assert len(result_libraries) == 3
+    assert len(result_libraries) == 1
     assert "Anime" in result_libraries
-    assert "Anime (anime2)" in result_libraries
-    assert "Anime (anime3)" in result_libraries
-
-    assert result_libraries["Anime"]["paths"] == ["/media/anime1"]
-    assert result_libraries["Anime"]["archive_paths"] == []
-    assert result_libraries["Anime"]["show_future_episodes"] is True
-
-    assert result_libraries["Anime (anime2)"]["paths"] == ["/media/anime2"]
-    assert result_libraries["Anime (anime2)"]["archive_paths"] == []
-
-    assert result_libraries["Anime (anime3)"]["paths"] == ["/media/anime3"]
-    assert result_libraries["Anime (anime3)"]["archive_paths"] == ["/media/anime3"]
-
-    assert split_records == [
-        ("Anime", "Anime (anime2)", "/media/anime2"),
-        ("Anime", "Anime (anime3)", "/media/anime3"),
+    assert result_libraries["Anime"]["paths"] == [
+        "/media/anime1",
+        "/media/anime2",
+        "/media/anime3",
     ]
+    assert result_libraries["Anime"]["archive_paths"] == ["/media/anime3"]
+    assert result_libraries["Anime"]["show_future_episodes"] is True
+    assert split_records == []
 
 
 def test_split_multi_root_libraries_collision_handling() -> None:
@@ -458,16 +449,14 @@ def test_split_multi_root_libraries_collision_handling() -> None:
     }
     result_libraries, split_records = split_multi_root_libraries(input_libraries)
 
-    # Since "Anime (shows)" already exists in input_libraries, the second path of "Anime"
-    # should fall back to an indexed name like "Anime (2)"
     assert "Anime" in result_libraries
     assert "Anime (shows)" in result_libraries
-    assert "Anime (2)" in result_libraries
-    assert result_libraries["Anime (2)"]["paths"] == ["/disk2/shows"]
-    assert ("Anime", "Anime (2)", "/disk2/shows") in split_records
+    assert result_libraries["Anime"]["paths"] == ["/disk1/shows", "/disk2/shows"]
+    assert result_libraries["Anime (shows)"]["paths"] == ["/disk3/other"]
+    assert split_records == []
 
 
-def test_config_load_automatically_splits_multi_root_libraries(
+def test_config_load_preserves_multi_root_libraries(
     mock_config_file,
 ) -> None:
     config = Config()
@@ -483,9 +472,7 @@ def test_config_load_automatically_splits_multi_root_libraries(
     reloaded.load_from_db()
 
     assert "Shows" in reloaded.libraries
-    assert "Shows (two)" in reloaded.libraries
-    assert reloaded.libraries["Shows"]["paths"] == ["/path/one"]
-    assert reloaded.libraries["Shows (two)"]["paths"] == ["/path/two"]
+    assert reloaded.libraries["Shows"]["paths"] == ["/path/one", "/path/two"]
 
 
 def test_config_tabs_default_generation(mock_config_file) -> None:
@@ -556,7 +543,7 @@ def test_split_multi_root_libraries_skips_remote_libraries() -> None:
     }
     result_libraries, split_records = split_multi_root_libraries(input_libraries)
 
-    # Remote library should NOT be split despite having 2 paths
+    # Neither remote nor local libraries should be split; paths are preserved
     assert "Remote Shows" in result_libraries
     assert "Remote Shows (mount2)" not in result_libraries
     assert result_libraries["Remote Shows"]["paths"] == [
@@ -564,8 +551,7 @@ def test_split_multi_root_libraries_skips_remote_libraries() -> None:
         "/local/mount2",
     ]
 
-    # Local TV library SHOULD be split
     assert "Local TV" in result_libraries
-    assert "Local TV (tv2)" in result_libraries
-    assert len(split_records) == 1
-    assert split_records[0] == ("Local TV", "Local TV (tv2)", "/local/tv2")
+    assert "Local TV (tv2)" not in result_libraries
+    assert result_libraries["Local TV"]["paths"] == ["/local/tv1", "/local/tv2"]
+    assert len(split_records) == 0
