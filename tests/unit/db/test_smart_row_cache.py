@@ -5,7 +5,9 @@ from sqlalchemy import select
 from lan_streamer.db import get_session
 from lan_streamer.db.models import (
     Movie,
+    MovieLibrary,
     Series,
+    SeriesLibrary,
     SmartRowCache,
 )
 from lan_streamer.db.smart_row_cache import (
@@ -525,3 +527,63 @@ def test_lookup_movie_id_found() -> None:
         "movie",
     )
     assert result == "id-456"
+
+
+def test_resolve_series_ids_with_junction_library() -> None:
+    with get_session() as session:
+        series = Series(name="Shared Series", library_name="TV Primary")
+        session.add(series)
+        session.flush()
+        junction_library = SeriesLibrary(
+            series_id=series.id, library_name="TV Secondary"
+        )
+        session.add(junction_library)
+        session.commit()
+
+    items = [
+        {"type": "series", "name": "Shared Series", "library_name": "TV Secondary"},
+    ]
+    resolved_ids = _resolve_series_ids(items)
+    assert "TV Primary|Shared Series" in resolved_ids
+    assert "TV Secondary|Shared Series" in resolved_ids
+    assert "Shared Series" in resolved_ids
+    assert resolved_ids["TV Secondary|Shared Series"] == series.id
+
+
+def test_resolve_movie_ids_with_junction_library() -> None:
+    with get_session() as session:
+        movie = Movie(name="Shared Movie", library_name="Movies 1080p")
+        session.add(movie)
+        session.flush()
+        junction_library = MovieLibrary(movie_id=movie.id, library_name="Movies 4K")
+        session.add(junction_library)
+        session.commit()
+
+    items = [
+        {"type": "movie", "name": "Shared Movie", "library_name": "Movies 4K"},
+    ]
+    resolved_ids = _resolve_movie_ids(items)
+    assert "Movies 1080p|Shared Movie" in resolved_ids
+    assert "Movies 4K|Shared Movie" in resolved_ids
+    assert "Shared Movie" in resolved_ids
+    assert resolved_ids["Movies 4K|Shared Movie"] == movie.id
+
+
+def test_lookup_series_id_fallback_to_name() -> None:
+    series_identifiers = {"Test Series": "series-uuid-123"}
+    lookup_result = _lookup_series_id(
+        {"type": "series", "name": "Test Series", "library_name": "Unknown Library"},
+        series_identifiers,
+        "series",
+    )
+    assert lookup_result == "series-uuid-123"
+
+
+def test_lookup_movie_id_fallback_to_name() -> None:
+    movie_identifiers = {"Test Movie": "movie-uuid-456"}
+    lookup_result = _lookup_movie_id(
+        {"type": "movie", "name": "Test Movie", "library_name": "Unknown Library"},
+        movie_identifiers,
+        "movie",
+    )
+    assert lookup_result == "movie-uuid-456"

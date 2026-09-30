@@ -414,7 +414,7 @@ def test_settings_dialog_enforce_single_root_directory_add_and_replace(qtbot) ->
     dialog.reject()
 
 
-def test_settings_dialog_save_config_splits_multi_root(qtbot, monkeypatch) -> None:
+def test_settings_dialog_save_config_preserves_multi_root(qtbot, monkeypatch) -> None:
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
 
@@ -438,9 +438,8 @@ def test_settings_dialog_save_config_splits_multi_root(qtbot, monkeypatch) -> No
     from lan_streamer.system.config import config
 
     assert "Combined" in config.libraries
-    assert config.libraries["Combined"]["paths"] == ["/media/shows"]
-    assert "Combined (cartoons)" in config.libraries
-    assert config.libraries["Combined (cartoons)"]["paths"] == ["/media/cartoons"]
+    assert config.libraries["Combined"]["paths"] == ["/media/shows", "/media/cartoons"]
+    assert "Combined (cartoons)" not in config.libraries
 
 
 def test_settings_dialog_tabs_management_workflow(qtbot) -> None:

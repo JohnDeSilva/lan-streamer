@@ -133,6 +133,15 @@ def _build_series_dict(series: Series) -> dict[str, Any]:
     for season in series.seasons:
         if season.name is not None:
             seasons[season.name] = _build_season_dict(season)
+
+    origin_libraries: list[str] = []
+    if series.library_name:
+        origin_libraries.append(series.library_name)
+    if hasattr(series, "libraries"):
+        for series_library in series.libraries:
+            if series_library.library_name not in origin_libraries:
+                origin_libraries.append(series_library.library_name)
+
     return {
         "metadata": {
             "jellyfin_id": series.jellyfin_id,
@@ -145,6 +154,7 @@ def _build_series_dict(series: Series) -> dict[str, Any]:
             "tmdb_episode_group_id": series.tmdb_episode_group_id,
         },
         "seasons": seasons,
+        "_origin_libraries": origin_libraries,
     }
 
 
@@ -224,6 +234,14 @@ def _build_movie_dict(movie: Movie) -> dict[str, Any]:
             }
         )
 
+    origin_libraries: list[str] = []
+    if movie.library_name:
+        origin_libraries.append(movie.library_name)
+    if hasattr(movie, "libraries"):
+        for movie_library in movie.libraries:
+            if movie_library.library_name not in origin_libraries:
+                origin_libraries.append(movie_library.library_name)
+
     return {
         "name": movie.name,
         "path": path,
@@ -250,6 +268,7 @@ def _build_movie_dict(movie: Movie) -> dict[str, Any]:
         "bit_rate": bit_rate,
         "versions": versions,
         "default_path": movie.default_path or "",
+        "_origin_libraries": origin_libraries,
     }
 
 

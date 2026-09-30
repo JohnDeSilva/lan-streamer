@@ -10,8 +10,10 @@ from lan_streamer.db.models import (
     MediaFile,
     MetadataFileMapping,
     Movie,
+    MovieLibrary,
     Season,
     Series,
+    SeriesLibrary,
 )
 from lan_streamer.db.utils import natural_sort_key
 
@@ -51,7 +53,14 @@ def get_combined_next_up(library_names: list[str]) -> list[dict[str, Any]]:
             )
             if library_names:
                 series_statement = series_statement.where(
-                    Series.library_name.in_(library_names)
+                    (Series.library_name.in_(library_names))
+                    | (
+                        Series.id.in_(
+                            select(SeriesLibrary.series_id).where(
+                                SeriesLibrary.library_name.in_(library_names)
+                            )
+                        )
+                    )
                 )
 
             # Eager load relationships on the fetched series to avoid N+1 queries during loop
@@ -220,7 +229,14 @@ def get_combined_smart_row(
             )
             if library_names:
                 series_statement = series_statement.where(
-                    Series.library_name.in_(library_names)
+                    (Series.library_name.in_(library_names))
+                    | (
+                        Series.id.in_(
+                            select(SeriesLibrary.series_id).where(
+                                SeriesLibrary.library_name.in_(library_names)
+                            )
+                        )
+                    )
                 )
             series_list = session.scalars(series_statement).all()
 
@@ -275,7 +291,14 @@ def get_combined_smart_row(
             movie_statement = select(Movie).options(selectinload(Movie.playback_state))
             if library_names:
                 movie_statement = movie_statement.where(
-                    Movie.library_name.in_(library_names)
+                    (Movie.library_name.in_(library_names))
+                    | (
+                        Movie.id.in_(
+                            select(MovieLibrary.movie_id).where(
+                                MovieLibrary.library_name.in_(library_names)
+                            )
+                        )
+                    )
                 )
             movies = session.scalars(movie_statement).all()
 
@@ -479,7 +502,14 @@ def search_media_names(
             series_statement = select(Series).where(Series.name.ilike(like_pattern))
             if library_names:
                 series_statement = series_statement.where(
-                    Series.library_name.in_(library_names)
+                    (Series.library_name.in_(library_names))
+                    | (
+                        Series.id.in_(
+                            select(SeriesLibrary.series_id).where(
+                                SeriesLibrary.library_name.in_(library_names)
+                            )
+                        )
+                    )
                 )
             series_list = list(session.scalars(series_statement).all())
 
@@ -487,7 +517,14 @@ def search_media_names(
             movie_statement = select(Movie).where(Movie.name.ilike(like_pattern))
             if library_names:
                 movie_statement = movie_statement.where(
-                    Movie.library_name.in_(library_names)
+                    (Movie.library_name.in_(library_names))
+                    | (
+                        Movie.id.in_(
+                            select(MovieLibrary.movie_id).where(
+                                MovieLibrary.library_name.in_(library_names)
+                            )
+                        )
+                    )
                 )
             movie_list = list(session.scalars(movie_statement).all())
 
