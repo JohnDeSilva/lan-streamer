@@ -155,7 +155,7 @@ def update_season_watched_status(
             f"Updating watched status for {series_name} - {season_name} in {library_name} to {watched}"
         )
         with get_session() as session:
-            from lan_streamer.db.models import Episode, PlaybackState
+            from lan_streamer.db.models import Episode, PlaybackState, SeriesLibrary
 
             season = session.scalars(
                 select(Season)
@@ -163,8 +163,10 @@ def update_season_watched_status(
                     selectinload(Season.episodes).selectinload(Episode.playback_state),
                 )
                 .join(Series)
+                .join(Series.libraries, isouter=True)
                 .where(
-                    Series.library_name == library_name,
+                    (Series.library_name == library_name)
+                    | (SeriesLibrary.library_name == library_name),
                     Series.name == series_name,
                     Season.name == season_name,
                 )
@@ -215,7 +217,12 @@ def update_series_watched_status(
             f"Updating watched status for entire series {series_name} in {library_name} to {watched}"
         )
         with get_session() as session:
-            from lan_streamer.db.models import Episode, PlaybackState, Season
+            from lan_streamer.db.models import (
+                Episode,
+                PlaybackState,
+                Season,
+                SeriesLibrary,
+            )
 
             series = session.scalars(
                 select(Series)
@@ -224,7 +231,12 @@ def update_series_watched_status(
                     .selectinload(Season.episodes)
                     .selectinload(Episode.playback_state),
                 )
-                .where(Series.library_name == library_name, Series.name == series_name)
+                .join(Series.libraries, isouter=True)
+                .where(
+                    (Series.library_name == library_name)
+                    | (SeriesLibrary.library_name == library_name),
+                    Series.name == series_name,
+                )
             ).first()
             if series:
                 for season in series.seasons:

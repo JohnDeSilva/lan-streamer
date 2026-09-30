@@ -6,7 +6,10 @@ link via SeriesLibrary and MovieLibrary junction tables, and correctly load
 unified records across single or multiple library queries.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from sqlalchemy import select
 
@@ -349,3 +352,174 @@ def test_ui_queries_support_junction_libraries() -> None:
     )
     assert len(search_movie_results) == 1
     assert search_movie_results[0]["name"] == "Interstellar"
+
+
+def test_mark_series_and_season_watched_via_junction_library() -> None:
+    from lan_streamer.db.queries_playback import (
+        update_season_watched_status,
+        update_series_watched_status,
+    )
+
+    series_payload: dict[str, Any] = {
+        "Fargo": {
+            "metadata": {"tmdb_identifier": "57532"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "The Crocodile's Dilemma",
+                            "episode_number": 1,
+                            "path": "/disk1/fargo/s01e01.mkv",
+                            "watched": False,
+                        }
+                    ]
+                },
+                "Season 2": {
+                    "episodes": [
+                        {
+                            "name": "Waiting for Dutch",
+                            "episode_number": 1,
+                            "path": "/disk2/fargo/s02e01.mkv",
+                            "watched": False,
+                        }
+                    ]
+                },
+            },
+        }
+    }
+    db.save_library("Primary TV", series_payload)
+    db.save_library("Secondary TV", series_payload)
+
+    # Mark Season 1 watched from Secondary TV
+    update_season_watched_status("Secondary TV", "Fargo", "Season 1", True)
+    loaded_data = db.load_library("Secondary TV")
+    season_one_episodes = loaded_data["Fargo"]["seasons"]["Season 1"]["episodes"]
+    assert season_one_episodes[0]["watched"] is True
+    season_two_episodes = loaded_data["Fargo"]["seasons"]["Season 2"]["episodes"]
+    assert season_two_episodes[0]["watched"] is False
+
+    # Mark Entire Series watched from Secondary TV
+    update_series_watched_status("Secondary TV", "Fargo", True)
+    loaded_data = db.load_library("Secondary TV")
+    season_two_episodes = loaded_data["Fargo"]["seasons"]["Season 2"]["episodes"]
+    assert season_two_episodes[0]["watched"] is True
+
+
+def test_delete_series_record_preserves_other_libraries() -> None:
+    from lan_streamer.db.orm_serialization import delete_series_record
+
+    series_payload: dict[str, Any] = {
+        "True Detective": {
+            "metadata": {"tmdb_identifier": "46648"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "The Long Bright Dark",
+                            "episode_number": 1,
+                            "path": "/disk1/td/s01e01.mkv",
+                        }
+                    ]
+                }
+            },
+        }
+    }
+    db.save_library("Primary TV", series_payload)
+    db.save_library("Secondary TV", series_payload)
+
+    # Delete from Secondary TV
+    delete_series_record("Secondary TV", "True Detective")
+
+    # True Detective must still exist in Primary TV
+    primary_data = db.load_library("Primary TV")
+    assert "True Detective" in primary_data
+
+    # Secondary TV should no longer have True Detective
+    secondary_data = db.load_library("Secondary TV")
+    assert "True Detective" not in secondary_data
+
+    # Now delete from Primary TV as well
+    delete_series_record("Primary TV", "True Detective")
+    primary_data_after = db.load_library("Primary TV")
+    assert "True Detective" not in primary_data_after
+
+
+def test_cleanup_tv_library_ignores_files_on_other_roots(tmp_path: Path) -> None:
+    from lan_streamer.db.models import MediaFile
+
+    # Create the series directory so cleanup knows the series itself is present on disk
+    series_directory = tmp_path / "Severance"
+    series_directory.mkdir(parents=True)
+
+    series_payload: dict[str, Any] = {
+        "Severance": {
+            "metadata": {"tmdb_identifier": "95557"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "Good News About Hell",
+                            "episode_number": 1,
+                            "path": str(series_directory / "s01e01.mkv"),
+                            "versions": [
+                                {"path": str(series_directory / "s01e01.mkv")},
+                                {"path": "/disk2/archive/Severance/s01e01.mkv"},
+                            ],
+                        }
+                    ]
+                }
+            },
+        }
+    }
+    db.save_library("Active TV", series_payload)
+
+    from unittest.mock import patch
+
+    from lan_streamer.system.config import config
+
+    with patch.dict(
+        config.libraries,
+        {
+            "Active TV": {"type": "tv", "paths": [str(tmp_path)]},
+            "Archive TV": {"type": "tv", "paths": ["/disk2/archive"]},
+        },
+    ):
+        # Run cleanup on Active TV (which only manages tmp_path)
+        with get_session() as session:
+            stats: dict[str, int] = {}
+            _cleanup_tv_library(
+                session,
+                "Active TV",
+                root_directories=[str(tmp_path)],
+                stats=stats,
+            )
+            session.commit()
+
+        # The archive file on /disk2 should NOT have been removed as stale
+        with get_session() as session:
+            disk2_media_file = session.scalars(
+                select(MediaFile).where(
+                    MediaFile.path == "/disk2/archive/Severance/s01e01.mkv"
+                )
+            ).first()
+            assert disk2_media_file is not None
+
+
+def test_get_and_set_series_pref_via_junction_library() -> None:
+    from lan_streamer.db.queries_config import get_series_pref, set_series_pref
+
+    series_payload: dict[str, Any] = {
+        "Dark": {
+            "metadata": {"tmdb_identifier": "70523"},
+            "seasons": {},
+        }
+    }
+    db.save_library("Primary TV", series_payload)
+    db.save_library("Secondary TV", series_payload)
+
+    # Set preference referencing Secondary TV
+    set_series_pref("Secondary TV", "Dark", "hide_missing_future", True)
+
+    # Get preference referencing Secondary TV
+    value = get_series_pref("Secondary TV", "Dark", "hide_missing_future")
+    assert value is True

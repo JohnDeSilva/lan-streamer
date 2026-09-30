@@ -277,15 +277,19 @@ class MovieDetailView(QWidget):
         """Fetch movie DB ID and cast list (to be run in a background thread)."""
         from sqlalchemy.orm import joinedload
 
+        from lan_streamer.db.models import MovieLibrary
         from lan_streamer.db.models_cast import MediaCast
 
         movie_database_identifier = None
         serialized_cast = []
         with get_session() as session:
+            current_library_name = self.controller.current_library_name
             statement = (
                 select(Movie)
+                .join(Movie.libraries, isouter=True)
                 .where(
-                    Movie.library_name == self.controller.current_library_name,
+                    (Movie.library_name == current_library_name)
+                    | (MovieLibrary.library_name == current_library_name),
                     Movie.name == movie_name,
                 )
                 .options(joinedload(Movie.media_cast).joinedload(MediaCast.person))
@@ -293,7 +297,10 @@ class MovieDetailView(QWidget):
             movie = session.execute(statement).unique().scalar_one_or_none()
             if movie is not None:
                 movie_database_identifier = movie.id
-                sorted_cast = sorted(movie.media_cast, key=lambda c: c.sort_order or 0)
+                sorted_cast = sorted(
+                    movie.media_cast,
+                    key=lambda cast_member: cast_member.sort_order or 0,
+                )
                 for cast_entry in sorted_cast[:20]:
                     person = cast_entry.person
                     if person:
@@ -342,9 +349,17 @@ class MovieDetailView(QWidget):
         if self._current_movie_db_id is not None:
             return self._current_movie_db_id
         with get_session() as session:
-            statement = select(Movie).where(
-                Movie.library_name == self.controller.current_library_name,
-                Movie.name == self._current_movie_name,
+            from lan_streamer.db.models import MovieLibrary
+
+            current_library_name = self.controller.current_library_name
+            statement = (
+                select(Movie)
+                .join(Movie.libraries, isouter=True)
+                .where(
+                    (Movie.library_name == current_library_name)
+                    | (MovieLibrary.library_name == current_library_name),
+                    Movie.name == self._current_movie_name,
+                )
             )
             movie = session.execute(statement).unique().scalar_one_or_none()
             if movie is not None:
