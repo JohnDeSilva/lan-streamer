@@ -382,7 +382,7 @@ def _resolve_episode_by_path(
                 # Episode already has a path (another version) — merge existing
                 # MediaFiles into episode_data so _sync_media_files preserves them.
                 versions_val = episode_data.get("versions")
-                if versions_val is None:
+                if not versions_val:
                     new_versions = [
                         {
                             "path": episode_data.get("path"),
@@ -506,7 +506,7 @@ def _merge_duplicate_episodes(
 ) -> None:
     """Deduplicate/merge pre-existing Episode records that are versions of this one."""
     v_list = episode_data.get("versions")
-    if v_list is None and episode_data.get("path"):
+    if not v_list and episode_data.get("path"):
         v_list = [{"path": episode_data.get("path")}]
     if v_list:
         for v in v_list:
@@ -685,7 +685,7 @@ def _apply_episode_fields(
     if "myanimelist_episode_number" in episode_data:
         episode.myanimelist_episode_number = episode_data["myanimelist_episode_number"]
     versions = episode_data.get("versions")
-    if versions is None and episode_data.get("path"):
+    if not versions and episode_data.get("path"):
         versions = [
             {
                 "path": episode_data.get("path"),
