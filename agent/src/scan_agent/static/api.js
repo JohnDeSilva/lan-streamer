@@ -45,11 +45,17 @@ export const api = {
     getConfig: () => request("/config"),
     updateConfig: (payload) => request("/config", { method: "PUT", body: payload }),
 
-    // Libraries
-    getLibraries: () => request("/libraries"),
-    createLibrary: (payload) => request("/libraries", { method: "POST", body: payload }),
-    updateLibrary: (id, payload) => request(`/libraries/${id}`, { method: "PATCH", body: payload }),
-    deleteLibrary: (id) => request(`/libraries/${id}`, { method: "DELETE" }),
+    // Media Sources
+    getSources: () => request("/sources"),
+    createSource: (payload) => request("/sources", { method: "POST", body: payload }),
+    updateSource: (id, payload) => request(`/sources/${id}`, { method: "PATCH", body: payload }),
+    deleteSource: (id) => request(`/sources/${id}`, { method: "DELETE" }),
+
+    // Libraries (legacy alias)
+    getLibraries: () => request("/sources"),
+    createLibrary: (payload) => request("/sources", { method: "POST", body: payload }),
+    updateLibrary: (id, payload) => request(`/sources/${id}`, { method: "PATCH", body: payload }),
+    deleteLibrary: (id) => request(`/sources/${id}`, { method: "DELETE" }),
     browseFilesystem: (directoryPath) => {
         const search = directoryPath ? `?path=${encodeURIComponent(directoryPath)}` : "";
         return request(`/filesystem/browse${search}`);

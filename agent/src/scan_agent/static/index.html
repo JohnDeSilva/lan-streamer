@@ -14,7 +14,7 @@
         </div>
         <nav>
             <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
-            <button class="nav-tab" data-tab="libraries">Libraries</button>
+            <button class="nav-tab" data-tab="libraries">Media Sources</button>
             <button class="nav-tab" data-tab="scan">Scan Monitor</button>
             <button class="nav-tab" data-tab="logs">Logs</button>
             <button class="nav-tab" data-tab="browse">Browse</button>
@@ -35,7 +35,7 @@
                     <span id="healthStatus" class="stat-value">Connecting...</span>
                 </div>
                 <div class="card stat-card">
-                    <span class="stat-label">Active Libraries</span>
+                    <span class="stat-label">Active Sources</span>
                     <span id="librariesCount" class="stat-value">0</span>
                 </div>
                 <div class="card stat-card">
@@ -52,12 +52,12 @@
                 <h3>Latest Scan Job</h3>
                 <div id="lastJobSummary" style="color: var(--text-secondary);">No scan recorded yet.</div>
                 <div style="margin-top: 1rem;">
-                    <button id="btnQuickScan" class="btn btn-primary">Scan All Libraries</button>
+                    <button id="btnQuickScan" class="btn btn-primary">Scan All Sources</button>
                 </div>
             </div>
 
             <div class="card">
-                <h3>Configured Libraries</h3>
+                <h3>Configured Media Sources</h3>
                 <div class="table-container">
                     <table id="dashboardLibrariesTable">
                         <thead>
@@ -78,8 +78,8 @@
         <!-- 2. Libraries Tab -->
         <section id="tab-libraries" class="tab-pane">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
-                <h2>Media Libraries</h2>
-                <button id="btnOpenAddLibrary" class="btn btn-primary">+ Add Library</button>
+                <h2>Media Sources</h2>
+                <button id="btnOpenAddLibrary" class="btn btn-primary">+ Add Media Source</button>
             </div>
             <div class="card">
                 <div class="table-container">
@@ -107,9 +107,9 @@
                 <h3>Trigger Scan</h3>
                 <div class="form-row">
                     <div class="form-group" style="flex: 2;">
-                        <label for="scanLibrarySelect">Target Library</label>
+                        <label for="scanLibrarySelect">Target Media Source</label>
                         <select id="scanLibrarySelect" class="form-control">
-                            <option value="">All Libraries</option>
+                            <option value="">All Media Sources</option>
                         </select>
                     </div>
                     <div class="form-group" style="flex: 2;">
@@ -214,9 +214,9 @@
                         <input type="text" id="browseSearch" class="form-control" placeholder="Filter by title...">
                     </div>
                     <div class="form-group" style="flex: 1.5; min-width: 160px;">
-                        <label for="browseLibrary">Library</label>
+                        <label for="browseLibrary">Media Source</label>
                         <select id="browseLibrary" class="form-control">
-                            <option value="">All Libraries</option>
+                            <option value="">All Media Sources</option>
                         </select>
                     </div>
                     <div class="form-group" style="flex: 1; min-width: 140px;">
@@ -304,14 +304,14 @@
     <div id="libraryModal" class="modal-backdrop">
         <div class="modal-dialog">
             <div class="modal-header">
-                <h3 id="libraryModalTitle">Add Library</h3>
+                <h3 id="libraryModalTitle">Add Media Source</h3>
                 <button class="close-btn" data-close="libraryModal">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="libraryForm">
                     <input type="hidden" id="libId">
                     <div class="form-group">
-                        <label for="libName">Library Name</label>
+                        <label for="libName">Media Source Name</label>
                         <input type="text" id="libName" class="form-control" required placeholder="e.g. TV Shows, Anime, Movies">
                     </div>
                     <div class="form-group">
@@ -338,7 +338,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-close="libraryModal">Cancel</button>
-                <button id="btnSaveLibrary" class="btn btn-primary">Save Library</button>
+                <button id="btnSaveLibrary" class="btn btn-primary">Save Media Source</button>
             </div>
         </div>
     </div>

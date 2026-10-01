@@ -584,7 +584,7 @@ class SettingsDialog(QDialog):
         remote_main_layout.addWidget(connection_group)
 
         # Tree Widget Section
-        tree_group = QGroupBox("Scan Agents & Tracked Remote Libraries")
+        tree_group = QGroupBox("Scan Agents & Tracked Media Sources")
         tree_layout = QVBoxLayout(tree_group)
         tree_layout.setSpacing(8)
 
@@ -639,9 +639,9 @@ class SettingsDialog(QDialog):
         self.refresh_remote_agents_button.clicked.connect(self.refresh_remote_agents)
         actions_layout.addWidget(self.refresh_remote_agents_button)
 
-        self.remote_library_scan_button.setText("Sync / Scan Library")
+        self.remote_library_scan_button.setText("Sync / Scan Media Source")
         self.remote_library_scan_button.setToolTip(
-            "Trigger synchronization and scanning for the selected remote library."
+            "Trigger synchronization and scanning for the selected remote media source."
         )
         self.remote_library_scan_button.clicked.connect(
             self.scan_selected_remote_library
@@ -872,8 +872,8 @@ class SettingsDialog(QDialog):
         if not selected_item or self.controller is None:
             QMessageBox.information(
                 self,
-                "Select Remote Library",
-                "Please select a remote library from the tree to sync or scan.",
+                "Select Media Source",
+                "Please select a media source from the tree to sync or scan.",
             )
             return
         item_data = selected_item.data(0, Qt.ItemDataRole.UserRole)
@@ -903,8 +903,8 @@ class SettingsDialog(QDialog):
         else:
             QMessageBox.information(
                 self,
-                "Select Remote Library",
-                "Please select a valid tracked remote library.",
+                "Select Media Source",
+                "Please select a valid tracked remote media source.",
             )
 
     def _build_combined_view_tab(self) -> QWidget:

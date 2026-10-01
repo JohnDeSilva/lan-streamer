@@ -123,6 +123,10 @@ class AgentConfig:
             persisted = {}
         for key, default_value in self._defaults().items():
             setattr(self, key, persisted.get(key, default_value))
+        if ("sources" in persisted and "libraries" not in persisted) or persisted.get(
+            "sources"
+        ):
+            self.libraries = persisted["sources"]
 
     def save(self) -> None:
         """Persist all top-level keys to the JSON file atomically."""
@@ -140,6 +144,7 @@ class AgentConfig:
             "database_path": self.database_path,
             "log_directory": self.log_directory,
             "cache_directory": self.cache_directory,
+            "sources": self.libraries,
             "libraries": self.libraries,
             "scheduled_scan_enabled": self.scheduled_scan_enabled,
             "scheduled_scan_interval_hours": self.scheduled_scan_interval_hours,
@@ -158,6 +163,39 @@ class AgentConfig:
                 os.unlink(temporary_name)
             raise
         logger.debug("Saved agent config to %s", self._path)
+
+    # ------------------------------------------------------------------
+    # Sources / Libraries access
+    # ------------------------------------------------------------------
+
+    @property
+    def sources(self) -> dict[str, Any]:
+        """Mapping of media source identifiers to source definitions."""
+        return self.libraries
+
+    @sources.setter
+    def sources(self, value: dict[str, Any]) -> None:
+        self.libraries = value
+
+    def add_source(self, identifier: str, definition: dict[str, Any]) -> None:
+        """Add or update a media source definition and persist immediately."""
+        self.libraries[identifier] = definition
+        self.save()
+
+    def remove_source(self, identifier: str) -> dict[str, Any]:
+        """Remove a media source definition and persist immediately."""
+        removed = self.libraries.pop(identifier)
+        self.save()
+        return removed
+
+    def get_source(self, identifier: str) -> dict[str, Any] | None:
+        """Retrieve a media source definition by identifier."""
+        return self.libraries.get(identifier)
+
+    # Aliases for backward compatibility
+    add_library = add_source
+    remove_library = remove_source
+    get_library = get_source
 
     # ------------------------------------------------------------------
     # Key access
