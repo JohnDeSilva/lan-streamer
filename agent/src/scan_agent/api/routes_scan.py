@@ -68,7 +68,7 @@ def start_scan(request: Request, payload: ScanRequest) -> dict[str, Any]:
     orchestrator = request.app.state.orchestrator
     try:
         job = orchestrator.start_scan(
-            library_identifier=payload.library_id,
+            library_identifier=payload.target_identifier,
             pass_number=payload.pass_number,
             force_refresh=payload.force_refresh,
         )
@@ -77,9 +77,9 @@ def start_scan(request: Request, payload: ScanRequest) -> dict[str, Any]:
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     logger.info(
-        "API started scan job %s (library=%s pass=%s)",
+        "API started scan job %s (target=%s pass=%s)",
         job.id,
-        payload.library_id,
+        payload.target_identifier,
         payload.pass_number,
     )
     return {"job": scan_job_to_dict(job)}

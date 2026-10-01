@@ -246,3 +246,46 @@ def test_scheduled_scan_and_watcher_config_defaults_and_round_trip(
     assert reloaded_config.scheduled_scan_enabled is False
     assert reloaded_config.filesystem_watching_enabled is False
     assert reloaded_config.filesystem_watching_debounce_seconds == 60
+
+
+def test_sources_config_aliasing_and_crud(tmp_path) -> None:
+    configuration_path = tmp_path / "config.json"
+    configuration_path.write_text(
+        json.dumps(
+            {
+                "sources": {
+                    "anime_source": {
+                        "name": "Anime",
+                        "media_type": "tv",
+                        "root_path": "/media/anime",
+                        "enabled": True,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    agent_config = AgentConfig(configuration_path)
+    assert "anime_source" in agent_config.sources
+    assert "anime_source" in agent_config.libraries
+    assert agent_config.sources == agent_config.libraries
+
+    agent_config.add_source(
+        "movie_source",
+        {
+            "name": "Movies",
+            "media_type": "movie",
+            "root_path": "/media/movies",
+            "enabled": True,
+        },
+    )
+    assert agent_config.get_source("movie_source") is not None
+    assert agent_config.get_source("movie_source")["name"] == "Movies"
+
+    reloaded_config = AgentConfig(configuration_path)
+    assert "movie_source" in reloaded_config.sources
+    assert "movie_source" in reloaded_config.libraries
+
+    removed_source = agent_config.remove_source("anime_source")
+    assert removed_source["name"] == "Anime"
+    assert "anime_source" not in agent_config.sources

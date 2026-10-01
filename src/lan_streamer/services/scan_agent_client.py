@@ -76,12 +76,12 @@ class ScanAgentClient:
                 f"Invalid JSON response from scan agent at '{agent_url}': {error}"
             ) from error
 
-    def fetch_agent_libraries(
+    def fetch_media_sources(
         self, agent_url: str, timeout: float = 10.0
     ) -> list[dict[str, Any]]:
-        """Fetch all libraries registered with the specified remote scan agent."""
+        """Fetch all media sources registered with the specified remote scan agent."""
         normalized_url = normalize_agent_url(agent_url)
-        target_endpoint = f"{normalized_url}/api/v1/libraries"
+        target_endpoint = f"{normalized_url}/api/v1/sources"
 
         try:
             response = requests.get(
@@ -89,12 +89,19 @@ class ScanAgentClient:
                 headers=self._headers,
                 timeout=timeout,
             )
+            if response.status_code == 404:
+                target_endpoint = f"{normalized_url}/api/v1/libraries"
+                response = requests.get(
+                    target_endpoint,
+                    headers=self._headers,
+                    timeout=timeout,
+                )
         except requests.RequestException as error:
             logger.warning(
-                f"Failed fetching libraries from scan agent '{agent_url}': {error}"
+                f"Failed fetching media sources from scan agent '{agent_url}': {error}"
             )
             raise ScanAgentConnectionError(
-                f"Could not fetch libraries from scan agent at '{agent_url}': {error}"
+                f"Could not fetch media sources from scan agent at '{agent_url}': {error}"
             ) from error
 
         if response.status_code != 200:
@@ -106,22 +113,28 @@ class ScanAgentClient:
             payload = response.json()
             if isinstance(payload, list):
                 return payload
-            raise ValueError("Expected list of libraries from agent")
+            raise ValueError("Expected list of media sources from agent")
         except ValueError as error:
             raise ScanAgentConnectionError(
-                f"Invalid libraries response from scan agent at '{agent_url}': {error}"
+                f"Invalid media sources response from scan agent at '{agent_url}': {error}"
             ) from error
 
-    def fetch_library_items(
+    def fetch_agent_libraries(
+        self, agent_url: str, timeout: float = 10.0
+    ) -> list[dict[str, Any]]:
+        """Fetch all libraries registered with the specified remote scan agent (legacy alias)."""
+        return self.fetch_media_sources(agent_url, timeout=timeout)
+
+    def fetch_source_items(
         self,
         agent_url: str,
-        library_identifier: str,
+        source_identifier: str,
         timeout: float = 30.0,
     ) -> dict[str, Any]:
-        """Fetch full library scanner items dictionary from the remote scan agent."""
+        """Fetch full media source scanner items dictionary from the remote scan agent."""
         normalized_url = normalize_agent_url(agent_url)
-        quoted_identifier = quote(str(library_identifier), safe="")
-        target_endpoint = f"{normalized_url}/api/v1/libraries/{quoted_identifier}/items"
+        quoted_identifier = quote(str(source_identifier), safe="")
+        target_endpoint = f"{normalized_url}/api/v1/sources/{quoted_identifier}/items"
 
         try:
             response = requests.get(
@@ -129,12 +142,21 @@ class ScanAgentClient:
                 headers=self._headers,
                 timeout=timeout,
             )
+            if response.status_code == 404:
+                target_endpoint = (
+                    f"{normalized_url}/api/v1/libraries/{quoted_identifier}/items"
+                )
+                response = requests.get(
+                    target_endpoint,
+                    headers=self._headers,
+                    timeout=timeout,
+                )
         except requests.RequestException as error:
             logger.warning(
-                f"Failed fetching library items from scan agent '{agent_url}': {error}"
+                f"Failed fetching source items from scan agent '{agent_url}': {error}"
             )
             raise ScanAgentConnectionError(
-                f"Could not fetch library items from scan agent at '{agent_url}': {error}"
+                f"Could not fetch source items from scan agent at '{agent_url}': {error}"
             ) from error
 
         if response.status_code != 200:
@@ -146,11 +168,20 @@ class ScanAgentClient:
             payload = response.json()
             if isinstance(payload, dict):
                 return payload
-            raise ValueError("Expected dictionary of library items from agent")
+            raise ValueError("Expected dictionary of items from agent")
         except ValueError as error:
             raise ScanAgentConnectionError(
-                f"Invalid library items response from scan agent at '{agent_url}': {error}"
+                f"Invalid items response from scan agent at '{agent_url}': {error}"
             ) from error
+
+    def fetch_library_items(
+        self,
+        agent_url: str,
+        library_identifier: str,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        """Fetch full library scanner items dictionary from the remote scan agent (legacy alias)."""
+        return self.fetch_source_items(agent_url, library_identifier, timeout=timeout)
 
     def download_poster(
         self,

@@ -10,7 +10,12 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 
 from scan_agent.api.routes_browse import browse_router
-from scan_agent.api.routes_core import config_router, health_router, libraries_router
+from scan_agent.api.routes_core import (
+    config_router,
+    health_router,
+    libraries_router,
+    sources_router,
+)
 from scan_agent.api.routes_filesystem import filesystem_router
 from scan_agent.api.routes_images import images_router
 from scan_agent.api.routes_scan import events_router, scan_router
@@ -152,6 +157,7 @@ def create_app(
 
     application.include_router(health_router, prefix=_API_PREFIX)
     application.include_router(config_router, prefix=_API_PREFIX)
+    application.include_router(sources_router, prefix=_API_PREFIX)
     application.include_router(libraries_router, prefix=_API_PREFIX)
     application.include_router(scan_router, prefix=_API_PREFIX)
     application.include_router(events_router, prefix=_API_PREFIX)
