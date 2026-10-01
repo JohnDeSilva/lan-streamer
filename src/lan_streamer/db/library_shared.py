@@ -5,7 +5,7 @@ Shared internal helpers used by both library_tv.py and library_movie.py.
 import json
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 
 from lan_streamer.db.models import MediaFile
 
@@ -63,18 +63,22 @@ def _sync_media_files(
                 owner.media_files.append(db_mf)
 
     # Remove existing files not in incoming
-    existing_files = {mf.path: mf for mf in owner.media_files}
+    existing_files = {media_file.path: media_file for media_file in owner.media_files}
     deleted_any = False
-    for path, mf in list(existing_files.items()):
+    for path, media_file in list(existing_files.items()):
         if path not in incoming_paths:
-            owner.media_files.remove(mf)
+            owner.media_files.remove(media_file)
             # Only delete the media file from database if it's no longer referenced
-            has_other_refs = any(ep != owner for ep in mf.episodes) or any(
-                mv != owner for mv in mf.movies
-            )
-            if not has_other_refs and mf in session:
-                session.delete(mf)
-                deleted_any = True
+            has_other_references = any(
+                episode != owner for episode in media_file.episodes
+            ) or any(movie != owner for movie in media_file.movies)
+            if not has_other_references and media_file in session:
+                inspection = inspect(media_file)
+                if getattr(inspection, "persistent", False):
+                    session.delete(media_file)
+                    deleted_any = True
+                elif getattr(inspection, "pending", False):
+                    session.expunge(media_file)
 
     # Flush deletes immediately so the database unique constraint is freed
     if deleted_any:

@@ -365,7 +365,7 @@ def save_movie_library(library_name: str, library: dict[str, Any]) -> dict[str, 
                 existing_movies_by_name[movie_name] = movie
 
                 versions = movie_data.get("versions")
-                if versions is None and movie_data.get("path"):
+                if not versions and movie_data.get("path"):
                     versions = [
                         {
                             "path": movie_data.get("path"),
@@ -564,7 +564,7 @@ def save_movie_data(
             stats["movies"] += 1
 
             versions = movie_data.get("versions")
-            if versions is None and movie_data.get("path"):
+            if not versions and movie_data.get("path"):
                 versions = [
                     {
                         "path": movie_data.get("path"),
