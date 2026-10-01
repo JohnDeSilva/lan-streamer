@@ -2108,3 +2108,97 @@ def test_reassign_library_items_by_root_path_movies(mock_db_file) -> None:
     loaded_split = db.load_movie_library("SplitMovies2")
     assert "Movie In Root 2" in loaded_split
     assert "Movie In Root 1" not in loaded_split
+
+
+def test_sync_media_files_with_unpersisted_media_file(mock_db_file) -> None:
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.library_shared import _sync_media_files
+    from lan_streamer.db.models import Episode
+
+    with get_session() as session:
+        episode = Episode(name="Test Episode", path="/path/to/ep1.mkv")
+        session.add(episode)
+        # episode.media_files has [MediaFile(path="/path/to/ep1.mkv")] which is pending in session.new
+        # Syncing with empty versions removes the pending MediaFile without raising InvalidRequestError
+        _sync_media_files(session, episode, [])
+        session.commit()
+
+
+def test_save_library_with_empty_versions_list(mock_db_file) -> None:
+    remote_library_data = {
+        "Anime Show": {
+            "metadata": {"overview": "An anime show"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/remote/path/to/ep1.mkv",
+                            "versions": [],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library("Anime_Current", remote_library_data)
+    loaded_library = db.load_library("Anime_Current")
+    assert "Anime Show" in loaded_library
+    episodes = loaded_library["Anime Show"]["seasons"]["Season 1"]["episodes"]
+    assert len(episodes) == 1
+    assert episodes[0]["path"] == "/remote/path/to/ep1.mkv"
+
+
+def test_save_movie_library_with_empty_versions_list(mock_db_file) -> None:
+    remote_movie_data = {
+        "Anime Movie": {
+            "name": "Anime Movie",
+            "path": "/remote/path/to/movie.mkv",
+            "versions": [],
+        }
+    }
+    db.save_movie_library("Anime_Movies", remote_movie_data)
+    loaded_movie_library = db.load_movie_library("Anime_Movies")
+    assert "Anime Movie" in loaded_movie_library
+
+
+def test_sync_remote_library_with_empty_versions_integration(mock_db_file) -> None:
+    from lan_streamer.backend.remote_sync_worker import sync_remote_library_from_agent
+
+    remote_items = {
+        "Anime Show": {
+            "name": "Anime Show",
+            "metadata": {"overview": "Remote anime show"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/data/anime/Episode 01.mkv",
+                            "versions": [],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    library_configuration = {
+        "management_type": "remote",
+        "agent_url": "http://127.0.0.1:8800",
+        "remote_library_id": "Anime_Current",
+        "type": "tv",
+    }
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+        return_value=remote_items,
+    ):
+        result = sync_remote_library_from_agent(
+            "Anime_Current", library_configuration, db
+        )
+        assert result["success"] is True
+        assert result["items"] == 1
+
+        loaded_library = db.load_library("Anime_Current")
+        assert "Anime Show" in loaded_library
