@@ -57,14 +57,25 @@ class LibraryPatch(BaseModel):
     enabled: bool | None = None
 
 
+# Media Source aliases
+MediaSourceWrite = LibraryWrite
+MediaSourcePatch = LibraryPatch
+
+
 class ScanRequest(BaseModel):
-    """Trigger a scan for one library or all libraries."""
+    """Trigger a scan for one media source / library or all."""
 
     model_config = ConfigDict(extra="ignore")
 
     library_id: str | None = None
+    source_id: str | None = None
     pass_number: int = Field(default=0, ge=0, le=3)
     force_refresh: bool = False
+
+    @property
+    def target_identifier(self) -> str | None:
+        """Target identifier prioritizing source_id over legacy library_id."""
+        return self.source_id or self.library_id
 
 
 class MetadataMatch(BaseModel):

@@ -61,6 +61,10 @@ class Library(Base):
     )
 
 
+# MediaSource is the preferred conceptual model alias for Library
+MediaSource = Library
+
+
 class Series(Base):
     """A television series belonging to a library."""
 

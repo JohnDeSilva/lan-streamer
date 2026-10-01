@@ -173,7 +173,7 @@ async function loadScanMonitor() {
         ]);
 
         const select = document.getElementById("scanLibrarySelect");
-        select.innerHTML = '<option value="">All Libraries</option>';
+        select.innerHTML = '<option value="">All Media Sources</option>';
         libraries.forEach((libraryItem) => {
             const option = document.createElement("option");
             option.value = libraryItem.id;
@@ -1246,11 +1246,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // Config form
     document.getElementById("configForm").onsubmit = saveConfig;
 
-    // Library CRUD
+    // Library / Source CRUD
     document.getElementById("btnOpenAddLibrary").onclick = () => {
         document.getElementById("libraryForm").reset();
         document.getElementById("libId").value = "";
-        document.getElementById("libraryModalTitle").textContent = "Add Library";
+        document.getElementById("libraryModalTitle").textContent = "Add Media Source";
         openModal("libraryModal");
     };
 
@@ -1275,9 +1275,9 @@ document.addEventListener("DOMContentLoaded", () => {
             browseLibrariesCache = null;
             closeModal("libraryModal");
             loadLibraries();
-            showAlert("Library saved successfully", "success");
+            showAlert("Media source saved successfully", "success");
         } catch (error) {
-            showAlert(`Failed saving library: ${error.message}`, "error");
+            showAlert(`Failed saving media source: ${error.message}`, "error");
         }
     };
 
@@ -1361,20 +1361,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 document.getElementById("libMediaType").value = libraryItem.media_type;
                 document.getElementById("libRootPath").value = libraryItem.root_path || "";
                 document.getElementById("libEnabled").checked = libraryItem.enabled !== false;
-                document.getElementById("libraryModalTitle").textContent = "Edit Library";
+                document.getElementById("libraryModalTitle").textContent = "Edit Media Source";
                 openModal("libraryModal");
             } catch (error) {
-                showAlert(`Failed loading library for edit: ${error.message}`, "error");
+                showAlert(`Failed loading media source for edit: ${error.message}`, "error");
             }
         } else if (action === "delete") {
-            if (confirm(`Are you sure you want to delete library "${id}"?`)) {
+            if (confirm(`Are you sure you want to delete media source "${id}"?`)) {
                 try {
                     await api.deleteLibrary(id);
                     browseLibrariesCache = null;
                     loadLibraries();
-                    showAlert("Library deleted", "success");
+                    showAlert("Media source deleted", "success");
                 } catch (error) {
-                    showAlert(`Could not delete library: ${error.message}`, "error");
+                    showAlert(`Could not delete media source: ${error.message}`, "error");
                 }
             }
         }

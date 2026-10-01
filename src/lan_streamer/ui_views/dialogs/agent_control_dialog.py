@@ -262,11 +262,11 @@ class AgentLibraryDeleteWorker(QThread):
 
 
 class AddRemoteLibraryDialog(QDialog):
-    """Sub-dialog to define a new library directly on the remote agent."""
+    """Sub-dialog to define a new media source directly on the remote agent."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Add Library on Remote Agent")
+        self.setWindowTitle("Add Media Source on Remote Agent")
         self.resize(440, 200)
 
         main_layout = QVBoxLayout(self)
@@ -274,7 +274,7 @@ class AddRemoteLibraryDialog(QDialog):
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("e.g. TV Shows, Movies, Anime")
-        form_layout.addRow("Library Name:", self.name_input)
+        form_layout.addRow("Media Source Name:", self.name_input)
 
         self.media_type_combobox = QComboBox()
         self.media_type_combobox.addItems(["tv", "movie", "anime"])
@@ -296,7 +296,7 @@ class AddRemoteLibraryDialog(QDialog):
     def _validate_and_accept(self) -> None:
         if not self.name_input.text().strip():
             QMessageBox.warning(
-                self, "Validation Error", "Library name cannot be empty."
+                self, "Validation Error", "Media source name cannot be empty."
             )
             return
         if not self.root_path_input.text().strip():
@@ -306,12 +306,15 @@ class AddRemoteLibraryDialog(QDialog):
             return
         self.accept()
 
-    def get_library_values(self) -> dict[str, str]:
+    def get_source_values(self) -> dict[str, str]:
         return {
             "name": self.name_input.text().strip(),
             "media_type": self.media_type_combobox.currentText().strip(),
             "root_path": self.root_path_input.text().strip(),
         }
+
+    def get_library_values(self) -> dict[str, str]:
+        return self.get_source_values()
 
 
 # ----------------------------------------------------------------------
@@ -368,7 +371,7 @@ class AgentControlDialog(QDialog):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_configuration_tab(), "Configuration")
         self.tabs.addTab(self._build_scan_actions_tab(), "Scan Actions & Status")
-        self.tabs.addTab(self._build_libraries_tab(), "Libraries Management")
+        self.tabs.addTab(self._build_libraries_tab(), "Media Sources")
         main_layout.addWidget(self.tabs, 1)
 
         # Bottom Close Button
@@ -523,8 +526,8 @@ class AgentControlDialog(QDialog):
         controls_layout = QFormLayout(controls_group)
 
         self.target_library_combobox = QComboBox()
-        self.target_library_combobox.addItem("All Libraries", userData=None)
-        controls_layout.addRow("Target Library:", self.target_library_combobox)
+        self.target_library_combobox.addItem("All Media Sources", userData=None)
+        controls_layout.addRow("Target Media Source:", self.target_library_combobox)
 
         self.scan_pass_combobox = QComboBox()
         self.scan_pass_combobox.addItem("Full Scan (Passes 1-3)", userData=0)
@@ -554,7 +557,7 @@ class AgentControlDialog(QDialog):
         return widget
 
     # ------------------------------------------------------------------
-    # Tab 3: Libraries Management
+    # Tab 3: Libraries / Media Sources Management
     # ------------------------------------------------------------------
 
     def _build_libraries_tab(self) -> QWidget:
@@ -574,15 +577,15 @@ class AgentControlDialog(QDialog):
         layout.addWidget(self.libraries_table, 1)
 
         buttons_layout = QHBoxLayout()
-        self.add_library_button = QPushButton("Add Library on Agent...")
+        self.add_library_button = QPushButton("Add Media Source on Agent...")
         self.add_library_button.clicked.connect(self.prompt_add_library)
         buttons_layout.addWidget(self.add_library_button)
 
-        self.delete_library_button = QPushButton("Delete Selected Library")
+        self.delete_library_button = QPushButton("Delete Selected Media Source")
         self.delete_library_button.clicked.connect(self.delete_selected_library)
         buttons_layout.addWidget(self.delete_library_button)
 
-        refresh_libraries_button = QPushButton("Refresh Libraries")
+        refresh_libraries_button = QPushButton("Refresh Media Sources")
         refresh_libraries_button.clicked.connect(self.refresh_all_data)
         buttons_layout.addWidget(refresh_libraries_button)
 
@@ -710,7 +713,7 @@ class AgentControlDialog(QDialog):
     ) -> None:
         current_selection = self.target_library_combobox.currentData()
         self.target_library_combobox.clear()
-        self.target_library_combobox.addItem("All Libraries", userData=None)
+        self.target_library_combobox.addItem("All Media Sources", userData=None)
 
         for library_entry in libraries_list:
             library_id = str(library_entry.get("id") or "")
@@ -899,7 +902,9 @@ class AgentControlDialog(QDialog):
 
     def _on_library_created(self, result: dict[str, Any]) -> None:
         QMessageBox.information(
-            self, "Library Added", f"Library '{result.get('name')}' created on agent."
+            self,
+            "Media Source Added",
+            f"Media source '{result.get('name')}' created on agent.",
         )
         self.refresh_all_data()
 
@@ -908,7 +913,7 @@ class AgentControlDialog(QDialog):
         selected_row = self.libraries_table.currentRow()
         if selected_row < 0:
             QMessageBox.warning(
-                self, "No Selection", "Please select a library to delete."
+                self, "No Selection", "Please select a media source to delete."
             )
             return
 
@@ -923,7 +928,7 @@ class AgentControlDialog(QDialog):
         confirmation = QMessageBox.question(
             self,
             "Confirm Delete",
-            f"Are you sure you want to delete remote library '{library_name}' ({library_id}) from the agent?",
+            f"Are you sure you want to delete media source '{library_name}' ({library_id}) from the agent?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirmation != QMessageBox.StandardButton.Yes:
@@ -939,14 +944,14 @@ class AgentControlDialog(QDialog):
     def _on_library_deleted(self, library_id: str) -> None:
         QMessageBox.information(
             self,
-            "Library Deleted",
-            f"Library '{library_id}' was removed from the agent.",
+            "Media Source Deleted",
+            f"Media source '{library_id}' was removed from the agent.",
         )
         self.refresh_all_data()
 
     def _on_library_action_failed(self, error_message: str) -> None:
         QMessageBox.warning(
-            self, "Library Operation Failed", f"Operation failed:\n{error_message}"
+            self, "Media Source Operation Failed", f"Operation failed:\n{error_message}"
         )
 
     def _remove_worker(self, worker: QThread) -> None:

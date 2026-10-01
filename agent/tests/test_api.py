@@ -196,10 +196,50 @@ def test_libraries_crud(api_client: TestClient) -> None:
     assert detail.status_code == 404
 
 
+def test_sources_crud(api_client: TestClient) -> None:
+    listing = api_client.get("/api/v1/sources").json()
+    assert {entry["id"] for entry in listing} == {"tv", "movie"}
+
+    created = api_client.post(
+        "/api/v1/sources",
+        json={
+            "name": "Anime Source",
+            "media_type": "anime",
+            "root_path": "/srv/anime",
+            "enabled": True,
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["id"] == "anime_source"
+    assert body["media_type"] == "anime"
+    assert body["counts"]["series"] == 0
+
+    patched = api_client.patch(
+        "/api/v1/sources/anime_source", json={"root_path": "/srv/renamed-anime"}
+    )
+    assert patched.status_code == 200
+    assert patched.json()["root_path"] == "/srv/renamed-anime"
+
+    items_response = api_client.get("/api/v1/sources/anime_source/items")
+    assert items_response.status_code == 200
+    assert items_response.json() == {}
+
+    response = api_client.delete("/api/v1/sources/anime_source")
+    assert response.status_code == 204
+    detail = api_client.patch("/api/v1/sources/anime_source", json={"name": "gone"})
+    assert detail.status_code == 404
+
+
 def test_scan_unknown_library_returns_404(
     api_client: TestClient, api_app: FastAPI
 ) -> None:
     response = api_client.post("/api/v1/scan", json={"library_id": "does-not-exist"})
+    assert response.status_code == 404
+
+
+def test_scan_with_source_id(api_client: TestClient, api_app: FastAPI) -> None:
+    response = api_client.post("/api/v1/scan", json={"source_id": "does-not-exist"})
     assert response.status_code == 404
 
 
