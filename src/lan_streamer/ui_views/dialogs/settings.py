@@ -70,7 +70,6 @@ class SettingsDialog(QDialog):
         self._init_scanning_widgets()
         self._init_integration_widgets()
         self._init_library_widgets()
-        self._init_tab_widgets()
         self._init_remote_agent_widgets()
         self._init_playback_widgets()
         self._init_system_widgets()
@@ -79,23 +78,16 @@ class SettingsDialog(QDialog):
         self._setup_ui()
         self._load_config()
 
-    def _init_tab_widgets(self) -> None:
-        self.staged_tabs: list[dict[str, Any]] = []
-        self.tabs_list_widget: QListWidget = QListWidget()
-        self.tab_libraries_list_widget: QListWidget = QListWidget()
-        self.add_tab_button: QPushButton = QPushButton("Add Tab")
-        self.rename_tab_button: QPushButton = QPushButton("Rename Tab")
-        self.remove_tab_button: QPushButton = QPushButton("Remove Tab")
-        self.move_tab_up_button: QPushButton = QPushButton("Move Up")
-        self.move_tab_down_button: QPushButton = QPushButton("Move Down")
-
     def _init_library_widgets(self) -> None:
         self.staged_libraries: dict[str, dict[str, Any]] = {}
         self.staged_scan_agents: dict[str, dict[str, Any]] = {}
+        self.deleted_libraries: set[str] = set()
+        self.renamed_libraries: dict[str, str] = {}
         self.library_name_input: QLineEdit = QLineEdit()
         self.library_type_input: QComboBox = QComboBox()
         self.library_management_type_input: QComboBox = QComboBox()
         self.library_selector: QComboBox = QComboBox()
+        self.selected_library_type_combobox: QComboBox = QComboBox()
         self.local_library_scan_button: QPushButton = QPushButton("Scan Library")
         self.remote_library_scan_button: QPushButton = QPushButton(
             "Sync / Scan Library"
@@ -304,9 +296,6 @@ class SettingsDialog(QDialog):
         # Library Management Pane
         management_tab: QWidget = self._build_management_tab()
 
-        # Dedicated Library Tabs Setup Pane
-        tabs_tab: QWidget = self._build_tabs_tab()
-
         # Libraries Management Pane
         local_libraries_tab: QWidget = self._build_libraries_tab()
 
@@ -327,7 +316,6 @@ class SettingsDialog(QDialog):
 
         # Add tabs in the requested order
         tab_container.addTab(management_tab, "Library Management")
-        tab_container.addTab(tabs_tab, "Library Tabs")
         tab_container.addTab(local_libraries_tab, "Libraries")
         tab_container.addTab(remote_libraries_tab, "Remote Sources")
         tab_container.addTab(combined_tab, "Combined View")
@@ -488,11 +476,26 @@ class SettingsDialog(QDialog):
         self.local_library_scan_button.clicked.connect(self.scan_selected_local_library)
         select_layout.addWidget(self.local_library_scan_button)
 
+        rename_library_button: QPushButton = QPushButton("Rename Library...")
+        rename_library_button.clicked.connect(self.rename_staged_library)
+        select_layout.addWidget(rename_library_button)
+
         delete_library_button: QPushButton = QPushButton("Remove Library")
         delete_library_button.clicked.connect(self.remove_staged_library)
         select_layout.addWidget(delete_library_button)
         select_layout.addStretch()
         libraries_layout.addLayout(select_layout)
+
+        type_layout: QHBoxLayout = QHBoxLayout()
+        type_layout.addWidget(QLabel("Library Type:"))
+        self.selected_library_type_combobox.clear()
+        self.selected_library_type_combobox.addItems(["TV Shows", "Movies", "Anime"])
+        self.selected_library_type_combobox.currentTextChanged.connect(
+            self._on_selected_library_type_changed
+        )
+        type_layout.addWidget(self.selected_library_type_combobox)
+        type_layout.addStretch()
+        libraries_layout.addLayout(type_layout)
 
         self.show_future_episodes_checkbox.setText("Show future episodes")
         self.show_future_episodes_checkbox.stateChanged.connect(
@@ -547,6 +550,9 @@ class SettingsDialog(QDialog):
         right_layout.setSpacing(12)
 
         right_layout.addWidget(QLabel("Library Scan Order (Left to Right):"))
+        self.library_order_list_widget.currentTextChanged.connect(
+            self._on_library_order_selected
+        )
         right_layout.addWidget(self.library_order_list_widget)
 
         order_btns_layout = QHBoxLayout()
@@ -660,203 +666,6 @@ class SettingsDialog(QDialog):
 
         remote_main_layout.addWidget(tree_group, 1)
         return remote_tab
-
-    def _build_tabs_tab(self) -> QWidget:
-        """Builds the dedicated Library Tabs setup pane."""
-        tabs_tab: QWidget = QWidget()
-        tabs_main_layout: QHBoxLayout = QHBoxLayout(tabs_tab)
-        tabs_main_layout.setSpacing(15)
-        tabs_main_layout.setContentsMargins(10, 10, 10, 10)
-
-        # Left Column: Tabs list and controls
-        left_column: QWidget = QWidget()
-        left_layout: QVBoxLayout = QVBoxLayout(left_column)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(10)
-
-        left_layout.addWidget(QLabel("Configured Library Tabs:"))
-        self.tabs_list_widget.currentRowChanged.connect(self._on_tab_selected)
-        left_layout.addWidget(self.tabs_list_widget)
-
-        buttons_layout: QHBoxLayout = QHBoxLayout()
-        self.add_tab_button.clicked.connect(self.add_tab)
-        buttons_layout.addWidget(self.add_tab_button)
-
-        self.rename_tab_button.clicked.connect(self.rename_tab)
-        buttons_layout.addWidget(self.rename_tab_button)
-
-        self.remove_tab_button.clicked.connect(self.remove_tab)
-        buttons_layout.addWidget(self.remove_tab_button)
-
-        self.move_tab_up_button.clicked.connect(self.move_tab_up)
-        buttons_layout.addWidget(self.move_tab_up_button)
-
-        self.move_tab_down_button.clicked.connect(self.move_tab_down)
-        buttons_layout.addWidget(self.move_tab_down_button)
-
-        left_layout.addLayout(buttons_layout)
-        tabs_main_layout.addWidget(left_column, 1)
-
-        # Right Column: Checkable libraries in selected tab
-        right_column: QWidget = QWidget()
-        right_layout: QVBoxLayout = QVBoxLayout(right_column)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(10)
-
-        right_layout.addWidget(QLabel("Libraries included in selected tab:"))
-        self.tab_libraries_list_widget.itemChanged.connect(
-            self._on_tab_library_item_changed
-        )
-        right_layout.addWidget(self.tab_libraries_list_widget)
-
-        tabs_main_layout.addWidget(right_column, 1)
-        return tabs_tab
-
-    def _refresh_tabs_list(self) -> None:
-        self.tabs_list_widget.blockSignals(True)
-        current_index: int = self.tabs_list_widget.currentRow()
-        self.tabs_list_widget.clear()
-        for tab_dict in self.staged_tabs:
-            tab_name: str = tab_dict.get("name", "")
-            libraries_count: int = len(tab_dict.get("libraries", []))
-            self.tabs_list_widget.addItem(f"{tab_name} ({libraries_count} libraries)")
-        if 0 <= current_index < len(self.staged_tabs):
-            self.tabs_list_widget.setCurrentRow(current_index)
-        elif self.staged_tabs:
-            self.tabs_list_widget.setCurrentRow(0)
-        self.tabs_list_widget.blockSignals(False)
-        self._on_tab_selected(self.tabs_list_widget.currentRow())
-
-    @Slot(int)
-    def _on_tab_selected(self, index: int) -> None:
-        if index < 0 or index >= len(self.staged_tabs):
-            self.tab_libraries_list_widget.clear()
-            self.tab_libraries_list_widget.setEnabled(False)
-            return
-
-        self.tab_libraries_list_widget.setEnabled(True)
-        self.tab_libraries_list_widget.blockSignals(True)
-        self.tab_libraries_list_widget.clear()
-
-        selected_tab: dict[str, Any] = self.staged_tabs[index]
-        selected_libraries: set[str] = set(selected_tab.get("libraries", []))
-
-        all_library_names: list[str] = sorted(self.staged_libraries.keys())
-        for library_name in all_library_names:
-            item = QListWidgetItem(library_name)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(
-                Qt.CheckState.Checked
-                if library_name in selected_libraries
-                else Qt.CheckState.Unchecked
-            )
-            self.tab_libraries_list_widget.addItem(item)
-
-        self.tab_libraries_list_widget.blockSignals(False)
-
-    @Slot(QListWidgetItem)
-    def _on_tab_library_item_changed(self, item: QListWidgetItem) -> None:
-        index: int = self.tabs_list_widget.currentRow()
-        if index < 0 or index >= len(self.staged_tabs):
-            return
-
-        selected_tab: dict[str, Any] = self.staged_tabs[index]
-        library_name: str = item.text()
-        libraries_list: list[str] = selected_tab.setdefault("libraries", [])
-
-        if item.checkState() == Qt.CheckState.Checked:
-            if library_name not in libraries_list:
-                libraries_list.append(library_name)
-        elif library_name in libraries_list:
-            libraries_list.remove(library_name)
-
-        self.tabs_list_widget.blockSignals(True)
-        current_item = self.tabs_list_widget.item(index)
-        if current_item is not None:
-            current_item.setText(
-                f"{selected_tab.get('name', '')} ({len(libraries_list)} libraries)"
-            )
-        self.tabs_list_widget.blockSignals(False)
-
-    @Slot()
-    def add_tab(self) -> None:
-        tab_name, confirmed = QInputDialog.getText(
-            self, "Add Tab", "Enter new tab name:"
-        )
-        tab_name = tab_name.strip()
-        if not confirmed or not tab_name:
-            return
-        if any(tab.get("name") == tab_name for tab in self.staged_tabs):
-            QMessageBox.warning(
-                self, "Tab Exists", f"A tab named '{tab_name}' already exists."
-            )
-            return
-
-        self.staged_tabs.append({"name": tab_name, "libraries": []})
-        self._refresh_tabs_list()
-        self.tabs_list_widget.setCurrentRow(len(self.staged_tabs) - 1)
-
-    @Slot()
-    def rename_tab(self) -> None:
-        index: int = self.tabs_list_widget.currentRow()
-        if index < 0 or index >= len(self.staged_tabs):
-            return
-
-        current_tab_name: str = self.staged_tabs[index].get("name", "")
-        new_tab_name, confirmed = QInputDialog.getText(
-            self, "Rename Tab", "Enter new tab name:", text=current_tab_name
-        )
-        new_tab_name = new_tab_name.strip()
-        if not confirmed or not new_tab_name or new_tab_name == current_tab_name:
-            return
-
-        if any(
-            item_index != index and tab.get("name") == new_tab_name
-            for item_index, tab in enumerate(self.staged_tabs)
-        ):
-            QMessageBox.warning(
-                self, "Tab Exists", f"A tab named '{new_tab_name}' already exists."
-            )
-            return
-
-        self.staged_tabs[index]["name"] = new_tab_name
-        self._refresh_tabs_list()
-        self.tabs_list_widget.setCurrentRow(index)
-
-    @Slot()
-    def remove_tab(self) -> None:
-        index: int = self.tabs_list_widget.currentRow()
-        if index < 0 or index >= len(self.staged_tabs):
-            return
-
-        del self.staged_tabs[index]
-        self._refresh_tabs_list()
-
-    @Slot()
-    def move_tab_up(self) -> None:
-        index: int = self.tabs_list_widget.currentRow()
-        if index <= 0 or index >= len(self.staged_tabs):
-            return
-
-        self.staged_tabs[index - 1], self.staged_tabs[index] = (
-            self.staged_tabs[index],
-            self.staged_tabs[index - 1],
-        )
-        self._refresh_tabs_list()
-        self.tabs_list_widget.setCurrentRow(index - 1)
-
-    @Slot()
-    def move_tab_down(self) -> None:
-        index: int = self.tabs_list_widget.currentRow()
-        if index < 0 or index >= len(self.staged_tabs) - 1:
-            return
-
-        self.staged_tabs[index + 1], self.staged_tabs[index] = (
-            self.staged_tabs[index],
-            self.staged_tabs[index + 1],
-        )
-        self._refresh_tabs_list()
-        self.tabs_list_widget.setCurrentRow(index + 1)
 
     @Slot()
     def scan_selected_local_library(self) -> None:
@@ -1544,21 +1353,6 @@ class SettingsDialog(QDialog):
         self.staged_combined_views = [dict(row) for row in config.combined_views]
         self._refresh_combined_views_list()
 
-        if config.tabs:
-            self.staged_tabs = [
-                {
-                    "name": tab.get("name", ""),
-                    "libraries": list(tab.get("libraries", [])),
-                }
-                for tab in config.tabs
-            ]
-        else:
-            self.staged_tabs = [
-                {"name": library_name, "libraries": [library_name]}
-                for library_name in self.staged_libraries
-            ]
-        self._refresh_tabs_list()
-
         # Populate initial logs from the buffer
         from lan_streamer.system.logging_handler import qt_log_handler
 
@@ -1751,15 +1545,28 @@ class SettingsDialog(QDialog):
 
     def _refresh_library_order_list(self) -> None:
         self.library_order_list_widget.blockSignals(True)
+        current_selection: str = self.library_selector.currentText()
         current_idx = self.library_order_list_widget.currentRow()
         self.library_order_list_widget.clear()
-        for lib_name in self.staged_libraries:
+        matching_row = -1
+        for idx, lib_name in enumerate(self.staged_libraries):
             self.library_order_list_widget.addItem(lib_name)
-        if current_idx >= 0 and current_idx < len(self.staged_libraries):
+            if lib_name == current_selection:
+                matching_row = idx
+        if matching_row >= 0:
+            self.library_order_list_widget.setCurrentRow(matching_row)
+        elif current_idx >= 0 and current_idx < len(self.staged_libraries):
             self.library_order_list_widget.setCurrentRow(current_idx)
         elif self.staged_libraries:
             self.library_order_list_widget.setCurrentRow(0)
         self.library_order_list_widget.blockSignals(False)
+
+    @Slot(str)
+    def _on_library_order_selected(self, library_name: str) -> None:
+        if library_name and self.library_selector.currentText() != library_name:
+            index = self.library_selector.findText(library_name)
+            if index >= 0:
+                self.library_selector.setCurrentIndex(index)
 
     @Slot()
     def move_library_order_up(self) -> None:
@@ -1796,54 +1603,74 @@ class SettingsDialog(QDialog):
         self.library_order_list_widget.setCurrentRow(row_idx + 1)
 
     def _refresh_library_selector(self) -> None:
+        current_selection: str = self.library_selector.currentText()
         self.library_selector.blockSignals(True)
         self.library_selector.clear()
-        local_libraries = [
-            library_name
-            for library_name, library_configuration in self.staged_libraries.items()
-            if library_configuration.get("management_type", "local") != "remote"
-        ]
-        self.library_selector.addItems(sorted(local_libraries))
+        all_libraries: list[str] = list(self.staged_libraries.keys())
+        self.library_selector.addItems(all_libraries)
+        if current_selection in self.staged_libraries:
+            self.library_selector.setCurrentText(current_selection)
+        elif all_libraries:
+            self.library_selector.setCurrentIndex(0)
         self.library_selector.blockSignals(False)
 
         if hasattr(self, "scan_target_library_combobox"):
             self.scan_target_library_combobox.blockSignals(True)
             current_target = self.scan_target_library_combobox.currentText()
             self.scan_target_library_combobox.clear()
-            all_libraries = sorted(self.staged_libraries.keys())
-            self.scan_target_library_combobox.addItems(all_libraries)
-            if current_target in all_libraries:
+            all_libraries_sorted = sorted(self.staged_libraries.keys())
+            self.scan_target_library_combobox.addItems(all_libraries_sorted)
+            if current_target in all_libraries_sorted:
                 self.scan_target_library_combobox.setCurrentText(current_target)
             self.scan_target_library_combobox.blockSignals(False)
 
         self._refresh_directory_list()
         self._refresh_library_options()
         self._refresh_library_order_list()
-        if hasattr(self, "tabs_list_widget"):
-            self._refresh_tabs_list()
 
     @Slot(str)
     def _on_library_selected(self, library_name: str) -> None:
+        if library_name and self.library_order_list_widget.count() > 0:
+            matching_items = self.library_order_list_widget.findItems(
+                library_name, Qt.MatchFlag.MatchExactly
+            )
+            if (
+                matching_items
+                and self.library_order_list_widget.currentItem() != matching_items[0]
+            ):
+                self.library_order_list_widget.blockSignals(True)
+                self.library_order_list_widget.setCurrentItem(matching_items[0])
+                self.library_order_list_widget.blockSignals(False)
         self._refresh_directory_list()
         self._refresh_library_options()
 
     def _refresh_library_options(self) -> None:
         selected_library: str = self.library_selector.currentText()
         if selected_library in self.staged_libraries:
-            lib_config = self.staged_libraries[selected_library]
-            lib_type = lib_config.get("type", "tv")
+            library_configuration = self.staged_libraries[selected_library]
+            library_type = library_configuration.get("type", "tv")
             self.directory_list_label.setText("Root Directory:")
 
-            if lib_type in ("tv", "anime"):
+            if hasattr(self, "selected_library_type_combobox"):
+                self.selected_library_type_combobox.blockSignals(True)
+                if library_type == "movie":
+                    self.selected_library_type_combobox.setCurrentText("Movies")
+                elif library_type == "anime":
+                    self.selected_library_type_combobox.setCurrentText("Anime")
+                else:
+                    self.selected_library_type_combobox.setCurrentText("TV Shows")
+                self.selected_library_type_combobox.blockSignals(False)
+
+            if library_type in ("tv", "anime"):
                 self.show_future_episodes_checkbox.setVisible(True)
                 self.show_future_episodes_checkbox.blockSignals(True)
                 self.show_future_episodes_checkbox.setChecked(
-                    lib_config.get("show_future_episodes", True)
+                    library_configuration.get("show_future_episodes", True)
                 )
                 self.show_future_episodes_checkbox.blockSignals(False)
                 self.anime_library_checkbox.setVisible(True)
                 self.anime_library_checkbox.blockSignals(True)
-                self.anime_library_checkbox.setChecked(lib_type == "anime")
+                self.anime_library_checkbox.setChecked(library_type == "anime")
                 self.anime_library_checkbox.blockSignals(False)
             else:
                 self.show_future_episodes_checkbox.setVisible(False)
@@ -1851,6 +1678,18 @@ class SettingsDialog(QDialog):
         else:
             self.show_future_episodes_checkbox.setVisible(False)
             self.anime_library_checkbox.setVisible(False)
+
+    @Slot(str)
+    def _on_selected_library_type_changed(self, new_type_text: str) -> None:
+        selected_library: str = self.library_selector.currentText()
+        if selected_library in self.staged_libraries:
+            if new_type_text == "Movies":
+                self.staged_libraries[selected_library]["type"] = "movie"
+            elif new_type_text == "Anime":
+                self.staged_libraries[selected_library]["type"] = "anime"
+            else:
+                self.staged_libraries[selected_library]["type"] = "tv"
+            self._refresh_library_options()
 
     @Slot(int)
     def _on_show_future_episodes_toggled(self, state: int) -> None:
@@ -2101,10 +1940,8 @@ class SettingsDialog(QDialog):
         }
         self.library_name_input.clear()
         self._refresh_library_selector()
-        self._refresh_tabs_list()
-        if new_management_type == "local":
-            self.library_selector.setCurrentText(new_library_name)
-        else:
+        self.library_selector.setCurrentText(new_library_name)
+        if new_management_type != "local":
             self._populate_remote_agents_tree()
         logger.info(
             "Added %s library '%s' (type: %s) to staged configuration",
@@ -2445,7 +2282,6 @@ class SettingsDialog(QDialog):
                 )
 
         self._refresh_library_order_list()
-        self._refresh_tabs_list()
         self._refresh_library_selector()
 
     def map_local_mount_for_item(
@@ -2697,18 +2533,90 @@ class SettingsDialog(QDialog):
         pass
 
     @Slot()
+    def rename_staged_library(self) -> None:
+        selected_library: str = self.library_selector.currentText()
+        if not selected_library or selected_library not in self.staged_libraries:
+            QMessageBox.warning(
+                self, "No Library Selected", "Please select a library to rename."
+            )
+            return
+
+        new_library_name, confirmed = QInputDialog.getText(
+            self,
+            "Rename Library",
+            f"Enter new name for library '{selected_library}':",
+            text=selected_library,
+        )
+        new_library_name = new_library_name.strip()
+        if (
+            not confirmed
+            or not new_library_name
+            or new_library_name == selected_library
+        ):
+            return
+
+        if new_library_name in self.staged_libraries:
+            QMessageBox.warning(
+                self,
+                "Duplicate Library Name",
+                f"A library named '{new_library_name}' already exists.",
+            )
+            return
+
+        new_staged_libraries: dict[str, dict[str, Any]] = {}
+        for key, value in self.staged_libraries.items():
+            if key == selected_library:
+                new_staged_libraries[new_library_name] = value
+            else:
+                new_staged_libraries[key] = value
+        self.staged_libraries = new_staged_libraries
+
+        original_library_name = None
+        for original_name, current_name in list(self.renamed_libraries.items()):
+            if current_name == selected_library:
+                original_library_name = original_name
+                break
+        if original_library_name:
+            self.renamed_libraries[original_library_name] = new_library_name
+        else:
+            self.renamed_libraries[selected_library] = new_library_name
+
+        self._refresh_library_selector()
+        self.library_selector.setCurrentText(new_library_name)
+        logger.info(
+            "Renamed staged library '%s' to '%s'",
+            selected_library,
+            new_library_name,
+        )
+
+    @Slot()
     def remove_staged_library(self) -> None:
         selected_library: str = self.library_selector.currentText()
-        if not selected_library:
+        if not selected_library or selected_library not in self.staged_libraries:
             return
+
+        original_library_name = None
+        for original_name, current_name in list(self.renamed_libraries.items()):
+            if current_name == selected_library:
+                original_library_name = original_name
+                break
+        if original_library_name:
+            del self.renamed_libraries[original_library_name]
+            self.deleted_libraries.add(original_library_name)
+        else:
+            self.deleted_libraries.add(selected_library)
 
         del self.staged_libraries[selected_library]
         self._refresh_library_selector()
+        logger.info(
+            "Removed staged library '%s' (queued for database cleanup)",
+            selected_library,
+        )
 
     @Slot()
     def add_staged_directory(self) -> None:
         selected_library: str = self.library_selector.currentText()
-        if not selected_library:
+        if not selected_library or selected_library not in self.staged_libraries:
             QMessageBox.warning(
                 self, "No Library Selected", "Please select or create a library first."
             )
@@ -2720,45 +2628,44 @@ class SettingsDialog(QDialog):
         if not chosen_directory:
             return
 
-        existing_paths: list[str] = self.staged_libraries[selected_library].get(
-            "paths", []
-        )
-        if existing_paths:
-            if chosen_directory in existing_paths:
-                return
-            confirmation_result = QMessageBox.question(
+        library_configuration = self.staged_libraries[selected_library]
+        existing_paths: list[str] = library_configuration.setdefault("paths", [])
+        if chosen_directory in existing_paths:
+            QMessageBox.information(
                 self,
-                "Replace Root Directory?",
-                f"This library already has a root directory configured:\n\n{existing_paths[0]}\n\n"
-                f"Libraries only support a single root directory. Would you like to replace it with:\n\n{chosen_directory}?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+                "Directory Already Added",
+                f"Directory '{chosen_directory}' is already configured for this library.",
             )
-            if confirmation_result != QMessageBox.StandardButton.Yes:
-                return
-            self.staged_libraries[selected_library]["archive_paths"] = []
+            return
 
-        self.staged_libraries[selected_library]["paths"] = [chosen_directory]
-        if "sources" in self.staged_libraries[selected_library]:
-            from lan_streamer.system.config import (
-                get_library_sources,
-                normalize_library_configuration,
-            )
+        existing_paths.append(chosen_directory)
+        library_configuration["paths"] = existing_paths
 
-            library_configuration = self.staged_libraries[selected_library]
-            sources = [
-                source
-                for source in get_library_sources(library_configuration)
-                if source.get("type") != "local"
-            ]
+        from lan_streamer.system.config import (
+            get_library_sources,
+            normalize_library_configuration,
+        )
+
+        sources = get_library_sources(library_configuration)
+        already_in_sources = any(
+            source.get("type") == "local" and source.get("path") == chosen_directory
+            for source in sources
+        )
+        if not already_in_sources:
             sources.append(
                 {"type": "local", "path": chosen_directory, "is_archive": False}
             )
             library_configuration["sources"] = sources
-            library_configuration.update(
-                normalize_library_configuration(library_configuration)
-            )
+
+        library_configuration.update(
+            normalize_library_configuration(library_configuration)
+        )
         self._refresh_directory_list()
+        logger.info(
+            "Added root directory '%s' to staged library '%s'",
+            chosen_directory,
+            selected_library,
+        )
 
     @Slot()
     def remove_staged_directory(self) -> None:
@@ -3001,9 +2908,32 @@ class SettingsDialog(QDialog):
         config.scan_agents = self.staged_scan_agents
         config.enable_combined_view = self.enable_combined_view_checkbox.isChecked()
         config.combined_views = self.staged_combined_views
-        config.tabs = self.staged_tabs
         config.save()  # Persist startup-critical keys to config file
         config.save_to_db()  # Persist all DB-backed keys to database
+
+        for old_library_name, new_library_name in self.renamed_libraries.items():
+            if old_library_name != new_library_name:
+                try:
+                    from lan_streamer.db.library import rename_library_records
+
+                    rename_library_records(old_library_name, new_library_name)
+                except Exception:
+                    logger.exception(
+                        "Failed to rename library records from '%s' to '%s'",
+                        old_library_name,
+                        new_library_name,
+                    )
+
+        for deleted_library_name in self.deleted_libraries:
+            try:
+                from lan_streamer.db.library import delete_library_records
+
+                delete_library_records(deleted_library_name)
+            except Exception:
+                logger.exception(
+                    "Failed to delete library records for '%s'",
+                    deleted_library_name,
+                )
 
         # Restart the scheduled scan service with the new settings
         if self.controller is not None:

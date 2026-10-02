@@ -475,8 +475,8 @@ def test_config_load_preserves_multi_root_libraries(
     assert reloaded.libraries["Shows"]["paths"] == ["/path/one", "/path/two"]
 
 
-def test_config_tabs_default_generation(mock_config_file) -> None:
-    """When no tabs are saved, load_from_db should generate default 1:1 tabs from libraries."""
+def test_config_tabs_reflect_libraries(mock_config_file) -> None:
+    """Tabs should directly reflect configured libraries."""
     config = Config()
     config.libraries = {
         "Anime": {"type": "tv", "paths": ["/anime"]},
@@ -489,34 +489,31 @@ def test_config_tabs_default_generation(mock_config_file) -> None:
 
     assert len(reloaded.tabs) == 2
     tab_names = reloaded.get_tab_names()
-    assert "Anime" in tab_names
-    assert "Movies" in tab_names
+    assert tab_names == ["Anime", "Movies"]
     assert reloaded.get_tab_libraries("Anime") == ["Anime"]
     assert reloaded.get_tab_libraries("Movies") == ["Movies"]
+    assert reloaded.get_tab_libraries("NonExistent") == []
 
 
-def test_config_tabs_custom_save_and_load(mock_config_file) -> None:
-    """Custom tabs grouping multiple libraries should persist and reload correctly."""
+def test_config_tabs_property_backward_compatibility(mock_config_file) -> None:
+    """Assigning to config.tabs should be safely handled without breaking 1:1 library tabs."""
     config = Config()
     config.libraries = {
         "Anime TV": {"type": "tv", "paths": ["/anime/tv"]},
-        "Anime OVAs": {"type": "tv", "paths": ["/anime/ovas"]},
         "Cinema": {"type": "movie", "paths": ["/movies"]},
     }
+    # Setting tabs is supported for backward compatibility
     config.tabs = [
-        {"name": "All Anime", "libraries": ["Anime TV", "Anime OVAs"]},
-        {"name": "Movies", "libraries": ["Cinema"]},
+        {"name": "All Anime", "libraries": ["Anime TV"]},
     ]
     config.save_to_db()
 
     reloaded = Config()
     reloaded.load_from_db()
 
-    assert len(reloaded.tabs) == 2
-    assert reloaded.get_tab_names() == ["All Anime", "Movies"]
-    assert reloaded.get_tab_libraries("All Anime") == ["Anime TV", "Anime OVAs"]
-    assert reloaded.get_tab_libraries("Movies") == ["Cinema"]
-    # Fallback for unconfigured tab name
+    assert reloaded.get_tab_names() == ["Anime TV", "Cinema"]
+    assert reloaded.get_tab_libraries("Anime TV") == ["Anime TV"]
+    assert reloaded.get_tab_libraries("Cinema") == ["Cinema"]
     assert reloaded.get_tab_libraries("NonExistent") == []
 
 

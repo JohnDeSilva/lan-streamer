@@ -476,6 +476,7 @@ def test_main_wayland_platform() -> None:
     import os
 
     with (
+        patch("sys.platform", "linux"),
         patch.dict(os.environ, {"XDG_SESSION_TYPE": "wayland", "QT_QPA_PLATFORM": ""}),
         patch("sys.exit", MagicMock()),
         patch("lan_streamer.main.QApplication", MagicMock()),
