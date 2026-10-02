@@ -16,6 +16,7 @@ from scan_agent.api.schemas import (
 )
 from scan_agent.db.repository import (
     add_subtitle,
+    apply_manual_episode_mappings,
     apply_manual_metadata_mappings,
     get_episode_media_path,
     get_episode_meta,
@@ -221,6 +222,19 @@ def manual_metadata_map(
     return {
         "status": "applied",
         "series": updated_series,
+    }
+
+
+@metadata_router.post("/services/metadata/episodes/manual-map")
+def manual_episodes_metadata_map(
+    payload: ManualMetadataMappingRequest,
+    session: Session = Depends(get_database_session),
+) -> dict[str, Any]:
+    """Apply manual episode mappings across any series/episodes by matching path or episode id."""
+    stats = apply_manual_episode_mappings(session, payload.episode_mappings)
+    return {
+        "status": "applied",
+        "stats": stats,
     }
 
 

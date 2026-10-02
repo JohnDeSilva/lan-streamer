@@ -138,3 +138,29 @@ def test_resolve_playback_path_fallback_candidate_when_file_not_on_disk() -> Non
         libraries_configuration=libraries_configuration,
     )
     assert resolved == "/mnt/movies/NonExistent.mkv"
+
+
+def test_map_local_path_to_remote_exact_and_nested() -> None:
+    from lan_streamer.services.path_mapping_service import map_local_path_to_remote
+
+    mount_mappings = {"/storage/tv": "/Volumes/media/tv"}
+
+    # Exact root
+    assert (
+        map_local_path_to_remote("/Volumes/media/tv", mount_mappings) == "/storage/tv"
+    )
+
+    # Sub-path
+    assert (
+        map_local_path_to_remote("/Volumes/media/tv/Show/S01E01.mkv", mount_mappings)
+        == "/storage/tv/Show/S01E01.mkv"
+    )
+
+    # Unmapped path returns unchanged
+    assert (
+        map_local_path_to_remote("/other/local/path.mkv", mount_mappings)
+        == "/other/local/path.mkv"
+    )
+
+    # Empty mappings returns unchanged
+    assert map_local_path_to_remote("/any/path.mkv", {}) == "/any/path.mkv"

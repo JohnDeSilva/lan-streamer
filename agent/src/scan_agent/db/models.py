@@ -32,7 +32,7 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class Base(DeclarativeBase):
@@ -119,6 +119,7 @@ class Season(Base):
     overview: Mapped[str | None] = mapped_column(String)
     poster_path: Mapped[str | None] = mapped_column(String)
     tmdb_identifier: Mapped[str | None] = mapped_column(String)
+    myanimelist_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     air_date: Mapped[str | None] = mapped_column(String)
     watched_episode_count: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False
@@ -149,6 +150,11 @@ class Episode(Base):
     )
     episode_number: Mapped[int | None] = mapped_column(Integer)
     tmdb_number: Mapped[int | None] = mapped_column(Integer)
+    tmdb_episode_identifier: Mapped[str | None] = mapped_column(String, nullable=True)
+    myanimelist_anime_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    myanimelist_episode_number: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     name: Mapped[str | None] = mapped_column(String)
     overview: Mapped[str | None] = mapped_column(String)
     path: Mapped[str | None] = mapped_column(String)
@@ -193,6 +199,7 @@ class Movie(Base):
     poster_path: Mapped[str | None] = mapped_column(String)
     backdrop_path: Mapped[str | None] = mapped_column(String)
     tmdb_identifier: Mapped[str | None] = mapped_column(String)
+    myanimelist_anime_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     year: Mapped[int | None] = mapped_column(Integer)
     runtime_seconds: Mapped[int | None] = mapped_column(Integer)
     path: Mapped[str | None] = mapped_column(String)

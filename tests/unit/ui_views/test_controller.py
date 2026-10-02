@@ -1533,3 +1533,71 @@ def test_controller_sync_remote_library_with_sources_list(
         result = mock_controller.sync_remote_library("Hybrid TV", emit_signal=False)
         assert result is True
         mock_queue.assert_called_once_with("Hybrid TV", emit_signal=False)
+
+
+def test_mark_episode_watched_invokes_agent_sync(mock_controller) -> None:
+    episode_path = "/media/tv/Test Show/Season 1/S01E01.mkv"
+    with patch.object(mock_controller, "_sync_watched_to_agents") as mock_sync:
+        mock_controller.mark_episode_watched(episode_path, True)
+        mock_sync.assert_called_once_with([episode_path], True)
+
+
+def test_sync_watched_to_agents_records_event(mock_controller) -> None:
+    mock_controller._config.libraries = {
+        "Agent Lib": {
+            "type": "tv",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "mount_mappings": {"/mnt/media": "/Volumes/media"},
+                }
+            ],
+        }
+    }
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.record_watch_event"
+    ) as mock_record:
+        mock_controller._sync_watched_to_agents(
+            ["/Volumes/media/Show/S01E01.mkv"], True
+        )
+        mock_record.assert_called_once_with(
+            agent_url="http://127.0.0.1:8800",
+            media_type="episode",
+            path="/mnt/media/Show/S01E01.mkv",
+            event="complete",
+            watched=True,
+        )
+
+
+def test_sync_episode_metadata_mappings_to_agents(mock_controller) -> None:
+    mock_controller._config.libraries = {
+        "Agent Lib": {
+            "type": "tv",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "mount_mappings": {"/mnt/media": "/Volumes/media"},
+                }
+            ],
+        }
+    }
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.apply_manual_metadata_mappings"
+    ) as mock_apply:
+        mock_controller.sync_episode_metadata_mappings_to_agents(
+            "Agent Lib",
+            [
+                {
+                    "path": "/Volumes/media/Show/S01E01.mkv",
+                    "tmdb_episode_identifier": "100",
+                }
+            ],
+        )
+        mock_apply.assert_called_once_with(
+            agent_url="http://127.0.0.1:8800",
+            episode_mappings=[
+                {"path": "/mnt/media/Show/S01E01.mkv", "tmdb_episode_identifier": "100"}
+            ],
+        )

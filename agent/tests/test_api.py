@@ -582,6 +582,76 @@ def test_watch_event_updates_movie_watched_flag(
     assert state["watched"] is True
 
 
+def test_watch_event_by_path_and_unwatched(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    episode = api_client.get("/api/v1/library/series").json()[0]["seasons"][0][
+        "episodes"
+    ][0]
+    episode_path = episode["path"]
+    episode_identifier = episode["id"]
+
+    # Mark watched via path
+    created = api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "episode",
+            "path": episode_path,
+            "event": "complete",
+            "watched": True,
+        },
+    )
+    assert created.status_code == 201
+    state = api_client.get(f"/api/v1/watch/episode/{episode_identifier}/state").json()
+    assert state["watched"] is True
+
+    # Mark unwatched via path
+    unwatched_response = api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "episode",
+            "path": episode_path,
+            "event": "unwatched",
+            "watched": False,
+        },
+    )
+    assert unwatched_response.status_code == 201
+    state_after = api_client.get(
+        f"/api/v1/watch/episode/{episode_identifier}/state"
+    ).json()
+    assert state_after["watched"] is False
+
+
+def test_watch_events_bulk_sync(api_app: FastAPI, api_client: TestClient) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    episodes = api_client.get("/api/v1/library/series").json()[0]["seasons"][0][
+        "episodes"
+    ]
+    episode_path = episodes[0]["path"]
+    episode_id = episodes[0]["id"]
+
+    sync_response = api_client.post(
+        "/api/v1/watch/sync",
+        json=[
+            {
+                "media_type": "episode",
+                "path": episode_path,
+                "event": "complete",
+                "watched": True,
+                "position_seconds": 500.0,
+            }
+        ],
+    )
+    assert sync_response.status_code == 200
+    assert sync_response.json()["updated_count"] == 1
+    state = api_client.get(f"/api/v1/watch/episode/{episode_id}/state").json()
+    assert state["watched"] is True
+    assert state["position_seconds"] == 500.0
+
+
 def test_metadata_search_and_match(api_client: TestClient) -> None:
     response = api_client.get(
         "/api/v1/services/metadata/search",
@@ -770,6 +840,50 @@ def test_metadata_manual_map_unknown_series_returns_404(
         json={"episode_mappings": []},
     )
     assert response.status_code == 404
+
+
+def test_manual_episodes_metadata_map(api_app: FastAPI, api_client: TestClient) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    series_list = api_client.get("/api/v1/library/series").json()
+    series_identifier = series_list[0]["id"]
+    episode = series_list[0]["seasons"][0]["episodes"][0]
+    episode_path = episode["path"]
+
+    payload = {
+        "episode_mappings": [
+            {
+                "path": episode_path,
+                "name": "Updated Episode Title",
+                "episode_number": 1,
+                "tmdb_episode_identifier": "987654",
+                "myanimelist_id": 500,
+                "myanimelist_anime_id": 500,
+                "myanimelist_episode_number": 1,
+                "watched": True,
+            }
+        ]
+    }
+    response = api_client.post(
+        "/api/v1/services/metadata/episodes/manual-map",
+        json=payload,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "applied"
+    assert response.json()["stats"]["modified_episodes"] == 1
+
+    updated_detail = api_client.get(
+        f"/api/v1/library/series/{series_identifier}"
+    ).json()
+    assert updated_detail["locked_metadata"] is True
+    updated_season = updated_detail["seasons"][0]
+    assert updated_season["myanimelist_id"] == 500
+    updated_episode = updated_season["episodes"][0]
+    assert updated_episode["name"] == "Updated Episode Title"
+    assert updated_episode["tmdb_episode_identifier"] == "987654"
+    assert updated_episode["myanimelist_anime_id"] == 500
+    assert updated_episode["myanimelist_episode_number"] == 1
+    assert updated_episode["watched"] is True
 
 
 def test_metadata_tmdb_series_seasons_and_episodes_error_cases(

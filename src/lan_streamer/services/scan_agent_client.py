@@ -548,5 +548,157 @@ class ScanAgentClient:
         except ValueError:
             return {"status": "deleted"}
 
+    def record_watch_event(
+        self,
+        agent_url: str,
+        media_type: str = "episode",
+        media_identifier: int | None = None,
+        path: str | None = None,
+        event: str = "complete",
+        position_seconds: float | None = None,
+        watched: bool | None = None,
+        client_identifier: str = "desktop",
+        timeout: float = 10.0,
+    ) -> dict[str, Any]:
+        """Record a watch event or sync watch state to a remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/watch/events"
+        payload: dict[str, Any] = {
+            "media_type": media_type,
+            "event": event,
+            "client_id": client_identifier,
+        }
+        if media_identifier is not None:
+            payload["media_id"] = media_identifier
+        if path is not None:
+            payload["path"] = path
+        if position_seconds is not None:
+            payload["position_seconds"] = position_seconds
+        if watched is not None:
+            payload["watched"] = watched
+
+        try:
+            response = requests.post(
+                target_endpoint,
+                json=payload,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed recording watch event on agent '%s': %s", agent_url, error
+            )
+            raise ScanAgentConnectionError(
+                f"Could not record watch event on scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code not in (200, 201):
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            response_json = response.json()
+            if isinstance(response_json, dict):
+                return response_json
+            return {"status": "recorded"}
+        except ValueError:
+            return {"status": "recorded"}
+
+    def sync_watch_events(
+        self,
+        agent_url: str,
+        events: list[dict[str, Any]],
+        timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        """Bulk synchronize multiple watch events to a remote scan agent."""
+        if not events:
+            return {"status": "synced", "updated_count": 0}
+
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/watch/sync"
+
+        try:
+            response = requests.post(
+                target_endpoint,
+                json=events,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed syncing watch events to agent '%s': %s", agent_url, error
+            )
+            raise ScanAgentConnectionError(
+                f"Could not sync watch events to scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            response_json = response.json()
+            if isinstance(response_json, dict):
+                return response_json
+            return {"status": "synced"}
+        except ValueError:
+            return {"status": "synced"}
+
+    def apply_manual_metadata_mappings(
+        self,
+        agent_url: str,
+        episode_mappings: list[dict[str, Any]],
+        series_identifier: int | None = None,
+        timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        """Apply manual episode metadata mappings to a remote scan agent."""
+        if not episode_mappings:
+            return {"status": "applied", "modified_count": 0}
+
+        normalized_url = normalize_agent_url(agent_url)
+        if series_identifier is not None:
+            target_endpoint = (
+                f"{normalized_url}/api/v1/services/metadata/series/"
+                f"{series_identifier}/manual-map"
+            )
+        else:
+            target_endpoint = (
+                f"{normalized_url}/api/v1/services/metadata/episodes/manual-map"
+            )
+
+        payload = {"episode_mappings": episode_mappings}
+
+        try:
+            response = requests.post(
+                target_endpoint,
+                json=payload,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed applying metadata mappings to agent '%s': %s",
+                agent_url,
+                error,
+            )
+            raise ScanAgentConnectionError(
+                f"Could not apply metadata mappings to scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            response_json = response.json()
+            if isinstance(response_json, dict):
+                return response_json
+            return {"status": "applied"}
+        except ValueError:
+            return {"status": "applied"}
+
 
 scan_agent_client = ScanAgentClient()
