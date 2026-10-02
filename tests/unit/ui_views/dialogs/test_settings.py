@@ -532,7 +532,7 @@ def test_settings_dialog_per_library_scanning_controls(qtbot) -> None:
     }
     dialog_instance._refresh_library_selector()
 
-    # Local Libraries Setup: Scan Library button
+    # Libraries: Scan Library button
     dialog_instance.library_selector.setCurrentText("Anime")
     dialog_instance.scan_selected_local_library()
     controller_mock.trigger_scan.assert_called_with(
