@@ -331,6 +331,10 @@ def _save_episode_record(
     watched = bool(episode_data.get("watched"))
     if watched:
         episode.watched = True
+    if episode_data.get("last_played_position") is not None:
+        episode.last_played_position = episode_data["last_played_position"]
+    if episode_data.get("last_played_at") is not None:
+        episode.last_played_at = episode_data["last_played_at"]
     if processed_episodes is not None:
         processed_episodes.add(episode)
 
