@@ -239,9 +239,16 @@ class Controller(QObject):
             else:
                 single_library_data = self._db.load_library(single_library_name)
 
+            from lan_streamer.system.config import get_library_sources
+
+            sources = get_library_sources(single_library_config)
+            has_agent_sources = any(source.get("type") == "agent" for source in sources)
             if (
                 trigger_remote_sync
-                and single_library_config.get("management_type") == "remote"
+                and (
+                    single_library_config.get("management_type") in ("remote", "hybrid")
+                    or has_agent_sources
+                )
                 and not single_library_data
             ):
                 self._queue_remote_sync(single_library_name, emit_signal=True)
@@ -266,10 +273,15 @@ class Controller(QObject):
         is reported through :meth:`_on_remote_sync_finished`.
         """
         library_configuration = self._config.libraries.get(library_name, {})
-        if library_configuration.get("management_type") != "remote":
-            return False
-        agent_url = library_configuration.get("agent_url", "")
-        if not agent_url:
+        from lan_streamer.system.config import get_library_sources
+
+        sources = get_library_sources(library_configuration)
+        agent_sources = [
+            source
+            for source in sources
+            if source.get("type") == "agent" and source.get("agent_url")
+        ]
+        if not agent_sources:
             return False
         self._queue_remote_sync(library_name, emit_signal=emit_signal)
         return True
@@ -652,7 +664,17 @@ class Controller(QObject):
 
         self._config.load()
         library_config = self._config.libraries.get(target_library_name, {})
-        if library_config.get("management_type") == "remote":
+        from lan_streamer.system.config import get_library_sources
+
+        sources = get_library_sources(library_config)
+        agent_sources = [
+            source
+            for source in sources
+            if source.get("type") == "agent" and source.get("agent_url")
+        ]
+        local_sources = [source for source in sources if source.get("type") == "local"]
+
+        if agent_sources:
             self.status_changed.emit(
                 f"Syncing remote library '{target_library_name}' from scan agent..."
             )
@@ -665,9 +687,10 @@ class Controller(QObject):
                 failure_message=(
                     f"Failed to sync remote library '{target_library_name}'."
                 ),
-                emit_scan_completed=True,
+                emit_scan_completed=not local_sources,
             )
-            return
+            if not local_sources:
+                return
 
         root_directories: list[str] = library_config.get("paths", [])
 
@@ -950,7 +973,17 @@ class Controller(QObject):
 
         self._config.load()
         library_config = self._config.libraries.get(target_library_name, {})
-        if library_config.get("management_type") == "remote":
+        from lan_streamer.system.config import get_library_sources
+
+        sources = get_library_sources(library_config)
+        agent_sources = [
+            source
+            for source in sources
+            if source.get("type") == "agent" and source.get("agent_url")
+        ]
+        local_sources = [source for source in sources if source.get("type") == "local"]
+
+        if agent_sources:
             self.status_changed.emit(
                 f"Syncing remote library '{target_library_name}' from scan agent..."
             )
@@ -963,9 +996,10 @@ class Controller(QObject):
                 failure_message=(
                     f"Failed to sync remote library '{target_library_name}'."
                 ),
-                emit_scan_completed=True,
+                emit_scan_completed=not local_sources,
             )
-            return
+            if not local_sources:
+                return
 
         root_directories: list[str] = library_config.get("paths", [])
         if not scan_archive_roots:

@@ -77,6 +77,104 @@ def test_remote_sync_worker_returns_error_result_on_failure() -> None:
             result = await worker.run_async()
         assert result["success"] is False
         assert "unreachable" in result["error"]
-        database.save_library.assert_not_called()
+
+    _run(run_test())
+
+
+def test_remote_sync_worker_multi_agent_sources() -> None:
+    parent = QObject()
+    task_manager = AsyncTaskManager(parent=parent)
+
+    async def run_test() -> None:
+        library_configuration = {
+            "management_type": "remote",
+            "type": "tv",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "source_id": "src-tv-01",
+                },
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "source_id": "src-tv-02",
+                },
+            ],
+        }
+        database = MagicMock()
+        database.load_library.return_value = {}
+        worker = RemoteSyncWorker(
+            library_name="Combined Remote TV",
+            library_configuration=library_configuration,
+            database=database,
+            async_task_manager=task_manager,
+            parent=parent,
+        )
+
+        def mock_fetch_source_items(
+            agent_url: str, source_id: str, **kwargs: Any
+        ) -> dict[str, Any]:
+            if source_id == "src-tv-01":
+                return {"Show A": {"name": "Show A", "seasons": {}}}
+            return {"Show B": {"name": "Show B", "seasons": {}}}
+
+        with patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            side_effect=mock_fetch_source_items,
+        ):
+            result = await worker.run_async()
+
+        assert result["success"] is True
+        assert result["items"] == 2
+        database.save_library.assert_called_once()
+        saved_items = database.save_library.call_args[0][1]
+        assert "Show A" in saved_items
+        assert "Show B" in saved_items
+
+    _run(run_test())
+
+
+def test_remote_sync_worker_hybrid_preserves_local_items() -> None:
+    parent = QObject()
+    task_manager = AsyncTaskManager(parent=parent)
+
+    async def run_test() -> None:
+        library_configuration = {
+            "management_type": "hybrid",
+            "type": "tv",
+            "sources": [
+                {"type": "local", "path": "/local/anime"},
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "source_id": "src-agent-anime",
+                },
+            ],
+        }
+        database = MagicMock()
+        # Existing database state has a locally-scanned show
+        database.load_library.return_value = {
+            "Local Show": {"name": "Local Show", "seasons": {}}
+        }
+        worker = RemoteSyncWorker(
+            library_name="Anime",
+            library_configuration=library_configuration,
+            database=database,
+            async_task_manager=task_manager,
+            parent=parent,
+        )
+
+        with patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            return_value={"Remote Show": {"name": "Remote Show", "seasons": {}}},
+        ):
+            result = await worker.run_async()
+
+        assert result["success"] is True
+        database.save_library.assert_called_once()
+        saved_items = database.save_library.call_args[0][1]
+        assert "Local Show" in saved_items
+        assert "Remote Show" in saved_items
 
     _run(run_test())

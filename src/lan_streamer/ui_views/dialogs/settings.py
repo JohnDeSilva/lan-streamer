@@ -518,6 +518,13 @@ class SettingsDialog(QDialog):
         add_dir_button.clicked.connect(self.add_staged_directory)
         dir_buttons_layout.addWidget(add_dir_button)
 
+        add_remote_source_button: QPushButton = QPushButton("Add Remote Source...")
+        add_remote_source_button.setToolTip(
+            "Add a media source from a configured scan agent to this library."
+        )
+        add_remote_source_button.clicked.connect(self.add_staged_remote_source)
+        dir_buttons_layout.addWidget(add_remote_source_button)
+
         toggle_archive_button: QPushButton = QPushButton("Toggle Active / Archive")
         toggle_archive_button.setToolTip(
             "Toggle between Active (frequently scanned) and Archive (rarely changing / skipped during periodic scans) mode."
@@ -1507,8 +1514,9 @@ class SettingsDialog(QDialog):
             getattr(config, "scan_concurrency", 4) or 4
         )
 
-        self.staged_libraries = {
-            library_name: {
+        self.staged_libraries = {}
+        for library_name, library_config in config.libraries.items():
+            staged_entry: dict[str, Any] = {
                 "type": library_config.get("type", "tv"),
                 "management_type": library_config.get("management_type", "local"),
                 "paths": list(library_config.get("paths", [])),
@@ -1522,8 +1530,11 @@ class SettingsDialog(QDialog):
                 "remote_root_paths": list(library_config.get("remote_root_paths", [])),
                 "mount_mappings": dict(library_config.get("mount_mappings", {})),
             }
-            for library_name, library_config in config.libraries.items()
-        }
+            if library_config.get("sources"):
+                staged_entry["sources"] = [
+                    dict(source_dict) for source_dict in library_config["sources"]
+                ]
+            self.staged_libraries[library_name] = staged_entry
         self.staged_scan_agents = copy.deepcopy(getattr(config, "scan_agents", {}))
         self._populate_remote_agents_tree()
         self._refresh_scan_agent_selectors()
@@ -1853,17 +1864,32 @@ class SettingsDialog(QDialog):
         self.directory_list_widget.clear()
         selected_library: str = self.library_selector.currentText()
         if selected_library in self.staged_libraries:
-            paths: list[str] = self.staged_libraries[selected_library].get("paths", [])
-            archive_paths: list[str] = self.staged_libraries[selected_library].get(
-                "archive_paths", []
-            )
-            for directory_path in paths:
-                mode_label = (
-                    "[Archive]" if directory_path in archive_paths else "[Active]"
-                )
-                item = QListWidgetItem(f"{mode_label}  {directory_path}")
-                item.setData(Qt.ItemDataRole.UserRole, directory_path)
-                self.directory_list_widget.addItem(item)
+            from lan_streamer.system.config import get_library_sources
+
+            library_configuration = self.staged_libraries[selected_library]
+            sources = get_library_sources(library_configuration)
+            for source_entry in sources:
+                source_type = source_entry.get("type", "local")
+                if source_type == "local":
+                    directory_path = str(source_entry.get("path", ""))
+                    is_archive = bool(source_entry.get("is_archive", False))
+                    mode_label = "[Archive]" if is_archive else "[Active]"
+                    item = QListWidgetItem(f"{mode_label}  {directory_path}")
+                    item.setData(Qt.ItemDataRole.UserRole, directory_path)
+                    self.directory_list_widget.addItem(item)
+                elif source_type == "agent":
+                    agent_url = str(source_entry.get("agent_url", ""))
+                    source_name = str(
+                        source_entry.get("name")
+                        or source_entry.get("source_identifier")
+                        or source_entry.get("source_id")
+                        or "Remote Source"
+                    )
+                    item = QListWidgetItem(
+                        f"[Remote Source]  {source_name} ({agent_url})"
+                    )
+                    item.setData(Qt.ItemDataRole.UserRole, source_entry)
+                    self.directory_list_widget.addItem(item)
 
     @Slot()
     def toggle_staged_directory_archive_mode(self) -> None:
@@ -1872,10 +1898,18 @@ class SettingsDialog(QDialog):
         if not selected_library or selected_item is None:
             return
 
-        directory_path: str = selected_item.data(Qt.ItemDataRole.UserRole) or (
-            selected_item.text().split("  ", 1)[-1]
-            if "  " in selected_item.text()
-            else selected_item.text()
+        item_data = selected_item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(item_data, dict) and item_data.get("type") == "agent":
+            return
+
+        directory_path: str = (
+            item_data
+            if isinstance(item_data, str)
+            else (
+                selected_item.text().split("  ", 1)[-1]
+                if "  " in selected_item.text()
+                else selected_item.text()
+            )
         )
         library_configuration = self.staged_libraries[selected_library]
         archive_paths: list[str] = library_configuration.setdefault("archive_paths", [])
@@ -1884,10 +1918,146 @@ class SettingsDialog(QDialog):
         else:
             archive_paths.append(directory_path)
 
+        if "sources" in library_configuration:
+            from lan_streamer.system.config import (
+                get_library_sources,
+                normalize_library_configuration,
+            )
+
+            sources = get_library_sources(library_configuration)
+            for source in sources:
+                if (
+                    source.get("type") == "local"
+                    and source.get("path") == directory_path
+                ):
+                    source["is_archive"] = directory_path in archive_paths
+            library_configuration["sources"] = sources
+            library_configuration.update(
+                normalize_library_configuration(library_configuration)
+            )
+
         current_row = self.directory_list_widget.currentRow()
         self._refresh_directory_list()
         if 0 <= current_row < self.directory_list_widget.count():
             self.directory_list_widget.setCurrentRow(current_row)
+
+    @Slot()
+    def add_staged_remote_source(self) -> None:
+        """Add a discovered media source from a configured scan agent to the selected library."""
+        selected_library: str = self.library_selector.currentText()
+        if not selected_library or selected_library not in self.staged_libraries:
+            QMessageBox.information(
+                self,
+                "Select Library",
+                "Please select a library first before adding a media source.",
+            )
+            return
+
+        available_sources: list[tuple[str, str, dict[str, Any]]] = []
+        for agent_url, agent_data in self.staged_scan_agents.items():
+            agent_name = agent_data.get("name") or agent_url
+            discovered = agent_data.get("discovered_libraries", [])
+            for source_info in discovered:
+                source_name = source_info.get("name") or "Unnamed Source"
+                source_type = (
+                    source_info.get("media_type") or source_info.get("type") or "tv"
+                )
+                display_label = f"{agent_name} : {source_name} [{source_type.upper()}] ({agent_url})"
+                available_sources.append((display_label, agent_url, source_info))
+
+        if not available_sources:
+            QMessageBox.information(
+                self,
+                "No Remote Sources",
+                "No media sources discovered from configured scan agents.\n"
+                "Please connect to a scan agent in the Media Sources tab first.",
+            )
+            return
+
+        items = [source_tuple[0] for source_tuple in available_sources]
+        chosen_label, confirmed = QInputDialog.getItem(
+            self,
+            "Add Remote Media Source",
+            "Select a media source to attach to this library:",
+            items,
+            0,
+            False,
+        )
+        if not confirmed or not chosen_label:
+            return
+
+        selected_tuple = next(
+            (
+                source_tuple
+                for source_tuple in available_sources
+                if source_tuple[0] == chosen_label
+            ),
+            None,
+        )
+        if selected_tuple is None:
+            return
+
+        _, chosen_agent_url, chosen_source_info = selected_tuple
+        source_identifier = (
+            chosen_source_info.get("id") or chosen_source_info.get("name") or ""
+        )
+        source_name = chosen_source_info.get("name") or "Remote Source"
+
+        from lan_streamer.system.config import (
+            get_library_sources,
+            normalize_library_configuration,
+        )
+
+        library_configuration = self.staged_libraries[selected_library]
+        current_sources = get_library_sources(library_configuration)
+
+        already_present = any(
+            source_entry.get("type") == "agent"
+            and source_entry.get("agent_url") == chosen_agent_url
+            and (
+                source_entry.get("source_identifier") == source_identifier
+                or source_entry.get("source_id") == source_identifier
+                or source_entry.get("name") == source_name
+            )
+            for source_entry in current_sources
+        )
+        if already_present:
+            QMessageBox.warning(
+                self,
+                "Source Already Attached",
+                f"Media source '{source_name}' is already attached to '{selected_library}'.",
+            )
+            return
+
+        root_paths: list[str] = []
+        if chosen_source_info.get("root_paths"):
+            root_paths = [
+                str(path) for path in chosen_source_info["root_paths"] if path
+            ]
+        elif chosen_source_info.get("root_path"):
+            root_paths = [str(chosen_source_info["root_path"])]
+
+        new_source_entry: dict[str, Any] = {
+            "type": "agent",
+            "agent_url": chosen_agent_url,
+            "source_identifier": source_identifier,
+            "source_id": source_identifier,
+            "name": source_name,
+            "remote_root_paths": root_paths,
+            "mount_mappings": {},
+        }
+        current_sources.append(new_source_entry)
+        library_configuration["sources"] = current_sources
+        library_configuration.update(
+            normalize_library_configuration(library_configuration)
+        )
+        self._refresh_directory_list()
+        logger.info(
+            "Attached agent source '%s' from %s to library '%s'",
+            source_name,
+            chosen_agent_url,
+            selected_library,
+        )
 
     @Slot()
     def add_staged_library(self) -> None:
@@ -1927,6 +2097,7 @@ class SettingsDialog(QDialog):
             "remote_library_id": "",
             "remote_root_path": "",
             "mount_mappings": {},
+            "sources": [],
         }
         self.library_name_input.clear()
         self._refresh_library_selector()
@@ -2207,6 +2378,16 @@ class SettingsDialog(QDialog):
                 if mapped_local and not mapped_local.startswith("[Not Mapped"):
                     mount_mappings[remote_root] = mapped_local
 
+            source_entry: dict[str, Any] = {
+                "type": "agent",
+                "agent_url": agent_url,
+                "source_identifier": library_identifier,
+                "source_id": library_identifier,
+                "name": library_name,
+                "remote_root_paths": list(root_paths),
+                "mount_mappings": mount_mappings,
+            }
+
             if library_name not in self.staged_libraries:
                 self.staged_libraries[library_name] = {
                     "type": library_type,
@@ -2223,6 +2404,7 @@ class SettingsDialog(QDialog):
                     ],
                     "archive_paths": [],
                     "show_future_episodes": True,
+                    "sources": [source_entry],
                 }
                 logger.info(
                     "Enabled remote library '%s' from agent %s",
@@ -2236,6 +2418,18 @@ class SettingsDialog(QDialog):
                     self.staged_libraries[library_name]["mount_mappings"] = (
                         mount_mappings
                     )
+                if "sources" in self.staged_libraries[library_name]:
+                    existing_sources = self.staged_libraries[library_name]["sources"]
+                    if not any(
+                        source.get("type") == "agent"
+                        and source.get("agent_url") == agent_url
+                        and (
+                            source.get("source_identifier") == library_identifier
+                            or source.get("source_id") == library_identifier
+                        )
+                        for source in existing_sources
+                    ):
+                        existing_sources.append(source_entry)
         else:
             item.setText(1, "Disabled")
             if (
@@ -2283,6 +2477,12 @@ class SettingsDialog(QDialog):
             paths = self.staged_libraries[library_name].setdefault("paths", [])
             if local_mount_directory not in paths:
                 paths.append(local_mount_directory)
+            if "sources" in self.staged_libraries[library_name]:
+                for agent_source in self.staged_libraries[library_name]["sources"]:
+                    if agent_source.get("type") == "agent":
+                        agent_source.setdefault("mount_mappings", {})[remote_root] = (
+                            local_mount_directory
+                        )
 
     @Slot()
     def map_local_mount_for_selected_item(self) -> None:
@@ -2539,6 +2739,25 @@ class SettingsDialog(QDialog):
             self.staged_libraries[selected_library]["archive_paths"] = []
 
         self.staged_libraries[selected_library]["paths"] = [chosen_directory]
+        if "sources" in self.staged_libraries[selected_library]:
+            from lan_streamer.system.config import (
+                get_library_sources,
+                normalize_library_configuration,
+            )
+
+            library_configuration = self.staged_libraries[selected_library]
+            sources = [
+                source
+                for source in get_library_sources(library_configuration)
+                if source.get("type") != "local"
+            ]
+            sources.append(
+                {"type": "local", "path": chosen_directory, "is_archive": False}
+            )
+            library_configuration["sources"] = sources
+            library_configuration.update(
+                normalize_library_configuration(library_configuration)
+            )
         self._refresh_directory_list()
 
     @Slot()
@@ -2548,28 +2767,79 @@ class SettingsDialog(QDialog):
         if not selected_library or selected_item is None:
             return
 
-        directory_path: str = selected_item.data(Qt.ItemDataRole.UserRole) or (
-            selected_item.text().split("  ", 1)[-1]
-            if "  " in selected_item.text()
-            else selected_item.text()
+        item_data = selected_item.data(Qt.ItemDataRole.UserRole)
+        library_configuration = self.staged_libraries[selected_library]
+
+        if isinstance(item_data, dict) and item_data.get("type") == "agent":
+            from lan_streamer.system.config import (
+                get_library_sources,
+                normalize_library_configuration,
+            )
+
+            sources = get_library_sources(library_configuration)
+            sources = [
+                source
+                for source in sources
+                if not (
+                    source.get("type") == "agent"
+                    and source.get("agent_url") == item_data.get("agent_url")
+                    and (
+                        source.get("source_identifier")
+                        == item_data.get("source_identifier")
+                        or source.get("source_id") == item_data.get("source_id")
+                        or source.get("name") == item_data.get("name")
+                    )
+                )
+            ]
+            library_configuration["sources"] = sources
+            library_configuration.update(
+                normalize_library_configuration(library_configuration)
+            )
+            self._refresh_directory_list()
+            return
+
+        directory_path: str = (
+            item_data
+            if isinstance(item_data, str)
+            else (
+                selected_item.text().split("  ", 1)[-1]
+                if "  " in selected_item.text()
+                else selected_item.text()
+            )
         )
-        configured_paths: list[str] = self.staged_libraries[selected_library].get(
-            "paths", []
-        )
+        configured_paths: list[str] = library_configuration.get("paths", [])
         if directory_path in configured_paths:
             configured_paths.remove(directory_path)
-            self.staged_libraries[selected_library]["paths"] = configured_paths
+            library_configuration["paths"] = configured_paths
         else:
-            self.staged_libraries[selected_library]["paths"] = []
+            library_configuration["paths"] = []
 
-        archive_paths: list[str] = self.staged_libraries[selected_library].get(
-            "archive_paths", []
-        )
+        archive_paths: list[str] = library_configuration.get("archive_paths", [])
         if directory_path in archive_paths:
             archive_paths.remove(directory_path)
-            self.staged_libraries[selected_library]["archive_paths"] = archive_paths
+            library_configuration["archive_paths"] = archive_paths
         else:
-            self.staged_libraries[selected_library]["archive_paths"] = []
+            library_configuration["archive_paths"] = []
+
+        if "sources" in library_configuration:
+            from lan_streamer.system.config import (
+                get_library_sources,
+                normalize_library_configuration,
+            )
+
+            sources = get_library_sources(library_configuration)
+            sources = [
+                source
+                for source in sources
+                if not (
+                    source.get("type") == "local"
+                    and source.get("path") == directory_path
+                )
+            ]
+            library_configuration["sources"] = sources
+            library_configuration.update(
+                normalize_library_configuration(library_configuration)
+            )
 
         self._refresh_directory_list()
 
