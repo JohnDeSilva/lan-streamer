@@ -355,17 +355,15 @@ def test_settings_dialog_remote_agent_unreachable(qtbot) -> None:
     dialog.reject()
 
 
-def test_settings_dialog_enforce_single_root_directory_add_and_replace(qtbot) -> None:
-    from PySide6.QtWidgets import QMessageBox
-
+def test_settings_dialog_add_multiple_root_directories(qtbot) -> None:
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
 
-    dialog.library_name_input.setText("SingleRootLib")
+    dialog.library_name_input.setText("MultiRootLib")
     dialog.add_staged_library()
 
-    assert "SingleRootLib" in dialog.staged_libraries
-    assert dialog.staged_libraries["SingleRootLib"]["paths"] == []
+    assert "MultiRootLib" in dialog.staged_libraries
+    assert dialog.staged_libraries["MultiRootLib"]["paths"] == []
 
     # 1. Add first directory
     with patch(
@@ -374,44 +372,157 @@ def test_settings_dialog_enforce_single_root_directory_add_and_replace(qtbot) ->
     ):
         dialog.add_staged_directory()
 
-    assert dialog.staged_libraries["SingleRootLib"]["paths"] == ["/root/one"]
+    assert dialog.staged_libraries["MultiRootLib"]["paths"] == ["/root/one"]
 
-    # 2. Try adding a second directory and choose No (cancel replace)
-    with (
-        patch(
-            "lan_streamer.ui_views.dialogs.settings.QFileDialog.getExistingDirectory",
-            return_value="/root/two",
-        ),
-        patch(
-            "lan_streamer.ui_views.dialogs.settings.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.No,
-        ),
+    # 2. Add second directory (no replace dialog; appends to multi-root list)
+    with patch(
+        "lan_streamer.ui_views.dialogs.settings.QFileDialog.getExistingDirectory",
+        return_value="/root/two",
     ):
         dialog.add_staged_directory()
 
-    assert dialog.staged_libraries["SingleRootLib"]["paths"] == ["/root/one"]
+    assert dialog.staged_libraries["MultiRootLib"]["paths"] == [
+        "/root/one",
+        "/root/two",
+    ]
 
-    # 3. Try adding a second directory and choose Yes (confirm replace)
-    with (
-        patch(
-            "lan_streamer.ui_views.dialogs.settings.QFileDialog.getExistingDirectory",
-            return_value="/root/two",
-        ),
-        patch(
-            "lan_streamer.ui_views.dialogs.settings.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ),
-    ):
-        dialog.add_staged_directory()
-
-    assert dialog.staged_libraries["SingleRootLib"]["paths"] == ["/root/two"]
-
-    # 4. Remove the directory
+    # 3. Remove the first directory
     dialog.directory_list_widget.setCurrentRow(0)
     dialog.remove_staged_directory()
-    assert dialog.staged_libraries["SingleRootLib"]["paths"] == []
+    assert dialog.staged_libraries["MultiRootLib"]["paths"] == ["/root/two"]
 
     dialog.reject()
+
+
+def test_settings_dialog_library_selector_includes_remote_and_local(qtbot) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.staged_libraries = {
+        "Local TV": {"type": "tv", "management_type": "local", "paths": ["/local/tv"]},
+        "Remote Movies": {
+            "type": "movie",
+            "management_type": "remote",
+            "paths": [],
+            "agent_url": "http://127.0.0.1:8800",
+        },
+    }
+    dialog._refresh_library_selector()
+
+    combo_items = [
+        dialog.library_selector.itemText(index)
+        for index in range(dialog.library_selector.count())
+    ]
+    assert "Local TV" in combo_items
+    assert "Remote Movies" in combo_items
+
+
+def test_settings_dialog_library_order_list_syncs_with_selector(qtbot) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.staged_libraries = {
+        "Library A": {"type": "tv", "management_type": "local", "paths": ["/path/a"]},
+        "Library B": {
+            "type": "movie",
+            "management_type": "local",
+            "paths": ["/path/b"],
+        },
+    }
+    dialog._refresh_library_selector()
+
+    # Selecting item in library_order_list_widget should update library_selector
+    dialog.library_order_list_widget.setCurrentRow(1)
+    assert dialog.library_selector.currentText() == "Library B"
+
+    # Selecting item in library_selector should update library_order_list_widget
+    dialog.library_selector.setCurrentText("Library A")
+    assert dialog.library_order_list_widget.currentItem() is not None
+    assert dialog.library_order_list_widget.currentItem().text() == "Library A"
+
+
+def test_settings_dialog_rename_library(qtbot) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.staged_libraries = {
+        "Original Name": {
+            "type": "tv",
+            "management_type": "local",
+            "paths": ["/path/tv"],
+        },
+    }
+    dialog._refresh_library_selector()
+    dialog.library_selector.setCurrentText("Original Name")
+
+    with patch(
+        "lan_streamer.ui_views.dialogs.settings.QInputDialog.getText",
+        return_value=("Renamed Name", True),
+    ):
+        dialog.rename_staged_library()
+
+    assert "Original Name" not in dialog.staged_libraries
+    assert "Renamed Name" in dialog.staged_libraries
+    assert dialog.library_selector.currentText() == "Renamed Name"
+    assert dialog.renamed_libraries.get("Original Name") == "Renamed Name"
+
+
+def test_settings_dialog_change_library_type(qtbot) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.staged_libraries = {
+        "My Media": {
+            "type": "tv",
+            "management_type": "local",
+            "paths": ["/path/media"],
+        },
+    }
+    dialog._refresh_library_selector()
+    dialog.library_selector.setCurrentText("My Media")
+
+    assert dialog.selected_library_type_combobox.currentText() == "TV Shows"
+
+    dialog.selected_library_type_combobox.setCurrentText("Movies")
+    assert dialog.staged_libraries["My Media"]["type"] == "movie"
+
+    dialog.selected_library_type_combobox.setCurrentText("Anime")
+    assert dialog.staged_libraries["My Media"]["type"] == "anime"
+
+
+def test_settings_dialog_delete_library_destructive(qtbot) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.staged_libraries = {
+        "Delete Me": {
+            "type": "tv",
+            "management_type": "local",
+            "paths": ["/path/delete"],
+        },
+        "Keep Me": {
+            "type": "movie",
+            "management_type": "local",
+            "paths": ["/path/keep"],
+        },
+    }
+    dialog._refresh_library_selector()
+    dialog.library_selector.setCurrentText("Delete Me")
+
+    dialog.remove_staged_library()
+
+    assert "Delete Me" not in dialog.staged_libraries
+    assert "Delete Me" in dialog.deleted_libraries
+    assert "Keep Me" in dialog.staged_libraries
+
+    with (
+        patch("lan_streamer.db.library.delete_library_records") as mock_delete_records,
+        patch("lan_streamer.system.config.config.save"),
+        patch("lan_streamer.system.config.config.save_to_db"),
+        patch("lan_streamer.system.logging_handler.set_application_log_level"),
+    ):
+        dialog.save_config()
+        mock_delete_records.assert_called_once_with("Delete Me")
 
 
 def test_settings_dialog_save_config_preserves_multi_root(qtbot, monkeypatch) -> None:
@@ -442,11 +553,10 @@ def test_settings_dialog_save_config_preserves_multi_root(qtbot, monkeypatch) ->
     assert "Combined (cartoons)" not in config.libraries
 
 
-def test_settings_dialog_tabs_management_workflow(qtbot) -> None:
+def test_settings_dialog_has_no_library_tabs_pane(qtbot) -> None:
     from unittest.mock import MagicMock, patch
 
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QInputDialog
+    from PySide6.QtWidgets import QTabWidget
 
     from lan_streamer.system.config import config
 
@@ -454,61 +564,27 @@ def test_settings_dialog_tabs_management_workflow(qtbot) -> None:
     dialog_instance = SettingsDialog(controller_instance=controller_mock)
     qtbot.addWidget(dialog_instance)
 
+    tab_widget = dialog_instance.findChild(QTabWidget)
+    assert tab_widget is not None
+    tabs_titles = [tab_widget.tabText(index) for index in range(tab_widget.count())]
+
+    assert "Library Tabs" not in tabs_titles
+    assert tabs_titles == [
+        "Library Management",
+        "Libraries",
+        "Remote Sources",
+        "Combined View",
+        "Video Player",
+        "Remote API's",
+        "Advanced",
+        "Logs",
+    ]
+
     dialog_instance.staged_libraries = {
         "Anime": {"type": "tv", "paths": ["/anime"], "management_type": "local"},
         "Movies": {"type": "movie", "paths": ["/movies"], "management_type": "local"},
-        "TV Shows": {"type": "tv", "paths": ["/tv"], "management_type": "local"},
     }
-    dialog_instance.staged_tabs = [
-        {"name": "Anime", "libraries": ["Anime"]},
-        {"name": "General", "libraries": ["Movies", "TV Shows"]},
-    ]
-    dialog_instance._refresh_tabs_list()
 
-    assert dialog_instance.tabs_list_widget.count() == 2
-
-    # 1. Select tab and verify checkable libraries
-    dialog_instance.tabs_list_widget.setCurrentRow(1)
-    assert dialog_instance.tab_libraries_list_widget.count() == 3
-
-    # Find item for Anime and check it
-    for row_index in range(dialog_instance.tab_libraries_list_widget.count()):
-        item = dialog_instance.tab_libraries_list_widget.item(row_index)
-        if item.text() == "Anime":
-            item.setCheckState(Qt.CheckState.Checked)
-
-    assert "Anime" in dialog_instance.staged_tabs[1]["libraries"]
-
-    # 2. Add tab
-    with patch.object(QInputDialog, "getText", return_value=("Cartoons", True)):
-        dialog_instance.add_tab()
-
-    assert len(dialog_instance.staged_tabs) == 3
-    assert dialog_instance.staged_tabs[2]["name"] == "Cartoons"
-
-    # 3. Rename tab
-    dialog_instance.tabs_list_widget.setCurrentRow(2)
-    with patch.object(QInputDialog, "getText", return_value=("Kids", True)):
-        dialog_instance.rename_tab()
-
-    assert dialog_instance.staged_tabs[2]["name"] == "Kids"
-
-    # 4. Move tab up
-    dialog_instance.tabs_list_widget.setCurrentRow(2)
-    dialog_instance.move_tab_up()
-    assert dialog_instance.staged_tabs[1]["name"] == "Kids"
-    assert dialog_instance.staged_tabs[2]["name"] == "General"
-
-    # 5. Move tab down
-    dialog_instance.move_tab_down()
-    assert dialog_instance.staged_tabs[2]["name"] == "Kids"
-
-    # 6. Remove tab
-    dialog_instance.tabs_list_widget.setCurrentRow(2)
-    dialog_instance.remove_tab()
-    assert len(dialog_instance.staged_tabs) == 2
-
-    # 7. Save config
     with (
         patch("lan_streamer.system.config.config.save"),
         patch("lan_streamer.system.config.config.save_to_db"),
@@ -516,7 +592,9 @@ def test_settings_dialog_tabs_management_workflow(qtbot) -> None:
     ):
         dialog_instance.save_config()
 
-    assert len(config.tabs) == 2
+    assert "Anime" in config.libraries
+    assert "Movies" in config.libraries
+    assert config.get_tab_names() == ["Anime", "Movies"]
 
 
 def test_settings_dialog_per_library_scanning_controls(qtbot) -> None:

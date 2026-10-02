@@ -385,13 +385,249 @@ def reassign_library_items_by_root_path(
     return reassigned_counts
 
 
+def delete_library_records(library_name: str) -> dict[str, int]:
+    """Destructively removes all media and junction records associated with a library.
+
+    If a series or movie is associated with other libraries, it is unlinked from
+    library_name. If it has no remaining library associations, the series or
+    movie record and its related entities are completely deleted from the database.
+    Orphaned MediaFile records and smart row caches are cleaned up.
+
+    Returns:
+        A dictionary with counts of deleted or unlinked items.
+    """
+    from sqlalchemy.orm import selectinload
+
+    from lan_streamer.db.models import (
+        Episode as EpisodeModel,
+    )
+    from lan_streamer.db.models import (
+        MediaFile as MediaFileModel,
+    )
+    from lan_streamer.db.models import (
+        MetadataFileMapping as MetadataFileMappingModel,
+    )
+    from lan_streamer.db.models import (
+        Movie as MovieModel,
+    )
+    from lan_streamer.db.models import (
+        MovieLibrary as MovieLibraryModel,
+    )
+    from lan_streamer.db.models import (
+        Season as SeasonModel,
+    )
+    from lan_streamer.db.models import (
+        Series as SeriesModel,
+    )
+    from lan_streamer.db.models import (
+        SeriesLibrary as SeriesLibraryModel,
+    )
+
+    stats_dictionary: dict[str, int] = {
+        "series_deleted": 0,
+        "series_unlinked": 0,
+        "movies_deleted": 0,
+        "movies_unlinked": 0,
+        "media_files_removed": 0,
+    }
+
+    with get_session() as session:
+        # 1. TV Series
+        series_records = session.scalars(
+            select(SeriesModel)
+            .join(SeriesModel.libraries, isouter=True)
+            .where(
+                (SeriesModel.library_name == library_name)
+                | (SeriesLibraryModel.library_name == library_name)
+            )
+            .distinct()
+            .options(
+                selectinload(SeriesModel.libraries),
+                selectinload(SeriesModel.seasons)
+                .selectinload(SeasonModel.episodes)
+                .selectinload(EpisodeModel.media_files),
+            )
+        ).all()
+
+        for series_item in series_records:
+            other_libraries = [
+                series_library
+                for series_library in series_item.libraries
+                if series_library.library_name != library_name
+            ]
+            for series_library in list(series_item.libraries):
+                if series_library.library_name == library_name:
+                    session.delete(series_library)
+
+            if other_libraries:
+                if series_item.library_name == library_name:
+                    series_item.library_name = other_libraries[0].library_name
+                stats_dictionary["series_unlinked"] += 1
+            else:
+                session.delete(series_item)
+                stats_dictionary["series_deleted"] += 1
+
+        # 2. Movies
+        movie_records = session.scalars(
+            select(MovieModel)
+            .join(MovieModel.libraries, isouter=True)
+            .where(
+                (MovieModel.library_name == library_name)
+                | (MovieLibraryModel.library_name == library_name)
+            )
+            .distinct()
+            .options(
+                selectinload(MovieModel.libraries),
+                selectinload(MovieModel.media_files),
+            )
+        ).all()
+
+        for movie_item in movie_records:
+            other_libraries = [
+                movie_library
+                for movie_library in movie_item.libraries
+                if movie_library.library_name != library_name
+            ]
+            for movie_library in list(movie_item.libraries):
+                if movie_library.library_name == library_name:
+                    session.delete(movie_library)
+
+            if other_libraries:
+                if movie_item.library_name == library_name:
+                    movie_item.library_name = other_libraries[0].library_name
+                stats_dictionary["movies_unlinked"] += 1
+            else:
+                session.delete(movie_item)
+                stats_dictionary["movies_deleted"] += 1
+
+        session.flush()
+
+        # 3. Clean up orphaned MediaFile records
+        subquery = select(MetadataFileMappingModel.media_file_id).distinct()
+        orphaned_media_files = session.scalars(
+            select(MediaFileModel).where(~MediaFileModel.id.in_(subquery))
+        ).all()
+        for media_file_record in orphaned_media_files:
+            session.delete(media_file_record)
+            stats_dictionary["media_files_removed"] += 1
+
+        session.commit()
+
+    try:
+        from lan_streamer.db.smart_row_cache import rebuild_all_cache
+
+        rebuild_all_cache()
+    except Exception:
+        logger.exception(
+            "Could not rebuild smart row cache during library deletion of '%s'",
+            library_name,
+        )
+
+    logger.info(
+        "delete_library_records for '%s' completed: %s",
+        library_name,
+        stats_dictionary,
+    )
+    return stats_dictionary
+
+
+def rename_library_records(
+    old_library_name: str, new_library_name: str
+) -> dict[str, int]:
+    """Updates library name across Series, Movie, SeriesLibrary, and MovieLibrary records.
+
+    Returns:
+        A dictionary with counts of updated items.
+    """
+    from sqlalchemy.orm import selectinload
+
+    from lan_streamer.db.models import (
+        Movie as MovieModel,
+    )
+    from lan_streamer.db.models import (
+        MovieLibrary as MovieLibraryModel,
+    )
+    from lan_streamer.db.models import (
+        Series as SeriesModel,
+    )
+    from lan_streamer.db.models import (
+        SeriesLibrary as SeriesLibraryModel,
+    )
+
+    stats_dictionary: dict[str, int] = {"series_updated": 0, "movies_updated": 0}
+
+    with get_session() as session:
+        # Update Series records
+        series_records = session.scalars(
+            select(SeriesModel)
+            .join(SeriesModel.libraries, isouter=True)
+            .where(
+                (SeriesModel.library_name == old_library_name)
+                | (SeriesLibraryModel.library_name == old_library_name)
+            )
+            .distinct()
+            .options(selectinload(SeriesModel.libraries))
+        ).all()
+
+        for series_item in series_records:
+            if series_item.library_name == old_library_name:
+                series_item.library_name = new_library_name
+            for series_library in series_item.libraries:
+                if series_library.library_name == old_library_name:
+                    series_library.library_name = new_library_name
+            stats_dictionary["series_updated"] += 1
+
+        # Update Movie records
+        movie_records = session.scalars(
+            select(MovieModel)
+            .join(MovieModel.libraries, isouter=True)
+            .where(
+                (MovieModel.library_name == old_library_name)
+                | (MovieLibraryModel.library_name == old_library_name)
+            )
+            .distinct()
+            .options(selectinload(MovieModel.libraries))
+        ).all()
+
+        for movie_item in movie_records:
+            if movie_item.library_name == old_library_name:
+                movie_item.library_name = new_library_name
+            for movie_library in movie_item.libraries:
+                if movie_library.library_name == old_library_name:
+                    movie_library.library_name = new_library_name
+            stats_dictionary["movies_updated"] += 1
+
+        session.commit()
+
+    try:
+        from lan_streamer.db.smart_row_cache import rebuild_all_cache
+
+        rebuild_all_cache()
+    except Exception:
+        logger.exception(
+            "Could not rebuild smart row cache during library rename from '%s' to '%s'",
+            old_library_name,
+            new_library_name,
+        )
+
+    logger.info(
+        "rename_library_records from '%s' to '%s' completed: %s",
+        old_library_name,
+        new_library_name,
+        stats_dictionary,
+    )
+    return stats_dictionary
+
+
 __all__ = [
     "cleanup_library",
+    "delete_library_records",
     "get_directory_mtime",
     "get_session",
     "load_library",
     "load_movie_library",
     "reassign_library_items_by_root_path",
+    "rename_library_records",
     "save_directory_mtime",
     "save_library",
     "save_movie_data",

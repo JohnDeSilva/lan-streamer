@@ -2202,3 +2202,119 @@ def test_sync_remote_library_with_empty_versions_integration(mock_db_file) -> No
 
         loaded_library = db.load_library("Anime_Current")
         assert "Anime Show" in loaded_library
+
+
+def test_delete_library_records_tv_and_movie(mock_db_file) -> None:
+    from lan_streamer.db.library import delete_library_records
+
+    tv_payload = {
+        "Show To Delete": {
+            "metadata": {"overview": "To be deleted"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/storage/disk1/delete_ep1.mkv",
+                            "versions": [{"path": "/storage/disk1/delete_ep1.mkv"}],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    movie_payload = {
+        "Movie To Delete": {
+            "name": "Movie To Delete",
+            "path": "/storage/disk1/delete_movie.mkv",
+            "versions": [{"path": "/storage/disk1/delete_movie.mkv"}],
+        }
+    }
+    db.save_library("TargetLibrary", tv_payload)
+    db.save_movie_library("TargetLibrary", movie_payload)
+
+    assert "Show To Delete" in db.load_library("TargetLibrary")
+    assert "Movie To Delete" in db.load_movie_library("TargetLibrary")
+
+    stats = delete_library_records("TargetLibrary")
+    assert stats["series_deleted"] == 1
+    assert stats["movies_deleted"] == 1
+
+    assert "Show To Delete" not in db.load_library("TargetLibrary")
+    assert "Movie To Delete" not in db.load_movie_library("TargetLibrary")
+
+
+def test_delete_library_records_unlinks_multi_library_items(mock_db_file) -> None:
+    from lan_streamer.db.library import delete_library_records
+
+    series_payload = {
+        "Shared Series": {
+            "metadata": {"overview": "Shared across libraries"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/storage/shared_ep1.mkv",
+                            "versions": [{"path": "/storage/shared_ep1.mkv"}],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    db.save_library("LibA", series_payload)
+    db.save_library("LibB", series_payload)
+
+    assert "Shared Series" in db.load_library("LibA")
+    assert "Shared Series" in db.load_library("LibB")
+
+    stats = delete_library_records("LibA")
+    assert stats["series_unlinked"] == 1
+    assert stats["series_deleted"] == 0
+
+    assert "Shared Series" not in db.load_library("LibA")
+    loaded_lib_b = db.load_library("LibB")
+    assert "Shared Series" in loaded_lib_b
+
+
+def test_rename_library_records(mock_db_file) -> None:
+    from lan_streamer.db.library import rename_library_records
+
+    series_payload = {
+        "Rename Series": {
+            "metadata": {"overview": "Before rename"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/storage/rename_ep1.mkv",
+                            "versions": [{"path": "/storage/rename_ep1.mkv"}],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    movie_payload = {
+        "Rename Movie": {
+            "name": "Rename Movie",
+            "path": "/storage/rename_movie.mkv",
+            "versions": [{"path": "/storage/rename_movie.mkv"}],
+        }
+    }
+    db.save_library("OldLibName", series_payload)
+    db.save_movie_library("OldLibName", movie_payload)
+
+    stats = rename_library_records("OldLibName", "NewLibName")
+    assert stats["series_updated"] == 1
+    assert stats["movies_updated"] == 1
+
+    assert "Rename Series" not in db.load_library("OldLibName")
+    assert "Rename Series" in db.load_library("NewLibName")
+    assert "Rename Movie" not in db.load_movie_library("OldLibName")
+    assert "Rename Movie" in db.load_movie_library("NewLibName")

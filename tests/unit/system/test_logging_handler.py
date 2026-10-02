@@ -417,7 +417,6 @@ def test_settings_dialog_tab_order(qtbot) -> None:
 
     expected_tabs = [
         "Library Management",
-        "Library Tabs",
         "Libraries",
         "Remote Sources",
         "Combined View",

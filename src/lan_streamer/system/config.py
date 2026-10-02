@@ -253,7 +253,6 @@ class Config:
         # before load_from_db() is called after DB initialisation) ---
         self.database_write_timeout: float = 60.0
         self.libraries: dict[str, dict[str, Any]] = {}
-        self.tabs: list[dict[str, Any]] = []
         for key, value in copy.deepcopy(self._DB_DEFAULTS).items():
             setattr(self, key, value)
 
@@ -476,23 +475,6 @@ class Config:
                 config_dict.get("default_video_aspect_mode", "fit")
             )
 
-            loaded_tabs = config_dict.get("tabs")
-            if loaded_tabs is None or not loaded_tabs:
-                self.tabs = [
-                    {"name": library_name, "libraries": [library_name]}
-                    for library_name in self.libraries
-                ]
-            else:
-                self.tabs = [
-                    {
-                        "name": str(tab_entry.get("name", "")),
-                        "libraries": list(tab_entry.get("libraries", [])),
-                    }
-                    for tab_entry in loaded_tabs
-                    if isinstance(tab_entry, dict) and tab_entry.get("name")
-                ]
-            config_dict["tabs"] = self.tabs
-
             # 3. After going through all the settings take the fully populated dictionary and write the contents back to the database
             bulk_set_app_configs(config_dict)
 
@@ -528,13 +510,6 @@ class Config:
         """Handle a multi-root library split after config load or save."""
         if not split_records:
             return
-
-        for old_name, new_name, _root_path in split_records:
-            for tab_entry in self.tabs:
-                if old_name in tab_entry.get(
-                    "libraries", []
-                ) and new_name not in tab_entry.get("libraries", []):
-                    tab_entry["libraries"].append(new_name)
 
         def _perform_reassignment() -> None:
             try:
@@ -590,7 +565,6 @@ class Config:
 
             # General settings
             set_app_config("libraries", self.libraries)
-            set_app_config("tabs", self.tabs)
             set_app_config("scan_agents", self.scan_agents)
             set_app_config("sync_history_on_start", self.sync_history_on_start)
             set_app_config("filter_out_watched", self.filter_out_watched)
@@ -728,23 +702,26 @@ class Config:
             )
         }
 
+    @property
+    def tabs(self) -> list[dict[str, Any]]:
+        """Return 1:1 tab definitions corresponding to configured libraries."""
+        return [
+            {"name": library_name, "libraries": [library_name]}
+            for library_name in self.libraries
+        ]
+
+    @tabs.setter
+    def tabs(self, value: list[dict[str, Any]]) -> None:
+        """Backward-compatibility setter; custom tabs are no longer stored."""
+
     def get_tab_libraries(self, tab_name: str) -> list[str]:
-        """Return the list of library names associated with a tab."""
-        for tab_entry in self.tabs:
-            if tab_entry.get("name") == tab_name:
-                return list(tab_entry.get("libraries", []))
+        """Return the list of library names associated with a tab (1:1 with libraries)."""
         if tab_name in self.libraries:
             return [tab_name]
         return []
 
     def get_tab_names(self) -> list[str]:
-        """Return all configured tab names, or library names if no tabs are defined."""
-        if self.tabs:
-            return [
-                str(tab_entry["name"])
-                for tab_entry in self.tabs
-                if tab_entry.get("name")
-            ]
+        """Return all configured library names to display as tabs along the top of the screen."""
         return list(self.libraries.keys())
 
 
