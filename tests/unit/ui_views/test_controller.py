@@ -1679,3 +1679,127 @@ def test_update_playback_position_syncs_to_agents_and_updates_cache(
             event="stop",
             position_seconds=540.0,
         )
+
+
+def test_find_agent_sources_and_remotes_for_path_ignores_unrelated_paths(
+    mock_controller,
+) -> None:
+    mock_controller._config.libraries = {
+        "Remote Lib": {
+            "type": "tv",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "mount_mappings": {"/mnt/media": "/Volumes/media"},
+                }
+            ],
+        },
+        "Local Lib": {
+            "type": "tv",
+            "sources": [{"type": "local", "path": "/Users/john/Videos"}],
+        },
+    }
+
+    # Unrelated local path must not be sent to agent
+    assert (
+        mock_controller._find_agent_sources_and_remotes_for_path(
+            "/Users/john/Videos/random.mp4"
+        )
+        == []
+    )
+
+    # Local mounted path matches and converts
+    assert mock_controller._find_agent_sources_and_remotes_for_path(
+        "/Volumes/media/Show/S01E01.mkv"
+    ) == [("http://127.0.0.1:8800", "/mnt/media/Show/S01E01.mkv")]
+
+    # Remote path matches directly
+    assert mock_controller._find_agent_sources_and_remotes_for_path(
+        "/mnt/media/Show/S01E01.mkv"
+    ) == [("http://127.0.0.1:8800", "/mnt/media/Show/S01E01.mkv")]
+
+
+def test_update_playback_position_matches_with_mount_mapping_fallback(
+    mock_controller,
+) -> None:
+    mock_controller._config.libraries = {
+        "Movie Lib": {
+            "type": "movie",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "mount_mappings": {"/mnt/movies": "/Volumes/movies"},
+                }
+            ],
+        }
+    }
+    # Cache stores the remote path
+    mock_controller.cached_library_data = {
+        "Feature Film": {
+            "name": "Feature Film",
+            "type": "movie",
+            "path": "/mnt/movies/Feature.Film.mkv",
+            "last_played_position": 0,
+        }
+    }
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.record_watch_event"
+    ) as mock_record:
+        # Player emits the resolved local path
+        mock_controller.update_playback_position(
+            "/Volumes/movies/Feature.Film.mkv", 1200
+        )
+        movie_entry = mock_controller.cached_library_data["Feature Film"]
+        assert movie_entry["last_played_position"] == 1200
+
+        mock_record.assert_called_once_with(
+            agent_url="http://127.0.0.1:8800",
+            media_type="movie",
+            path="/mnt/movies/Feature.Film.mkv",
+            event="stop",
+            position_seconds=1200.0,
+        )
+
+
+def test_update_playback_position_cancels_superseded_task(mock_controller) -> None:
+    mock_controller._config.libraries = {
+        "Agent Lib": {
+            "type": "tv",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "mount_mappings": {"/mnt/media": "/Volumes/media"},
+                }
+            ],
+        }
+    }
+    mock_controller.cached_library_data = {
+        "Show A": {
+            "name": "Show A",
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "path": "/mnt/media/Show/S01E01.mkv",
+                            "last_played_position": 0,
+                        }
+                    ]
+                }
+            },
+        }
+    }
+
+    mock_task = MagicMock()
+    mock_task.done.return_value = False
+    mock_controller._pending_position_sync_tasks["/mnt/media/Show/S01E01.mkv"] = (
+        mock_task
+    )
+
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.record_watch_event"
+    ):
+        mock_controller.update_playback_position("/mnt/media/Show/S01E01.mkv", 600)
+        mock_task.cancel.assert_called_once()

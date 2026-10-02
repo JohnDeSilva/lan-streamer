@@ -94,6 +94,61 @@ class SmartRowService:
                 media_file = session.scalars(
                     select(MediaFile).where(MediaFile.path == file_path)
                 ).first()
+
+                if not media_file:
+                    try:
+                        from lan_streamer.services.path_mapping_service import (
+                            map_local_path_to_remote,
+                            map_remote_path_to_local,
+                        )
+                        from lan_streamer.system.config import (
+                            config,
+                            get_library_sources,
+                        )
+
+                        for library_configuration in config.libraries.values():
+                            mount_mappings = dict(
+                                library_configuration.get("mount_mappings", {})
+                            )
+                            for source_entry in get_library_sources(
+                                library_configuration
+                            ):
+                                if "mount_mappings" in source_entry:
+                                    mount_mappings.update(
+                                        source_entry.get("mount_mappings", {})
+                                    )
+                            if not mount_mappings:
+                                continue
+
+                            remote_candidate = map_local_path_to_remote(
+                                file_path, mount_mappings
+                            )
+                            if remote_candidate != file_path:
+                                media_file = session.scalars(
+                                    select(MediaFile).where(
+                                        MediaFile.path == remote_candidate
+                                    )
+                                ).first()
+                                if media_file:
+                                    break
+
+                            local_candidate = map_remote_path_to_local(
+                                file_path, mount_mappings
+                            )
+                            if local_candidate != file_path:
+                                media_file = session.scalars(
+                                    select(MediaFile).where(
+                                        MediaFile.path == local_candidate
+                                    )
+                                ).first()
+                                if media_file:
+                                    break
+                    except KeyError, ValueError, TypeError, OSError, AttributeError:
+                        logger.debug(
+                            "Failed checking mount mappings in smart row service for '%s'",
+                            file_path,
+                        )
+
                 if not media_file:
                     return []
 

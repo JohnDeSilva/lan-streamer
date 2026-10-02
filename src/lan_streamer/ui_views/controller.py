@@ -154,6 +154,7 @@ class Controller(QObject):
         self._remote_sync_emit_signal: dict[str, bool] = {}
         self._remote_sync_scan_completed: dict[str, bool] = {}
         self._remote_sync_status_messages: dict[str, tuple[str, str]] = {}
+        self._pending_position_sync_tasks: dict[str, Any] = {}
 
         self.file_system_watcher = QFileSystemWatcher(self)
 
@@ -538,6 +539,40 @@ class Controller(QObject):
             self._config.save_to_db()
             self.library_loaded.emit()
 
+    def _matches_file_path(
+        self,
+        query_path: str,
+        candidate_path: str | None,
+        version_paths: set[Any],
+    ) -> bool:
+        """Check if query_path matches candidate_path or any version_paths with mount mapping fallback."""
+        if not candidate_path:
+            return False
+        if query_path == candidate_path or query_path in version_paths:
+            return True
+
+        from lan_streamer.services.path_mapping_service import (
+            map_local_path_to_remote,
+            map_remote_path_to_local,
+        )
+        from lan_streamer.system.config import get_library_sources
+
+        for library_configuration in self._config.libraries.values():
+            mount_mappings = dict(library_configuration.get("mount_mappings", {}))
+            for source_entry in get_library_sources(library_configuration):
+                if "mount_mappings" in source_entry:
+                    mount_mappings.update(source_entry.get("mount_mappings", {}))
+            if not mount_mappings:
+                continue
+            remote_candidate = map_local_path_to_remote(query_path, mount_mappings)
+            if remote_candidate == candidate_path or remote_candidate in version_paths:
+                return True
+            local_candidate = map_remote_path_to_local(query_path, mount_mappings)
+            if local_candidate == candidate_path or local_candidate in version_paths:
+                return True
+
+        return False
+
     def mark_episode_watched(self, absolute_path: str, watched: bool) -> None:
         logger.info(
             f"Controller marking episode watched={watched} for path: {absolute_path}"
@@ -556,7 +591,7 @@ class Controller(QObject):
                     for version in series_data.get("versions", [])
                     if isinstance(version, dict) and version.get("path")
                 }
-                if absolute_path == movie_path or absolute_path in version_paths:
+                if self._matches_file_path(absolute_path, movie_path, version_paths):
                     series_data["watched"] = watched
                     series_data["last_played_at"] = current_time_epoch
                     if not watched:
@@ -573,9 +608,8 @@ class Controller(QObject):
                             for version in episode_record.get("versions", [])
                             if isinstance(version, dict) and version.get("path")
                         }
-                        if (
-                            absolute_path == episode_file_path
-                            or absolute_path in version_paths
+                        if self._matches_file_path(
+                            absolute_path, episode_file_path, version_paths
                         ):
                             episode_record["watched"] = watched
                             episode_record["last_played_at"] = current_time_epoch
@@ -636,7 +670,7 @@ class Controller(QObject):
                     for version in series_data.get("versions", [])
                     if isinstance(version, dict) and version.get("path")
                 }
-                if absolute_path == movie_path or absolute_path in version_paths:
+                if self._matches_file_path(absolute_path, movie_path, version_paths):
                     series_data["last_played_position"] = position_seconds
                     series_data["last_played_at"] = current_time_epoch
                     media_type = "movie"
@@ -651,9 +685,8 @@ class Controller(QObject):
                             for version in episode_record.get("versions", [])
                             if isinstance(version, dict) and version.get("path")
                         }
-                        if (
-                            absolute_path == episode_file_path
-                            or absolute_path in version_paths
+                        if self._matches_file_path(
+                            absolute_path, episode_file_path, version_paths
                         ):
                             episode_record["last_played_position"] = position_seconds
                             episode_record["last_played_at"] = current_time_epoch
@@ -676,6 +709,10 @@ class Controller(QObject):
         media_type: str = "episode",
     ) -> None:
         """Asynchronously dispatch playback position update to relevant remote scan agents."""
+        if file_path in self._pending_position_sync_tasks:
+            previous_task = self._pending_position_sync_tasks.pop(file_path)
+            if hasattr(previous_task, "done") and not previous_task.done():
+                previous_task.cancel()
 
         def run_sync() -> None:
             import requests
@@ -714,15 +751,23 @@ class Controller(QObject):
         async def run_async_task() -> None:
             from lan_streamer.system.async_utils import run_in_executor
 
-            await run_in_executor(run_sync)
+            try:
+                await run_in_executor(run_sync)
+            finally:
+                self._pending_position_sync_tasks.pop(file_path, None)
 
         task_name = f"sync_position_{uuid.uuid4().hex}"
-        self.async_task_manager.create_task(run_async_task(), name=task_name)
+        created_task = self.async_task_manager.create_task(
+            run_async_task(), name=task_name
+        )
+        self._pending_position_sync_tasks[file_path] = created_task
 
     def _find_agent_sources_and_remotes_for_path(
         self, file_path: str, target_libraries: list[str] | None = None
     ) -> list[tuple[str, str]]:
         """Find (agent_url, remote_path) pairs for a local or remote media file path."""
+        import os
+
         from lan_streamer.services.path_mapping_service import (
             map_local_path_to_remote,
         )
@@ -739,6 +784,8 @@ class Controller(QObject):
             else self._config.libraries
         )
 
+        normalized_file_path = os.path.normpath(file_path).replace("\\", "/")
+
         for library_configuration in libraries_to_check.values():
             sources = get_library_sources(library_configuration)
             mount_mappings = library_configuration.get("mount_mappings", {})
@@ -752,10 +799,64 @@ class Controller(QObject):
                         source_mount_mappings.update(
                             source_entry.get("mount_mappings", {})
                         )
-                    remote_path = map_local_path_to_remote(
-                        file_path, source_mount_mappings
-                    )
-                    results.append((agent_url, remote_path))
+
+                    if source_mount_mappings:
+                        matched = False
+                        remote_path = file_path
+                        for remote_root, local_mount in source_mount_mappings.items():
+                            normalized_mount = (
+                                os.path.normpath(local_mount)
+                                .replace("\\", "/")
+                                .rstrip("/")
+                            )
+                            normalized_root = remote_root.replace("\\", "/").rstrip("/")
+                            if (
+                                normalized_file_path == normalized_mount
+                                or normalized_file_path.startswith(
+                                    normalized_mount + "/"
+                                )
+                            ):
+                                remote_path = map_local_path_to_remote(
+                                    file_path, source_mount_mappings
+                                )
+                                matched = True
+                                break
+                            if (
+                                normalized_file_path == normalized_root
+                                or normalized_file_path.startswith(
+                                    normalized_root + "/"
+                                )
+                            ):
+                                remote_path = file_path
+                                matched = True
+                                break
+                        if matched:
+                            results.append((agent_url, remote_path))
+                    else:
+                        is_local_file = False
+                        for candidate_library in self._config.libraries.values():
+                            candidate_sources = get_library_sources(candidate_library)
+                            for candidate_source in candidate_sources:
+                                if candidate_source.get(
+                                    "type"
+                                ) == "local" and candidate_source.get("path"):
+                                    norm_local_source = (
+                                        os.path.normpath(candidate_source["path"])
+                                        .replace("\\", "/")
+                                        .rstrip("/")
+                                    )
+                                    if (
+                                        normalized_file_path == norm_local_source
+                                        or normalized_file_path.startswith(
+                                            norm_local_source + "/"
+                                        )
+                                    ):
+                                        is_local_file = True
+                                        break
+                            if is_local_file:
+                                break
+                        if not is_local_file:
+                            results.append((agent_url, file_path))
 
         return results
 
