@@ -85,8 +85,10 @@ def _collect_movie_deltas_for_agent(
         desktop_position = movie_data.get("last_played_position") or 0
         remote_position = remote_movie.get("last_played_position") or 0
 
-        needs_watch_sync = (desktop_watched and not remote_watched) or (
-            desktop_watched and desktop_last_played > remote_last_played
+        needs_watch_sync = (
+            desktop_watched
+            and (not remote_watched or desktop_last_played > remote_last_played)
+            and not (remote_last_played > desktop_last_played)
         )
         if raw_agent_items is None and desktop_watched:
             needs_watch_sync = True
@@ -96,8 +98,8 @@ def _collect_movie_deltas_for_agent(
             and not remote_watched
             and desktop_position > 0
             and (
-                desktop_position != remote_position
-                or desktop_last_played > remote_last_played
+                desktop_last_played > remote_last_played
+                or (remote_last_played == 0 and remote_position == 0)
             )
         )
         if raw_agent_items is None and not desktop_watched and desktop_position > 0:
@@ -227,8 +229,10 @@ def _collect_tv_deltas_for_agent(
                 desktop_position = episode_data.get("last_played_position") or 0
                 remote_position = remote_episode_data.get("last_played_position") or 0
 
-                needs_watch_sync = (desktop_watched and not remote_watched) or (
-                    desktop_watched and desktop_last_played > remote_last_played
+                needs_watch_sync = (
+                    desktop_watched
+                    and (not remote_watched or desktop_last_played > remote_last_played)
+                    and not (remote_last_played > desktop_last_played)
                 )
                 if raw_agent_items is None and desktop_watched:
                     needs_watch_sync = True
@@ -238,8 +242,8 @@ def _collect_tv_deltas_for_agent(
                     and not remote_watched
                     and desktop_position > 0
                     and (
-                        desktop_position != remote_position
-                        or desktop_last_played > remote_last_played
+                        desktop_last_played > remote_last_played
+                        or (remote_last_played == 0 and remote_position == 0)
                     )
                 )
                 if (

@@ -366,6 +366,76 @@ def get_next_episode(current_path: str) -> dict[str, Any] | None:
                 .where(MediaFile.path == current_path)
                 .options(joinedload(Episode.season).joinedload(Season.series))
             ).first()
+
+            if not current_episode:
+                try:
+                    from lan_streamer.services.path_mapping_service import (
+                        map_local_path_to_remote,
+                        map_remote_path_to_local,
+                    )
+                    from lan_streamer.system.config import config, get_library_sources
+
+                    for library_configuration in config.libraries.values():
+                        mount_mappings = dict(
+                            library_configuration.get("mount_mappings", {})
+                        )
+                        for source_entry in get_library_sources(library_configuration):
+                            if "mount_mappings" in source_entry:
+                                mount_mappings.update(
+                                    source_entry.get("mount_mappings", {})
+                                )
+                        if not mount_mappings:
+                            continue
+
+                        remote_candidate = map_local_path_to_remote(
+                            current_path, mount_mappings
+                        )
+                        if remote_candidate != current_path:
+                            current_episode = session.scalars(
+                                select(Episode)
+                                .join(
+                                    MetadataFileMapping,
+                                    MetadataFileMapping.episode_id == Episode.id,
+                                )
+                                .join(
+                                    MediaFile,
+                                    MediaFile.id == MetadataFileMapping.media_file_id,
+                                )
+                                .where(MediaFile.path == remote_candidate)
+                                .options(
+                                    joinedload(Episode.season).joinedload(Season.series)
+                                )
+                            ).first()
+                            if current_episode:
+                                break
+
+                        local_candidate = map_remote_path_to_local(
+                            current_path, mount_mappings
+                        )
+                        if local_candidate != current_path:
+                            current_episode = session.scalars(
+                                select(Episode)
+                                .join(
+                                    MetadataFileMapping,
+                                    MetadataFileMapping.episode_id == Episode.id,
+                                )
+                                .join(
+                                    MediaFile,
+                                    MediaFile.id == MetadataFileMapping.media_file_id,
+                                )
+                                .where(MediaFile.path == local_candidate)
+                                .options(
+                                    joinedload(Episode.season).joinedload(Season.series)
+                                )
+                            ).first()
+                            if current_episode:
+                                break
+                except KeyError, ValueError, TypeError, OSError, AttributeError:
+                    logger.debug(
+                        "Failed checking mount mappings for next episode lookup for '%s'",
+                        current_path,
+                    )
+
             if (
                 not current_episode
                 or not current_episode.season

@@ -378,7 +378,7 @@ def _wire_navigation_signals(
             if hasattr(controller, "set_video_playing"):
                 controller.set_video_playing(True)
             previous_layout_index[0] = stacked_layout.currentIndex()
-            player_view.play_video(resolved_path)
+            player_view.play_video(resolved_path, canonical_media_path=file_path)
             stacked_layout.setCurrentIndex(5)
         else:
             try:

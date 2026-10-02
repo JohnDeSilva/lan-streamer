@@ -1508,19 +1508,24 @@ class VideoPlayerWidget(QWidget):
         super().resizeEvent(event)
         self._reposition_overlays()
 
-    def play_video(self, file_path: str) -> None:
+    def play_video(
+        self, file_path: str, canonical_media_path: str | None = None
+    ) -> None:
         """Starts the playback process (caching if enabled)."""
-        logger.info(f"Request to play video: {file_path}")
+        logger.info(
+            f"Request to play video: {file_path} (canonical: {canonical_media_path})"
+        )
         self.setFocus()
         self.stop()
-        self.current_media_path = file_path
+        self.current_media_path = canonical_media_path or file_path
+        self.playable_media_path = file_path
         self.is_watched_marked = False
         self._is_playback_finished = False
         self.next_episode_popup_shown = False
-        self.next_episode_info = db.get_next_episode(file_path)
+        self.next_episode_info = db.get_next_episode(self.current_media_path)
         self.pending_resume_position = 0
 
-        saved_pos = db.get_episode_playback_position(file_path)
+        saved_pos = db.get_episode_playback_position(self.current_media_path)
         if saved_pos > 60:
             formatted_time = self._format_time(saved_pos)
             if self._ask_resume_playback(formatted_time):
@@ -1528,19 +1533,20 @@ class VideoPlayerWidget(QWidget):
                 self.pending_resume_position = saved_pos
             else:
                 logger.info("User chose to start playback from the beginning")
-                db.update_episode_playback_position(file_path, 0)
+                db.update_episode_playback_position(self.current_media_path, 0)
         elif saved_pos > 0:
             logger.info(
                 f"Saved position {saved_pos}s is <= 60s, starting from beginning without prompt"
             )
-            db.update_episode_playback_position(file_path, 0)
+            db.update_episode_playback_position(self.current_media_path, 0)
 
+        load_path = self.playable_media_path
         if config.enable_caching:
             logger.info("Caching is enabled, starting cache process")
-            self._start_caching(file_path)
+            self._start_caching(load_path)
         else:
             logger.info("Caching is disabled, playing directly")
-            self._load_and_play(file_path)
+            self._load_and_play(load_path)
 
     def _ask_resume_playback(self, formatted_time: str) -> bool:
         """Prompts the user with custom buttons to resume or restart."""

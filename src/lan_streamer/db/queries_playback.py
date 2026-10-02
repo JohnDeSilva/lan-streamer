@@ -27,6 +27,57 @@ def _trigger_mal_push_async(anime_id: int, num_watched_episodes: int) -> None:
     trigger_mal_push_async(anime_id, num_watched_episodes)
 
 
+def _find_media_file_record(
+    session: Any, file_path: str, load_options: list[Any]
+) -> MediaFile | None:
+    """Find a MediaFile record by path, with fallback mount mapping resolution."""
+    query = select(MediaFile).options(*load_options).where(MediaFile.path == file_path)
+    media_file_record = session.scalars(query).first()
+    if media_file_record:
+        return media_file_record
+
+    try:
+        from lan_streamer.services.path_mapping_service import (
+            map_local_path_to_remote,
+            map_remote_path_to_local,
+        )
+        from lan_streamer.system.config import config, get_library_sources
+
+        for library_configuration in config.libraries.values():
+            mount_mappings = dict(library_configuration.get("mount_mappings", {}))
+            for source_entry in get_library_sources(library_configuration):
+                if "mount_mappings" in source_entry:
+                    mount_mappings.update(source_entry.get("mount_mappings", {}))
+            if not mount_mappings:
+                continue
+
+            remote_candidate = map_local_path_to_remote(file_path, mount_mappings)
+            if remote_candidate != file_path:
+                candidate_query = (
+                    select(MediaFile)
+                    .options(*load_options)
+                    .where(MediaFile.path == remote_candidate)
+                )
+                candidate_record = session.scalars(candidate_query).first()
+                if candidate_record:
+                    return candidate_record
+
+            local_candidate = map_remote_path_to_local(file_path, mount_mappings)
+            if local_candidate != file_path:
+                candidate_query = (
+                    select(MediaFile)
+                    .options(*load_options)
+                    .where(MediaFile.path == local_candidate)
+                )
+                candidate_record = session.scalars(candidate_query).first()
+                if candidate_record:
+                    return candidate_record
+    except KeyError, ValueError, TypeError, OSError, AttributeError:
+        logger.debug("Failed checking mount mappings for path '%s'", file_path)
+
+    return None
+
+
 def update_episode_watched_status(path: str, watched: bool) -> None:
     try:
         logger.debug(
@@ -36,16 +87,16 @@ def update_episode_watched_status(path: str, watched: bool) -> None:
         with get_session() as session:
             from lan_streamer.db.models import Episode, Movie, PlaybackState
 
-            mf = session.scalars(
-                select(MediaFile)
-                .options(
+            mf = _find_media_file_record(
+                session,
+                path,
+                [
                     selectinload(MediaFile.episodes).selectinload(
                         Episode.playback_state
                     ),
                     selectinload(MediaFile.movies).selectinload(Movie.playback_state),
-                )
-                .where(MediaFile.path == path)
-            ).first()
+                ],
+            )
             if mf:
                 for ep in mf.episodes:
                     if not ep.playback_state:
@@ -84,16 +135,16 @@ def update_episode_playback_position(path: str, position: int) -> bool:
         with get_session() as session:
             from lan_streamer.db.models import Episode, Movie, PlaybackState
 
-            mf = session.scalars(
-                select(MediaFile)
-                .options(
+            mf = _find_media_file_record(
+                session,
+                path,
+                [
                     selectinload(MediaFile.episodes).selectinload(
                         Episode.playback_state
                     ),
                     selectinload(MediaFile.movies).selectinload(Movie.playback_state),
-                )
-                .where(MediaFile.path == path)
-            ).first()
+                ],
+            )
             if mf:
                 for ep in mf.episodes:
                     if not ep.playback_state:
@@ -118,16 +169,16 @@ def get_episode_playback_position(path: str) -> int:
         with get_session() as session:
             from lan_streamer.db.models import Episode, Movie
 
-            mf = session.scalars(
-                select(MediaFile)
-                .options(
+            mf = _find_media_file_record(
+                session,
+                path,
+                [
                     selectinload(MediaFile.episodes).selectinload(
                         Episode.playback_state
                     ),
                     selectinload(MediaFile.movies).selectinload(Movie.playback_state),
-                )
-                .where(MediaFile.path == path)
-            ).first()
+                ],
+            )
             if mf:
                 if mf.episodes and mf.episodes[0].playback_state:
                     pos = mf.episodes[0].playback_state.last_played_position

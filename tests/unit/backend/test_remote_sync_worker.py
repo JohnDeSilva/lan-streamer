@@ -428,3 +428,89 @@ def test_remote_sync_worker_back_syncs_in_progress_position_delta() -> None:
         assert watch_events[0]["position_seconds"] == 420.0
 
     _run(run_test())
+
+
+def test_remote_sync_worker_does_not_overwrite_newer_agent_progress() -> None:
+    parent = QObject()
+    task_manager = AsyncTaskManager(parent=parent)
+
+    async def run_test() -> None:
+        library_configuration = {
+            "type": "tv",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "mount_mappings": {"/mnt/share": "/Volumes/share"},
+                }
+            ],
+        }
+
+        database = MagicMock()
+        database.load_library.return_value = {
+            "Anime Series": {
+                "name": "Anime Series",
+                "seasons": {
+                    "Season 1": {
+                        "metadata": {},
+                        "episodes": [
+                            {
+                                "path": "/Volumes/share/Anime/S01E01.mkv",
+                                "episode_number": 1,
+                                "watched": False,
+                                "last_played_position": 100,
+                                "last_played_at": 1000,
+                            }
+                        ],
+                    }
+                },
+            }
+        }
+
+        worker = RemoteSyncWorker(
+            library_name="Anime",
+            library_configuration=library_configuration,
+            database=database,
+            async_task_manager=task_manager,
+            parent=parent,
+        )
+
+        # Agent has played further and more recently
+        mock_agent_items = {
+            "Anime Series": {
+                "name": "Anime Series",
+                "seasons": {
+                    "Season 1": {
+                        "metadata": {},
+                        "episodes": [
+                            {
+                                "path": "/mnt/share/Anime/S01E01.mkv",
+                                "episode_number": 1,
+                                "watched": False,
+                                "last_played_position": 500,
+                                "last_played_at": 2000,
+                            }
+                        ],
+                    }
+                },
+            }
+        }
+
+        with (
+            patch(
+                "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+                return_value=mock_agent_items,
+            ),
+            patch(
+                "lan_streamer.services.scan_agent_client.scan_agent_client.sync_watch_events"
+            ) as mock_sync_watch,
+            patch(
+                "lan_streamer.services.scan_agent_client.scan_agent_client.apply_manual_metadata_mappings"
+            ),
+        ):
+            result = await worker.run_async()
+
+        assert result["success"] is True
+        mock_sync_watch.assert_not_called()
+
+    _run(run_test())
