@@ -1422,6 +1422,16 @@ class SeasonDetailView(QWidget):
         db.save_library(library_name, self.controller.cached_library_data)
         self.controller.library_loaded.emit()
 
+        # Synchronize manual mappings to remote scan agents
+        mappings_for_agent: list[dict[str, Any]] = []
+        for path_key, update_data in updates.items():
+            entry_dict = dict(update_data)
+            entry_dict["path"] = path_key
+            mappings_for_agent.append(entry_dict)
+        self.controller.sync_episode_metadata_mappings_to_agents(
+            library_name, mappings_for_agent
+        )
+
         QMessageBox.information(
             self,
             "Success",
@@ -1957,6 +1967,18 @@ class SeasonDetailView(QWidget):
             self.controller.current_library_name, self.controller.cached_library_data
         )
         self.controller.library_loaded.emit()
+
+        # Synchronize manual MAL mappings to remote scan agents
+        mal_mappings_for_agent: list[dict[str, Any]] = []
+        for path_key, update_data in updates.items():
+            entry_dict = dict(update_data)
+            entry_dict["path"] = path_key
+            if season_data.get("metadata", {}).get("myanimelist_id"):
+                entry_dict["myanimelist_id"] = season_data["metadata"]["myanimelist_id"]
+            mal_mappings_for_agent.append(entry_dict)
+        self.controller.sync_episode_metadata_mappings_to_agents(
+            self.controller.current_library_name, mal_mappings_for_agent
+        )
 
         QMessageBox.information(
             self,

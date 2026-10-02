@@ -447,3 +447,97 @@ def test_create_and_delete_agent_library() -> None:
                 "User-Agent": "LanStreamer-Desktop/1.0",
             },
         )
+
+
+def test_record_watch_event_and_sync() -> None:
+    client = ScanAgentClient()
+    mock_post_response = MagicMock()
+    mock_post_response.status_code = 201
+    mock_post_response.json.return_value = {"event": "complete", "status": "recorded"}
+
+    with patch("requests.post", return_value=mock_post_response) as mock_post:
+        result = client.record_watch_event(
+            agent_url="http://127.0.0.1:8800",
+            media_type="episode",
+            path="/media/anime/Show/S01E01.mkv",
+            event="complete",
+            watched=True,
+            position_seconds=123.4,
+        )
+        assert result["status"] == "recorded"
+        mock_post.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/watch/events",
+            json={
+                "media_type": "episode",
+                "event": "complete",
+                "client_id": "desktop",
+                "path": "/media/anime/Show/S01E01.mkv",
+                "position_seconds": 123.4,
+                "watched": True,
+            },
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+            timeout=10.0,
+        )
+
+    # Test bulk sync
+    sync_mock_response = MagicMock()
+    sync_mock_response.status_code = 200
+    sync_mock_response.json.return_value = {"status": "synced", "updated_count": 2}
+
+    with patch("requests.post", return_value=sync_mock_response) as mock_sync_post:
+        sync_result = client.sync_watch_events(
+            agent_url="http://127.0.0.1:8800",
+            events=[
+                {"media_type": "episode", "path": "/p1", "watched": True},
+                {"media_type": "episode", "path": "/p2", "watched": False},
+            ],
+        )
+        assert sync_result["status"] == "synced"
+        mock_sync_post.assert_called_once()
+
+
+def test_apply_manual_metadata_mappings() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "status": "applied",
+        "stats": {"modified_episodes": 1},
+    }
+
+    with patch("requests.post", return_value=mock_response) as mock_post:
+        result = client.apply_manual_metadata_mappings(
+            agent_url="http://127.0.0.1:8800",
+            episode_mappings=[
+                {
+                    "path": "/media/anime/Show/S01E01.mkv",
+                    "myanimelist_id": 500,
+                    "myanimelist_anime_id": 500,
+                    "myanimelist_episode_number": 1,
+                    "watched": True,
+                }
+            ],
+        )
+        assert result["status"] == "applied"
+        mock_post.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/services/metadata/episodes/manual-map",
+            json={
+                "episode_mappings": [
+                    {
+                        "path": "/media/anime/Show/S01E01.mkv",
+                        "myanimelist_id": 500,
+                        "myanimelist_anime_id": 500,
+                        "myanimelist_episode_number": 1,
+                        "watched": True,
+                    }
+                ]
+            },
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+            timeout=15.0,
+        )

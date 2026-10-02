@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import create_engine, event
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from scan_agent.db.models import SCHEMA_VERSION, Base, SchemaVersion
@@ -73,12 +74,76 @@ def get_session(engine: Engine) -> Generator[Session]:
         session.close()
 
 
+def _migrate_columns_if_missing(engine: Engine) -> None:
+    """Ensure newly introduced columns exist in SQLite database tables."""
+    try:
+        with engine.begin() as connection_instance:
+            cursor_seasons = connection_instance.exec_driver_sql(
+                "PRAGMA table_info(seasons)"
+            )
+            existing_seasons_columns = {row[1] for row in cursor_seasons.fetchall()}
+            if (
+                existing_seasons_columns
+                and "myanimelist_id" not in existing_seasons_columns
+            ):
+                connection_instance.exec_driver_sql(
+                    "ALTER TABLE seasons ADD COLUMN myanimelist_id INTEGER"
+                )
+                logger.info("Migrated seasons table: added myanimelist_id column")
+
+            cursor_episodes = connection_instance.exec_driver_sql(
+                "PRAGMA table_info(episodes)"
+            )
+            existing_episodes_columns = {row[1] for row in cursor_episodes.fetchall()}
+            if existing_episodes_columns:
+                if "tmdb_episode_identifier" not in existing_episodes_columns:
+                    connection_instance.exec_driver_sql(
+                        "ALTER TABLE episodes ADD COLUMN tmdb_episode_identifier VARCHAR"
+                    )
+                    logger.info(
+                        "Migrated episodes table: added tmdb_episode_identifier column"
+                    )
+                if "myanimelist_anime_id" not in existing_episodes_columns:
+                    connection_instance.exec_driver_sql(
+                        "ALTER TABLE episodes ADD COLUMN myanimelist_anime_id INTEGER"
+                    )
+                    logger.info(
+                        "Migrated episodes table: added myanimelist_anime_id column"
+                    )
+                if "myanimelist_episode_number" not in existing_episodes_columns:
+                    connection_instance.exec_driver_sql(
+                        "ALTER TABLE episodes ADD COLUMN myanimelist_episode_number INTEGER"
+                    )
+                    logger.info(
+                        "Migrated episodes table: added myanimelist_episode_number column"
+                    )
+
+            cursor_movies = connection_instance.exec_driver_sql(
+                "PRAGMA table_info(movies)"
+            )
+            existing_movies_columns = {row[1] for row in cursor_movies.fetchall()}
+            if (
+                existing_movies_columns
+                and "myanimelist_anime_id" not in existing_movies_columns
+            ):
+                connection_instance.exec_driver_sql(
+                    "ALTER TABLE movies ADD COLUMN myanimelist_anime_id INTEGER"
+                )
+                logger.info("Migrated movies table: added myanimelist_anime_id column")
+    except (SQLAlchemyError, OSError) as migration_error:
+        logger.warning(
+            "Failed executing column auto-migration on agent database: %s",
+            migration_error,
+        )
+
+
 def init_database(engine: Engine) -> None:
     """Create all tables and ensure the schema version row exists.
 
     Idempotent: safe to call on every boot.
     """
     Base.metadata.create_all(engine)
+    _migrate_columns_if_missing(engine)
     with get_session(engine) as session:
         version_row = session.get(SchemaVersion, 1)
         if version_row is None:
@@ -87,8 +152,8 @@ def init_database(engine: Engine) -> None:
                 "Initialised agent database at schema version %d", SCHEMA_VERSION
             )
         elif version_row.version != SCHEMA_VERSION:
-            logger.warning(
-                "Agent database schema version %d does not match expected %d",
-                version_row.version,
+            version_row.version = SCHEMA_VERSION
+            logger.info(
+                "Updated agent database schema version to %d",
                 SCHEMA_VERSION,
             )

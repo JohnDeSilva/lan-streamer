@@ -195,6 +195,15 @@ def _apply_episode_fields(
     if episode_data.get("air_date"):
         episode.air_date = episode_data.get("air_date")
 
+    if "tmdb_episode_identifier" in episode_data:
+        episode.tmdb_episode_identifier = episode_data.get("tmdb_episode_identifier")
+    if "myanimelist_anime_id" in episode_data:
+        episode.myanimelist_anime_id = episode_data.get("myanimelist_anime_id")
+    if "myanimelist_episode_number" in episode_data:
+        episode.myanimelist_episode_number = episode_data.get(
+            "myanimelist_episode_number"
+        )
+
     if "watched" in episode_data:
         episode.watched = bool(episode_data.get("watched"))
     if "last_played_at" in episode_data:
@@ -422,6 +431,7 @@ def _upsert_seasons(
         season.overview = season_metadata.get("overview")
         season.poster_path = season_metadata.get("poster_path")
         season.tmdb_identifier = season_metadata.get("tmdb_identifier")
+        season.myanimelist_id = season_metadata.get("myanimelist_id")
         season.air_date = season_metadata.get("air_date")
         season_episode_count, season_media_file_count = _upsert_episodes(
             connection, season, grouped_season.get("episodes", [])
@@ -481,6 +491,8 @@ def _apply_movie_fields(
     movie.poster_path = movie_data.get("poster_path")
     movie.backdrop_path = movie_data.get("backdrop_path")
     movie.tmdb_identifier = movie_data.get("tmdb_identifier")
+    if "myanimelist_anime_id" in movie_data:
+        movie.myanimelist_anime_id = movie_data.get("myanimelist_anime_id")
     movie.year = movie_data.get("year")
     movie.runtime_seconds = movie_data.get("runtime") or movie_data.get("file_runtime")
     movie_path = movie_data.get("path")
@@ -1081,7 +1093,7 @@ def _series_to_scanner_dict(series: Series) -> dict[str, Any]:
                 "jellyfin_id": None,
                 "tmdb_identifier": season.tmdb_identifier,
                 "poster_path": season.poster_path,
-                "myanimelist_id": None,
+                "myanimelist_id": season.myanimelist_id,
                 "season_directory_path": "",
                 "last_scanned_mtime": None,
             },
@@ -1133,11 +1145,11 @@ def _episode_to_scanner_dict(episode: Episode) -> dict[str, Any]:
         "path": primary_path,
         "episode_number": episode.episode_number,
         "jellyfin_id": None,
-        "tmdb_episode_identifier": None,
+        "tmdb_episode_identifier": episode.tmdb_episode_identifier,
         "tmdb_name": episode.name,
         "tmdb_number": episode.tmdb_number,
-        "myanimelist_anime_id": None,
-        "myanimelist_episode_number": None,
+        "myanimelist_anime_id": episode.myanimelist_anime_id,
+        "myanimelist_episode_number": episode.myanimelist_episode_number,
         "watched": episode.watched,
         "date_added": 0,
         "air_date": episode.air_date or "",
@@ -1238,7 +1250,7 @@ def _movie_to_scanner_dict(movie: Movie) -> dict[str, Any]:
         "tmdb_name": movie.name,
         "locked_metadata": movie.locked_metadata,
         "date_added": movie.date_added or 0,
-        "myanimelist_anime_id": None,
+        "myanimelist_anime_id": movie.myanimelist_anime_id,
         "runtime": movie.runtime_seconds,
         "file_runtime": movie.runtime_seconds,
         "rating": None,
@@ -1311,52 +1323,97 @@ def count_items_per_library(connection: Session) -> dict[str, dict[str, int]]:
 def record_watch_event(
     connection: Session,
     media_type: str,
-    media_identifier: int,
-    event: str,
+    media_identifier: int | None = None,
+    event: str = "complete",
     position_seconds: float | None = None,
     client_id: str | None = None,
+    path: str | None = None,
+    watched: bool | None = None,
 ) -> dict[str, Any]:
     """Persist a playback watch event and update the watched state.
 
-    A ``complete`` event marks the episode/movie watched. ``play`` and
-    ``stop`` update the resume position and last-played timestamp. Parent
-    season/series watched counters are kept consistent.
+    A ``complete`` event or ``watched=True`` marks the episode/movie watched.
+    An ``unwatched`` event or ``watched=False`` marks it unwatched.
+    ``play`` and ``stop`` update the resume position and last-played timestamp.
+    Parent season/series watched counters are kept consistent.
+    Supports locating items by either integer identifier or file path.
     """
     timestamp = time.time()
+    target_episode: Episode | None = None
+    target_movie: Movie | None = None
+
+    if media_type == "episode":
+        if media_identifier is not None and media_identifier > 0:
+            target_episode = connection.get(Episode, media_identifier)
+        if target_episode is None and path:
+            target_episode = connection.scalars(
+                select(Episode).where(Episode.path == path)
+            ).first()
+            if target_episode is None:
+                media_file_row = connection.scalars(
+                    select(MediaFile).where(
+                        MediaFile.path == path, MediaFile.media_type == "episode"
+                    )
+                ).first()
+                if media_file_row and media_file_row.media_id:
+                    target_episode = connection.get(Episode, media_file_row.media_id)
+        if target_episode is not None:
+            media_identifier = target_episode.id
+            if watched is not None:
+                target_episode.watched = watched
+            elif event == "complete":
+                target_episode.watched = True
+            elif event == "unwatched":
+                target_episode.watched = False
+            target_episode.last_played_at = timestamp
+            if position_seconds is not None:
+                target_episode.resume_position_seconds = position_seconds
+            _recount_episode_watched(connection, target_episode)
+    elif media_type == "movie":
+        if media_identifier is not None and media_identifier > 0:
+            target_movie = connection.get(Movie, media_identifier)
+        if target_movie is None and path:
+            target_movie = connection.scalars(
+                select(Movie).where(Movie.path == path)
+            ).first()
+            if target_movie is None:
+                media_file_row = connection.scalars(
+                    select(MediaFile).where(
+                        MediaFile.path == path, MediaFile.media_type == "movie"
+                    )
+                ).first()
+                if media_file_row and media_file_row.media_id:
+                    target_movie = connection.get(Movie, media_file_row.media_id)
+        if target_movie is not None:
+            media_identifier = target_movie.id
+            if watched is not None:
+                target_movie.watched = watched
+            elif event == "complete":
+                target_movie.watched = True
+            elif event == "unwatched":
+                target_movie.watched = False
+            movie_last_played = timestamp
+            target_movie.last_played_at = movie_last_played
+            if position_seconds is not None:
+                target_movie.resume_position_seconds = position_seconds
+
     watch_event = WatchEvent(
         media_type=media_type,
-        media_id=media_identifier,
+        media_id=media_identifier or 0,
         event=event,
         position_seconds=position_seconds,
         client_id=client_id,
         timestamp=timestamp,
     )
     connection.add(watch_event)
-
-    if media_type == "episode":
-        episode = connection.get(Episode, media_identifier)
-        if episode is not None:
-            if event == "complete":
-                episode.watched = True
-            episode.last_played_at = timestamp
-            if position_seconds is not None:
-                episode.resume_position_seconds = position_seconds
-            _recount_episode_watched(connection, episode)
-    elif media_type == "movie":
-        movie = connection.get(Movie, media_identifier)
-        if movie is not None:
-            if event == "complete":
-                movie.watched = True
-            movie.last_played_at = timestamp
-            if position_seconds is not None:
-                movie.resume_position_seconds = position_seconds
-
     connection.flush()
     logger.info(
-        "Recorded watch event media_type=%s media_id=%s event=%s",
+        "Recorded watch event media_type=%s media_id=%s event=%s path=%s watched=%s",
         media_type,
         media_identifier,
         event,
+        path,
+        watched,
     )
     return watch_event_to_dict(watch_event)
 
@@ -1954,6 +2011,27 @@ def apply_manual_metadata_mappings(
         if mapping_dictionary.get("runtime_seconds") is not None:
             target_episode.runtime_seconds = mapping_dictionary["runtime_seconds"]
 
+        if mapping_dictionary.get("tmdb_episode_identifier") is not None:
+            target_episode.tmdb_episode_identifier = str(
+                mapping_dictionary["tmdb_episode_identifier"]
+            )
+        if mapping_dictionary.get("myanimelist_anime_id") is not None:
+            target_episode.myanimelist_anime_id = mapping_dictionary[
+                "myanimelist_anime_id"
+            ]
+        if mapping_dictionary.get("myanimelist_episode_number") is not None:
+            target_episode.myanimelist_episode_number = mapping_dictionary[
+                "myanimelist_episode_number"
+            ]
+        if mapping_dictionary.get("watched") is not None:
+            target_episode.watched = bool(mapping_dictionary["watched"])
+            _recount_episode_watched(connection, target_episode)
+        if (
+            mapping_dictionary.get("myanimelist_id") is not None
+            and target_episode.season is not None
+        ):
+            target_episode.season.myanimelist_id = mapping_dictionary["myanimelist_id"]
+
         if mapping_dictionary.get("tmdb_identifier"):
             mapped_series_tmdb_identifier = str(mapping_dictionary["tmdb_identifier"])
 
@@ -1970,3 +2048,99 @@ def apply_manual_metadata_mappings(
         modified_count,
     )
     return series_to_dict(series)
+
+
+def apply_manual_episode_mappings(
+    connection: Session,
+    episode_mappings: list[Any],
+) -> dict[str, int]:
+    """Apply manual metadata and watch mappings across episodes by path or identifier.
+
+    Locks series metadata for all affected parent series.
+    Returns stats with count of modified episodes and affected series.
+    """
+    modified_count = 0
+    affected_series_identifiers: set[int] = set()
+
+    for mapping_data in episode_mappings:
+        mapping_dictionary = (
+            mapping_data.model_dump()
+            if hasattr(mapping_data, "model_dump")
+            else dict(mapping_data)
+        )
+        target_path = mapping_dictionary.get("path")
+        episode_identifier = mapping_dictionary.get("episode_identifier")
+
+        target_episode: Episode | None = None
+        if target_path:
+            target_episode = connection.scalars(
+                select(Episode).where(Episode.path == target_path)
+            ).first()
+            if target_episode is None:
+                media_file_row = connection.scalars(
+                    select(MediaFile).where(
+                        MediaFile.path == target_path, MediaFile.media_type == "episode"
+                    )
+                ).first()
+                if media_file_row and media_file_row.media_id:
+                    target_episode = connection.get(Episode, media_file_row.media_id)
+        if target_episode is None and episode_identifier:
+            target_episode = connection.get(Episode, episode_identifier)
+
+        if target_episode is None:
+            continue
+
+        if mapping_dictionary.get("name"):
+            target_episode.name = mapping_dictionary["name"]
+        if mapping_dictionary.get("episode_number") is not None:
+            target_episode.episode_number = mapping_dictionary["episode_number"]
+            target_episode.tmdb_number = mapping_dictionary["episode_number"]
+        if mapping_dictionary.get("overview") is not None:
+            target_episode.overview = mapping_dictionary["overview"]
+        if mapping_dictionary.get("air_date") is not None:
+            target_episode.air_date = mapping_dictionary["air_date"]
+        if mapping_dictionary.get("runtime_seconds") is not None:
+            target_episode.runtime_seconds = mapping_dictionary["runtime_seconds"]
+
+        if mapping_dictionary.get("tmdb_episode_identifier") is not None:
+            target_episode.tmdb_episode_identifier = str(
+                mapping_dictionary["tmdb_episode_identifier"]
+            )
+        if mapping_dictionary.get("myanimelist_anime_id") is not None:
+            target_episode.myanimelist_anime_id = mapping_dictionary[
+                "myanimelist_anime_id"
+            ]
+        if mapping_dictionary.get("myanimelist_episode_number") is not None:
+            target_episode.myanimelist_episode_number = mapping_dictionary[
+                "myanimelist_episode_number"
+            ]
+        if mapping_dictionary.get("watched") is not None:
+            target_episode.watched = bool(mapping_dictionary["watched"])
+            _recount_episode_watched(connection, target_episode)
+        if (
+            mapping_dictionary.get("myanimelist_id") is not None
+            and target_episode.season is not None
+        ):
+            target_episode.season.myanimelist_id = mapping_dictionary["myanimelist_id"]
+
+        if target_episode.season and target_episode.season.series:
+            parent_series = target_episode.season.series
+            parent_series.locked_metadata = True
+            if mapping_dictionary.get("tmdb_identifier"):
+                parent_series.tmdb_identifier = str(
+                    mapping_dictionary["tmdb_identifier"]
+                )
+            affected_series_identifiers.add(parent_series.id)
+
+        modified_count += 1
+
+    connection.flush()
+    logger.info(
+        "Applied manual episode mappings: %d episodes updated across %d series",
+        modified_count,
+        len(affected_series_identifiers),
+    )
+    return {
+        "modified_episodes": modified_count,
+        "affected_series": len(affected_series_identifiers),
+    }
