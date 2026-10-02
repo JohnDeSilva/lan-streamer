@@ -293,7 +293,9 @@ def test_main_signal_routing() -> None:
         )
         playback_slot("/path/to/vid.mkv")
         mock_controller_instance.set_video_playing.assert_called_once_with(True)
-        mock_player_instance.play_video.assert_called_once_with("/path/to/vid.mkv")
+        mock_player_instance.play_video.assert_called_once_with(
+            "/path/to/vid.mkv", canonical_media_path="/path/to/vid.mkv"
+        )
         mock_layout_instance.setCurrentIndex.assert_called_with(5)
 
         # Test player back button routes to detail view (index 1)
