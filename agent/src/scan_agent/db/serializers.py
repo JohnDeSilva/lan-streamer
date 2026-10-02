@@ -53,6 +53,7 @@ def episode_to_dict(episode: Episode) -> dict[str, Any]:
         "watched": episode.watched,
         "last_played_at": episode.last_played_at,
         "resume_position_seconds": episode.resume_position_seconds,
+        "last_played_position": episode.resume_position_seconds,
         "versions": [media_file_to_dict(mf) for mf in episode.media_files],
     }
 
@@ -124,6 +125,7 @@ def movie_to_dict(movie: Movie) -> dict[str, Any]:
         "watched": movie.watched,
         "last_played_at": movie.last_played_at,
         "resume_position_seconds": movie.resume_position_seconds,
+        "last_played_position": movie.resume_position_seconds,
         "versions": [media_file_to_dict(mf) for mf in movie.media_files],
     }
 

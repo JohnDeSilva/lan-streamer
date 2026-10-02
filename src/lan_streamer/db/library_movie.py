@@ -107,6 +107,18 @@ def _apply_movie_fields(movie: Movie, movie_data: dict[str, Any]) -> bool:
     if watched and not movie.watched:
         movie.watched = True
         changed = True
+    if (
+        movie_data.get("last_played_position") is not None
+        and movie.last_played_position != movie_data["last_played_position"]
+    ):
+        movie.last_played_position = movie_data["last_played_position"]
+        changed = True
+    if (
+        movie_data.get("last_played_at") is not None
+        and movie.last_played_at != movie_data["last_played_at"]
+    ):
+        movie.last_played_at = movie_data["last_played_at"]
+        changed = True
 
     return changed
 

@@ -65,8 +65,30 @@ def _merge_movie_records(
             )
 
     merged_movie["versions"] = existing_versions
-    if incoming_movie.get("watched") is True:
-        merged_movie["watched"] = True
+
+    existing_last_played = primary_movie.get("last_played_at") or 0
+    incoming_last_played = incoming_movie.get("last_played_at") or 0
+    if incoming_last_played > existing_last_played:
+        if incoming_movie.get("watched") is not None:
+            merged_movie["watched"] = bool(incoming_movie.get("watched"))
+        merged_movie["last_played_at"] = incoming_movie.get("last_played_at")
+        if incoming_movie.get("last_played_position") is not None:
+            merged_movie["last_played_position"] = incoming_movie.get(
+                "last_played_position"
+            )
+    elif existing_last_played > incoming_last_played:
+        pass
+    else:
+        if incoming_movie.get("watched") or primary_movie.get("watched"):
+            merged_movie["watched"] = True
+        if (
+            merged_movie.get("last_played_position") is None
+            and incoming_movie.get("last_played_position") is not None
+        ):
+            merged_movie["last_played_position"] = incoming_movie.get(
+                "last_played_position"
+            )
+
     if not merged_movie.get("myanimelist_anime_id") and incoming_movie.get(
         "myanimelist_anime_id"
     ):

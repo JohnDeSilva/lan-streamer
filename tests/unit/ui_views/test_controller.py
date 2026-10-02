@@ -1601,3 +1601,81 @@ def test_sync_episode_metadata_mappings_to_agents(mock_controller) -> None:
                 {"path": "/mnt/media/Show/S01E01.mkv", "tmdb_episode_identifier": "100"}
             ],
         )
+
+
+def test_sync_watched_to_agents_records_event_for_movie(mock_controller) -> None:
+    mock_controller._config.libraries = {
+        "Movie Lib": {
+            "type": "movie",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "mount_mappings": {"/mnt/movies": "/Volumes/movies"},
+                }
+            ],
+        }
+    }
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.record_watch_event"
+    ) as mock_record:
+        mock_controller._sync_watched_to_agents(
+            ["/Volumes/movies/Film.mkv"], True, media_type="movie"
+        )
+        mock_record.assert_called_once_with(
+            agent_url="http://127.0.0.1:8800",
+            media_type="movie",
+            path="/mnt/movies/Film.mkv",
+            event="complete",
+            watched=True,
+        )
+
+
+def test_update_playback_position_syncs_to_agents_and_updates_cache(
+    mock_controller,
+) -> None:
+    mock_controller._config.libraries = {
+        "Agent Lib": {
+            "type": "tv",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "mount_mappings": {"/mnt/media": "/Volumes/media"},
+                }
+            ],
+        }
+    }
+    mock_controller.cached_library_data = {
+        "Show A": {
+            "name": "Show A",
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "path": "/Volumes/media/Show/S01E01.mkv",
+                            "name": "Pilot",
+                            "last_played_position": 0,
+                        }
+                    ]
+                }
+            },
+        }
+    }
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.record_watch_event"
+    ) as mock_record:
+        mock_controller.update_playback_position("/Volumes/media/Show/S01E01.mkv", 540)
+        episode = mock_controller.cached_library_data["Show A"]["seasons"]["Season 1"][
+            "episodes"
+        ][0]
+        assert episode["last_played_position"] == 540
+        assert episode.get("last_played_at", 0) > 0
+
+        mock_record.assert_called_once_with(
+            agent_url="http://127.0.0.1:8800",
+            media_type="episode",
+            path="/mnt/media/Show/S01E01.mkv",
+            event="stop",
+            position_seconds=540.0,
+        )

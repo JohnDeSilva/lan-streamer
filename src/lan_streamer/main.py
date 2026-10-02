@@ -409,6 +409,14 @@ def _wire_navigation_signals(
 
     player_view.watched_marked.connect(on_watched_marked)
 
+    def on_playback_position_updated(file_path: str, position_seconds: int) -> None:
+        logger.info(
+            f"Signal received: updating playback position for '{file_path}' to {position_seconds}s"
+        )
+        controller.update_playback_position(file_path, position_seconds)
+
+    player_view.playback_position_updated.connect(on_playback_position_updated)
+
 
 def _wire_dialog_signals(
     controller: Controller,
