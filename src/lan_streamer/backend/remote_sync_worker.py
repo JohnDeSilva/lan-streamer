@@ -57,16 +57,205 @@ def _download_posters_for_items(
                         season_metadata_dict["poster_path"] = local_season_poster
 
 
+def _collect_movie_deltas_for_agent(
+    combined_items: dict[str, Any],
+    raw_agent_items: dict[str, Any] | None,
+    mount_mappings: dict[str, str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Collect watch and metadata deltas for movie libraries to avoid redundant agent sync."""
+    from lan_streamer.services.path_mapping_service import map_local_path_to_remote
+
+    watch_events_to_sync: list[dict[str, Any]] = []
+    metadata_mappings_to_sync: list[dict[str, Any]] = []
+
+    for movie_name, movie_data in combined_items.items():
+        if raw_agent_items is not None and movie_name not in raw_agent_items:
+            continue
+        remote_movie = (
+            raw_agent_items.get(movie_name, {}) if raw_agent_items is not None else {}
+        )
+        movie_path = movie_data.get("path")
+        if not movie_path:
+            continue
+
+        desktop_watched = bool(movie_data.get("watched"))
+        remote_watched = bool(remote_movie.get("watched"))
+        desktop_last_played = movie_data.get("last_played_at") or 0
+        remote_last_played = remote_movie.get("last_played_at") or 0
+
+        needs_watch_sync = (desktop_watched and not remote_watched) or (
+            desktop_watched and desktop_last_played > remote_last_played
+        )
+        if raw_agent_items is None and desktop_watched:
+            needs_watch_sync = True
+
+        if needs_watch_sync:
+            remote_path = map_local_path_to_remote(movie_path, mount_mappings)
+            watch_events_to_sync.append(
+                {
+                    "media_type": "movie",
+                    "path": remote_path,
+                    "event": "complete",
+                    "watched": True,
+                    "position_seconds": movie_data.get("last_played_position"),
+                }
+            )
+
+        desktop_mal_id = movie_data.get("myanimelist_anime_id")
+        remote_mal_id = remote_movie.get("myanimelist_anime_id")
+        needs_metadata_sync = bool(
+            desktop_mal_id
+            and (raw_agent_items is None or desktop_mal_id != remote_mal_id)
+        )
+        if needs_metadata_sync:
+            remote_path = map_local_path_to_remote(movie_path, mount_mappings)
+            metadata_mappings_to_sync.append(
+                {
+                    "path": remote_path,
+                    "myanimelist_anime_id": desktop_mal_id,
+                    "watched": movie_data.get("watched"),
+                }
+            )
+
+    return watch_events_to_sync, metadata_mappings_to_sync
+
+
+def _collect_tv_deltas_for_agent(
+    combined_items: dict[str, Any],
+    raw_agent_items: dict[str, Any] | None,
+    mount_mappings: dict[str, str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Collect watch and metadata deltas for TV libraries to avoid redundant agent sync."""
+    from lan_streamer.services.path_mapping_service import map_local_path_to_remote
+
+    watch_events_to_sync: list[dict[str, Any]] = []
+    metadata_mappings_to_sync: list[dict[str, Any]] = []
+
+    for series_name, series_data in combined_items.items():
+        if raw_agent_items is not None and series_name not in raw_agent_items:
+            continue
+        remote_series = (
+            raw_agent_items.get(series_name, {}) if raw_agent_items is not None else {}
+        )
+        remote_seasons = remote_series.get("seasons", {})
+
+        for season_name, season_data in series_data.get("seasons", {}).items():
+            season_mal_id = season_data.get("metadata", {}).get("myanimelist_id")
+            remote_season = remote_seasons.get(season_name, {})
+            remote_season_metadata = (
+                remote_season.get("metadata", {})
+                if isinstance(remote_season, dict)
+                else {}
+            )
+            remote_season_mal_id = remote_season_metadata.get("myanimelist_id")
+
+            remote_episodes_by_number: dict[int, dict[str, Any]] = {}
+            remote_episodes_by_path: dict[str, dict[str, Any]] = {}
+            if isinstance(remote_season, dict):
+                for remote_episode in remote_season.get("episodes", []):
+                    episode_number = remote_episode.get("episode_number")
+                    if episode_number is not None:
+                        remote_episodes_by_number[episode_number] = remote_episode
+                    if remote_episode.get("path"):
+                        remote_episodes_by_path[remote_episode["path"]] = remote_episode
+
+            for episode_data in season_data.get("episodes", []):
+                episode_path = episode_data.get("path")
+                if not episode_path:
+                    continue
+
+                episode_number = episode_data.get("episode_number")
+                remote_episode = None
+                if (
+                    episode_number is not None
+                    and episode_number in remote_episodes_by_number
+                ):
+                    remote_episode = remote_episodes_by_number[episode_number]
+                elif episode_path in remote_episodes_by_path:
+                    remote_episode = remote_episodes_by_path[episode_path]
+
+                if raw_agent_items is not None and remote_episode is None:
+                    continue
+
+                remote_episode_data = remote_episode or {}
+                desktop_watched = bool(episode_data.get("watched"))
+                remote_watched = bool(remote_episode_data.get("watched"))
+                desktop_last_played = episode_data.get("last_played_at") or 0
+                remote_last_played = remote_episode_data.get("last_played_at") or 0
+
+                needs_watch_sync = (desktop_watched and not remote_watched) or (
+                    desktop_watched and desktop_last_played > remote_last_played
+                )
+                if raw_agent_items is None and desktop_watched:
+                    needs_watch_sync = True
+
+                if needs_watch_sync:
+                    remote_path = map_local_path_to_remote(episode_path, mount_mappings)
+                    watch_events_to_sync.append(
+                        {
+                            "media_type": "episode",
+                            "path": remote_path,
+                            "event": "complete",
+                            "watched": True,
+                            "position_seconds": episode_data.get(
+                                "last_played_position"
+                            ),
+                        }
+                    )
+
+                desktop_tmdb_id = episode_data.get("tmdb_episode_identifier")
+                remote_tmdb_id = remote_episode_data.get("tmdb_episode_identifier")
+                desktop_mal_anime_id = episode_data.get("myanimelist_anime_id")
+                remote_mal_anime_id = remote_episode_data.get("myanimelist_anime_id")
+                desktop_mal_ep_num = episode_data.get("myanimelist_episode_number")
+                remote_mal_ep_num = remote_episode_data.get(
+                    "myanimelist_episode_number"
+                )
+
+                if raw_agent_items is None:
+                    needs_metadata_sync = bool(
+                        desktop_tmdb_id or desktop_mal_anime_id or season_mal_id
+                    )
+                else:
+                    needs_metadata_sync = False
+                    if desktop_tmdb_id and desktop_tmdb_id != remote_tmdb_id:
+                        needs_metadata_sync = True
+                    if (
+                        desktop_mal_anime_id
+                        and desktop_mal_anime_id != remote_mal_anime_id
+                    ):
+                        needs_metadata_sync = True
+                    if desktop_mal_ep_num and desktop_mal_ep_num != remote_mal_ep_num:
+                        needs_metadata_sync = True
+                    if season_mal_id and season_mal_id != remote_season_mal_id:
+                        needs_metadata_sync = True
+
+                if needs_metadata_sync:
+                    remote_path = map_local_path_to_remote(episode_path, mount_mappings)
+                    metadata_mappings_to_sync.append(
+                        {
+                            "path": remote_path,
+                            "tmdb_episode_identifier": desktop_tmdb_id,
+                            "myanimelist_id": season_mal_id,
+                            "myanimelist_anime_id": desktop_mal_anime_id,
+                            "myanimelist_episode_number": desktop_mal_ep_num,
+                            "watched": episode_data.get("watched"),
+                        }
+                    )
+
+    return watch_events_to_sync, metadata_mappings_to_sync
+
+
 def _back_sync_to_agents(
     agent_sources: list[dict[str, Any]],
     library_configuration: dict[str, Any],
     library_type: str,
     combined_items: dict[str, Any],
+    agent_source_items: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """Synchronize local watch states and manual metadata mappings back to agent sources."""
     import requests
 
-    from lan_streamer.services.path_mapping_service import map_local_path_to_remote
     from lan_streamer.services.scan_agent_client import (
         ScanAgentConnectionError,
         scan_agent_client,
@@ -80,66 +269,22 @@ def _back_sync_to_agents(
         if "mount_mappings" in agent_source:
             mount_mappings.update(agent_source.get("mount_mappings", {}))
 
-        watch_events_to_sync: list[dict[str, Any]] = []
-        metadata_mappings_to_sync: list[dict[str, Any]] = []
+        raw_agent_items = (
+            agent_source_items.get(agent_url) if agent_source_items else None
+        )
 
-        for _item_name, item_data in combined_items.items():
-            if library_type == "movie":
-                movie_path = item_data.get("path")
-                if movie_path and item_data.get("watched"):
-                    remote_path = map_local_path_to_remote(movie_path, mount_mappings)
-                    watch_events_to_sync.append(
-                        {
-                            "media_type": "movie",
-                            "path": remote_path,
-                            "event": "complete",
-                            "watched": True,
-                            "position_seconds": item_data.get("last_played_position"),
-                        }
-                    )
-            else:
-                for season_data in item_data.get("seasons", {}).values():
-                    season_mal_id = season_data.get("metadata", {}).get(
-                        "myanimelist_id"
-                    )
-                    for episode_data in season_data.get("episodes", []):
-                        episode_path = episode_data.get("path")
-                        if not episode_path:
-                            continue
-                        remote_path = map_local_path_to_remote(
-                            episode_path, mount_mappings
-                        )
-                        if episode_data.get("watched"):
-                            watch_events_to_sync.append(
-                                {
-                                    "media_type": "episode",
-                                    "path": remote_path,
-                                    "event": "complete",
-                                    "watched": True,
-                                    "position_seconds": episode_data.get(
-                                        "last_played_position"
-                                    ),
-                                }
-                            )
-                        if episode_data.get("myanimelist_anime_id") or episode_data.get(
-                            "tmdb_episode_identifier"
-                        ):
-                            metadata_mappings_to_sync.append(
-                                {
-                                    "path": remote_path,
-                                    "tmdb_episode_identifier": episode_data.get(
-                                        "tmdb_episode_identifier"
-                                    ),
-                                    "myanimelist_id": season_mal_id,
-                                    "myanimelist_anime_id": episode_data.get(
-                                        "myanimelist_anime_id"
-                                    ),
-                                    "myanimelist_episode_number": episode_data.get(
-                                        "myanimelist_episode_number"
-                                    ),
-                                    "watched": episode_data.get("watched"),
-                                }
-                            )
+        if library_type == "movie":
+            watch_events_to_sync, metadata_mappings_to_sync = (
+                _collect_movie_deltas_for_agent(
+                    combined_items, raw_agent_items, mount_mappings
+                )
+            )
+        else:
+            watch_events_to_sync, metadata_mappings_to_sync = (
+                _collect_tv_deltas_for_agent(
+                    combined_items, raw_agent_items, mount_mappings
+                )
+            )
 
         if watch_events_to_sync:
             try:
@@ -245,6 +390,7 @@ def sync_remote_library_from_agent(
 
         library_type = library_configuration.get("type", "tv")
         combined_items: dict[str, Any] = {}
+        agent_source_items: dict[str, dict[str, Any]] = {}
 
         for agent_source in agent_sources:
             agent_url = agent_source.get("agent_url", "")
@@ -257,6 +403,9 @@ def sync_remote_library_from_agent(
             remote_items = scan_agent_client.fetch_library_items(
                 agent_url, str(source_identifier)
             )
+            if agent_url not in agent_source_items:
+                agent_source_items[agent_url] = {}
+            agent_source_items[agent_url].update(remote_items)
 
             _download_posters_for_items(remote_items, library_type, agent_url)
 
@@ -318,6 +467,7 @@ def sync_remote_library_from_agent(
             library_configuration=library_configuration,
             library_type=library_type,
             combined_items=combined_items,
+            agent_source_items=agent_source_items,
         )
 
         result["success"] = True
