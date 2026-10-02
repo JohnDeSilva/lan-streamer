@@ -191,17 +191,7 @@ def test_remote_sync_worker_back_syncs_watch_and_metadata() -> None:
             "agent_url": "http://127.0.0.1:8800",
             "mount_mappings": {"/mnt/share": "/Volumes/share"},
         }
-        database = MagicMock()
-        database.load_library.return_value = {}
-        worker = RemoteSyncWorker(
-            library_name="Anime Remote",
-            library_configuration=library_configuration,
-            database=database,
-            async_task_manager=task_manager,
-            parent=parent,
-        )
-
-        mock_items = {
+        local_desktop_items = {
             "Anime Series": {
                 "name": "Anime Series",
                 "seasons": {
@@ -210,6 +200,7 @@ def test_remote_sync_worker_back_syncs_watch_and_metadata() -> None:
                         "episodes": [
                             {
                                 "path": "/Volumes/share/Anime/S01E01.mkv",
+                                "episode_number": 1,
                                 "watched": True,
                                 "last_played_position": 350,
                                 "tmdb_episode_identifier": "tmdb-ep-99",
@@ -221,11 +212,38 @@ def test_remote_sync_worker_back_syncs_watch_and_metadata() -> None:
                 },
             }
         }
+        database = MagicMock()
+        database.load_library.return_value = local_desktop_items
+        worker = RemoteSyncWorker(
+            library_name="Anime Remote",
+            library_configuration=library_configuration,
+            database=database,
+            async_task_manager=task_manager,
+            parent=parent,
+        )
+
+        mock_agent_items = {
+            "Anime Series": {
+                "name": "Anime Series",
+                "seasons": {
+                    "Season 1": {
+                        "metadata": {},
+                        "episodes": [
+                            {
+                                "path": "/mnt/share/Anime/S01E01.mkv",
+                                "episode_number": 1,
+                                "watched": False,
+                            }
+                        ],
+                    }
+                },
+            }
+        }
 
         with (
             patch(
                 "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
-                return_value=mock_items,
+                return_value=mock_agent_items,
             ),
             patch(
                 "lan_streamer.services.scan_agent_client.scan_agent_client.sync_watch_events"
@@ -256,5 +274,70 @@ def test_remote_sync_worker_back_syncs_watch_and_metadata() -> None:
         assert mappings[0]["myanimelist_id"] == 9999
         assert mappings[0]["myanimelist_anime_id"] == 9999
         assert mappings[0]["myanimelist_episode_number"] == 1
+
+    _run(run_test())
+
+
+def test_remote_sync_worker_skips_back_sync_when_already_in_sync() -> None:
+    parent = QObject()
+    task_manager = AsyncTaskManager(parent=parent)
+
+    async def run_test() -> None:
+        library_configuration = {
+            "management_type": "remote",
+            "type": "tv",
+            "agent_url": "http://127.0.0.1:8800",
+            "mount_mappings": {"/mnt/share": "/Volumes/share"},
+        }
+        identical_items = {
+            "Anime Series": {
+                "name": "Anime Series",
+                "seasons": {
+                    "Season 1": {
+                        "metadata": {"myanimelist_id": 9999},
+                        "episodes": [
+                            {
+                                "path": "/Volumes/share/Anime/S01E01.mkv",
+                                "episode_number": 1,
+                                "watched": True,
+                                "last_played_position": 350,
+                                "tmdb_episode_identifier": "tmdb-ep-99",
+                                "myanimelist_anime_id": 9999,
+                                "myanimelist_episode_number": 1,
+                            }
+                        ],
+                    }
+                },
+            }
+        }
+        database = MagicMock()
+        database.load_library.return_value = identical_items
+        worker = RemoteSyncWorker(
+            library_name="Anime Remote",
+            library_configuration=library_configuration,
+            database=database,
+            async_task_manager=task_manager,
+            parent=parent,
+        )
+
+        with (
+            patch(
+                "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+                return_value=identical_items,
+            ),
+            patch(
+                "lan_streamer.services.scan_agent_client.scan_agent_client.sync_watch_events"
+            ) as mock_sync_watch,
+            patch(
+                "lan_streamer.services.scan_agent_client.scan_agent_client.apply_manual_metadata_mappings"
+            ) as mock_sync_mappings,
+        ):
+            result = await worker.run_async()
+
+        assert result["success"] is True
+        database.save_library.assert_called_once()
+        # When desktop and agent are already in sync, no redundant network calls are made
+        mock_sync_watch.assert_not_called()
+        mock_sync_mappings.assert_not_called()
 
     _run(run_test())
