@@ -42,7 +42,7 @@ LAN Streamer is built to play your media files directly and natively without any
 *   **🛡️ Graceful Offline Handling**: Gracefully handles temporarily unavailable files and root directories (e.g. disconnected NAS or external drives) during a scan, preventing data loss or premature library cleanup.
 
 ### 🎨 UI & Settings Features
-*   **📑 Library Tabs & Relational Multi-Library Deduplication**: Group any number of local and remote libraries into custom tabs (configured via the **Library Tabs** settings tab). Series or movies spanning multiple root directories or multiple libraries within the same tab are relationally unified into single canonical records with combined seasons, episodes, and media file versions. Marking items watched propagates across all associated libraries.
+*   **📑 Library Tabs**: Libraries are displayed directly in tabs along the top of the main screen (alongside the optional Combined View) for instant switching between configured media libraries.
 *   **⚙️ Settings-Only Per-Library Scanning**: Scanning operations are centralized exclusively in the Settings dialog on a per-library basis. Target libraries can be selected under **Library Management** for full scans, pass-specific scans (File Discovery, Metadata Resolution, Technical ffprobe), and missing-file cleanup, or triggered directly from **Libraries** and **Remote Sources**.
 *   **📁 Multi-Source & Multi-Root Libraries**: Organize content into flexible libraries that aggregate multiple sources—including local directory paths (active and archive) and remote agent media sources—into a single unified media library without artificial library splitting. Individual directories can be configured for **Active** (frequently changing, scanned on routine and combined view scans) and **Archive** (static/rarely changing, scanned only via **Full Scan** to prevent network bottlenecks and disk thrashing).
 *   **🏠 Combined View**: Configure a global **Combined Library View** in the settings menu to aggregate content from all or selected libraries into custom scrollable rows (e.g. Next Up, Recently Added, or custom smart queries). The main toolbar's sort and order selector dropdowns are automatically hidden when viewing the Combined Library View to prevent layout clutter.
@@ -122,12 +122,12 @@ make run-agent    # Scan agent only (foreground via Docker Compose)
 2.  **Configure Jellyfin (Optional)**: In **Settings... > Remote API's**, enter your Jellyfin Server URL and API Key.
 3.  **Configure OpenSubtitles (Optional)**: In **Settings... > Remote API's**, enter your OpenSubtitles credentials and API Key.
 4.  **Configure MyAnimeList (Optional)**: In **Settings... > Remote API's**, enter your MyAnimeList Client ID and Client Secret, and click **Link MAL Account...** to link your account using the browser-based OAuth flow.
-5.  **Add Libraries**: In **Settings... > Libraries Setup**, define your media libraries. Each library can aggregate multiple local directory paths (active and archive) and/or remote agent media sources. Check **Anime Mode** for libraries containing anime series you want to map to MyAnimeList.
-6.  **Connect Remote Scan Agents (Optional)**: In **Settings... > Remote Media Sources**, enter your Scan Agent URL (e.g., `http://192.168.1.100:8800`) and click **Connect to Agent**. Enable the media sources you want to track and map each remote storage root directory to its local SMB/NFS mount point.
-7.  **Organize Library Tabs**: In **Settings... > Library Tabs**, create and configure tabs grouping any combination of libraries. Media items spanning multiple root paths or libraries assigned to the same tab are automatically unified into single deduplicated entries.
+5.  **Add Libraries**: In **Settings... > Libraries**, define your media libraries. Each library can aggregate multiple local directory paths (active and archive) and/or remote agent media sources. Check **Anime Mode** for libraries containing anime series you want to map to MyAnimeList.
+6.  **Connect Remote Scan Agents (Optional)**: In **Settings... > Remote Sources**, enter your Scan Agent URL (e.g., `http://192.168.1.100:8800`) and click **Connect to Agent**. Enable the media sources you want to track and map each remote storage root directory to its local SMB/NFS mount point.
+7.  **Navigate Libraries**: Each configured library is automatically displayed in a dedicated tab along the top of the main window (plus Combined View if enabled) for seamless switching.
 8.  **Scan Libraries**: Scanning is managed within **Settings...**:
-    - **Libraries Setup**: Click **Scan Library** to scan active roots, archive paths, or refresh metadata for the selected library (or sync its remote agent media sources).
-    - **Remote Media Sources**: Click **Sync / Scan Source** to trigger a remote agent scan and sync metadata.
+    - **Libraries**: Click **Scan Library** to scan active roots, archive paths, or refresh metadata for the selected library (or sync its remote agent media sources).
+    - **Remote Sources**: Click **Sync / Scan Source** to trigger a remote agent scan and sync metadata.
     - **Library Management**: Click **Scan Files** to run a quick scan across all active local libraries.
 
 ---

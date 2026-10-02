@@ -77,7 +77,10 @@ def test_update_dialog_finished_success(dialog, qtbot) -> None:
             mock_chmod.assert_called_once_with(
                 Path("/path/to/downloaded/update"), 0o755
             )  # chmod called on path
-        mock_launch.assert_called_once_with("/path/to/downloaded/update")
+        if sys.platform == "darwin":
+            mock_launch.assert_called_once_with("open", ["/path/to/downloaded/update"])
+        else:
+            mock_launch.assert_called_once_with("/path/to/downloaded/update")
         mock_quit.assert_called_once()
 
 

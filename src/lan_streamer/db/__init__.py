@@ -9,9 +9,12 @@ from lan_streamer.db.connection import (
 )
 from lan_streamer.db.library import (
     cleanup_library,
+    delete_library_records,
     get_directory_mtime,
     load_library,
     load_movie_library,
+    reassign_library_items_by_root_path,
+    rename_library_records,
     save_directory_mtime,
     save_library,
     save_movie_data,
