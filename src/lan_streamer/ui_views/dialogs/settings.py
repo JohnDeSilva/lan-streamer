@@ -307,10 +307,10 @@ class SettingsDialog(QDialog):
         # Dedicated Library Tabs Setup Pane
         tabs_tab: QWidget = self._build_tabs_tab()
 
-        # Local Libraries Management Pane
+        # Libraries Management Pane
         local_libraries_tab: QWidget = self._build_libraries_tab()
 
-        # Dedicated Remote Libraries Management Pane
+        # Dedicated Remote Sources Management Pane
         remote_libraries_tab: QWidget = self._build_remote_libraries_tab()
 
         # Combined View Setup Pane
@@ -328,8 +328,8 @@ class SettingsDialog(QDialog):
         # Add tabs in the requested order
         tab_container.addTab(management_tab, "Library Management")
         tab_container.addTab(tabs_tab, "Library Tabs")
-        tab_container.addTab(local_libraries_tab, "Local Libraries Setup")
-        tab_container.addTab(remote_libraries_tab, "Remote Libraries Setup")
+        tab_container.addTab(local_libraries_tab, "Libraries")
+        tab_container.addTab(remote_libraries_tab, "Remote Sources")
         tab_container.addTab(combined_tab, "Combined View")
         tab_container.addTab(player_tab, "Video Player")
         tab_container.addTab(connectivity_tab, "Remote API's")
@@ -562,7 +562,7 @@ class SettingsDialog(QDialog):
         return libraries_tab
 
     def _build_remote_libraries_tab(self) -> QWidget:
-        """Builds the dedicated Remote Libraries Setup tab."""
+        """Builds the dedicated Remote Sources tab."""
         remote_tab: QWidget = QWidget()
         remote_main_layout: QVBoxLayout = QVBoxLayout(remote_tab)
         remote_main_layout.setSpacing(12)
@@ -571,7 +571,7 @@ class SettingsDialog(QDialog):
         # Instructions banner
         instructions_label = QLabel(
             "Connect to a remote Scan Agent running on your network (e.g. Docker / NAS server).\n"
-            "Once connected, check the libraries you want to enable and map their remote directories to local mounts for playback."
+            "Once connected, check the remote sources you want to enable and map their remote directories to local mounts for playback."
         )
         instructions_label.setStyleSheet("color: #9ca3af; font-size: 11px;")
         instructions_label.setWordWrap(True)
@@ -632,7 +632,7 @@ class SettingsDialog(QDialog):
 
         self.remove_remote_agent_button.setText("Remove Agent")
         self.remove_remote_agent_button.setToolTip(
-            "Remove the selected scan agent and its remote libraries."
+            "Remove the selected scan agent and its remote sources."
         )
         self.remove_remote_agent_button.clicked.connect(
             self.remove_selected_remote_agent
@@ -641,12 +641,12 @@ class SettingsDialog(QDialog):
 
         self.refresh_remote_agents_button.setText("Refresh Status")
         self.refresh_remote_agents_button.setToolTip(
-            "Re-check reachability and fetch library updates for all configured agents."
+            "Re-check reachability and fetch source updates for all configured agents."
         )
         self.refresh_remote_agents_button.clicked.connect(self.refresh_remote_agents)
         actions_layout.addWidget(self.refresh_remote_agents_button)
 
-        self.remote_library_scan_button.setText("Sync / Scan Media Source")
+        self.remote_library_scan_button.setText("Sync / Scan Remote Source")
         self.remote_library_scan_button.setToolTip(
             "Trigger synchronization and scanning for the selected remote media source."
         )
