@@ -10,7 +10,7 @@ LibraryMediaType = Literal["tv", "anime", "movie"]
 MediaTypeTv = LibraryMediaType
 RenameTarget = Literal["series", "movie"]
 WatchMediaType = Literal["episode", "movie"]
-WatchEventName = Literal["play", "stop", "complete"]
+WatchEventName = Literal["play", "stop", "complete", "unwatched"]
 
 
 class ConfigUpdate(BaseModel):
@@ -113,11 +113,13 @@ class WatchEventWrite(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    media_type: WatchMediaType
-    media_id: int
-    event: WatchEventName
+    media_type: WatchMediaType = "episode"
+    media_id: int | None = None
+    path: str | None = None
+    event: WatchEventName = "complete"
     position_seconds: float | None = None
     client_id: str | None = None
+    watched: bool | None = None
 
 
 class ManualEpisodeMapping(BaseModel):
@@ -135,6 +137,10 @@ class ManualEpisodeMapping(BaseModel):
     air_date: str | None = None
     overview: str | None = None
     runtime_seconds: int | None = None
+    myanimelist_id: int | None = None
+    myanimelist_anime_id: int | None = None
+    myanimelist_episode_number: int | None = None
+    watched: bool | None = None
 
 
 class ManualMetadataMappingRequest(BaseModel):

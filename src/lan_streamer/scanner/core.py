@@ -685,6 +685,47 @@ def _merge_episodes_by_number(
                 existing_entry["path"] = episode["path"]
             if not existing_entry.get("name") and episode.get("name"):
                 existing_entry["name"] = episode["name"]
+
+            # Reconcile watched status and playback offset
+            existing_last_played = existing_entry.get("last_played_at") or 0
+            incoming_last_played = episode.get("last_played_at") or 0
+            if incoming_last_played > existing_last_played:
+                existing_entry["watched"] = bool(episode.get("watched"))
+                existing_entry["last_played_at"] = episode.get("last_played_at")
+                if episode.get("last_played_position") is not None:
+                    existing_entry["last_played_position"] = episode.get(
+                        "last_played_position"
+                    )
+            elif existing_last_played > incoming_last_played:
+                pass
+            else:
+                if episode.get("watched") or existing_entry.get("watched"):
+                    existing_entry["watched"] = True
+                if (
+                    existing_entry.get("last_played_position") is None
+                    and episode.get("last_played_position") is not None
+                ):
+                    existing_entry["last_played_position"] = episode.get(
+                        "last_played_position"
+                    )
+
+            # Reconcile episode metadata maps
+            if not existing_entry.get("tmdb_episode_identifier") and episode.get(
+                "tmdb_episode_identifier"
+            ):
+                existing_entry["tmdb_episode_identifier"] = episode[
+                    "tmdb_episode_identifier"
+                ]
+            if not existing_entry.get("myanimelist_anime_id") and episode.get(
+                "myanimelist_anime_id"
+            ):
+                existing_entry["myanimelist_anime_id"] = episode["myanimelist_anime_id"]
+            if not existing_entry.get("myanimelist_episode_number") and episode.get(
+                "myanimelist_episode_number"
+            ):
+                existing_entry["myanimelist_episode_number"] = episode[
+                    "myanimelist_episode_number"
+                ]
         else:
             entry = dict(episode)
             entry["versions"] = list(episode.get("versions", []))
@@ -711,6 +752,17 @@ def merge_series_data(
         incoming_season = incoming_seasons.get(season_name)
         if existing_season is not None and incoming_season is not None:
             merged_season = {**existing_season, **incoming_season}
+            merged_metadata = {
+                **existing_season.get("metadata", {}),
+                **incoming_season.get("metadata", {}),
+            }
+            if not merged_metadata.get("myanimelist_id"):
+                merged_metadata["myanimelist_id"] = existing_season.get(
+                    "metadata", {}
+                ).get("myanimelist_id") or incoming_season.get("metadata", {}).get(
+                    "myanimelist_id"
+                )
+            merged_season["metadata"] = merged_metadata
             merged_season["episodes"] = _merge_episodes_by_number(
                 existing_season.get("episodes", []),
                 incoming_season.get("episodes", []),

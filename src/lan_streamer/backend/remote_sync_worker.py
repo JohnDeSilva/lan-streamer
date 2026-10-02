@@ -57,6 +57,125 @@ def _download_posters_for_items(
                         season_metadata_dict["poster_path"] = local_season_poster
 
 
+def _back_sync_to_agents(
+    agent_sources: list[dict[str, Any]],
+    library_configuration: dict[str, Any],
+    library_type: str,
+    combined_items: dict[str, Any],
+) -> None:
+    """Synchronize local watch states and manual metadata mappings back to agent sources."""
+    import requests
+
+    from lan_streamer.services.path_mapping_service import map_local_path_to_remote
+    from lan_streamer.services.scan_agent_client import (
+        ScanAgentConnectionError,
+        scan_agent_client,
+    )
+
+    for agent_source in agent_sources:
+        agent_url = agent_source.get("agent_url", "")
+        if not agent_url:
+            continue
+        mount_mappings = dict(library_configuration.get("mount_mappings", {}))
+        if "mount_mappings" in agent_source:
+            mount_mappings.update(agent_source.get("mount_mappings", {}))
+
+        watch_events_to_sync: list[dict[str, Any]] = []
+        metadata_mappings_to_sync: list[dict[str, Any]] = []
+
+        for _item_name, item_data in combined_items.items():
+            if library_type == "movie":
+                movie_path = item_data.get("path")
+                if movie_path and item_data.get("watched"):
+                    remote_path = map_local_path_to_remote(movie_path, mount_mappings)
+                    watch_events_to_sync.append(
+                        {
+                            "media_type": "movie",
+                            "path": remote_path,
+                            "event": "complete",
+                            "watched": True,
+                            "position_seconds": item_data.get("last_played_position"),
+                        }
+                    )
+            else:
+                for season_data in item_data.get("seasons", {}).values():
+                    season_mal_id = season_data.get("metadata", {}).get(
+                        "myanimelist_id"
+                    )
+                    for episode_data in season_data.get("episodes", []):
+                        episode_path = episode_data.get("path")
+                        if not episode_path:
+                            continue
+                        remote_path = map_local_path_to_remote(
+                            episode_path, mount_mappings
+                        )
+                        if episode_data.get("watched"):
+                            watch_events_to_sync.append(
+                                {
+                                    "media_type": "episode",
+                                    "path": remote_path,
+                                    "event": "complete",
+                                    "watched": True,
+                                    "position_seconds": episode_data.get(
+                                        "last_played_position"
+                                    ),
+                                }
+                            )
+                        if episode_data.get("myanimelist_anime_id") or episode_data.get(
+                            "tmdb_episode_identifier"
+                        ):
+                            metadata_mappings_to_sync.append(
+                                {
+                                    "path": remote_path,
+                                    "tmdb_episode_identifier": episode_data.get(
+                                        "tmdb_episode_identifier"
+                                    ),
+                                    "myanimelist_id": season_mal_id,
+                                    "myanimelist_anime_id": episode_data.get(
+                                        "myanimelist_anime_id"
+                                    ),
+                                    "myanimelist_episode_number": episode_data.get(
+                                        "myanimelist_episode_number"
+                                    ),
+                                    "watched": episode_data.get("watched"),
+                                }
+                            )
+
+        if watch_events_to_sync:
+            try:
+                scan_agent_client.sync_watch_events(agent_url, watch_events_to_sync)
+            except (
+                ScanAgentConnectionError,
+                requests.RequestException,
+                OSError,
+                ValueError,
+                KeyError,
+            ) as sync_watch_error:
+                logger.debug(
+                    "Failed back-syncing watch events to agent '%s': %s",
+                    agent_url,
+                    sync_watch_error,
+                )
+
+        if metadata_mappings_to_sync:
+            try:
+                scan_agent_client.apply_manual_metadata_mappings(
+                    agent_url, metadata_mappings_to_sync
+                )
+            except (
+                ScanAgentConnectionError,
+                requests.RequestException,
+                OSError,
+                ValueError,
+                KeyError,
+            ) as sync_metadata_error:
+                logger.debug(
+                    "Failed back-syncing metadata mappings to agent '%s': %s",
+                    agent_url,
+                    sync_metadata_error,
+                )
+
+
 def sync_remote_library_from_agent(
     library_name: str,
     library_configuration: dict[str, Any],
@@ -192,6 +311,14 @@ def sync_remote_library_from_agent(
             database.save_movie_library(library_name, combined_items)
         else:
             database.save_library(library_name, combined_items)
+
+        # Synchronize watch state and metadata maps back to agents
+        _back_sync_to_agents(
+            agent_sources=agent_sources,
+            library_configuration=library_configuration,
+            library_type=library_type,
+            combined_items=combined_items,
+        )
 
         result["success"] = True
         result["items"] = len(combined_items)

@@ -52,8 +52,32 @@ def create_watch_event(
     return record_watch_event(
         session,
         event.media_type,
-        event.media_id,
-        event.event,
+        media_identifier=event.media_id,
+        event=event.event,
         position_seconds=event.position_seconds,
         client_id=event.client_id,
+        path=event.path,
+        watched=event.watched,
     )
+
+
+@watch_router.post("/watch/sync")
+def sync_watch_events(
+    events: list[WatchEventWrite],
+    session: Session = Depends(get_database_session),
+) -> dict[str, Any]:
+    """Bulk update or sync watch events from a desktop client."""
+    updated_count = 0
+    for event_item in events:
+        record_watch_event(
+            session,
+            event_item.media_type,
+            media_identifier=event_item.media_id,
+            event=event_item.event,
+            position_seconds=event_item.position_seconds,
+            client_id=event_item.client_id,
+            path=event_item.path,
+            watched=event_item.watched,
+        )
+        updated_count += 1
+    return {"status": "synced", "updated_count": updated_count}

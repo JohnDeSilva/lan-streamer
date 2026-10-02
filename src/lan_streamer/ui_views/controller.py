@@ -575,8 +575,192 @@ class Controller(QObject):
             name=task_name,
         )
 
+        # Synchronize watched status to remote scan agents
+        self._sync_watched_to_agents([absolute_path], watched)
+
         if not self.is_video_playing:
             self.library_loaded.emit()
+
+    def _find_agent_sources_and_remotes_for_path(
+        self, file_path: str, target_libraries: list[str] | None = None
+    ) -> list[tuple[str, str]]:
+        """Find (agent_url, remote_path) pairs for a local or remote media file path."""
+        from lan_streamer.services.path_mapping_service import (
+            map_local_path_to_remote,
+        )
+        from lan_streamer.system.config import get_library_sources
+
+        results: list[tuple[str, str]] = []
+        libraries_to_check = (
+            {
+                library_name: self._config.libraries[library_name]
+                for library_name in target_libraries
+                if library_name in self._config.libraries
+            }
+            if target_libraries
+            else self._config.libraries
+        )
+
+        for library_configuration in libraries_to_check.values():
+            sources = get_library_sources(library_configuration)
+            mount_mappings = library_configuration.get("mount_mappings", {})
+            for source_entry in sources:
+                if source_entry.get("type") == "agent" and source_entry.get(
+                    "agent_url"
+                ):
+                    agent_url = source_entry["agent_url"]
+                    source_mount_mappings = dict(mount_mappings)
+                    if "mount_mappings" in source_entry:
+                        source_mount_mappings.update(
+                            source_entry.get("mount_mappings", {})
+                        )
+                    remote_path = map_local_path_to_remote(
+                        file_path, source_mount_mappings
+                    )
+                    results.append((agent_url, remote_path))
+
+        return results
+
+    def _sync_watched_to_agents(
+        self,
+        file_paths: list[str],
+        watched: bool,
+        target_libraries: list[str] | None = None,
+    ) -> None:
+        """Asynchronously dispatch watched status synchronization to relevant remote scan agents."""
+        if not file_paths:
+            return
+
+        def run_sync() -> None:
+            import requests
+
+            from lan_streamer.services.scan_agent_client import (
+                ScanAgentConnectionError,
+                scan_agent_client,
+            )
+
+            for file_path in file_paths:
+                agent_targets = self._find_agent_sources_and_remotes_for_path(
+                    file_path, target_libraries
+                )
+                for agent_url, remote_path in agent_targets:
+                    try:
+                        scan_agent_client.record_watch_event(
+                            agent_url=agent_url,
+                            media_type="episode",
+                            path=remote_path,
+                            event="complete" if watched else "unwatched",
+                            watched=watched,
+                        )
+                    except (
+                        ScanAgentConnectionError,
+                        requests.RequestException,
+                        OSError,
+                        ValueError,
+                        KeyError,
+                    ) as sync_error:
+                        logger.debug(
+                            "Failed syncing watched status to agent '%s' for '%s': %s",
+                            agent_url,
+                            remote_path,
+                            sync_error,
+                        )
+
+        async def run_async_task() -> None:
+            from lan_streamer.system.async_utils import run_in_executor
+
+            await run_in_executor(run_sync)
+
+        task_name = f"agent_watch_sync_{uuid.uuid4().hex}"
+        self.async_task_manager.create_task(run_async_task(), name=task_name)
+
+    def sync_episode_metadata_mappings_to_agents(
+        self,
+        library_name: str,
+        episode_mappings: list[dict[str, Any]],
+    ) -> None:
+        """Asynchronously sync manual episode metadata mappings to all agent sources configured for a library."""
+        if not episode_mappings:
+            return
+
+        library_configuration = self._config.libraries.get(library_name, {})
+        from lan_streamer.services.path_mapping_service import (
+            map_local_path_to_remote,
+        )
+        from lan_streamer.system.config import get_library_sources
+
+        sources = get_library_sources(library_configuration)
+        agent_urls = [
+            source_entry["agent_url"]
+            for source_entry in sources
+            if source_entry.get("type") == "agent" and source_entry.get("agent_url")
+        ]
+        if not agent_urls and library_configuration.get("agent_url"):
+            agent_urls = [library_configuration["agent_url"]]
+
+        if not agent_urls:
+            return
+
+        mount_mappings = library_configuration.get("mount_mappings", {})
+
+        def run_sync() -> None:
+            import requests
+
+            from lan_streamer.services.scan_agent_client import (
+                ScanAgentConnectionError,
+                scan_agent_client,
+            )
+
+            for agent_url in agent_urls:
+                source_mount_mappings = dict(mount_mappings)
+                for source_entry in sources:
+                    if (
+                        source_entry.get("agent_url") == agent_url
+                        and "mount_mappings" in source_entry
+                    ):
+                        source_mount_mappings.update(
+                            source_entry.get("mount_mappings", {})
+                        )
+                remote_mappings: list[dict[str, Any]] = []
+                for mapping in episode_mappings:
+                    mapping_copy = dict(mapping)
+                    if mapping_copy.get("path"):
+                        mapping_copy["path"] = map_local_path_to_remote(
+                            mapping_copy["path"], source_mount_mappings
+                        )
+                    remote_mappings.append(mapping_copy)
+
+                try:
+                    scan_agent_client.apply_manual_metadata_mappings(
+                        agent_url=agent_url,
+                        episode_mappings=remote_mappings,
+                    )
+                    logger.info(
+                        "Synchronized %d episode metadata mappings to agent '%s' for library '%s'",
+                        len(remote_mappings),
+                        agent_url,
+                        library_name,
+                    )
+                except (
+                    ScanAgentConnectionError,
+                    requests.RequestException,
+                    OSError,
+                    ValueError,
+                    KeyError,
+                ) as sync_error:
+                    logger.warning(
+                        "Failed synchronizing episode metadata mappings to agent '%s': %s",
+                        agent_url,
+                        sync_error,
+                    )
+
+        async def run_async_task() -> None:
+            from lan_streamer.system.async_utils import run_in_executor
+
+            await run_in_executor(run_sync)
+
+        task_name = f"metadata_map_sync_{uuid.uuid4().hex}"
+        self.async_task_manager.create_task(run_async_task(), name=task_name)
 
     def mark_season_watched(
         self, series_name: str, season_name: str, watched: bool = True
@@ -596,9 +780,11 @@ class Controller(QObject):
         season_data: dict[str, Any] = series_data.get("seasons", {}).get(
             season_name, {}
         )
+        affected_paths: list[str] = []
         for episode_record in season_data.get("episodes", []):
             if episode_record.get("path"):
                 episode_record["watched"] = watched
+                affected_paths.append(episode_record["path"])
 
         self._cache_series_metrics()
 
@@ -608,6 +794,9 @@ class Controller(QObject):
             )
             if changed_hashes:
                 self.smart_rows_updated.emit(changed_hashes)
+
+        # Synchronize watched status to remote scan agents
+        self._sync_watched_to_agents(affected_paths, watched, target_libraries)
 
         if not self.is_video_playing:
             self.library_loaded.emit()
@@ -623,10 +812,12 @@ class Controller(QObject):
                 target_library_name, series_name, True
             )
 
+        affected_paths: list[str] = []
         for season_data in series_data.get("seasons", {}).values():
             for episode_record in season_data.get("episodes", []):
                 if episode_record.get("path"):
                     episode_record["watched"] = True
+                    affected_paths.append(episode_record["path"])
 
         self._cache_series_metrics()
 
@@ -636,6 +827,9 @@ class Controller(QObject):
             )
             if changed_hashes:
                 self.smart_rows_updated.emit(changed_hashes)
+
+        # Synchronize watched status to remote scan agents
+        self._sync_watched_to_agents(affected_paths, True, target_libraries)
 
         if not self.is_video_playing:
             self.library_loaded.emit()

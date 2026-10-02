@@ -67,6 +67,10 @@ def _merge_movie_records(
     merged_movie["versions"] = existing_versions
     if incoming_movie.get("watched") is True:
         merged_movie["watched"] = True
+    if not merged_movie.get("myanimelist_anime_id") and incoming_movie.get(
+        "myanimelist_anime_id"
+    ):
+        merged_movie["myanimelist_anime_id"] = incoming_movie["myanimelist_anime_id"]
 
     return merged_movie
 

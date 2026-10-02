@@ -53,6 +53,49 @@ def map_remote_path_to_local(
     return remote_file_path
 
 
+def map_local_path_to_remote(
+    local_file_path: str,
+    mount_mappings: dict[str, str],
+) -> str:
+    """Map a local mount path back to its remote path using configured directory mappings.
+
+    Sorts mappings by longest local mount path first to ensure most specific prefix matches.
+    """
+    if not mount_mappings:
+        return local_file_path
+
+    # Sort by longest local mount prefix descending to match most specific path first
+    sorted_mappings = sorted(
+        mount_mappings.items(),
+        key=lambda item: len(item[1]),
+        reverse=True,
+    )
+
+    normalized_local = os.path.normpath(local_file_path).replace("\\", "/")
+
+    for remote_root, local_mount in sorted_mappings:
+        normalized_mount = os.path.normpath(local_mount).replace("\\", "/").rstrip("/")
+        if not normalized_mount:
+            continue
+
+        if normalized_local == normalized_mount:
+            return remote_root
+
+        if normalized_local.startswith(normalized_mount + "/"):
+            relative_suffix = normalized_local[len(normalized_mount) :].lstrip("/")
+            normalized_remote_root = remote_root.replace("\\", "/").rstrip("/")
+            mapped_remote_path = f"{normalized_remote_root}/{relative_suffix}"
+            logger.debug(
+                "Mapped local path '%s' to remote path '%s' via prefix '%s'",
+                local_file_path,
+                mapped_remote_path,
+                local_mount,
+            )
+            return mapped_remote_path
+
+    return local_file_path
+
+
 def resolve_playback_path(
     file_path: str,
     libraries_configuration: dict[str, dict[str, Any]],

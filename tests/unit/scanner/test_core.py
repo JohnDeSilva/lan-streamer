@@ -3773,3 +3773,46 @@ def test_scan_directories_multi_file_episode_preserves_versions(tmp_path) -> Non
     version_paths = {v.get("path") for v in versions}
     assert str(season_dir / "S01E01.mkv") in version_paths
     assert str(season_dir / "S01E01.mp4") in version_paths
+
+
+def test_merge_episodes_reconciles_watch_status_and_metadata_maps() -> None:
+    from lan_streamer.scanner.core import _merge_episodes_by_number
+
+    existing_episodes = [
+        {
+            "episode_number": 1,
+            "path": "/media/tv/Show/S01E01.mkv",
+            "watched": False,
+            "last_played_at": 1000,
+            "last_played_position": 120,
+            "tmdb_episode_identifier": "tmdb-ep-1",
+            "versions": [{"path": "/media/tv/Show/S01E01.mkv"}],
+        }
+    ]
+    incoming_episodes = [
+        {
+            "episode_number": 1,
+            "path": "/remote/tv/Show/S01E01.mkv",
+            "watched": True,
+            "last_played_at": 2000,
+            "last_played_position": 1400,
+            "myanimelist_anime_id": 12345,
+            "myanimelist_episode_number": 1,
+            "versions": [{"path": "/remote/tv/Show/S01E01.mkv"}],
+        }
+    ]
+
+    merged_episodes = _merge_episodes_by_number(existing_episodes, incoming_episodes)
+    assert len(merged_episodes) == 1
+    episode_entry = merged_episodes[0]
+
+    # Incoming has newer last_played_at, so watched and position should match incoming
+    assert episode_entry["watched"] is True
+    assert episode_entry["last_played_at"] == 2000
+    assert episode_entry["last_played_position"] == 1400
+    # Both sets of metadata maps should be preserved
+    assert episode_entry["tmdb_episode_identifier"] == "tmdb-ep-1"
+    assert episode_entry["myanimelist_anime_id"] == 12345
+    assert episode_entry["myanimelist_episode_number"] == 1
+    # Both file versions preserved
+    assert len(episode_entry["versions"]) == 2
