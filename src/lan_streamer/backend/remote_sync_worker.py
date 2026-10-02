@@ -82,12 +82,32 @@ def _collect_movie_deltas_for_agent(
         remote_watched = bool(remote_movie.get("watched"))
         desktop_last_played = movie_data.get("last_played_at") or 0
         remote_last_played = remote_movie.get("last_played_at") or 0
+        desktop_position = movie_data.get("last_played_position") or 0
+        remote_position = remote_movie.get("last_played_position") or 0
 
         needs_watch_sync = (desktop_watched and not remote_watched) or (
             desktop_watched and desktop_last_played > remote_last_played
         )
         if raw_agent_items is None and desktop_watched:
             needs_watch_sync = True
+
+        needs_position_sync = (
+            not desktop_watched
+            and not remote_watched
+            and desktop_position > 0
+            and (
+                desktop_position != remote_position
+                or desktop_last_played > remote_last_played
+            )
+        )
+        if raw_agent_items is None and not desktop_watched and desktop_position > 0:
+            needs_position_sync = True
+
+        needs_unwatched_sync = (
+            not desktop_watched
+            and remote_watched
+            and desktop_last_played > remote_last_played
+        )
 
         if needs_watch_sync:
             remote_path = map_local_path_to_remote(movie_path, mount_mappings)
@@ -98,6 +118,28 @@ def _collect_movie_deltas_for_agent(
                     "event": "complete",
                     "watched": True,
                     "position_seconds": movie_data.get("last_played_position"),
+                }
+            )
+        elif needs_position_sync:
+            remote_path = map_local_path_to_remote(movie_path, mount_mappings)
+            watch_events_to_sync.append(
+                {
+                    "media_type": "movie",
+                    "path": remote_path,
+                    "event": "stop",
+                    "watched": False,
+                    "position_seconds": float(desktop_position),
+                }
+            )
+        elif needs_unwatched_sync:
+            remote_path = map_local_path_to_remote(movie_path, mount_mappings)
+            watch_events_to_sync.append(
+                {
+                    "media_type": "movie",
+                    "path": remote_path,
+                    "event": "unwatched",
+                    "watched": False,
+                    "position_seconds": 0,
                 }
             )
 
@@ -182,12 +224,36 @@ def _collect_tv_deltas_for_agent(
                 remote_watched = bool(remote_episode_data.get("watched"))
                 desktop_last_played = episode_data.get("last_played_at") or 0
                 remote_last_played = remote_episode_data.get("last_played_at") or 0
+                desktop_position = episode_data.get("last_played_position") or 0
+                remote_position = remote_episode_data.get("last_played_position") or 0
 
                 needs_watch_sync = (desktop_watched and not remote_watched) or (
                     desktop_watched and desktop_last_played > remote_last_played
                 )
                 if raw_agent_items is None and desktop_watched:
                     needs_watch_sync = True
+
+                needs_position_sync = (
+                    not desktop_watched
+                    and not remote_watched
+                    and desktop_position > 0
+                    and (
+                        desktop_position != remote_position
+                        or desktop_last_played > remote_last_played
+                    )
+                )
+                if (
+                    raw_agent_items is None
+                    and not desktop_watched
+                    and desktop_position > 0
+                ):
+                    needs_position_sync = True
+
+                needs_unwatched_sync = (
+                    not desktop_watched
+                    and remote_watched
+                    and desktop_last_played > remote_last_played
+                )
 
                 if needs_watch_sync:
                     remote_path = map_local_path_to_remote(episode_path, mount_mappings)
@@ -200,6 +266,28 @@ def _collect_tv_deltas_for_agent(
                             "position_seconds": episode_data.get(
                                 "last_played_position"
                             ),
+                        }
+                    )
+                elif needs_position_sync:
+                    remote_path = map_local_path_to_remote(episode_path, mount_mappings)
+                    watch_events_to_sync.append(
+                        {
+                            "media_type": "episode",
+                            "path": remote_path,
+                            "event": "stop",
+                            "watched": False,
+                            "position_seconds": float(desktop_position),
+                        }
+                    )
+                elif needs_unwatched_sync:
+                    remote_path = map_local_path_to_remote(episode_path, mount_mappings)
+                    watch_events_to_sync.append(
+                        {
+                            "media_type": "episode",
+                            "path": remote_path,
+                            "event": "unwatched",
+                            "watched": False,
+                            "position_seconds": 0,
                         }
                     )
 

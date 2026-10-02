@@ -673,9 +673,13 @@ def test_stop_saves_playback_position_incomplete(player_widget) -> None:
     player_widget.mediaplayer.get_length.return_value = 1000000
     config.watched_threshold = 0.9
 
+    mock_signal_slot = MagicMock()
+    player_widget.playback_position_updated.connect(mock_signal_slot)
+
     with patch("lan_streamer.db.update_episode_playback_position") as mock_db:
         player_widget.stop()
         mock_db.assert_called_once_with("/path/to/ep.mkv", 400)
+        mock_signal_slot.assert_called_once_with("/path/to/ep.mkv", 400)
 
 
 def test_stop_clears_playback_position_under_one_minute(player_widget) -> None:
@@ -691,9 +695,13 @@ def test_stop_clears_playback_position_under_one_minute(player_widget) -> None:
     player_widget.mediaplayer.get_length.return_value = 1000000
     config.watched_threshold = 0.9
 
+    mock_signal_slot = MagicMock()
+    player_widget.playback_position_updated.connect(mock_signal_slot)
+
     with patch("lan_streamer.db.update_episode_playback_position") as mock_db:
         player_widget.stop()
         mock_db.assert_called_once_with("/path/to/ep.mkv", 0)
+        mock_signal_slot.assert_called_once_with("/path/to/ep.mkv", 0)
 
 
 def test_stop_resets_playback_position_complete(player_widget) -> None:
@@ -709,9 +717,34 @@ def test_stop_resets_playback_position_complete(player_widget) -> None:
     config.watched_threshold = 0.9
     player_widget.is_watched_marked = False
 
+    mock_signal_slot = MagicMock()
+    player_widget.playback_position_updated.connect(mock_signal_slot)
+
     with patch("lan_streamer.db.update_episode_playback_position") as mock_db:
         player_widget.stop()
         mock_db.assert_called_once_with("/path/to/ep.mkv", 0)
+        mock_signal_slot.assert_called_once_with("/path/to/ep.mkv", 0)
+
+
+def test_play_pause_saves_playback_position_when_paused(player_widget) -> None:
+    from unittest.mock import MagicMock
+
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.is_playing.return_value = True
+    player_widget.mediaplayer.get_time.return_value = 120000  # 120s > 60s
+    player_widget.mediaplayer.get_length.return_value = 1000000
+    player_widget.mediaplayer.get_media.return_value = MagicMock()
+    player_widget.current_media_path = "/path/to/ep.mkv"
+    player_widget.is_watched_marked = False
+
+    mock_signal_slot = MagicMock()
+    player_widget.playback_position_updated.connect(mock_signal_slot)
+
+    with patch("lan_streamer.db.update_episode_playback_position") as mock_db:
+        player_widget.play_pause()
+        player_widget.mediaplayer.pause.assert_called_once()
+        mock_db.assert_called_once_with("/path/to/ep.mkv", 120)
+        mock_signal_slot.assert_called_once_with("/path/to/ep.mkv", 120)
 
 
 def test_play_video_prompts_resume(player_widget) -> None:

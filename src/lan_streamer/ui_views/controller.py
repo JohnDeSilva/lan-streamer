@@ -1,6 +1,7 @@
 import contextlib
 import logging
 import re
+import time
 import uuid
 from collections import deque
 from pathlib import Path
@@ -543,18 +544,49 @@ class Controller(QObject):
         )
         self._db.update_episode_watched_status(absolute_path, watched)
 
+        media_type = "episode"
+        current_time_epoch = int(time.time())
+
         # Update cached state in memory
         for series_data in self.cached_library_data.values():
-            if "seasons" not in series_data:
-                if series_data.get("path") == absolute_path:
+            if series_data.get("type") == "movie" or "seasons" not in series_data:
+                movie_path = series_data.get("path")
+                version_paths = {
+                    version.get("path")
+                    for version in series_data.get("versions", [])
+                    if isinstance(version, dict) and version.get("path")
+                }
+                if absolute_path == movie_path or absolute_path in version_paths:
                     series_data["watched"] = watched
+                    series_data["last_played_at"] = current_time_epoch
+                    if not watched:
+                        series_data["last_played_position"] = 0
+                    media_type = "movie"
                     break
             else:
+                found_match = False
                 for season_data in series_data.get("seasons", {}).values():
                     for episode_record in season_data.get("episodes", []):
-                        if episode_record.get("path") == absolute_path:
+                        episode_file_path = episode_record.get("path")
+                        version_paths = {
+                            version.get("path")
+                            for version in episode_record.get("versions", [])
+                            if isinstance(version, dict) and version.get("path")
+                        }
+                        if (
+                            absolute_path == episode_file_path
+                            or absolute_path in version_paths
+                        ):
                             episode_record["watched"] = watched
+                            episode_record["last_played_at"] = current_time_epoch
+                            if not watched:
+                                episode_record["last_played_position"] = 0
+                            found_match = True
                             break
+                    if found_match:
+                        break
+                if found_match:
+                    break
 
         self._cache_series_metrics()
 
@@ -576,10 +608,116 @@ class Controller(QObject):
         )
 
         # Synchronize watched status to remote scan agents
-        self._sync_watched_to_agents([absolute_path], watched)
+        if media_type == "movie":
+            self._sync_watched_to_agents([absolute_path], watched, media_type="movie")
+        else:
+            self._sync_watched_to_agents([absolute_path], watched)
 
         if not self.is_video_playing:
             self.library_loaded.emit()
+
+    def update_playback_position(
+        self, absolute_path: str, position_seconds: int
+    ) -> None:
+        """Update local cached playback position and dispatch to remote agents."""
+        logger.info(
+            "Controller updating playback position for '%s' to %ds",
+            absolute_path,
+            position_seconds,
+        )
+        media_type = "episode"
+        current_time_epoch = int(time.time())
+
+        for series_data in self.cached_library_data.values():
+            if series_data.get("type") == "movie" or "seasons" not in series_data:
+                movie_path = series_data.get("path")
+                version_paths = {
+                    version.get("path")
+                    for version in series_data.get("versions", [])
+                    if isinstance(version, dict) and version.get("path")
+                }
+                if absolute_path == movie_path or absolute_path in version_paths:
+                    series_data["last_played_position"] = position_seconds
+                    series_data["last_played_at"] = current_time_epoch
+                    media_type = "movie"
+                    break
+            else:
+                found_episode = False
+                for season_dictionary in series_data.get("seasons", {}).values():
+                    for episode_record in season_dictionary.get("episodes", []):
+                        episode_file_path = episode_record.get("path")
+                        version_paths = {
+                            version.get("path")
+                            for version in episode_record.get("versions", [])
+                            if isinstance(version, dict) and version.get("path")
+                        }
+                        if (
+                            absolute_path == episode_file_path
+                            or absolute_path in version_paths
+                        ):
+                            episode_record["last_played_position"] = position_seconds
+                            episode_record["last_played_at"] = current_time_epoch
+                            found_episode = True
+                            break
+                    if found_episode:
+                        break
+                if found_episode:
+                    break
+
+        self._sync_playback_position_to_agents(
+            absolute_path, position_seconds, media_type=media_type
+        )
+
+    def _sync_playback_position_to_agents(
+        self,
+        file_path: str,
+        position_seconds: int,
+        target_libraries: list[str] | None = None,
+        media_type: str = "episode",
+    ) -> None:
+        """Asynchronously dispatch playback position update to relevant remote scan agents."""
+
+        def run_sync() -> None:
+            import requests
+
+            from lan_streamer.services.scan_agent_client import (
+                ScanAgentConnectionError,
+                scan_agent_client,
+            )
+
+            agent_targets = self._find_agent_sources_and_remotes_for_path(
+                file_path, target_libraries
+            )
+            for agent_url, remote_path in agent_targets:
+                try:
+                    scan_agent_client.record_watch_event(
+                        agent_url=agent_url,
+                        media_type=media_type,
+                        path=remote_path,
+                        event="stop",
+                        position_seconds=float(position_seconds),
+                    )
+                except (
+                    ScanAgentConnectionError,
+                    requests.RequestException,
+                    OSError,
+                    ValueError,
+                    KeyError,
+                ) as sync_error:
+                    logger.debug(
+                        "Failed syncing playback position to agent '%s' for '%s': %s",
+                        agent_url,
+                        file_path,
+                        sync_error,
+                    )
+
+        async def run_async_task() -> None:
+            from lan_streamer.system.async_utils import run_in_executor
+
+            await run_in_executor(run_sync)
+
+        task_name = f"sync_position_{uuid.uuid4().hex}"
+        self.async_task_manager.create_task(run_async_task(), name=task_name)
 
     def _find_agent_sources_and_remotes_for_path(
         self, file_path: str, target_libraries: list[str] | None = None
@@ -626,6 +764,7 @@ class Controller(QObject):
         file_paths: list[str],
         watched: bool,
         target_libraries: list[str] | None = None,
+        media_type: str = "episode",
     ) -> None:
         """Asynchronously dispatch watched status synchronization to relevant remote scan agents."""
         if not file_paths:
@@ -647,7 +786,7 @@ class Controller(QObject):
                     try:
                         scan_agent_client.record_watch_event(
                             agent_url=agent_url,
-                            media_type="episode",
+                            media_type=media_type,
                             path=remote_path,
                             event="complete" if watched else "unwatched",
                             watched=watched,

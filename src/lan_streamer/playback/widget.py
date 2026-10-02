@@ -178,6 +178,7 @@ class VideoPlayerWidget(QWidget):
 
     back_requested = Signal()
     watched_marked = Signal(str)  # path
+    playback_position_updated = Signal(str, int)  # (path, position_seconds)
     fullscreen_changed = Signal(bool)
 
     ASPECT_MODES: ClassVar[list[tuple[str, str]]] = [
@@ -1810,6 +1811,20 @@ class VideoPlayerWidget(QWidget):
                 self.new_play_btn.button.setText("▶")
             if hasattr(self, "fs_new_play_btn"):
                 self.fs_new_play_btn.button.setText("▶")
+            if self.current_media_path and not self.is_watched_marked:
+                time_value = self.mediaplayer.get_time()
+                current_time_seconds: int = (
+                    int(time_value // 1000)
+                    if isinstance(time_value, (int, float))
+                    else 0
+                )
+                if current_time_seconds > 60:
+                    db.update_episode_playback_position(
+                        self.current_media_path, current_time_seconds
+                    )
+                    self.playback_position_updated.emit(
+                        self.current_media_path, current_time_seconds
+                    )
         else:
             logger.info("Resuming playback")
             self.mediaplayer.play()
@@ -1831,12 +1846,22 @@ class VideoPlayerWidget(QWidget):
         if self.mediaplayer:
             media = self.mediaplayer.get_media()
             if media and self.current_media_path:
-                curr_time = self.mediaplayer.get_time() // 1000
-                duration = self.mediaplayer.get_length() // 1000
+                time_value = self.mediaplayer.get_time()
+                length_value = self.mediaplayer.get_length()
+                current_time_seconds: int = (
+                    int(time_value // 1000)
+                    if isinstance(time_value, (int, float))
+                    else 0
+                )
+                duration: int = (
+                    int(length_value // 1000)
+                    if isinstance(length_value, (int, float))
+                    else 0
+                )
                 if duration > 0:
                     is_completed = (
                         self._is_playback_finished
-                        or (curr_time / duration) >= config.watched_threshold
+                        or (current_time_seconds / duration) >= config.watched_threshold
                     )
                     if not self.is_watched_marked and is_completed:
                         logger.info(
@@ -1844,19 +1869,26 @@ class VideoPlayerWidget(QWidget):
                         )
                         self._mark_as_watched()
                         db.update_episode_playback_position(self.current_media_path, 0)
+                        self.playback_position_updated.emit(self.current_media_path, 0)
                     elif not self.is_watched_marked:
-                        if curr_time > 60:
+                        if current_time_seconds > 60:
                             logger.info(
-                                f"Saving playback position for {self.current_media_path} at {curr_time}s"
+                                f"Saving playback position for {self.current_media_path} at {current_time_seconds}s"
                             )
                             db.update_episode_playback_position(
-                                self.current_media_path, curr_time
+                                self.current_media_path, current_time_seconds
+                            )
+                            self.playback_position_updated.emit(
+                                self.current_media_path, current_time_seconds
                             )
                         else:
                             logger.info(
-                                f"Playback stopped before 1 minute ({curr_time}s), clearing saved position for {self.current_media_path}"
+                                f"Playback stopped before 1 minute ({current_time_seconds}s), clearing saved position for {self.current_media_path}"
                             )
                             db.update_episode_playback_position(
+                                self.current_media_path, 0
+                            )
+                            self.playback_position_updated.emit(
                                 self.current_media_path, 0
                             )
                     else:
@@ -1864,6 +1896,7 @@ class VideoPlayerWidget(QWidget):
                             f"Video already marked watched, clearing saved position for {self.current_media_path}"
                         )
                         db.update_episode_playback_position(self.current_media_path, 0)
+                        self.playback_position_updated.emit(self.current_media_path, 0)
 
             self.mediaplayer.stop()
         self.wakelock.uninhibit()
