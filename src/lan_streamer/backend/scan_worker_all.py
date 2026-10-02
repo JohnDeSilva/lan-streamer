@@ -898,52 +898,59 @@ class ScanAllLibrariesWorker(AsyncWorkerBase):
         libraries_dictionary: dict[str, dict[str, Any]] = config.libraries
         tasks = []
         tree: dict[str, Any] = {}
+        from lan_streamer.system.config import get_library_sources
+
         for library_name, library_configuration in libraries_dictionary.items():
-            if library_configuration.get("management_type", "local") == "remote":
+            sources = get_library_sources(library_configuration)
+            has_agent = any(
+                source_entry.get("type") == "agent" for source_entry in sources
+            )
+            has_local = (
+                bool(library_configuration.get("paths"))
+                and library_configuration.get("management_type") != "remote"
+            )
+            if has_agent or library_configuration.get("management_type") == "remote":
                 logger.info(
-                    f"Syncing remote library '{library_name}' from scan agent..."
+                    f"Syncing remote media sources for library '{library_name}' from scan agent..."
                 )
-                agent_url = library_configuration.get("agent_url", "")
-                remote_library_identifier = (
-                    library_configuration.get("remote_library_id") or library_name
-                )
-                if agent_url:
-                    try:
-                        import requests
+                try:
+                    from lan_streamer.backend.remote_sync_worker import (
+                        sync_remote_library_from_agent,
+                    )
 
-                        from lan_streamer.services.scan_agent_client import (
-                            ScanAgentConnectionError,
-                            scan_agent_client,
-                        )
+                    sync_result = sync_remote_library_from_agent(
+                        library_name, library_configuration, db
+                    )
+                    if sync_result.get("success"):
+                        if library_configuration.get("type", "tv") == "movie":
+                            library_data_by_name[library_name] = db.load_movie_library(
+                                library_name
+                            )
+                        else:
+                            library_data_by_name[library_name] = db.load_library(
+                                library_name
+                            )
+                except (
+                    KeyError,
+                    ValueError,
+                    TypeError,
+                    OSError,
+                    RuntimeError,
+                    SQLAlchemyError,
+                ) as error_instance:
+                    logger.warning(
+                        "Failed to sync remote library '%s' during scan: %s",
+                        library_name,
+                        error_instance,
+                    )
 
-                        remote_items = scan_agent_client.fetch_library_items(
-                            agent_url, str(remote_library_identifier)
-                        )
-                        if remote_items:
-                            if library_configuration.get("type", "tv") == "movie":
-                                db.save_movie_library(library_name, remote_items)
-                            else:
-                                db.save_library(library_name, remote_items)
-                            library_data_by_name[library_name] = remote_items
-                    except (
-                        ScanAgentConnectionError,
-                        requests.RequestException,
-                        SQLAlchemyError,
-                        OSError,
-                        ValueError,
-                        KeyError,
-                    ) as error_instance:
-                        logger.warning(
-                            "Failed to sync remote library '%s' from agent during scan: %s",
-                            library_name,
-                            error_instance,
-                        )
-
+            if not has_local:
                 tree[library_name] = {
                     "type": library_configuration.get("type", "tv"),
                     "roots": {},
                 }
                 continue
+
             existing_data = library_data_by_name.get(library_name, {})
             coro = run_in_fs_executor(
                 self._discover_single_library_tree,

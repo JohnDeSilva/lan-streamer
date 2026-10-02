@@ -679,3 +679,94 @@ def test_settings_dialog_scan_selected_remote_library(qtbot) -> None:
     )
 
     dialog.reject()
+
+
+def test_settings_dialog_add_and_remove_staged_remote_source(qtbot) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.staged_libraries = {
+        "Anime_Unified": {
+            "type": "tv",
+            "management_type": "local",
+            "paths": ["/media/local/anime"],
+            "archive_paths": [],
+            "show_future_episodes": True,
+            "sources": [
+                {"type": "local", "path": "/media/local/anime", "is_archive": False}
+            ],
+        }
+    }
+    dialog.staged_scan_agents = {
+        "http://127.0.0.1:8800": {
+            "name": "NAS Agent",
+            "discovered_libraries": [
+                {
+                    "id": "nas-anime-source",
+                    "name": "NAS Anime",
+                    "media_type": "tv",
+                    "root_paths": ["/nas/anime"],
+                }
+            ],
+        }
+    }
+
+    dialog._refresh_library_selector()
+    dialog.library_selector.setCurrentText("Anime_Unified")
+
+    with patch(
+        "lan_streamer.ui_views.dialogs.settings.QInputDialog.getItem",
+        return_value=("NAS Agent : NAS Anime [TV] (http://127.0.0.1:8800)", True),
+    ):
+        dialog.add_staged_remote_source()
+
+    library_config = dialog.staged_libraries["Anime_Unified"]
+    assert library_config["management_type"] == "hybrid"
+    assert len(library_config["sources"]) == 2
+    agent_sources = [
+        source for source in library_config["sources"] if source.get("type") == "agent"
+    ]
+    assert len(agent_sources) == 1
+    assert agent_sources[0]["source_identifier"] == "nas-anime-source"
+
+    # Verify widget displayed both local and remote source
+    assert dialog.directory_list_widget.count() == 2
+    remote_item = dialog.directory_list_widget.item(1)
+    assert "[Remote Source]" in remote_item.text()
+    assert "NAS Anime" in remote_item.text()
+
+    # Now remove the remote source
+    dialog.directory_list_widget.setCurrentRow(1)
+    dialog.remove_staged_directory()
+
+    assert len(dialog.staged_libraries["Anime_Unified"]["sources"]) == 1
+    assert dialog.directory_list_widget.count() == 1
+    assert "[Active]" in dialog.directory_list_widget.item(0).text()
+
+    dialog.reject()
+
+
+def test_settings_dialog_add_remote_source_no_agents_shows_info(qtbot) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.staged_libraries = {
+        "Test Lib": {
+            "type": "tv",
+            "management_type": "local",
+            "paths": ["/media/test"],
+            "archive_paths": [],
+            "show_future_episodes": True,
+        }
+    }
+    dialog.staged_scan_agents = {}
+    dialog._refresh_library_selector()
+    dialog.library_selector.setCurrentText("Test Lib")
+
+    with patch(
+        "lan_streamer.ui_views.dialogs.settings.QMessageBox.information"
+    ) as mock_info:
+        dialog.add_staged_remote_source()
+        mock_info.assert_called_once()
+
+    dialog.reject()

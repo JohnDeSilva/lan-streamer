@@ -555,3 +555,102 @@ def test_split_multi_root_libraries_skips_remote_libraries() -> None:
     assert "Local TV (tv2)" not in result_libraries
     assert result_libraries["Local TV"]["paths"] == ["/local/tv1", "/local/tv2"]
     assert len(split_records) == 0
+
+
+def test_get_library_sources_and_normalize_configuration() -> None:
+    from lan_streamer.system.config import (
+        get_library_sources,
+        normalize_library_configuration,
+    )
+
+    # 1. Legacy local library coercion
+    legacy_local = {
+        "type": "tv",
+        "management_type": "local",
+        "paths": ["/local/tv1", "/local/tv2"],
+        "archive_paths": ["/local/tv2"],
+    }
+    normalized_local = normalize_library_configuration(legacy_local)
+    assert normalized_local["management_type"] == "local"
+    assert "sources" in normalized_local
+    assert len(normalized_local["sources"]) == 2
+    assert normalized_local["sources"][0] == {
+        "type": "local",
+        "path": "/local/tv1",
+        "is_archive": False,
+    }
+    assert normalized_local["sources"][1] == {
+        "type": "local",
+        "path": "/local/tv2",
+        "is_archive": True,
+    }
+
+    # 2. Legacy remote library coercion
+    legacy_remote = {
+        "type": "tv",
+        "management_type": "remote",
+        "agent_url": "http://127.0.0.1:8800",
+        "remote_library_id": "src-tv",
+        "mount_mappings": {"/agent/tv": "/mnt/tv"},
+    }
+    normalized_remote = normalize_library_configuration(legacy_remote)
+    assert normalized_remote["management_type"] == "remote"
+    assert len(normalized_remote["sources"]) == 1
+    assert normalized_remote["sources"][0]["type"] == "agent"
+    assert normalized_remote["sources"][0]["agent_url"] == "http://127.0.0.1:8800"
+    assert normalized_remote["sources"][0]["source_id"] == "src-tv"
+
+    # 3. Explicit multi-source hybrid library
+    hybrid_library = {
+        "type": "tv",
+        "sources": [
+            {"type": "local", "path": "/storage/anime"},
+            {
+                "type": "agent",
+                "agent_url": "http://127.0.0.1:8800",
+                "source_id": "src-agent-anime",
+                "mount_path": "/mnt/agent_anime",
+            },
+        ],
+    }
+    normalized_hybrid = normalize_library_configuration(hybrid_library)
+    assert normalized_hybrid["management_type"] == "hybrid"
+    assert normalized_hybrid["paths"] == ["/storage/anime"]
+    sources = get_library_sources(normalized_hybrid)
+    assert len(sources) == 2
+    assert sources[0]["type"] == "local"
+    assert sources[1]["type"] == "agent"
+
+
+def test_config_get_local_and_remote_libraries_hybrid() -> None:
+    config = Config()
+    config.libraries = {
+        "Local Only": {"type": "tv", "paths": ["/local/tv"]},
+        "Remote Only": {
+            "type": "tv",
+            "management_type": "remote",
+            "agent_url": "http://127.0.0.1:8800",
+            "remote_library_id": "src-tv",
+        },
+        "Hybrid Library": {
+            "type": "tv",
+            "sources": [
+                {"type": "local", "path": "/hybrid/local"},
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "source_id": "src-tv",
+                },
+            ],
+        },
+    }
+
+    local_libs = config.get_local_libraries()
+    assert "Local Only" in local_libs
+    assert "Hybrid Library" in local_libs
+    assert "Remote Only" not in local_libs
+
+    remote_libs = config.get_remote_libraries()
+    assert "Remote Only" in remote_libs
+    assert "Hybrid Library" in remote_libs
+    assert "Local Only" not in remote_libs

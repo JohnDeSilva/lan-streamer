@@ -1478,3 +1478,58 @@ def test_controller_select_tab_syncs_remote_tv_library(mock_controller) -> None:
         assert series_data["metrics"]["total_episodes"] == 1
         assert "seasons" in series_data
         assert len(loaded_signal_received) == 2
+
+
+def test_controller_trigger_scan_hybrid_library_queues_remote_and_starts_local_worker(
+    mock_controller,
+) -> None:
+    mock_controller._config.libraries = {
+        "Hybrid TV": {
+            "type": "tv",
+            "management_type": "hybrid",
+            "paths": ["/media/local/tv"],
+            "sources": [
+                {"type": "local", "path": "/media/local/tv"},
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "source_id": "remote-tv-1",
+                },
+            ],
+        }
+    }
+    with (
+        patch.object(mock_controller, "_queue_remote_sync") as mock_queue,
+        patch.object(mock_controller.worker_manager.scan, "start") as mock_scan_start,
+    ):
+        mock_controller.trigger_scan(library_name="Hybrid TV")
+        mock_queue.assert_called_once_with(
+            "Hybrid TV",
+            emit_signal=True,
+            success_message="Remote library 'Hybrid TV' synced successfully.",
+            failure_message="Failed to sync remote library 'Hybrid TV'.",
+            emit_scan_completed=False,
+        )
+        mock_scan_start.assert_called_once()
+
+
+def test_controller_sync_remote_library_with_sources_list(
+    mock_controller,
+) -> None:
+    mock_controller._config.libraries = {
+        "Hybrid TV": {
+            "type": "tv",
+            "sources": [
+                {"type": "local", "path": "/media/local/tv"},
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "source_id": "remote-tv-1",
+                },
+            ],
+        }
+    }
+    with patch.object(mock_controller, "_queue_remote_sync") as mock_queue:
+        result = mock_controller.sync_remote_library("Hybrid TV", emit_signal=False)
+        assert result is True
+        mock_queue.assert_called_once_with("Hybrid TV", emit_signal=False)
