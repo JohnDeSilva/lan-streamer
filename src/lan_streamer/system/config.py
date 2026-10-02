@@ -27,6 +27,117 @@ CONFIG_FILE = _parse_config_path()
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+def get_library_sources(
+    library_configuration: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Return the list of media sources configured for a library.
+
+    Coerces legacy single-source fields (paths, archive_paths, agent_url)
+    into the unified sources list if the explicit 'sources' key is absent.
+    """
+    if library_configuration.get("sources") and isinstance(
+        library_configuration["sources"], list
+    ):
+        return [
+            dict(source_entry)
+            for source_entry in library_configuration["sources"]
+            if isinstance(source_entry, dict)
+        ]
+
+    sources_list: list[dict[str, Any]] = []
+    archive_paths = set(library_configuration.get("archive_paths", []))
+    for path in library_configuration.get("paths", []):
+        if path:
+            sources_list.append(
+                {
+                    "type": "local",
+                    "path": path,
+                    "is_archive": path in archive_paths,
+                }
+            )
+
+    agent_url = library_configuration.get("agent_url")
+    if agent_url or library_configuration.get("management_type") == "remote":
+        source_identifier = library_configuration.get("remote_library_id") or ""
+        agent_source: dict[str, Any] = {
+            "type": "agent",
+            "agent_url": agent_url or "",
+            "source_id": str(source_identifier),
+        }
+        if "mount_mappings" in library_configuration:
+            agent_source["mount_mappings"] = dict(
+                library_configuration.get("mount_mappings", {})
+            )
+        sources_list.append(agent_source)
+
+    return sources_list
+
+
+def normalize_library_configuration(
+    library_configuration: dict[str, Any],
+) -> dict[str, Any]:
+    """Normalize a library configuration dictionary.
+
+    Ensures both the unified 'sources' list and legacy fields ('paths',
+    'management_type', 'agent_url') remain synchronized and populated.
+    """
+    normalized_configuration = dict(library_configuration)
+    sources = get_library_sources(normalized_configuration)
+    normalized_configuration["sources"] = sources
+
+    # Synchronize local paths
+    local_paths: list[str] = []
+    archive_paths: list[str] = []
+    has_local: bool = False
+    has_agent: bool = False
+
+    for source_entry in sources:
+        source_type = source_entry.get("type", "local")
+        if source_type == "local":
+            has_local = True
+            source_path = source_entry.get("path")
+            if source_path:
+                local_paths.append(source_path)
+                if source_entry.get("is_archive"):
+                    archive_paths.append(source_path)
+        elif source_type == "agent":
+            has_agent = True
+
+    # Deduplicate local paths if sources defined local paths
+    if has_local:
+        normalized_configuration["paths"] = list(dict.fromkeys(local_paths))
+        if archive_paths:
+            normalized_configuration["archive_paths"] = list(
+                dict.fromkeys(archive_paths)
+            )
+
+    # Determine management_type: if sources was explicitly provided, infer management_type
+    if "sources" in library_configuration:
+        if has_local and has_agent:
+            normalized_configuration["management_type"] = "hybrid"
+        elif has_agent:
+            normalized_configuration["management_type"] = "remote"
+        else:
+            normalized_configuration["management_type"] = "local"
+    elif "management_type" not in normalized_configuration:
+        normalized_configuration["management_type"] = "remote" if has_agent else "local"
+
+    # Populate primary agent fields for legacy consumers if agent sources exist
+    agent_sources = [
+        source_entry for source_entry in sources if source_entry.get("type") == "agent"
+    ]
+    if agent_sources:
+        primary_agent = agent_sources[0]
+        if not normalized_configuration.get("agent_url"):
+            normalized_configuration["agent_url"] = primary_agent.get("agent_url", "")
+        if not normalized_configuration.get("remote_library_id"):
+            normalized_configuration["remote_library_id"] = primary_agent.get(
+                "source_identifier"
+            ) or primary_agent.get("source_id", "")
+
+    return normalized_configuration
+
+
 def split_multi_root_libraries(
     libraries_dictionary: dict[str, dict[str, Any]],
 ) -> tuple[dict[str, dict[str, Any]], list[tuple[str, str, str]]]:
@@ -46,6 +157,8 @@ def split_multi_root_libraries(
         if "archive_paths" in configuration_copy:
             archive_paths = configuration_copy.get("archive_paths", [])
             configuration_copy["archive_paths"] = list(dict.fromkeys(archive_paths))
+        if "sources" in configuration_copy:
+            configuration_copy = normalize_library_configuration(configuration_copy)
         normalized_libraries[library_name] = configuration_copy
 
     return normalized_libraries, []
@@ -590,19 +703,29 @@ class Config:
         self._backup_directory = str(Path(val).expanduser().absolute())
 
     def get_local_libraries(self) -> dict[str, dict[str, Any]]:
-        """Return subset of libraries that are locally managed."""
+        """Return subset of libraries that have local storage."""
         return {
             library_name: library_configuration
             for library_name, library_configuration in self.libraries.items()
-            if library_configuration.get("management_type", "local") == "local"
+            if library_configuration.get("management_type", "local")
+            in ("local", "hybrid")
+            or any(
+                source_entry.get("type") == "local"
+                for source_entry in library_configuration.get("sources", [])
+            )
         }
 
     def get_remote_libraries(self) -> dict[str, dict[str, Any]]:
-        """Return subset of libraries that are remotely managed by a scan agent."""
+        """Return subset of libraries that have remote scan agent sources."""
         return {
             library_name: library_configuration
             for library_name, library_configuration in self.libraries.items()
-            if library_configuration.get("management_type", "local") == "remote"
+            if library_configuration.get("management_type", "local")
+            in ("remote", "hybrid")
+            or any(
+                source_entry.get("type") == "agent"
+                for source_entry in library_configuration.get("sources", [])
+            )
         }
 
     def get_tab_libraries(self, tab_name: str) -> list[str]:
