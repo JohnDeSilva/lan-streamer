@@ -1,3 +1,29 @@
+## v0.56.0 (2026-10-03)
+
+### Feat
+
+- **sync**: sync in-progress playback positions and movie watch events to agent
+- **ui**: allow selecting, updating, and deleting libraries in settings
+- **sync**: automatically sync episode watched status and metadata maps with remote agent
+- **desktop**: support multi-source libraries aggregating local folders and remote agent sources
+- **agent**: rename agent libraries to media sources with backward compatibility
+
+### Fix
+
+- **dev-dependency**: bump commitizen from 4.18.1 to 4.19.0
+- **agent**: align frontend tests with media source renaming and upgrade mini-racer
+- **sync**: resolve path mapping mismatches, agent broadcasting, and watch progress overwrites
+- **db**: prevent invalid delete on unpersisted MediaFile instances during sync
+- **dev-dependency**: bump ruff from 0.16.7 to 0.16.9
+
+### Refactor
+
+- **ui**: rename settings tabs to Libraries and Remote Sources
+
+### Perf
+
+- **sync**: avoid redundant agent back-sync by calculating watch and metadata deltas
+
 ## v0.56.0rc1 (2026-10-03)
 
 ### Feat
