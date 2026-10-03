@@ -868,7 +868,7 @@ def test_v8_quick_scan_dashboard_button(engine: MiniRacer) -> None:
 
 
 def test_v8_add_library_button_resets_form(engine: MiniRacer) -> None:
-    """Verify clicking '+ Add Library' resets form, sets title, and opens modal."""
+    """Verify clicking '+ Add Media Source' resets form, sets title, and opens modal."""
     result = _load_app_in_v8(
         engine,
         """
@@ -888,7 +888,7 @@ def test_v8_add_library_button_resets_form(engine: MiniRacer) -> None:
     )
     assert result["formResetCalled"] is True
     assert result["libId"] == ""
-    assert result["title"] == "Add Library"
+    assert result["title"] == "Add Media Source"
     assert result["modalOpen"] is True
 
 

@@ -25,7 +25,7 @@ dev = [
     "ruff>=0.16.3",
     "mypy>=2.3.0",
     "types-requests>=2.33.0.20260712",
-    "py-mini-racer>=0.6.0",
+    "mini-racer>=0.14.0",
 ]
 
 [tool.pytest.ini_options]
@@ -36,6 +36,7 @@ filterwarnings = [
     "ignore::ResourceWarning",
     "ignore::starlette.exceptions.StarletteDeprecationWarning",
     "ignore:The anyio.abc.BlockingPortal alias is deprecated.*:DeprecationWarning",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 testpaths = ["tests"]
 
