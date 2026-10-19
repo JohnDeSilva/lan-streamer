@@ -527,8 +527,10 @@ LAN Streamer includes a standalone, remote scanning agent (`agent/`) designed to
 - **Storage-Colocated Scanning**: Runs filesystem discovery, TMDB metadata resolution, OpenSubtitles downloading, media file renaming, and technical analysis (`ffprobe`) locally on your storage server without loading the desktop client.
 - **Automated Scanning**: Real-time filesystem event watching with configurable debounce for instant updates when media files are added/modified, paired with periodic scheduled scans (default: every 4 hours) as an automated fallback.
 - **Web Interface**: Includes a responsive web management SPA (port `8800`) with tabs for Dashboard, Media Sources, Real-Time Scan Monitor (with live Server-Sent Events log streaming), Media Browser, and Configuration.
+- **Real-Time Reactive Event Bridge (SSE)**: The remote agent broadcasts real-time Server-Sent Events (`watch.updated`, `metadata.updated`, `scan.finished`) over `/api/v1/events`. The desktop app streams this background feed to instantly update watched states, playback progress, Smart Rows (Combined View), and synchronize newly scanned libraries without requiring manual reloads.
 - **REST API (`/api/v1`)**: Exposes typed endpoints for health checks, media source configuration, background scan management, TMDB metadata searching & matching, filename preview & renaming, subtitles, and desktop client watch-state sync.
 - **Streaming Compatibility & Mount Mapping**: Preserves original media streaming behavior. Remote storage paths (e.g., `/media/movies`) are mapped to local SMB/NFS filesystem mount points in the desktop client's **Remote Media Sources** tab, allowing instant VLC playback without transcoding.
+
 
 ### Running with Docker
 

@@ -13,8 +13,15 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
+    from scan_agent.scan.progress import ProgressBroker
+
 
 def get_database_session(request: Request) -> Iterator[Session]:
     """Yield a database session bound to the app's engine for the request."""
     with get_session(request.app.state.engine) as session:
         yield session
+
+
+def get_progress_broker(request: Request) -> ProgressBroker:
+    """Return the progress and event broker singleton."""
+    return request.app.state.progress_broker
