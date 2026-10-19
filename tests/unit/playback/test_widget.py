@@ -535,6 +535,7 @@ def test_key_press_events(player_widget) -> None:
     with (
         patch.object(player_widget, "toggle_fullscreen") as mock_toggle,
         patch.object(player_widget, "play_pause") as mock_play,
+        patch.object(player_widget, "toggle_subtitles") as mock_toggle_subtitles,
     ):
         # F key
         event_f = QKeyEvent(
@@ -565,6 +566,15 @@ def test_key_press_events(player_widget) -> None:
         )
         player_widget.keyPressEvent(event_space)
         mock_play.assert_called_once()
+
+        # C key for toggling subtitles / captions
+        event_c = QKeyEvent(
+            QKeyEvent.Type.KeyPress,
+            Qt.Key.Key_C,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        player_widget.keyPressEvent(event_c)
+        mock_toggle_subtitles.assert_called_once()
 
     # Volume shortcuts
     player_widget.mediaplayer = MagicMock()
@@ -1575,3 +1585,135 @@ def test_fullscreen_control_bar_positions(player_widget, qtbot) -> None:
         player_widget._hide_fullscreen_controls()
         assert player_widget.fullscreen_overlay.isHidden()
         assert player_widget.fullscreen_view.isHidden()
+
+
+def test_toggle_subtitles_no_mediaplayer(player_widget) -> None:
+    player_widget.mediaplayer = None
+    # Should not raise exception
+    player_widget.toggle_subtitles()
+
+
+def test_toggle_subtitles_no_available_tracks(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.subtitle_combo.clear()
+    player_widget.subtitle_combo.addItem("Disable", -1)
+
+    with patch.object(player_widget, "_show_osd") as mock_show_osd:
+        player_widget.toggle_subtitles()
+        mock_show_osd.assert_called_once_with("Subtitles Unavailable")
+
+
+def test_toggle_subtitles_enable_and_disable_cycle(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.subtitle_combo.clear()
+    player_widget.subtitle_combo.addItem("Disable", -1)
+    player_widget.subtitle_combo.addItem("English", 1)
+    player_widget.subtitle_combo.addItem("Spanish", 2)
+
+    # Initially select English (index 1)
+    player_widget.subtitle_combo.setCurrentIndex(1)
+    player_widget.mediaplayer.video_set_spu.reset_mock()
+
+    with patch.object(player_widget, "_show_osd") as mock_show_osd:
+        # 1. Toggle off (disable)
+        player_widget.toggle_subtitles()
+        assert player_widget.subtitle_combo.currentIndex() == 0
+        player_widget.mediaplayer.video_set_spu.assert_called_with(-1)
+        mock_show_osd.assert_called_with("Subtitles: OFF")
+        assert player_widget.last_selected_subtitle_track_identifier == 1
+
+        mock_show_osd.reset_mock()
+        player_widget.mediaplayer.video_set_spu.reset_mock()
+
+        # 2. Toggle on (restore English, index 1)
+        player_widget.toggle_subtitles()
+        assert player_widget.subtitle_combo.currentIndex() == 1
+        player_widget.mediaplayer.video_set_spu.assert_called_with(1)
+        mock_show_osd.assert_called_with("Subtitles: ON (English)")
+        assert player_widget.last_selected_subtitle_track_identifier == 1
+
+        mock_show_osd.reset_mock()
+        player_widget.mediaplayer.video_set_spu.reset_mock()
+
+        # 3. User manually switches to Spanish (index 2)
+        player_widget._select_subtitle_track_from_menu(2)
+        assert player_widget.last_selected_subtitle_track_identifier == 2
+
+        # 4. Toggle off (disable)
+        player_widget.toggle_subtitles()
+        assert player_widget.subtitle_combo.currentIndex() == 0
+        player_widget.mediaplayer.video_set_spu.assert_called_with(-1)
+        mock_show_osd.assert_called_with("Subtitles: OFF")
+        assert player_widget.last_selected_subtitle_track_identifier == 2
+
+        mock_show_osd.reset_mock()
+        player_widget.mediaplayer.video_set_spu.reset_mock()
+
+        # 5. Toggle on (restore Spanish, index 2)
+        player_widget.toggle_subtitles()
+        assert player_widget.subtitle_combo.currentIndex() == 2
+        player_widget.mediaplayer.video_set_spu.assert_called_with(2)
+        mock_show_osd.assert_called_with("Subtitles: ON (Spanish)")
+
+
+def test_toggle_subtitles_without_explicit_disable_item(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.subtitle_combo.clear()
+    player_widget.subtitle_combo.addItem("English", 1)
+    player_widget.subtitle_combo.addItem("Japanese", 2)
+
+    player_widget.subtitle_combo.setCurrentIndex(0)
+    player_widget.mediaplayer.video_set_spu.reset_mock()
+
+    with patch.object(player_widget, "_show_osd") as mock_show_osd:
+        # Disable subtitles
+        player_widget.toggle_subtitles()
+        assert player_widget.subtitle_combo.currentIndex() == -1
+        player_widget.mediaplayer.video_set_spu.assert_called_with(-1)
+        mock_show_osd.assert_called_with("Subtitles: OFF")
+
+        mock_show_osd.reset_mock()
+        player_widget.mediaplayer.video_set_spu.reset_mock()
+
+        # Re-enable subtitles
+        player_widget.toggle_subtitles()
+        assert player_widget.subtitle_combo.currentIndex() == 0
+        player_widget.mediaplayer.video_set_spu.assert_called_with(1)
+        mock_show_osd.assert_called_with("Subtitles: ON (English)")
+
+
+def test_toggle_subtitles_defaults_to_english_or_first(player_widget) -> None:
+    player_widget.mediaplayer = MagicMock()
+    player_widget.last_selected_subtitle_track_identifier = None
+    player_widget.subtitle_combo.clear()
+    player_widget.subtitle_combo.addItem("Disable", -1)
+    player_widget.subtitle_combo.addItem("French", 5)
+    player_widget.subtitle_combo.addItem("English", 6)
+
+    player_widget.subtitle_combo.setCurrentIndex(0)
+
+    with patch.object(player_widget, "_show_osd") as mock_show_osd:
+        player_widget.toggle_subtitles()
+        # English should be preferred over French
+        assert player_widget.subtitle_combo.currentIndex() == 2
+        player_widget.mediaplayer.video_set_spu.assert_called_with(6)
+        mock_show_osd.assert_called_with("Subtitles: ON (English)")
+
+    # Test fallback to first available if no English
+    player_widget.last_selected_subtitle_track_identifier = None
+    player_widget.subtitle_combo.clear()
+    player_widget.subtitle_combo.addItem("Disable", -1)
+    player_widget.subtitle_combo.addItem("German", 8)
+    player_widget.subtitle_combo.setCurrentIndex(0)
+
+    with patch.object(player_widget, "_show_osd") as mock_show_osd:
+        player_widget.toggle_subtitles()
+        assert player_widget.subtitle_combo.currentIndex() == 1
+        player_widget.mediaplayer.video_set_spu.assert_called_with(8)
+        mock_show_osd.assert_called_with("Subtitles: ON (German)")
+
+
+def test_toggle_captions_alias(player_widget) -> None:
+    with patch.object(player_widget, "toggle_subtitles") as mock_toggle:
+        player_widget.toggle_captions()
+        mock_toggle.assert_called_once()
