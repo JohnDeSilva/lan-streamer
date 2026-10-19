@@ -54,6 +54,10 @@ class AgentEventListenerWorker(AsyncWorkerBase):
         Emitted when a ``metadata.updated`` event is received from the agent.
     scan_finished : Signal(dict)
         Emitted when a ``scan.finished`` event is received from the agent.
+    stream_gap : Signal(dict)
+        Emitted when a ``stream.gap`` event is received from the agent. This
+        signals that the agent's bounded event history dropped events the
+        client never received, so consumers may need to fully resynchronize.
     connection_status_changed : Signal(str, bool)
         Emitted with the agent URL and boolean connection status (True when connected,
         False when disconnected or reconnecting).
@@ -63,6 +67,7 @@ class AgentEventListenerWorker(AsyncWorkerBase):
     watch_updated = Signal(dict)
     metadata_updated = Signal(dict)
     scan_finished = Signal(dict)
+    stream_gap = Signal(dict)
     connection_status_changed = Signal(str, bool)
 
     def __init__(
@@ -321,6 +326,8 @@ class AgentEventListenerWorker(AsyncWorkerBase):
             self.metadata_updated.emit(payload)
         elif event_name == "scan.finished":
             self.scan_finished.emit(payload)
+        elif event_name == "stream.gap":
+            self.stream_gap.emit(payload)
 
     def _update_connection_status(self, is_connected: bool) -> None:
         """Update internal connection state and emit signal if changed."""
