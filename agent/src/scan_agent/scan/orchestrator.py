@@ -277,9 +277,17 @@ class ScanOrchestrator:
             with self._state_lock:
                 self._running_job_id = None
                 self._last_job_id = job_id
+            target_library_names = [
+                str(library_definition.get("name", ""))
+                for library_definition in target_libraries
+            ]
             self._progress_broker.publish(
                 "scan.finished",
-                {"job_id": job_id, "status": self._load_job_status(job_id)},
+                {
+                    "job_id": job_id,
+                    "status": self._load_job_status(job_id),
+                    "libraries": target_library_names,
+                },
             )
 
     def _scan_single_library(

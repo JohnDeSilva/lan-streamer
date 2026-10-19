@@ -82,6 +82,7 @@ def test_main_execution() -> None:
         mock_backup.assert_called_once()
         mock_grid_instance.populate_libraries.assert_called_once()
         mock_controller_instance.trigger_jellyfin_pull.assert_not_called()
+        mock_controller_instance.start_agent_event_listeners.assert_called_once()
 
 
 def test_main_logging_setup(tmp_path: Any) -> None:

@@ -171,6 +171,8 @@ class Controller(QObject):
             parent=self,
         )
 
+        self.agent_event_listeners: dict[str, Any] = {}
+
         self.file_system_watcher.directoryChanged.connect(self._on_directory_changed)
 
     @property
@@ -182,6 +184,68 @@ class Controller(QObject):
         """Start the periodic background scan service."""
         if self._config.auto_scan_enabled:
             self.scheduled_scan_service.start()
+
+    def start_agent_event_listeners(self) -> None:
+        """Discover configured scan agents and launch background SSE event listeners."""
+        configured_agent_urls: set[str] = set()
+        for agent_url, agent_data in getattr(self._config, "scan_agents", {}).items():
+            if (
+                isinstance(agent_data, dict) and agent_data.get("enabled", True)
+            ) or not isinstance(agent_data, dict):
+                configured_agent_urls.add(agent_url)
+
+        from lan_streamer.system.config import get_library_sources
+
+        for library_configuration in self._config.libraries.values():
+            if library_configuration.get("agent_url"):
+                configured_agent_urls.add(library_configuration["agent_url"])
+            for source_entry in get_library_sources(library_configuration):
+                if source_entry.get("type") == "agent" and source_entry.get(
+                    "agent_url"
+                ):
+                    configured_agent_urls.add(source_entry["agent_url"])
+
+        # Stop workers for agents that are no longer configured
+        for active_url in list(self.agent_event_listeners.keys()):
+            if active_url not in configured_agent_urls:
+                worker_to_stop = self.agent_event_listeners.pop(active_url)
+                worker_to_stop.stop()
+
+        # Start workers for newly configured agents
+        from lan_streamer.backend.agent_event_worker import (
+            AgentEventListenerWorker,
+        )
+
+        for agent_url in configured_agent_urls:
+            if agent_url not in self.agent_event_listeners:
+                worker = AgentEventListenerWorker(
+                    agent_url=agent_url,
+                    async_task_manager=self.async_task_manager,
+                    parent=self,
+                )
+                worker.watch_updated.connect(
+                    lambda payload, url=agent_url: self._on_agent_watch_updated(
+                        payload, url
+                    )
+                )
+                worker.metadata_updated.connect(
+                    lambda payload, url=agent_url: self._on_agent_metadata_updated(
+                        payload, url
+                    )
+                )
+                worker.scan_finished.connect(
+                    lambda payload, url=agent_url: self._on_agent_scan_finished(
+                        payload, url
+                    )
+                )
+                self.agent_event_listeners[agent_url] = worker
+                worker.start()
+
+    def stop_agent_event_listeners(self) -> None:
+        """Stop all background SSE event listeners."""
+        for worker in self.agent_event_listeners.values():
+            worker.stop()
+        self.agent_event_listeners.clear()
 
     def select_tab(self, tab_name: str, reset_selection: bool = True) -> None:
         logger.info("Controller loading tab: %s", tab_name)
@@ -1001,6 +1065,195 @@ class Controller(QObject):
 
         task_name = f"metadata_map_sync_{uuid.uuid4().hex}"
         self.async_task_manager.create_task(run_async_task(), name=task_name)
+
+    def _on_agent_watch_updated(self, payload: dict[str, Any], agent_url: str) -> None:
+        """Handle watch.updated event received from a remote scan agent."""
+        logger.info(
+            "Controller received watch.updated from agent '%s': %s",
+            agent_url,
+            payload,
+        )
+        remote_path = payload.get("path")
+        watched = payload.get("watched")
+        position_seconds = payload.get("position_seconds")
+        last_played_at = payload.get("last_played_at") or int(time.time())
+
+        if not remote_path:
+            return
+
+        from lan_streamer.services.path_mapping_service import (
+            map_remote_path_to_local,
+        )
+        from lan_streamer.system.config import get_library_sources
+
+        # Find mount mappings across libraries referencing this agent
+        resolved_local_path = remote_path
+        for library_configuration in self._config.libraries.values():
+            sources = get_library_sources(library_configuration)
+            uses_agent = (
+                any(
+                    source.get("type") == "agent"
+                    and source.get("agent_url") == agent_url
+                    for source in sources
+                )
+                or library_configuration.get("agent_url") == agent_url
+            )
+            if uses_agent:
+                mount_mappings = dict(library_configuration.get("mount_mappings", {}))
+                for source_entry in sources:
+                    if "mount_mappings" in source_entry:
+                        mount_mappings.update(source_entry.get("mount_mappings", {}))
+                mapped_candidate = map_remote_path_to_local(remote_path, mount_mappings)
+                if mapped_candidate != remote_path:
+                    resolved_local_path = mapped_candidate
+                    break
+
+        # 1. Update in-memory cached_library_data
+        updated_in_memory = False
+        for series_data in self.cached_library_data.values():
+            if series_data.get("type") == "movie" or "seasons" not in series_data:
+                movie_path = series_data.get("path")
+                version_paths = {
+                    version.get("path")
+                    for version in series_data.get("versions", [])
+                    if isinstance(version, dict) and version.get("path")
+                }
+                if self._matches_file_path(
+                    resolved_local_path, movie_path, version_paths
+                ) or self._matches_file_path(remote_path, movie_path, version_paths):
+                    if watched is not None:
+                        series_data["watched"] = bool(watched)
+                    if position_seconds is not None:
+                        series_data["last_played_position"] = int(position_seconds)
+                    series_data["last_played_at"] = last_played_at
+                    updated_in_memory = True
+                    break
+            else:
+                found_episode = False
+                for season_data in series_data.get("seasons", {}).values():
+                    for episode_record in season_data.get("episodes", []):
+                        episode_path = episode_record.get("path")
+                        version_paths = {
+                            version.get("path")
+                            for version in episode_record.get("versions", [])
+                            if isinstance(version, dict) and version.get("path")
+                        }
+                        if self._matches_file_path(
+                            resolved_local_path, episode_path, version_paths
+                        ) or self._matches_file_path(
+                            remote_path, episode_path, version_paths
+                        ):
+                            if watched is not None:
+                                episode_record["watched"] = bool(watched)
+                            if position_seconds is not None:
+                                episode_record["last_played_position"] = int(
+                                    position_seconds
+                                )
+                            episode_record["last_played_at"] = last_played_at
+                            found_episode = True
+                            updated_in_memory = True
+                            break
+                    if found_episode:
+                        break
+                if found_episode:
+                    break
+
+        if updated_in_memory:
+            self._cache_series_metrics()
+
+        # 2. Update local database cache
+        try:
+            if watched is not None:
+                self._db.update_episode_watched_status(
+                    resolved_local_path, bool(watched)
+                )
+            if position_seconds is not None:
+                self._db.update_playback_position(
+                    resolved_local_path, int(position_seconds)
+                )
+        except Exception:
+            logger.exception(
+                "Could not update local database from remote watch event for '%s'",
+                resolved_local_path,
+            )
+
+        # 3. Update smart row cache for combined view
+        async def run_smart_row_update() -> None:
+            from lan_streamer.system.async_utils import run_in_executor
+
+            changed_hashes = await run_in_executor(
+                self._smart_row_service.on_episode_watched,
+                resolved_local_path,
+            )
+            if not changed_hashes and resolved_local_path != remote_path:
+                changed_hashes = await run_in_executor(
+                    self._smart_row_service.on_episode_watched,
+                    remote_path,
+                )
+            if changed_hashes:
+                self.smart_rows_updated.emit(changed_hashes)
+
+        task_name = f"agent_watch_smart_row_update_{uuid.uuid4().hex}"
+        self.async_task_manager.create_task(
+            run_smart_row_update(),
+            name=task_name,
+        )
+
+        if not self.is_video_playing:
+            self.library_loaded.emit()
+
+    def _on_agent_scan_finished(self, payload: dict[str, Any], agent_url: str) -> None:
+        """Handle scan.finished event received from a remote scan agent."""
+        logger.info(
+            "Controller received scan.finished from agent '%s': %s",
+            agent_url,
+            payload,
+        )
+        scanned_libraries = payload.get("libraries", [])
+        from lan_streamer.system.config import get_library_sources
+
+        for library_name, library_configuration in self._config.libraries.items():
+            sources = get_library_sources(library_configuration)
+            uses_agent = (
+                any(
+                    source.get("type") == "agent"
+                    and source.get("agent_url") == agent_url
+                    for source in sources
+                )
+                or library_configuration.get("agent_url") == agent_url
+            )
+
+            if uses_agent:
+                should_sync = not scanned_libraries or any(
+                    scanned_name.lower()
+                    in (
+                        library_name.lower(),
+                        str(library_configuration.get("remote_library_id", "")).lower(),
+                    )
+                    or any(
+                        scanned_name.lower() == str(source.get("source_id", "")).lower()
+                        for source in sources
+                    )
+                    for scanned_name in scanned_libraries
+                )
+                if should_sync:
+                    logger.info(
+                        "Triggering remote sync for library '%s' following agent scan completion",
+                        library_name,
+                    )
+                    self._queue_remote_sync(library_name, emit_signal=True)
+
+    def _on_agent_metadata_updated(
+        self, payload: dict[str, Any], agent_url: str
+    ) -> None:
+        """Handle metadata.updated event received from a remote scan agent."""
+        logger.info(
+            "Controller received metadata.updated from agent '%s': %s",
+            agent_url,
+            payload,
+        )
+        media_type = payload.get("media_type", "item")
+        self.status_changed.emit(f"Metadata updated on remote agent for {media_type}")
 
     def mark_season_watched(
         self, series_name: str, season_name: str, watched: bool = True

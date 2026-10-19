@@ -84,6 +84,8 @@ async def main() -> None:
     controller = Controller()
     application_instance.aboutToQuit.connect(controller.worker_manager.stop_all)
     application_instance.aboutToQuit.connect(controller.async_task_manager.stop_all)
+    application_instance.aboutToQuit.connect(controller.stop_agent_event_listeners)
+    controller.start_agent_event_listeners()
     library_grid_view = LibraryGridView(controller)
     series_detail_view = SeriesDetailView(controller)
     movie_detail_view = MovieDetailView(controller)

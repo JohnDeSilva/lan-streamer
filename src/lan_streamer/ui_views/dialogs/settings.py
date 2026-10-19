@@ -2943,6 +2943,7 @@ class SettingsDialog(QDialog):
             )
             if config.auto_scan_enabled:
                 self.controller.start_scheduled_scans()
+            self.controller.start_agent_event_listeners()
 
         from lan_streamer.system.logging_handler import set_application_log_level
 

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
-from scan_agent.api.deps import get_database_session
+from scan_agent.api.deps import get_database_session, get_progress_broker
 from scan_agent.api.schemas import (
     ManualMetadataMappingRequest,
     MetadataMatch,
@@ -32,6 +32,9 @@ if TYPE_CHECKING:
     import pathlib
 
     from sqlalchemy.orm import Session
+
+    from scan_agent.scan.progress import ProgressBroker
+
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +133,7 @@ def metadata_match(
     media_identifier: int = Path(ge=1),
     payload: MetadataMatch = ...,  # type: ignore[assignment]
     session: Session = Depends(get_database_session),
+    progress_broker: ProgressBroker = Depends(get_progress_broker),
 ) -> dict[str, Any]:
     """Point a series/movie at a TMDB identifier.
 
@@ -164,6 +168,19 @@ def metadata_match(
         raise HTTPException(status_code=400, detail="media_type must be series/movie")
     if result is None:
         raise HTTPException(status_code=404, detail="Unknown media identifier")
+    progress_broker.publish(
+        "metadata.updated",
+        {
+            "media_type": resolved_media_type,
+            "media_identifier": media_identifier,
+            "tmdb_identifier": payload.tmdb_identifier,
+            "name": result.get("name") if isinstance(result, dict) else None,
+            "poster_path": (
+                result.get("poster_path") if isinstance(result, dict) else None
+            ),
+            "media": result,
+        },
+    )
     return {
         "status": "accepted",
         "rescan_required": False,
