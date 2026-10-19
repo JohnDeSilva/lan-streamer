@@ -1757,3 +1757,96 @@ def test_toggle_captions_alias(player_widget) -> None:
     with patch.object(player_widget, "toggle_subtitles") as mock_toggle:
         player_widget.toggle_captions()
         mock_toggle.assert_called_once()
+
+
+def test_subtitle_shortcut_ignores_modifiers_and_auto_repeat(player_widget) -> None:
+    """Ctrl+C and key auto-repeat must not toggle subtitles."""
+    from PySide6.QtGui import QKeyEvent
+
+    with patch.object(player_widget, "toggle_subtitles") as mock_toggle:
+        ctrl_c_event = QKeyEvent(
+            QKeyEvent.Type.KeyPress,
+            Qt.Key.Key_C,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        player_widget.keyPressEvent(ctrl_c_event)
+        mock_toggle.assert_not_called()
+
+        repeat_c_event = QKeyEvent(
+            QKeyEvent.Type.KeyPress,
+            Qt.Key.Key_C,
+            Qt.KeyboardModifier.NoModifier,
+            "",
+            True,
+        )
+        player_widget.keyPressEvent(repeat_c_event)
+        mock_toggle.assert_not_called()
+
+        plain_c_event = QKeyEvent(
+            QKeyEvent.Type.KeyPress,
+            Qt.Key.Key_C,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        player_widget.keyPressEvent(plain_c_event)
+        mock_toggle.assert_called_once()
+
+
+def test_refresh_tracks_keeps_user_disabled_choice(player_widget) -> None:
+    """The delayed auto-selection must not re-enable subtitles the user turned off."""
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = []
+    player_widget.mediaplayer.audio_get_track.return_value = -1
+    player_widget.mediaplayer.video_get_spu_description.return_value = [
+        (-1, b"Disable"),
+        (2, b"English"),
+    ]
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+    player_widget._subtitle_user_override = True
+    player_widget._subtitles_user_enabled = False
+    player_widget.last_selected_subtitle_track_identifier = 2
+
+    player_widget._refresh_tracks()
+
+    player_widget.mediaplayer.video_set_spu.assert_called_with(-1)
+    assert player_widget.subtitle_combo.currentData() == -1
+
+
+def test_refresh_tracks_restores_user_selected_track(player_widget) -> None:
+    """The delayed auto-selection must restore the track the user explicitly chose."""
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = []
+    player_widget.mediaplayer.audio_get_track.return_value = -1
+    player_widget.mediaplayer.video_get_spu_description.return_value = [
+        (-1, b"Disable"),
+        (2, b"English"),
+        (3, b"French"),
+    ]
+    player_widget.mediaplayer.video_get_spu.return_value = 3
+    player_widget._subtitle_user_override = True
+    player_widget._subtitles_user_enabled = True
+    player_widget.last_selected_subtitle_track_identifier = 3
+
+    player_widget._refresh_tracks()
+
+    player_widget.mediaplayer.video_set_spu.assert_called_with(3)
+    assert player_widget.subtitle_combo.currentData() == 3
+
+
+def test_first_subtitle_toggle_enables_real_track(player_widget) -> None:
+    """With an empty combo and subtitles off, the first toggle must enable a track."""
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.audio_get_track_description.return_value = []
+    player_widget.mediaplayer.audio_get_track.return_value = -1
+    player_widget.mediaplayer.video_get_spu_description.return_value = [
+        (-1, b"Disable"),
+        (2, b"English"),
+    ]
+    player_widget.mediaplayer.video_get_spu.return_value = -1
+
+    with patch.object(player_widget, "_show_osd"):
+        player_widget.toggle_subtitles()
+
+    player_widget.mediaplayer.video_set_spu.assert_any_call(2)
+    assert player_widget._subtitles_user_enabled is True
+    assert player_widget._subtitle_user_override is True
+    assert player_widget.subtitle_combo.currentData() == 2
