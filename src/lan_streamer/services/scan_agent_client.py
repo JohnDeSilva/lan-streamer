@@ -700,5 +700,69 @@ class ScanAgentClient:
         except ValueError:
             return {"status": "applied"}
 
+    def match_metadata(
+        self,
+        agent_url: str,
+        media_type: str,
+        tmdb_identifier: str,
+        media_identifier: int | None = None,
+        name: str | None = None,
+        path: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        """Apply a manual TMDB metadata match to a media item on a remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        resolved_media_type = (
+            "series" if media_type in ("series", "tv", "anime") else "movie"
+        )
+        if media_identifier is not None:
+            target_endpoint = (
+                f"{normalized_url}/api/v1/services/metadata/"
+                f"{resolved_media_type}/{media_identifier}/match"
+            )
+        else:
+            target_endpoint = (
+                f"{normalized_url}/api/v1/services/metadata/{resolved_media_type}/match"
+            )
+
+        payload: dict[str, Any] = {"tmdb_identifier": str(tmdb_identifier)}
+        if media_identifier is not None:
+            payload["media_id"] = media_identifier
+            payload["media_identifier"] = media_identifier
+        if name:
+            payload["name"] = name
+        if path:
+            payload["path"] = path
+
+        try:
+            response = requests.post(
+                target_endpoint,
+                json=payload,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed applying metadata match to agent '%s': %s",
+                agent_url,
+                error,
+            )
+            raise ScanAgentConnectionError(
+                f"Could not apply metadata match to scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code not in (200, 202):
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            response_json = response.json()
+            if isinstance(response_json, dict):
+                return response_json
+            return {"status": "accepted"}
+        except ValueError:
+            return {"status": "accepted"}
+
 
 scan_agent_client = ScanAgentClient()

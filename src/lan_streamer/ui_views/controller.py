@@ -1271,6 +1271,116 @@ class Controller(QObject):
         media_type = payload.get("media_type", "item")
         self.status_changed.emit(f"Metadata updated on remote agent for {media_type}")
 
+        from lan_streamer.system.config import get_library_sources
+
+        for library_name, library_configuration in self._config.libraries.items():
+            sources = get_library_sources(library_configuration)
+            matches_agent = library_configuration.get("agent_url") == agent_url or any(
+                source.get("agent_url") == agent_url for source in sources
+            )
+            if matches_agent:
+                logger.info(
+                    "Queueing remote sync for library '%s' following agent metadata update",
+                    library_name,
+                )
+                self._queue_remote_sync(library_name, emit_signal=True)
+
+    def _sync_metadata_match_to_agents(
+        self, series_name: str, match_dictionary: dict[str, Any], is_movie: bool
+    ) -> None:
+        """Propagate manual TMDB metadata match to remote agents configured for this library."""
+        from lan_streamer.system.config import get_library_sources
+
+        library_config = self._config.libraries.get(self.current_library_name, {})
+        sources = get_library_sources(library_config)
+        agent_urls = [
+            source_entry["agent_url"]
+            for source_entry in sources
+            if source_entry.get("type") == "agent" and source_entry.get("agent_url")
+        ]
+        if not agent_urls and library_config.get("agent_url"):
+            agent_urls = [library_config["agent_url"]]
+
+        if not agent_urls:
+            return
+
+        series_record = self.cached_library_data.get(series_name, {})
+        target_dict = series_record if is_movie else series_record.get("metadata", {})
+        target_tmdb_identifier = (
+            target_dict.get("tmdb_identifier")
+            or match_dictionary.get("id")
+            or match_dictionary.get("tmdb_id")
+        )
+        if not target_tmdb_identifier:
+            return
+
+        media_identifier = series_record.get("id") or target_dict.get("id")
+        mount_mappings = library_config.get("mount_mappings", {})
+        raw_path = series_record.get("path")
+        media_type = "movie" if is_movie else "series"
+
+        def run_agent_match() -> None:
+            import requests
+
+            from lan_streamer.services.path_mapping_service import (
+                map_local_path_to_remote,
+            )
+            from lan_streamer.services.scan_agent_client import (
+                ScanAgentConnectionError,
+                scan_agent_client,
+            )
+
+            for agent_url in agent_urls:
+                source_mount_mappings = dict(mount_mappings)
+                for source_entry in sources:
+                    if (
+                        source_entry.get("agent_url") == agent_url
+                        and "mount_mappings" in source_entry
+                    ):
+                        source_mount_mappings.update(
+                            source_entry.get("mount_mappings", {})
+                        )
+                remote_path = (
+                    map_local_path_to_remote(raw_path, source_mount_mappings)
+                    if raw_path
+                    else None
+                )
+                try:
+                    scan_agent_client.match_metadata(
+                        agent_url=agent_url,
+                        media_type=media_type,
+                        tmdb_identifier=str(target_tmdb_identifier),
+                        media_identifier=media_identifier,
+                        name=series_name,
+                        path=remote_path,
+                    )
+                    logger.info(
+                        "Synchronized metadata match for '%s' to agent '%s'",
+                        series_name,
+                        agent_url,
+                    )
+                except (
+                    ScanAgentConnectionError,
+                    requests.RequestException,
+                    OSError,
+                    ValueError,
+                    KeyError,
+                ) as sync_error:
+                    logger.warning(
+                        "Failed synchronizing metadata match for '%s' to agent '%s': %s",
+                        series_name,
+                        agent_url,
+                        sync_error,
+                    )
+
+        async def run_async_task() -> None:
+            from lan_streamer.system.async_utils import run_in_executor
+
+            await run_in_executor(run_agent_match)
+
+        task_name = f"metadata_match_sync_{uuid.uuid4().hex}"
+        self.async_task_manager.create_task(run_async_task(), name=task_name)
+
     def mark_season_watched(
         self, series_name: str, season_name: str, watched: bool = True
     ) -> None:
@@ -2141,6 +2251,7 @@ class Controller(QObject):
             target_dict["locked_metadata"] = True
             self._download_provider_artwork(target_dict, match_dictionary, is_movie)
             self._finish_metadata_match(series_name)
+            self._sync_metadata_match_to_agents(series_name, match_dictionary, is_movie)
             return
 
         # TV series: clear old metadata and sync TMDB episodes in background.
@@ -2157,8 +2268,8 @@ class Controller(QObject):
         for _season_name, season_data in list(series_record.get("seasons", {}).items()):
             season_data.get("metadata", {}).pop("tmdb_identifier", None)
             filtered_episodes = []
-            for ep in season_data.get("episodes", []):
-                if ep.get("path"):
+            for episode in season_data.get("episodes", []):
+                if episode.get("path"):
                     for key in [
                         "tmdb_name",
                         "tmdb_identifier",
@@ -2167,14 +2278,25 @@ class Controller(QObject):
                         "air_date",
                         "runtime",
                     ]:
-                        ep.pop(key, None)
-                    filtered_episodes.append(ep)
+                        episode.pop(key, None)
+                    filtered_episodes.append(episode)
             season_data["episodes"] = filtered_episodes
 
         saved_group_id = None
         poster_path = match_dictionary.get("poster_path")
 
         # Resolve the series directory from the library root paths
+        from lan_streamer.system.config import get_library_sources
+
+        sources = get_library_sources(library_config)
+        agent_urls = [
+            source_entry["agent_url"]
+            for source_entry in sources
+            if source_entry.get("type") == "agent" and source_entry.get("agent_url")
+        ]
+        if not agent_urls and library_config.get("agent_url"):
+            agent_urls = [library_config["agent_url"]]
+
         root_paths: list[str] = library_config.get("paths", [])
         series_directory: Path | None = None
         for root_path in root_paths:
@@ -2183,9 +2305,21 @@ class Controller(QObject):
                 series_directory = potential_dir
                 break
 
+        is_remote = library_config.get("management_type") == "remote" or (
+            bool(agent_urls) and series_directory is None
+        )
+        if is_remote:
+            target_dict["locked_metadata"] = True
+            self._download_provider_artwork(target_dict, match_dictionary, is_movie)
+            self._finish_metadata_match(series_name)
+            self._sync_metadata_match_to_agents(series_name, match_dictionary, is_movie)
+            return
+
         if self.worker_manager.metadata_apply.is_running:
             logger.info("MetadataApplyWorker is already running. Skipping.")
             return
+
+        self._sync_metadata_match_to_agents(series_name, match_dictionary, is_movie)
 
         self.worker_manager.metadata_apply.start(
             lambda: MetadataApplyWorker(
@@ -2204,7 +2338,9 @@ class Controller(QObject):
                     series_name, synced_data, cached_poster
                 )
             ),
-            error=lambda msg: self._on_metadata_apply_error(series_name, msg),
+            error=lambda error_message: self._on_metadata_apply_error(
+                series_name, error_message
+            ),
         )
 
     def _on_metadata_apply_finished(

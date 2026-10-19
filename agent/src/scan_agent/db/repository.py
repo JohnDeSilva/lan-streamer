@@ -1102,9 +1102,11 @@ def _series_to_scanner_dict(series: Series) -> dict[str, Any]:
             ],
         }
     return {
+        "id": series.id,
         "name": series.name or series.folder_name,
         "path": series.path,
         "metadata": {
+            "id": series.id,
             "jellyfin_id": None,
             "tmdb_identifier": series.tmdb_identifier,
             "poster_path": series.poster_path,
@@ -1241,6 +1243,7 @@ def _movie_to_scanner_dict(movie: Movie) -> dict[str, Any]:
     """Convert a :class:`Movie` row into the scanner's movie dict shape."""
     versions = [_media_file_to_version(media_file) for media_file in movie.media_files]
     return {
+        "id": movie.id,
         "name": movie.name or movie.folder_name,
         "path": movie.path or (versions[0]["path"] if versions else None),
         "jellyfin_id": None,
@@ -1864,6 +1867,58 @@ def set_movie_metadata_match(
         tmdb_identifier,
     )
     return movie_to_dict(movie)
+
+
+def find_series_entity(
+    connection: Session,
+    series_identifier: int | None = None,
+    name: str | None = None,
+    path: str | None = None,
+) -> Series | None:
+    """Find a :class:`Series` row by primary key, filesystem path, name, or folder_name."""
+    if series_identifier is not None:
+        series_entity = connection.get(Series, series_identifier)
+        if series_entity is not None:
+            return series_entity
+    if path:
+        series_entity = connection.scalars(
+            select(Series).where(Series.path == path)
+        ).first()
+        if series_entity is not None:
+            return series_entity
+    if name:
+        series_entity = connection.scalars(
+            select(Series).where(or_(Series.name == name, Series.folder_name == name))
+        ).first()
+        if series_entity is not None:
+            return series_entity
+    return None
+
+
+def find_movie_entity(
+    connection: Session,
+    movie_identifier: int | None = None,
+    name: str | None = None,
+    path: str | None = None,
+) -> Movie | None:
+    """Find a :class:`Movie` row by primary key, filesystem path, name, or folder_name."""
+    if movie_identifier is not None:
+        movie_entity = connection.get(Movie, movie_identifier)
+        if movie_entity is not None:
+            return movie_entity
+    if path:
+        movie_entity = connection.scalars(
+            select(Movie).where(Movie.path == path)
+        ).first()
+        if movie_entity is not None:
+            return movie_entity
+    if name:
+        movie_entity = connection.scalars(
+            select(Movie).where(or_(Movie.name == name, Movie.folder_name == name))
+        ).first()
+        if movie_entity is not None:
+            return movie_entity
+    return None
 
 
 def get_rename_source(

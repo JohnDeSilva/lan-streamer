@@ -84,6 +84,10 @@ class MetadataMatch(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     tmdb_identifier: str = Field(min_length=1)
+    media_id: int | None = None
+    media_identifier: int | None = None
+    name: str | None = None
+    path: str | None = None
 
 
 class RenameRequest(BaseModel):
