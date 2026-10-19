@@ -154,6 +154,7 @@ class Controller(QObject):
         self._remote_sync_emit_signal: dict[str, bool] = {}
         self._remote_sync_scan_completed: dict[str, bool] = {}
         self._remote_sync_status_messages: dict[str, tuple[str, str]] = {}
+        self._remote_library_last_synced: dict[str, float] = {}
         self._pending_position_sync_tasks: dict[str, Any] = {}
 
         self.file_system_watcher = QFileSystemWatcher(self)
@@ -309,13 +310,18 @@ class Controller(QObject):
 
             sources = get_library_sources(single_library_config)
             has_agent_sources = any(source.get("type") == "agent" for source in sources)
+            now = time.time()
+            last_synced_at = self._remote_library_last_synced.get(
+                single_library_name, 0.0
+            )
+            is_stale = (now - last_synced_at) > 60.0
             if (
                 trigger_remote_sync
                 and (
                     single_library_config.get("management_type") in ("remote", "hybrid")
                     or has_agent_sources
                 )
-                and not single_library_data
+                and (not single_library_data or is_stale)
             ):
                 self._queue_remote_sync(single_library_name, emit_signal=True)
 
@@ -351,6 +357,44 @@ class Controller(QObject):
             return False
         self._queue_remote_sync(library_name, emit_signal=emit_signal)
         return True
+
+    def check_combined_view_freshness(self) -> None:
+        """Queue background synchronization for remote libraries contributing to Combined View."""
+        from lan_streamer.system.config import get_library_sources
+
+        now = time.time()
+        remote_libraries_to_sync: set[str] = set()
+
+        enabled_rows = [
+            row for row in self._config.combined_views if row.get("enabled", True)
+        ]
+        if not enabled_rows:
+            return
+
+        for row in enabled_rows:
+            row_libraries = row.get("libraries", [])
+            candidate_libraries = row_libraries or list(self._config.libraries.keys())
+            for single_library_name in candidate_libraries:
+                single_library_config = self._config.libraries.get(
+                    single_library_name, {}
+                )
+                sources = get_library_sources(single_library_config)
+                has_agent_sources = any(
+                    source.get("type") == "agent" for source in sources
+                )
+                is_remote_or_hybrid = (
+                    single_library_config.get("management_type") in ("remote", "hybrid")
+                    or has_agent_sources
+                )
+                if is_remote_or_hybrid:
+                    last_synced_at = self._remote_library_last_synced.get(
+                        single_library_name, 0.0
+                    )
+                    if (now - last_synced_at) > 60.0:
+                        remote_libraries_to_sync.add(single_library_name)
+
+        for library_name in remote_libraries_to_sync:
+            self._queue_remote_sync(library_name, emit_signal=False)
 
     def _queue_remote_sync(
         self,
@@ -427,6 +471,13 @@ class Controller(QObject):
                 library_name,
                 result.get("items", 0),
             )
+            self._remote_library_last_synced[library_name] = time.time()
+            if self._smart_row_service is not None:
+                changed_hashes = self._smart_row_service.rebuild_for_libraries(
+                    [library_name]
+                )
+                if changed_hashes:
+                    self.smart_rows_updated.emit(changed_hashes)
             if success_message:
                 self.status_changed.emit(success_message)
             if emit_signal:

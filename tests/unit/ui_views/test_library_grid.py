@@ -173,15 +173,19 @@ class TestOnLibraryChanged:
             mock_select.assert_called_once_with("ShowLib")
 
     def test_combined_view_shows_combined_scroll(self, grid_view) -> None:
-        view, _controller = grid_view
+        view, controller = grid_view
         view.show()  # Widget must be shown for isVisible() to return True
         config.combined_views = []
-        with patch.object(view, "populate_combined_view") as mock_populate:
+        with (
+            patch.object(view, "populate_combined_view") as mock_populate,
+            patch.object(controller, "check_combined_view_freshness") as mock_freshness,
+        ):
             view.on_library_changed("Combined View")
             assert not view.series_list_widget.isVisible()
             assert not view.filter_watched_checkbox.isVisible()
             assert view.combined_scroll_area.isVisible()
             mock_populate.assert_called_once()
+            mock_freshness.assert_called_once()
 
     def test_empty_library_name_no_crash(self, grid_view) -> None:
         view, _controller = grid_view
