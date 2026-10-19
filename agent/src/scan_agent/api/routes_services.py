@@ -170,19 +170,17 @@ def metadata_match(
         raise HTTPException(status_code=400, detail="media_type must be series/movie")
     if result is None:
         raise HTTPException(status_code=404, detail="Unknown media identifier")
-    progress_broker.publish(
-        "metadata.updated",
-        {
-            "media_type": resolved_media_type,
-            "media_identifier": media_identifier,
-            "tmdb_identifier": payload.tmdb_identifier,
-            "name": result.get("name") if isinstance(result, dict) else None,
-            "poster_path": (
-                result.get("poster_path") if isinstance(result, dict) else None
-            ),
-            "media": result,
-        },
-    )
+    event_payload: dict[str, Any] = {
+        "media_type": resolved_media_type,
+        "media_identifier": media_identifier,
+        "tmdb_identifier": payload.tmdb_identifier,
+        "name": result.get("name"),
+        "poster_path": result.get("poster_path"),
+    }
+    library_identifier = result.get("library_id")
+    if isinstance(library_identifier, int):
+        event_payload["library_id"] = library_identifier
+    progress_broker.publish("metadata.updated", event_payload)
     return {
         "status": "accepted",
         "rescan_required": False,

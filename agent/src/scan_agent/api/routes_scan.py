@@ -150,17 +150,29 @@ async def events_stream(
     """Stream scan progress/log events over Server-Sent Events.
 
     *sequence* (or the ``Last-Event-ID`` header value) resumes history after
-    the given sequence number. With ``until_finished=1`` the stream ends once
-    a ``scan.finished`` event is delivered.
+    the given sequence number. With ``live=1`` and no explicit *sequence* or
+    ``Last-Event-ID``, the stream starts at the broker's latest sequence so
+    only newly published events are delivered (no history replay). With
+    ``until_finished=1`` the stream ends once a ``scan.finished`` event is
+    delivered.
     """
     broker: ProgressBroker = request.app.state.progress_broker
     last_sequence = sequence if sequence is not None else 0
     last_event_id = request.headers.get("last-event-id")
+    live_tail_requested = (
+        sequence is None
+        and last_event_id is None
+        and request.query_params.get("live", "0") == "1"
+    )
     if last_event_id is not None:
         try:
             last_sequence = int(last_event_id)
         except ValueError, TypeError:
             last_sequence = 0
+    elif live_tail_requested:
+        # Live-tail handshake: skip replaying buffered history for clients
+        # (such as the desktop event listener) that only want new events.
+        last_sequence = broker.latest_sequence
     end_on_finished = request.query_params.get("until_finished", "0") == "1"
 
     loop = asyncio.get_running_loop()
@@ -173,6 +185,12 @@ async def events_stream(
     async def _event_generator() -> Any:
         nonlocal last_sequence
         try:
+            if live_tail_requested:
+                # Hand the client the resume point immediately. Without this a
+                # live-tail client that receives no events before a disconnect
+                # would reconnect with ``live=1`` again and silently skip
+                # everything published while it was away.
+                yield f"id: {last_sequence}\n\n"
             for message in broker.pending_since(last_sequence):
                 last_sequence = message["sequence"]
                 yield _format_sse_event(message)
