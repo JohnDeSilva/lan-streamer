@@ -98,6 +98,18 @@ class ProgressBroker:
         with self._lock:
             return self._sequence
 
+    @property
+    def oldest_sequence(self) -> int:
+        """Return the sequence number of the oldest retained history event.
+
+        Falls back to :attr:`latest_sequence` when no events are retained so
+        consumers can treat an empty history as "nothing to replay".
+        """
+        with self._lock:
+            if self._history:
+                return self._history[0]["sequence"]
+            return self._sequence
+
     def attach_to_logger(self, target_logger: logging.Logger) -> BrokerLogHandler:
         """Attach a BrokerLogHandler to target_logger if not already attached."""
         for existing_handler in target_logger.handlers:

@@ -64,6 +64,27 @@ def test_history_is_bounded() -> None:
     assert len(events) <= 5
 
 
+def test_oldest_sequence_matches_latest_when_history_is_empty() -> None:
+    broker = ProgressBroker()
+    assert broker.oldest_sequence == 0
+    assert broker.oldest_sequence == broker.latest_sequence
+
+    broker.publish("scan.progress", {"step": 1})
+    assert broker.oldest_sequence == 1
+    assert broker.oldest_sequence == broker.latest_sequence
+
+
+def test_oldest_sequence_advances_after_history_rotation() -> None:
+    broker = ProgressBroker(max_history=3)
+    for index in range(10):
+        broker.publish("scan.progress", {"index": index})
+
+    assert broker.latest_sequence == 10
+    assert broker.oldest_sequence == 8
+    retained_sequences = [message["sequence"] for message in broker.pending_since(0)]
+    assert retained_sequences == [8, 9, 10]
+
+
 def test_publish_log_uses_log_event() -> None:
     broker = ProgressBroker()
     event = broker.publish_log("some log line")
