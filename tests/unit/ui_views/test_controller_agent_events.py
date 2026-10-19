@@ -306,3 +306,72 @@ def test_apply_metadata_match_remote_library_dispatches_to_agent(
         assert call_kwargs["tmdb_identifier"] == "999"
         assert call_kwargs["name"] == "Show Alpha"
         assert call_kwargs["path"] == "/remote/media/tv/Show Alpha"
+
+
+def test_select_tab_triggers_freshness_check_for_stale_remote_libraries(
+    test_controller: Controller,
+) -> None:
+    """select_tab queues remote sync if the library has not been synced recently, even if data exists."""
+    test_controller._db.load_library.return_value = {
+        "Show Alpha": {"name": "Show Alpha"}
+    }
+    test_controller._remote_library_last_synced["Remote TV"] = 0.0
+
+    with patch.object(test_controller, "_queue_remote_sync") as mock_queue_sync:
+        test_controller.select_tab("Remote TV")
+        mock_queue_sync.assert_called_once_with("Remote TV", emit_signal=True)
+
+
+def test_select_tab_skips_freshness_sync_if_recently_synced(
+    test_controller: Controller,
+) -> None:
+    """select_tab does not queue remote sync if the library was synced within 60 seconds."""
+    test_controller._db.load_library.return_value = {
+        "Show Alpha": {"name": "Show Alpha"}
+    }
+    test_controller._remote_library_last_synced["Remote TV"] = 1000.0
+
+    with (
+        patch("time.time", return_value=1030.0),
+        patch.object(test_controller, "_queue_remote_sync") as mock_queue_sync,
+    ):
+        test_controller.select_tab("Remote TV")
+        mock_queue_sync.assert_not_called()
+
+
+def test_check_combined_view_freshness_queues_sync_for_remote_libraries(
+    test_controller: Controller,
+) -> None:
+    """check_combined_view_freshness queues background sync with emit_signal=False for stale remote libraries."""
+    test_controller._config.combined_views = [
+        {"name": "Next Up", "enabled": True, "libraries": ["Remote TV"]}
+    ]
+    test_controller._remote_library_last_synced["Remote TV"] = 0.0
+
+    with patch.object(test_controller, "_queue_remote_sync") as mock_queue_sync:
+        test_controller.check_combined_view_freshness()
+        mock_queue_sync.assert_called_once_with("Remote TV", emit_signal=False)
+
+
+def test_remote_sync_finished_rebuilds_smart_row_cache(
+    test_controller: Controller,
+) -> None:
+    """_on_remote_sync_finished rebuilds smart rows and emits smart_rows_updated on success."""
+    mock_smart_row_service = MagicMock()
+    mock_smart_row_service.rebuild_for_libraries.return_value = ["hash_123"]
+    test_controller._smart_row_service = mock_smart_row_service
+
+    emitted_hashes = []
+    test_controller.smart_rows_updated.connect(emitted_hashes.append)
+
+    test_controller._remote_sync_scheduled.add("Remote TV")
+    test_controller._remote_sync_emit_signal["Remote TV"] = False
+
+    with patch.object(test_controller, "_drain_remote_sync_queue"):
+        test_controller._on_remote_sync_finished(
+            {"success": True, "items": 5}, "Remote TV"
+        )
+
+    mock_smart_row_service.rebuild_for_libraries.assert_called_once_with(["Remote TV"])
+    assert emitted_hashes == [["hash_123"]]
+    assert "Remote TV" in test_controller._remote_library_last_synced

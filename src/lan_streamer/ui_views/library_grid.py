@@ -374,6 +374,7 @@ class LibraryGridView(QWidget):
         if library_name == "Combined View":
             self.controller.current_library_name = "Combined View"
             self.controller.current_tab_name = "Combined View"
+            self.controller.check_combined_view_freshness()
             self.series_list_widget.setVisible(False)
             if hasattr(self, "actions_toolbar_widget"):
                 self.actions_toolbar_widget.setVisible(False)
