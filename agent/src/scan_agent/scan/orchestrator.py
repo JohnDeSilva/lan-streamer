@@ -281,14 +281,69 @@ class ScanOrchestrator:
                 str(library_definition.get("name", ""))
                 for library_definition in target_libraries
             ]
+            target_library_ids = self._resolve_target_library_ids(target_libraries)
             self._progress_broker.publish(
                 "scan.finished",
                 {
                     "job_id": job_id,
                     "status": self._load_job_status(job_id),
                     "libraries": target_library_names,
+                    "library_names": list(target_library_names),
+                    "library_ids": target_library_ids,
                 },
             )
+
+    def _resolve_target_library_ids(
+        self, target_libraries: list[dict[str, Any]]
+    ) -> list[int]:
+        """Resolve persisted ``Library`` row ids for the scan target definitions.
+
+        Resolution is best-effort: definitions missing required keys and
+        database errors are logged and skipped so the ``scan.finished``
+        event is always published.
+
+        Args:
+            target_libraries: Library definition dictionaries from the agent
+                config (``name``, ``media_type``, ``root_path``).
+
+        Returns:
+            The resolved integer library row ids, aligned with the
+            definitions that could be resolved.
+        """
+        library_ids: list[int] = []
+        for library_definition in target_libraries:
+            if not isinstance(library_definition, dict):
+                logger.warning(
+                    "Skipping library id resolution for non-mapping definition: %r",
+                    library_definition,
+                )
+                continue
+            library_name = library_definition.get("name")
+            media_type = library_definition.get("media_type")
+            root_path = library_definition.get("root_path")
+            if not (
+                isinstance(library_name, str)
+                and library_name
+                and isinstance(media_type, str)
+                and isinstance(root_path, str)
+                and root_path
+            ):
+                logger.warning(
+                    "Skipping library id resolution for incomplete definition: %r",
+                    library_definition,
+                )
+                continue
+            try:
+                with get_session(self._engine) as session:
+                    library_row = get_or_create_library(
+                        session, library_name, media_type, root_path
+                    )
+                    library_ids.append(int(library_row.id))
+            except Exception:
+                logger.exception(
+                    "Failed to resolve Library row id for library '%s'", library_name
+                )
+        return library_ids
 
     def _scan_single_library(
         self,
