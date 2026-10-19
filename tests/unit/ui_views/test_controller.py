@@ -1229,17 +1229,18 @@ def test_controller_mark_series_watched_with_origin_libraries(
         },
     }
     mock_controller.cached_library_data = {"Steins;Gate": series_record}
-    mock_controller._db.update_series_watched_status = MagicMock()
     mock_controller._smart_row_service.rebuild_for_libraries = MagicMock(
         return_value=[]
     )
 
-    mock_controller.mark_series_watched("Steins;Gate")
+    with patch.object(
+        mock_controller._db, "update_series_watched_status"
+    ) as mock_update_series:
+        mock_controller.mark_series_watched("Steins;Gate")
 
-    assert mock_controller._db.update_series_watched_status.call_count == 2
+    assert mock_update_series.call_count == 2
     called_library_names = [
-        call_argument[0][0]
-        for call_argument in mock_controller._db.update_series_watched_status.call_args_list
+        call_argument[0][0] for call_argument in mock_update_series.call_args_list
     ]
     assert "Anime Local" in called_library_names
     assert "Anime Remote" in called_library_names
@@ -1265,17 +1266,18 @@ def test_controller_mark_season_watched_with_origin_libraries(
         },
     }
     mock_controller.cached_library_data = {"Steins;Gate": series_record}
-    mock_controller._db.update_season_watched_status = MagicMock()
     mock_controller._smart_row_service.rebuild_for_libraries = MagicMock(
         return_value=[]
     )
 
-    mock_controller.mark_season_watched("Steins;Gate", "Season 1", watched=True)
+    with patch.object(
+        mock_controller._db, "update_season_watched_status"
+    ) as mock_update_season:
+        mock_controller.mark_season_watched("Steins;Gate", "Season 1", watched=True)
 
-    assert mock_controller._db.update_season_watched_status.call_count == 2
+    assert mock_update_season.call_count == 2
     called_library_names = [
-        call_argument[0][0]
-        for call_argument in mock_controller._db.update_season_watched_status.call_args_list
+        call_argument[0][0] for call_argument in mock_update_season.call_args_list
     ]
     assert "Anime Local" in called_library_names
     assert "Anime Remote" in called_library_names
