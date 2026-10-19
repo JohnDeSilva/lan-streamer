@@ -221,6 +221,7 @@ class VideoPlayerWidget(QWidget):
         self.current_aspect_mode: str = (
             getattr(config, "default_video_aspect_mode", "fit") or "fit"
         )
+        self.last_selected_subtitle_track_identifier: int | None = None
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         # Timer for auto-hiding fullscreen controls
@@ -1352,6 +1353,8 @@ class VideoPlayerWidget(QWidget):
             self.toggle_stats()
         elif event.key() == Qt.Key.Key_Z:
             self.cycle_video_aspect_mode()
+        elif event.key() == Qt.Key.Key_C:
+            self.toggle_subtitles()
         else:
             super().keyPressEvent(event)
 
@@ -1651,6 +1654,7 @@ class VideoPlayerWidget(QWidget):
             self.new_play_btn.button.setText("⏸")
         if hasattr(self, "fs_new_play_btn"):
             self.fs_new_play_btn.button.setText("⏸")
+        self.last_selected_subtitle_track_identifier = None
         self._update_subtitles_audio_pane_text()
 
         # Initial volume
@@ -1786,8 +1790,12 @@ class VideoPlayerWidget(QWidget):
             logger.info(f"Automatically selecting subtitle track ID: {selected_spu}")
             self.mediaplayer.video_set_spu(selected_spu)
             current_sub = selected_spu
+            if selected_spu != -1:
+                self.last_selected_subtitle_track_identifier = selected_spu
         else:
             current_sub = self.mediaplayer.video_get_spu()
+            if isinstance(current_sub, int) and current_sub != -1:
+                self.last_selected_subtitle_track_identifier = current_sub
 
         idx = self.subtitle_combo.findData(current_sub)
         if idx != -1:
@@ -1802,10 +1810,15 @@ class VideoPlayerWidget(QWidget):
             self.mediaplayer.audio_set_track(track_id)
 
     def change_subtitle_track(self, index: int) -> None:
-        track_id = self.subtitle_combo.itemData(index)
-        if track_id is not None:
-            logger.info(f"Changing subtitle track to ID: {track_id}")
-            self.mediaplayer.video_set_spu(track_id)
+        track_identifier = self.subtitle_combo.itemData(index)
+        if track_identifier is not None:
+            logger.info(f"Changing subtitle track to ID: {track_identifier}")
+            self.mediaplayer.video_set_spu(track_identifier)
+            if (
+                track_identifier != -1
+                and "disable" not in self.subtitle_combo.itemText(index).lower()
+            ):
+                self.last_selected_subtitle_track_identifier = track_identifier
 
     def play_pause(self) -> None:
         if self.mediaplayer.is_playing():
@@ -2051,6 +2064,127 @@ class VideoPlayerWidget(QWidget):
         else:
             self.stats_overlay.hide()
             self._show_osd("Playback Stats: OFF")
+
+    def toggle_subtitles(self) -> None:
+        """Toggle subtitles (captions) on or off."""
+        if not self.mediaplayer:
+            return
+
+        if self.subtitle_combo.count() == 0:
+            self._refresh_tracks()
+
+        available_subtitle_indices = [
+            index
+            for index in range(self.subtitle_combo.count())
+            if self.subtitle_combo.itemData(index) is not None
+            and self.subtitle_combo.itemData(index) != -1
+            and "disable" not in self.subtitle_combo.itemText(index).lower()
+        ]
+
+        if not available_subtitle_indices:
+            logger.info("No subtitle tracks available to toggle")
+            self._show_osd("Subtitles Unavailable")
+            return
+
+        current_index = self.subtitle_combo.currentIndex()
+        if self.mediaplayer:
+            try:
+                current_subtitle_track_identifier = self.mediaplayer.video_get_spu()
+                if (
+                    isinstance(current_subtitle_track_identifier, int)
+                    and current_subtitle_track_identifier != -1
+                ):
+                    matched_index = self.subtitle_combo.findData(
+                        current_subtitle_track_identifier
+                    )
+                    if matched_index != -1:
+                        current_index = matched_index
+            except AttributeError, TypeError:
+                logger.debug(
+                    "Could not retrieve current subtitle track from mediaplayer"
+                )
+
+        is_currently_enabled = current_index in available_subtitle_indices
+
+        if is_currently_enabled:
+            current_track_identifier = self.subtitle_combo.itemData(current_index)
+            if current_track_identifier is not None:
+                self.last_selected_subtitle_track_identifier = current_track_identifier
+
+            disable_index = self.subtitle_combo.findData(-1)
+            if disable_index == -1:
+                for index in range(self.subtitle_combo.count()):
+                    if "disable" in self.subtitle_combo.itemText(index).lower():
+                        disable_index = index
+                        break
+
+            if disable_index != -1:
+                if self.subtitle_combo.currentIndex() != disable_index:
+                    self.subtitle_combo.setCurrentIndex(disable_index)
+                else:
+                    self.change_subtitle_track(disable_index)
+            else:
+                self.mediaplayer.video_set_spu(-1)
+                self.subtitle_combo.setCurrentIndex(-1)
+
+            self._update_subtitles_audio_pane_text()
+            self._show_osd("Subtitles: OFF")
+            logger.info("Subtitles disabled")
+        else:
+            target_index: int | None = None
+            if self.last_selected_subtitle_track_identifier is not None:
+                matched_index = self.subtitle_combo.findData(
+                    self.last_selected_subtitle_track_identifier
+                )
+                if matched_index in available_subtitle_indices:
+                    target_index = matched_index
+
+            if target_index is None:
+                english_indices = [
+                    index
+                    for index in available_subtitle_indices
+                    if "english" in self.subtitle_combo.itemText(index).lower()
+                ]
+                if english_indices:
+                    excluded_words = ["forced", "signs", "songs"]
+                    preferred_indices = [
+                        index
+                        for index in english_indices
+                        if not any(
+                            word in self.subtitle_combo.itemText(index).lower()
+                            for word in excluded_words
+                        )
+                    ]
+                    target_index = (
+                        preferred_indices[0]
+                        if preferred_indices
+                        else english_indices[0]
+                    )
+                else:
+                    target_index = available_subtitle_indices[0]
+
+            selected_track_identifier = self.subtitle_combo.itemData(target_index)
+            if selected_track_identifier is not None:
+                self.last_selected_subtitle_track_identifier = selected_track_identifier
+
+            if self.subtitle_combo.currentIndex() != target_index:
+                self.subtitle_combo.setCurrentIndex(target_index)
+            else:
+                self.change_subtitle_track(target_index)
+
+            self._update_subtitles_audio_pane_text()
+            track_name = self.subtitle_combo.itemText(target_index)
+            if track_name and "disable" not in track_name.lower():
+                self._show_osd(f"Subtitles: ON ({track_name})")
+            else:
+                self._show_osd("Subtitles: ON")
+            logger.info(
+                f"Subtitles enabled: {track_name} (ID: {selected_track_identifier})"
+            )
+
+    def toggle_captions(self) -> None:
+        """Alias for toggle_subtitles."""
+        self.toggle_subtitles()
 
     def _update_stats(self) -> None:
         if not self.mediaplayer or self.stats_overlay.isHidden():

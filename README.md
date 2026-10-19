@@ -147,6 +147,7 @@ make run-agent    # Scan agent only (foreground via Docker Compose)
 | **`→`** or **`L`** | Skip forward 10 seconds |
 | **`S`** | Cycle playback speed (1.0x, 1.5x, 2.0x) |
 | **`Z`** | Cycle video aspect ratio & zoom modes (Fit, Fill/Zoom, Stretch, etc.) |
+| **`C`** | Toggle subtitles / captions |
 | **`I`** | Toggle playback statistics overlay |
 | **`Backspace`** | Stop playback and return to details view |
 
