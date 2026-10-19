@@ -1850,3 +1850,15 @@ def test_first_subtitle_toggle_enables_real_track(player_widget) -> None:
     assert player_widget._subtitles_user_enabled is True
     assert player_widget._subtitle_user_override is True
     assert player_widget.subtitle_combo.currentData() == 2
+
+
+def test_save_playback_position_async_executes_and_guards_empty_path(
+    player_widget,
+) -> None:
+    """_save_playback_position_async ignores empty paths and delegates to the database."""
+    with patch("lan_streamer.db.update_episode_playback_position") as mock_update:
+        player_widget._save_playback_position_async("", 100)
+        mock_update.assert_not_called()
+
+        player_widget._save_playback_position_async("/media/video.mkv", 420)
+        mock_update.assert_called_once_with("/media/video.mkv", 420)

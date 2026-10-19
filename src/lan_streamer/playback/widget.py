@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -30,6 +31,7 @@ from lan_streamer import db
 from lan_streamer.playback.proxy import CacheWorker, vlc
 from lan_streamer.playback.wakelock import WakeLock
 from lan_streamer.system.async_task_manager import AsyncTaskManager
+from lan_streamer.system.async_utils import run_in_executor
 from lan_streamer.system.config import config
 
 logger = logging.getLogger("lan_streamer.player_widget")
@@ -1543,12 +1545,12 @@ class VideoPlayerWidget(QWidget):
                 self.pending_resume_position = saved_pos
             else:
                 logger.info("User chose to start playback from the beginning")
-                db.update_episode_playback_position(self.current_media_path, 0)
+                self._save_playback_position_async(self.current_media_path, 0)
         elif saved_pos > 0:
             logger.info(
                 f"Saved position {saved_pos}s is <= 60s, starting from beginning without prompt"
             )
-            db.update_episode_playback_position(self.current_media_path, 0)
+            self._save_playback_position_async(self.current_media_path, 0)
 
         load_path = self.playable_media_path
         if config.enable_caching:
@@ -1879,7 +1881,7 @@ class VideoPlayerWidget(QWidget):
                     else 0
                 )
                 if current_time_seconds > 60:
-                    db.update_episode_playback_position(
+                    self._save_playback_position_async(
                         self.current_media_path, current_time_seconds
                     )
                     self.playback_position_updated.emit(
@@ -1928,14 +1930,14 @@ class VideoPlayerWidget(QWidget):
                             f"Playback completed or exceeded watched threshold. Marking as watched for {self.current_media_path}"
                         )
                         self._mark_as_watched()
-                        db.update_episode_playback_position(self.current_media_path, 0)
+                        self._save_playback_position_async(self.current_media_path, 0)
                         self.playback_position_updated.emit(self.current_media_path, 0)
                     elif not self.is_watched_marked:
                         if current_time_seconds > 60:
                             logger.info(
                                 f"Saving playback position for {self.current_media_path} at {current_time_seconds}s"
                             )
-                            db.update_episode_playback_position(
+                            self._save_playback_position_async(
                                 self.current_media_path, current_time_seconds
                             )
                             self.playback_position_updated.emit(
@@ -1945,7 +1947,7 @@ class VideoPlayerWidget(QWidget):
                             logger.info(
                                 f"Playback stopped before 1 minute ({current_time_seconds}s), clearing saved position for {self.current_media_path}"
                             )
-                            db.update_episode_playback_position(
+                            self._save_playback_position_async(
                                 self.current_media_path, 0
                             )
                             self.playback_position_updated.emit(
@@ -1955,7 +1957,7 @@ class VideoPlayerWidget(QWidget):
                         logger.info(
                             f"Video already marked watched, clearing saved position for {self.current_media_path}"
                         )
-                        db.update_episode_playback_position(self.current_media_path, 0)
+                        self._save_playback_position_async(self.current_media_path, 0)
                         self.playback_position_updated.emit(self.current_media_path, 0)
 
             self.mediaplayer.stop()
@@ -2318,7 +2320,7 @@ class VideoPlayerWidget(QWidget):
                 and (curr_time - self._last_checkpoint_seconds >= 30)
             ):
                 self._last_checkpoint_seconds = int(curr_time)
-                db.update_episode_playback_position(
+                self._save_playback_position_async(
                     self.current_media_path, int(curr_time)
                 )
                 self.playback_position_updated.emit(
@@ -2392,7 +2394,7 @@ class VideoPlayerWidget(QWidget):
 
         if self.current_media_path:
             self._mark_as_watched()
-            db.update_episode_playback_position(self.current_media_path, 0)
+            self._save_playback_position_async(self.current_media_path, 0)
 
         self.is_transitioning_to_next = True
         try:
@@ -2408,6 +2410,23 @@ class VideoPlayerWidget(QWidget):
         if h > 0:
             return f"{h:02d}:{m:02d}:{s:02d}"
         return f"{m:02d}:{s:02d}"
+
+    def _save_playback_position_async(
+        self, media_path: str, position_seconds: int
+    ) -> None:
+        """Persist playback position to database asynchronously off the UI thread."""
+        if not media_path:
+            return
+
+        async def run_save_playback_position_task() -> None:
+            await run_in_executor(
+                db.update_episode_playback_position, media_path, position_seconds
+            )
+
+        task_name = f"save_playback_position_{uuid.uuid4().hex}"
+        self.async_task_manager.create_task(
+            run_save_playback_position_task(), name=task_name
+        )
 
     def _mark_as_watched(self) -> None:
         if self.current_media_path:
