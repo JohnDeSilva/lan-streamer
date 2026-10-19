@@ -205,3 +205,56 @@ def test_controller_handles_agent_watch_updated_empty_path(
     test_controller.cached_library_data = {}
     test_controller._on_agent_watch_updated({}, "http://127.0.0.1:8000")
     test_controller._db.update_episode_watched_status.assert_not_called()
+
+
+def test_sync_watched_to_agents_batches_multiple_episodes(
+    test_controller: Controller,
+) -> None:
+    """When multiple episode paths are synced, sync_watch_events is called with the batch."""
+    paths = [
+        "/local/mount/tv/Show Alpha/S01E01.mkv",
+        "/local/mount/tv/Show Alpha/S01E02.mkv",
+    ]
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.sync_watch_events"
+    ) as mock_sync_batch:
+        test_controller._sync_watched_to_agents(paths, watched=True)
+        test_controller.async_task_manager.stop_all()
+        mock_sync_batch.assert_called_once()
+        agent_url, events = mock_sync_batch.call_args[0]
+        assert agent_url == "http://127.0.0.1:8000"
+        assert len(events) == 2
+        assert events[0]["path"] == "/remote/media/tv/Show Alpha/S01E01.mkv"
+        assert events[0]["watched"] is True
+
+
+def test_mark_series_unwatched(test_controller: Controller) -> None:
+    """mark_series_watched with watched=False marks all episodes unwatched and syncs False to agent."""
+    test_controller.cached_library_data = {
+        "Show Alpha": {
+            "name": "Show Alpha",
+            "_origin_libraries": ["Remote TV"],
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/local/mount/tv/Show Alpha/S01E01.mkv",
+                            "watched": True,
+                        }
+                    ]
+                }
+            },
+        }
+    }
+    with patch.object(test_controller, "_sync_watched_to_agents") as mock_sync:
+        test_controller.mark_series_watched("Show Alpha", watched=False)
+        assert (
+            test_controller.cached_library_data["Show Alpha"]["seasons"]["Season 1"][
+                "episodes"
+            ][0]["watched"]
+            is False
+        )
+        mock_sync.assert_called_once_with(
+            ["/local/mount/tv/Show Alpha/S01E01.mkv"], False, ["Remote TV"]
+        )

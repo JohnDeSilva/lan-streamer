@@ -142,41 +142,41 @@ class AgentEventListenerWorker(AsyncWorkerBase):
                     message=f"Agent returned HTTP {response_stream.status}",
                 )
 
-                self._update_connection_status(True)
-                logger.info(
-                    "Connected to agent SSE event stream at '%s'",
-                    events_endpoint,
+            self._update_connection_status(True)
+            logger.info(
+                "Connected to agent SSE event stream at '%s'",
+                events_endpoint,
+            )
+
+            current_event_name = "message"
+            current_data_lines: list[str] = []
+
+            async for raw_line_bytes in response_stream.content:
+                if self.isInterruptionRequested():
+                    break
+
+                decoded_line = raw_line_bytes.decode("utf-8", errors="replace").rstrip(
+                    "\r\n"
                 )
 
-                current_event_name = "message"
-                current_data_lines: list[str] = []
+                if decoded_line.startswith(":"):
+                    # SSE comment / heartbeat ping
+                    continue
 
-                async for raw_line_bytes in response_stream.content:
-                    if self.isInterruptionRequested():
-                        break
+                if not decoded_line:
+                    # Empty line marks end of an event frame
+                    if current_data_lines:
+                        data_string = "\n".join(current_data_lines)
+                        self._dispatch_event(current_event_name, data_string)
+                    current_event_name = "message"
+                    current_data_lines = []
+                    continue
 
-                    decoded_line = raw_line_bytes.decode(
-                        "utf-8", errors="replace"
-                    ).rstrip("\r\n")
-
-                    if decoded_line.startswith(":"):
-                        # SSE comment / heartbeat ping
-                        continue
-
-                    if not decoded_line:
-                        # Empty line marks end of an event frame
-                        if current_data_lines:
-                            data_string = "\n".join(current_data_lines)
-                            self._dispatch_event(current_event_name, data_string)
-                        current_event_name = "message"
-                        current_data_lines = []
-                        continue
-
-                    if decoded_line.startswith("event:"):
-                        current_event_name = decoded_line.split(":", 1)[1].strip()
-                    elif decoded_line.startswith("data:"):
-                        data_content = decoded_line.split(":", 1)[1].strip()
-                        current_data_lines.append(data_content)
+                if decoded_line.startswith("event:"):
+                    current_event_name = decoded_line.split(":", 1)[1].strip()
+                elif decoded_line.startswith("data:"):
+                    data_content = decoded_line.split(":", 1)[1].strip()
+                    current_data_lines.append(data_content)
 
     def _dispatch_event(self, event_name: str, raw_data_string: str) -> None:
         """Parse JSON payload and emit targeted signals."""

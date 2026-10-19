@@ -652,6 +652,80 @@ def test_watch_events_bulk_sync(api_app: FastAPI, api_client: TestClient) -> Non
     assert state["position_seconds"] == 500.0
 
 
+def test_watch_event_clears_resume_position_on_unwatched_and_complete(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    episode = api_client.get("/api/v1/library/series").json()[0]["seasons"][0][
+        "episodes"
+    ][0]
+    episode_path = episode["path"]
+    episode_identifier = episode["id"]
+
+    # Set position to 500.0
+    api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "episode",
+            "path": episode_path,
+            "event": "stop",
+            "position_seconds": 500.0,
+        },
+    )
+    state = api_client.get(f"/api/v1/watch/episode/{episode_identifier}/state").json()
+    assert state["position_seconds"] == 500.0
+
+    # Mark unwatched without position_seconds -> resets position to 0.0
+    unwatched_response = api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "episode",
+            "path": episode_path,
+            "event": "unwatched",
+            "watched": False,
+        },
+    )
+    assert unwatched_response.status_code == 201
+    assert unwatched_response.json()["position_seconds"] == 0.0
+
+    state_unwatched = api_client.get(
+        f"/api/v1/watch/episode/{episode_identifier}/state"
+    ).json()
+    assert state_unwatched["watched"] is False
+    assert state_unwatched["position_seconds"] == 0.0
+
+    # Set position to 300.0
+    api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "episode",
+            "path": episode_path,
+            "event": "stop",
+            "position_seconds": 300.0,
+        },
+    )
+
+    # Mark complete without position_seconds -> resets position to 0.0
+    complete_response = api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "episode",
+            "path": episode_path,
+            "event": "complete",
+            "watched": True,
+        },
+    )
+    assert complete_response.status_code == 201
+    assert complete_response.json()["position_seconds"] == 0.0
+
+    state_complete = api_client.get(
+        f"/api/v1/watch/episode/{episode_identifier}/state"
+    ).json()
+    assert state_complete["watched"] is True
+    assert state_complete["position_seconds"] == 0.0
+
+
 def test_metadata_search_and_match(api_client: TestClient) -> None:
     response = api_client.get(
         "/api/v1/services/metadata/search",
