@@ -1415,7 +1415,25 @@ def record_watch_event(
         path,
         watched,
     )
-    return watch_event_to_dict(watch_event)
+    result_dictionary = watch_event_to_dict(watch_event)
+    resolved_path: str | None = path
+    resolved_watched: bool | None = watched
+    resolved_last_played_at: float | None = timestamp
+    if target_episode is not None:
+        if not resolved_path:
+            resolved_path = target_episode.path
+        resolved_watched = target_episode.watched
+        resolved_last_played_at = target_episode.last_played_at
+    elif target_movie is not None:
+        if not resolved_path:
+            resolved_path = target_movie.path
+        resolved_watched = target_movie.watched
+        resolved_last_played_at = target_movie.last_played_at
+
+    result_dictionary["path"] = resolved_path
+    result_dictionary["watched"] = resolved_watched
+    result_dictionary["last_played_at"] = resolved_last_played_at
+    return result_dictionary
 
 
 def _recount_episode_watched(connection: Session, episode: Episode) -> None:

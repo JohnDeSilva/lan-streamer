@@ -848,3 +848,17 @@ def test_settings_dialog_add_remote_source_no_agents_shows_info(qtbot) -> None:
         mock_info.assert_called_once()
 
     dialog.reject()
+
+
+def test_settings_dialog_save_config_starts_agent_event_listeners(qtbot) -> None:
+    from unittest.mock import MagicMock
+
+    mock_controller = MagicMock()
+    dialog = SettingsDialog(controller_instance=mock_controller)
+    qtbot.addWidget(dialog)
+
+    with patch.object(config, "save"):
+        dialog.save_config()
+
+    mock_controller.start_agent_event_listeners.assert_called_once()
+    dialog.reject()

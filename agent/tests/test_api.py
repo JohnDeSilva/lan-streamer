@@ -1313,3 +1313,153 @@ def test_sse_enqueue_ignores_closed_event_loop() -> None:
     _enqueue_after_loop_close_safe(
         loop, queue, {"sequence": 1, "event": "ping", "payload": {}}
     )
+
+
+def test_watch_event_publishes_sse_event(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    """Recording a watch event must publish a watch.updated event to the progress broker."""
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    episode = api_client.get("/api/v1/library/series").json()[0]["seasons"][0][
+        "episodes"
+    ][0]
+    episode_identifier = episode["id"]
+    episode_path = episode["path"]
+
+    broker = api_app.state.progress_broker
+    sequence_before = broker.latest_sequence
+
+    created_response = api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "episode",
+            "media_id": episode_identifier,
+            "event": "complete",
+            "position_seconds": 1234.5,
+            "watched": True,
+        },
+    )
+    assert created_response.status_code == 201
+
+    watch_messages = [
+        message
+        for message in broker.pending_since(sequence_before)
+        if message.get("event") == "watch.updated"
+    ]
+    assert len(watch_messages) >= 1
+    latest_payload = watch_messages[-1]["payload"]
+    assert latest_payload["media_type"] == "episode"
+    assert latest_payload["media_id"] == episode_identifier
+    assert latest_payload["path"] == episode_path
+    assert latest_payload["watched"] is True
+    assert latest_payload["position_seconds"] == 1234.5
+
+
+def test_watch_sync_publishes_sse_event(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    """Bulk syncing watch events must publish watch.updated events to the progress broker."""
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    episode = api_client.get("/api/v1/library/series").json()[0]["seasons"][0][
+        "episodes"
+    ][0]
+    episode_path = episode["path"]
+
+    broker = api_app.state.progress_broker
+    sequence_before = broker.latest_sequence
+
+    sync_response = api_client.post(
+        "/api/v1/watch/sync",
+        json=[
+            {
+                "media_type": "episode",
+                "path": episode_path,
+                "event": "complete",
+                "watched": True,
+                "position_seconds": 999.0,
+            }
+        ],
+    )
+    assert sync_response.status_code == 200
+
+    watch_messages = [
+        message
+        for message in broker.pending_since(sequence_before)
+        if message.get("event") == "watch.updated"
+    ]
+    assert len(watch_messages) >= 1
+    assert watch_messages[-1]["payload"]["path"] == episode_path
+    assert watch_messages[-1]["payload"]["watched"] is True
+
+
+def test_metadata_match_publishes_sse_event(
+    api_app: FastAPI, api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Applying a metadata match must publish a metadata.updated event to the progress broker."""
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    series_identifier = api_client.get("/api/v1/library/series").json()[0]["id"]
+
+    class MockTmdbClient:
+        def is_configured(self) -> bool:
+            return True
+
+        def get_series_by_id(self, tmdb_identifier: str) -> dict[str, Any]:
+            return {
+                "name": "Matched Series Title",
+                "overview": "Matched series overview",
+                "first_air_date": "2024-01-01",
+                "poster_path": "/matched_poster.jpg",
+                "backdrop_path": "/matched_backdrop.jpg",
+                "status": "Ended",
+                "seasons": [],
+            }
+
+        def get_series_season(
+            self, tmdb_identifier: int, season_number: int
+        ) -> dict[str, Any]:
+            return {"episodes": []}
+
+    monkeypatch.setattr("scan_agent.api.routes_services._tmdb_client", MockTmdbClient)
+
+    broker = api_app.state.progress_broker
+    sequence_before = broker.latest_sequence
+
+    match_response = api_client.post(
+        f"/api/v1/services/metadata/series/{series_identifier}/match",
+        json={"tmdb_identifier": "99999"},
+    )
+    assert match_response.status_code == 202
+
+    metadata_messages = [
+        message
+        for message in broker.pending_since(sequence_before)
+        if message.get("event") == "metadata.updated"
+    ]
+    assert len(metadata_messages) >= 1
+    payload = metadata_messages[-1]["payload"]
+    assert payload["media_type"] == "series"
+    assert payload["media_identifier"] == series_identifier
+    assert payload["tmdb_identifier"] == "99999"
+
+
+def test_scan_finished_includes_libraries(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    """scan.finished event must include the target libraries."""
+    broker = api_app.state.progress_broker
+    sequence_before = broker.latest_sequence
+
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+
+    finished_messages = [
+        message
+        for message in broker.pending_since(sequence_before)
+        if message.get("event") == "scan.finished"
+    ]
+    assert len(finished_messages) >= 1
+    assert "libraries" in finished_messages[-1]["payload"]
+    assert "TV Shows" in finished_messages[-1]["payload"]["libraries"]
