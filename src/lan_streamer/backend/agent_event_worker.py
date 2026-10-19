@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 from typing import TYPE_CHECKING
 
 import aiohttp
@@ -23,9 +24,25 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_SOCK_CONNECT_TIMEOUT_SECONDS: float = 10.0
+_SOCK_READ_TIMEOUT_SECONDS: float = 45.0
+_MAX_RECONNECT_INTERVAL_SECONDS: float = 30.0
+_RECONNECT_SLEEP_STEP_SECONDS: float = 0.2
+_BACKOFF_JITTER_FACTOR_MINIMUM: float = 0.8
+_BACKOFF_JITTER_FACTOR_MAXIMUM: float = 1.2
+
 
 class AgentEventListenerWorker(AsyncWorkerBase):
     """Asynchronous worker listening to remote scan agent Server-Sent Events.
+
+    The worker opens a long-lived SSE connection to ``/api/v1/events``. The
+    first request uses the ``live=1`` handshake so the agent streams only new
+    events instead of replaying its buffered history. Every subsequent
+    reconnect sends a ``Last-Event-ID`` header derived from the last parsed
+    ``id:`` field so missed events are resumed exactly once. Reconnection
+    uses exponential backoff with jitter, capped at 30 seconds, and reset to
+    the base interval after every successful connection. Socket connect and
+    read timeouts detect half-open connections.
 
     Signals
     -------
@@ -59,6 +76,25 @@ class AgentEventListenerWorker(AsyncWorkerBase):
         self.agent_url: str = agent_url
         self.reconnect_interval_seconds: float = max(0.01, reconnect_interval_seconds)
         self._is_connected: bool | None = None
+        self._last_sequence: int | None = None
+        self._current_backoff_seconds: float = self.reconnect_interval_seconds
+
+    def start(self) -> None:
+        """Start the listener only when an asyncio loop is running.
+
+        ``AsyncTaskManager.create_task`` falls back to running a coroutine
+        synchronously when no loop exists. For this infinite SSE worker that
+        fallback would block the caller forever, so refuse to start instead.
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning(
+                "Cannot start agent event listener for '%s': no running event loop.",
+                self.agent_url,
+            )
+            return
+        super().start()
 
     async def run_async(self) -> None:
         """Continuously stream SSE events with cooperative reconnection."""
@@ -93,46 +129,67 @@ class AgentEventListenerWorker(AsyncWorkerBase):
             ) as stream_error:
                 if self.isInterruptionRequested():
                     break
+                backoff_seconds = self._compute_backoff_delay()
                 logger.warning(
                     "Agent event listener connection to '%s' failed: %s. Reconnecting in %.1fs...",
                     self.agent_url,
                     stream_error,
-                    self.reconnect_interval_seconds,
+                    backoff_seconds,
                 )
                 self._update_connection_status(False)
-
-                # Cooperatively wait before reconnecting
-                elapsed_sleep = 0.0
-                step_interval = min(0.2, self.reconnect_interval_seconds)
-                while (
-                    elapsed_sleep < self.reconnect_interval_seconds
-                    and not self.isInterruptionRequested()
-                ):
-                    await asyncio.sleep(step_interval)
-                    elapsed_sleep += step_interval
+                self._advance_backoff()
+                await self._sleep_cooperatively(backoff_seconds)
             except Exception:
                 if self.isInterruptionRequested():
                     break
+                backoff_seconds = self._compute_backoff_delay()
                 logger.exception(
                     "Unexpected error in agent event listener for '%s'",
                     self.agent_url,
                 )
                 self._update_connection_status(False)
+                self._advance_backoff()
+                await self._sleep_cooperatively(backoff_seconds)
+            else:
+                if self.isInterruptionRequested():
+                    break
+                # The server closed the stream cleanly; reconnect after a
+                # short backoff (reset to base by the successful connection).
+                self._update_connection_status(False)
+                backoff_seconds = self._compute_backoff_delay()
+                logger.info(
+                    "Agent SSE event stream from '%s' closed. Reconnecting in %.1fs...",
+                    self.agent_url,
+                    backoff_seconds,
+                )
+                self._advance_backoff()
+                await self._sleep_cooperatively(backoff_seconds)
 
         self._update_connection_status(False)
         logger.info("Agent event listener worker for '%s' terminated", self.agent_url)
 
     async def _listen_stream(self, events_endpoint: str) -> None:
         """Connect to the SSE stream and process incoming event frames."""
-        client_timeout = aiohttp.ClientTimeout(total=None, sock_read=None)
-        headers = {
+        client_timeout = aiohttp.ClientTimeout(
+            total=None,
+            sock_connect=_SOCK_CONNECT_TIMEOUT_SECONDS,
+            sock_read=_SOCK_READ_TIMEOUT_SECONDS,
+        )
+        request_headers = {
             "Accept": "text/event-stream",
             "User-Agent": "LanStreamer-Desktop/1.0",
         }
+        if self._last_sequence is None:
+            # Live-tail handshake: only stream events published after the
+            # connection is established instead of replaying buffered history.
+            request_url = f"{events_endpoint}?live=1"
+        else:
+            request_url = events_endpoint
+            request_headers["Last-Event-ID"] = str(self._last_sequence)
 
         async with (
             aiohttp.ClientSession(timeout=client_timeout) as client_session,
-            client_session.get(events_endpoint, headers=headers) as response_stream,
+            client_session.get(request_url, headers=request_headers) as response_stream,
         ):
             if response_stream.status != 200:
                 raise aiohttp.ClientResponseError(
@@ -142,14 +199,17 @@ class AgentEventListenerWorker(AsyncWorkerBase):
                     message=f"Agent returned HTTP {response_stream.status}",
                 )
 
+            self._reset_backoff()
             self._update_connection_status(True)
             logger.info(
-                "Connected to agent SSE event stream at '%s'",
-                events_endpoint,
+                "Connected to agent SSE event stream at '%s' (resuming after sequence %s)",
+                request_url,
+                self._last_sequence,
             )
 
             current_event_name = "message"
             current_data_lines: list[str] = []
+            current_sequence: int | None = None
 
             async for raw_line_bytes in response_stream.content:
                 if self.isInterruptionRequested():
@@ -164,12 +224,18 @@ class AgentEventListenerWorker(AsyncWorkerBase):
                     continue
 
                 if not decoded_line:
-                    # Empty line marks end of an event frame
+                    # Empty line marks end of an event frame. Commit the id
+                    # only once the frame is complete so a connection dropped
+                    # mid-frame resumes from the previous id and re-delivers
+                    # the interrupted event instead of silently skipping it.
                     if current_data_lines:
                         data_string = "\n".join(current_data_lines)
                         self._dispatch_event(current_event_name, data_string)
+                    if current_sequence is not None:
+                        self._last_sequence = current_sequence
                     current_event_name = "message"
                     current_data_lines = []
+                    current_sequence = None
                     continue
 
                 if decoded_line.startswith("event:"):
@@ -177,6 +243,53 @@ class AgentEventListenerWorker(AsyncWorkerBase):
                 elif decoded_line.startswith("data:"):
                     data_content = decoded_line.split(":", 1)[1].strip()
                     current_data_lines.append(data_content)
+                elif decoded_line.startswith("id:"):
+                    current_sequence = self._parse_sequence(
+                        decoded_line.split(":", 1)[1].strip()
+                    )
+
+    def _parse_sequence(self, raw_sequence: str) -> int | None:
+        """Parse an SSE ``id:`` value, returning None for non-numeric ids."""
+        try:
+            return int(raw_sequence)
+        except ValueError:
+            logger.debug(
+                "Ignoring non-numeric SSE id '%s' received from '%s'",
+                raw_sequence,
+                self.agent_url,
+            )
+            return None
+
+    def _compute_backoff_delay(self) -> float:
+        """Return the next reconnect delay scaled by a random jitter factor."""
+        jitter_factor = random.uniform(
+            _BACKOFF_JITTER_FACTOR_MINIMUM,
+            _BACKOFF_JITTER_FACTOR_MAXIMUM,
+        )
+        return max(0.0, self._current_backoff_seconds * jitter_factor)
+
+    def _advance_backoff(self) -> None:
+        """Double the current backoff interval, capped at the maximum."""
+        self._current_backoff_seconds = min(
+            self._current_backoff_seconds * 2.0,
+            _MAX_RECONNECT_INTERVAL_SECONDS,
+        )
+
+    def _reset_backoff(self) -> None:
+        """Reset the backoff interval to the configured base value."""
+        self._current_backoff_seconds = self.reconnect_interval_seconds
+
+    async def _sleep_cooperatively(self, total_seconds: float) -> None:
+        """Sleep for *total_seconds* in short steps, aborting on interruption."""
+        elapsed_seconds = 0.0
+        step_seconds = min(_RECONNECT_SLEEP_STEP_SECONDS, total_seconds)
+        while (
+            step_seconds > 0
+            and elapsed_seconds < total_seconds
+            and not self.isInterruptionRequested()
+        ):
+            await asyncio.sleep(step_seconds)
+            elapsed_seconds += step_seconds
 
     def _dispatch_event(self, event_name: str, raw_data_string: str) -> None:
         """Parse JSON payload and emit targeted signals."""

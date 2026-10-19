@@ -51,6 +51,7 @@ class AsyncWorkerBase(QObject):
         self._async_task_manager: AsyncTaskManager | None = async_task_manager
         self._task_name: str = f"{self.__class__.__name__}_{id(self)}"
         self._cancelled: bool = False
+        self._finished: bool = False
 
     async def run_async(self) -> Any:
         """Coroutine that performs the background work.
@@ -77,6 +78,7 @@ class AsyncWorkerBase(QObject):
                 f"Cannot start {self.__class__.__name__} without an AsyncTaskManager"
             )
         self._cancelled = False
+        self._finished = False
         self._async_task_manager.create_task(
             coroutine=self._run_wrapper(),
             name=self._task_name,
@@ -95,7 +97,7 @@ class AsyncWorkerBase(QObject):
 
     @property
     def is_running(self) -> bool:
-        if self._async_task_manager is None:
+        if self._async_task_manager is None or self._finished:
             return False
         return self._async_task_manager.is_task_running(self._task_name)
 
@@ -108,11 +110,17 @@ class AsyncWorkerBase(QObject):
         try:
             self.started.emit()
             result = await self.run_async()
+            # Mark the worker finished *before* emitting ``finished``. Slots
+            # commonly start the next queued worker from that signal, and a
+            # still-TRUE ``is_running`` would make their drain loop a no-op.
+            self._finished = True
             if not self._cancelled:
                 self.finished.emit(result)
         except asyncio.CancelledError:
+            self._finished = True
             logger.info("%s was cancelled.", self.__class__.__name__)
         except Exception as exception:
+            self._finished = True
             logger.exception("%s failed with error.", self.__class__.__name__)
             if not self._cancelled:
                 self.error.emit(str(exception))
