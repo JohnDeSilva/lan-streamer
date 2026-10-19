@@ -10,8 +10,14 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
-from scan_agent.db.connection import create_engine_for_database, init_database
+from scan_agent.db.connection import (
+    create_engine_for_database,
+    get_session,
+    init_database,
+)
+from scan_agent.db.models import Library
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -1268,6 +1274,35 @@ def test_sse_live_event_and_sequence_resume(
     assert "event: scan.finished" in live_text
 
 
+def test_sse_live_only_skips_buffered_history(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    """The live=1 handshake must not replay events buffered before connection."""
+    broker = api_app.state.progress_broker
+    broker.publish("test.history", {"val": "old"})
+    broker.publish("scan.finished", {"job_id": 1, "status": "done"})
+
+    def _publish_live() -> None:
+        time.sleep(0.05)
+        broker.publish("test.live_only", {"val": "new"})
+        broker.publish("scan.finished", {"job_id": 2, "status": "done"})
+
+    live_thread = threading.Thread(target=_publish_live, daemon=True)
+    live_thread.start()
+
+    with api_client.stream("GET", "/api/v1/events?live=1&until_finished=1") as response:
+        assert response.status_code == 200
+        live_payload = list(response.iter_lines())
+
+    live_thread.join(timeout=1.0)
+    live_text = "\n".join(live_payload)
+    # The handshake publishes the resume point so a disconnect before the
+    # first real event cannot cause the client to skip future events.
+    assert live_payload[0].startswith("id: ")
+    assert "event: test.history" not in live_text
+    assert "event: test.live_only" in live_text
+
+
 def test_count_items_per_library_endpoint(
     api_app: FastAPI, api_client: TestClient
 ) -> None:
@@ -1585,6 +1620,20 @@ def test_metadata_match_publishes_sse_event(
     assert payload["media_type"] == "series"
     assert payload["media_identifier"] == series_identifier
     assert payload["tmdb_identifier"] == "99999"
+    assert payload["name"] == "Matched Series Title"
+    assert payload["poster_path"] == "/matched_poster.jpg"
+    assert "media" not in payload
+    assert "seasons" not in payload
+    assert "episodes" not in payload
+    assert set(payload) <= {
+        "media_type",
+        "media_identifier",
+        "tmdb_identifier",
+        "name",
+        "poster_path",
+        "library_id",
+    }
+    assert isinstance(payload.get("library_id"), int)
 
 
 def test_scan_finished_includes_libraries(
@@ -1603,5 +1652,15 @@ def test_scan_finished_includes_libraries(
         if message.get("event") == "scan.finished"
     ]
     assert len(finished_messages) >= 1
-    assert "libraries" in finished_messages[-1]["payload"]
-    assert "TV Shows" in finished_messages[-1]["payload"]["libraries"]
+    payload = finished_messages[-1]["payload"]
+    assert "libraries" in payload
+    assert "TV Shows" in payload["libraries"]
+    assert payload["library_names"] == payload["libraries"]
+    assert "library_ids" in payload
+    assert payload["library_ids"]
+    assert all(isinstance(library_id, int) for library_id in payload["library_ids"])
+    with get_session(api_app.state.engine) as session:
+        library_row = session.scalars(
+            select(Library).where(Library.name == "TV Shows")
+        ).one()
+    assert library_row.id in payload["library_ids"]
