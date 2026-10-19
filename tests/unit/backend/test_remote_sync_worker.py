@@ -514,3 +514,40 @@ def test_remote_sync_worker_does_not_overwrite_newer_agent_progress() -> None:
         mock_sync_watch.assert_not_called()
 
     _run(run_test())
+
+
+def test_remote_sync_worker_serializes_save_with_database_lock() -> None:
+    """The snapshot save must hold the shared watch-state write lock."""
+    parent = QObject()
+    task_manager = AsyncTaskManager(parent=parent)
+    database_lock = MagicMock()
+
+    async def run_test() -> None:
+        database = MagicMock()
+        database.load_library.return_value = {}
+        worker = RemoteSyncWorker(
+            library_name="Remote TV",
+            library_configuration={
+                "management_type": "remote",
+                "type": "tv",
+                "agent_url": "http://127.0.0.1:8800",
+            },
+            database=database,
+            async_task_manager=task_manager,
+            parent=parent,
+            database_lock=database_lock,
+        )
+
+        with patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            return_value={"Show A": {"name": "Show A", "seasons": {}}},
+        ):
+            result = await worker.run_async()
+
+        assert result["success"] is True
+        assert worker._database_lock is database_lock
+        database_lock.__enter__.assert_called_once()
+        database_lock.__exit__.assert_called_once()
+        database.save_library.assert_called_once()
+
+    _run(run_test())
