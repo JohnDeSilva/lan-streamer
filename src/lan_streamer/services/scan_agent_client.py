@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
@@ -10,6 +11,15 @@ from urllib.parse import quote, urlparse
 import requests
 
 logger = logging.getLogger(__name__)
+
+DESKTOP_CLIENT_IDENTIFIER: str = f"desktop-{uuid.uuid4().hex}"
+"""Stable per-process identifier used to recognise echoed watch events.
+
+The desktop is authoritative for watch-state mutations it originates. The
+agent publishes a ``watch.updated`` event for every accepted write, so the
+listener compares the payload's ``client_id`` against this value and ignores
+its own echoes.
+"""
 
 
 class ScanAgentConnectionError(Exception):
@@ -557,7 +567,7 @@ class ScanAgentClient:
         event: str = "complete",
         position_seconds: float | None = None,
         watched: bool | None = None,
-        client_identifier: str = "desktop",
+        client_identifier: str = DESKTOP_CLIENT_IDENTIFIER,
         timeout: float = 10.0,
     ) -> dict[str, Any]:
         """Record a watch event or sync watch state to a remote scan agent."""
@@ -610,6 +620,7 @@ class ScanAgentClient:
         agent_url: str,
         events: list[dict[str, Any]],
         timeout: float = 15.0,
+        client_identifier: str = DESKTOP_CLIENT_IDENTIFIER,
     ) -> dict[str, Any]:
         """Bulk synchronize multiple watch events to a remote scan agent."""
         if not events:
@@ -617,11 +628,16 @@ class ScanAgentClient:
 
         normalized_url = normalize_agent_url(agent_url)
         target_endpoint = f"{normalized_url}/api/v1/watch/sync"
+        # Tag desktop-originated events so their echoes can be suppressed.
+        tagged_events = [
+            {"client_id": client_identifier, **event_dictionary}
+            for event_dictionary in events
+        ]
 
         try:
             response = requests.post(
                 target_endpoint,
-                json=events,
+                json=tagged_events,
                 headers=self._headers,
                 timeout=timeout,
             )

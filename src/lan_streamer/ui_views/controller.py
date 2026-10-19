@@ -1,6 +1,7 @@
 import contextlib
 import logging
 import re
+import threading
 import time
 import uuid
 from collections import deque
@@ -15,6 +16,7 @@ from PySide6.QtCore import QFileSystemWatcher, QObject, QTimer, Signal
 
 from lan_streamer import db as _db_default
 from lan_streamer.services.path_mapping_service import resolve_playback_path
+from lan_streamer.services.scan_agent_client import DESKTOP_CLIENT_IDENTIFIER
 from lan_streamer.services.smart_row_service import SmartRowService
 from lan_streamer.system.async_task_manager import AsyncTaskManager
 from lan_streamer.system.config import config as _config_default
@@ -54,6 +56,9 @@ else:
     )
 
 logger = logging.getLogger(__name__)
+
+REMOTE_LIBRARY_FRESHNESS_SECONDS: float = 300.0
+"""How long a remote library snapshot is considered fresh."""
 
 # ------------------------------------------------------------------
 # Protocols for dependency injection interfaces
@@ -155,7 +160,21 @@ class Controller(QObject):
         self._remote_sync_scan_completed: dict[str, bool] = {}
         self._remote_sync_status_messages: dict[str, tuple[str, str]] = {}
         self._remote_library_last_synced: dict[str, float] = {}
+        self._remote_library_last_sync_attempt: dict[str, float] = {}
         self._pending_position_sync_tasks: dict[str, Any] = {}
+        # Serializes playback-state writes with RemoteSyncWorker's library save
+        # so a sync started before a watch event cannot clobber it afterwards.
+        self._watch_state_write_lock = threading.Lock()
+        # Separate, short-held lock for the in-memory recent-event map. It must
+        # never alias ``_watch_state_write_lock``: recording an event happens
+        # on the UI thread and must not block behind a full library save.
+        self._recent_remote_watch_events_lock = threading.Lock()
+        self._recent_remote_watch_events: dict[str, dict[str, Any]] = {}
+        # Manual metadata matches for local/hybrid libraries are only forwarded
+        # to agents after the local MetadataApplyWorker succeeds.
+        self._pending_agent_metadata_matches: dict[
+            str, tuple[dict[str, Any], bool]
+        ] = {}
 
         self.file_system_watcher = QFileSystemWatcher(self)
 
@@ -188,29 +207,43 @@ class Controller(QObject):
 
     def start_agent_event_listeners(self) -> None:
         """Discover configured scan agents and launch background SSE event listeners."""
+        from lan_streamer.services.scan_agent_client import normalize_agent_url
+        from lan_streamer.system.config import get_library_sources
+
         configured_agent_urls: set[str] = set()
+
+        def add_configured_agent_url(raw_agent_url: Any) -> None:
+            if not raw_agent_url:
+                return
+            try:
+                configured_agent_urls.add(normalize_agent_url(str(raw_agent_url)))
+            except ValueError as url_error:
+                logger.warning(
+                    "Ignoring invalid scan agent URL '%s': %s",
+                    raw_agent_url,
+                    url_error,
+                )
+
         for agent_url, agent_data in getattr(self._config, "scan_agents", {}).items():
             if (
                 isinstance(agent_data, dict) and agent_data.get("enabled", True)
             ) or not isinstance(agent_data, dict):
-                configured_agent_urls.add(agent_url)
-
-        from lan_streamer.system.config import get_library_sources
+                add_configured_agent_url(agent_url)
 
         for library_configuration in self._config.libraries.values():
-            if library_configuration.get("agent_url"):
-                configured_agent_urls.add(library_configuration["agent_url"])
+            add_configured_agent_url(library_configuration.get("agent_url"))
             for source_entry in get_library_sources(library_configuration):
-                if source_entry.get("type") == "agent" and source_entry.get(
-                    "agent_url"
-                ):
-                    configured_agent_urls.add(source_entry["agent_url"])
+                if source_entry.get("type") == "agent":
+                    add_configured_agent_url(source_entry.get("agent_url"))
 
-        # Stop workers for agents that are no longer configured
+        # Stop workers for agents that are no longer configured. Keys are
+        # normalized so 'http://host:8000' and 'http://host:8000/' cannot
+        # register two listeners for the same agent.
         for active_url in list(self.agent_event_listeners.keys()):
             if active_url not in configured_agent_urls:
                 worker_to_stop = self.agent_event_listeners.pop(active_url)
                 worker_to_stop.stop()
+                worker_to_stop.deleteLater()
 
         # Start workers for newly configured agents
         from lan_streamer.backend.agent_event_worker import (
@@ -246,6 +279,7 @@ class Controller(QObject):
         """Stop all background SSE event listeners."""
         for worker in self.agent_event_listeners.values():
             worker.stop()
+            worker.deleteLater()
         self.agent_event_listeners.clear()
 
     def select_tab(self, tab_name: str, reset_selection: bool = True) -> None:
@@ -306,22 +340,8 @@ class Controller(QObject):
             else:
                 single_library_data = self._db.load_library(single_library_name)
 
-            from lan_streamer.system.config import get_library_sources
-
-            sources = get_library_sources(single_library_config)
-            has_agent_sources = any(source.get("type") == "agent" for source in sources)
-            now = time.time()
-            last_synced_at = self._remote_library_last_synced.get(
-                single_library_name, 0.0
-            )
-            is_stale = (now - last_synced_at) > 60.0
-            if (
-                trigger_remote_sync
-                and (
-                    single_library_config.get("management_type") in ("remote", "hybrid")
-                    or has_agent_sources
-                )
-                and (not single_library_data or is_stale)
+            if trigger_remote_sync and self._should_refresh_remote_library(
+                single_library_name
             ):
                 self._queue_remote_sync(single_library_name, emit_signal=True)
 
@@ -345,23 +365,50 @@ class Controller(QObject):
         is reported through :meth:`_on_remote_sync_finished`.
         """
         library_configuration = self._config.libraries.get(library_name, {})
-        from lan_streamer.system.config import get_library_sources
-
-        sources = get_library_sources(library_configuration)
-        agent_sources = [
-            source
-            for source in sources
-            if source.get("type") == "agent" and source.get("agent_url")
-        ]
-        if not agent_sources:
+        if not self._agent_urls_for_library(library_configuration):
             return False
         self._queue_remote_sync(library_name, emit_signal=emit_signal)
         return True
 
-    def check_combined_view_freshness(self) -> None:
-        """Queue background synchronization for remote libraries contributing to Combined View."""
+    def _agent_urls_for_library(
+        self, library_configuration: dict[str, Any]
+    ) -> list[str]:
+        """Return the distinct agent URLs backing a library configuration."""
         from lan_streamer.system.config import get_library_sources
 
+        agent_urls: list[str] = []
+        configured_agent_url = library_configuration.get("agent_url")
+        if configured_agent_url:
+            agent_urls.append(str(configured_agent_url))
+        for source_entry in get_library_sources(library_configuration):
+            source_agent_url = source_entry.get("agent_url")
+            if source_entry.get("type") == "agent" and source_agent_url:
+                agent_urls.append(str(source_agent_url))
+        return list(dict.fromkeys(agent_urls))
+
+    def _should_refresh_remote_library(
+        self, library_name: str, now: float | None = None
+    ) -> bool:
+        """Return True when a remote-backed library should be synchronized.
+
+        A library only qualifies when it has an actual agent URL; a
+        ``management_type: hybrid`` entry without an agent source used to retry
+        a guaranteed-to-fail sync on every tab selection. The last *attempt*
+        (not just the last success) is used so failures back off instead of
+        looping. Explicit sync requests bypass this helper.
+        """
+        library_configuration = self._config.libraries.get(library_name, {})
+        if not self._agent_urls_for_library(library_configuration):
+            return False
+        current_time = time.time() if now is None else now
+        last_activity = max(
+            self._remote_library_last_synced.get(library_name, 0.0),
+            self._remote_library_last_sync_attempt.get(library_name, 0.0),
+        )
+        return (current_time - last_activity) > REMOTE_LIBRARY_FRESHNESS_SECONDS
+
+    def check_combined_view_freshness(self) -> None:
+        """Queue background synchronization for remote libraries contributing to Combined View."""
         now = time.time()
         remote_libraries_to_sync: set[str] = set()
 
@@ -375,23 +422,8 @@ class Controller(QObject):
             row_libraries = row.get("libraries", [])
             candidate_libraries = row_libraries or list(self._config.libraries.keys())
             for single_library_name in candidate_libraries:
-                single_library_config = self._config.libraries.get(
-                    single_library_name, {}
-                )
-                sources = get_library_sources(single_library_config)
-                has_agent_sources = any(
-                    source.get("type") == "agent" for source in sources
-                )
-                is_remote_or_hybrid = (
-                    single_library_config.get("management_type") in ("remote", "hybrid")
-                    or has_agent_sources
-                )
-                if is_remote_or_hybrid:
-                    last_synced_at = self._remote_library_last_synced.get(
-                        single_library_name, 0.0
-                    )
-                    if (now - last_synced_at) > 60.0:
-                        remote_libraries_to_sync.add(single_library_name)
+                if self._should_refresh_remote_library(single_library_name, now):
+                    remote_libraries_to_sync.add(single_library_name)
 
         for library_name in remote_libraries_to_sync:
             self._queue_remote_sync(library_name, emit_signal=False)
@@ -413,6 +445,7 @@ class Controller(QObject):
             )
             return
         self._remote_sync_scheduled.add(library_name)
+        self._remote_library_last_sync_attempt[library_name] = time.time()
         self._remote_sync_emit_signal[library_name] = emit_signal
         if success_message is not None:
             self._remote_sync_status_messages[library_name] = (
@@ -445,6 +478,7 @@ class Controller(QObject):
                     self._db,
                     async_task_manager=self.async_task_manager,
                     parent=self,
+                    database_lock=self._watch_state_write_lock,
                 )
 
             self.worker_manager.remote_sync.start(
@@ -465,53 +499,102 @@ class Controller(QObject):
             library_name, ("", "")
         )
 
-        if result.get("success"):
-            logger.info(
-                "Remote library '%s' synced successfully (%d items).",
-                library_name,
-                result.get("items", 0),
-            )
-            self._remote_library_last_synced[library_name] = time.time()
-            if self._smart_row_service is not None:
-                changed_hashes = self._smart_row_service.rebuild_for_libraries(
-                    [library_name]
+        try:
+            if result.get("success"):
+                logger.info(
+                    "Remote library '%s' synced successfully (%d items).",
+                    library_name,
+                    result.get("items", 0),
                 )
-                if changed_hashes:
-                    self.smart_rows_updated.emit(changed_hashes)
-            if success_message:
-                self.status_changed.emit(success_message)
+                self._remote_library_last_synced[library_name] = time.time()
+                if success_message:
+                    self.status_changed.emit(success_message)
+                self._finalize_remote_sync_in_background(
+                    library_name, emit_signal, emit_scan_completed
+                )
+            else:
+                error_message = result.get("error") or "Unknown error"
+                logger.warning(
+                    "Remote library '%s' sync failed: %s", library_name, error_message
+                )
+                if failure_message:
+                    self.status_changed.emit(failure_message)
+                if emit_scan_completed:
+                    self.scan_completed.emit()
+        finally:
+            # ``AsyncWorkerBase.is_running`` is already False while ``finished``
+            # is emitted, but defer the next start so the current worker's task
+            # can unwind. Always drain, even when finalization raises, otherwise
+            # every later queued library stalls.
+            QTimer.singleShot(0, self._drain_remote_sync_queue)
+
+    def _finalize_remote_sync_in_background(
+        self, library_name: str, emit_signal: bool, emit_scan_completed: bool
+    ) -> None:
+        """Reconcile watch state and rebuild smart rows off the UI thread."""
+
+        def run_blocking_finalization() -> list[str]:
+            self._reapply_recent_remote_watch_events()
+            if self._smart_row_service is None:
+                return []
+            return self._smart_row_service.rebuild_for_libraries([library_name])
+
+        async def run_finalization() -> None:
+            from lan_streamer.system.async_utils import run_in_executor
+
+            changed_hashes = await run_in_executor(run_blocking_finalization)
+            if changed_hashes:
+                self.smart_rows_updated.emit(changed_hashes)
             if emit_signal:
                 self._reload_current_tab_data()
-        else:
-            error_message = result.get("error") or "Unknown error"
-            logger.warning(
-                "Remote library '%s' sync failed: %s", library_name, error_message
-            )
-            if failure_message:
-                self.status_changed.emit(failure_message)
-        if emit_scan_completed:
-            self.scan_completed.emit()
-        self._drain_remote_sync_queue()
+            if emit_scan_completed:
+                self.scan_completed.emit()
+
+        task_name = f"remote_sync_finalize_{uuid.uuid4().hex}"
+        self.async_task_manager.create_task(run_finalization(), name=task_name)
+
+    def _resolve_tab_library_names(self, tab_name: str) -> list[str]:
+        """Resolve the libraries backing *tab_name*, including Combined View."""
+        if tab_name == "Combined View":
+            combined_library_names: list[str] = []
+            for combined_row in self._config.combined_views:
+                if not combined_row.get("enabled", True):
+                    continue
+                row_libraries = combined_row.get("libraries", [])
+                if row_libraries:
+                    combined_library_names.extend(row_libraries)
+                else:
+                    combined_library_names.extend(self._config.libraries.keys())
+            return list(dict.fromkeys(combined_library_names))
+
+        library_names: list[str] = []
+        if hasattr(self._config, "get_tab_libraries"):
+            configured_tab_libraries = self._config.get_tab_libraries(tab_name)
+            if isinstance(configured_tab_libraries, list) and configured_tab_libraries:
+                library_names = [
+                    name for name in configured_tab_libraries if isinstance(name, str)
+                ]
+        if not library_names:
+            library_names = [tab_name]
+        return library_names
 
     def _reload_current_tab_data(self) -> None:
         """Reload the current tab's data after a remote library sync."""
         if not self.current_tab_name:
             return
         self._config.load()
-        library_names: list[str] = []
-        if hasattr(self._config, "get_tab_libraries"):
-            configured_tab_libraries = self._config.get_tab_libraries(
-                self.current_tab_name
-            )
-            if isinstance(configured_tab_libraries, list) and configured_tab_libraries:
-                library_names = [
-                    name for name in configured_tab_libraries if isinstance(name, str)
-                ]
+        library_names = self._resolve_tab_library_names(self.current_tab_name)
         if not library_names:
-            library_names = [self.current_tab_name]
-        self.cached_library_data = self._load_tab_library_data(
+            # Never wipe the in-memory cache when a synthetic tab (e.g.
+            # Combined View with no configured rows) has no backing library.
+            self._cache_series_metrics()
+            self.library_loaded.emit()
+            return
+        reloaded_library_data = self._load_tab_library_data(
             library_names, trigger_remote_sync=False
         )
+        if reloaded_library_data or self.current_tab_name != "Combined View":
+            self.cached_library_data = reloaded_library_data
         self._cache_series_metrics()
         self.library_loaded.emit()
 
@@ -1148,6 +1231,16 @@ class Controller(QObject):
         if not remote_path:
             return
 
+        if payload.get("client_id") == DESKTOP_CLIENT_IDENTIFIER:
+            # This event is the echo of a write this desktop just sent to the
+            # agent (watch toggle, bulk sync, or 30 s playback checkpoint).
+            # Re-applying it causes redundant DB writes, smart-row rebuilds,
+            # and MyAnimeList pushes.
+            logger.debug(
+                "Ignoring echoed watch.updated event originated by this desktop"
+            )
+            return
+
         from lan_streamer.services.path_mapping_service import (
             map_remote_path_to_local,
         )
@@ -1228,26 +1321,21 @@ class Controller(QObject):
         if updated_in_memory:
             self._cache_series_metrics()
 
-        # 2. Update local database cache
-        try:
-            if watched is not None:
-                self._db.update_episode_watched_status(
-                    resolved_local_path, bool(watched)
-                )
-            if position_seconds is not None:
-                self._db.update_playback_position(
-                    resolved_local_path, int(position_seconds)
-                )
-        except Exception:
-            logger.exception(
-                "Could not update local database from remote watch event for '%s'",
-                resolved_local_path,
-            )
+        # Remember the newest event per path. RemoteSyncWorker may have
+        # snapshotted this library before the event landed; these are re-applied
+        # after any in-flight sync finishes so a stale snapshot cannot win.
+        self._record_recent_remote_watch_event(resolved_local_path, payload)
 
-        # 3. Update smart row cache for combined view
-        async def run_smart_row_update() -> None:
+        # 2+3. Persist and update the smart-row cache off the Qt/asyncio loop.
+        async def run_watch_update() -> None:
             from lan_streamer.system.async_utils import run_in_executor
 
+            await run_in_executor(
+                self._apply_remote_watch_event_to_database,
+                resolved_local_path,
+                watched,
+                position_seconds,
+            )
             changed_hashes = await run_in_executor(
                 self._smart_row_service.on_episode_watched,
                 resolved_local_path,
@@ -1260,14 +1348,65 @@ class Controller(QObject):
             if changed_hashes:
                 self.smart_rows_updated.emit(changed_hashes)
 
-        task_name = f"agent_watch_smart_row_update_{uuid.uuid4().hex}"
+        task_name = f"agent_watch_update_{uuid.uuid4().hex}"
         self.async_task_manager.create_task(
-            run_smart_row_update(),
+            run_watch_update(),
             name=task_name,
         )
 
-        if not self.is_video_playing:
+        if updated_in_memory and not self.is_video_playing:
             self.library_loaded.emit()
+
+    def _record_recent_remote_watch_event(
+        self, media_path: str, payload: dict[str, Any]
+    ) -> None:
+        """Store the latest remote watch event for post-sync reconciliation."""
+        current_time = time.time()
+        with self._recent_remote_watch_events_lock:
+            self._recent_remote_watch_events[media_path] = {
+                **payload,
+                "received_at": current_time,
+            }
+            expiration_cutoff = current_time - 300.0
+            expired_paths = [
+                path
+                for path, event in self._recent_remote_watch_events.items()
+                if float(event.get("received_at", 0.0)) < expiration_cutoff
+            ]
+            for expired_path in expired_paths:
+                self._recent_remote_watch_events.pop(expired_path, None)
+
+    def _apply_remote_watch_event_to_database(
+        self,
+        media_path: str,
+        watched: Any,
+        position_seconds: Any,
+    ) -> None:
+        """Persist one remote watch event while holding the sync write lock."""
+        with self._watch_state_write_lock:
+            try:
+                if watched is not None:
+                    self._db.update_episode_watched_status(media_path, bool(watched))
+                if position_seconds is not None:
+                    self._db.update_episode_playback_position(
+                        media_path, int(position_seconds)
+                    )
+            except Exception:
+                logger.exception(
+                    "Could not update local database from remote watch event for '%s'",
+                    media_path,
+                )
+
+    def _reapply_recent_remote_watch_events(self) -> None:
+        """Re-apply recent watch events after a remote sync wrote its snapshot."""
+        with self._recent_remote_watch_events_lock:
+            recent_events = list(self._recent_remote_watch_events.items())
+        for media_path, event in recent_events:
+            self._apply_remote_watch_event_to_database(
+                media_path,
+                event.get("watched"),
+                event.get("position_seconds"),
+            )
 
     def _on_agent_scan_finished(self, payload: dict[str, Any], agent_url: str) -> None:
         """Handle scan.finished event received from a remote scan agent."""
@@ -1276,7 +1415,22 @@ class Controller(QObject):
             agent_url,
             payload,
         )
-        scanned_libraries = payload.get("libraries", [])
+        raw_library_ids = payload.get("library_ids", [])
+        if not isinstance(raw_library_ids, list):
+            raw_library_ids = []
+        scanned_library_ids = {
+            str(library_identifier)
+            for library_identifier in raw_library_ids
+            if library_identifier is not None
+        }
+        raw_library_names = payload.get("library_names") or payload.get("libraries", [])
+        if isinstance(raw_library_names, str):
+            raw_library_names = [raw_library_names]
+        elif not isinstance(raw_library_names, list):
+            raw_library_names = []
+        scanned_library_names = [
+            str(library_name) for library_name in raw_library_names if library_name
+        ]
         from lan_streamer.system.config import get_library_sources
 
         for library_name, library_configuration in self._config.libraries.items():
@@ -1290,25 +1444,43 @@ class Controller(QObject):
                 or library_configuration.get("agent_url") == agent_url
             )
 
-            if uses_agent:
-                should_sync = not scanned_libraries or any(
-                    scanned_name.lower()
-                    in (
-                        library_name.lower(),
-                        str(library_configuration.get("remote_library_id", "")).lower(),
-                    )
-                    or any(
-                        scanned_name.lower() == str(source.get("source_id", "")).lower()
-                        for source in sources
-                    )
-                    for scanned_name in scanned_libraries
+            if not uses_agent:
+                continue
+
+            configured_identifiers = {
+                str(library_configuration.get("remote_library_id", "")),
+                *(
+                    str(source.get("source_id", ""))
+                    for source in sources
+                    if source.get("source_id") is not None
+                ),
+            }
+            matched_by_identifier = bool(scanned_library_ids & configured_identifiers)
+            matched_by_name = any(
+                scanned_name.lower()
+                in (
+                    library_name.lower(),
+                    str(library_configuration.get("remote_library_id", "")).lower(),
                 )
-                if should_sync:
-                    logger.info(
-                        "Triggering remote sync for library '%s' following agent scan completion",
-                        library_name,
-                    )
-                    self._queue_remote_sync(library_name, emit_signal=True)
+                or any(
+                    scanned_name.lower() == str(source.get("source_id", "")).lower()
+                    for source in sources
+                )
+                for scanned_name in scanned_library_names
+            )
+            if scanned_library_ids or scanned_library_names:
+                should_sync = matched_by_identifier or matched_by_name
+            else:
+                # Older agents publish no target metadata; preserve the
+                # previous "sync every library on this agent" behaviour.
+                should_sync = True
+
+            if should_sync:
+                logger.info(
+                    "Triggering remote sync for library '%s' following agent scan completion",
+                    library_name,
+                )
+                self._queue_remote_sync(library_name, emit_signal=True)
 
     def _on_agent_metadata_updated(
         self, payload: dict[str, Any], agent_url: str
@@ -1321,25 +1493,48 @@ class Controller(QObject):
         )
         media_type = payload.get("media_type", "item")
         self.status_changed.emit(f"Metadata updated on remote agent for {media_type}")
+        affected_library_identifier = payload.get("library_id")
 
         from lan_streamer.system.config import get_library_sources
 
+        agent_library_names: list[str] = []
+        scoped_library_names: list[str] = []
         for library_name, library_configuration in self._config.libraries.items():
             sources = get_library_sources(library_configuration)
             matches_agent = library_configuration.get("agent_url") == agent_url or any(
                 source.get("agent_url") == agent_url for source in sources
             )
-            if matches_agent:
-                logger.info(
-                    "Queueing remote sync for library '%s' following agent metadata update",
-                    library_name,
-                )
-                self._queue_remote_sync(library_name, emit_signal=True)
+            if not matches_agent:
+                continue
+            agent_library_names.append(library_name)
+            if affected_library_identifier is None:
+                continue
+            configured_identifiers = {
+                str(library_configuration.get("remote_library_id", "")),
+                *(
+                    str(source.get("source_id", ""))
+                    for source in sources
+                    if source.get("source_id") is not None
+                ),
+            }
+            if str(affected_library_identifier) in configured_identifiers:
+                scoped_library_names.append(library_name)
 
-    def _sync_metadata_match_to_agents(
+        # When the agent reports a library id we can match, only refresh that
+        # library; otherwise fall back to every library served by the agent so
+        # an update is never silently dropped.
+        target_library_names = scoped_library_names or agent_library_names
+        for library_name in target_library_names:
+            logger.info(
+                "Queueing remote sync for library '%s' following agent metadata update",
+                library_name,
+            )
+            self._queue_remote_sync(library_name, emit_signal=True)
+
+    def _dispatch_metadata_match_to_agents(
         self, series_name: str, match_dictionary: dict[str, Any], is_movie: bool
     ) -> None:
-        """Propagate manual TMDB metadata match to remote agents configured for this library."""
+        """Blocking dispatch of a manual metadata match to agents for this library."""
         from lan_streamer.system.config import get_library_sources
 
         library_config = self._config.libraries.get(self.current_library_name, {})
@@ -1365,9 +1560,22 @@ class Controller(QObject):
         if not target_tmdb_identifier:
             return
 
-        media_identifier = series_record.get("id") or target_dict.get("id")
+        # Never forward a local database row id: the agent's ids belong to a
+        # different database and could resolve to an unrelated item. Use the
+        # unscoped endpoint, which resolves by remote path first, then name.
         mount_mappings = library_config.get("mount_mappings", {})
         raw_path = series_record.get("path")
+        if not raw_path and not is_movie:
+            for season_data in series_record.get("seasons", {}).values():
+                for episode_record in season_data.get("episodes", []):
+                    episode_path = episode_record.get("path")
+                    if episode_path:
+                        # Series.path on the agent is the show directory, i.e.
+                        # two levels above the episode file.
+                        raw_path = str(Path(episode_path).parent.parent)
+                        break
+                if raw_path:
+                    break
         media_type = "movie" if is_movie else "series"
 
         def run_agent_match() -> None:
@@ -1401,7 +1609,6 @@ class Controller(QObject):
                         agent_url=agent_url,
                         media_type=media_type,
                         tmdb_identifier=str(target_tmdb_identifier),
-                        media_identifier=media_identifier,
                         name=series_name,
                         path=remote_path,
                     )
@@ -1424,10 +1631,22 @@ class Controller(QObject):
                         sync_error,
                     )
 
+        run_agent_match()
+
+    def _sync_metadata_match_to_agents(
+        self, series_name: str, match_dictionary: dict[str, Any], is_movie: bool
+    ) -> None:
+        """Propagate a manual metadata match to agents on a background task."""
+
         async def run_async_task() -> None:
             from lan_streamer.system.async_utils import run_in_executor
 
-            await run_in_executor(run_agent_match)
+            await run_in_executor(
+                self._dispatch_metadata_match_to_agents,
+                series_name,
+                match_dictionary,
+                is_movie,
+            )
 
         task_name = f"metadata_match_sync_{uuid.uuid4().hex}"
         self.async_task_manager.create_task(run_async_task(), name=task_name)
@@ -2297,20 +2516,30 @@ class Controller(QObject):
                 with contextlib.suppress(ValueError):
                     target_dict["year"] = int(air_date_str.split("-")[0])
 
-        # For movies, save immediately (no episode sync needed).
+        # For movies, save immediately (no episode sync needed). Artwork
+        # downloads are network-bound, so finalize them off the UI thread.
         if is_movie:
             target_dict["locked_metadata"] = True
-            self._download_provider_artwork(target_dict, match_dictionary, is_movie)
-            self._finish_metadata_match(series_name)
-            self._sync_metadata_match_to_agents(series_name, match_dictionary, is_movie)
+            self._finalize_metadata_match_async(
+                series_name,
+                target_dict,
+                match_dictionary,
+                is_movie,
+                sync_to_agents=True,
+            )
             return
 
         # TV series: clear old metadata and sync TMDB episodes in background.
         series_record["metadata"] = target_dict
         new_tmdb_identifier: str = target_dict.get("tmdb_identifier", "")
         if not new_tmdb_identifier:
-            self._download_provider_artwork(target_dict, match_dictionary, is_movie)
-            self._finish_metadata_match(series_name)
+            self._finalize_metadata_match_async(
+                series_name,
+                target_dict,
+                match_dictionary,
+                is_movie,
+                sync_to_agents=False,
+            )
             return
 
         # Clear old TMDB fields from series/season metadata and episodes
@@ -2361,16 +2590,26 @@ class Controller(QObject):
         )
         if is_remote:
             target_dict["locked_metadata"] = True
-            self._download_provider_artwork(target_dict, match_dictionary, is_movie)
-            self._finish_metadata_match(series_name)
-            self._sync_metadata_match_to_agents(series_name, match_dictionary, is_movie)
+            self._finalize_metadata_match_async(
+                series_name,
+                target_dict,
+                match_dictionary,
+                is_movie,
+                sync_to_agents=True,
+            )
             return
 
         if self.worker_manager.metadata_apply.is_running:
             logger.info("MetadataApplyWorker is already running. Skipping.")
             return
 
-        self._sync_metadata_match_to_agents(series_name, match_dictionary, is_movie)
+        # Do not dispatch to the agent until the local apply succeeds: both
+        # writers touch the same library, and a concurrent remote sync could
+        # otherwise overwrite the local match with a stale snapshot.
+        self._pending_agent_metadata_matches[series_name] = (
+            dict(match_dictionary),
+            is_movie,
+        )
 
         self.worker_manager.metadata_apply.start(
             lambda: MetadataApplyWorker(
@@ -2409,11 +2648,58 @@ class Controller(QObject):
             target_dict["poster_path"] = poster_path
 
         self._finish_metadata_match(series_name)
+        pending_agent_match = self._pending_agent_metadata_matches.pop(
+            series_name, None
+        )
+        if pending_agent_match is not None:
+            pending_match_dictionary, pending_is_movie = pending_agent_match
+            self._sync_metadata_match_to_agents(
+                series_name, pending_match_dictionary, pending_is_movie
+            )
 
     def _on_metadata_apply_error(self, series_name: str, error_message: str) -> None:
         """Handle metadata apply failure — save what we have and warn."""
         logger.error(f"Metadata apply failed for '{series_name}': {error_message}")
+        # The local apply failed, so do not let the agent overwrite the local
+        # library with a match the desktop could not persist.
+        self._pending_agent_metadata_matches.pop(series_name, None)
         self._finish_metadata_match(series_name)
+
+    def _finalize_metadata_match_async(
+        self,
+        series_name: str,
+        target_dict: dict[str, Any],
+        match_dictionary: dict[str, Any],
+        is_movie: bool,
+        sync_to_agents: bool,
+    ) -> None:
+        """Download artwork and persist a match without blocking the UI thread.
+
+        Poster/backdrop downloads are synchronous HTTP requests with long
+        timeouts. The database save and signal emission must stay on the UI
+        thread, so only the artwork fetch runs in the executor.
+        """
+
+        def download_artwork() -> None:
+            self._download_provider_artwork(target_dict, match_dictionary, is_movie)
+
+        async def run_finalization() -> None:
+            from lan_streamer.system.async_utils import run_in_executor
+
+            await run_in_executor(download_artwork)
+            self._finish_metadata_match(series_name)
+            if sync_to_agents:
+                # Await the dispatch in this task instead of spawning a nested
+                # task, which would be orphaned by the no-event-loop fallback.
+                await run_in_executor(
+                    self._dispatch_metadata_match_to_agents,
+                    series_name,
+                    match_dictionary,
+                    is_movie,
+                )
+
+        task_name = f"metadata_finalize_{uuid.uuid4().hex}"
+        self.async_task_manager.create_task(run_finalization(), name=task_name)
 
     def _finish_metadata_match(self, series_name: str) -> None:
         """Finalize metadata match: save to DB and emit signals."""

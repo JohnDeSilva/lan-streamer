@@ -417,6 +417,7 @@ def sync_remote_library_from_agent(
     library_name: str,
     library_configuration: dict[str, Any],
     database: Any,
+    database_lock: Any | None = None,
 ) -> dict[str, Any]:
     """Fetch items for remote media sources from scan agents and persist them.
 
@@ -548,7 +549,16 @@ def sync_remote_library_from_agent(
                 load_error,
             )
 
-        if library_type == "movie":
+        # Serialize the snapshot write with desktop watch-state writes. The
+        # controller re-applies events that arrived during the fetch after the
+        # save, but holding the lock prevents them from interleaving mid-save.
+        if database_lock is not None:
+            with database_lock:
+                if library_type == "movie":
+                    database.save_movie_library(library_name, combined_items)
+                else:
+                    database.save_library(library_name, combined_items)
+        elif library_type == "movie":
             database.save_movie_library(library_name, combined_items)
         else:
             database.save_library(library_name, combined_items)
@@ -604,11 +614,13 @@ class RemoteSyncWorker(AsyncWorkerBase):
         database: Any,
         async_task_manager: Any | None = None,
         parent: Any | None = None,
+        database_lock: Any | None = None,
     ) -> None:
         super().__init__(async_task_manager=async_task_manager, parent=parent)
         self.library_name: str = library_name
         self._library_configuration: dict[str, Any] = dict(library_configuration)
         self._database: Any = database
+        self._database_lock: Any | None = database_lock
 
     async def run_async(self) -> dict[str, Any]:
         """Run the blocking sync inside the thread-pool executor."""
@@ -617,4 +629,5 @@ class RemoteSyncWorker(AsyncWorkerBase):
             self.library_name,
             self._library_configuration,
             self._database,
+            database_lock=self._database_lock,
         )

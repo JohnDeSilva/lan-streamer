@@ -8,6 +8,7 @@ import pytest
 import requests
 
 from lan_streamer.services.scan_agent_client import (
+    DESKTOP_CLIENT_IDENTIFIER,
     ScanAgentClient,
     ScanAgentConnectionError,
     normalize_agent_url,
@@ -470,7 +471,7 @@ def test_record_watch_event_and_sync() -> None:
             json={
                 "media_type": "episode",
                 "event": "complete",
-                "client_id": "desktop",
+                "client_id": DESKTOP_CLIENT_IDENTIFIER,
                 "path": "/media/anime/Show/S01E01.mkv",
                 "position_seconds": 123.4,
                 "watched": True,
@@ -636,3 +637,22 @@ def test_match_metadata_error_handling() -> None:
             tmdb_identifier="999",
             media_identifier=9999,
         )
+
+
+def test_sync_watch_events_tags_events_with_client_identifier() -> None:
+    """Bulk watch syncs must be tagged so their SSE echoes can be suppressed."""
+    client = ScanAgentClient()
+    mock_post_response = MagicMock()
+    mock_post_response.status_code = 200
+    mock_post_response.json.return_value = {"status": "synced", "updated_count": 1}
+
+    with patch("requests.post", return_value=mock_post_response) as mock_post:
+        result = client.sync_watch_events(
+            agent_url="http://127.0.0.1:8800",
+            events=[{"media_type": "episode", "path": "/media/a.mkv", "watched": True}],
+        )
+
+    assert result["status"] == "synced"
+    posted_events = mock_post.call_args[1]["json"]
+    assert posted_events[0]["client_id"] == DESKTOP_CLIENT_IDENTIFIER
+    assert posted_events[0]["path"] == "/media/a.mkv"
