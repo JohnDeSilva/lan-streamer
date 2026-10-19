@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import logging
 import re
@@ -170,6 +171,21 @@ class Controller(QObject):
         # on the UI thread and must not block behind a full library save.
         self._recent_remote_watch_events_lock = threading.Lock()
         self._recent_remote_watch_events: dict[str, dict[str, Any]] = {}
+        # Bulk watch events are coalesced for a short fixed window so a burst of
+        # remote updates results in one cached-library pass, one DB write batch,
+        # and one smart-row rebuild instead of one of each per event.
+        self._pending_remote_watch_events: dict[str, dict[str, Any]] = {}
+        # Monotonic guard per resolved local path: an out-of-order (older)
+        # event must never overwrite newer in-memory or DB playback state.
+        self._remote_watch_event_timestamps: dict[str, float] = {}
+        self._remote_watch_apply_lock = asyncio.Lock()
+        self._remote_watch_apply_lock_loop: asyncio.AbstractEventLoop | None = None
+        self._remote_watch_flush_timer = QTimer(self)
+        self._remote_watch_flush_timer.setSingleShot(True)
+        self._remote_watch_flush_timer.setInterval(150)
+        self._remote_watch_flush_timer.timeout.connect(
+            self._flush_pending_remote_watch_events
+        )
         # Manual metadata matches for local/hybrid libraries are only forwarded
         # to agents after the local MetadataApplyWorker succeeds.
         self._pending_agent_metadata_matches: dict[
@@ -269,6 +285,11 @@ class Controller(QObject):
                 )
                 worker.scan_finished.connect(
                     lambda payload, url=agent_url: self._on_agent_scan_finished(
+                        payload, url
+                    )
+                )
+                worker.stream_gap.connect(
+                    lambda payload, url=agent_url: self._on_agent_stream_gap(
                         payload, url
                     )
                 )
@@ -1217,7 +1238,13 @@ class Controller(QObject):
         self.async_task_manager.create_task(run_async_task(), name=task_name)
 
     def _on_agent_watch_updated(self, payload: dict[str, Any], agent_url: str) -> None:
-        """Handle watch.updated event received from a remote scan agent."""
+        """Handle watch.updated event received from a remote scan agent.
+
+        This runs on the Qt/asyncio thread for every SSE event, so it only does
+        cheap validation and coalescing. The cached-library pass, DB writes,
+        metrics recompute, and smart-row rebuild are deferred to the flush
+        timer (see :meth:`_flush_pending_remote_watch_events`).
+        """
         logger.info(
             "Controller received watch.updated from agent '%s': %s",
             agent_url,
@@ -1226,7 +1253,6 @@ class Controller(QObject):
         remote_path = payload.get("path")
         watched = payload.get("watched")
         position_seconds = payload.get("position_seconds")
-        last_played_at = payload.get("last_played_at") or int(time.time())
 
         if not remote_path:
             return
@@ -1241,12 +1267,51 @@ class Controller(QObject):
             )
             return
 
+        resolved_local_path = self._resolve_remote_watch_local_path(
+            str(remote_path), agent_url
+        )
+        event_timestamp = self._resolve_remote_watch_event_timestamp(payload)
+
+        with self._recent_remote_watch_events_lock:
+            previous_timestamp = self._remote_watch_event_timestamps.get(
+                resolved_local_path
+            )
+            if previous_timestamp is not None and previous_timestamp > event_timestamp:
+                logger.debug(
+                    "Ignoring out-of-order watch.updated for '%s' "
+                    "(event=%s, latest=%s)",
+                    resolved_local_path,
+                    event_timestamp,
+                    previous_timestamp,
+                )
+                return
+            self._remote_watch_event_timestamps[resolved_local_path] = event_timestamp
+
+        self._pending_remote_watch_events[resolved_local_path] = {
+            "remote_path": str(remote_path),
+            "resolved_local_path": resolved_local_path,
+            "watched": watched,
+            "position_seconds": position_seconds,
+            "last_played_at": event_timestamp,
+        }
+
+        # Record immediately so a remote sync that snapshotted the library
+        # before this event landed cannot clobber it afterwards.
+        self._record_recent_remote_watch_event(resolved_local_path, payload)
+
+        # Fixed-window coalescing: only start the timer when idle. Calling
+        # start() on an active timer would restart the 150 ms window and a
+        # continuous stream could starve flushing forever.
+        if not self._remote_watch_flush_timer.isActive():
+            self._remote_watch_flush_timer.start()
+
+    def _resolve_remote_watch_local_path(self, remote_path: str, agent_url: str) -> str:
+        """Resolve an agent-side path to the desktop-side mount path."""
         from lan_streamer.services.path_mapping_service import (
             map_remote_path_to_local,
         )
         from lan_streamer.system.config import get_library_sources
 
-        # Find mount mappings across libraries referencing this agent
         resolved_local_path = remote_path
         for library_configuration in self._config.libraries.values():
             sources = get_library_sources(library_configuration)
@@ -1258,104 +1323,271 @@ class Controller(QObject):
                 )
                 or library_configuration.get("agent_url") == agent_url
             )
-            if uses_agent:
-                mount_mappings = dict(library_configuration.get("mount_mappings", {}))
-                for source_entry in sources:
-                    if "mount_mappings" in source_entry:
-                        mount_mappings.update(source_entry.get("mount_mappings", {}))
-                mapped_candidate = map_remote_path_to_local(remote_path, mount_mappings)
-                if mapped_candidate != remote_path:
-                    resolved_local_path = mapped_candidate
-                    break
+            if not uses_agent:
+                continue
+            mount_mappings = dict(library_configuration.get("mount_mappings", {}))
+            for source_entry in sources:
+                if "mount_mappings" in source_entry:
+                    mount_mappings.update(source_entry.get("mount_mappings", {}))
+            mapped_candidate = map_remote_path_to_local(remote_path, mount_mappings)
+            if mapped_candidate != remote_path:
+                resolved_local_path = mapped_candidate
+                break
+        return resolved_local_path
 
-        # 1. Update in-memory cached_library_data
-        updated_in_memory = False
-        for series_data in self.cached_library_data.values():
-            if series_data.get("type") == "movie" or "seasons" not in series_data:
-                movie_path = series_data.get("path")
-                version_paths = {
-                    version.get("path")
-                    for version in series_data.get("versions", [])
-                    if isinstance(version, dict) and version.get("path")
-                }
-                if self._matches_file_path(
-                    resolved_local_path, movie_path, version_paths
-                ) or self._matches_file_path(remote_path, movie_path, version_paths):
-                    if watched is not None:
-                        series_data["watched"] = bool(watched)
-                    if position_seconds is not None:
-                        series_data["last_played_position"] = int(position_seconds)
-                    series_data["last_played_at"] = last_played_at
-                    updated_in_memory = True
-                    break
-            else:
-                found_episode = False
-                for season_data in series_data.get("seasons", {}).values():
-                    for episode_record in season_data.get("episodes", []):
-                        episode_path = episode_record.get("path")
-                        version_paths = {
-                            version.get("path")
-                            for version in episode_record.get("versions", [])
-                            if isinstance(version, dict) and version.get("path")
-                        }
-                        if self._matches_file_path(
-                            resolved_local_path, episode_path, version_paths
-                        ) or self._matches_file_path(
-                            remote_path, episode_path, version_paths
-                        ):
-                            if watched is not None:
-                                episode_record["watched"] = bool(watched)
-                            if position_seconds is not None:
-                                episode_record["last_played_position"] = int(
-                                    position_seconds
-                                )
-                            episode_record["last_played_at"] = last_played_at
-                            found_episode = True
-                            updated_in_memory = True
-                            break
-                    if found_episode:
-                        break
-                if found_episode:
-                    break
+    @staticmethod
+    def _resolve_remote_watch_event_timestamp(payload: dict[str, Any]) -> float:
+        """Return the event timestamp as epoch seconds, falling back to now."""
+        raw_timestamp = payload.get("last_played_at")
+        if raw_timestamp is None:
+            raw_timestamp = payload.get("timestamp")
+        if raw_timestamp is None:
+            return time.time()
+        try:
+            return float(raw_timestamp)
+        except TypeError, ValueError:
+            logger.debug(
+                "Could not parse watch.updated timestamp '%s'; using current time",
+                raw_timestamp,
+            )
+            return time.time()
+
+    def _flush_pending_remote_watch_events(self) -> None:
+        """Apply coalesced remote watch events in one batch.
+
+        Performs a single cached-library pass, then schedules a single
+        background task that writes all unique paths to the database and
+        rebuilds the affected smart-row configs. This keeps a bulk update of
+        N events from causing N grid reloads and N full-library scans.
+        """
+        pending_events = self._pending_remote_watch_events
+        self._pending_remote_watch_events = {}
+        if not pending_events:
+            return
+
+        event_lookup = self._build_remote_watch_event_lookup(pending_events)
+        updated_in_memory = self._apply_remote_watch_events_to_cached_library(
+            event_lookup
+        )
 
         if updated_in_memory:
             self._cache_series_metrics()
+            if not self.is_video_playing:
+                self.library_loaded.emit()
 
-        # Remember the newest event per path. RemoteSyncWorker may have
-        # snapshotted this library before the event landed; these are re-applied
-        # after any in-flight sync finishes so a stale snapshot cannot win.
-        self._record_recent_remote_watch_event(resolved_local_path, payload)
+        ordered_events = list(pending_events.values())
 
-        # 2+3. Persist and update the smart-row cache off the Qt/asyncio loop.
-        async def run_watch_update() -> None:
+        async def run_batch_watch_update() -> None:
             from lan_streamer.system.async_utils import run_in_executor
 
-            await run_in_executor(
-                self._apply_remote_watch_event_to_database,
-                resolved_local_path,
-                watched,
-                position_seconds,
-            )
-            changed_hashes = await run_in_executor(
-                self._smart_row_service.on_episode_watched,
-                resolved_local_path,
-            )
-            if not changed_hashes and resolved_local_path != remote_path:
+            apply_lock = self._get_remote_watch_apply_lock()
+            async with apply_lock:
+                await run_in_executor(
+                    self._apply_remote_watch_events_batch_to_database,
+                    ordered_events,
+                )
                 changed_hashes = await run_in_executor(
-                    self._smart_row_service.on_episode_watched,
-                    remote_path,
+                    self._apply_remote_watch_events_batch_to_smart_rows,
+                    ordered_events,
                 )
             if changed_hashes:
                 self.smart_rows_updated.emit(changed_hashes)
 
-        task_name = f"agent_watch_update_{uuid.uuid4().hex}"
+        task_name = f"agent_watch_batch_{uuid.uuid4().hex}"
         self.async_task_manager.create_task(
-            run_watch_update(),
+            run_batch_watch_update(),
             name=task_name,
         )
 
-        if updated_in_memory and not self.is_video_playing:
-            self.library_loaded.emit()
+    def _get_remote_watch_apply_lock(self) -> asyncio.Lock:
+        """Return the apply lock bound to the currently running event loop.
+
+        The synchronous test fallback of :class:`AsyncTaskManager` creates a
+        fresh event loop per task. Re-binding keeps the serialization guarantee
+        in production while avoiding "bound to a different loop" failures when
+        tests flush multiple batches.
+        """
+        running_loop = asyncio.get_running_loop()
+        if self._remote_watch_apply_lock_loop is not running_loop:
+            self._remote_watch_apply_lock = asyncio.Lock()
+            self._remote_watch_apply_lock_loop = running_loop
+        return self._remote_watch_apply_lock
+
+    def _build_remote_watch_event_lookup(
+        self, pending_events: dict[str, dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        """Map every known path variant to its newest pending event.
+
+        Replicates the mount-mapping fallback used by
+        :meth:`_matches_file_path` by expanding each event path through every
+        configured library's mappings and matching by exact set intersection.
+        """
+        from lan_streamer.services.path_mapping_service import (
+            map_local_path_to_remote,
+            map_remote_path_to_local,
+        )
+        from lan_streamer.system.config import get_library_sources
+
+        mount_mappings_by_library: list[dict[str, str]] = []
+        for library_configuration in self._config.libraries.values():
+            mount_mappings = dict(library_configuration.get("mount_mappings", {}))
+            for source_entry in get_library_sources(library_configuration):
+                if "mount_mappings" in source_entry:
+                    mount_mappings.update(source_entry.get("mount_mappings", {}))
+            if mount_mappings:
+                mount_mappings_by_library.append(mount_mappings)
+
+        event_lookup: dict[str, dict[str, Any]] = {}
+        for pending_event in pending_events.values():
+            resolved_local_path = str(pending_event["resolved_local_path"])
+            remote_path = str(pending_event["remote_path"])
+            path_variants = {resolved_local_path, remote_path}
+            for mount_mappings in mount_mappings_by_library:
+                for base_path in (resolved_local_path, remote_path):
+                    path_variants.add(
+                        map_local_path_to_remote(base_path, mount_mappings)
+                    )
+                    path_variants.add(
+                        map_remote_path_to_local(base_path, mount_mappings)
+                    )
+
+            for path_variant in path_variants:
+                if not path_variant:
+                    continue
+                existing_event = event_lookup.get(path_variant)
+                if existing_event is None or float(
+                    pending_event["last_played_at"]
+                ) >= float(existing_event["last_played_at"]):
+                    event_lookup[path_variant] = pending_event
+        return event_lookup
+
+    def _apply_remote_watch_events_to_cached_library(
+        self, event_lookup: dict[str, dict[str, Any]]
+    ) -> bool:
+        """Apply matching events to ``cached_library_data`` in a single pass."""
+        updated_in_memory = False
+        for series_data in self.cached_library_data.values():
+            is_movie_record = (
+                series_data.get("type") == "movie" or "seasons" not in series_data
+            )
+            if is_movie_record:
+                if self._apply_remote_watch_event_to_cached_item(
+                    series_data, event_lookup
+                ):
+                    updated_in_memory = True
+                continue
+
+            for season_data in series_data.get("seasons", {}).values():
+                for episode_record in season_data.get("episodes", []):
+                    if self._apply_remote_watch_event_to_cached_item(
+                        episode_record, event_lookup
+                    ):
+                        updated_in_memory = True
+        return updated_in_memory
+
+    @staticmethod
+    def _apply_remote_watch_event_to_cached_item(
+        cached_item: dict[str, Any], event_lookup: dict[str, dict[str, Any]]
+    ) -> bool:
+        """Apply the newest matching event to one cached movie/episode record."""
+        candidate_paths: set[str] = set()
+        cached_path = cached_item.get("path")
+        if cached_path:
+            candidate_paths.add(str(cached_path))
+        for version in cached_item.get("versions", []) or []:
+            if isinstance(version, dict) and version.get("path"):
+                candidate_paths.add(str(version["path"]))
+        if not candidate_paths:
+            return False
+
+        matching_events = [
+            event_lookup[candidate_path]
+            for candidate_path in candidate_paths
+            if candidate_path in event_lookup
+        ]
+        if not matching_events:
+            return False
+        newest_event = max(
+            matching_events, key=lambda event: float(event["last_played_at"])
+        )
+
+        cached_last_played_at = cached_item.get("last_played_at")
+        if cached_last_played_at is not None:
+            try:
+                if float(cached_last_played_at) > float(newest_event["last_played_at"]):
+                    return False
+            except TypeError, ValueError:
+                logger.debug(
+                    "Ignoring unparseable cached last_played_at '%s'",
+                    cached_last_played_at,
+                )
+
+        watched = newest_event.get("watched")
+        if watched is not None:
+            cached_item["watched"] = bool(watched)
+        position_seconds = newest_event.get("position_seconds")
+        if position_seconds is not None:
+            cached_item["last_played_position"] = int(position_seconds)
+        cached_item["last_played_at"] = newest_event["last_played_at"]
+        return True
+
+    def _apply_remote_watch_events_batch_to_database(
+        self, events: list[dict[str, Any]]
+    ) -> None:
+        """Persist a batch of watch events while holding the sync write lock once."""
+        with self._watch_state_write_lock:
+            processed_paths: set[str] = set()
+            for event in events:
+                media_path = event.get("resolved_local_path") or event.get(
+                    "remote_path"
+                )
+                if not media_path or media_path in processed_paths:
+                    continue
+                processed_paths.add(str(media_path))
+                watched = event.get("watched")
+                position_seconds = event.get("position_seconds")
+                try:
+                    if watched is not None:
+                        self._db.update_episode_watched_status(
+                            str(media_path), bool(watched)
+                        )
+                    if position_seconds is not None:
+                        self._db.update_episode_playback_position(
+                            str(media_path), int(position_seconds)
+                        )
+                except Exception:
+                    logger.exception(
+                        "Could not update local database from remote watch "
+                        "event for '%s'",
+                        media_path,
+                    )
+
+    def _apply_remote_watch_events_batch_to_smart_rows(
+        self, events: list[dict[str, Any]]
+    ) -> list[str]:
+        """Rebuild smart-row configs for a batch, returning unique hashes."""
+        changed_hashes: list[str] = []
+        seen_hashes: set[str] = set()
+        processed_paths: set[str] = set()
+        for event in events:
+            resolved_local_path = event.get("resolved_local_path")
+            if not resolved_local_path or resolved_local_path in processed_paths:
+                continue
+            processed_paths.add(str(resolved_local_path))
+
+            event_hashes = self._smart_row_service.on_episode_watched(
+                str(resolved_local_path)
+            )
+            remote_path = event.get("remote_path")
+            if not event_hashes and remote_path and remote_path != resolved_local_path:
+                event_hashes = self._smart_row_service.on_episode_watched(
+                    str(remote_path)
+                )
+            for config_hash in event_hashes:
+                if config_hash not in seen_hashes:
+                    seen_hashes.add(config_hash)
+                    changed_hashes.append(config_hash)
+        return changed_hashes
 
     def _record_recent_remote_watch_event(
         self, media_path: str, payload: dict[str, Any]
@@ -1375,6 +1607,7 @@ class Controller(QObject):
             ]
             for expired_path in expired_paths:
                 self._recent_remote_watch_events.pop(expired_path, None)
+                self._remote_watch_event_timestamps.pop(expired_path, None)
 
     def _apply_remote_watch_event_to_database(
         self,
@@ -1382,20 +1615,16 @@ class Controller(QObject):
         watched: Any,
         position_seconds: Any,
     ) -> None:
-        """Persist one remote watch event while holding the sync write lock."""
-        with self._watch_state_write_lock:
-            try:
-                if watched is not None:
-                    self._db.update_episode_watched_status(media_path, bool(watched))
-                if position_seconds is not None:
-                    self._db.update_episode_playback_position(
-                        media_path, int(position_seconds)
-                    )
-            except Exception:
-                logger.exception(
-                    "Could not update local database from remote watch event for '%s'",
-                    media_path,
-                )
+        """Persist one remote watch event via the batch database writer."""
+        self._apply_remote_watch_events_batch_to_database(
+            [
+                {
+                    "resolved_local_path": media_path,
+                    "watched": watched,
+                    "position_seconds": position_seconds,
+                }
+            ]
+        )
 
     def _reapply_recent_remote_watch_events(self) -> None:
         """Re-apply recent watch events after a remote sync wrote its snapshot."""
@@ -1406,6 +1635,57 @@ class Controller(QObject):
                 media_path,
                 event.get("watched"),
                 event.get("position_seconds"),
+            )
+
+    def _on_agent_stream_gap(self, payload: dict[str, Any], agent_url: str) -> None:
+        """Resynchronize libraries after the agent dropped buffered events.
+
+        The agent emits ``stream.gap`` when a reconnect resumes from a sequence
+        that predates its bounded event history. Watch and metadata events may
+        have been lost, so every library sourced from that agent must be fully
+        synchronized before it is trusted again.
+        """
+        logger.warning(
+            "Agent '%s' reported a dropped SSE event history (%s); "
+            "queuing remote library resynchronization.",
+            agent_url,
+            payload,
+        )
+        from lan_streamer.system.config import get_library_sources
+
+        current_tab_libraries = (
+            set(self._resolve_tab_library_names(self.current_tab_name))
+            if self.current_tab_name
+            else set()
+        )
+        resynchronized_libraries: list[str] = []
+        for library_name, library_configuration in self._config.libraries.items():
+            sources = get_library_sources(library_configuration)
+            uses_agent = (
+                any(
+                    source.get("type") == "agent"
+                    and source.get("agent_url") == agent_url
+                    for source in sources
+                )
+                or library_configuration.get("agent_url") == agent_url
+            )
+            if not uses_agent:
+                continue
+
+            # Clear both freshness markers so a tab selection cannot keep
+            # serving the incomplete snapshot while a resync is pending.
+            self._remote_library_last_synced.pop(library_name, None)
+            self._remote_library_last_sync_attempt.pop(library_name, None)
+            self._queue_remote_sync(
+                library_name,
+                emit_signal=library_name in current_tab_libraries,
+            )
+            resynchronized_libraries.append(library_name)
+
+        if resynchronized_libraries:
+            self.status_changed.emit(
+                "Remote agent event history was truncated; "
+                "resynchronizing remote libraries."
             )
 
     def _on_agent_scan_finished(self, payload: dict[str, Any], agent_url: str) -> None:
