@@ -154,17 +154,19 @@ def test_controller_handles_agent_scan_finished_all_libraries(
 def test_controller_handles_agent_metadata_updated_event(
     test_controller: Controller,
 ) -> None:
-    """metadata.updated event emits status message on the controller."""
+    """metadata.updated event emits status message and queues remote sync."""
     status_messages = []
     test_controller.status_changed.connect(status_messages.append)
 
-    test_controller._on_agent_metadata_updated(
-        {"media_type": "series", "series_name": "Show Alpha"},
-        "http://127.0.0.1:8000",
-    )
-    assert any(
-        "Metadata updated on remote agent" in message for message in status_messages
-    )
+    with patch.object(test_controller, "_queue_remote_sync") as mock_queue_sync:
+        test_controller._on_agent_metadata_updated(
+            {"media_type": "series", "series_name": "Show Alpha"},
+            "http://127.0.0.1:8000",
+        )
+        assert any(
+            "Metadata updated on remote agent" in message for message in status_messages
+        )
+        mock_queue_sync.assert_called_once_with("Remote TV", emit_signal=True)
 
 
 def test_controller_handles_agent_watch_updated_movie(
@@ -258,3 +260,49 @@ def test_mark_series_unwatched(test_controller: Controller) -> None:
         mock_sync.assert_called_once_with(
             ["/local/mount/tv/Show Alpha/S01E01.mkv"], False, ["Remote TV"]
         )
+
+
+def test_apply_metadata_match_remote_library_dispatches_to_agent(
+    test_controller: Controller,
+) -> None:
+    """apply_metadata_match on a remote library dispatches to agent and does not spawn MetadataApplyWorker."""
+    test_controller.current_library_name = "Remote TV"
+    test_controller.cached_library_data = {
+        "Show Alpha": {
+            "name": "Show Alpha",
+            "path": "/local/mount/tv/Show Alpha",
+            "metadata": {
+                "locked_metadata": False,
+                "tmdb_identifier": "111",
+            },
+            "seasons": {},
+        }
+    }
+
+    with (
+        patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.match_metadata"
+        ) as mock_agent_match,
+        patch.object(
+            test_controller.worker_manager.metadata_apply, "start"
+        ) as mock_worker_start,
+        patch.object(test_controller, "_finish_metadata_match") as mock_finish,
+    ):
+        test_controller.apply_metadata_match(
+            "Show Alpha",
+            {"provider": "TMDB", "id": "999", "name": "Show Alpha TMDB"},
+        )
+        test_controller.async_task_manager.stop_all()
+
+        # MetadataApplyWorker should NOT be started for remote library
+        mock_worker_start.assert_not_called()
+        mock_finish.assert_called_once_with("Show Alpha")
+
+        # scan_agent_client.match_metadata should be called
+        mock_agent_match.assert_called_once()
+        call_kwargs = mock_agent_match.call_args[1]
+        assert call_kwargs["agent_url"] == "http://127.0.0.1:8000"
+        assert call_kwargs["media_type"] == "series"
+        assert call_kwargs["tmdb_identifier"] == "999"
+        assert call_kwargs["name"] == "Show Alpha"
+        assert call_kwargs["path"] == "/remote/media/tv/Show Alpha"

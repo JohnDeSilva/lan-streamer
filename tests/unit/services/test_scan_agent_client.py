@@ -541,3 +541,98 @@ def test_apply_manual_metadata_mappings() -> None:
             },
             timeout=15.0,
         )
+
+
+def test_match_metadata_with_id_success() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 202
+    mock_response.json.return_value = {
+        "status": "accepted",
+        "rescan_required": False,
+        "media": {"tmdb_identifier": "999"},
+    }
+
+    with patch("requests.post", return_value=mock_response) as mock_post:
+        result = client.match_metadata(
+            agent_url="http://127.0.0.1:8800",
+            media_type="series",
+            tmdb_identifier="999",
+            media_identifier=42,
+        )
+        assert result["status"] == "accepted"
+        mock_post.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/services/metadata/series/42/match",
+            json={
+                "tmdb_identifier": "999",
+                "media_id": 42,
+                "media_identifier": 42,
+            },
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+            timeout=30.0,
+        )
+
+
+def test_match_metadata_unscoped_success() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "status": "accepted",
+        "rescan_required": False,
+    }
+
+    with patch("requests.post", return_value=mock_response) as mock_post:
+        result = client.match_metadata(
+            agent_url="http://127.0.0.1:8800",
+            media_type="movie",
+            tmdb_identifier="555",
+            name="Movie Title",
+            path="/remote/media/movies/Movie.mkv",
+        )
+        assert result["status"] == "accepted"
+        mock_post.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/services/metadata/movie/match",
+            json={
+                "tmdb_identifier": "555",
+                "name": "Movie Title",
+                "path": "/remote/media/movies/Movie.mkv",
+            },
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+            timeout=30.0,
+        )
+
+
+def test_match_metadata_error_handling() -> None:
+    client = ScanAgentClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.text = "Not found"
+
+    with (
+        patch("requests.post", return_value=mock_response),
+        pytest.raises(ScanAgentConnectionError, match="returned HTTP 404"),
+    ):
+        client.match_metadata(
+            agent_url="http://127.0.0.1:8800",
+            media_type="series",
+            tmdb_identifier="999",
+            media_identifier=9999,
+        )
+
+    with (
+        patch("requests.post", side_effect=requests.RequestException("Timeout")),
+        pytest.raises(ScanAgentConnectionError, match="Could not apply metadata match"),
+    ):
+        client.match_metadata(
+            agent_url="http://127.0.0.1:8800",
+            media_type="series",
+            tmdb_identifier="999",
+            media_identifier=9999,
+        )

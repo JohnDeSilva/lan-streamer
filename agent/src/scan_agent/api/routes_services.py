@@ -18,6 +18,8 @@ from scan_agent.db.repository import (
     add_subtitle,
     apply_manual_episode_mappings,
     apply_manual_metadata_mappings,
+    find_movie_entity,
+    find_series_entity,
     get_episode_media_path,
     get_episode_meta,
     get_movie_media_path,
@@ -186,6 +188,49 @@ def metadata_match(
         "rescan_required": False,
         "media": result,
     }
+
+
+@metadata_router.post(
+    "/services/metadata/{media_type}/match",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def metadata_match_unscoped(
+    media_type: str = Path(pattern="^(series|movie|tv)$"),
+    payload: MetadataMatch = ...,  # type: ignore[assignment]
+    session: Session = Depends(get_database_session),
+    progress_broker: ProgressBroker = Depends(get_progress_broker),
+) -> dict[str, Any]:
+    """Apply a TMDB metadata match by identifying media by ID, name, or path."""
+    resolved_media_type = "series" if media_type == "tv" else media_type
+    target_identifier = payload.media_id or payload.media_identifier
+
+    if target_identifier is None:
+        if resolved_media_type == "series":
+            series_entity = find_series_entity(
+                session, name=payload.name, path=payload.path
+            )
+            if series_entity is None:
+                raise HTTPException(status_code=404, detail="Series not found")
+            target_identifier = series_entity.id
+        elif resolved_media_type == "movie":
+            movie_entity = find_movie_entity(
+                session, name=payload.name, path=payload.path
+            )
+            if movie_entity is None:
+                raise HTTPException(status_code=404, detail="Movie not found")
+            target_identifier = movie_entity.id
+        else:
+            raise HTTPException(
+                status_code=400, detail="media_type must be series/movie"
+            )
+
+    return metadata_match(
+        media_type=media_type,
+        media_identifier=target_identifier,
+        payload=payload,
+        session=session,
+        progress_broker=progress_broker,
+    )
 
 
 @metadata_router.get("/services/metadata/tmdb/series/{tmdb_identifier}/seasons")
