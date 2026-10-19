@@ -1170,3 +1170,184 @@ def test_legacy_unencrypted_secrets_migrated_transparently(mock_db_file) -> None
             )
         except json.JSONDecodeError:
             pass
+
+
+# ---------------------------------------------------------------------------
+# unwatch clears resume progress (P1 regression coverage)
+# ---------------------------------------------------------------------------
+
+
+def test_movie_unwatch_clears_resume_position(mock_db_file) -> None:
+    """Unwatching a movie must clear its persisted resume position."""
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        movie = Movie(
+            name="Resume Movie",
+            library_name="Movies",
+            path="/movies/resume.mkv",
+            watched=True,
+        )
+        session.add(movie)
+        session.commit()
+
+    assert db.update_episode_playback_position("/movies/resume.mkv", 1200) is True
+    assert db.get_episode_playback_position("/movies/resume.mkv") == 1200
+
+    db.update_episode_watched_status("/movies/resume.mkv", False)
+
+    assert db.get_episode_playback_position("/movies/resume.mkv") == 0
+
+
+def test_episode_unwatch_clears_resume_position(mock_db_file) -> None:
+    """Unwatching an episode must clear its persisted resume position."""
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        series = Series(name="Resume Show", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        episode = Episode(
+            season_id=season.id,
+            name="episode.mkv",
+            path="/resume/episode.mkv",
+            watched=True,
+        )
+        session.add(episode)
+        session.commit()
+
+    assert db.update_episode_playback_position("/resume/episode.mkv", 900) is True
+    assert db.get_episode_playback_position("/resume/episode.mkv") == 900
+
+    db.update_episode_watched_status("/resume/episode.mkv", False)
+
+    assert db.get_episode_playback_position("/resume/episode.mkv") == 0
+
+
+def test_season_unwatch_clears_every_resume_position(mock_db_file) -> None:
+    """Unwatching a season must clear progress for every episode in it."""
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        series = Series(name="Season Resume Show", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        episodes = [
+            Episode(
+                season_id=season.id,
+                name=f"episode_{number}.mkv",
+                path=f"/season_resume/episode_{number}.mkv",
+                watched=True,
+            )
+            for number in (1, 2)
+        ]
+        session.add_all(episodes)
+        session.commit()
+
+    for number in (1, 2):
+        assert (
+            db.update_episode_playback_position(
+                f"/season_resume/episode_{number}.mkv", 300 + number
+            )
+            is True
+        )
+
+    db.update_season_watched_status("Lib", "Season Resume Show", "Season 1", False)
+
+    for number in (1, 2):
+        assert (
+            db.get_episode_playback_position(f"/season_resume/episode_{number}.mkv")
+            == 0
+        )
+
+
+def test_already_watched_episode_does_not_retrigger_mal_push(mock_db_file) -> None:
+    """Re-marking an already-watched episode must not spam the MAL API."""
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        series = Series(name="MAL Repeat Show", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        episode = Episode(
+            season_id=season.id,
+            name="episode.mkv",
+            path="/mal_repeat/episode.mkv",
+            watched=True,
+            myanimelist_anime_id=1234,
+            myanimelist_episode_number=1,
+        )
+        session.add(episode)
+        session.commit()
+
+    with patch("lan_streamer.db.queries_playback._trigger_mal_push_async") as mock_push:
+        db.update_episode_watched_status("/mal_repeat/episode.mkv", True)
+
+    mock_push.assert_not_called()
+
+
+def test_already_watched_season_does_not_retrigger_mal_push(mock_db_file) -> None:
+    """Re-marking an already-watched season must not spam the MAL API."""
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        series = Series(name="MAL Watched Season", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        session.add(
+            Episode(
+                season_id=season.id,
+                name="episode.mkv",
+                path="/mal_watched_season/episode.mkv",
+                watched=True,
+                myanimelist_anime_id=4321,
+                myanimelist_episode_number=1,
+            )
+        )
+        session.commit()
+
+    with patch("lan_streamer.db.queries_playback._trigger_mal_push_async") as mock_push:
+        db.update_season_watched_status("Lib", "MAL Watched Season", "Season 1", True)
+
+    mock_push.assert_not_called()
+
+
+def test_already_watched_series_does_not_retrigger_mal_push(mock_db_file) -> None:
+    """Re-marking an already-watched series must not spam the MAL API."""
+    from lan_streamer.db import get_session
+
+    with get_session() as session:
+        series = Series(name="MAL Watched Series", library_name="Lib")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, name="Season 1")
+        session.add(season)
+        session.flush()
+        session.add(
+            Episode(
+                season_id=season.id,
+                name="episode.mkv",
+                path="/mal_watched_series/episode.mkv",
+                watched=True,
+                myanimelist_anime_id=8765,
+                myanimelist_episode_number=1,
+            )
+        )
+        session.commit()
+
+    with patch("lan_streamer.db.queries_playback._trigger_mal_push_async") as mock_push:
+        db.update_series_watched_status("Lib", "MAL Watched Series", True)
+
+    mock_push.assert_not_called()

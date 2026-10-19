@@ -101,10 +101,18 @@ def update_episode_watched_status(path: str, watched: bool) -> None:
                 for ep in mf.episodes:
                     if not ep.playback_state:
                         ep.playback_state = PlaybackState(episode_id=ep.id)
+                    was_watched = bool(ep.playback_state.watched)
                     ep.playback_state.watched = watched
-                    if watched:
+                    if not watched:
+                        # Unwatching must clear resume progress, not just the flag.
+                        ep.playback_state.last_played_position = 0
+                    else:
                         ep.playback_state.last_played_at = int(time.time())
-                        if ep.myanimelist_anime_id and ep.myanimelist_episode_number:
+                        if (
+                            not was_watched
+                            and ep.myanimelist_anime_id
+                            and ep.myanimelist_episode_number
+                        ):
                             _trigger_mal_push_async(
                                 ep.myanimelist_anime_id,
                                 ep.myanimelist_episode_number,
@@ -112,10 +120,13 @@ def update_episode_watched_status(path: str, watched: bool) -> None:
                 for mv in mf.movies:
                     if not mv.playback_state:
                         mv.playback_state = PlaybackState(movie_id=mv.id)
+                    was_watched = bool(mv.playback_state.watched)
                     mv.playback_state.watched = watched
-                    if watched:
+                    if not watched:
+                        mv.playback_state.last_played_position = 0
+                    else:
                         mv.playback_state.last_played_at = int(time.time())
-                        if mv.myanimelist_anime_id:
+                        if not was_watched and mv.myanimelist_anime_id:
                             _trigger_mal_push_async(mv.myanimelist_anime_id, 1)
                 logger.debug(
                     f"Updated watched status in database: path={path}, watched={watched}"
@@ -226,14 +237,22 @@ def update_season_watched_status(
                 local_episodes = [
                     ep for ep in season.episodes if ep.default_path is not None
                 ]
+                newly_watched_episodes = []
                 for ep in local_episodes:
                     if not ep.playback_state:
                         ep.playback_state = PlaybackState(episode_id=ep.id)
+                    was_watched = bool(ep.playback_state.watched)
                     ep.playback_state.watched = watched
-                    if watched:
+                    if not watched:
+                        ep.playback_state.last_played_position = 0
+                    else:
                         ep.playback_state.last_played_at = int(time.time())
-                if watched:
+                        if not was_watched:
+                            newly_watched_episodes.append(ep)
+                if watched and newly_watched_episodes:
                     mal_updates = {}
+                    # Push the highest episode across the whole season, but
+                    # only when at least one episode actually transitioned.
                     for ep in local_episodes:
                         if ep.myanimelist_anime_id and ep.myanimelist_episode_number:
                             mal_updates[ep.myanimelist_anime_id] = max(
@@ -290,6 +309,7 @@ def update_series_watched_status(
                 )
             ).first()
             if series:
+                newly_watched_episodes = []
                 for season in series.seasons:
                     local_episodes = [
                         ep for ep in season.episodes if ep.default_path is not None
@@ -297,24 +317,31 @@ def update_series_watched_status(
                     for ep in local_episodes:
                         if not ep.playback_state:
                             ep.playback_state = PlaybackState(episode_id=ep.id)
+                        was_watched = bool(ep.playback_state.watched)
                         ep.playback_state.watched = watched
-                        if watched:
+                        if not watched:
+                            ep.playback_state.last_played_position = 0
+                        else:
                             ep.playback_state.last_played_at = int(time.time())
+                            if not was_watched:
+                                newly_watched_episodes.append(ep)
 
                 mal_updates = {}
-                for season in series.seasons:
-                    for episode in season.episodes:
-                        if (
-                            not watched
-                            or not episode.default_path
-                            or not episode.myanimelist_anime_id
-                            or not episode.myanimelist_episode_number
-                        ):
-                            continue
-                        mal_updates[episode.myanimelist_anime_id] = max(
-                            mal_updates.get(episode.myanimelist_anime_id, 0),
-                            episode.myanimelist_episode_number,
-                        )
+                if newly_watched_episodes:
+                    # Push the highest episode across the whole series, but
+                    # only when at least one episode actually transitioned.
+                    for season in series.seasons:
+                        for episode in season.episodes:
+                            if (
+                                not episode.default_path
+                                or not episode.myanimelist_anime_id
+                                or not episode.myanimelist_episode_number
+                            ):
+                                continue
+                            mal_updates[episode.myanimelist_anime_id] = max(
+                                mal_updates.get(episode.myanimelist_anime_id, 0),
+                                episode.myanimelist_episode_number,
+                            )
                 for anime_id, max_ep in mal_updates.items():
                     _trigger_mal_push_async(anime_id, max_ep)
                 logger.debug(
