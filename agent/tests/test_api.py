@@ -842,6 +842,74 @@ def test_metadata_match_updates_movie(api_app: FastAPI, api_client: TestClient) 
     assert detail["runtime_seconds"] == 120 * 60
 
 
+def test_metadata_match_unscoped_by_name_and_path(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    series_list = api_client.get("/api/v1/library/series").json()
+    series_item = series_list[0]
+    series_identifier = series_item["id"]
+    series_name = series_item["name"]
+    series_path = series_item.get("path")
+
+    # Match by name without media_identifier in path
+    response_by_name = api_client.post(
+        "/api/v1/services/metadata/series/match",
+        json={"tmdb_identifier": "999", "name": series_name},
+    )
+    assert response_by_name.status_code == 202
+    assert response_by_name.json()["media"]["tmdb_identifier"] == "999"
+
+    # Match by path
+    response_by_path = api_client.post(
+        "/api/v1/services/metadata/series/match",
+        json={"tmdb_identifier": "888", "path": series_path},
+    )
+    assert response_by_path.status_code == 202
+    assert response_by_path.json()["media"]["tmdb_identifier"] == "888"
+
+    # Match by media_id
+    response_by_id = api_client.post(
+        "/api/v1/services/metadata/series/match",
+        json={"tmdb_identifier": "999", "media_id": series_identifier},
+    )
+    assert response_by_id.status_code == 202
+    assert response_by_id.json()["media"]["tmdb_identifier"] == "999"
+
+    # Match movie by name
+    api_client.post("/api/v1/scan", json={"library_id": "movie", "pass_number": 1})
+    _wait_for_idle(api_app)
+    movie_list = api_client.get("/api/v1/library/movies").json()
+    movie_name = movie_list[0]["name"]
+    response_movie_by_name = api_client.post(
+        "/api/v1/services/metadata/movie/match",
+        json={"tmdb_identifier": "200", "name": movie_name},
+    )
+    assert response_movie_by_name.status_code == 202
+    assert response_movie_by_name.json()["media"]["tmdb_identifier"] == "200"
+
+    # Unknown entity returns 404
+    response_not_found = api_client.post(
+        "/api/v1/services/metadata/series/match",
+        json={"tmdb_identifier": "999", "name": "NonExistentShow123"},
+    )
+    assert response_not_found.status_code == 404
+
+
+def test_source_items_include_database_id(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    items_response = api_client.get("/api/v1/sources/tv/items")
+    assert items_response.status_code == 200
+    items = items_response.json()
+    for item in items.values():
+        assert "id" in item
+        assert isinstance(item["id"], int)
+
+
 def test_metadata_tmdb_series_seasons_and_episodes(api_client: TestClient) -> None:
     seasons_response = api_client.get(
         "/api/v1/services/metadata/tmdb/series/999/seasons"
