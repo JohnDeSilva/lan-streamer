@@ -223,6 +223,8 @@ class VideoPlayerWidget(QWidget):
             getattr(config, "default_video_aspect_mode", "fit") or "fit"
         )
         self.last_selected_subtitle_track_identifier: int | None = None
+        self._subtitle_user_override: bool = False
+        self._subtitles_user_enabled: bool = False
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         # Timer for auto-hiding fullscreen controls
@@ -1355,7 +1357,11 @@ class VideoPlayerWidget(QWidget):
         elif event.key() == Qt.Key.Key_Z:
             self.cycle_video_aspect_mode()
         elif event.key() == Qt.Key.Key_C:
-            self.toggle_subtitles()
+            if (
+                event.modifiers() == Qt.KeyboardModifier.NoModifier
+                and not event.isAutoRepeat()
+            ):
+                self.toggle_subtitles()
         else:
             super().keyPressEvent(event)
 
@@ -1656,6 +1662,8 @@ class VideoPlayerWidget(QWidget):
         if hasattr(self, "fs_new_play_btn"):
             self.fs_new_play_btn.button.setText("⏸")
         self.last_selected_subtitle_track_identifier = None
+        self._subtitle_user_override = False
+        self._subtitles_user_enabled = False
         self._update_subtitles_audio_pane_text()
 
         # Initial volume
@@ -1684,7 +1692,7 @@ class VideoPlayerWidget(QWidget):
             )
             self.pending_resume_position = 0
 
-    def _refresh_tracks(self) -> None:
+    def _refresh_tracks(self, auto_select: bool = True) -> None:
         if not self.mediaplayer:
             return
         # Audio tracks
@@ -1758,13 +1766,39 @@ class VideoPlayerWidget(QWidget):
                 decoded_subs.append((track_id, decoded_name))
 
         selected_spu = None
-        active_subs = [
-            (t_id, t_name)
-            for t_id, t_name in decoded_subs
-            if t_id != -1 and "disable" not in t_name.lower()
-        ]
+        active_subs = [(t_id, t_name) for t_id, t_name in decoded_subs if t_id != -1]
 
-        if active_subs:
+        if self._subtitle_user_override:
+            # The user has explicitly toggled or picked a track. Re-apply that
+            # choice instead of running the English auto-selection heuristic,
+            # which would otherwise overwrite the choice one second into
+            # playback.
+            can_restore_selected_track = (
+                self._subtitles_user_enabled
+                and self.last_selected_subtitle_track_identifier is not None
+                and any(
+                    track_identifier == self.last_selected_subtitle_track_identifier
+                    for track_identifier, _ in active_subs
+                )
+            )
+            if can_restore_selected_track:
+                selected_spu = self.last_selected_subtitle_track_identifier
+                logger.info(
+                    "Restoring user-selected subtitle track ID: %s", selected_spu
+                )
+                self.mediaplayer.video_set_spu(selected_spu)
+                current_sub = selected_spu
+            else:
+                logger.info("Restoring user-disabled subtitle state")
+                self.mediaplayer.video_set_spu(-1)
+                current_sub = -1
+        elif not auto_select:
+            # Populate the combo without changing the active track. Used by
+            # toggle_subtitles() so its first press reflects the real state.
+            current_sub = self.mediaplayer.video_get_spu()
+            if isinstance(current_sub, int) and current_sub != -1:
+                self.last_selected_subtitle_track_identifier = current_sub
+        elif active_subs:
             english_subs = [
                 (t_id, t_name)
                 for t_id, t_name in active_subs
@@ -1787,7 +1821,6 @@ class VideoPlayerWidget(QWidget):
             else:
                 selected_spu = active_subs[0][0]
 
-        if selected_spu is not None:
             logger.info(f"Automatically selecting subtitle track ID: {selected_spu}")
             self.mediaplayer.video_set_spu(selected_spu)
             current_sub = selected_spu
@@ -1812,14 +1845,21 @@ class VideoPlayerWidget(QWidget):
 
     def change_subtitle_track(self, index: int) -> None:
         track_identifier = self.subtitle_combo.itemData(index)
-        if track_identifier is not None:
-            logger.info(f"Changing subtitle track to ID: {track_identifier}")
-            self.mediaplayer.video_set_spu(track_identifier)
-            if (
-                track_identifier != -1
-                and "disable" not in self.subtitle_combo.itemText(index).lower()
-            ):
-                self.last_selected_subtitle_track_identifier = track_identifier
+        if track_identifier is None:
+            return
+
+        logger.info(f"Changing subtitle track to ID: {track_identifier}")
+        self.mediaplayer.video_set_spu(track_identifier)
+
+        is_disable_entry = track_identifier == -1
+        # Any explicit track choice must survive the delayed auto-selection
+        # performed by _refresh_tracks() after playback starts.
+        self._subtitle_user_override = True
+        if is_disable_entry:
+            self._subtitles_user_enabled = False
+        else:
+            self._subtitles_user_enabled = True
+            self.last_selected_subtitle_track_identifier = track_identifier
 
     def play_pause(self) -> None:
         if self.mediaplayer.is_playing():
@@ -2073,14 +2113,16 @@ class VideoPlayerWidget(QWidget):
             return
 
         if self.subtitle_combo.count() == 0:
-            self._refresh_tracks()
+            # Populate the combo without triggering the English auto-selection
+            # heuristic; the toggle decision below must reflect the real VLC
+            # state so the first press enables subtitles.
+            self._refresh_tracks(auto_select=False)
 
         available_subtitle_indices = [
             index
             for index in range(self.subtitle_combo.count())
             if self.subtitle_combo.itemData(index) is not None
             and self.subtitle_combo.itemData(index) != -1
-            and "disable" not in self.subtitle_combo.itemText(index).lower()
         ]
 
         if not available_subtitle_indices:
@@ -2092,10 +2134,11 @@ class VideoPlayerWidget(QWidget):
         if self.mediaplayer:
             try:
                 current_subtitle_track_identifier = self.mediaplayer.video_get_spu()
-                if (
-                    isinstance(current_subtitle_track_identifier, int)
-                    and current_subtitle_track_identifier != -1
-                ):
+                if current_subtitle_track_identifier == -1:
+                    # VLC reports subtitles off even when the combo has no
+                    # explicit "Disable" entry and is sitting on a real track.
+                    current_index = -1
+                elif isinstance(current_subtitle_track_identifier, int):
                     matched_index = self.subtitle_combo.findData(
                         current_subtitle_track_identifier
                     )
@@ -2113,12 +2156,9 @@ class VideoPlayerWidget(QWidget):
             if current_track_identifier is not None:
                 self.last_selected_subtitle_track_identifier = current_track_identifier
 
+            self._subtitle_user_override = True
+            self._subtitles_user_enabled = False
             disable_index = self.subtitle_combo.findData(-1)
-            if disable_index == -1:
-                for index in range(self.subtitle_combo.count()):
-                    if "disable" in self.subtitle_combo.itemText(index).lower():
-                        disable_index = index
-                        break
 
             if disable_index != -1:
                 if self.subtitle_combo.currentIndex() != disable_index:
@@ -2133,6 +2173,8 @@ class VideoPlayerWidget(QWidget):
             self._show_osd("Subtitles: OFF")
             logger.info("Subtitles disabled")
         else:
+            self._subtitle_user_override = True
+            self._subtitles_user_enabled = True
             target_index: int | None = None
             if self.last_selected_subtitle_track_identifier is not None:
                 matched_index = self.subtitle_combo.findData(
