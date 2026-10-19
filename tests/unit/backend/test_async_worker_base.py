@@ -200,6 +200,28 @@ class TestAsyncWorkerBase:
 
         _run(run(), event_loop)
 
+    def test_is_running_is_false_during_finished_signal(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        task_manager: AsyncTaskManager,
+    ) -> None:
+        """Signal handlers (e.g. queue drains) must see a finished worker as idle."""
+        worker = _StubAsyncWorker(
+            async_task_manager=task_manager, return_value="test_result"
+        )
+        observed_is_running: list[bool] = []
+        worker.finished.connect(
+            lambda _result: observed_is_running.append(worker.is_running)
+        )
+
+        async def run() -> None:
+            worker.start()
+            await _wait_until(lambda: len(observed_is_running) > 0)
+            worker.stop()
+
+        _run(run(), event_loop)
+        assert observed_is_running == [False]
+
     def test_finished_signal(
         self,
         event_loop: asyncio.AbstractEventLoop,
