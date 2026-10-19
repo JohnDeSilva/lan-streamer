@@ -1368,6 +1368,8 @@ def record_watch_event(
             target_episode.last_played_at = timestamp
             if position_seconds is not None:
                 target_episode.resume_position_seconds = position_seconds
+            elif target_episode.watched is False or event in ("complete", "unwatched"):
+                target_episode.resume_position_seconds = 0.0
             _recount_episode_watched(connection, target_episode)
     elif media_type == "movie":
         if media_identifier is not None and media_identifier > 0:
@@ -1396,6 +1398,8 @@ def record_watch_event(
             target_movie.last_played_at = movie_last_played
             if position_seconds is not None:
                 target_movie.resume_position_seconds = position_seconds
+            elif target_movie.watched is False or event in ("complete", "unwatched"):
+                target_movie.resume_position_seconds = 0.0
 
     watch_event = WatchEvent(
         media_type=media_type,
@@ -1419,20 +1423,24 @@ def record_watch_event(
     resolved_path: str | None = path
     resolved_watched: bool | None = watched
     resolved_last_played_at: float | None = timestamp
+    resolved_position_seconds: float | None = position_seconds
     if target_episode is not None:
         if not resolved_path:
             resolved_path = target_episode.path
         resolved_watched = target_episode.watched
         resolved_last_played_at = target_episode.last_played_at
+        resolved_position_seconds = target_episode.resume_position_seconds
     elif target_movie is not None:
         if not resolved_path:
             resolved_path = target_movie.path
         resolved_watched = target_movie.watched
         resolved_last_played_at = target_movie.last_played_at
+        resolved_position_seconds = target_movie.resume_position_seconds
 
     result_dictionary["path"] = resolved_path
     result_dictionary["watched"] = resolved_watched
     result_dictionary["last_played_at"] = resolved_last_played_at
+    result_dictionary["position_seconds"] = resolved_position_seconds
     return result_dictionary
 
 

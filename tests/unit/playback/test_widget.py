@@ -757,6 +757,46 @@ def test_play_pause_saves_playback_position_when_paused(player_widget) -> None:
         mock_signal_slot.assert_called_once_with("/path/to/ep.mkv", 120)
 
 
+def test_update_ui_emits_periodic_checkpoint_during_playback(
+    player_widget,
+) -> None:
+    from unittest.mock import MagicMock
+
+    player_widget.mediaplayer = MagicMock()
+    player_widget.mediaplayer.get_media.return_value = MagicMock()
+    player_widget.mediaplayer.is_playing.return_value = True
+    player_widget.mediaplayer.get_time.return_value = 120000  # 120 seconds
+    player_widget.mediaplayer.get_length.return_value = 1000000  # 1000 seconds
+    player_widget.mediaplayer.get_position.return_value = 0.12
+    player_widget.current_media_path = "/path/to/ep.mkv"
+    player_widget.is_watched_marked = False
+    player_widget._last_checkpoint_seconds = 0
+
+    mock_signal_receiver = MagicMock()
+    player_widget.playback_position_updated.connect(mock_signal_receiver)
+
+    with patch("lan_streamer.db.update_episode_playback_position") as mock_database:
+        player_widget.update_ui()
+        mock_database.assert_called_once_with("/path/to/ep.mkv", 120)
+        mock_signal_receiver.assert_called_once_with("/path/to/ep.mkv", 120)
+        assert player_widget._last_checkpoint_seconds == 120
+
+        # Second tick 5 seconds later should NOT emit checkpoint (not reached 30s)
+        player_widget.mediaplayer.get_time.return_value = 125000
+        mock_database.reset_mock()
+        mock_signal_receiver.reset_mock()
+        player_widget.update_ui()
+        mock_database.assert_not_called()
+        mock_signal_receiver.assert_not_called()
+
+        # Third tick 35 seconds later (> 30s threshold) should emit checkpoint
+        player_widget.mediaplayer.get_time.return_value = 155000
+        player_widget.update_ui()
+        mock_database.assert_called_once_with("/path/to/ep.mkv", 155)
+        mock_signal_receiver.assert_called_once_with("/path/to/ep.mkv", 155)
+        assert player_widget._last_checkpoint_seconds == 155
+
+
 def test_play_video_preserves_canonical_path_for_queries_and_signals(
     player_widget,
 ) -> None:

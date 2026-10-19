@@ -936,6 +936,8 @@ class Controller(QObject):
             return
 
         def run_sync() -> None:
+            from collections import defaultdict
+
             import requests
 
             from lan_streamer.services.scan_agent_client import (
@@ -943,32 +945,46 @@ class Controller(QObject):
                 scan_agent_client,
             )
 
+            events_by_agent: dict[str, list[dict[str, Any]]] = defaultdict(list)
             for file_path in file_paths:
                 agent_targets = self._find_agent_sources_and_remotes_for_path(
                     file_path, target_libraries
                 )
                 for agent_url, remote_path in agent_targets:
-                    try:
+                    events_by_agent[agent_url].append(
+                        {
+                            "media_type": media_type,
+                            "path": remote_path,
+                            "event": "complete" if watched else "unwatched",
+                            "watched": watched,
+                        }
+                    )
+
+            for agent_url, events in events_by_agent.items():
+                try:
+                    if len(events) > 1:
+                        scan_agent_client.sync_watch_events(agent_url, events)
+                    elif len(events) == 1:
+                        single_event = events[0]
                         scan_agent_client.record_watch_event(
                             agent_url=agent_url,
-                            media_type=media_type,
-                            path=remote_path,
-                            event="complete" if watched else "unwatched",
-                            watched=watched,
+                            media_type=single_event["media_type"],
+                            path=single_event["path"],
+                            event=single_event["event"],
+                            watched=single_event["watched"],
                         )
-                    except (
-                        ScanAgentConnectionError,
-                        requests.RequestException,
-                        OSError,
-                        ValueError,
-                        KeyError,
-                    ) as sync_error:
-                        logger.debug(
-                            "Failed syncing watched status to agent '%s' for '%s': %s",
-                            agent_url,
-                            remote_path,
-                            sync_error,
-                        )
+                except (
+                    ScanAgentConnectionError,
+                    requests.RequestException,
+                    OSError,
+                    ValueError,
+                    KeyError,
+                ) as sync_error:
+                    logger.debug(
+                        "Failed syncing watched status to agent '%s': %s",
+                        agent_url,
+                        sync_error,
+                    )
 
         async def run_async_task() -> None:
             from lan_streamer.system.async_utils import run_in_executor
@@ -1277,6 +1293,8 @@ class Controller(QObject):
         for episode_record in season_data.get("episodes", []):
             if episode_record.get("path"):
                 episode_record["watched"] = watched
+                if not watched:
+                    episode_record["last_played_position"] = 0
                 affected_paths.append(episode_record["path"])
 
         self._cache_series_metrics()
@@ -1294,22 +1312,27 @@ class Controller(QObject):
         if not self.is_video_playing:
             self.library_loaded.emit()
 
-    def mark_series_watched(self, series_name: str) -> None:
-        logger.info(f"Controller marking entire series watched: '{series_name}'")
+    def mark_series_watched(self, series_name: str, watched: bool = True) -> None:
+        status_action = "watched" if watched else "unwatched"
+        logger.info(
+            f"Controller marking entire series {status_action}: '{series_name}'"
+        )
         series_data: dict[str, Any] = self.cached_library_data.get(series_name, {})
         target_libraries: list[str] = series_data.get("_origin_libraries") or (
             [self.current_library_name] if self.current_library_name else []
         )
         for target_library_name in target_libraries:
             self._db.update_series_watched_status(
-                target_library_name, series_name, True
+                target_library_name, series_name, watched
             )
 
         affected_paths: list[str] = []
         for season_data in series_data.get("seasons", {}).values():
             for episode_record in season_data.get("episodes", []):
                 if episode_record.get("path"):
-                    episode_record["watched"] = True
+                    episode_record["watched"] = watched
+                    if not watched:
+                        episode_record["last_played_position"] = 0
                     affected_paths.append(episode_record["path"])
 
         self._cache_series_metrics()
@@ -1322,7 +1345,7 @@ class Controller(QObject):
                 self.smart_rows_updated.emit(changed_hashes)
 
         # Synchronize watched status to remote scan agents
-        self._sync_watched_to_agents(affected_paths, True, target_libraries)
+        self._sync_watched_to_agents(affected_paths, watched, target_libraries)
 
         if not self.is_video_playing:
             self.library_loaded.emit()

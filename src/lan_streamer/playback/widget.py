@@ -212,6 +212,7 @@ class VideoPlayerWidget(QWidget):
         self.pending_resume_position: int = 0
         self.is_watched_marked = False
         self._is_playback_finished = False
+        self._last_checkpoint_seconds: int = 0
         self.is_muted = False
         self.previous_volume = 80
         self.wakelock = WakeLock()
@@ -1940,6 +1941,7 @@ class VideoPlayerWidget(QWidget):
             self.fs_duration_label.setText("00:00")
         self._cleanup_cache()
         self._is_playback_finished = False
+        self._last_checkpoint_seconds = 0
 
     def _on_stop_clicked(self) -> None:
         """Called when user clicks the stop button."""
@@ -2261,6 +2263,25 @@ class VideoPlayerWidget(QWidget):
                 self.fs_elapsed_label.setText(self._format_time(curr_time))
             if hasattr(self, "fs_duration_label"):
                 self.fs_duration_label.setText(self._format_time(duration))
+
+            is_currently_playing = bool(
+                self.mediaplayer and self.mediaplayer.is_playing()
+            )
+
+            if (
+                is_currently_playing
+                and self.current_media_path
+                and not self.is_watched_marked
+                and curr_time > 60
+                and (curr_time - self._last_checkpoint_seconds >= 30)
+            ):
+                self._last_checkpoint_seconds = int(curr_time)
+                db.update_episode_playback_position(
+                    self.current_media_path, int(curr_time)
+                )
+                self.playback_position_updated.emit(
+                    self.current_media_path, int(curr_time)
+                )
 
             # Show next episode popup if playback reaches 98% watched and a next episode exists
             if (
