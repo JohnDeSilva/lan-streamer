@@ -1303,6 +1303,74 @@ def test_sse_live_only_skips_buffered_history(
     assert "event: test.live_only" in live_text
 
 
+def test_sse_reports_gap_when_history_dropped(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    """An old resume point must surface a stream.gap before replaying the tail."""
+    from scan_agent.scan.progress import ProgressBroker
+
+    broker = ProgressBroker(max_history=3)
+    api_app.state.progress_broker = broker
+    for index in range(10):
+        broker.publish("test.event", {"index": index})
+    broker.publish("scan.finished", {"job_id": 1, "status": "done"})
+
+    with api_client.stream(
+        "GET",
+        "/api/v1/events?until_finished=1",
+        headers={"last-event-id": "1"},
+    ) as response:
+        assert response.status_code == 200
+        payload_lines = list(response.iter_lines())
+
+    payload_text = "\n".join(payload_lines)
+    # Sequences 1..8 are dropped; the oldest retained event is 9.
+    assert payload_lines[0] == "id: 8"
+    assert "event: stream.gap" in payload_text
+    assert '"last_sequence": 1' in payload_text
+    assert '"oldest_sequence": 9' in payload_text
+    assert '"latest_sequence": 11' in payload_text
+    assert payload_text.index("event: stream.gap") < payload_text.index(
+        "event: test.event"
+    )
+    assert "event: test.event" in payload_text
+    assert '"index": 8' in payload_text
+    assert "event: scan.finished" in payload_text
+
+
+def test_sse_recovers_from_broker_sequence_rollback(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    """A Last-Event-ID ahead of the broker must not stall the live stream."""
+    from scan_agent.scan.progress import ProgressBroker
+
+    broker = ProgressBroker()
+    api_app.state.progress_broker = broker
+
+    def _publish_after_rollback() -> None:
+        time.sleep(0.05)
+        broker.publish("test.after_rollback", {"value": 1})
+        time.sleep(0.05)
+        broker.publish("scan.finished", {"job_id": 9, "status": "done"})
+
+    publisher_thread = threading.Thread(target=_publish_after_rollback, daemon=True)
+    publisher_thread.start()
+
+    with api_client.stream(
+        "GET",
+        "/api/v1/events?until_finished=1",
+        headers={"last-event-id": "9999"},
+    ) as response:
+        assert response.status_code == 200
+        payload_lines = list(response.iter_lines())
+
+    publisher_thread.join(timeout=1.0)
+    payload_text = "\n".join(payload_lines)
+    assert "event: test.after_rollback" in payload_text
+    assert '"value": 1' in payload_text
+    assert "event: scan.finished" in payload_text
+
+
 def test_count_items_per_library_endpoint(
     api_app: FastAPI, api_client: TestClient
 ) -> None:

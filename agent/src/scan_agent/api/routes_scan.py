@@ -154,7 +154,9 @@ async def events_stream(
     ``Last-Event-ID``, the stream starts at the broker's latest sequence so
     only newly published events are delivered (no history replay). With
     ``until_finished=1`` the stream ends once a ``scan.finished`` event is
-    delivered.
+    delivered. If the resume point predates the broker's retained history, a
+    synthetic ``stream.gap`` event is emitted before the retained tail so the
+    client can detect dropped events.
     """
     broker: ProgressBroker = request.app.state.progress_broker
     last_sequence = sequence if sequence is not None else 0
@@ -175,6 +177,47 @@ async def events_stream(
         last_sequence = broker.latest_sequence
     end_on_finished = request.query_params.get("until_finished", "0") == "1"
 
+    # A broker restart resets its sequence to 0. A client that reconnects with
+    # a sequence from the previous process would otherwise wait forever because
+    # every newly published event carries a lower sequence number.
+    latest_sequence = broker.latest_sequence
+    if last_sequence > latest_sequence:
+        logger.warning(
+            "SSE client requested resume after sequence %s but the broker only "
+            "reached %s; assuming a broker restart and restarting from the "
+            "oldest retained event.",
+            last_sequence,
+            latest_sequence,
+        )
+        last_sequence = 0
+
+    # The bounded history may already have dropped events newer than the
+    # client's resume point. Tell the client explicitly instead of silently
+    # replaying the retained tail.
+    oldest_sequence = broker.oldest_sequence
+    gap_message: dict[str, Any] | None = None
+    if last_sequence < oldest_sequence - 1:
+        logger.warning(
+            "SSE client requested resume after sequence %s but the oldest "
+            "retained event is %s; events were dropped from the bounded "
+            "history.",
+            last_sequence,
+            oldest_sequence,
+        )
+        gap_message = {
+            "sequence": oldest_sequence - 1,
+            "event": "stream.gap",
+            "payload": {
+                "last_sequence": last_sequence,
+                "oldest_sequence": oldest_sequence,
+                "latest_sequence": broker.latest_sequence,
+            },
+        }
+        # Resume from just before the oldest retained event so the retained
+        # history still replays and a reconnect with the gap id does not
+        # report the same gap again.
+        last_sequence = oldest_sequence - 1
+
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
 
@@ -191,6 +234,8 @@ async def events_stream(
                 # would reconnect with ``live=1`` again and silently skip
                 # everything published while it was away.
                 yield f"id: {last_sequence}\n\n"
+            if gap_message is not None:
+                yield _format_sse_event(gap_message)
             for message in broker.pending_since(last_sequence):
                 last_sequence = message["sequence"]
                 yield _format_sse_event(message)

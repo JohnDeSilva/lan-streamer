@@ -118,6 +118,67 @@ def test_agent_event_worker_processes_sse_events() -> None:
     assert worker._last_sequence == 3
 
 
+def test_agent_event_worker_emits_stream_gap_signal() -> None:
+    parent = QObject()
+    task_manager = AsyncTaskManager(parent=parent)
+    worker = AgentEventListenerWorker(
+        agent_url="http://127.0.0.1:8000",
+        async_task_manager=task_manager,
+        parent=parent,
+    )
+
+    received_gaps: list[dict[str, Any]] = []
+    worker.stream_gap.connect(received_gaps.append)
+
+    sample_lines = [
+        b"id: 8\n",
+        b"event: stream.gap\n",
+        b'data: {"last_sequence": 1, "oldest_sequence": 9, "latest_sequence": 11}\n',
+        b"\n",
+    ]
+
+    async def mock_line_generator():
+        for line in sample_lines:
+            yield line
+        worker.stop()
+
+    class MockContent:
+        def __aiter__(self):
+            return mock_line_generator()
+
+    class MockResponse:
+        status = 200
+        content = MockContent()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    class MockSession:
+        def get(self, url: str, **kwargs: Any):
+            return MockResponse()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    async def run_test() -> None:
+        with patch("aiohttp.ClientSession", return_value=MockSession()):
+            await worker.run_async()
+
+    _run_coroutine(run_test())
+
+    assert len(received_gaps) == 1
+    assert received_gaps[0]["last_sequence"] == 1
+    assert received_gaps[0]["oldest_sequence"] == 9
+    assert received_gaps[0]["latest_sequence"] == 11
+    assert worker._last_sequence == 8
+
+
 def test_agent_event_worker_handles_connection_error_and_cancellation() -> None:
     parent = QObject()
     task_manager = AsyncTaskManager(parent=parent)
