@@ -351,3 +351,27 @@ def test_series_details_dialog_refresh_series(qtbot: Any) -> None:
     ):
         dialog._on_refresh_clicked()
         mock_refresh.assert_called_once_with("Breaking Bad")
+
+
+def test_series_detail_view_navigates_back_when_series_removed(qtbot: Any) -> None:
+    controller = Controller()
+    controller.current_library_name = "TV"
+    controller.cached_library_data = {
+        "Active Show": {"metadata": {}, "seasons": {}},
+    }
+
+    view = SeriesDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_series_name = "Deleted Show"
+
+    back_requested = False
+
+    def on_back_requested() -> None:
+        nonlocal back_requested
+        back_requested = True
+
+    view.back_requested.connect(on_back_requested)
+
+    # When library is reloaded without Deleted Show
+    view.on_library_loaded()
+    assert back_requested is True

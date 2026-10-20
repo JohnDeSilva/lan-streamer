@@ -7,6 +7,7 @@ import logging
 import shutil
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from scan_agent.config import AgentConfig, install_into_lan_streamer
@@ -32,6 +33,15 @@ logger = logging.getLogger(__name__)
 _BrokerLogHandler = BrokerLogHandler
 
 
+def _file_exists_on_disk(path_string: str | None) -> bool:
+    if not path_string:
+        return False
+    try:
+        return Path(path_string).exists()
+    except ValueError, OSError:
+        return False
+
+
 def _series_has_episode_files(series_data: dict[str, Any]) -> bool:
     """Return True if the series data dictionary contains at least one episode file."""
     if not isinstance(series_data, dict):
@@ -48,11 +58,29 @@ def _series_has_episode_files(series_data: dict[str, Any]) -> bool:
         for episode in episodes:
             if not isinstance(episode, dict):
                 continue
-            if episode.get("path"):
+            path = episode.get("path")
+            if path and _file_exists_on_disk(path):
                 return True
             for version in episode.get("versions", []):
-                if isinstance(version, dict) and version.get("path"):
-                    return True
+                if isinstance(version, dict):
+                    version_path = version.get("path")
+                    if version_path and _file_exists_on_disk(version_path):
+                        return True
+    return False
+
+
+def _movie_has_media_files(movie_data: dict[str, Any]) -> bool:
+    """Return True if the movie data dictionary contains at least one media file."""
+    if not isinstance(movie_data, dict):
+        return False
+    path = movie_data.get("path")
+    if path and _file_exists_on_disk(path):
+        return True
+    for version in movie_data.get("versions", []):
+        if isinstance(version, dict):
+            version_path = version.get("path")
+            if version_path and _file_exists_on_disk(version_path):
+                return True
     return False
 
 
@@ -386,15 +414,20 @@ class ScanOrchestrator:
             season_callback=self._season_callback,
             is_interrupted=self._is_interrupted.is_set,
         )
-        if media_type != "movie":
-            empty_series_folders = [
+        if root_path not in result.unavailable_directories:
+            empty_folders = [
                 folder_name
-                for folder_name, series_data in result.items()
-                if not _series_has_episode_files(series_data)
+                for folder_name, item_data in result.items()
+                if (
+                    not _movie_has_media_files(item_data)
+                    if media_type == "movie"
+                    else not _series_has_episode_files(item_data)
+                )
             ]
-            for folder_name in empty_series_folders:
+            for folder_name in empty_folders:
                 logger.info(
-                    "Omitting series folder with no episode files from scan results: '%s'",
+                    "Omitting %s folder with no media files from scan results: '%s'",
+                    media_type,
                     folder_name,
                 )
                 del result[folder_name]
