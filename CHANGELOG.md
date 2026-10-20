@@ -1,3 +1,9 @@
+## v0.58.1rc0 (2026-10-20)
+
+### Fix
+
+- **ui**: prevent empty series view caused by duplicate series records and unhandled exceptions
+
 ## v0.58.0 (2026-10-20)
 
 ### Feat
