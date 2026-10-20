@@ -1,3 +1,23 @@
+## v0.58.0 (2026-10-20)
+
+### Feat
+
+- **scanner**: deduplicate series and movies across remote locations within libraries
+
+### Fix
+
+- **dev-dependency**: bump ruff from 0.16.9 to 0.16.10
+- **dependency**: bump cryptography from 50.0.1 to 50.0.2
+- **dependency**: bump aiohttp from 3.14.3 to 3.14.5
+- **dev-dependency**: bump mypy from 2.3.1 to 2.4.0
+- **agent**: prune deleted series and movies from agent libraries and sync desktop view state
+- remove deleted remote items during library synchronization from agent
+
+### Refactor
+
+- **ui**: attach remote sources only to existing libraries and remove auto-creation checkboxes
+- **agent**: clarify separation between desktop libraries and agent media sources
+
 ## v0.58.0rc5 (2026-10-20)
 
 ### Fix
