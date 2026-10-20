@@ -102,7 +102,7 @@ def test_library_grid_autoscan_on_settings_save(qtbot, mock_db_save) -> None:
         mock_trigger_scan_and_update.reset_mock()
         mock_trigger_scan_all.reset_mock()
 
-        # Scenario 2: User adds a path to a DIFFERENT library ("OtherLib")
+        # Scenario 2: User adds a path to a DIFFERENT library ("OtherLib") -> targeted scan
         def mock_exec_accept_other():
             config.libraries["OtherLib"]["paths"].append("/tv/other2")
             return QDialog.DialogCode.Accepted
@@ -111,8 +111,10 @@ def test_library_grid_autoscan_on_settings_save(qtbot, mock_db_save) -> None:
 
         grid_view.open_settings_dialog()
 
-        mock_trigger_scan_and_update.assert_not_called()
-        mock_trigger_scan_all.assert_called_once_with(False)
+        mock_trigger_scan_and_update.assert_called_once_with(
+            False, library_name="OtherLib"
+        )
+        mock_trigger_scan_all.assert_not_called()
 
         # Reset config and mocks
         config.libraries = {
@@ -130,4 +132,48 @@ def test_library_grid_autoscan_on_settings_save(qtbot, mock_db_save) -> None:
 
         mock_config_load.assert_called()  # It loads at start, and loads on reject.
         mock_trigger_scan_and_update.assert_not_called()
+        mock_trigger_scan_all.assert_not_called()
+
+        # Scenario 4: User adds paths to MULTIPLE libraries -> triggers scan all
+        config.libraries = {
+            "MyLib": {"type": "tv", "paths": ["/tv/path1"]},
+            "OtherLib": {"type": "tv", "paths": ["/tv/other1"]},
+        }
+        mock_trigger_scan_and_update.reset_mock()
+        mock_trigger_scan_all.reset_mock()
+
+        def mock_exec_accept_multiple():
+            config.libraries["MyLib"]["paths"].append("/tv/path_extra")
+            config.libraries["OtherLib"]["paths"].append("/tv/other_extra")
+            return QDialog.DialogCode.Accepted
+
+        mock_dialog_instance.exec.side_effect = mock_exec_accept_multiple
+
+        grid_view.open_settings_dialog()
+
+        mock_trigger_scan_all.assert_called_once_with(False)
+        mock_trigger_scan_and_update.assert_not_called()
+
+        # Scenario 5: User adds a BRAND NEW library with a path -> targeted scan on new library
+        config.libraries = {
+            "MyLib": {"type": "tv", "paths": ["/tv/path1"]},
+            "OtherLib": {"type": "tv", "paths": ["/tv/other1"]},
+        }
+        mock_trigger_scan_and_update.reset_mock()
+        mock_trigger_scan_all.reset_mock()
+
+        def mock_exec_accept_brand_new_library():
+            config.libraries["BrandNewLib"] = {
+                "type": "tv",
+                "paths": ["/tv/brand_new"],
+            }
+            return QDialog.DialogCode.Accepted
+
+        mock_dialog_instance.exec.side_effect = mock_exec_accept_brand_new_library
+
+        grid_view.open_settings_dialog()
+
+        mock_trigger_scan_and_update.assert_called_once_with(
+            False, library_name="BrandNewLib"
+        )
         mock_trigger_scan_all.assert_not_called()

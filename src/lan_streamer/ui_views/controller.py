@@ -321,16 +321,7 @@ class Controller(QObject):
 
         self.current_library_name = library_names[0] if library_names else tab_name
 
-        existing_directories = self.file_system_watcher.directories()
-        if existing_directories:
-            self.file_system_watcher.removePaths(existing_directories)
-
-        for single_library_name in library_names:
-            single_library_config = self._config.libraries.get(single_library_name, {})
-            root_directories: list[str] = single_library_config.get("paths", [])
-            for directory_path in root_directories:
-                if Path(directory_path).is_dir():
-                    self.file_system_watcher.addPath(directory_path)
+        self._update_file_system_watcher(library_names)
 
         self.cached_library_data = self._load_tab_library_data(
             library_names, trigger_remote_sync=True
@@ -623,6 +614,71 @@ class Controller(QObject):
             self.selected_series_name = ""
         self._cache_series_metrics()
         self.library_loaded.emit()
+
+    def _update_file_system_watcher(self, library_names: list[str]) -> None:
+        """Update file system watcher for the specified libraries.
+
+        When an asyncio event loop is running, the blocking filesystem existence
+        checks are executed in the dedicated filesystem thread pool to prevent
+        UI thread hangs on slow or network filesystems. When no loop is active,
+        checks fall back to running inline.
+        """
+        directories_to_check: list[str] = []
+        for single_library_name in library_names:
+            single_library_config = self._config.libraries.get(single_library_name, {})
+            root_directories: list[str] = single_library_config.get("paths", [])
+            for directory_path in root_directories:
+                if directory_path:
+                    directories_to_check.append(directory_path)
+
+        existing_directories = self.file_system_watcher.directories()
+        if existing_directories:
+            self.file_system_watcher.removePaths(existing_directories)
+
+        if not directories_to_check:
+            return
+
+        def _filter_existing_directories(
+            directory_path_list: list[str],
+        ) -> list[str]:
+            valid_directory_paths: list[str] = []
+            for path_string in directory_path_list:
+                try:
+                    if Path(path_string).is_dir():
+                        valid_directory_paths.append(path_string)
+                except OSError, PermissionError:
+                    continue
+            return valid_directory_paths
+
+        has_running_loop: bool = False
+        try:
+            asyncio.get_running_loop()
+            has_running_loop = True
+        except RuntimeError:
+            has_running_loop = False
+
+        if (
+            has_running_loop
+            and hasattr(self, "async_task_manager")
+            and self.async_task_manager is not None
+        ):
+
+            async def _async_watcher_task() -> None:
+                from lan_streamer.system.async_utils import run_in_fs_executor
+
+                valid_directories = await run_in_fs_executor(
+                    _filter_existing_directories, directories_to_check
+                )
+                if valid_directories:
+                    self.file_system_watcher.addPaths(valid_directories)
+
+            self.async_task_manager.create_task(
+                _async_watcher_task(), name="update_file_system_watcher"
+            )
+        else:
+            valid_directories = _filter_existing_directories(directories_to_check)
+            if valid_directories:
+                self.file_system_watcher.addPaths(valid_directories)
 
     def _on_directory_changed(self, path_string: str) -> None:
         logger.info(
