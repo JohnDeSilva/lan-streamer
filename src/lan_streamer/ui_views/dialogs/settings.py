@@ -577,7 +577,7 @@ class SettingsDialog(QDialog):
         # Instructions banner
         instructions_label = QLabel(
             "Connect to a remote Scan Agent running on your network (e.g. Docker / NAS server).\n"
-            "Once connected, check the remote sources you want to enable and map their remote directories to local mounts for playback."
+            "Discovered media sources are displayed below. To attach a remote source to an existing library, open the 'Libraries' tab and click 'Add Remote Source...'."
         )
         instructions_label.setStyleSheet("color: #9ca3af; font-size: 11px;")
         instructions_label.setWordWrap(True)
@@ -602,7 +602,7 @@ class SettingsDialog(QDialog):
         tree_layout.setSpacing(8)
 
         self.remote_agents_tree_widget.setHeaderLabels(
-            ["Remote Media Source", "Local Mount Point"]
+            ["Remote Media Source", "Status / Mount Point"]
         )
         self.remote_agents_tree_widget.setColumnCount(2)
         if self.remote_agents_tree_widget.header() is not None:
@@ -610,9 +610,6 @@ class SettingsDialog(QDialog):
         self.remote_agents_tree_widget.setColumnWidth(0, 380)
         self.remote_agents_tree_widget.itemDoubleClicked.connect(
             self._on_remote_tree_item_double_clicked
-        )
-        self.remote_agents_tree_widget.itemChanged.connect(
-            self._on_remote_tree_item_changed
         )
         tree_layout.addWidget(self.remote_agents_tree_widget, 1)
 
@@ -682,7 +679,6 @@ class SettingsDialog(QDialog):
             chain_cleanup=True,
         )
 
-    @Slot()
     def scan_selected_remote_library(self) -> None:
         selected_item = self.remote_agents_tree_widget.currentItem()
         if not selected_item or self.controller is None:
@@ -693,35 +689,39 @@ class SettingsDialog(QDialog):
             )
             return
         item_data = selected_item.data(0, Qt.ItemDataRole.UserRole)
-        library_name = ""
-        if isinstance(item_data, dict) and item_data.get("item_type") in (
-            "library",
-            "root_directory",
-        ):
-            library_name = item_data.get("library_name", "")
-        if not library_name:
-            library_name = selected_item.data(
-                0, Qt.ItemDataRole.UserRole + 1
-            ) or selected_item.text(0)
-        if library_name and library_name in self.staged_libraries:
-            self.controller._config.libraries[library_name] = dict(
-                self.staged_libraries[library_name]
-            )
-            self._show_scan_progress_widgets()
-            self.controller.trigger_scan(
-                force_refresh=False,
-                library_name=library_name,
-                run_pass1=True,
-                run_pass2=True,
-                chain_pass3=True,
-                chain_cleanup=True,
-            )
-        else:
+        if not isinstance(item_data, dict):
+            return
+
+        attached_libraries: list[str] = list(item_data.get("attached_libraries", []))
+        parent_item = selected_item.parent()
+        if not attached_libraries and parent_item is not None:
+            parent_data = parent_item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(parent_data, dict):
+                attached_libraries = list(parent_data.get("attached_libraries", []))
+
+        if not attached_libraries:
             QMessageBox.information(
                 self,
-                "Select Media Source",
-                "Please select a valid tracked remote media source.",
+                "Unattached Media Source",
+                "This media source is not attached to any desktop library.\n"
+                "To scan it, open the 'Libraries' tab and attach it to a library using 'Add Remote Source...'.",
             )
+            return
+
+        self._show_scan_progress_widgets()
+        for library_name in attached_libraries:
+            if library_name in self.staged_libraries:
+                self.controller._config.libraries[library_name] = dict(
+                    self.staged_libraries[library_name]
+                )
+                self.controller.trigger_scan(
+                    force_refresh=False,
+                    library_name=library_name,
+                    run_pass1=True,
+                    run_pass2=True,
+                    chain_pass3=True,
+                    chain_cleanup=True,
+                )
 
     def _build_combined_view_tab(self) -> QWidget:
         combined_tab: QWidget = QWidget()
@@ -1876,6 +1876,15 @@ class SettingsDialog(QDialog):
         elif chosen_source_info.get("root_path"):
             root_paths = [str(chosen_source_info["root_path"])]
 
+        agent_mount_mappings: dict[str, str] = dict(
+            self.staged_scan_agents.get(chosen_agent_url, {}).get("mount_mappings", {})
+        )
+        mount_mappings: dict[str, str] = {
+            root: agent_mount_mappings[root]
+            for root in root_paths
+            if root in agent_mount_mappings
+        }
+
         new_source_entry: dict[str, Any] = {
             "type": "agent",
             "agent_url": chosen_agent_url,
@@ -1883,14 +1892,23 @@ class SettingsDialog(QDialog):
             "source_id": source_identifier,
             "name": source_name,
             "remote_root_paths": root_paths,
-            "mount_mappings": {},
+            "mount_mappings": mount_mappings,
         }
         current_sources.append(new_source_entry)
         library_configuration["sources"] = current_sources
+        if mount_mappings:
+            lib_mounts = library_configuration.setdefault("mount_mappings", {})
+            lib_mounts.update(mount_mappings)
+            lib_paths = library_configuration.setdefault("paths", [])
+            for local_path in mount_mappings.values():
+                if local_path not in lib_paths:
+                    lib_paths.append(local_path)
+
         library_configuration.update(
             normalize_library_configuration(library_configuration)
         )
         self._refresh_directory_list()
+        self._populate_remote_agents_tree()
         logger.info(
             "Attached agent source '%s' from %s to library '%s'",
             source_name,
@@ -2046,9 +2064,11 @@ class SettingsDialog(QDialog):
             )
 
     def _populate_remote_agents_tree(self) -> None:
-        """Populates the tree widget with configured agents, their libraries, and root directory mappings."""
+        """Populates the tree widget with configured agents, their media sources, and root directory mappings."""
         self.remote_agents_tree_widget.blockSignals(True)
         self.remote_agents_tree_widget.clear()
+
+        from lan_streamer.system.config import get_library_sources
 
         for agent_url, agent_data in sorted(self.staged_scan_agents.items()):
             agent_name = agent_data.get("name") or "Scan Agent"
@@ -2066,109 +2086,92 @@ class SettingsDialog(QDialog):
             )
             agent_item.setExpanded(True)
 
-            discovered_libraries: list[dict[str, Any]] = list(
+            discovered_sources: list[dict[str, Any]] = list(
                 agent_data.get("discovered_libraries", [])
             )
+            agent_mount_mappings: dict[str, str] = dict(
+                agent_data.get("mount_mappings", {})
+            )
 
-            # Ensure any staged remote libraries belonging to this agent are included
-            seen_library_names = {
-                library_dict.get("name")
-                for library_dict in discovered_libraries
-                if isinstance(library_dict, dict) and library_dict.get("name")
-            }
-            for (
-                staged_library_name,
-                staged_library_config,
-            ) in self.staged_libraries.items():
-                if (
-                    staged_library_config.get("management_type") == "remote"
-                    and staged_library_config.get("agent_url") == agent_url
-                    and staged_library_name not in seen_library_names
-                ):
-                    discovered_libraries.append(
-                        {
-                            "id": staged_library_config.get("remote_library_id", ""),
-                            "name": staged_library_name,
-                            "type": staged_library_config.get("type", "tv"),
-                            "root_path": staged_library_config.get(
-                                "remote_root_path", ""
-                            ),
-                            "root_paths": list(
-                                staged_library_config.get("mount_mappings", {})
-                            )
-                            or list(staged_library_config.get("remote_root_paths", []))
-                            or [staged_library_config.get("remote_root_path", "")],
-                        }
-                    )
-                    seen_library_names.add(staged_library_name)
-
-            for library_info in discovered_libraries:
-                if not isinstance(library_info, dict):
+            for source_info in discovered_sources:
+                if not isinstance(source_info, dict):
                     continue
-                library_name = library_info.get("name") or "Unnamed Library"
-                library_type = (
-                    library_info.get("media_type") or library_info.get("type") or "tv"
+                source_name = source_info.get("name") or "Unnamed Source"
+                source_type = (
+                    source_info.get("media_type") or source_info.get("type") or "tv"
                 )
-                library_identifier = library_info.get("id") or ""
+                source_identifier = str(source_info.get("id") or "")
 
-                is_enabled = (
-                    library_name in self.staged_libraries
-                    and self.staged_libraries[library_name].get("management_type")
-                    == "remote"
-                    and self.staged_libraries[library_name].get("agent_url")
-                    == agent_url
-                )
+                # Check which existing desktop libraries have this agent source attached
+                attached_libraries: list[str] = [
+                    library_name
+                    for library_name, library_config in self.staged_libraries.items()
+                    if any(
+                        source_entry.get("type") == "agent"
+                        and source_entry.get("agent_url") == agent_url
+                        and (
+                            str(source_entry.get("source_identifier") or "")
+                            == source_identifier
+                            or str(source_entry.get("source_id") or "")
+                            == source_identifier
+                            or str(source_entry.get("name") or "") == source_name
+                        )
+                        for source_entry in get_library_sources(library_config)
+                    )
+                ]
 
                 root_paths: list[str] = []
-                if library_info.get("root_paths"):
+                if source_info.get("root_paths"):
                     root_paths = [
-                        str(path) for path in library_info["root_paths"] if path
+                        str(path) for path in source_info["root_paths"] if path
                     ]
-                elif library_info.get("root_path"):
-                    root_paths = [str(library_info["root_path"])]
+                elif source_info.get("root_path"):
+                    root_paths = [str(source_info["root_path"])]
 
-                mount_mappings: dict[str, str] = {}
-                if is_enabled:
-                    mount_mappings = dict(
-                        self.staged_libraries[library_name].get("mount_mappings", {})
+                source_item = QTreeWidgetItem(agent_item)
+                source_item.setText(0, f"{source_name} [{source_type.upper()}]")
+                if attached_libraries:
+                    source_item.setText(
+                        1, f"Attached to: {', '.join(attached_libraries)}"
                     )
-                    for root_key in mount_mappings:
-                        if root_key and root_key not in root_paths:
-                            root_paths.append(root_key)
+                else:
+                    source_item.setText(1, "Unattached")
 
-                library_item = QTreeWidgetItem(agent_item)
-                library_item.setText(0, f"{library_name} [{library_type.upper()}]")
-                library_item.setText(1, "Enabled" if is_enabled else "Disabled")
-                library_item.setFlags(
-                    library_item.flags()
-                    | Qt.ItemFlag.ItemIsUserCheckable
-                    | Qt.ItemFlag.ItemIsEnabled
-                    | Qt.ItemFlag.ItemIsSelectable
+                source_item.setFlags(
+                    Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
                 )
-                library_item.setCheckState(
-                    0,
-                    Qt.CheckState.Checked if is_enabled else Qt.CheckState.Unchecked,
-                )
-                library_item.setData(
+                source_item.setData(
                     0,
                     Qt.ItemDataRole.UserRole,
                     {
-                        "item_type": "library",
+                        "item_type": "source",
                         "agent_url": agent_url,
-                        "library_id": library_identifier,
-                        "library_name": library_name,
-                        "library_type": library_type,
+                        "source_id": source_identifier,
+                        "source_identifier": source_identifier,
+                        "source_name": source_name,
+                        "source_type": source_type,
                         "root_paths": root_paths,
+                        "attached_libraries": attached_libraries,
                     },
                 )
-                library_item.setExpanded(True)
+                source_item.setExpanded(True)
 
                 for remote_root in root_paths:
                     if not remote_root:
                         continue
-                    root_item = QTreeWidgetItem(library_item)
+                    root_item = QTreeWidgetItem(source_item)
                     root_item.setText(0, f"📁 {remote_root}")
-                    local_mount = mount_mappings.get(remote_root, "")
+
+                    local_mount = agent_mount_mappings.get(remote_root, "")
+                    if not local_mount:
+                        for attached_lib_name in attached_libraries:
+                            lib_mounts = self.staged_libraries.get(
+                                attached_lib_name, {}
+                            ).get("mount_mappings", {})
+                            if remote_root in lib_mounts:
+                                local_mount = lib_mounts[remote_root]
+                                break
+
                     root_item.setText(
                         1,
                         local_mount or "[Not Mapped - Select to Map]",
@@ -2179,8 +2182,10 @@ class SettingsDialog(QDialog):
                         {
                             "item_type": "root_directory",
                             "agent_url": agent_url,
-                            "library_name": library_name,
+                            "source_name": source_name,
+                            "source_identifier": source_identifier,
                             "remote_root": remote_root,
+                            "attached_libraries": attached_libraries,
                         },
                     )
 
@@ -2188,101 +2193,8 @@ class SettingsDialog(QDialog):
 
     @Slot(QTreeWidgetItem, int)
     def _on_remote_tree_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
-        """Handles enabling or disabling a remote library when its check state changes."""
-        if column != 0:
-            return
-        item_data = item.data(0, Qt.ItemDataRole.UserRole)
-        if not isinstance(item_data, dict) or item_data.get("item_type") != "library":
-            return
-
-        is_checked = item.checkState(0) == Qt.CheckState.Checked
-        library_name: str = item_data["library_name"]
-        agent_url: str = item_data["agent_url"]
-        library_type: str = item_data["library_type"]
-        library_identifier: str = item_data["library_id"]
-        root_paths: list[str] = item_data.get("root_paths", [])
-
-        if is_checked:
-            item.setText(1, "Enabled")
-            mount_mappings: dict[str, str] = {}
-            for child_index in range(item.childCount()):
-                child_item = item.child(child_index)
-                if child_item is None:
-                    continue
-                child_data = child_item.data(0, Qt.ItemDataRole.UserRole) or {}
-                remote_root = child_data.get("remote_root", "")
-                mapped_local = child_item.text(1)
-                if mapped_local and not mapped_local.startswith("[Not Mapped"):
-                    mount_mappings[remote_root] = mapped_local
-
-            source_entry: dict[str, Any] = {
-                "type": "agent",
-                "agent_url": agent_url,
-                "source_identifier": library_identifier,
-                "source_id": library_identifier,
-                "name": library_name,
-                "remote_root_paths": list(root_paths),
-                "mount_mappings": mount_mappings,
-            }
-
-            if library_name not in self.staged_libraries:
-                self.staged_libraries[library_name] = {
-                    "type": library_type,
-                    "management_type": "remote",
-                    "agent_url": agent_url,
-                    "remote_library_id": library_identifier,
-                    "remote_root_path": root_paths[0] if root_paths else "",
-                    "remote_root_paths": list(root_paths),
-                    "mount_mappings": mount_mappings,
-                    "paths": [
-                        local_path
-                        for local_path in mount_mappings.values()
-                        if local_path
-                    ],
-                    "archive_paths": [],
-                    "show_future_episodes": True,
-                    "sources": [source_entry],
-                }
-                logger.info(
-                    "Enabled remote library '%s' from agent %s",
-                    library_name,
-                    agent_url,
-                )
-            else:
-                self.staged_libraries[library_name]["management_type"] = "remote"
-                self.staged_libraries[library_name]["agent_url"] = agent_url
-                if "mount_mappings" not in self.staged_libraries[library_name]:
-                    self.staged_libraries[library_name]["mount_mappings"] = (
-                        mount_mappings
-                    )
-                if "sources" in self.staged_libraries[library_name]:
-                    existing_sources = self.staged_libraries[library_name]["sources"]
-                    if not any(
-                        source.get("type") == "agent"
-                        and source.get("agent_url") == agent_url
-                        and (
-                            source.get("source_identifier") == library_identifier
-                            or source.get("source_id") == library_identifier
-                        )
-                        for source in existing_sources
-                    ):
-                        existing_sources.append(source_entry)
-        else:
-            item.setText(1, "Disabled")
-            if (
-                library_name in self.staged_libraries
-                and self.staged_libraries[library_name].get("management_type")
-                == "remote"
-            ):
-                del self.staged_libraries[library_name]
-                logger.info(
-                    "Disabled remote library '%s' from agent %s",
-                    library_name,
-                    agent_url,
-                )
-
-        self._refresh_library_order_list()
-        self._refresh_library_selector()
+        """Deprecated: remote sources are attached to libraries via the Libraries tab."""
+        return
 
     def map_local_mount_for_item(
         self, item: QTreeWidgetItem, local_mount_directory: str
@@ -2295,30 +2207,50 @@ class SettingsDialog(QDialog):
         ):
             return
         remote_root: str = item_data.get("remote_root", "")
-        library_name: str = item_data.get("library_name", "")
+        agent_url: str = item_data.get("agent_url", "")
+        source_name: str = item_data.get("source_name", "")
+        source_identifier: str = item_data.get("source_identifier", "")
 
         item.setText(1, local_mount_directory)
         logger.info(
-            "Mapped remote root '%s' for library '%s' to local mount '%s'",
+            "Mapped remote root '%s' for agent source '%s' to local mount '%s'",
             remote_root,
-            library_name,
+            source_name,
             local_mount_directory,
         )
 
-        if library_name in self.staged_libraries:
-            mount_mappings = self.staged_libraries[library_name].setdefault(
-                "mount_mappings", {}
-            )
-            mount_mappings[remote_root] = local_mount_directory
-            paths = self.staged_libraries[library_name].setdefault("paths", [])
-            if local_mount_directory not in paths:
-                paths.append(local_mount_directory)
-            if "sources" in self.staged_libraries[library_name]:
-                for agent_source in self.staged_libraries[library_name]["sources"]:
-                    if agent_source.get("type") == "agent":
-                        agent_source.setdefault("mount_mappings", {})[remote_root] = (
-                            local_mount_directory
-                        )
+        if agent_url in self.staged_scan_agents:
+            self.staged_scan_agents[agent_url].setdefault("mount_mappings", {})[
+                remote_root
+            ] = local_mount_directory
+
+        from lan_streamer.system.config import get_library_sources
+
+        for _library_name, library_config in self.staged_libraries.items():
+            sources = get_library_sources(library_config)
+            matched = False
+            for source in sources:
+                if (
+                    source.get("type") == "agent"
+                    and source.get("agent_url") == agent_url
+                    and (
+                        str(source.get("source_identifier") or "") == source_identifier
+                        or str(source.get("source_id") or "") == source_identifier
+                        or str(source.get("name") or "") == source_name
+                    )
+                ):
+                    source.setdefault("mount_mappings", {})[remote_root] = (
+                        local_mount_directory
+                    )
+                    matched = True
+            if matched:
+                library_config["sources"] = sources
+                library_config.setdefault("mount_mappings", {})[remote_root] = (
+                    local_mount_directory
+                )
+                paths = library_config.setdefault("paths", [])
+                if local_mount_directory not in paths:
+                    paths.append(local_mount_directory)
 
     @Slot()
     def map_local_mount_for_selected_item(self) -> None:
@@ -2436,15 +2368,34 @@ class SettingsDialog(QDialog):
         del self.staged_scan_agents[agent_url]
         logger.info("Removed scan agent %s", agent_url)
 
-        libraries_to_remove = [
-            library_name
-            for library_name, library_config in self.staged_libraries.items()
-            if library_config.get("management_type") == "remote"
-            and library_config.get("agent_url") == agent_url
-        ]
+        from lan_streamer.system.config import (
+            get_library_sources,
+            normalize_library_configuration,
+        )
+
+        libraries_to_remove: list[str] = []
+        for library_name, library_config in list(self.staged_libraries.items()):
+            sources = get_library_sources(library_config)
+            remaining_sources = [
+                source_entry
+                for source_entry in sources
+                if not (
+                    source_entry.get("type") == "agent"
+                    and source_entry.get("agent_url") == agent_url
+                )
+            ]
+            if len(remaining_sources) != len(sources):
+                if remaining_sources:
+                    library_config["sources"] = remaining_sources
+                    library_config.update(
+                        normalize_library_configuration(library_config)
+                    )
+                elif library_config.get("management_type") == "remote":
+                    libraries_to_remove.append(library_name)
+
         for library_name in libraries_to_remove:
             del self.staged_libraries[library_name]
-            logger.info("Removed remote library '%s'", library_name)
+            logger.info("Removed empty remote library '%s'", library_name)
 
         self._populate_remote_agents_tree()
         self._refresh_scan_agent_selectors()
@@ -2703,6 +2654,7 @@ class SettingsDialog(QDialog):
                 normalize_library_configuration(library_configuration)
             )
             self._refresh_directory_list()
+            self._populate_remote_agents_tree()
             return
 
         directory_path: str = (
