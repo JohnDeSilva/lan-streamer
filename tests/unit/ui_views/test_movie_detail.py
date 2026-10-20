@@ -181,3 +181,30 @@ def test_movie_detail_cast_via_junction_library(qtbot: Any) -> None:
 
     assert view._cast_grid.count() > 0
     assert view._lookup_movie_id() == movie.id
+
+
+def test_movie_detail_view_navigates_back_when_movie_removed(qtbot: Any) -> None:
+    from lan_streamer.system.config import config
+
+    controller = Controller()
+    controller.current_library_name = "Movies"
+    config.libraries["Movies"] = {"type": "movie"}
+    controller.cached_library_data = {
+        "Active Movie": {"name": "Active Movie"},
+    }
+
+    view = MovieDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_movie_name = "Deleted Movie"
+
+    back_requested = False
+
+    def on_back_requested() -> None:
+        nonlocal back_requested
+        back_requested = True
+
+    view.back_requested.connect(on_back_requested)
+
+    # When library is reloaded without Deleted Movie
+    view.on_library_loaded()
+    assert back_requested is True
