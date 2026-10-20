@@ -208,3 +208,60 @@ def test_movie_detail_view_navigates_back_when_movie_removed(qtbot: Any) -> None
     # When library is reloaded without Deleted Movie
     view.on_library_loaded()
     assert back_requested is True
+
+
+def test_movie_detail_view_handles_duplicate_movie_records(qtbot: Any) -> None:
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import Movie, MovieLibrary
+
+    controller = Controller()
+    controller.current_library_name = "Movies"
+
+    with get_session() as session:
+        movie_1 = Movie(library_name="Movies", name="Duplicate Film")
+        movie_2 = Movie(library_name="Movies", name="Duplicate Film")
+        session.add_all([movie_1, movie_2])
+        session.flush()
+        junction_1 = MovieLibrary(movie_id=movie_1.id, library_name="Movies")
+        junction_2 = MovieLibrary(movie_id=movie_2.id, library_name="Movies")
+        session.add_all([junction_1, junction_2])
+        session.commit()
+
+    view = MovieDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_movie_name = "Duplicate Film"
+
+    movie_identifier = view._lookup_movie_id()
+    assert movie_identifier is not None
+
+    fetched_id, cast_entries = view._fetch_movie_db_and_cast("Duplicate Film")
+    assert fetched_id is not None
+    assert isinstance(cast_entries, list)
+
+
+def test_movie_detail_view_load_details_async_fault_tolerant(qtbot: Any) -> None:
+    import asyncio
+
+    controller = Controller()
+    controller.current_library_name = "Movies"
+    controller.cached_library_data = {
+        "Failing Movie": {
+            "name": "Failing Movie",
+            "tmdb_name": "Failing Movie",
+            "overview": "Overview text",
+        }
+    }
+
+    view = MovieDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_movie_name = "Failing Movie"
+
+    with patch.object(
+        view,
+        "_fetch_movie_db_and_cast",
+        side_effect=RuntimeError("Simulated DB error"),
+    ):
+        asyncio.run(view._load_movie_details_async("Failing Movie"))
+
+    # UI update should still have executed without raising
+    assert view._current_movie_name == "Failing Movie"

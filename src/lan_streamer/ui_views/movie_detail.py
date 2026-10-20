@@ -245,9 +245,16 @@ class MovieDetailView(QWidget):
             )
         else:
             logger.debug("No running event loop. Loading movie details synchronously.")
-            movie_database_identifier, cast_entries = self._fetch_movie_db_and_cast(
-                movie_name
-            )
+            movie_database_identifier = None
+            cast_entries: list[dict[str, Any]] = []
+            try:
+                movie_database_identifier, cast_entries = self._fetch_movie_db_and_cast(
+                    movie_name
+                )
+            except Exception:
+                logger.exception(
+                    "Error fetching DB identifier and cast for movie '%s'", movie_name
+                )
             self._update_movie_ui(movie_name, movie_database_identifier, cast_entries)
 
     async def _load_movie_details_async(self, movie_name: str) -> None:
@@ -255,9 +262,16 @@ class MovieDetailView(QWidget):
 
         await asyncio.sleep(0.05)
 
-        movie_database_identifier, cast_entries = await asyncio.to_thread(
-            self._fetch_movie_db_and_cast, movie_name
-        )
+        movie_database_identifier: str | None = None
+        cast_entries: list[dict[str, Any]] = []
+        try:
+            movie_database_identifier, cast_entries = await asyncio.to_thread(
+                self._fetch_movie_db_and_cast, movie_name
+            )
+        except Exception:
+            logger.exception(
+                "Error fetching DB identifier and cast for movie '%s'", movie_name
+            )
         self._update_movie_ui(movie_name, movie_database_identifier, cast_entries)
 
     def _update_movie_ui(
@@ -294,7 +308,7 @@ class MovieDetailView(QWidget):
                 )
                 .options(joinedload(Movie.media_cast).joinedload(MediaCast.person))
             )
-            movie = session.execute(statement).unique().scalar_one_or_none()
+            movie = session.execute(statement).unique().scalars().first()
             if movie is not None:
                 movie_database_identifier = movie.id
                 sorted_cast = sorted(
@@ -361,7 +375,7 @@ class MovieDetailView(QWidget):
                     Movie.name == self._current_movie_name,
                 )
             )
-            movie = session.execute(statement).unique().scalar_one_or_none()
+            movie = session.execute(statement).unique().scalars().first()
             if movie is not None:
                 self._current_movie_db_id = movie.id
                 return movie.id
