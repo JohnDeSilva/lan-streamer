@@ -616,6 +616,11 @@ class Controller(QObject):
         )
         if reloaded_library_data or self.current_tab_name != "Combined View":
             self.cached_library_data = reloaded_library_data
+        if (
+            self.selected_series_name
+            and self.selected_series_name not in self.cached_library_data
+        ):
+            self.selected_series_name = ""
         self._cache_series_metrics()
         self.library_loaded.emit()
 

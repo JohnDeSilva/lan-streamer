@@ -9,6 +9,7 @@ from lan_streamer.db.connection import (
 )
 from lan_streamer.db.library import (
     cleanup_library,
+    cleanup_removed_library_items,
     delete_library_records,
     get_directory_mtime,
     load_library,
@@ -46,6 +47,7 @@ from lan_streamer.db.orm_serialization import (
     _build_season_dict,
     _build_series_dict,
     delete_episode_record,
+    delete_movie_record,
     delete_series_record,
     is_movie,
     update_episode_path,

@@ -180,6 +180,119 @@ def test_remote_sync_worker_hybrid_preserves_local_items() -> None:
     _run(run_test())
 
 
+def test_remote_sync_worker_does_not_resurrect_deleted_series() -> None:
+    parent = QObject()
+    task_manager = AsyncTaskManager(parent=parent)
+
+    async def run_test() -> None:
+        library_configuration = {
+            "management_type": "remote",
+            "type": "tv",
+            "agent_url": "http://127.0.0.1:8800",
+        }
+        database = MagicMock()
+        # Existing database state has an old show that was removed on the remote agent
+        database.load_library.return_value = {
+            "Deleted Show": {"name": "Deleted Show", "seasons": {}},
+            "Existing Show": {"name": "Existing Show", "seasons": {}},
+        }
+        worker = RemoteSyncWorker(
+            library_name="Anime",
+            library_configuration=library_configuration,
+            database=database,
+            async_task_manager=task_manager,
+            parent=parent,
+        )
+
+        with patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            return_value={"Existing Show": {"name": "Existing Show", "seasons": {}}},
+        ):
+            result = await worker.run_async()
+
+        assert result["success"] is True
+        assert result["items"] == 1
+        database.save_library.assert_called_once()
+        saved_items = database.save_library.call_args[0][1]
+        assert "Existing Show" in saved_items
+        assert "Deleted Show" not in saved_items
+        database.cleanup_removed_library_items.assert_called_once_with(
+            "Anime", "tv", {"Existing Show"}
+        )
+
+    _run(run_test())
+
+
+def test_remote_sync_worker_hybrid_purges_remote_items_missing_from_agent() -> None:
+    parent = QObject()
+    task_manager = AsyncTaskManager(parent=parent)
+
+    async def run_test() -> None:
+        library_configuration = {
+            "management_type": "hybrid",
+            "type": "tv",
+            "sources": [
+                {"type": "local", "path": "/local/anime"},
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "source_id": "src-agent-anime",
+                },
+            ],
+        }
+        database = MagicMock()
+        # "Local Show" has files under /local/anime, "Old Remote Show" has files outside /local/anime
+        database.load_library.return_value = {
+            "Local Show": {
+                "name": "Local Show",
+                "seasons": {
+                    "Season 1": {
+                        "episodes": [
+                            {"name": "E1", "path": "/local/anime/Local Show/e1.mkv"}
+                        ]
+                    }
+                },
+            },
+            "Old Remote Show": {
+                "name": "Old Remote Show",
+                "seasons": {
+                    "Season 1": {
+                        "episodes": [
+                            {"name": "E1", "path": "/mnt/remote/Old Remote Show/e1.mkv"}
+                        ]
+                    }
+                },
+            },
+        }
+        worker = RemoteSyncWorker(
+            library_name="Anime",
+            library_configuration=library_configuration,
+            database=database,
+            async_task_manager=task_manager,
+            parent=parent,
+        )
+
+        with patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            return_value={
+                "Active Remote Show": {"name": "Active Remote Show", "seasons": {}}
+            },
+        ):
+            result = await worker.run_async()
+
+        assert result["success"] is True
+        database.save_library.assert_called_once()
+        saved_items = database.save_library.call_args[0][1]
+        assert "Local Show" in saved_items
+        assert "Active Remote Show" in saved_items
+        assert "Old Remote Show" not in saved_items
+        database.cleanup_removed_library_items.assert_called_once_with(
+            "Anime", "tv", {"Local Show", "Active Remote Show"}
+        )
+
+    _run(run_test())
+
+
 def test_remote_sync_worker_back_syncs_watch_and_metadata() -> None:
     parent = QObject()
     task_manager = AsyncTaskManager(parent=parent)

@@ -413,6 +413,58 @@ def _back_sync_to_agents(
                 )
 
 
+def _is_definitely_remote_item(
+    item_data: dict[str, Any],
+    local_roots: list[str],
+    library_type: str,
+) -> bool:
+    """Check if an item is remote: has media files where none reside under local roots, or no local roots."""
+    if not local_roots:
+        return True
+    resolved_roots: list[str] = []
+    for root in local_roots:
+        try:
+            resolved_roots.append(str(Path(root).resolve()))
+        except ValueError, OSError:
+            continue
+
+    def _is_under_local_roots(path_string: str | None) -> bool:
+        if not path_string:
+            return False
+        try:
+            resolved = str(Path(path_string).resolve())
+            return any(
+                resolved == root or resolved.startswith(root + "/")
+                for root in resolved_roots
+            )
+        except ValueError, OSError:
+            return False
+
+    all_paths: list[str] = []
+    if library_type == "movie":
+        if item_data.get("path"):
+            all_paths.append(str(item_data["path"]))
+        for version in item_data.get("versions", []):
+            if isinstance(version, dict) and version.get("path"):
+                all_paths.append(str(version["path"]))
+    else:
+        for season_data in item_data.get("seasons", {}).values():
+            if not isinstance(season_data, dict):
+                continue
+            for episode in season_data.get("episodes", []):
+                if not isinstance(episode, dict):
+                    continue
+                if episode.get("path"):
+                    all_paths.append(str(episode["path"]))
+                for version in episode.get("versions", []):
+                    if isinstance(version, dict) and version.get("path"):
+                        all_paths.append(str(version["path"]))
+
+    if not all_paths:
+        return False
+    return not any(_is_under_local_roots(path) for path in all_paths)
+
+
 def sync_remote_library_from_agent(
     library_name: str,
     library_configuration: dict[str, Any],
@@ -516,7 +568,34 @@ def sync_remote_library_from_agent(
                 else:
                     combined_items[item_name] = item_data
 
-        # Merge with existing items in database (preserves local items for hybrid libraries)
+        # Determine whether this library contains local media sources (hybrid library)
+        local_sources = [
+            source_entry
+            for source_entry in sources
+            if source_entry.get("type") == "local" and source_entry.get("path")
+        ]
+        has_local_sources = bool(
+            local_sources
+            or (
+                library_configuration.get("paths")
+                and library_configuration.get("management_type") != "remote"
+            )
+        )
+        local_roots = (
+            [
+                str(source_entry["path"])
+                for source_entry in local_sources
+                if source_entry.get("path")
+            ]
+            + [
+                str(configured_path)
+                for configured_path in library_configuration.get("paths", [])
+                if configured_path
+            ]
+            if has_local_sources
+            else []
+        )
+
         try:
             if library_type == "movie":
                 existing_items = database.load_movie_library(library_name)
@@ -533,7 +612,11 @@ def sync_remote_library_from_agent(
                             combined_items[existing_name] = merge_series_data(
                                 existing_data, combined_items[existing_name]
                             )
-                    else:
+                    # Only preserve items that are not remote (i.e. local items in hybrid libraries).
+                    # Remote items missing from agent fetch were removed on the agent and must not be resurrected.
+                    elif not _is_definitely_remote_item(
+                        existing_data, local_roots, library_type
+                    ):
                         combined_items[existing_name] = existing_data
         except (
             KeyError,
@@ -558,10 +641,22 @@ def sync_remote_library_from_agent(
                     database.save_movie_library(library_name, combined_items)
                 else:
                     database.save_library(library_name, combined_items)
+                if hasattr(database, "cleanup_removed_library_items"):
+                    database.cleanup_removed_library_items(
+                        library_name, library_type, set(combined_items.keys())
+                    )
         elif library_type == "movie":
             database.save_movie_library(library_name, combined_items)
+            if hasattr(database, "cleanup_removed_library_items"):
+                database.cleanup_removed_library_items(
+                    library_name, library_type, set(combined_items.keys())
+                )
         else:
             database.save_library(library_name, combined_items)
+            if hasattr(database, "cleanup_removed_library_items"):
+                database.cleanup_removed_library_items(
+                    library_name, library_type, set(combined_items.keys())
+                )
 
         # Synchronize watch state and metadata maps back to agents
         _back_sync_to_agents(
