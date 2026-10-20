@@ -450,6 +450,55 @@ def test_create_and_delete_agent_library() -> None:
         )
 
 
+def test_create_and_delete_agent_source() -> None:
+    client = ScanAgentClient()
+    post_response = MagicMock()
+    post_response.status_code = 201
+    post_response.json.return_value = {
+        "id": "anime",
+        "name": "Anime",
+        "media_type": "anime",
+        "root_path": "/media/anime",
+    }
+
+    with patch("requests.post", return_value=post_response) as mock_post:
+        create_result = client.create_agent_source(
+            "http://127.0.0.1:8800",
+            name="Anime",
+            media_type="anime",
+            root_path="/media/anime",
+        )
+        assert create_result["id"] == "anime"
+        mock_post.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/sources",
+            json={
+                "name": "Anime",
+                "media_type": "anime",
+                "root_path": "/media/anime",
+            },
+            timeout=10.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )
+
+    delete_response = MagicMock()
+    delete_response.status_code = 204
+
+    with patch("requests.delete", return_value=delete_response) as mock_delete:
+        delete_result = client.delete_agent_source("http://127.0.0.1:8800", "anime")
+        assert delete_result["status"] == "deleted"
+        mock_delete.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/sources/anime",
+            timeout=10.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )
+
+
 def test_record_watch_event_and_sync() -> None:
     client = ScanAgentClient()
     mock_post_response = MagicMock()

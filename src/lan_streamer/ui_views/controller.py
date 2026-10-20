@@ -1700,22 +1700,23 @@ class Controller(QObject):
             agent_url,
             payload,
         )
-        raw_library_ids = payload.get("library_ids", [])
+        raw_library_ids = payload.get("source_ids") or payload.get("library_ids", [])
         if not isinstance(raw_library_ids, list):
             raw_library_ids = []
         scanned_library_ids = {
-            str(library_identifier)
-            for library_identifier in raw_library_ids
-            if library_identifier is not None
+            str(identifier) for identifier in raw_library_ids if identifier is not None
         }
-        raw_library_names = payload.get("library_names") or payload.get("libraries", [])
+        raw_library_names = (
+            payload.get("source_names")
+            or payload.get("sources")
+            or payload.get("library_names")
+            or payload.get("libraries", [])
+        )
         if isinstance(raw_library_names, str):
             raw_library_names = [raw_library_names]
         elif not isinstance(raw_library_names, list):
             raw_library_names = []
-        scanned_library_names = [
-            str(library_name) for library_name in raw_library_names if library_name
-        ]
+        scanned_library_names = [str(name) for name in raw_library_names if name]
         from lan_streamer.system.config import get_library_sources
 
         for library_name, library_configuration in self._config.libraries.items():
@@ -1739,6 +1740,11 @@ class Controller(QObject):
                     for source in sources
                     if source.get("source_id") is not None
                 ),
+                *(
+                    str(source.get("source_identifier", ""))
+                    for source in sources
+                    if source.get("source_identifier") is not None
+                ),
             }
             matched_by_identifier = bool(scanned_library_ids & configured_identifiers)
             matched_by_name = any(
@@ -1748,7 +1754,12 @@ class Controller(QObject):
                     str(library_configuration.get("remote_library_id", "")).lower(),
                 )
                 or any(
-                    scanned_name.lower() == str(source.get("source_id", "")).lower()
+                    scanned_name.lower()
+                    in (
+                        str(source.get("source_id", "")).lower(),
+                        str(source.get("source_identifier", "")).lower(),
+                        str(source.get("name", "")).lower(),
+                    )
                     for source in sources
                 )
                 for scanned_name in scanned_library_names
