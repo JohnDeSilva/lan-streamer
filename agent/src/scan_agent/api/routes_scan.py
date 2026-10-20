@@ -64,11 +64,11 @@ def _enqueue_after_loop_close_safe(
 
 @scan_router.post("/scan", status_code=status.HTTP_202_ACCEPTED)
 def start_scan(request: Request, payload: ScanRequest) -> dict[str, Any]:
-    """Start a scan for one library or all libraries."""
+    """Start a scan for one media source / library or all."""
     orchestrator = request.app.state.orchestrator
     try:
         job = orchestrator.start_scan(
-            library_identifier=payload.target_identifier,
+            source_identifier=payload.target_identifier,
             pass_number=payload.pass_number,
             force_refresh=payload.force_refresh,
         )

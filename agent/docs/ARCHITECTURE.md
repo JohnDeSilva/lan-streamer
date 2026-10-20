@@ -209,11 +209,11 @@ Health/config:
 - `GET /api/v1/health`
 - `GET|PUT /api/v1/config`
 
-Libraries:
-- `GET /api/v1/libraries`
-- `POST /api/v1/libraries` (name, media_type, root_path)
-- `PATCH /api/v1/libraries/{library_id}`
-- `DELETE /api/v1/libraries/{library_id}`
+Media Sources (and legacy `/libraries` aliases):
+- `GET /api/v1/sources` (alias: `GET /api/v1/libraries`)
+- `POST /api/v1/sources` (name, media_type, root_path) (alias: `POST /api/v1/libraries`)
+- `PATCH /api/v1/sources/{source_id}` (alias: `PATCH /api/v1/libraries/{library_id}`)
+- `DELETE /api/v1/sources/{source_id}` (alias: `DELETE /api/v1/libraries/{library_id}`)
 
 Scanning:
 - `POST /api/v1/scan` (`{library_id?|all, pass_number, force_refresh}`)
@@ -319,7 +319,7 @@ Order matters — the desktop must remain fully functional each step:
 
 1. **Phase A (Local vs Remote Library Architecture & Read-Only Adoption):**
    - **Library `management_type`**: Each library configured on the desktop is explicitly designated as `"local"` (managed and scanned by the desktop filesystem scanner) or `"remote"` (managed by an agent). Existing libraries default to `"local"`.
-   - **Multiple Scan Agents**: Desktop Settings ("Remote API's" tab) allows configuring 1 or more Scan Agent URLs, testing connectivity (`GET /api/v1/health`), and querying remote libraries (`GET /api/v1/libraries`).
+   - **Multiple Scan Agents**: Desktop Settings ("Remote API's" tab) allows configuring 1 or more Scan Agent URLs, testing connectivity (`GET /api/v1/health`), and querying remote media sources (`GET /api/v1/sources` or legacy `GET /api/v1/libraries`).
    - **Path & Mount Point Mapping**: Remote libraries keep local mount paths (`paths` in SMB/NFS mount points) so local VLC playback continues without changing the streaming model.
    - **Decoupled Local Scanning**: Desktop scanner (`ScanAllLibrariesWorker`) skips local filesystem walks on remote libraries, preventing spurious inotify alerts and redundant local scans.
 2. **Phase B (agent-authoritative scan):** Desktop defers all scans to the agent;

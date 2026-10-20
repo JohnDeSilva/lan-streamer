@@ -391,15 +391,21 @@ class ScanAgentClient:
         pass_number: int = 0,
         force_refresh: bool = False,
         timeout: float = 10.0,
+        source_identifier: str | None = None,
     ) -> dict[str, Any]:
         """Initiate a background scan on the remote scan agent."""
         normalized_url = normalize_agent_url(agent_url)
         target_endpoint = f"{normalized_url}/api/v1/scan"
+        target_identifier = (
+            source_identifier if source_identifier is not None else library_identifier
+        )
         request_body: dict[str, Any] = {
-            "library_id": library_identifier,
+            "library_id": target_identifier,
             "pass_number": pass_number,
             "force_refresh": force_refresh,
         }
+        if source_identifier is not None:
+            request_body["source_id"] = source_identifier
 
         try:
             response = requests.post(
@@ -467,6 +473,64 @@ class ScanAgentClient:
                 f"Invalid response from scan agent at '{agent_url}': {error}"
             ) from error
 
+    def create_agent_source(
+        self,
+        agent_url: str,
+        name: str,
+        media_type: str,
+        root_path: str,
+        timeout: float = 10.0,
+    ) -> dict[str, Any]:
+        """Register a new media source on the remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/sources"
+        payload = {
+            "name": name,
+            "media_type": media_type,
+            "root_path": root_path,
+        }
+
+        try:
+            response = requests.post(
+                target_endpoint,
+                json=payload,
+                headers=self._headers,
+                timeout=timeout,
+            )
+            if response.status_code == 404:
+                target_endpoint = f"{normalized_url}/api/v1/libraries"
+                response = requests.post(
+                    target_endpoint,
+                    json=payload,
+                    headers=self._headers,
+                    timeout=timeout,
+                )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed creating media source '%s' on agent '%s': %s",
+                name,
+                agent_url,
+                error,
+            )
+            raise ScanAgentConnectionError(
+                f"Could not create media source on scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code not in (200, 201):
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            response_json = response.json()
+            if isinstance(response_json, dict):
+                return response_json
+            raise ValueError("Expected dictionary response from create media source")
+        except ValueError as error:
+            raise ScanAgentConnectionError(
+                f"Invalid response from scan agent at '{agent_url}': {error}"
+            ) from error
+
     def create_agent_library(
         self,
         agent_url: str,
@@ -475,7 +539,7 @@ class ScanAgentClient:
         root_path: str,
         timeout: float = 10.0,
     ) -> dict[str, Any]:
-        """Register a new library on the remote scan agent."""
+        """Register a new library on the remote scan agent (legacy alias)."""
         normalized_url = normalize_agent_url(agent_url)
         target_endpoint = f"{normalized_url}/api/v1/libraries"
         payload = {
@@ -517,13 +581,63 @@ class ScanAgentClient:
                 f"Invalid response from scan agent at '{agent_url}': {error}"
             ) from error
 
+    def delete_agent_source(
+        self,
+        agent_url: str,
+        source_identifier: str,
+        timeout: float = 10.0,
+    ) -> dict[str, Any]:
+        """Delete a media source from the remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        quoted_identifier = quote(str(source_identifier), safe="")
+        target_endpoint = f"{normalized_url}/api/v1/sources/{quoted_identifier}"
+
+        try:
+            response = requests.delete(
+                target_endpoint,
+                headers=self._headers,
+                timeout=timeout,
+            )
+            if response.status_code == 404:
+                target_endpoint = (
+                    f"{normalized_url}/api/v1/libraries/{quoted_identifier}"
+                )
+                response = requests.delete(
+                    target_endpoint,
+                    headers=self._headers,
+                    timeout=timeout,
+                )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed deleting media source '%s' from agent '%s': %s",
+                source_identifier,
+                agent_url,
+                error,
+            )
+            raise ScanAgentConnectionError(
+                f"Could not delete media source from scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code not in (200, 204):
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            response_json = response.json()
+            if isinstance(response_json, dict):
+                return response_json
+            return {"status": "deleted"}
+        except ValueError:
+            return {"status": "deleted"}
+
     def delete_agent_library(
         self,
         agent_url: str,
         library_identifier: str,
         timeout: float = 10.0,
     ) -> dict[str, Any]:
-        """Delete a library from the remote scan agent."""
+        """Delete a library from the remote scan agent (legacy alias)."""
         normalized_url = normalize_agent_url(agent_url)
         quoted_identifier = quote(str(library_identifier), safe="")
         target_endpoint = f"{normalized_url}/api/v1/libraries/{quoted_identifier}"
