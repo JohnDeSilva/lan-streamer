@@ -664,3 +664,330 @@ def test_remote_sync_worker_serializes_save_with_database_lock() -> None:
         database.save_library.assert_called_once()
 
     _run(run_test())
+
+
+def test_remote_sync_worker_deduplicates_series_across_agent_sources() -> None:
+    parent = QObject()
+    task_manager = AsyncTaskManager(parent=parent)
+
+    async def run_test() -> None:
+        library_configuration = {
+            "management_type": "remote",
+            "type": "tv",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "source_id": "remote-tv-01",
+                },
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8801",
+                    "source_id": "remote-tv-02",
+                },
+            ],
+        }
+        database = MagicMock()
+        database.load_library.return_value = {}
+        worker = RemoteSyncWorker(
+            library_name="TV Shows",
+            library_configuration=library_configuration,
+            database=database,
+            async_task_manager=task_manager,
+            parent=parent,
+        )
+
+        source_1_items = {
+            "Breaking Bad": {
+                "name": "Breaking Bad",
+                "metadata": {
+                    "tmdb_identifier": "1396",
+                    "tmdb_name": "Breaking Bad",
+                    "overview": "Teacher becomes kingpin.",
+                },
+                "seasons": {
+                    "Season 1": {
+                        "metadata": {},
+                        "episodes": [
+                            {
+                                "name": "Pilot",
+                                "episode_number": 1,
+                                "path": "/agent1/tv/Breaking Bad/S01E01.mkv",
+                                "versions": [
+                                    {"path": "/agent1/tv/Breaking Bad/S01E01.mkv"}
+                                ],
+                            },
+                            {
+                                "name": "Cat's in the Bag...",
+                                "episode_number": 2,
+                                "path": "/agent1/tv/Breaking Bad/S01E02.mkv",
+                                "versions": [
+                                    {"path": "/agent1/tv/Breaking Bad/S01E02.mkv"}
+                                ],
+                            },
+                        ],
+                    }
+                },
+            }
+        }
+
+        source_2_items = {
+            "Breaking Bad (2008)": {
+                "name": "Breaking Bad (2008)",
+                "metadata": {
+                    "tmdb_identifier": "1396",
+                    "tmdb_name": "Breaking Bad",
+                    "overview": "Teacher becomes kingpin.",
+                },
+                "seasons": {
+                    "Season 1": {
+                        "metadata": {},
+                        "episodes": [
+                            {
+                                "name": "Pilot",
+                                "episode_number": 1,
+                                "path": "/agent2/tv/Breaking Bad (2008)/S01E01.4k.mkv",
+                                "versions": [
+                                    {
+                                        "path": "/agent2/tv/Breaking Bad (2008)/S01E01.4k.mkv"
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    "Season 2": {
+                        "metadata": {},
+                        "episodes": [
+                            {
+                                "name": "Seven Thirty-Seven",
+                                "episode_number": 1,
+                                "path": "/agent2/tv/Breaking Bad (2008)/S02E01.mkv",
+                                "versions": [
+                                    {
+                                        "path": "/agent2/tv/Breaking Bad (2008)/S02E01.mkv"
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                },
+            }
+        }
+
+        def mock_fetch(agent_url: str, source_id: str, **kwargs: Any) -> dict[str, Any]:
+            if source_id == "remote-tv-01":
+                return source_1_items
+            return source_2_items
+
+        with patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            side_effect=mock_fetch,
+        ):
+            result = await worker.run_async()
+
+        assert result["success"] is True
+        assert result["items"] == 1
+        database.save_library.assert_called_once()
+        saved_library = database.save_library.call_args[0][1]
+        assert len(saved_library) == 1
+        series_key = next(iter(saved_library.keys()))
+        merged_series = saved_library[series_key]
+
+        # Both seasons must be present
+        assert "Season 1" in merged_series["seasons"]
+        assert "Season 2" in merged_series["seasons"]
+
+        # Season 1 Episode 1 must have both versions preserved
+        s1_episodes = merged_series["seasons"]["Season 1"]["episodes"]
+        ep1 = next(ep for ep in s1_episodes if ep.get("episode_number") == 1)
+        ep1_paths = [v["path"] for v in ep1["versions"]]
+        assert "/agent1/tv/Breaking Bad/S01E01.mkv" in ep1_paths
+        assert "/agent2/tv/Breaking Bad (2008)/S01E01.4k.mkv" in ep1_paths
+
+        # Season 1 Episode 2 must be present
+        assert any(ep.get("episode_number") == 2 for ep in s1_episodes)
+
+        # Season 2 Episode 1 must be present
+        s2_episodes = merged_series["seasons"]["Season 2"]["episodes"]
+        assert any(ep.get("episode_number") == 1 for ep in s2_episodes)
+
+    _run(run_test())
+
+
+def test_remote_sync_worker_deduplicates_movies_across_agent_sources() -> None:
+    parent = QObject()
+    task_manager = AsyncTaskManager(parent=parent)
+
+    async def run_test() -> None:
+        library_configuration = {
+            "management_type": "remote",
+            "type": "movie",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "source_id": "remote-movies-01",
+                },
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8801",
+                    "source_id": "remote-movies-02",
+                },
+            ],
+        }
+        database = MagicMock()
+        database.load_movie_library.return_value = {}
+        worker = RemoteSyncWorker(
+            library_name="Movies",
+            library_configuration=library_configuration,
+            database=database,
+            async_task_manager=task_manager,
+            parent=parent,
+        )
+
+        source_1_items = {
+            "Inception": {
+                "name": "Inception",
+                "tmdb_identifier": "27205",
+                "path": "/agent1/movies/Inception (2010)/Inception.mkv",
+                "versions": [{"path": "/agent1/movies/Inception (2010)/Inception.mkv"}],
+            }
+        }
+
+        source_2_items = {
+            "Inception (2010)": {
+                "name": "Inception (2010)",
+                "tmdb_identifier": "27205",
+                "path": "/agent2/movies/Inception (2010)/Inception.4k.mkv",
+                "versions": [
+                    {"path": "/agent2/movies/Inception (2010)/Inception.4k.mkv"}
+                ],
+            }
+        }
+
+        def mock_fetch(agent_url: str, source_id: str, **kwargs: Any) -> dict[str, Any]:
+            if source_id == "remote-movies-01":
+                return source_1_items
+            return source_2_items
+
+        with patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            side_effect=mock_fetch,
+        ):
+            result = await worker.run_async()
+
+        assert result["success"] is True
+        assert result["items"] == 1
+        database.save_movie_library.assert_called_once()
+        saved_library = database.save_movie_library.call_args[0][1]
+        assert len(saved_library) == 1
+        movie_key = next(iter(saved_library.keys()))
+        merged_movie = saved_library[movie_key]
+
+        paths = [version["path"] for version in merged_movie["versions"]]
+        assert "/agent1/movies/Inception (2010)/Inception.mkv" in paths
+        assert "/agent2/movies/Inception (2010)/Inception.4k.mkv" in paths
+
+    _run(run_test())
+
+
+def test_remote_sync_worker_deduplicates_series_by_normalized_title() -> None:
+    parent = QObject()
+    task_manager = AsyncTaskManager(parent=parent)
+
+    async def run_test() -> None:
+        library_configuration = {
+            "management_type": "remote",
+            "type": "tv",
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8800",
+                    "source_id": "remote-tv-01",
+                },
+                {
+                    "type": "agent",
+                    "agent_url": "http://127.0.0.1:8801",
+                    "source_id": "remote-tv-02",
+                },
+            ],
+        }
+        database = MagicMock()
+        database.load_library.return_value = {}
+        worker = RemoteSyncWorker(
+            library_name="TV Shows",
+            library_configuration=library_configuration,
+            database=database,
+            async_task_manager=task_manager,
+            parent=parent,
+        )
+
+        source_1_items = {
+            "Steins;Gate": {
+                "name": "Steins;Gate",
+                "metadata": {},
+                "seasons": {
+                    "Season 1": {
+                        "metadata": {},
+                        "episodes": [
+                            {
+                                "name": "Episode 1",
+                                "episode_number": 1,
+                                "path": "/agent1/tv/Steins Gate/S01E01.mkv",
+                                "versions": [
+                                    {"path": "/agent1/tv/Steins Gate/S01E01.mkv"}
+                                ],
+                            }
+                        ],
+                    }
+                },
+            }
+        }
+
+        source_2_items = {
+            "steins.gate": {
+                "name": "steins.gate",
+                "metadata": {},
+                "seasons": {
+                    "Season 1": {
+                        "metadata": {},
+                        "episodes": [
+                            {
+                                "name": "Episode 1",
+                                "episode_number": 1,
+                                "path": "/agent2/tv/steins.gate/S01E01.720p.mkv",
+                                "versions": [
+                                    {"path": "/agent2/tv/steins.gate/S01E01.720p.mkv"}
+                                ],
+                            }
+                        ],
+                    }
+                },
+            }
+        }
+
+        def mock_fetch(agent_url: str, source_id: str, **kwargs: Any) -> dict[str, Any]:
+            if source_id == "remote-tv-01":
+                return source_1_items
+            return source_2_items
+
+        with patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+            side_effect=mock_fetch,
+        ):
+            result = await worker.run_async()
+
+        assert result["success"] is True
+        assert result["items"] == 1
+        database.save_library.assert_called_once()
+        saved_library = database.save_library.call_args[0][1]
+        assert len(saved_library) == 1
+        series_key = next(iter(saved_library.keys()))
+        merged_series = saved_library[series_key]
+
+        episode_one = merged_series["seasons"]["Season 1"]["episodes"][0]
+        episode_one_paths = [version["path"] for version in episode_one["versions"]]
+        assert "/agent1/tv/Steins Gate/S01E01.mkv" in episode_one_paths
+        assert "/agent2/tv/steins.gate/S01E01.720p.mkv" in episode_one_paths
+
+    _run(run_test())
