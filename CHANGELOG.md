@@ -1,3 +1,9 @@
+## v0.58.0rc4 (2026-10-20)
+
+### Fix
+
+- **dependency**: bump cryptography from 50.0.1 to 50.0.2
+
 ## v0.58.0rc3 (2026-10-20)
 
 ### Fix
