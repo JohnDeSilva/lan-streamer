@@ -269,17 +269,18 @@ def test_settings_dialog_remote_libraries_tab_flow(qtbot) -> None:
     assert "Storage NAS Agent" in agent_item.text(0)
     assert agent_item.text(1) == "Status: Reachable"
 
-    # Library node assertions
+    # Source node assertions - no checkboxes, initially Unattached
     assert agent_item.childCount() == 1
-    library_item = agent_item.child(0)
-    assert library_item is not None
-    assert "NAS TV" in library_item.text(0)
-    assert library_item.text(1) == "Disabled"
-    assert library_item.checkState(0) == Qt.CheckState.Unchecked
+    source_item = agent_item.child(0)
+    assert source_item is not None
+    assert "NAS TV" in source_item.text(0)
+    assert source_item.text(1) == "Unattached"
+    assert not (source_item.flags() & Qt.ItemFlag.ItemIsUserCheckable)
 
     # Root directory node assertions
-    assert library_item.childCount() == 1
-    root_item = library_item.child(0)
+    assert source_item.childCount() == 1
+    root_item = source_item.child(0)
+    assert root_item is not None
     assert "📁 /storage/tv" in root_item.text(0)
 
     # Manage agent dialog opening
@@ -288,41 +289,67 @@ def test_settings_dialog_remote_libraries_tab_flow(qtbot) -> None:
         dialog.open_selected_agent_management_dialog()
         mock_dialog_open.assert_called_once_with("http://127.0.0.1:8800")
 
-    # Enable library via checkbox
-    library_item.setCheckState(0, Qt.CheckState.Checked)
-    assert "NAS TV" in dialog.staged_libraries
-    assert dialog.staged_libraries["NAS TV"]["management_type"] == "remote"
-    assert library_item.text(1) == "Enabled"
-
     # Map local mount
     dialog.map_local_mount_for_item(root_item, "/mnt/nas/tv")
     assert root_item.text(1) == "/mnt/nas/tv"
-    assert dialog.staged_libraries["NAS TV"]["mount_mappings"] == {
+    assert dialog.staged_scan_agents["http://127.0.0.1:8800"]["mount_mappings"] == {
         "/storage/tv": "/mnt/nas/tv"
     }
 
-    # Disable library via checkbox
-    library_item.setCheckState(0, Qt.CheckState.Unchecked)
-    assert "NAS TV" not in dialog.staged_libraries
-    assert library_item.text(1) == "Disabled"
+    # Attach remote source to an existing library ("TV Shows") via Libraries tab
+    dialog.staged_libraries["TV Shows"] = {
+        "type": "tv",
+        "paths": ["/local/tv"],
+        "management_type": "local",
+    }
+    dialog._refresh_library_selector()
+    dialog.library_selector.setCurrentText("TV Shows")
+    with patch(
+        "lan_streamer.ui_views.dialogs.settings.QInputDialog.getItem",
+        return_value=("Storage NAS Agent : NAS TV [TV] (http://127.0.0.1:8800)", True),
+    ):
+        dialog.add_staged_remote_source()
 
-    # Re-enable library
-    library_item.setCheckState(0, Qt.CheckState.Checked)
-    assert "NAS TV" in dialog.staged_libraries
+    agent_item = tree.topLevelItem(0)
+    assert agent_item is not None
+    source_item = agent_item.child(0)
+    assert source_item is not None
+    assert source_item.text(1) == "Attached to: TV Shows"
+    assert dialog.staged_libraries["TV Shows"]["management_type"] == "hybrid"
+    assert dialog.staged_libraries["TV Shows"]["mount_mappings"] == {
+        "/storage/tv": "/mnt/nas/tv"
+    }
+    assert "/local/tv" in dialog.staged_libraries["TV Shows"]["paths"]
+    assert "NAS TV" not in dialog.staged_libraries  # No separate library created!
+
+    # Remove remote source from the library
+    count = dialog.directory_list_widget.count()
+    for row_index in range(count):
+        widget_item = dialog.directory_list_widget.item(row_index)
+        item_data = widget_item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(item_data, dict) and item_data.get("type") == "agent":
+            dialog.directory_list_widget.setCurrentRow(row_index)
+            dialog.remove_staged_directory()
+            break
+
+    agent_item = tree.topLevelItem(0)
+    assert agent_item is not None
+    source_item = agent_item.child(0)
+    assert source_item is not None
+    assert source_item.text(1) == "Unattached"
 
     # Remove agent
     tree.setCurrentItem(agent_item)
     dialog.remove_selected_remote_agent()
     assert tree.topLevelItemCount() == 0
     assert "http://127.0.0.1:8800" not in dialog.staged_scan_agents
-    assert "NAS TV" not in dialog.staged_libraries
 
     dialog.reject()
 
 
-def test_settings_dialog_enabling_remote_source_creates_desktop_library(qtbot) -> None:
-    from PySide6.QtCore import Qt
-
+def test_settings_dialog_attaching_remote_source_to_existing_library(
+    qtbot,
+) -> None:
     from lan_streamer.system.config import config
 
     dialog = SettingsDialog()
@@ -363,26 +390,47 @@ def test_settings_dialog_enabling_remote_source_creates_desktop_library(qtbot) -
     source_item = agent_item.child(0)
     assert source_item is not None
     assert "Remote Anime" in source_item.text(0)
+    assert source_item.text(1) == "Unattached"
 
-    # Enable remote media source
-    source_item.setCheckState(0, Qt.CheckState.Checked)
-    assert "Remote Anime" in dialog.staged_libraries
-    staged_library = dialog.staged_libraries["Remote Anime"]
-    assert staged_library["management_type"] == "remote"
-    assert staged_library["type"] == "anime"
-    assert staged_library["agent_url"] == "http://127.0.0.1:8800"
-
-    # Map local mount path for local VLC playback
-    assert source_item.childCount() == 1
+    # Map local mount path on the agent source
     root_item = source_item.child(0)
     assert root_item is not None
     dialog.map_local_mount_for_item(root_item, "/Volumes/remote_anime")
-    assert staged_library["paths"] == ["/Volumes/remote_anime"]
-    assert staged_library["mount_mappings"] == {
-        "/storage/anime": "/Volumes/remote_anime"
-    }
 
-    # Save settings and verify desktop library creation and tab visibility
+    # Attach remote media source to existing "Anime" library via Libraries tab
+    dialog.staged_libraries["Anime"] = {
+        "type": "anime",
+        "paths": [],
+        "management_type": "local",
+    }
+    dialog._refresh_library_selector()
+    dialog.library_selector.setCurrentText("Anime")
+    with patch(
+        "lan_streamer.ui_views.dialogs.settings.QInputDialog.getItem",
+        return_value=(
+            "Remote Media Server : Remote Anime [ANIME] (http://127.0.0.1:8800)",
+            True,
+        ),
+    ):
+        dialog.add_staged_remote_source()
+
+    agent_item = tree.topLevelItem(0)
+    assert agent_item is not None
+    source_item = agent_item.child(0)
+    assert source_item is not None
+    assert source_item.text(1) == "Attached to: Anime"
+    staged_anime = dialog.staged_libraries["Anime"]
+    assert staged_anime["management_type"] == "remote"
+    assert "/Volumes/remote_anime" in staged_anime["paths"]
+    assert staged_anime["mount_mappings"] == {"/storage/anime": "/Volumes/remote_anime"}
+    assert any(
+        s.get("type") == "agent" and s.get("source_identifier") == "source-anime"
+        for s in staged_anime["sources"]
+    )
+    # Ensure NO separate library named "Remote Anime" was created!
+    assert "Remote Anime" not in dialog.staged_libraries
+
+    # Save settings and verify persistence
     with (
         patch("lan_streamer.system.config.config.save") as mock_save,
         patch("lan_streamer.system.config.config.save_to_db") as mock_save_db,
@@ -392,10 +440,9 @@ def test_settings_dialog_enabling_remote_source_creates_desktop_library(qtbot) -
         mock_save.assert_called_once()
         mock_save_db.assert_called_once()
 
-    assert "Remote Anime" in config.libraries
-    assert config.libraries["Remote Anime"]["management_type"] == "remote"
-    assert config.libraries["Remote Anime"]["paths"] == ["/Volumes/remote_anime"]
-    assert "Remote Anime" in config.get_tab_names()
+    assert "Remote Anime" not in config.libraries
+    assert "Anime" in config.libraries
+    assert "/Volumes/remote_anime" in config.libraries["Anime"]["paths"]
 
     dialog.reject()
 
@@ -740,7 +787,6 @@ def test_settings_dialog_per_library_scanning_controls(qtbot) -> None:
 
 
 def test_settings_dialog_remote_library_uses_media_type(qtbot) -> None:
-    from PySide6.QtCore import Qt
 
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
@@ -767,19 +813,41 @@ def test_settings_dialog_remote_library_uses_media_type(qtbot) -> None:
     agent_item = dialog.remote_agents_tree_widget.topLevelItem(0)
     assert agent_item is not None
     assert agent_item.childCount() == 1
-    library_item = agent_item.child(0)
-    assert library_item is not None
-    assert "Remote Cinema [MOVIE]" in library_item.text(0)
+    source_item = agent_item.child(0)
+    assert source_item is not None
+    assert "Remote Cinema [MOVIE]" in source_item.text(0)
+    assert source_item.text(1) == "Unattached"
 
-    # Check the item to enable it
-    library_item.setCheckState(0, Qt.CheckState.Checked)
-    dialog._on_remote_tree_item_changed(library_item, 0)
+    # Attach the remote source to an existing library ("Movies") via Libraries tab
+    dialog.staged_libraries["Movies"] = {
+        "type": "movie",
+        "paths": [],
+        "management_type": "local",
+    }
+    dialog._refresh_library_selector()
+    dialog.library_selector.setCurrentText("Movies")
+    with patch(
+        "lan_streamer.ui_views.dialogs.settings.QInputDialog.getItem",
+        return_value=(
+            "Scan Agent : Remote Cinema [MOVIE] (http://127.0.0.1:8800)",
+            True,
+        ),
+    ):
+        dialog.add_staged_remote_source()
 
-    assert "Remote Cinema" in dialog.staged_libraries
-    staged_config = dialog.staged_libraries["Remote Cinema"]
+    agent_item = dialog.remote_agents_tree_widget.topLevelItem(0)
+    assert agent_item is not None
+    source_item = agent_item.child(0)
+    assert source_item is not None
+    assert source_item.text(1) == "Attached to: Movies"
+
+    staged_config = dialog.staged_libraries["Movies"]
     assert staged_config["type"] == "movie"
     assert staged_config["management_type"] == "remote"
-    assert staged_config["remote_library_id"] == "remote-cinema"
+    assert any(
+        s.get("source_identifier") == "remote-cinema" for s in staged_config["sources"]
+    )
+    assert "Remote Cinema" not in dialog.staged_libraries
 
     dialog.reject()
 
