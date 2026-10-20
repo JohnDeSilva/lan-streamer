@@ -320,6 +320,86 @@ def test_settings_dialog_remote_libraries_tab_flow(qtbot) -> None:
     dialog.reject()
 
 
+def test_settings_dialog_enabling_remote_source_creates_desktop_library(qtbot) -> None:
+    from PySide6.QtCore import Qt
+
+    from lan_streamer.system.config import config
+
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    mock_health = {"status": "ok", "service": "Remote Media Server", "libraries": 1}
+    mock_sources = [
+        {
+            "id": "source-anime",
+            "name": "Remote Anime",
+            "media_type": "anime",
+            "root_path": "/storage/anime",
+            "root_paths": ["/storage/anime"],
+        }
+    ]
+
+    with (
+        patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.check_agent_health",
+            return_value=mock_health,
+        ),
+        patch(
+            "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_agent_libraries",
+            return_value=mock_sources,
+        ),
+    ):
+        dialog.remote_agent_url_input.setText("http://127.0.0.1:8800")
+        dialog.connect_to_agent()
+        qtbot.waitUntil(
+            lambda: "http://127.0.0.1:8800" in dialog.staged_scan_agents,
+            timeout=5000,
+        )
+
+    tree = dialog.remote_agents_tree_widget
+    agent_item = tree.topLevelItem(0)
+    assert agent_item is not None
+    assert agent_item.childCount() == 1
+    source_item = agent_item.child(0)
+    assert source_item is not None
+    assert "Remote Anime" in source_item.text(0)
+
+    # Enable remote media source
+    source_item.setCheckState(0, Qt.CheckState.Checked)
+    assert "Remote Anime" in dialog.staged_libraries
+    staged_library = dialog.staged_libraries["Remote Anime"]
+    assert staged_library["management_type"] == "remote"
+    assert staged_library["type"] == "anime"
+    assert staged_library["agent_url"] == "http://127.0.0.1:8800"
+
+    # Map local mount path for local VLC playback
+    assert source_item.childCount() == 1
+    root_item = source_item.child(0)
+    assert root_item is not None
+    dialog.map_local_mount_for_item(root_item, "/Volumes/remote_anime")
+    assert staged_library["paths"] == ["/Volumes/remote_anime"]
+    assert staged_library["mount_mappings"] == {
+        "/storage/anime": "/Volumes/remote_anime"
+    }
+
+    # Save settings and verify desktop library creation and tab visibility
+    with (
+        patch("lan_streamer.system.config.config.save") as mock_save,
+        patch("lan_streamer.system.config.config.save_to_db") as mock_save_db,
+        patch("lan_streamer.system.logging_handler.set_application_log_level"),
+    ):
+        dialog.save_config()
+        mock_save.assert_called_once()
+        mock_save_db.assert_called_once()
+
+    assert "Remote Anime" in config.libraries
+    assert config.libraries["Remote Anime"]["management_type"] == "remote"
+    assert config.libraries["Remote Anime"]["paths"] == ["/Volumes/remote_anime"]
+    assert "Remote Anime" in config.get_tab_names()
+
+    dialog.reject()
+
+
 def test_settings_dialog_remote_agent_unreachable(qtbot) -> None:
     from lan_streamer.services.scan_agent_client import ScanAgentConnectionError
 
