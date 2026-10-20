@@ -416,6 +416,12 @@ class SeriesDetailView(QWidget):
                 copy.deepcopy(new_data) if new_data else None
             )
             self.populate_series_details(self._current_series_name)
+        elif (
+            self._current_series_name
+            and self.controller.cached_library_data
+            and self._current_series_name not in self.controller.cached_library_data
+        ):
+            self.back_requested.emit()
 
     @Slot(int)
     def _on_order_changed(self, index: int) -> None:

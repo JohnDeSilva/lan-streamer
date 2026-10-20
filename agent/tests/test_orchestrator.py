@@ -227,3 +227,87 @@ def test_scan_ignores_folders_with_no_episode_files(
         assert "Empty Season Folder" not in folder_names
         assert "Text Only Folder" not in folder_names
         assert len(series_list) == 1
+
+
+def test_scan_removes_deleted_series_from_library(
+    database_engine, agent_config, media_tree
+) -> None:
+    import shutil
+
+    orchestrator = ScanOrchestrator(agent_config, database_engine, ProgressBroker())
+    orchestrator.start_scan(library_identifier="tv", pass_number=0)
+    _wait_for_scan_finish(orchestrator)
+
+    with get_session(database_engine) as session:
+        series_list = list_series(session)
+        assert len(series_list) == 1
+        assert series_list[0]["folder_name"] == "Test Show"
+
+    # Now delete the series folder from the filesystem
+    shutil.rmtree(media_tree / "Shows" / "Test Show")
+
+    # Rescan
+    orchestrator.start_scan(library_identifier="tv", pass_number=0)
+    _wait_for_scan_finish(orchestrator)
+
+    with get_session(database_engine) as session:
+        series_list = list_series(session)
+        assert len(series_list) == 0
+
+
+def test_scan_removes_deleted_movie_from_library(
+    database_engine, agent_config, media_tree
+) -> None:
+    import shutil
+
+    from scan_agent.db.repository import list_movies
+
+    orchestrator = ScanOrchestrator(agent_config, database_engine, ProgressBroker())
+    orchestrator.start_scan(library_identifier="movie", pass_number=0)
+    _wait_for_scan_finish(orchestrator)
+
+    with get_session(database_engine) as session:
+        movies = list_movies(session)
+        assert len(movies) == 1
+        assert movies[0]["folder_name"] == "Some Movie (2020)"
+
+    # Now delete the movie folder from the filesystem
+    shutil.rmtree(media_tree / "Movies" / "Some Movie (2020)")
+
+    # Rescan
+    orchestrator.start_scan(library_identifier="movie", pass_number=0)
+    _wait_for_scan_finish(orchestrator)
+
+    with get_session(database_engine) as session:
+        movies = list_movies(session)
+        assert len(movies) == 0
+
+
+def test_scan_pass_one_removes_deleted_series_and_movies(
+    database_engine, agent_config, media_tree
+) -> None:
+    import shutil
+
+    from scan_agent.db.repository import list_movies
+
+    orchestrator = ScanOrchestrator(agent_config, database_engine, ProgressBroker())
+    orchestrator.start_scan(library_identifier="tv", pass_number=1)
+    _wait_for_scan_finish(orchestrator)
+    orchestrator.start_scan(library_identifier="movie", pass_number=1)
+    _wait_for_scan_finish(orchestrator)
+
+    with get_session(database_engine) as session:
+        assert len(list_series(session)) == 1
+        assert len(list_movies(session)) == 1
+
+    shutil.rmtree(media_tree / "Shows" / "Test Show")
+    shutil.rmtree(media_tree / "Movies" / "Some Movie (2020)")
+
+    orchestrator.start_scan(library_identifier="tv", pass_number=1)
+    _wait_for_scan_finish(orchestrator)
+    orchestrator.start_scan(library_identifier="movie", pass_number=1)
+    _wait_for_scan_finish(orchestrator)
+
+    with get_session(database_engine) as session:
+        assert len(list_series(session)) == 0
+        assert len(list_movies(session)) == 0

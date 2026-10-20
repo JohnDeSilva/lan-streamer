@@ -516,6 +516,13 @@ class MovieDetailView(QWidget):
 
             self._cached_movie_data_copy = copy.deepcopy(new_data) if new_data else None
             self.populate_movie_details(self.controller.selected_series_name)
+        elif (
+            is_movie
+            and self.controller.cached_library_data
+            and self._current_movie_name
+            and self._current_movie_name not in self.controller.cached_library_data
+        ):
+            self.back_requested.emit()
 
     @Slot()
     def _on_play_clicked(self) -> None:

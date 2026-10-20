@@ -1431,3 +1431,45 @@ def test_remote_sync_finalization_rebuilds_off_the_main_thread(
 
     assert rebuild_thread_identifiers
     assert rebuild_thread_identifiers[0] != main_thread_identifier
+
+
+def test_agent_scan_finished_triggers_sync_and_removes_deleted_series(
+    test_controller: Controller,
+) -> None:
+    """When scan.finished is received from agent, remote sync is queued and deleted series are pruned."""
+    test_controller.current_tab_name = "Remote TV"
+    test_controller.cached_library_data = {
+        "Old Series": {"name": "Old Series", "seasons": {}},
+        "Surviving Series": {"name": "Surviving Series", "seasons": {}},
+    }
+
+    with patch.object(test_controller, "_queue_remote_sync") as mock_queue_sync:
+        test_controller._on_agent_scan_finished(
+            {"job_id": 101, "libraries": ["Remote TV"]},
+            "http://127.0.0.1:8000",
+        )
+        mock_queue_sync.assert_called_once_with("Remote TV", emit_signal=True)
+
+    # Now simulate the remote sync completion where agent returned only "Surviving Series"
+    with (
+        patch.object(
+            test_controller, "_resolve_tab_library_names", return_value=["Remote TV"]
+        ),
+        patch.object(
+            test_controller,
+            "_load_tab_library_data",
+            return_value={
+                "Surviving Series": {"name": "Surviving Series", "seasons": {}}
+            },
+        ),
+        patch.object(test_controller, "_drain_remote_sync_queue"),
+    ):
+        test_controller._remote_sync_scheduled.add("Remote TV")
+        test_controller._remote_sync_emit_signal["Remote TV"] = True
+        test_controller._on_remote_sync_finished(
+            {"success": True, "items": 1}, "Remote TV"
+        )
+        test_controller.async_task_manager.stop_all()
+
+    assert "Old Series" not in test_controller.cached_library_data
+    assert "Surviving Series" in test_controller.cached_library_data

@@ -695,6 +695,18 @@ def _upsert_series(
     return series_count, season_count, episode_count, media_file_count
 
 
+def _movie_has_media_files(movie_data: dict[str, Any]) -> bool:
+    """Return True if the movie data dictionary contains at least one media file."""
+    if not isinstance(movie_data, dict):
+        return False
+    if movie_data.get("path"):
+        return True
+    for version in movie_data.get("versions", []):
+        if isinstance(version, dict) and version.get("path"):
+            return True
+    return False
+
+
 def _upsert_movies(
     connection: Session,
     library: Library,
@@ -706,6 +718,16 @@ def _upsert_movies(
     movie_count = 0
     media_file_count = 0
     for folder_name, movie_data in items.items():
+        if not _movie_has_media_files(movie_data):
+            movie = existing_movies.get(folder_name)
+            if movie is not None:
+                connection.delete(movie)
+                logger.info(
+                    "Pruning movie '%s' with no media files from library '%s'",
+                    folder_name,
+                    library.name,
+                )
+            continue
         try:
             with connection.begin_nested():
                 movie = existing_movies.get(folder_name)
