@@ -334,8 +334,7 @@ class LibraryGridView(QWidget):
                 single_library_name: list(single_library_info.get("paths", []))
                 for single_library_name, single_library_info in config.libraries.items()
             }
-            new_paths_added: bool = False
-            current_library_paths_added: bool = False
+            modified_libraries: list[str] = []
             current_library_name = self.controller.current_library_name
 
             for single_library_name, new_paths in new_library_paths.items():
@@ -343,16 +342,20 @@ class LibraryGridView(QWidget):
                 added_for_this_library = any(
                     path not in old_paths for path in new_paths
                 )
-                if added_for_this_library:
-                    new_paths_added = True
-                    if single_library_name == current_library_name:
-                        current_library_paths_added = True
+                is_brand_new_library = single_library_name not in old_library_paths
+                library_info = config.libraries.get(single_library_name, {})
+                has_content_to_scan = bool(new_paths or library_info.get("sources"))
+                if added_for_this_library or (
+                    is_brand_new_library and has_content_to_scan
+                ):
+                    modified_libraries.append(single_library_name)
 
             self.populate_libraries(config.get_tab_names())
 
-            if new_paths_added:
+            if len(modified_libraries) == 1:
+                target_library_name = modified_libraries[0]
                 if (
-                    current_library_paths_added
+                    target_library_name == current_library_name
                     and current_library_name != "Combined View"
                 ):
                     logger.info(
@@ -362,9 +365,18 @@ class LibraryGridView(QWidget):
                     self.controller.trigger_scan_and_update(False)
                 else:
                     logger.info(
-                        "New path added to a library. Triggering scan all libraries..."
+                        "Targeted scan for newly configured library '%s'...",
+                        target_library_name,
                     )
-                    self.controller.trigger_scan_all(False)
+                    self.controller.trigger_scan_and_update(
+                        False, library_name=target_library_name
+                    )
+            elif len(modified_libraries) > 1:
+                logger.info(
+                    "Multiple libraries added or modified (%s). Triggering scan all libraries...",
+                    modified_libraries,
+                )
+                self.controller.trigger_scan_all(False)
         else:
             config.load()
             self.populate_libraries(config.get_tab_names())

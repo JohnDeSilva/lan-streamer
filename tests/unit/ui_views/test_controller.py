@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, ClassVar
 from unittest.mock import ANY, MagicMock, patch
 
@@ -412,6 +413,57 @@ def test_controller_file_system_monitoring(
         ) as mock_worker_constructor:
             controller_instance.trigger_scan(force_refresh=False)
             mock_worker_constructor.assert_not_called()
+
+
+def test_controller_update_file_system_watcher_with_event_loop(tmp_path) -> None:
+    """Verify that file system watcher updates directories via async task when event loop is running."""
+    event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(event_loop)
+    try:
+        mock_config = MagicMock()
+        valid_directory = tmp_path / "valid_watch_dir"
+        valid_directory.mkdir()
+        non_existent_directory = tmp_path / "non_existent_dir"
+        mock_config.libraries = {
+            "AsyncWatchLib": {
+                "paths": [str(valid_directory), str(non_existent_directory)],
+            }
+        }
+        controller_instance = Controller(config=mock_config)
+        controller_instance._update_file_system_watcher(["AsyncWatchLib"])
+
+        event_loop.run_until_complete(asyncio.sleep(0.05))
+
+        watcher_directories = controller_instance.file_system_watcher.directories()
+        assert str(valid_directory) in watcher_directories
+        assert str(non_existent_directory) not in watcher_directories
+    finally:
+        for pending_task in asyncio.all_tasks(event_loop):
+            pending_task.cancel()
+        event_loop.run_until_complete(
+            asyncio.gather(*asyncio.all_tasks(event_loop), return_exceptions=True)
+        )
+        event_loop.close()
+        asyncio.set_event_loop(None)
+
+
+def test_controller_update_file_system_watcher_without_event_loop(tmp_path) -> None:
+    """Verify that file system watcher updates directories synchronously when no event loop is running."""
+    mock_config = MagicMock()
+    valid_directory = tmp_path / "sync_watch_dir"
+    valid_directory.mkdir()
+    non_existent_directory = tmp_path / "sync_missing_dir"
+    mock_config.libraries = {
+        "SyncWatchLib": {
+            "paths": [str(valid_directory), str(non_existent_directory)],
+        }
+    }
+    controller_instance = Controller(config=mock_config)
+    controller_instance._update_file_system_watcher(["SyncWatchLib"])
+
+    watcher_directories = controller_instance.file_system_watcher.directories()
+    assert str(valid_directory) in watcher_directories
+    assert str(non_existent_directory) not in watcher_directories
 
 
 def test_controller_global_triggers() -> None:
