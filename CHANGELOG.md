@@ -1,3 +1,19 @@
+## v0.58.0rc0 (2026-10-20)
+
+### Feat
+
+- **scanner**: deduplicate series and movies across remote locations within libraries
+
+### Fix
+
+- **agent**: prune deleted series and movies from agent libraries and sync desktop view state
+- remove deleted remote items during library synchronization from agent
+
+### Refactor
+
+- **ui**: attach remote sources only to existing libraries and remove auto-creation checkboxes
+- **agent**: clarify separation between desktop libraries and agent media sources
+
 ## v0.57.0 (2026-10-20)
 
 ### Feat
