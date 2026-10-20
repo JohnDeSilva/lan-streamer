@@ -375,3 +375,81 @@ def test_series_detail_view_navigates_back_when_series_removed(qtbot: Any) -> No
     # When library is reloaded without Deleted Show
     view.on_library_loaded()
     assert back_requested is True
+
+
+def test_series_detail_view_handles_duplicate_series_records(qtbot: Any) -> None:
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import Series, SeriesLibrary
+
+    controller = Controller()
+    controller.current_library_name = "TV"
+
+    # Insert two duplicate Series records in the database with the same name
+    with get_session() as session:
+        series_1 = Series(library_name="TV", name="Duplicate Show")
+        series_2 = Series(library_name="TV", name="Duplicate Show")
+        session.add_all([series_1, series_2])
+        session.flush()
+        junction_1 = SeriesLibrary(series_id=series_1.id, library_name="TV")
+        junction_2 = SeriesLibrary(series_id=series_2.id, library_name="TV")
+        session.add_all([junction_1, junction_2])
+        session.commit()
+
+    view = SeriesDetailView(controller)
+    qtbot.addWidget(view)
+    view._current_series_name = "Duplicate Show"
+
+    # Should not raise MultipleResultsFound and should return one of the IDs
+    series_identifier = view._lookup_series_id()
+    assert series_identifier is not None
+
+    fetched_id, cast_entries = view._fetch_series_db_and_cast("Duplicate Show")
+    assert fetched_id is not None
+    assert isinstance(cast_entries, list)
+
+
+def test_series_detail_view_load_details_async_fault_tolerant(qtbot: Any) -> None:
+    import asyncio
+
+    controller = Controller()
+    controller.current_library_name = "TV"
+    controller.cached_library_data = {
+        "Failing Show": {
+            "metadata": {
+                "tmdb_identifier": "99999",
+                "tmdb_name": "Failing Show",
+                "overview": "Overview text",
+            },
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/tv/Failing Show/S01E01.mkv",
+                            "watched": False,
+                            "tmdb_number": 1,
+                        }
+                    ]
+                }
+            },
+        }
+    }
+
+    view = SeriesDetailView(controller)
+    qtbot.addWidget(view)
+
+    with (
+        patch.object(
+            view,
+            "_fetch_series_db_and_cast",
+            side_effect=RuntimeError("Simulated DB error"),
+        ),
+        patch(
+            "lan_streamer.ui_views.series_detail.tmdb_client.get_episode_groups",
+            return_value=[],
+        ),
+    ):
+        asyncio.run(view._load_details_async("Failing Show"))
+
+    # UI update should still have executed despite background error
+    assert view.seasons_tab_widget.count() == 1

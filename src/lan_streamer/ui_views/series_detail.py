@@ -244,7 +244,7 @@ class SeriesDetailView(QWidget):
                     Series.name == self._current_series_name,
                 )
             )
-            series = session.execute(statement).unique().scalar_one_or_none()
+            series = session.execute(statement).unique().scalars().first()
             if series is not None:
                 self._current_series_db_id = series.id
                 return series.id
@@ -286,7 +286,7 @@ class SeriesDetailView(QWidget):
                 )
                 .options(joinedload(Series.media_cast).joinedload(MediaCast.person))
             )
-            series = session.execute(statement).unique().scalar_one_or_none()
+            series = session.execute(statement).unique().scalars().first()
             if series is not None:
                 series_database_identifier = series.id
                 sorted_cast = sorted(
@@ -614,9 +614,16 @@ class SeriesDetailView(QWidget):
         await asyncio.sleep(0.05)
 
         # 1. Fetch DB ID and Cast Entries (serialized) in a background thread
-        series_database_identifier, cast_entries = await asyncio.to_thread(
-            self._fetch_series_db_and_cast, series_name
-        )
+        series_database_identifier: str | None = None
+        cast_entries: list[dict[str, Any]] = []
+        try:
+            series_database_identifier, cast_entries = await asyncio.to_thread(
+                self._fetch_series_db_and_cast, series_name
+            )
+        except Exception:
+            logger.exception(
+                "Error fetching DB identifier and cast for series '%s'", series_name
+            )
 
         # 2. Get metadata dictionary
         series_record: dict[str, Any] = self.controller.cached_library_data.get(
@@ -630,18 +637,25 @@ class SeriesDetailView(QWidget):
         ]
         tmdb_identifier = metadata_dictionary.get("tmdb_identifier")
         if tmdb_identifier:
-            if tmdb_identifier not in self.episode_groups_cache:
-                fetched_groups = await asyncio.to_thread(
-                    tmdb_client.get_episode_groups, tmdb_identifier
-                )
-                self.episode_groups_cache[tmdb_identifier] = fetched_groups
-            groups_list = self.episode_groups_cache[tmdb_identifier]
-            for group in groups_list:
-                available_groups.append(
-                    {
-                        "id": str(group.get("id") or ""),
-                        "name": str(group.get("name") or "Unknown Order"),
-                    }
+            try:
+                if tmdb_identifier not in self.episode_groups_cache:
+                    fetched_groups = await asyncio.to_thread(
+                        tmdb_client.get_episode_groups, tmdb_identifier
+                    )
+                    self.episode_groups_cache[tmdb_identifier] = fetched_groups
+                groups_list = self.episode_groups_cache[tmdb_identifier]
+                for group in groups_list:
+                    available_groups.append(
+                        {
+                            "id": str(group.get("id") or ""),
+                            "name": str(group.get("name") or "Unknown Order"),
+                        }
+                    )
+            except Exception:
+                logger.exception(
+                    "Error fetching episode groups for series '%s' (TMDB ID %s)",
+                    series_name,
+                    tmdb_identifier,
                 )
 
         # 4. Get the saved group ID
@@ -657,14 +671,22 @@ class SeriesDetailView(QWidget):
         # 5. Fetch group details
         group_details = None
         if saved_group_identifier != "default":
-            if saved_group_identifier not in self.episode_group_details_cache:
-                fetched_details = await asyncio.to_thread(
-                    tmdb_client.get_episode_group_details, saved_group_identifier
+            try:
+                if saved_group_identifier not in self.episode_group_details_cache:
+                    fetched_details = await asyncio.to_thread(
+                        tmdb_client.get_episode_group_details, saved_group_identifier
+                    )
+                    self.episode_group_details_cache[saved_group_identifier] = (
+                        fetched_details or {}
+                    )
+                group_details = self.episode_group_details_cache.get(
+                    saved_group_identifier
                 )
-                self.episode_group_details_cache[saved_group_identifier] = (
-                    fetched_details or {}
+            except Exception:
+                logger.exception(
+                    "Error fetching group details for group '%s'",
+                    saved_group_identifier,
                 )
-            group_details = self.episode_group_details_cache.get(saved_group_identifier)
 
         # 6. Update UI on the main thread
         self._update_series_ui(

@@ -196,6 +196,295 @@ def cleanup_library(library_name: str, root_directories: list[str]) -> dict[str,
     return stats
 
 
+def _merge_duplicate_series(
+    session: Any,
+    primary_series: Any,
+    duplicate_series: Any,
+) -> None:
+    """Merge seasons, episodes, media files, and junction entries from duplicate_series into primary_series, then delete duplicate_series."""
+    primary_seasons_by_name = {
+        season.name: season
+        for season in primary_series.seasons
+        if season.name is not None
+    }
+
+    for duplicate_season in list(duplicate_series.seasons):
+        if duplicate_season.name in primary_seasons_by_name:
+            primary_season = primary_seasons_by_name[duplicate_season.name]
+            primary_episodes_by_number = {
+                episode.tmdb_number: episode
+                for episode in primary_season.episodes
+                if episode.tmdb_number is not None
+            }
+            primary_episodes_by_name = {
+                episode.name: episode
+                for episode in primary_season.episodes
+                if episode.name is not None
+            }
+
+            for duplicate_episode in list(duplicate_season.episodes):
+                matching_episode = None
+                if duplicate_episode.tmdb_number is not None:
+                    matching_episode = primary_episodes_by_number.get(
+                        duplicate_episode.tmdb_number
+                    )
+                if matching_episode is None and duplicate_episode.name is not None:
+                    matching_episode = primary_episodes_by_name.get(
+                        duplicate_episode.name
+                    )
+
+                if matching_episode is not None:
+                    # Transfer media files
+                    for media_file in list(duplicate_episode.media_files):
+                        if media_file not in matching_episode.media_files:
+                            matching_episode.media_files.append(media_file)
+                    # Transfer playback state if duplicate has one and primary doesn't
+                    if (
+                        duplicate_episode.playback_state
+                        and not matching_episode.playback_state
+                    ):
+                        matching_episode.playback_state = (
+                            duplicate_episode.playback_state
+                        )
+                        duplicate_episode.playback_state = None
+                    session.delete(duplicate_episode)
+                else:
+                    duplicate_episode.season = primary_season
+                    if duplicate_episode.tmdb_number is not None:
+                        primary_episodes_by_number[duplicate_episode.tmdb_number] = (
+                            duplicate_episode
+                        )
+                    if duplicate_episode.name is not None:
+                        primary_episodes_by_name[duplicate_episode.name] = (
+                            duplicate_episode
+                        )
+            session.delete(duplicate_season)
+        else:
+            duplicate_season.series = primary_series
+            if duplicate_season.name is not None:
+                primary_seasons_by_name[duplicate_season.name] = duplicate_season
+
+    for series_library in list(duplicate_series.libraries):
+        if not any(
+            existing_library.library_name == series_library.library_name
+            for existing_library in primary_series.libraries
+        ):
+            series_library.series = primary_series
+        else:
+            session.delete(series_library)
+
+    session.delete(duplicate_series)
+    session.flush()
+
+
+def _merge_duplicate_movies(
+    session: Any,
+    primary_movie: Any,
+    duplicate_movie: Any,
+) -> None:
+    """Merge media files and libraries from duplicate_movie into primary_movie, then delete duplicate_movie."""
+    for media_file in list(duplicate_movie.media_files):
+        if media_file not in primary_movie.media_files:
+            primary_movie.media_files.append(media_file)
+
+    if duplicate_movie.playback_state and not primary_movie.playback_state:
+        primary_movie.playback_state = duplicate_movie.playback_state
+        duplicate_movie.playback_state = None
+
+    for movie_library in list(duplicate_movie.libraries):
+        if not any(
+            existing_library.library_name == movie_library.library_name
+            for existing_library in primary_movie.libraries
+        ):
+            movie_library.movie = primary_movie
+        else:
+            session.delete(movie_library)
+
+    session.delete(duplicate_movie)
+    session.flush()
+
+
+def _cleanup_removed_movies(
+    session: Any,
+    library_name: str,
+    active_names_set: set[str],
+    removal_statistics: dict[str, int],
+) -> None:
+    """Removes or dissociates movies for library_name whose names are not in active_names_set and deduplicates duplicates."""
+    from sqlalchemy.orm import selectinload
+
+    from lan_streamer.db.models import Movie, MovieLibrary
+
+    movie_list = session.scalars(
+        select(Movie)
+        .join(Movie.libraries, isouter=True)
+        .where(
+            (Movie.library_name == library_name)
+            | (MovieLibrary.library_name == library_name)
+        )
+        .distinct()
+        .options(
+            selectinload(Movie.libraries),
+            selectinload(Movie.media_files),
+        )
+    ).all()
+    seen_movies_by_name: dict[str, Movie] = {}
+    seen_movies_by_tmdb: dict[str, Movie] = {}
+    for movie in movie_list:
+        existing_primary_movie = None
+        if movie.name and movie.name in seen_movies_by_name:
+            existing_primary_movie = seen_movies_by_name[movie.name]
+        elif movie.tmdb_identifier and movie.tmdb_identifier in seen_movies_by_tmdb:
+            existing_primary_movie = seen_movies_by_tmdb[movie.tmdb_identifier]
+
+        if existing_primary_movie is not None and existing_primary_movie is not movie:
+            logger.info(
+                "Cleanup: Merging duplicate Movie record '%s' into primary",
+                movie.name,
+            )
+            _merge_duplicate_movies(session, existing_primary_movie, movie)
+            removal_statistics["movies"] += 1
+            removal_statistics["movies_removed"] += 1
+            continue
+
+        if movie.name:
+            seen_movies_by_name[movie.name] = movie
+        if movie.tmdb_identifier:
+            seen_movies_by_tmdb[movie.tmdb_identifier] = movie
+
+        if movie.name not in active_names_set:
+            other_libraries = [
+                movie_library
+                for movie_library in movie.libraries
+                if movie_library.library_name != library_name
+            ]
+            if other_libraries:
+                logger.info(
+                    "Cleanup: Movie '%s' no longer in remote library '%s', "
+                    "dissociating (remains in %d other libraries).",
+                    movie.name,
+                    library_name,
+                    len(other_libraries),
+                )
+                for movie_library in list(movie.libraries):
+                    if movie_library.library_name == library_name:
+                        session.delete(movie_library)
+                if movie.library_name == library_name:
+                    movie.library_name = other_libraries[0].library_name
+            else:
+                logger.info(
+                    "Cleanup: Removing missing movie '%s' from remote library '%s'",
+                    movie.name,
+                    library_name,
+                )
+                for media_file in list(movie.media_files):
+                    has_other_movies = any(
+                        other_movie != movie for other_movie in media_file.movies
+                    )
+                    if not has_other_movies and not media_file.episodes:
+                        session.delete(media_file)
+                session.delete(movie)
+            removal_statistics["movies"] += 1
+            removal_statistics["movies_removed"] += 1
+
+
+def _cleanup_removed_series(
+    session: Any,
+    library_name: str,
+    active_names_set: set[str],
+    removal_statistics: dict[str, int],
+) -> None:
+    """Removes or dissociates series for library_name whose names are not in active_names_set and deduplicates duplicates."""
+    from sqlalchemy.orm import selectinload
+
+    from lan_streamer.db.models import Episode, Season, Series, SeriesLibrary
+
+    series_list = session.scalars(
+        select(Series)
+        .join(Series.libraries, isouter=True)
+        .where(
+            (Series.library_name == library_name)
+            | (SeriesLibrary.library_name == library_name)
+        )
+        .distinct()
+        .options(
+            selectinload(Series.libraries),
+            selectinload(Series.seasons)
+            .selectinload(Season.episodes)
+            .selectinload(Episode.media_files),
+        )
+    ).all()
+    seen_series_by_name: dict[str, Series] = {}
+    seen_series_by_tmdb: dict[str, Series] = {}
+    for series in series_list:
+        existing_primary_series = None
+        if series.name and series.name in seen_series_by_name:
+            existing_primary_series = seen_series_by_name[series.name]
+        elif series.tmdb_identifier and series.tmdb_identifier in seen_series_by_tmdb:
+            existing_primary_series = seen_series_by_tmdb[series.tmdb_identifier]
+
+        if (
+            existing_primary_series is not None
+            and existing_primary_series is not series
+        ):
+            logger.info(
+                "Cleanup: Merging duplicate Series record '%s' into primary",
+                series.name,
+            )
+            _merge_duplicate_series(session, existing_primary_series, series)
+            removal_statistics["series"] += 1
+            removal_statistics["series_removed"] += 1
+            continue
+
+        if series.name:
+            seen_series_by_name[series.name] = series
+        if series.tmdb_identifier:
+            seen_series_by_tmdb[series.tmdb_identifier] = series
+
+        if series.name not in active_names_set:
+            other_libraries = [
+                series_library
+                for series_library in series.libraries
+                if series_library.library_name != library_name
+            ]
+            if other_libraries:
+                logger.info(
+                    "Cleanup: Series '%s' no longer in remote library '%s', "
+                    "dissociating (remains in %d other libraries).",
+                    series.name,
+                    library_name,
+                    len(other_libraries),
+                )
+                for series_library in list(series.libraries):
+                    if series_library.library_name == library_name:
+                        session.delete(series_library)
+                    if series.library_name == library_name:
+                        series.library_name = other_libraries[0].library_name
+            else:
+                logger.info(
+                    "Cleanup: Removing missing series '%s' from remote library '%s'",
+                    series.name,
+                    library_name,
+                )
+                removal_statistics["seasons"] += len(series.seasons)
+                removal_statistics["seasons_removed"] += len(series.seasons)
+                for season in series.seasons:
+                    removal_statistics["episodes"] += len(season.episodes)
+                    removal_statistics["episodes_removed"] += len(season.episodes)
+                    for episode in season.episodes:
+                        for media_file in list(episode.media_files):
+                            has_other_episodes = any(
+                                other_episode != episode
+                                for other_episode in media_file.episodes
+                            )
+                            if not has_other_episodes and not media_file.movies:
+                                session.delete(media_file)
+                        session.delete(episode)
+                session.delete(series)
+            removal_statistics["series"] += 1
+            removal_statistics["series_removed"] += 1
+
+
 def cleanup_removed_library_items(
     library_name: str,
     library_type: str,
@@ -206,17 +495,6 @@ def cleanup_removed_library_items(
     Used when synchronizing libraries from remote agents or external sources where
     the list of active items is authoritatively provided.
     """
-    from sqlalchemy.orm import selectinload
-
-    from lan_streamer.db.models import (
-        Episode,
-        Movie,
-        MovieLibrary,
-        Season,
-        Series,
-        SeriesLibrary,
-    )
-
     removal_statistics: dict[str, int] = {
         "series": 0,
         "seasons": 0,
@@ -231,118 +509,13 @@ def cleanup_removed_library_items(
     try:
         with get_session() as session:
             if library_type == "movie":
-                movie_list = session.scalars(
-                    select(Movie)
-                    .join(Movie.libraries, isouter=True)
-                    .where(
-                        (Movie.library_name == library_name)
-                        | (MovieLibrary.library_name == library_name)
-                    )
-                    .distinct()
-                    .options(
-                        selectinload(Movie.libraries),
-                        selectinload(Movie.media_files),
-                    )
-                ).all()
-                for movie in movie_list:
-                    if movie.name not in active_names_set:
-                        other_libraries = [
-                            movie_library
-                            for movie_library in movie.libraries
-                            if movie_library.library_name != library_name
-                        ]
-                        if other_libraries:
-                            logger.info(
-                                "Cleanup: Movie '%s' no longer in remote library '%s', "
-                                "dissociating (remains in %d other libraries).",
-                                movie.name,
-                                library_name,
-                                len(other_libraries),
-                            )
-                            for movie_library in list(movie.libraries):
-                                if movie_library.library_name == library_name:
-                                    session.delete(movie_library)
-                            if movie.library_name == library_name:
-                                movie.library_name = other_libraries[0].library_name
-                        else:
-                            logger.info(
-                                "Cleanup: Removing missing movie '%s' from remote library '%s'",
-                                movie.name,
-                                library_name,
-                            )
-                            for media_file in list(movie.media_files):
-                                has_other_movies = any(
-                                    other_movie != movie
-                                    for other_movie in media_file.movies
-                                )
-                                if not has_other_movies and not media_file.episodes:
-                                    session.delete(media_file)
-                            session.delete(movie)
-                        removal_statistics["movies"] += 1
-                        removal_statistics["movies_removed"] += 1
+                _cleanup_removed_movies(
+                    session, library_name, active_names_set, removal_statistics
+                )
             else:
-                series_list = session.scalars(
-                    select(Series)
-                    .join(Series.libraries, isouter=True)
-                    .where(
-                        (Series.library_name == library_name)
-                        | (SeriesLibrary.library_name == library_name)
-                    )
-                    .distinct()
-                    .options(
-                        selectinload(Series.libraries),
-                        selectinload(Series.seasons)
-                        .selectinload(Season.episodes)
-                        .selectinload(Episode.media_files),
-                    )
-                ).all()
-                for series in series_list:
-                    if series.name not in active_names_set:
-                        other_libraries = [
-                            series_library
-                            for series_library in series.libraries
-                            if series_library.library_name != library_name
-                        ]
-                        if other_libraries:
-                            logger.info(
-                                "Cleanup: Series '%s' no longer in remote library '%s', "
-                                "dissociating (remains in %d other libraries).",
-                                series.name,
-                                library_name,
-                                len(other_libraries),
-                            )
-                            for series_library in list(series.libraries):
-                                if series_library.library_name == library_name:
-                                    session.delete(series_library)
-                            if series.library_name == library_name:
-                                series.library_name = other_libraries[0].library_name
-                        else:
-                            logger.info(
-                                "Cleanup: Removing missing series '%s' from remote library '%s'",
-                                series.name,
-                                library_name,
-                            )
-                            removal_statistics["seasons"] += len(series.seasons)
-                            removal_statistics["seasons_removed"] += len(series.seasons)
-                            for season in series.seasons:
-                                removal_statistics["episodes"] += len(season.episodes)
-                                removal_statistics["episodes_removed"] += len(
-                                    season.episodes
-                                )
-                                for episode in season.episodes:
-                                    for media_file in list(episode.media_files):
-                                        has_other_episodes = any(
-                                            other_episode != episode
-                                            for other_episode in media_file.episodes
-                                        )
-                                        if (
-                                            not has_other_episodes
-                                            and not media_file.movies
-                                        ):
-                                            session.delete(media_file)
-                            session.delete(series)
-                        removal_statistics["series"] += 1
-                        removal_statistics["series_removed"] += 1
+                _cleanup_removed_series(
+                    session, library_name, active_names_set, removal_statistics
+                )
             session.flush()
     except Exception:
         logger.exception(

@@ -764,7 +764,9 @@ def _load_existing_series_for_save(
 
     existing_series: dict[str, Series] = {}
     if filter_predicates:
-        for series_obj in session.scalars(
+        from lan_streamer.db.library import _merge_duplicate_series
+
+        series_records = session.scalars(
             select(Series)
             .where(or_(*filter_predicates))
             .options(
@@ -776,11 +778,34 @@ def _load_existing_series_for_save(
                 .selectinload(Season.episodes)
                 .selectinload(Episode.playback_state),
             )
-        ).all():
-            if series_obj.name is not None:
-                existing_series[series_obj.name] = series_obj
-            if series_obj.tmdb_identifier:
-                existing_series[f"tmdb:{series_obj.tmdb_identifier}"] = series_obj
+        ).all()
+        for series_object in series_records:
+            existing_primary_series = None
+            if series_object.name is not None and series_object.name in existing_series:
+                existing_primary_series = existing_series[series_object.name]
+            elif (
+                series_object.tmdb_identifier
+                and f"tmdb:{series_object.tmdb_identifier}" in existing_series
+            ):
+                existing_primary_series = existing_series[
+                    f"tmdb:{series_object.tmdb_identifier}"
+                ]
+
+            if (
+                existing_primary_series is not None
+                and existing_primary_series is not series_object
+            ):
+                logger.info(
+                    "Save: Merging duplicate Series record '%s' into primary",
+                    series_object.name,
+                )
+                _merge_duplicate_series(session, existing_primary_series, series_object)
+                continue
+
+            if series_object.name is not None:
+                existing_series[series_object.name] = series_object
+            if series_object.tmdb_identifier:
+                existing_series[f"tmdb:{series_object.tmdb_identifier}"] = series_object
     return existing_series
 
 
