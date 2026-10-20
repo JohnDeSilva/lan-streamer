@@ -209,10 +209,30 @@ def load_movie_library(library_name: str | list[str]) -> dict[str, Any]:
                 .order_by(Movie.name)
             ).all()
 
+            from lan_streamer.services.tab_consolidation_service import (
+                _extract_movie_merge_key,
+                _merge_movie_records,
+            )
+
+            merge_key_to_name: dict[str, str] = {}
             for movie in movie_list:
                 stats["movies"] += 1
                 if movie.name is not None:
-                    library_data[movie.name] = _build_movie_dict(movie)
+                    movie_dict = _build_movie_dict(movie)
+                    dedup_key = _extract_movie_merge_key(movie.name, movie_dict)
+                    target_name = merge_key_to_name.get(dedup_key)
+                    if target_name and target_name in library_data:
+                        library_data[target_name] = _merge_movie_records(
+                            library_data[target_name], movie_dict
+                        )
+                    elif movie.name in library_data:
+                        library_data[movie.name] = _merge_movie_records(
+                            library_data[movie.name], movie_dict
+                        )
+                        merge_key_to_name[dedup_key] = movie.name
+                    else:
+                        library_data[movie.name] = movie_dict
+                        merge_key_to_name[dedup_key] = movie.name
     except Exception:
         logger.exception(f"Error loading movie library '{library_name}' from database")
         return {}

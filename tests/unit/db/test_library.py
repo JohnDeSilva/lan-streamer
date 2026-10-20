@@ -2449,3 +2449,125 @@ def test_rename_library_records(mock_db_file) -> None:
     assert "Rename Series" in db.load_library("NewLibName")
     assert "Rename Movie" not in db.load_movie_library("OldLibName")
     assert "Rename Movie" in db.load_movie_library("NewLibName")
+
+
+def test_sync_remote_library_deduplicates_series_across_multiple_remote_sources_integration(
+    mock_db_file,
+) -> None:
+    from lan_streamer.backend.remote_sync_worker import sync_remote_library_from_agent
+
+    source_1_items = {
+        "Breaking Bad": {
+            "name": "Breaking Bad",
+            "metadata": {
+                "tmdb_identifier": "1396",
+                "overview": "First source overview",
+            },
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Pilot",
+                            "episode_number": 1,
+                            "path": "/remote/agent1/S01E01.mkv",
+                            "versions": [{"path": "/remote/agent1/S01E01.mkv"}],
+                        },
+                        {
+                            "name": "Cat's in the Bag...",
+                            "episode_number": 2,
+                            "path": "/remote/agent1/S01E02.mkv",
+                            "versions": [{"path": "/remote/agent1/S01E02.mkv"}],
+                        },
+                    ],
+                }
+            },
+        }
+    }
+
+    source_2_items = {
+        "Breaking Bad (2008)": {
+            "name": "Breaking Bad (2008)",
+            "metadata": {
+                "tmdb_identifier": "1396",
+                "overview": "Second source overview",
+            },
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Pilot (4K)",
+                            "episode_number": 1,
+                            "path": "/remote/agent2/S01E01.4k.mkv",
+                            "versions": [{"path": "/remote/agent2/S01E01.4k.mkv"}],
+                        }
+                    ],
+                },
+                "Season 2": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Seven Thirty-Seven",
+                            "episode_number": 1,
+                            "path": "/remote/agent2/S02E01.mkv",
+                            "versions": [{"path": "/remote/agent2/S02E01.mkv"}],
+                        }
+                    ],
+                },
+            },
+        }
+    }
+
+    library_configuration = {
+        "management_type": "remote",
+        "type": "tv",
+        "sources": [
+            {
+                "type": "agent",
+                "agent_url": "http://127.0.0.1:8800",
+                "source_id": "source-tv-1",
+            },
+            {
+                "type": "agent",
+                "agent_url": "http://127.0.0.1:8801",
+                "source_id": "source-tv-2",
+            },
+        ],
+    }
+
+    def mock_fetch(agent_url: str, source_id: str, **kwargs: Any) -> dict[str, Any]:
+        if source_id == "source-tv-1":
+            return source_1_items
+        return source_2_items
+
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+        side_effect=mock_fetch,
+    ):
+        result = sync_remote_library_from_agent("Unified_TV", library_configuration, db)
+        assert result["success"] is True
+        assert result["items"] == 1
+
+    loaded_library = db.load_library("Unified_TV")
+    assert len(loaded_library) == 1
+    series_name = next(iter(loaded_library.keys()))
+    series_record = loaded_library[series_name]
+
+    # Verify seasons combined
+    assert "Season 1" in series_record["seasons"]
+    assert "Season 2" in series_record["seasons"]
+
+    # Verify episode 1 has versions from both remote locations
+    season_one_episodes = series_record["seasons"]["Season 1"]["episodes"]
+    episode_one = next(
+        episode for episode in season_one_episodes if episode.get("episode_number") == 1
+    )
+    episode_one_version_paths = [version["path"] for version in episode_one["versions"]]
+    assert "/remote/agent1/S01E01.mkv" in episode_one_version_paths
+    assert "/remote/agent2/S01E01.4k.mkv" in episode_one_version_paths
+
+    # Verify other episodes present
+    assert any(episode.get("episode_number") == 2 for episode in season_one_episodes)
+    season_two_episodes = series_record["seasons"]["Season 2"]["episodes"]
+    assert any(episode.get("episode_number") == 1 for episode in season_two_episodes)

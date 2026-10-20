@@ -95,6 +95,7 @@ def _build_episode_dict(episode: Episode) -> dict[str, Any]:
         "tmdb_episode_identifier": episode.tmdb_episode_identifier,
         "tmdb_name": episode.tmdb_name,
         "tmdb_number": episode.tmdb_number,
+        "episode_number": episode.tmdb_number,
         "myanimelist_anime_id": episode.myanimelist_anime_id,
         "myanimelist_episode_number": episode.myanimelist_episode_number,
         "watched": watched,
