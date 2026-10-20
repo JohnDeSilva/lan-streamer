@@ -2571,3 +2571,108 @@ def test_sync_remote_library_deduplicates_series_across_multiple_remote_sources_
     assert any(episode.get("episode_number") == 2 for episode in season_one_episodes)
     season_two_episodes = series_record["seasons"]["Season 2"]["episodes"]
     assert any(episode.get("episode_number") == 1 for episode in season_two_episodes)
+
+
+def test_cleanup_removed_library_items_deduplicates_duplicate_series(
+    mock_db_file,
+) -> None:
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import Episode, Season, Series, SeriesLibrary
+
+    with get_session() as session:
+        series_1 = Series(
+            library_name="Unified_TV", name="Duplicate Show", tmdb_identifier="1234"
+        )
+        series_2 = Series(
+            library_name="Unified_TV", name="Duplicate Show", tmdb_identifier="1234"
+        )
+        session.add_all([series_1, series_2])
+        session.flush()
+
+        junction_1 = SeriesLibrary(series_id=series_1.id, library_name="Unified_TV")
+        junction_2 = SeriesLibrary(series_id=series_2.id, library_name="Unified_TV")
+        season_1 = Season(name="Season 1", series=series_1)
+        season_2 = Season(name="Season 1", series=series_2)
+        session.add_all([junction_1, junction_2, season_1, season_2])
+        session.flush()
+
+        episode_1 = Episode(
+            name="Episode 1", season=season_1, tmdb_number=1, default_path="/path1.mkv"
+        )
+        episode_2 = Episode(
+            name="Episode 2", season=season_2, tmdb_number=2, default_path="/path2.mkv"
+        )
+        session.add_all([episode_1, episode_2])
+        session.commit()
+
+    # Run cleanup
+    db.cleanup_removed_library_items("Unified_TV", "tv", ["Duplicate Show"])
+
+    with get_session() as session:
+        from sqlalchemy import select
+
+        series_rows = session.scalars(
+            select(Series).where(Series.name == "Duplicate Show")
+        ).all()
+        assert len(series_rows) == 1
+        remaining_series = series_rows[0]
+        assert len(remaining_series.seasons) == 1
+        # Episodes should have been merged
+        episodes = remaining_series.seasons[0].episodes
+        assert len(episodes) == 2
+
+
+def test_save_library_deduplicates_duplicate_series(
+    mock_db_file,
+) -> None:
+    from lan_streamer.db.connection import get_session
+    from lan_streamer.db.models import Episode, Season, Series, SeriesLibrary
+
+    with get_session() as session:
+        series_1 = Series(
+            library_name="Unified_TV", name="Duplicate Show 2", tmdb_identifier="5678"
+        )
+        series_2 = Series(
+            library_name="Unified_TV", name="Duplicate Show 2", tmdb_identifier="5678"
+        )
+        session.add_all([series_1, series_2])
+        session.flush()
+
+        junction_1 = SeriesLibrary(series_id=series_1.id, library_name="Unified_TV")
+        junction_2 = SeriesLibrary(series_id=series_2.id, library_name="Unified_TV")
+        season_1 = Season(name="Season 1", series=series_1)
+        season_2 = Season(name="Season 1", series=series_2)
+        session.add_all([junction_1, junction_2, season_1, season_2])
+        session.flush()
+
+        episode_1 = Episode(
+            name="Episode 1", season=season_1, tmdb_number=1, default_path="/path1.mkv"
+        )
+        episode_2 = Episode(
+            name="Episode 2", season=season_2, tmdb_number=2, default_path="/path2.mkv"
+        )
+        session.add_all([episode_1, episode_2])
+        session.commit()
+
+    incoming_library = {
+        "Duplicate Show 2": {
+            "metadata": {"tmdb_identifier": "5678"},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {"name": "Episode 1", "tmdb_number": 1, "path": "/path1.mkv"},
+                        {"name": "Episode 2", "tmdb_number": 2, "path": "/path2.mkv"},
+                    ]
+                }
+            },
+        }
+    }
+    db.save_library("Unified_TV", incoming_library)
+
+    with get_session() as session:
+        from sqlalchemy import select
+
+        series_rows = session.scalars(
+            select(Series).where(Series.name == "Duplicate Show 2")
+        ).all()
+        assert len(series_rows) == 1

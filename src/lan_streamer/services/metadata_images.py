@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 def _lookup_series_id(tmdb_identifier: str) -> str | None:
     """Look up the DB UUID for a series by its TMDB identifier."""
     with get_session() as session:
-        stmt = select(Series).where(Series.tmdb_identifier == tmdb_identifier)
-        series = session.execute(stmt).unique().scalar_one_or_none()
+        statement = select(Series).where(Series.tmdb_identifier == tmdb_identifier)
+        series = session.execute(statement).unique().scalars().first()
         if series is None:
             logger.warning("Series with TMDB ID '%s' not found in DB", tmdb_identifier)
             return None
@@ -29,8 +29,8 @@ def _lookup_series_id(tmdb_identifier: str) -> str | None:
 def _lookup_movie_id(tmdb_identifier: str) -> str | None:
     """Look up the DB UUID for a movie by its TMDB identifier."""
     with get_session() as session:
-        stmt = select(Movie).where(Movie.tmdb_identifier == tmdb_identifier)
-        movie = session.execute(stmt).unique().scalar_one_or_none()
+        statement = select(Movie).where(Movie.tmdb_identifier == tmdb_identifier)
+        movie = session.execute(statement).unique().scalars().first()
         if movie is None:
             logger.warning("Movie with TMDB ID '%s' not found in DB", tmdb_identifier)
             return None
