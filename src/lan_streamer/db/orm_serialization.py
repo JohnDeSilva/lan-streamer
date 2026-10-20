@@ -395,3 +395,56 @@ def delete_episode_record(path: str) -> None:
                 logger.debug(f"Episode record not found for deletion for path: {path}")
     except Exception:
         logger.exception(f"Error deleting episode record for '{path}'")
+
+
+def delete_movie_record(library_name: str, movie_name: str) -> None:
+    """Deletes a movie record from the database, or dissociates it from the library."""
+    try:
+        logger.debug(
+            f"Executing DB delete_movie_record: library={library_name}, movie={movie_name}"
+        )
+        logger.info(
+            f"Deleting movie '{movie_name}' from library '{library_name}' in database"
+        )
+        with get_session() as session:
+            from lan_streamer.db.models import MovieLibrary
+
+            movie = session.scalars(
+                select(Movie)
+                .join(Movie.libraries, isouter=True)
+                .where(
+                    (Movie.library_name == library_name)
+                    | (MovieLibrary.library_name == library_name),
+                    Movie.name == movie_name,
+                )
+                .options(selectinload(Movie.libraries))
+            ).first()
+            if movie:
+                other_libraries = [
+                    movie_library
+                    for movie_library in movie.libraries
+                    if movie_library.library_name != library_name
+                ]
+                if other_libraries:
+                    logger.info(
+                        f"Dissociating movie '{movie_name}' from library '{library_name}'; "
+                        f"it remains in {len(other_libraries)} other libraries"
+                    )
+                    for movie_library in list(movie.libraries):
+                        if movie_library.library_name == library_name:
+                            session.delete(movie_library)
+                    if movie.library_name == library_name:
+                        movie.library_name = other_libraries[0].library_name
+                else:
+                    session.delete(movie)
+                    logger.debug(
+                        f"Deleted movie '{movie_name}' from library '{library_name}' successfully"
+                    )
+            else:
+                logger.debug(
+                    f"Movie '{movie_name}' not found for deletion in library '{library_name}'"
+                )
+    except Exception:
+        logger.exception(
+            f"Error deleting movie '{movie_name}' from library '{library_name}'"
+        )
