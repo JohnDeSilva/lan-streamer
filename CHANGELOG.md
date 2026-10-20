@@ -1,3 +1,9 @@
+## v0.58.0rc3 (2026-10-20)
+
+### Fix
+
+- **dependency**: bump aiohttp from 3.14.3 to 3.14.5
+
 ## v0.58.0rc2 (2026-10-20)
 
 ### Fix
