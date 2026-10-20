@@ -1,3 +1,24 @@
+## v0.57.0rc0 (2026-10-20)
+
+### Feat
+
+- **sync**: implement tab and combined view freshness checks with smart row cache synchronization
+- **metadata**: implement remote agent authoritative metadata matching from desktop
+- **playback**: implement authoritative watch state mutations and playback checkpoints
+- **agent**: implement real-time SSE event bridge between agent and desktop
+- add keyboard shortcut and toggle functionality for subtitles
+
+### Fix
+
+- **playback**: persist playback position asynchronously off UI thread
+- **controller**: batch remote watch events and resync after SSE gaps
+- **agent**: detect SSE history gaps and sequence rollbacks
+- **controller**: harden remote watch sync, metadata matching, and freshness
+- **backend**: resume SSE streams and harden async worker lifecycle
+- **agent**: scope scan events and support resumable live SSE
+- **db**: reset resume state on unwatch and dedupe MAL pushes
+- **playback**: respect modifiers and explicit choices in subtitle shortcut
+
 ## v0.56.0 (2026-10-03)
 
 ### Feat
