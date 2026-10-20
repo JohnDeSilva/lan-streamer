@@ -10,6 +10,7 @@ and media file versions.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -20,19 +21,37 @@ from lan_streamer.scanner.core import merge_series_data
 logger = logging.getLogger(__name__)
 
 
+def _normalize_title_for_key(name: str) -> str:
+    cleaned = re.sub(r"[._\-:;]+", " ", name).strip().lower()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"\s*\(\d{4}\)$", "", cleaned)
+    return cleaned.strip()
+
+
 def _extract_series_merge_key(series_name: str, series_data: dict[str, Any]) -> str:
-    metadata = series_data.get("metadata", {})
-    tmdb_identifier = metadata.get("tmdb_identifier") or metadata.get("tmdb_id")
+    metadata = series_data.get("metadata", {}) if isinstance(series_data, dict) else {}
+    tmdb_identifier = (
+        series_data.get("tmdb_identifier")
+        or series_data.get("tmdb_id")
+        or metadata.get("tmdb_identifier")
+        or metadata.get("tmdb_id")
+    )
     if tmdb_identifier:
         return f"tmdb:{tmdb_identifier}"
-    return f"title:{series_name.strip().lower()}"
+    return f"title:{_normalize_title_for_key(series_name)}"
 
 
 def _extract_movie_merge_key(movie_name: str, movie_data: dict[str, Any]) -> str:
-    tmdb_identifier = movie_data.get("tmdb_id") or movie_data.get("tmdb_identifier")
+    metadata = movie_data.get("metadata", {}) if isinstance(movie_data, dict) else {}
+    tmdb_identifier = (
+        movie_data.get("tmdb_id")
+        or movie_data.get("tmdb_identifier")
+        or metadata.get("tmdb_id")
+        or metadata.get("tmdb_identifier")
+    )
     if tmdb_identifier:
         return f"tmdb:{tmdb_identifier}"
-    return f"title:{movie_name.strip().lower()}"
+    return f"title:{_normalize_title_for_key(movie_name)}"
 
 
 def _merge_movie_records(

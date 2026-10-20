@@ -666,7 +666,10 @@ def _merge_episodes_by_number(
     for episode in existing_episodes:
         key = _episode_merge_key(episode)
         entry = dict(episode)
-        entry["versions"] = list(episode.get("versions", []))
+        entry_versions = list(episode.get("versions", []))
+        if not entry_versions and episode.get("path"):
+            entry_versions = [{"path": episode["path"]}]
+        entry["versions"] = entry_versions
         by_key[key] = entry
 
     for episode in incoming_episodes:
@@ -678,9 +681,13 @@ def _merge_episodes_by_number(
                 for v in existing_entry.get("versions", [])
                 if v.get("path")
             }
-            for version in episode.get("versions", []):
+            incoming_versions = list(episode.get("versions", []))
+            if not incoming_versions and episode.get("path"):
+                incoming_versions = [{"path": episode["path"]}]
+            for version in incoming_versions:
                 if version.get("path") and version["path"] not in existing_paths:
                     existing_entry["versions"].append(version)
+                    existing_paths.add(version["path"])
             if not existing_entry.get("path") and episode.get("path"):
                 existing_entry["path"] = episode["path"]
             if not existing_entry.get("name") and episode.get("name"):
@@ -728,7 +735,10 @@ def _merge_episodes_by_number(
                 ]
         else:
             entry = dict(episode)
-            entry["versions"] = list(episode.get("versions", []))
+            entry_versions = list(episode.get("versions", []))
+            if not entry_versions and episode.get("path"):
+                entry_versions = [{"path": episode["path"]}]
+            entry["versions"] = entry_versions
             by_key[key] = entry
 
     return list(by_key.values())
@@ -743,14 +753,51 @@ def merge_series_data(
     are merged by number (versions combined). The *incoming* data takes
     precedence for top-level metadata.
     """
+    from lan_streamer.scanner.parser import _parse_season_number
+
     merged = {**existing, **incoming}
     existing_seasons = existing.get("seasons", {})
     incoming_seasons = incoming.get("seasons", {})
     merged_seasons: dict[str, Any] = {}
-    for season_name in set(existing_seasons) | set(incoming_seasons):
-        existing_season = existing_seasons.get(season_name)
-        incoming_season = incoming_seasons.get(season_name)
-        if existing_season is not None and incoming_season is not None:
+
+    existing_by_key: dict[tuple[str, Any], tuple[str, dict[str, Any]]] = {}
+    for season_name, season_dict in existing_seasons.items():
+        if not isinstance(season_dict, dict):
+            continue
+        parsed_number = _parse_season_number(season_name)
+        season_key = (
+            ("number", parsed_number)
+            if parsed_number is not None
+            else ("name", season_name.strip().lower())
+        )
+        existing_by_key[season_key] = (season_name, season_dict)
+
+    incoming_by_key: dict[tuple[str, Any], tuple[str, dict[str, Any]]] = {}
+    for season_name, season_dict in incoming_seasons.items():
+        if not isinstance(season_dict, dict):
+            continue
+        parsed_number = _parse_season_number(season_name)
+        season_key = (
+            ("number", parsed_number)
+            if parsed_number is not None
+            else ("name", season_name.strip().lower())
+        )
+        incoming_by_key[season_key] = (season_name, season_dict)
+
+    all_keys = list(existing_by_key.keys())
+    for incoming_key in incoming_by_key:
+        if incoming_key not in existing_by_key:
+            all_keys.append(incoming_key)
+
+    for season_key in all_keys:
+        if season_key in existing_by_key and season_key in incoming_by_key:
+            existing_name, existing_season = existing_by_key[season_key]
+            incoming_name, incoming_season = incoming_by_key[season_key]
+            primary_season_name = (
+                incoming_name
+                if incoming_name.lower().startswith("season")
+                else existing_name
+            )
             merged_season = {**existing_season, **incoming_season}
             merged_metadata = {
                 **existing_season.get("metadata", {}),
@@ -768,10 +815,13 @@ def merge_series_data(
                 incoming_season.get("episodes", []),
             )
             merged_season["_changed"] = True
-            merged_seasons[season_name] = merged_season
+            merged_seasons[primary_season_name] = merged_season
+        elif season_key in existing_by_key:
+            season_name, season_dict = existing_by_key[season_key]
+            merged_seasons[season_name] = season_dict
         else:
-            merged_seasons[season_name] = (
-                existing_season if existing_season is not None else incoming_season
-            )
+            season_name, season_dict = incoming_by_key[season_key]
+            merged_seasons[season_name] = season_dict
+
     merged["seasons"] = merged_seasons
     return merged

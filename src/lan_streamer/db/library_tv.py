@@ -78,13 +78,33 @@ def load_library(library_name: str | list[str]) -> dict[str, Any]:
                 .order_by(Series.name)
             ).all()
 
+            from lan_streamer.scanner.core import merge_series_data
+            from lan_streamer.services.tab_consolidation_service import (
+                _extract_series_merge_key,
+            )
+
+            merge_key_to_name: dict[str, str] = {}
             for series in series_list:
                 stats["series"] += 1
                 stats["seasons"] += len(series.seasons)
                 for season in series.seasons:
                     stats["episodes"] += len(season.episodes)
                 if series.name is not None:
-                    library_data[series.name] = _build_series_dict(series)
+                    series_dict = _build_series_dict(series)
+                    dedup_key = _extract_series_merge_key(series.name, series_dict)
+                    target_name = merge_key_to_name.get(dedup_key)
+                    if target_name and target_name in library_data:
+                        library_data[target_name] = merge_series_data(
+                            library_data[target_name], series_dict
+                        )
+                    elif series.name in library_data:
+                        library_data[series.name] = merge_series_data(
+                            library_data[series.name], series_dict
+                        )
+                        merge_key_to_name[dedup_key] = series.name
+                    else:
+                        library_data[series.name] = series_dict
+                        merge_key_to_name[dedup_key] = series.name
 
     except Exception:
         logger.exception(f"Error loading library '{library_name}' from database")
@@ -233,7 +253,11 @@ def _save_episode_record(
     incoming_paths_in_season: set[str] | None = None,
 ) -> Episode:
     path = episode_data.get("path")
-    tmdb_num = episode_data.get("tmdb_number")
+    tmdb_num = (
+        episode_data.get("tmdb_number")
+        if episode_data.get("tmdb_number") is not None
+        else episode_data.get("episode_number")
+    )
     name = episode_data.get("name")
 
     is_new_file = False
@@ -675,9 +699,13 @@ def _apply_episode_fields(
     episode.tmdb_episode_identifier = (
         episode_data.get("tmdb_episode_identifier") or episode.tmdb_episode_identifier
     )
-    episode.tmdb_name = episode_data.get("tmdb_name") or episode.tmdb_name
-    if episode_data.get("tmdb_number") is not None:
-        episode.tmdb_number = episode_data["tmdb_number"]
+    resolved_episode_number = (
+        episode_data.get("tmdb_number")
+        if episode_data.get("tmdb_number") is not None
+        else episode_data.get("episode_number")
+    )
+    if resolved_episode_number is not None:
+        episode.tmdb_number = int(resolved_episode_number)
     raw_date_added = episode_data.get("date_added")
     episode.date_added = (
         int(raw_date_added) if raw_date_added is not None else episode.date_added or 0

@@ -64,17 +64,34 @@ def _collect_movie_deltas_for_agent(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Collect watch and metadata deltas for movie libraries to avoid redundant agent sync."""
     from lan_streamer.services.path_mapping_service import map_local_path_to_remote
+    from lan_streamer.services.tab_consolidation_service import _extract_movie_merge_key
 
     watch_events_to_sync: list[dict[str, Any]] = []
     metadata_mappings_to_sync: list[dict[str, Any]] = []
 
+    raw_agent_by_dedup: dict[str, dict[str, Any]] = {}
+    if raw_agent_items is not None:
+        for raw_name, raw_data in raw_agent_items.items():
+            if isinstance(raw_data, dict):
+                raw_key = _extract_movie_merge_key(raw_name, raw_data)
+                raw_agent_by_dedup[raw_key] = raw_data
+
     for movie_name, movie_data in combined_items.items():
-        if raw_agent_items is not None and movie_name not in raw_agent_items:
+        if not isinstance(movie_data, dict):
             continue
+        movie_dedup_key = _extract_movie_merge_key(movie_name, movie_data)
         remote_movie = (
-            raw_agent_items.get(movie_name, {}) if raw_agent_items is not None else {}
+            (
+                raw_agent_items.get(movie_name)
+                or raw_agent_by_dedup.get(movie_dedup_key)
+                or {}
+            )
+            if raw_agent_items is not None
+            else {}
         )
-        movie_path = movie_data.get("path")
+        if raw_agent_items is not None and not remote_movie:
+            continue
+        movie_path = remote_movie.get("path") or movie_data.get("path")
         if not movie_path:
             continue
 
@@ -164,6 +181,28 @@ def _collect_movie_deltas_for_agent(
     return watch_events_to_sync, metadata_mappings_to_sync
 
 
+def _find_matching_remote_episode(
+    episode_data: dict[str, Any],
+    remote_episodes_by_number: dict[int, dict[str, Any]],
+    remote_episodes_by_path: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Find the matching remote episode by episode number, version path, or primary path."""
+    episode_number = episode_data.get("episode_number")
+    if episode_number is not None and episode_number in remote_episodes_by_number:
+        return remote_episodes_by_number[episode_number]
+
+    for version in episode_data.get("versions", []):
+        version_path = version.get("path") if isinstance(version, dict) else None
+        if version_path and version_path in remote_episodes_by_path:
+            return remote_episodes_by_path[version_path]
+
+    episode_path = episode_data.get("path")
+    if episode_path and episode_path in remote_episodes_by_path:
+        return remote_episodes_by_path[episode_path]
+
+    return None
+
+
 def _collect_tv_deltas_for_agent(
     combined_items: dict[str, Any],
     raw_agent_items: dict[str, Any] | None,
@@ -171,27 +210,48 @@ def _collect_tv_deltas_for_agent(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Collect watch and metadata deltas for TV libraries to avoid redundant agent sync."""
     from lan_streamer.services.path_mapping_service import map_local_path_to_remote
+    from lan_streamer.services.tab_consolidation_service import (
+        _extract_series_merge_key,
+    )
 
     watch_events_to_sync: list[dict[str, Any]] = []
     metadata_mappings_to_sync: list[dict[str, Any]] = []
 
+    raw_agent_by_deduplication: dict[str, dict[str, Any]] = {}
+    if raw_agent_items is not None:
+        for raw_name, raw_data in raw_agent_items.items():
+            if isinstance(raw_data, dict):
+                raw_key = _extract_series_merge_key(raw_name, raw_data)
+                raw_agent_by_deduplication[raw_key] = raw_data
+
     for series_name, series_data in combined_items.items():
-        if raw_agent_items is not None and series_name not in raw_agent_items:
+        if not isinstance(series_data, dict):
             continue
+        series_deduplication_key = _extract_series_merge_key(series_name, series_data)
         remote_series = (
-            raw_agent_items.get(series_name, {}) if raw_agent_items is not None else {}
+            (
+                raw_agent_items.get(series_name)
+                or raw_agent_by_deduplication.get(series_deduplication_key)
+                or {}
+            )
+            if raw_agent_items is not None
+            else {}
         )
+        if raw_agent_items is not None and not remote_series:
+            continue
         remote_seasons = remote_series.get("seasons", {})
 
         for season_name, season_data in series_data.get("seasons", {}).items():
-            season_mal_id = season_data.get("metadata", {}).get("myanimelist_id")
+            season_mal_identifier = season_data.get("metadata", {}).get(
+                "myanimelist_id"
+            )
             remote_season = remote_seasons.get(season_name, {})
             remote_season_metadata = (
                 remote_season.get("metadata", {})
                 if isinstance(remote_season, dict)
                 else {}
             )
-            remote_season_mal_id = remote_season_metadata.get("myanimelist_id")
+            remote_season_mal_identifier = remote_season_metadata.get("myanimelist_id")
 
             remote_episodes_by_number: dict[int, dict[str, Any]] = {}
             remote_episodes_by_path: dict[str, dict[str, Any]] = {}
@@ -204,24 +264,21 @@ def _collect_tv_deltas_for_agent(
                         remote_episodes_by_path[remote_episode["path"]] = remote_episode
 
             for episode_data in season_data.get("episodes", []):
-                episode_path = episode_data.get("path")
-                if not episode_path:
-                    continue
-
-                episode_number = episode_data.get("episode_number")
-                remote_episode = None
-                if (
-                    episode_number is not None
-                    and episode_number in remote_episodes_by_number
-                ):
-                    remote_episode = remote_episodes_by_number[episode_number]
-                elif episode_path in remote_episodes_by_path:
-                    remote_episode = remote_episodes_by_path[episode_path]
+                remote_episode = _find_matching_remote_episode(
+                    episode_data,
+                    remote_episodes_by_number,
+                    remote_episodes_by_path,
+                )
 
                 if raw_agent_items is not None and remote_episode is None:
                     continue
 
                 remote_episode_data = remote_episode or {}
+                episode_path = remote_episode_data.get("path") or episode_data.get(
+                    "path"
+                )
+                if not episode_path:
+                    continue
                 desktop_watched = bool(episode_data.get("watched"))
                 remote_watched = bool(remote_episode_data.get("watched"))
                 desktop_last_played = episode_data.get("last_played_at") or 0
@@ -295,31 +352,48 @@ def _collect_tv_deltas_for_agent(
                         }
                     )
 
-                desktop_tmdb_id = episode_data.get("tmdb_episode_identifier")
-                remote_tmdb_id = remote_episode_data.get("tmdb_episode_identifier")
-                desktop_mal_anime_id = episode_data.get("myanimelist_anime_id")
-                remote_mal_anime_id = remote_episode_data.get("myanimelist_anime_id")
-                desktop_mal_ep_num = episode_data.get("myanimelist_episode_number")
-                remote_mal_ep_num = remote_episode_data.get(
+                desktop_tmdb_identifier = episode_data.get("tmdb_episode_identifier")
+                remote_tmdb_identifier = remote_episode_data.get(
+                    "tmdb_episode_identifier"
+                )
+                desktop_mal_anime_identifier = episode_data.get("myanimelist_anime_id")
+                remote_mal_anime_identifier = remote_episode_data.get(
+                    "myanimelist_anime_id"
+                )
+                desktop_mal_episode_number = episode_data.get(
+                    "myanimelist_episode_number"
+                )
+                remote_mal_episode_number = remote_episode_data.get(
                     "myanimelist_episode_number"
                 )
 
                 if raw_agent_items is None:
                     needs_metadata_sync = bool(
-                        desktop_tmdb_id or desktop_mal_anime_id or season_mal_id
+                        desktop_tmdb_identifier
+                        or desktop_mal_anime_identifier
+                        or season_mal_identifier
                     )
                 else:
                     needs_metadata_sync = False
-                    if desktop_tmdb_id and desktop_tmdb_id != remote_tmdb_id:
-                        needs_metadata_sync = True
                     if (
-                        desktop_mal_anime_id
-                        and desktop_mal_anime_id != remote_mal_anime_id
+                        desktop_tmdb_identifier
+                        and desktop_tmdb_identifier != remote_tmdb_identifier
                     ):
                         needs_metadata_sync = True
-                    if desktop_mal_ep_num and desktop_mal_ep_num != remote_mal_ep_num:
+                    if (
+                        desktop_mal_anime_identifier
+                        and desktop_mal_anime_identifier != remote_mal_anime_identifier
+                    ):
                         needs_metadata_sync = True
-                    if season_mal_id and season_mal_id != remote_season_mal_id:
+                    if (
+                        desktop_mal_episode_number
+                        and desktop_mal_episode_number != remote_mal_episode_number
+                    ):
+                        needs_metadata_sync = True
+                    if (
+                        season_mal_identifier
+                        and season_mal_identifier != remote_season_mal_identifier
+                    ):
                         needs_metadata_sync = True
 
                 if needs_metadata_sync:
@@ -327,10 +401,10 @@ def _collect_tv_deltas_for_agent(
                     metadata_mappings_to_sync.append(
                         {
                             "path": remote_path,
-                            "tmdb_episode_identifier": desktop_tmdb_id,
-                            "myanimelist_id": season_mal_id,
-                            "myanimelist_anime_id": desktop_mal_anime_id,
-                            "myanimelist_episode_number": desktop_mal_ep_num,
+                            "tmdb_episode_identifier": desktop_tmdb_identifier,
+                            "myanimelist_id": season_mal_identifier,
+                            "myanimelist_anime_id": desktop_mal_anime_identifier,
+                            "myanimelist_episode_number": desktop_mal_episode_number,
                             "watched": episode_data.get("watched"),
                         }
                     )
@@ -465,6 +539,162 @@ def _is_definitely_remote_item(
     return not any(_is_under_local_roots(path) for path in all_paths)
 
 
+def _merge_incoming_agent_items(
+    combined_items: dict[str, Any],
+    remote_items: dict[str, Any],
+    merge_key_to_name: dict[str, str],
+    library_type: str,
+) -> None:
+    """Merge items fetched from an agent source into combined_items with deduplication."""
+    from lan_streamer.scanner.core import merge_series_data
+    from lan_streamer.services.tab_consolidation_service import (
+        _extract_movie_merge_key,
+        _extract_series_merge_key,
+        _merge_movie_records,
+    )
+
+    for item_name, item_data in remote_items.items():
+        if not isinstance(item_data, dict):
+            combined_items[item_name] = item_data
+            continue
+
+        if library_type == "movie":
+            deduplication_key = _extract_movie_merge_key(item_name, item_data)
+        else:
+            deduplication_key = _extract_series_merge_key(item_name, item_data)
+
+        target_name = merge_key_to_name.get(deduplication_key)
+        if target_name and target_name in combined_items:
+            if library_type == "movie":
+                combined_items[target_name] = _merge_movie_records(
+                    combined_items[target_name], item_data
+                )
+            else:
+                combined_items[target_name] = merge_series_data(
+                    combined_items[target_name], item_data
+                )
+        elif item_name in combined_items:
+            if library_type == "movie":
+                combined_items[item_name] = _merge_movie_records(
+                    combined_items[item_name], item_data
+                )
+            else:
+                combined_items[item_name] = merge_series_data(
+                    combined_items[item_name], item_data
+                )
+            merge_key_to_name[deduplication_key] = item_name
+        else:
+            combined_items[item_name] = item_data
+            merge_key_to_name[deduplication_key] = item_name
+
+
+def _merge_existing_database_items(
+    database: Any,
+    library_name: str,
+    library_type: str,
+    combined_items: dict[str, Any],
+    merge_key_to_name: dict[str, str],
+    local_roots: list[str],
+) -> None:
+    """Merge existing database items into combined_items, preserving local items in hybrid libraries."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from lan_streamer.scanner.core import merge_series_data
+    from lan_streamer.services.tab_consolidation_service import (
+        _extract_movie_merge_key,
+        _extract_series_merge_key,
+        _merge_movie_records,
+    )
+
+    try:
+        if library_type == "movie":
+            existing_items = database.load_movie_library(library_name)
+        else:
+            existing_items = database.load_library(library_name)
+        if not existing_items or not isinstance(existing_items, dict):
+            return
+
+        for existing_name, existing_data in existing_items.items():
+            if not isinstance(existing_data, dict):
+                continue
+
+            if library_type == "movie":
+                existing_deduplication_key = _extract_movie_merge_key(
+                    existing_name, existing_data
+                )
+            else:
+                existing_deduplication_key = _extract_series_merge_key(
+                    existing_name, existing_data
+                )
+
+            target_name = merge_key_to_name.get(existing_deduplication_key)
+            if target_name and target_name in combined_items:
+                if library_type == "movie":
+                    combined_items[target_name] = _merge_movie_records(
+                        combined_items[target_name], existing_data
+                    )
+                else:
+                    combined_items[target_name] = merge_series_data(
+                        existing_data, combined_items[target_name]
+                    )
+            elif existing_name in combined_items:
+                if library_type == "movie":
+                    combined_items[existing_name] = _merge_movie_records(
+                        combined_items[existing_name], existing_data
+                    )
+                else:
+                    combined_items[existing_name] = merge_series_data(
+                        existing_data, combined_items[existing_name]
+                    )
+                merge_key_to_name[existing_deduplication_key] = existing_name
+            # Only preserve items that are not remote (i.e. local items in hybrid libraries).
+            # Remote items missing from agent fetch were removed on the agent and must not be resurrected.
+            elif not _is_definitely_remote_item(
+                existing_data, local_roots, library_type
+            ):
+                combined_items[existing_name] = existing_data
+                merge_key_to_name[existing_deduplication_key] = existing_name
+    except (
+        KeyError,
+        ValueError,
+        TypeError,
+        OSError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as load_error:
+        logger.debug(
+            "Could not load existing items for library '%s' before sync: %s",
+            library_name,
+            load_error,
+        )
+
+
+def _save_synced_library_items(
+    database: Any,
+    library_name: str,
+    library_type: str,
+    combined_items: dict[str, Any],
+    database_lock: Any | None = None,
+) -> None:
+    """Save the synced library snapshot and remove deleted items under lock if provided."""
+
+    def _execute_save() -> None:
+        if library_type == "movie":
+            database.save_movie_library(library_name, combined_items)
+        else:
+            database.save_library(library_name, combined_items)
+        if hasattr(database, "cleanup_removed_library_items"):
+            database.cleanup_removed_library_items(
+                library_name, library_type, set(combined_items.keys())
+            )
+
+    if database_lock is not None:
+        with database_lock:
+            _execute_save()
+    else:
+        _execute_save()
+
+
 def sync_remote_library_from_agent(
     library_name: str,
     library_configuration: dict[str, Any],
@@ -488,10 +718,6 @@ def sync_remote_library_from_agent(
         ``items`` (count of persisted items), and ``error`` (message on
         failure).
     """
-    from lan_streamer.scanner.core import merge_series_data
-    from lan_streamer.services.tab_consolidation_service import (
-        _merge_movie_records,
-    )
     from lan_streamer.system.config import get_library_sources
 
     sources = get_library_sources(library_configuration)
@@ -535,6 +761,7 @@ def sync_remote_library_from_agent(
 
         library_type = library_configuration.get("type", "tv")
         combined_items: dict[str, Any] = {}
+        merge_key_to_name: dict[str, str] = {}
         agent_source_items: dict[str, dict[str, Any]] = {}
 
         for agent_source in agent_sources:
@@ -553,20 +780,9 @@ def sync_remote_library_from_agent(
             agent_source_items[agent_url].update(remote_items)
 
             _download_posters_for_items(remote_items, library_type, agent_url)
-
-            # Merge items across multiple agent sources
-            for item_name, item_data in remote_items.items():
-                if item_name in combined_items:
-                    if library_type == "movie":
-                        combined_items[item_name] = _merge_movie_records(
-                            combined_items[item_name], item_data
-                        )
-                    else:
-                        combined_items[item_name] = merge_series_data(
-                            combined_items[item_name], item_data
-                        )
-                else:
-                    combined_items[item_name] = item_data
+            _merge_incoming_agent_items(
+                combined_items, remote_items, merge_key_to_name, library_type
+            )
 
         # Determine whether this library contains local media sources (hybrid library)
         local_sources = [
@@ -596,67 +812,25 @@ def sync_remote_library_from_agent(
             else []
         )
 
-        try:
-            if library_type == "movie":
-                existing_items = database.load_movie_library(library_name)
-            else:
-                existing_items = database.load_library(library_name)
-            if existing_items and isinstance(existing_items, dict):
-                for existing_name, existing_data in existing_items.items():
-                    if existing_name in combined_items:
-                        if library_type == "movie":
-                            combined_items[existing_name] = _merge_movie_records(
-                                combined_items[existing_name], existing_data
-                            )
-                        else:
-                            combined_items[existing_name] = merge_series_data(
-                                existing_data, combined_items[existing_name]
-                            )
-                    # Only preserve items that are not remote (i.e. local items in hybrid libraries).
-                    # Remote items missing from agent fetch were removed on the agent and must not be resurrected.
-                    elif not _is_definitely_remote_item(
-                        existing_data, local_roots, library_type
-                    ):
-                        combined_items[existing_name] = existing_data
-        except (
-            KeyError,
-            ValueError,
-            TypeError,
-            OSError,
-            RuntimeError,
-            SQLAlchemyError,
-        ) as load_error:
-            logger.debug(
-                "Could not load existing items for library '%s' before sync: %s",
-                library_name,
-                load_error,
-            )
+        _merge_existing_database_items(
+            database=database,
+            library_name=library_name,
+            library_type=library_type,
+            combined_items=combined_items,
+            merge_key_to_name=merge_key_to_name,
+            local_roots=local_roots,
+        )
 
         # Serialize the snapshot write with desktop watch-state writes. The
         # controller re-applies events that arrived during the fetch after the
         # save, but holding the lock prevents them from interleaving mid-save.
-        if database_lock is not None:
-            with database_lock:
-                if library_type == "movie":
-                    database.save_movie_library(library_name, combined_items)
-                else:
-                    database.save_library(library_name, combined_items)
-                if hasattr(database, "cleanup_removed_library_items"):
-                    database.cleanup_removed_library_items(
-                        library_name, library_type, set(combined_items.keys())
-                    )
-        elif library_type == "movie":
-            database.save_movie_library(library_name, combined_items)
-            if hasattr(database, "cleanup_removed_library_items"):
-                database.cleanup_removed_library_items(
-                    library_name, library_type, set(combined_items.keys())
-                )
-        else:
-            database.save_library(library_name, combined_items)
-            if hasattr(database, "cleanup_removed_library_items"):
-                database.cleanup_removed_library_items(
-                    library_name, library_type, set(combined_items.keys())
-                )
+        _save_synced_library_items(
+            database=database,
+            library_name=library_name,
+            library_type=library_type,
+            combined_items=combined_items,
+            database_lock=database_lock,
+        )
 
         # Synchronize watch state and metadata maps back to agents
         _back_sync_to_agents(
