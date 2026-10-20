@@ -150,6 +150,18 @@ def test_controller_handles_agent_scan_finished_event(
         mock_queue_sync.assert_called_once_with("Remote TV", emit_signal=True)
 
 
+def test_controller_handles_agent_scan_finished_event_with_sources(
+    test_controller: Controller,
+) -> None:
+    """scan.finished event with sources and source_ids queues synchronization."""
+    with patch.object(test_controller, "_queue_remote_sync") as mock_queue_sync:
+        test_controller._on_agent_scan_finished(
+            {"job_id": 1, "sources": ["Remote TV"], "source_ids": [101]},
+            "http://127.0.0.1:8000",
+        )
+        mock_queue_sync.assert_called_once_with("Remote TV", emit_signal=True)
+
+
 def test_controller_handles_agent_scan_finished_all_libraries(
     test_controller: Controller,
 ) -> None:

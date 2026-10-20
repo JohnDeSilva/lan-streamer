@@ -311,3 +311,32 @@ def test_scan_pass_one_removes_deleted_series_and_movies(
     with get_session(database_engine) as session:
         assert len(list_series(session)) == 0
         assert len(list_movies(session)) == 0
+
+
+def test_scan_with_source_identifier_publishes_sources(
+    database_engine, agent_config
+) -> None:
+    broker = ProgressBroker()
+    orchestrator = ScanOrchestrator(agent_config, database_engine, broker)
+    orchestrator.start_scan(source_identifier="tv", pass_number=1)
+    _wait_for_scan_finish(orchestrator)
+
+    finished_events = [
+        message
+        for message in broker.pending_since(0)
+        if message.get("event") == "scan.finished"
+    ]
+    assert len(finished_events) == 1
+    payload = finished_events[0]["payload"]
+    assert "sources" in payload
+    assert "source_names" in payload
+    assert "source_ids" in payload
+    assert "TV Shows" in payload["sources"]
+    assert "TV Shows" in payload["libraries"]
+
+
+def test_scan_with_no_sources_configured_raises(database_engine, agent_config) -> None:
+    agent_config.sources = {}
+    orchestrator = ScanOrchestrator(agent_config, database_engine, ProgressBroker())
+    with pytest.raises(ValueError, match="No media sources configured"):
+        orchestrator.start_scan(pass_number=1)

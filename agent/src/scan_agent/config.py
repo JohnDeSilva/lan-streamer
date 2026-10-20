@@ -74,7 +74,7 @@ class AgentConfig:
         self.database_path: str = str(self.data_directory / "library.db")
         self.log_directory: str = str(self.data_directory / "logs")
         self.cache_directory: str = str(self.data_directory / "cache")
-        self.libraries: dict[str, dict[str, Any]] = {}
+        self._sources: dict[str, dict[str, Any]] = {}
         self.scheduled_scan_enabled: bool = True
         self.scheduled_scan_interval_hours: int = 4
         self.filesystem_watching_enabled: bool = True
@@ -97,6 +97,7 @@ class AgentConfig:
             "database_path": str(self.data_directory / "library.db"),
             "log_directory": str(self.data_directory / "logs"),
             "cache_directory": str(self.data_directory / "cache"),
+            "sources": {},
             "libraries": {},
             "scheduled_scan_enabled": True,
             "scheduled_scan_interval_hours": 4,
@@ -122,11 +123,12 @@ class AgentConfig:
             logger.warning("Could not read config file %s: %s", self._path, error)
             persisted = {}
         for key, default_value in self._defaults().items():
-            setattr(self, key, persisted.get(key, default_value))
-        if ("sources" in persisted and "libraries" not in persisted) or persisted.get(
-            "sources"
-        ):
-            self.libraries = persisted["sources"]
+            if key not in ("sources", "libraries"):
+                setattr(self, key, persisted.get(key, default_value))
+        raw_sources = persisted.get("sources")
+        if raw_sources is None:
+            raw_sources = persisted.get("libraries", {})
+        self._sources = dict(raw_sources) if isinstance(raw_sources, dict) else {}
 
     def save(self) -> None:
         """Persist all top-level keys to the JSON file atomically."""
@@ -144,8 +146,8 @@ class AgentConfig:
             "database_path": self.database_path,
             "log_directory": self.log_directory,
             "cache_directory": self.cache_directory,
-            "sources": self.libraries,
-            "libraries": self.libraries,
+            "sources": self._sources,
+            "libraries": self._sources,
             "scheduled_scan_enabled": self.scheduled_scan_enabled,
             "scheduled_scan_interval_hours": self.scheduled_scan_interval_hours,
             "filesystem_watching_enabled": self.filesystem_watching_enabled,
@@ -169,28 +171,37 @@ class AgentConfig:
     # ------------------------------------------------------------------
 
     @property
-    def sources(self) -> dict[str, Any]:
+    def sources(self) -> dict[str, dict[str, Any]]:
         """Mapping of media source identifiers to source definitions."""
-        return self.libraries
+        return self._sources
 
     @sources.setter
-    def sources(self, value: dict[str, Any]) -> None:
-        self.libraries = value
+    def sources(self, value: dict[str, dict[str, Any]]) -> None:
+        self._sources = value
+
+    @property
+    def libraries(self) -> dict[str, dict[str, Any]]:
+        """Legacy alias mapping to media sources."""
+        return self._sources
+
+    @libraries.setter
+    def libraries(self, value: dict[str, dict[str, Any]]) -> None:
+        self._sources = value
 
     def add_source(self, identifier: str, definition: dict[str, Any]) -> None:
         """Add or update a media source definition and persist immediately."""
-        self.libraries[identifier] = definition
+        self._sources[identifier] = definition
         self.save()
 
     def remove_source(self, identifier: str) -> dict[str, Any]:
         """Remove a media source definition and persist immediately."""
-        removed = self.libraries.pop(identifier)
+        removed = self._sources.pop(identifier)
         self.save()
         return removed
 
     def get_source(self, identifier: str) -> dict[str, Any] | None:
         """Retrieve a media source definition by identifier."""
-        return self.libraries.get(identifier)
+        return self._sources.get(identifier)
 
     # Aliases for backward compatibility
     add_library = add_source

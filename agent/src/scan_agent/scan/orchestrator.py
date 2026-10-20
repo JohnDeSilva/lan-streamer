@@ -121,27 +121,32 @@ class ScanOrchestrator:
         library_identifier: str | int | None = None,
         pass_number: int = 0,
         force_refresh: bool = False,
+        source_identifier: str | int | None = None,
     ) -> ScanJob:
         """Start a background scan and return the pending :class:`ScanJob`.
 
         Args:
-            library_identifier: Config library id or name; ``None`` scans all
-                configured libraries.
+            library_identifier: Config library/source id or name; ``None`` scans all
+                configured media sources.
             pass_number: Scanner pass to run (0 = all, 1 = discovery,
                 2 = metadata, 3 = technical).
             force_refresh: Re-scan even when directory mtimes match.
+            source_identifier: Media source identifier (preferred over library_identifier).
 
         Raises:
             RuntimeError: When another scan is already running.
-            ValueError: When no libraries are configured or the identifier is
+            ValueError: When no media sources are configured or the identifier is
                 unknown.
         """
+        target_identifier = (
+            source_identifier if source_identifier is not None else library_identifier
+        )
         with self._state_lock:
             if self._running_job_id is not None:
                 raise RuntimeError("A scan is already running")
             self._is_interrupted.clear()
-            target_libraries = self._resolve_target_libraries(library_identifier)
-            job = self._create_job(library_identifier, pass_number, target_libraries)
+            target_libraries = self._resolve_target_libraries(target_identifier)
+            job = self._create_job(target_identifier, pass_number, target_libraries)
             self._running_job_id = job.id
         thread = threading.Thread(
             target=self._run_scan,
@@ -156,7 +161,9 @@ class ScanOrchestrator:
                 self._running_job_id = None
             self._mark_job_failed(job.id, error)
             raise
-        logger.info("Scan job %s started (%d libraries)", job.id, len(target_libraries))
+        logger.info(
+            "Scan job %s started (%d media sources)", job.id, len(target_libraries)
+        )
         return job
 
     def cancel(self) -> None:
@@ -315,6 +322,9 @@ class ScanOrchestrator:
                 {
                     "job_id": job_id,
                     "status": self._load_job_status(job_id),
+                    "sources": target_library_names,
+                    "source_names": list(target_library_names),
+                    "source_ids": target_library_ids,
                     "libraries": target_library_names,
                     "library_names": list(target_library_names),
                     "library_ids": target_library_ids,
@@ -396,12 +406,13 @@ class ScanOrchestrator:
             "scan.progress",
             {
                 "type": "library_start",
+                "source": library_name,
                 "library": library_name,
                 "root": root_path,
             },
         )
         self._progress_broker.publish_log(
-            f"Scanning library '{library_name}' ({media_type}) at {root_path}..."
+            f"Scanning media source '{library_name}' ({media_type}) at {root_path}..."
         )
         result = scan_directories(
             root_directories=[root_path],
@@ -450,12 +461,13 @@ class ScanOrchestrator:
             "scan.progress",
             {
                 "type": "library_finished",
+                "source": library_name,
                 "library": library_name,
                 "stats": stats,
             },
         )
         self._progress_broker.publish_log(
-            f"Library '{library_name}' finished: {stats.get('series', 0)} series, "
+            f"Media source '{library_name}' finished: {stats.get('series', 0)} series, "
             f"{stats.get('episodes', 0)} episodes, {stats.get('movies', 0)} movies."
         )
         return stats
@@ -518,20 +530,22 @@ class ScanOrchestrator:
     # ------------------------------------------------------------------
 
     def _resolve_target_libraries(
-        self, library_identifier: str | int | None
+        self, target_identifier: str | int | None
     ) -> list[dict[str, Any]]:
-        """Resolve config library definitions for a scan request."""
-        libraries = self._agent_config.libraries
-        if not libraries:
-            raise ValueError("No libraries configured; add one before scanning")
-        if library_identifier is None:
-            return list(libraries.values())
-        for identifier, definition in libraries.items():
-            if str(identifier) == str(library_identifier) or definition.get(
+        """Resolve config media source definitions for a scan request."""
+        sources = self._agent_config.sources
+        if not sources:
+            raise ValueError("No media sources configured; add one before scanning")
+        if target_identifier is None:
+            return list(sources.values())
+        for identifier, definition in sources.items():
+            if str(identifier) == str(target_identifier) or definition.get(
                 "name"
-            ) == str(library_identifier):
+            ) == str(target_identifier):
                 return [definition]
-        raise ValueError(f"Unknown library identifier: {library_identifier}")
+        raise ValueError(
+            f"Unknown library or media source identifier: {target_identifier}"
+        )
 
     def _create_job(
         self,
