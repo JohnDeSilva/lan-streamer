@@ -2204,6 +2204,137 @@ def test_sync_remote_library_with_empty_versions_integration(mock_db_file) -> No
         assert "Anime Show" in loaded_library
 
 
+def test_sync_remote_library_removes_deleted_series_integration(mock_db_file) -> None:
+    from lan_streamer.backend.remote_sync_worker import sync_remote_library_from_agent
+
+    initial_remote_items = {
+        "Anime Show One": {
+            "name": "Anime Show One",
+            "metadata": {"overview": "First show"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/data/anime/show1_ep01.mkv",
+                            "versions": [],
+                        }
+                    ],
+                }
+            },
+        },
+        "Anime Show Two": {
+            "name": "Anime Show Two",
+            "metadata": {"overview": "Second show"},
+            "seasons": {
+                "Season 1": {
+                    "metadata": {},
+                    "episodes": [
+                        {
+                            "name": "Episode 1",
+                            "path": "/data/anime/show2_ep01.mkv",
+                            "versions": [],
+                        }
+                    ],
+                }
+            },
+        },
+    }
+    library_configuration = {
+        "management_type": "remote",
+        "agent_url": "http://127.0.0.1:8800",
+        "remote_library_id": "Anime_Current",
+        "type": "tv",
+    }
+
+    # Initial sync persists both series
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+        return_value=initial_remote_items,
+    ):
+        initial_result = sync_remote_library_from_agent(
+            "Anime_Current", library_configuration, db
+        )
+        assert initial_result["success"] is True
+        assert initial_result["items"] == 2
+
+    loaded_library = db.load_library("Anime_Current")
+    assert "Anime Show One" in loaded_library
+    assert "Anime Show Two" in loaded_library
+
+    # Remote agent removes "Anime Show One"
+    updated_remote_items = {"Anime Show Two": initial_remote_items["Anime Show Two"]}
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+        return_value=updated_remote_items,
+    ):
+        second_result = sync_remote_library_from_agent(
+            "Anime_Current", library_configuration, db
+        )
+        assert second_result["success"] is True
+        assert second_result["items"] == 1
+
+    loaded_after_removal = db.load_library("Anime_Current")
+    assert "Anime Show One" not in loaded_after_removal
+    assert "Anime Show Two" in loaded_after_removal
+
+
+def test_sync_remote_library_removes_deleted_movie_integration(mock_db_file) -> None:
+    from lan_streamer.backend.remote_sync_worker import sync_remote_library_from_agent
+
+    initial_movies = {
+        "Movie Alpha": {
+            "name": "Movie Alpha",
+            "path": "/data/movies/alpha.mkv",
+            "overview": "Alpha movie",
+            "versions": [{"path": "/data/movies/alpha.mkv"}],
+        },
+        "Movie Beta": {
+            "name": "Movie Beta",
+            "path": "/data/movies/beta.mkv",
+            "overview": "Beta movie",
+            "versions": [{"path": "/data/movies/beta.mkv"}],
+        },
+    }
+    library_configuration = {
+        "management_type": "remote",
+        "agent_url": "http://127.0.0.1:8800",
+        "remote_library_id": "Movies_Current",
+        "type": "movie",
+    }
+
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+        return_value=initial_movies,
+    ):
+        first_result = sync_remote_library_from_agent(
+            "Movies_Current", library_configuration, db
+        )
+        assert first_result["success"] is True
+        assert first_result["items"] == 2
+
+    loaded_movies = db.load_movie_library("Movies_Current")
+    assert "Movie Alpha" in loaded_movies
+    assert "Movie Beta" in loaded_movies
+
+    # Remote agent removes "Movie Alpha"
+    updated_movies = {"Movie Beta": initial_movies["Movie Beta"]}
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.fetch_library_items",
+        return_value=updated_movies,
+    ):
+        second_result = sync_remote_library_from_agent(
+            "Movies_Current", library_configuration, db
+        )
+        assert second_result["success"] is True
+        assert second_result["items"] == 1
+
+    loaded_after_removal = db.load_movie_library("Movies_Current")
+    assert "Movie Alpha" not in loaded_after_removal
+    assert "Movie Beta" in loaded_after_removal
+
+
 def test_delete_library_records_tv_and_movie(mock_db_file) -> None:
     from lan_streamer.db.library import delete_library_records
 
