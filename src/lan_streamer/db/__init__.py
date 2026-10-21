@@ -79,6 +79,7 @@ from lan_streamer.db.queries_playback import (
     get_episode_playback_position,
     update_episode_playback_position,
     update_episode_watched_status,
+    update_movie_watched_status,
     update_season_watched_status,
     update_series_watched_status,
 )

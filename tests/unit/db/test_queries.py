@@ -147,6 +147,44 @@ def test_update_series_watched_status(mock_db_file) -> None:
             assert ep["watched"] is False
 
 
+def test_update_movie_watched_status(mock_db_file) -> None:
+    test_movie_library = {
+        "Test Movie": {
+            "name": "Test Movie",
+            "path": "/movies/test.mkv",
+            "watched": False,
+            "myanimelist_anime_id": 12345,
+        },
+        "Other Movie": {
+            "name": "Other Movie",
+            "path": "/movies/other.mkv",
+            "watched": False,
+        },
+    }
+    db.save_movie_library("MovieLib", test_movie_library)
+
+    with patch(
+        "lan_streamer.db.queries_playback._trigger_mal_push_async"
+    ) as mock_mal_push:
+        db.update_movie_watched_status("MovieLib", "Test Movie", True)
+        mock_mal_push.assert_called_once_with(12345, 1)
+
+    loaded_movie_library = db.load_movie_library("MovieLib")
+    assert loaded_movie_library["Test Movie"]["watched"] is True
+    assert loaded_movie_library["Other Movie"]["watched"] is False
+
+    # Toggle back to unwatched
+    db.update_movie_watched_status("MovieLib", "Test Movie", False)
+    loaded_movie_library = db.load_movie_library("MovieLib")
+    assert loaded_movie_library["Test Movie"]["watched"] is False
+    assert loaded_movie_library["Test Movie"]["last_played_position"] == 0
+
+
+def test_update_movie_watched_status_nonexistent(mock_db_file) -> None:
+    # Should not raise exception
+    db.update_movie_watched_status("NonexistentLib", "No Movie", True)
+
+
 def test_update_episode_path(mock_db_file) -> None:
     test_lib = {
         "Show": {

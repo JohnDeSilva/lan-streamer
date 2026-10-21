@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPixmap
-from PySide6.QtWidgets import QDialog, QListWidgetItem, QPushButton
+from PySide6.QtWidgets import QDialog, QListWidget, QListWidgetItem, QPushButton
 
 from lan_streamer.system.config import config
 from lan_streamer.ui_views import Controller
@@ -1020,6 +1020,120 @@ class TestOnSearchResultSelected:
             assert not item.icon().isNull()
         finally:
             config.cache_directory = original_cache_directory
+
+    def test_grid_context_menu_movie(self, grid_view) -> None:
+        view, controller = grid_view
+        controller.cached_library_data = {
+            "Avatar (2009)": {
+                "name": "Avatar (2009)",
+                "path": "/movies/avatar.mkv",
+                "watched": False,
+            }
+        }
+        view.populate_grid()
+        item = view.series_list_widget.item(0)
+        assert item is not None
+        item_rectangle = view.series_list_widget.visualItemRect(item)
+        center_position = item_rectangle.center()
+
+        with (
+            patch("lan_streamer.ui_views.library_grid.QMenu") as mock_menu_class,
+            patch.object(controller, "mark_movie_watched") as mock_mark_movie,
+        ):
+            mock_menu_instance = MagicMock()
+            mock_menu_class.return_value = mock_menu_instance
+
+            view._on_grid_context_menu(center_position)
+
+            mock_menu_instance.exec.assert_called_once()
+            actions = [
+                call_args[0][0]
+                for call_args in mock_menu_instance.addAction.call_args_list
+            ]
+            assert any("Mark as Watched" in action.text() for action in actions)
+            for action in actions:
+                if "Mark as Watched" in action.text():
+                    action.trigger()
+            mock_mark_movie.assert_called_once_with("Avatar (2009)", True)
+
+    def test_grid_context_menu_series(self, grid_view) -> None:
+        view, controller = grid_view
+        controller.cached_library_data = {
+            "Breaking Bad": {
+                "metadata": {"tmdb_name": "Breaking Bad"},
+                "metrics": {"total_episodes": 2, "watched_episodes": 0},
+                "seasons": {
+                    "Season 1": {
+                        "episodes": [
+                            {"name": "Pilot", "watched": False, "path": "/p1"},
+                        ]
+                    }
+                },
+            }
+        }
+        view.populate_grid()
+        item = view.series_list_widget.item(0)
+        assert item is not None
+        item_rectangle = view.series_list_widget.visualItemRect(item)
+        center_position = item_rectangle.center()
+
+        with (
+            patch("lan_streamer.ui_views.library_grid.QMenu") as mock_menu_class,
+            patch.object(controller, "mark_series_watched") as mock_mark_series,
+        ):
+            mock_menu_instance = MagicMock()
+            mock_menu_class.return_value = mock_menu_instance
+
+            view._on_grid_context_menu(center_position)
+
+            mock_menu_instance.exec.assert_called_once()
+            actions = [
+                call_args[0][0]
+                for call_args in mock_menu_instance.addAction.call_args_list
+            ]
+            assert any("Mark Series as Watched" in action.text() for action in actions)
+            for action in actions:
+                if "Mark Series as Watched" in action.text():
+                    action.trigger()
+            mock_mark_series.assert_called_once_with("Breaking Bad", True)
+
+    def test_combined_item_context_menu_movie(self, grid_view) -> None:
+        view, controller = grid_view
+        list_widget = QListWidget()
+        movie_item = QListWidgetItem("Movie Title")
+        movie_item.setData(
+            Qt.ItemDataRole.UserRole,
+            {
+                "type": "movie",
+                "name": "Movie Title",
+                "library_name": "Movies",
+                "watched_count": 0,
+                "total_count": 1,
+            },
+        )
+        list_widget.addItem(movie_item)
+        item_rectangle = list_widget.visualItemRect(movie_item)
+        center_position = item_rectangle.center()
+
+        with (
+            patch("lan_streamer.ui_views.library_grid.QMenu") as mock_menu_class,
+            patch.object(controller, "mark_movie_watched") as mock_mark_movie,
+        ):
+            mock_menu_instance = MagicMock()
+            mock_menu_class.return_value = mock_menu_instance
+
+            view._on_combined_item_context_menu(center_position, list_widget)
+
+            mock_menu_instance.exec.assert_called_once()
+            actions = [
+                call_args[0][0]
+                for call_args in mock_menu_instance.addAction.call_args_list
+            ]
+            assert any("Mark as Watched" in action.text() for action in actions)
+            for action in actions:
+                if "Mark as Watched" in action.text():
+                    action.trigger()
+            mock_mark_movie.assert_called_once_with("Movie Title", True)
 
 
 # ---------------------------------------------------------------------------

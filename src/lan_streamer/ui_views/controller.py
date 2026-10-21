@@ -2082,6 +2082,56 @@ class Controller(QObject):
         if not self.is_video_playing:
             self.library_loaded.emit()
 
+    def mark_movie_watched(self, movie_name: str, watched: bool = True) -> None:
+        status_action = "watched" if watched else "unwatched"
+        logger.info(f"Controller marking movie {status_action}: '{movie_name}'")
+        movie_record: dict[str, Any] = self.cached_library_data.get(movie_name, {})
+        target_libraries: list[str] = movie_record.get("_origin_libraries") or (
+            [self.current_library_name] if self.current_library_name else []
+        )
+        for target_library_name in target_libraries:
+            self._db.update_movie_watched_status(
+                target_library_name, movie_name, watched
+            )
+
+        affected_paths: list[str] = []
+        primary_file_path = movie_record.get("path")
+        if primary_file_path:
+            affected_paths.append(primary_file_path)
+            self._db.update_episode_watched_status(primary_file_path, watched)
+
+        versions_list = movie_record.get("versions", [])
+        for version_entry in versions_list:
+            if isinstance(version_entry, dict) and version_entry.get("path"):
+                version_path = version_entry["path"]
+                if version_path not in affected_paths:
+                    affected_paths.append(version_path)
+                    self._db.update_episode_watched_status(version_path, watched)
+
+        movie_record["watched"] = watched
+        current_time_epoch = int(time.time())
+        if watched:
+            movie_record["last_played_at"] = current_time_epoch
+        else:
+            movie_record["last_played_position"] = 0
+
+        self._cache_series_metrics()
+
+        if target_libraries:
+            changed_hashes = self._smart_row_service.rebuild_for_libraries(
+                target_libraries
+            )
+            if changed_hashes:
+                self.smart_rows_updated.emit(changed_hashes)
+
+        # Synchronize watched status to remote scan agents
+        self._sync_watched_to_agents(
+            affected_paths, watched, target_libraries, media_type="movie"
+        )
+
+        if not self.is_video_playing:
+            self.library_loaded.emit()
+
     def trigger_scan(
         self,
         force_refresh: bool = False,

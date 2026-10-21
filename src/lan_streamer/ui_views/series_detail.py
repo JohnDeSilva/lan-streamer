@@ -155,6 +155,11 @@ class SeriesDetailView(QWidget):
         )
         actions_layout.addWidget(series_details_button)
 
+        self.mark_series_button: QPushButton = QPushButton("Mark Series as Watched")
+        self.mark_series_button.setObjectName("markSeriesWatchedButton")
+        self.mark_series_button.clicked.connect(self._on_mark_series_clicked)
+        actions_layout.addWidget(self.mark_series_button)
+
         display_group_row = QHBoxLayout()
         display_group_row.setSpacing(6)
         display_group_row.addWidget(QLabel("Display Group:"))
@@ -446,6 +451,25 @@ class SeriesDetailView(QWidget):
         self.populate_series_details(self._current_series_name)
 
     @Slot()
+    def _on_mark_series_clicked(self) -> None:
+        target_series_name = (
+            self.controller.selected_series_name or self._current_series_name
+        )
+        if not target_series_name:
+            return
+        series_record: dict[str, Any] = self.controller.cached_library_data.get(
+            target_series_name, {}
+        )
+        metrics: dict[str, Any] = series_record.get("metrics", {})
+        total_episodes: int = metrics.get("total_episodes", 0)
+        watched_episodes: int = metrics.get("watched_episodes", 0)
+        is_fully_watched: bool = (
+            total_episodes > 0 and watched_episodes == total_episodes
+        )
+        self.controller.mark_series_watched(target_series_name, not is_fully_watched)
+        self.populate_series_details(target_series_name)
+
+    @Slot()
     def _on_play_next_clicked(self) -> None:
         if self._next_episode_path:
             logger.info(
@@ -508,6 +532,17 @@ class SeriesDetailView(QWidget):
         self.overview_label.setText(
             metadata_dictionary.get("overview") or "No overview available."
         )
+
+        metrics: dict[str, Any] = series_record.get("metrics", {})
+        total_episodes: int = metrics.get("total_episodes", 0)
+        watched_episodes: int = metrics.get("watched_episodes", 0)
+        is_fully_watched: bool = (
+            total_episodes > 0 and watched_episodes == total_episodes
+        )
+        if is_fully_watched:
+            self.mark_series_button.setText("Mark Series as Unwatched")
+        else:
+            self.mark_series_button.setText("Mark Series as Watched")
 
         # Load dynamic poster fragment
         poster_path_string: str = metadata_dictionary.get("poster_path", "")

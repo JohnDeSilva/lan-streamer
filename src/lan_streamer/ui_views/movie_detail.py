@@ -118,7 +118,10 @@ class MovieDetailView(QWidget):
         )
         actions_layout.addWidget(movie_details_button)
 
-        info_layout.addLayout(actions_layout)
+        self.mark_watched_button: QPushButton = QPushButton("Mark as Watched")
+        self.mark_watched_button.setObjectName("markMovieWatchedButton")
+        self.mark_watched_button.clicked.connect(self._on_mark_watched_clicked)
+        actions_layout.addWidget(self.mark_watched_button)
 
         self.trailers_button: QPushButton = QPushButton("Trailers")
         self.trailers_button.setObjectName("trailersButton")
@@ -128,6 +131,7 @@ class MovieDetailView(QWidget):
 
         actions_layout.addStretch()
 
+        info_layout.addLayout(actions_layout)
         header_layout.addLayout(info_layout)
         main_layout.addLayout(header_layout)
 
@@ -175,6 +179,12 @@ class MovieDetailView(QWidget):
         self.overview_label.setText(
             movie_record.get("overview") or "No overview available."
         )
+
+        is_watched: bool = bool(movie_record.get("watched", False))
+        if is_watched:
+            self.mark_watched_button.setText("Mark as Unwatched")
+        else:
+            self.mark_watched_button.setText("Mark as Watched")
 
         # Build metadata label details
         year: int | None = movie_record.get("year")
@@ -545,3 +555,18 @@ class MovieDetailView(QWidget):
                 f"Play Movie clicked for: '{self._current_movie_name}' (Path: {self._current_movie_path})"
             )
             self.controller.playback_requested.emit(self._current_movie_path)
+
+    @Slot()
+    def _on_mark_watched_clicked(self) -> None:
+        if not self._current_movie_name:
+            return
+        movie_record = self.controller.cached_library_data.get(
+            self._current_movie_name, {}
+        )
+        is_watched = bool(movie_record.get("watched", False))
+        new_watched_state = not is_watched
+        self.controller.mark_movie_watched(self._current_movie_name, new_watched_state)
+        if new_watched_state:
+            self.mark_watched_button.setText("Mark as Unwatched")
+        else:
+            self.mark_watched_button.setText("Mark as Watched")

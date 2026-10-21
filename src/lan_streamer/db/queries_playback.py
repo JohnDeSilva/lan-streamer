@@ -353,3 +353,55 @@ def update_series_watched_status(
                 )
     except Exception:
         logger.exception(f"Error updating watched status for series {series_name}")
+
+
+def update_movie_watched_status(
+    library_name: str, movie_name: str, watched: bool
+) -> None:
+    """Updates the watched status for a movie in a specific library."""
+    try:
+        logger.debug(
+            f"Executing DB update_movie_watched_status: library={library_name}, "
+            f"movie={movie_name}, watched={watched}"
+        )
+        logger.info(
+            f"Updating watched status for movie '{movie_name}' in '{library_name}' to {watched}"
+        )
+        with get_session() as session:
+            from lan_streamer.db.models import Movie, MovieLibrary, PlaybackState
+
+            movie_record = session.scalars(
+                select(Movie)
+                .options(
+                    selectinload(Movie.playback_state),
+                    selectinload(Movie.media_files),
+                )
+                .join(Movie.libraries, isouter=True)
+                .where(
+                    (Movie.library_name == library_name)
+                    | (MovieLibrary.library_name == library_name),
+                    Movie.name == movie_name,
+                )
+            ).first()
+            if movie_record:
+                if not movie_record.playback_state:
+                    movie_record.playback_state = PlaybackState(
+                        movie_id=movie_record.id
+                    )
+                was_watched = bool(movie_record.playback_state.watched)
+                movie_record.playback_state.watched = watched
+                if not watched:
+                    movie_record.playback_state.last_played_position = 0
+                else:
+                    movie_record.playback_state.last_played_at = int(time.time())
+                    if not was_watched and movie_record.myanimelist_anime_id:
+                        _trigger_mal_push_async(movie_record.myanimelist_anime_id, 1)
+                logger.debug(
+                    f"Successfully updated watched status to {watched} for movie '{movie_name}'"
+                )
+            else:
+                logger.debug(
+                    f"Movie '{movie_name}' not found in library '{library_name}'"
+                )
+    except Exception:
+        logger.exception(f"Error updating watched status for movie '{movie_name}'")

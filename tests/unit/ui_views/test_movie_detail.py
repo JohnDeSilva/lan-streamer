@@ -265,3 +265,37 @@ def test_movie_detail_view_load_details_async_fault_tolerant(qtbot: Any) -> None
 
     # UI update should still have executed without raising
     assert view._current_movie_name == "Failing Movie"
+
+
+def test_movie_detail_view_mark_watched_toggle(qtbot: Any) -> None:
+    controller = Controller()
+    controller.cached_library_data = {
+        "Avatar (2009)": {
+            "name": "Avatar (2009)",
+            "path": "/movies/Avatar/video.mkv",
+            "tmdb_name": "Avatar",
+            "watched": False,
+        }
+    }
+
+    view = MovieDetailView(controller)
+    qtbot.addWidget(view)
+    view.populate_movie_details("Avatar (2009)")
+
+    assert hasattr(view, "mark_watched_button")
+    assert view.mark_watched_button.text() == "Mark as Watched"
+
+    with patch.object(controller, "mark_movie_watched") as mock_mark_movie:
+        view.mark_watched_button.click()
+        mock_mark_movie.assert_called_once_with("Avatar (2009)", True)
+        assert view.mark_watched_button.text() == "Mark as Unwatched"
+
+    # Test toggling when initially watched
+    controller.cached_library_data["Avatar (2009)"]["watched"] = True
+    view.populate_movie_details("Avatar (2009)")
+    assert view.mark_watched_button.text() == "Mark as Unwatched"
+
+    with patch.object(controller, "mark_movie_watched") as mock_mark_movie:
+        view.mark_watched_button.click()
+        mock_mark_movie.assert_called_once_with("Avatar (2009)", False)
+        assert view.mark_watched_button.text() == "Mark as Watched"
