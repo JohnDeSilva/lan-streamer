@@ -55,8 +55,22 @@ class SeriesDetailsDialog(QDialog):
 
         # Tab widget
         self.tab_widget = QTabWidget(self)
+        self.tab_widget.addTab(self._create_info_tab(), "Series Info")
+        self.tab_widget.addTab(self._create_metadata_tab(), "Series Metadata")
+        main_layout.addWidget(self.tab_widget)
 
-        # Series Info tab widget
+        # Bottom Close/Save buttons
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.reject)
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self._on_save_clicked)
+        buttons.addWidget(close_btn)
+        buttons.addWidget(save_btn)
+        main_layout.addLayout(buttons)
+
+    def _create_info_tab(self) -> QWidget:
         info_tab = QWidget()
         info_layout = QVBoxLayout(info_tab)
         info_layout.setSpacing(15)
@@ -107,8 +121,6 @@ class SeriesDetailsDialog(QDialog):
             False,
         )
         self.hide_missing_checkbox.setChecked(hide_missing_val)
-        # hide_missing preference is saved in _on_save_clicked, so no per-toggle
-        # config write needed here to avoid blocking the UI thread.
         info_form.addRow("Episode View:", self.hide_missing_checkbox)
 
         info_layout.addLayout(info_form)
@@ -118,7 +130,23 @@ class SeriesDetailsDialog(QDialog):
         scan_series_btn.clicked.connect(self._on_scan_series_clicked)
         info_layout.addWidget(scan_series_btn)
 
-        mark_watched_btn = QPushButton("Mark Series as Watched")
+        is_fully_watched = False
+        if self.series_record and "seasons" in self.series_record:
+            all_episodes = [
+                episode_item
+                for season_dictionary in self.series_record.get("seasons", {}).values()
+                for episode_item in season_dictionary.get("episodes", [])
+            ]
+            if all_episodes and all(
+                bool(episode_item.get("watched", False))
+                for episode_item in all_episodes
+            ):
+                is_fully_watched = True
+
+        mark_watched_text = (
+            "Mark Series as Unwatched" if is_fully_watched else "Mark Series as Watched"
+        )
+        mark_watched_btn = QPushButton(mark_watched_text)
         mark_watched_btn.clicked.connect(self._on_mark_watched_clicked)
         info_layout.addWidget(mark_watched_btn)
 
@@ -128,10 +156,9 @@ class SeriesDetailsDialog(QDialog):
         info_layout.addWidget(remove_series_btn)
 
         info_layout.addStretch()
+        return info_tab
 
-        self.tab_widget.addTab(info_tab, "Series Info")
-
-        # Series Metadata tab widget
+    def _create_metadata_tab(self) -> QWidget:
         metadata_tab = QWidget()
         metadata_layout = QVBoxLayout(metadata_tab)
         metadata_layout.setSpacing(15)
@@ -147,6 +174,7 @@ class SeriesDetailsDialog(QDialog):
         if is_movie:
             is_locked = bool(self.series_record.get("locked_metadata", False))
         else:
+            metadata = self.series_record.get("metadata", {})
             is_locked = bool(metadata.get("locked_metadata", False))
         self.locked_checkbox.setChecked(is_locked)
         metadata_form.addRow("Metadata Lock:", self.locked_checkbox)
@@ -178,21 +206,7 @@ class SeriesDetailsDialog(QDialog):
         metadata_layout.addWidget(embed_btn)
 
         metadata_layout.addStretch()
-
-        self.tab_widget.addTab(metadata_tab, "Series Metadata")
-
-        main_layout.addWidget(self.tab_widget)
-
-        # Bottom Close/Save buttons
-        buttons = QHBoxLayout()
-        buttons.addStretch()
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.reject)
-        save_btn = QPushButton("Save")
-        save_btn.clicked.connect(self._on_save_clicked)
-        buttons.addWidget(close_btn)
-        buttons.addWidget(save_btn)
-        main_layout.addLayout(buttons)
+        return metadata_tab
 
     def _on_match_meta_clicked(self) -> None:
         self.controller.metadata_dialog_requested.emit(self.series_name)
@@ -247,7 +261,23 @@ class SeriesDetailsDialog(QDialog):
             self.accept()
 
     def _on_mark_watched_clicked(self) -> None:
-        self.controller.mark_series_watched(self.series_name)
+        is_fully_watched = False
+        if self.series_record and "seasons" in self.series_record:
+            all_episodes = [
+                episode_item
+                for season_dictionary in self.series_record.get("seasons", {}).values()
+                for episode_item in season_dictionary.get("episodes", [])
+            ]
+            if all_episodes and all(
+                bool(episode_item.get("watched", False))
+                for episode_item in all_episodes
+            ):
+                is_fully_watched = True
+
+        if is_fully_watched:
+            self.controller.mark_series_watched(self.series_name, False)
+        else:
+            self.controller.mark_series_watched(self.series_name)
         self.accept()
 
     def _on_remove_series_clicked(self) -> None:

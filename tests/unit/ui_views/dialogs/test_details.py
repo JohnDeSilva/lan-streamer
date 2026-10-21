@@ -399,6 +399,52 @@ def test_movie_details_merge_subtitles_trigger(mock_movie_controller, qtbot):
             )
 
 
+def test_movie_details_mark_watched_toggle(mock_movie_controller, qtbot) -> None:
+    mock_movie_controller.cached_library_data["Test Movie"]["watched"] = False
+    with patch("lan_streamer.scanner.get_detailed_file_info") as mock_info:
+        mock_info.return_value = {
+            "path": "/media/Movies/Test Movie.mkv",
+            "size_bytes": 0,
+            "video_type": "MKV",
+            "resolution": "Unknown",
+            "audio_tracks": [],
+            "subtitle_tracks": [],
+        }
+        dialog = MovieDetailsDialog(
+            "Test Movie", "/media/Movies/Test Movie.mkv", mock_movie_controller
+        )
+        qtbot.addWidget(dialog)
+
+        assert hasattr(dialog, "mark_watched_button")
+        assert dialog.mark_watched_button.text() == "Mark Movie as Watched"
+
+        with patch.object(mock_movie_controller, "mark_movie_watched") as mock_mark:
+            dialog._on_mark_watched_clicked()
+            mock_mark.assert_called_once_with("Test Movie", True)
+
+    # Now test when initially watched
+    mock_movie_controller.cached_library_data["Test Movie"]["watched"] = True
+    with patch("lan_streamer.scanner.get_detailed_file_info") as mock_info:
+        mock_info.return_value = {
+            "path": "/media/Movies/Test Movie.mkv",
+            "size_bytes": 0,
+            "video_type": "MKV",
+            "resolution": "Unknown",
+            "audio_tracks": [],
+            "subtitle_tracks": [],
+        }
+        dialog = MovieDetailsDialog(
+            "Test Movie", "/media/Movies/Test Movie.mkv", mock_movie_controller
+        )
+        qtbot.addWidget(dialog)
+
+        assert dialog.mark_watched_button.text() == "Mark Movie as Unwatched"
+
+        with patch.object(mock_movie_controller, "mark_movie_watched") as mock_mark:
+            dialog._on_mark_watched_clicked()
+            mock_mark.assert_called_once_with("Test Movie", False)
+
+
 # ---------------------------------------------------------------------------
 # Series Details Dialog Tests
 # ---------------------------------------------------------------------------
