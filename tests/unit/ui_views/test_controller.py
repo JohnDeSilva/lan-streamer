@@ -1336,6 +1336,65 @@ def test_controller_mark_season_watched_with_origin_libraries(
     assert series_record["seasons"]["Season 1"]["episodes"][0]["watched"] is True
 
 
+def test_controller_mark_movie_watched_with_origin_libraries(
+    mock_controller,
+) -> None:
+    movie_record = {
+        "name": "Spirited Away",
+        "path": "/movies/spirited_away.mkv",
+        "watched": False,
+        "versions": [{"path": "/movies/spirited_away_1080p.mkv"}],
+        "_origin_libraries": ["Anime Movies Local", "Anime Movies Remote"],
+    }
+    mock_controller.cached_library_data = {"Spirited Away": movie_record}
+    mock_controller._smart_row_service.rebuild_for_libraries = MagicMock(
+        return_value=["test_hash"]
+    )
+    mock_controller.smart_rows_updated = MagicMock()
+    mock_controller._sync_watched_to_agents = MagicMock()
+
+    with (
+        patch.object(
+            mock_controller._db, "update_movie_watched_status"
+        ) as mock_update_movie,
+        patch.object(
+            mock_controller._db, "update_episode_watched_status"
+        ) as mock_update_episode,
+    ):
+        mock_controller.mark_movie_watched("Spirited Away", watched=True)
+
+    assert mock_update_movie.call_count == 2
+    called_library_names = [
+        call_argument[0][0] for call_argument in mock_update_movie.call_args_list
+    ]
+    assert "Anime Movies Local" in called_library_names
+    assert "Anime Movies Remote" in called_library_names
+
+    called_paths = [
+        call_argument[0][0] for call_argument in mock_update_episode.call_args_list
+    ]
+    assert "/movies/spirited_away.mkv" in called_paths
+    assert "/movies/spirited_away_1080p.mkv" in called_paths
+
+    assert movie_record["watched"] is True
+    assert movie_record["last_played_at"] > 0
+    mock_controller._smart_row_service.rebuild_for_libraries.assert_called_once_with(
+        ["Anime Movies Local", "Anime Movies Remote"]
+    )
+    mock_controller.smart_rows_updated.emit.assert_called_once_with(["test_hash"])
+    mock_controller._sync_watched_to_agents.assert_called_once_with(
+        ["/movies/spirited_away.mkv", "/movies/spirited_away_1080p.mkv"],
+        True,
+        ["Anime Movies Local", "Anime Movies Remote"],
+        media_type="movie",
+    )
+
+    # Now mark unwatched
+    mock_controller.mark_movie_watched("Spirited Away", watched=False)
+    assert movie_record["watched"] is False
+    assert movie_record["last_played_position"] == 0
+
+
 def test_controller_trigger_scan_target_library(mock_controller) -> None:
     mock_controller._config.libraries = {
         "Anime Local": {

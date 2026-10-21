@@ -2,8 +2,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QSize, Qt, Slot
-from PySide6.QtGui import QColor, QIcon
+from PySide6.QtCore import QPoint, QSize, Qt, Slot
+from PySide6.QtGui import QAction, QColor, QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QScrollArea,
     QTabBar,
@@ -144,6 +145,12 @@ class LibraryGridView(QWidget):
         self.series_list_widget.setIconSize(QSize(160, 220))
         self.series_list_widget.setGridSize(QSize(190, 280))
         self.series_list_widget.setMovement(QListWidget.Movement.Static)
+        self.series_list_widget.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.series_list_widget.customContextMenuRequested.connect(
+            self._on_grid_context_menu
+        )
 
         main_layout.addWidget(self.series_list_widget)
 
@@ -690,6 +697,47 @@ class LibraryGridView(QWidget):
             else:
                 self.controller.select_series(title)
 
+    @Slot(QPoint)
+    def _on_grid_context_menu(self, position: QPoint) -> None:
+        list_item = self.series_list_widget.itemAt(position)
+        if not list_item:
+            return
+        item_title: str = list_item.data(Qt.ItemDataRole.UserRole)
+        if not item_title:
+            return
+
+        item_data = self.controller.cached_library_data.get(item_title, {})
+        is_movie = "seasons" not in item_data or item_data.get("type") == "movie"
+
+        context_menu = QMenu(self)
+        if is_movie:
+            is_watched = bool(item_data.get("watched", False))
+            action_text = "Mark as Unwatched" if is_watched else "Mark as Watched"
+            toggle_action = QAction(action_text, self)
+            toggle_action.triggered.connect(
+                lambda: self.controller.mark_movie_watched(item_title, not is_watched)
+            )
+            context_menu.addAction(toggle_action)
+        else:
+            metrics_dictionary = item_data.get("metrics", {})
+            total_episodes = metrics_dictionary.get("total_episodes", 0)
+            watched_episodes = metrics_dictionary.get("watched_episodes", 0)
+            is_fully_watched = total_episodes > 0 and watched_episodes == total_episodes
+            action_text = (
+                "Mark Series as Unwatched"
+                if is_fully_watched
+                else "Mark Series as Watched"
+            )
+            toggle_action = QAction(action_text, self)
+            toggle_action.triggered.connect(
+                lambda: self.controller.mark_series_watched(
+                    item_title, not is_fully_watched
+                )
+            )
+            context_menu.addAction(toggle_action)
+
+        context_menu.exec(self.series_list_widget.mapToGlobal(position))
+
     @Slot()
     def _open_search_dialog(self) -> None:
         """Open the search dialog, scoped to current library (or all if combined view)."""
@@ -773,6 +821,12 @@ class LibraryGridView(QWidget):
         h_list.setMovement(QListWidget.Movement.Static)
         h_list.setResizeMode(QListWidget.ResizeMode.Adjust)
         h_list.setFixedHeight(225)
+        h_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        h_list.customContextMenuRequested.connect(
+            lambda position, target_list_widget=h_list: (
+                self._on_combined_item_context_menu(position, target_list_widget)
+            )
+        )
         h_list.setStyleSheet(
             """
             QListWidget {
@@ -827,6 +881,56 @@ class LibraryGridView(QWidget):
         row_layout.addWidget(h_list)
 
         return row_container
+
+    def _on_combined_item_context_menu(
+        self, position: QPoint, list_widget: QListWidget
+    ) -> None:
+        list_item = list_widget.itemAt(position)
+        if not list_item:
+            return
+        item_data = list_item.data(Qt.ItemDataRole.UserRole)
+        if not item_data:
+            return
+
+        item_type = item_data.get("type")
+        item_name = item_data.get("name") or item_data.get("series_name") or ""
+        watched_count = item_data.get("watched_count", 0)
+        total_count = item_data.get("total_count", 0)
+
+        context_menu = QMenu(self)
+        if item_type == "movie":
+            is_watched = watched_count > 0
+            action_text = "Mark as Unwatched" if is_watched else "Mark as Watched"
+            toggle_action = QAction(action_text, self)
+            toggle_action.triggered.connect(
+                lambda: self.controller.mark_movie_watched(item_name, not is_watched)
+            )
+            context_menu.addAction(toggle_action)
+        elif item_type == "season":
+            season_name = item_data.get("season_name") or ""
+            is_watched = total_count > 0 and watched_count == total_count
+            action_text = (
+                "Mark Season as Unwatched" if is_watched else "Mark Season as Watched"
+            )
+            toggle_action = QAction(action_text, self)
+            toggle_action.triggered.connect(
+                lambda: self.controller.mark_season_watched(
+                    item_name, season_name, not is_watched
+                )
+            )
+            context_menu.addAction(toggle_action)
+        else:
+            is_watched = total_count > 0 and watched_count == total_count
+            action_text = (
+                "Mark Series as Unwatched" if is_watched else "Mark Series as Watched"
+            )
+            toggle_action = QAction(action_text, self)
+            toggle_action.triggered.connect(
+                lambda: self.controller.mark_series_watched(item_name, not is_watched)
+            )
+            context_menu.addAction(toggle_action)
+
+        context_menu.exec(list_widget.mapToGlobal(position))
 
     def _clear_combined_view(self) -> None:
         """Remove all widgets from the combined scroll layout."""

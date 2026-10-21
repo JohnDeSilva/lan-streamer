@@ -453,3 +453,42 @@ def test_series_detail_view_load_details_async_fault_tolerant(qtbot: Any) -> Non
 
     # UI update should still have executed despite background error
     assert view.seasons_tab_widget.count() == 1
+
+
+def test_series_detail_view_mark_series_watched_toggle(qtbot: Any) -> None:
+    controller = Controller()
+    controller.selected_series_name = "Breaking Bad"
+    controller.cached_library_data = {
+        "Breaking Bad": {
+            "metadata": {"tmdb_name": "Breaking Bad"},
+            "metrics": {"total_episodes": 2, "watched_episodes": 0},
+            "seasons": {
+                "Season 1": {
+                    "episodes": [
+                        {"name": "Pilot", "watched": False, "path": "/p1"},
+                        {"name": "Ep2", "watched": False, "path": "/p2"},
+                    ]
+                }
+            },
+        }
+    }
+
+    view = SeriesDetailView(controller)
+    qtbot.addWidget(view)
+    view.populate_series_details("Breaking Bad")
+
+    assert hasattr(view, "mark_series_button")
+    assert view.mark_series_button.text() == "Mark Series as Watched"
+
+    with patch.object(controller, "mark_series_watched") as mock_mark_series:
+        view.mark_series_button.click()
+        mock_mark_series.assert_called_once_with("Breaking Bad", True)
+
+    # Now test with fully watched series
+    controller.cached_library_data["Breaking Bad"]["metrics"]["watched_episodes"] = 2
+    view.populate_series_details("Breaking Bad")
+    assert view.mark_series_button.text() == "Mark Series as Unwatched"
+
+    with patch.object(controller, "mark_series_watched") as mock_mark_series:
+        view.mark_series_button.click()
+        mock_mark_series.assert_called_once_with("Breaking Bad", False)

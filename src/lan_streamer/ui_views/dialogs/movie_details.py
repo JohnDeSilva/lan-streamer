@@ -144,6 +144,15 @@ class MovieDetailsDialog(QDialog):
         embed_btn.clicked.connect(self._on_embed_clicked)
         layout.addWidget(embed_btn)
 
+        is_watched = bool(self.movie_record.get("watched", False))
+        mark_watched_text = (
+            "Mark Movie as Unwatched" if is_watched else "Mark Movie as Watched"
+        )
+        self.mark_watched_button: QPushButton = QPushButton(mark_watched_text)
+        self.mark_watched_button.setObjectName("markMovieWatchedButton")
+        self.mark_watched_button.clicked.connect(self._on_mark_watched_clicked)
+        layout.addWidget(self.mark_watched_button)
+
         layout.addStretch()
 
         # Populate
@@ -524,3 +533,9 @@ class MovieDetailsDialog(QDialog):
         )
         if dialog.exec():
             self._refresh_file_info()
+
+    @Slot()
+    def _on_mark_watched_clicked(self) -> None:
+        is_watched = bool(self.movie_record.get("watched", False))
+        self.controller.mark_movie_watched(self.movie_name, not is_watched)
+        self.accept()
