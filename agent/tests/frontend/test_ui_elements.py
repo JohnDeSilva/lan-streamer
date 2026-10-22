@@ -446,6 +446,8 @@ def test_all_app_get_element_by_id_references_exist_in_html() -> None:
         "btnOpenTmdbMatch",
         "btnOpenRename",
         "btnOpenManualMapper",
+        "btnToggleSeriesWatched",
+        "btnToggleMovieWatched",
     }
 
     static_referenced_identifiers = referenced_identifiers - dynamic_modal_elements

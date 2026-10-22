@@ -732,6 +732,147 @@ def test_watch_event_clears_resume_position_on_unwatched_and_complete(
     assert state_complete["position_seconds"] == 0.0
 
 
+def test_watch_event_marks_season_watched_and_unwatched(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    series_list = api_client.get("/api/v1/library/series").json()
+    assert len(series_list) > 0
+    first_series = series_list[0]
+    first_season = first_series["seasons"][0]
+    season_identifier = first_season["id"]
+    season_episodes = first_season["episodes"]
+    assert len(season_episodes) > 0
+
+    # Mark season watched
+    response_watched = api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "season",
+            "media_id": season_identifier,
+            "event": "complete",
+            "watched": True,
+        },
+    )
+    assert response_watched.status_code == 201
+    assert response_watched.json()["watched"] is True
+
+    # Check season state
+    season_state = api_client.get(
+        f"/api/v1/watch/season/{season_identifier}/state"
+    ).json()
+    assert season_state["watched"] is True
+
+    # Verify all episodes of that season are marked watched
+    series_detail = api_client.get(
+        f"/api/v1/library/series/{first_series['id']}"
+    ).json()
+    matching_season = next(
+        season
+        for season in series_detail["seasons"]
+        if season["id"] == season_identifier
+    )
+    assert matching_season["watched_episode_count"] == len(season_episodes)
+    for episode_item in matching_season["episodes"]:
+        assert episode_item["watched"] is True
+
+    # Mark season unwatched
+    response_unwatched = api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "season",
+            "media_id": season_identifier,
+            "event": "unwatched",
+            "watched": False,
+        },
+    )
+    assert response_unwatched.status_code == 201
+    assert response_unwatched.json()["watched"] is False
+
+    # Check season state again
+    season_state_after = api_client.get(
+        f"/api/v1/watch/season/{season_identifier}/state"
+    ).json()
+    assert season_state_after["watched"] is False
+
+    series_detail_after = api_client.get(
+        f"/api/v1/library/series/{first_series['id']}"
+    ).json()
+    matching_season_after = next(
+        season
+        for season in series_detail_after["seasons"]
+        if season["id"] == season_identifier
+    )
+    assert matching_season_after["watched_episode_count"] == 0
+    for episode_item in matching_season_after["episodes"]:
+        assert episode_item["watched"] is False
+
+
+def test_watch_event_marks_series_watched_and_unwatched(
+    api_app: FastAPI, api_client: TestClient
+) -> None:
+    api_client.post("/api/v1/scan", json={"library_id": "tv", "pass_number": 1})
+    _wait_for_idle(api_app)
+    series_list = api_client.get("/api/v1/library/series").json()
+    assert len(series_list) > 0
+    first_series = series_list[0]
+    series_identifier = first_series["id"]
+
+    # Mark series watched
+    response_watched = api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "series",
+            "media_id": series_identifier,
+            "event": "complete",
+            "watched": True,
+        },
+    )
+    assert response_watched.status_code == 201
+    assert response_watched.json()["watched"] is True
+
+    # Check series watch state
+    series_state = api_client.get(
+        f"/api/v1/watch/series/{series_identifier}/state"
+    ).json()
+    assert series_state["watched"] is True
+
+    # Verify series detail has all episodes and seasons watched
+    series_detail = api_client.get(f"/api/v1/library/series/{series_identifier}").json()
+    for season in series_detail["seasons"]:
+        assert season["watched_episode_count"] == len(season["episodes"])
+        for episode in season["episodes"]:
+            assert episode["watched"] is True
+
+    # Mark series unwatched
+    response_unwatched = api_client.post(
+        "/api/v1/watch/events",
+        json={
+            "media_type": "series",
+            "media_id": series_identifier,
+            "event": "unwatched",
+            "watched": False,
+        },
+    )
+    assert response_unwatched.status_code == 201
+    assert response_unwatched.json()["watched"] is False
+
+    series_state_after = api_client.get(
+        f"/api/v1/watch/series/{series_identifier}/state"
+    ).json()
+    assert series_state_after["watched"] is False
+
+    series_detail_after = api_client.get(
+        f"/api/v1/library/series/{series_identifier}"
+    ).json()
+    assert series_detail_after["watched_count"] == 0
+    for season in series_detail_after["seasons"]:
+        assert season["watched_episode_count"] == 0
+        for episode in season["episodes"]:
+            assert episode["watched"] is False
+
+
 def test_metadata_search_and_match(api_client: TestClient) -> None:
     response = api_client.get(
         "/api/v1/services/metadata/search",

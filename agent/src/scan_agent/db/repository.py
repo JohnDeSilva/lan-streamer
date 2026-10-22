@@ -1345,6 +1345,174 @@ def count_items_per_library(connection: Session) -> dict[str, dict[str, int]]:
     }
 
 
+def _apply_episode_watch_event(
+    connection: Session,
+    media_identifier: int | None,
+    path: str | None,
+    watched: bool | None,
+    event: str,
+    position_seconds: float | None,
+    timestamp: float,
+) -> tuple[int | None, Episode | None]:
+    target_episode: Episode | None = None
+    if media_identifier is not None and media_identifier > 0:
+        target_episode = connection.get(Episode, media_identifier)
+    if target_episode is None and path:
+        target_episode = connection.scalars(
+            select(Episode).where(Episode.path == path)
+        ).first()
+        if target_episode is None:
+            media_file_row = connection.scalars(
+                select(MediaFile).where(
+                    MediaFile.path == path, MediaFile.media_type == "episode"
+                )
+            ).first()
+            if media_file_row and media_file_row.media_id:
+                target_episode = connection.get(Episode, media_file_row.media_id)
+    if target_episode is not None:
+        media_identifier = target_episode.id
+        if watched is not None:
+            target_episode.watched = watched
+        elif event == "complete":
+            target_episode.watched = True
+        elif event == "unwatched":
+            target_episode.watched = False
+        target_episode.last_played_at = timestamp
+        if position_seconds is not None:
+            target_episode.resume_position_seconds = position_seconds
+        elif target_episode.watched is False or event in ("complete", "unwatched"):
+            target_episode.resume_position_seconds = 0.0
+        _recount_episode_watched(connection, target_episode)
+    return media_identifier, target_episode
+
+
+def _apply_movie_watch_event(
+    connection: Session,
+    media_identifier: int | None,
+    path: str | None,
+    watched: bool | None,
+    event: str,
+    position_seconds: float | None,
+    timestamp: float,
+) -> tuple[int | None, Movie | None]:
+    target_movie: Movie | None = None
+    if media_identifier is not None and media_identifier > 0:
+        target_movie = connection.get(Movie, media_identifier)
+    if target_movie is None and path:
+        target_movie = connection.scalars(
+            select(Movie).where(Movie.path == path)
+        ).first()
+        if target_movie is None:
+            media_file_row = connection.scalars(
+                select(MediaFile).where(
+                    MediaFile.path == path, MediaFile.media_type == "movie"
+                )
+            ).first()
+            if media_file_row and media_file_row.media_id:
+                target_movie = connection.get(Movie, media_file_row.media_id)
+    if target_movie is not None:
+        media_identifier = target_movie.id
+        if watched is not None:
+            target_movie.watched = watched
+        elif event == "complete":
+            target_movie.watched = True
+        elif event == "unwatched":
+            target_movie.watched = False
+        target_movie.last_played_at = timestamp
+        if position_seconds is not None:
+            target_movie.resume_position_seconds = position_seconds
+        elif target_movie.watched is False or event in ("complete", "unwatched"):
+            target_movie.resume_position_seconds = 0.0
+    return media_identifier, target_movie
+
+
+def _apply_season_watch_event(
+    connection: Session,
+    media_identifier: int | None,
+    watched: bool | None,
+    event: str,
+    position_seconds: float | None,
+    timestamp: float,
+) -> tuple[int | None, Season | None, list[Episode]]:
+    target_season: Season | None = None
+    affected_episodes: list[Episode] = []
+    if media_identifier is not None and media_identifier > 0:
+        target_season = connection.get(Season, media_identifier)
+    if target_season is not None:
+        media_identifier = target_season.id
+        season_watched = watched if watched is not None else (event == "complete")
+        episodes_in_season = connection.scalars(
+            select(Episode).where(Episode.season_id == target_season.id)
+        ).all()
+        for episode_item in episodes_in_season:
+            episode_item.watched = season_watched
+            episode_item.last_played_at = timestamp
+            if season_watched and position_seconds is not None:
+                episode_item.resume_position_seconds = position_seconds
+            else:
+                episode_item.resume_position_seconds = 0.0
+            affected_episodes.append(episode_item)
+        target_season.watched_episode_count = len(
+            [episode for episode in episodes_in_season if episode.watched]
+        )
+        series_total = (
+            connection.scalar(
+                select(func.count(Episode.id))
+                .join(Season, Season.id == Episode.season_id)
+                .where(
+                    Season.series_id == target_season.series_id,
+                    Episode.watched.is_(True),
+                )
+            )
+            or 0
+        )
+        connection.execute(
+            update(Series)
+            .where(Series.id == target_season.series_id)
+            .values(watched_count=series_total)
+        )
+    return media_identifier, target_season, affected_episodes
+
+
+def _apply_series_watch_event(
+    connection: Session,
+    media_identifier: int | None,
+    watched: bool | None,
+    event: str,
+    position_seconds: float | None,
+    timestamp: float,
+) -> tuple[int | None, Series | None, list[Episode]]:
+    target_series: Series | None = None
+    affected_episodes: list[Episode] = []
+    if media_identifier is not None and media_identifier > 0:
+        target_series = connection.get(Series, media_identifier)
+    if target_series is not None:
+        media_identifier = target_series.id
+        series_watched = watched if watched is not None else (event == "complete")
+        seasons_in_series = connection.scalars(
+            select(Season).where(Season.series_id == target_series.id)
+        ).all()
+        for season_item in seasons_in_series:
+            season_episodes = connection.scalars(
+                select(Episode).where(Episode.season_id == season_item.id)
+            ).all()
+            for episode_item in season_episodes:
+                episode_item.watched = series_watched
+                episode_item.last_played_at = timestamp
+                if series_watched and position_seconds is not None:
+                    episode_item.resume_position_seconds = position_seconds
+                else:
+                    episode_item.resume_position_seconds = 0.0
+                affected_episodes.append(episode_item)
+            season_item.watched_episode_count = len(
+                [episode for episode in season_episodes if episode.watched]
+            )
+        target_series.watched_count = len(
+            [episode for episode in affected_episodes if episode.watched]
+        )
+    return media_identifier, target_series, affected_episodes
+
+
 def record_watch_event(
     connection: Session,
     media_type: str,
@@ -1366,65 +1534,38 @@ def record_watch_event(
     timestamp = time.time()
     target_episode: Episode | None = None
     target_movie: Movie | None = None
+    target_season: Season | None = None
+    target_series: Series | None = None
+    affected_episodes: list[Episode] = []
 
     if media_type == "episode":
-        if media_identifier is not None and media_identifier > 0:
-            target_episode = connection.get(Episode, media_identifier)
-        if target_episode is None and path:
-            target_episode = connection.scalars(
-                select(Episode).where(Episode.path == path)
-            ).first()
-            if target_episode is None:
-                media_file_row = connection.scalars(
-                    select(MediaFile).where(
-                        MediaFile.path == path, MediaFile.media_type == "episode"
-                    )
-                ).first()
-                if media_file_row and media_file_row.media_id:
-                    target_episode = connection.get(Episode, media_file_row.media_id)
-        if target_episode is not None:
-            media_identifier = target_episode.id
-            if watched is not None:
-                target_episode.watched = watched
-            elif event == "complete":
-                target_episode.watched = True
-            elif event == "unwatched":
-                target_episode.watched = False
-            target_episode.last_played_at = timestamp
-            if position_seconds is not None:
-                target_episode.resume_position_seconds = position_seconds
-            elif target_episode.watched is False or event in ("complete", "unwatched"):
-                target_episode.resume_position_seconds = 0.0
-            _recount_episode_watched(connection, target_episode)
+        media_identifier, target_episode = _apply_episode_watch_event(
+            connection,
+            media_identifier,
+            path,
+            watched,
+            event,
+            position_seconds,
+            timestamp,
+        )
     elif media_type == "movie":
-        if media_identifier is not None and media_identifier > 0:
-            target_movie = connection.get(Movie, media_identifier)
-        if target_movie is None and path:
-            target_movie = connection.scalars(
-                select(Movie).where(Movie.path == path)
-            ).first()
-            if target_movie is None:
-                media_file_row = connection.scalars(
-                    select(MediaFile).where(
-                        MediaFile.path == path, MediaFile.media_type == "movie"
-                    )
-                ).first()
-                if media_file_row and media_file_row.media_id:
-                    target_movie = connection.get(Movie, media_file_row.media_id)
-        if target_movie is not None:
-            media_identifier = target_movie.id
-            if watched is not None:
-                target_movie.watched = watched
-            elif event == "complete":
-                target_movie.watched = True
-            elif event == "unwatched":
-                target_movie.watched = False
-            movie_last_played = timestamp
-            target_movie.last_played_at = movie_last_played
-            if position_seconds is not None:
-                target_movie.resume_position_seconds = position_seconds
-            elif target_movie.watched is False or event in ("complete", "unwatched"):
-                target_movie.resume_position_seconds = 0.0
+        media_identifier, target_movie = _apply_movie_watch_event(
+            connection,
+            media_identifier,
+            path,
+            watched,
+            event,
+            position_seconds,
+            timestamp,
+        )
+    elif media_type == "season":
+        media_identifier, target_season, affected_episodes = _apply_season_watch_event(
+            connection, media_identifier, watched, event, position_seconds, timestamp
+        )
+    elif media_type == "series":
+        media_identifier, target_series, affected_episodes = _apply_series_watch_event(
+            connection, media_identifier, watched, event, position_seconds, timestamp
+        )
 
     watch_event = WatchEvent(
         media_type=media_type,
@@ -1461,11 +1602,27 @@ def record_watch_event(
         resolved_watched = target_movie.watched
         resolved_last_played_at = target_movie.last_played_at
         resolved_position_seconds = target_movie.resume_position_seconds
+    elif target_season is not None:
+        resolved_watched = len(
+            affected_episodes
+        ) > 0 and target_season.watched_episode_count >= len(affected_episodes)
+        result_dictionary["watched_episode_count"] = target_season.watched_episode_count
+        result_dictionary["episode_count"] = len(affected_episodes)
+    elif target_series is not None:
+        resolved_watched = len(
+            affected_episodes
+        ) > 0 and target_series.watched_count >= len(affected_episodes)
+        result_dictionary["watched_count"] = target_series.watched_count
+        result_dictionary["total_episodes"] = len(affected_episodes)
 
     result_dictionary["path"] = resolved_path
     result_dictionary["watched"] = resolved_watched
     result_dictionary["last_played_at"] = resolved_last_played_at
     result_dictionary["position_seconds"] = resolved_position_seconds
+    if affected_episodes:
+        result_dictionary["affected_episodes"] = [
+            episode_to_dict(episode) for episode in affected_episodes
+        ]
     return result_dictionary
 
 
@@ -1519,7 +1676,7 @@ def list_watch_events(
 def get_watch_state(
     connection: Session, media_type: str, media_identifier: int
 ) -> dict[str, Any]:
-    """Return the cumulative watch state for an episode or movie."""
+    """Return the cumulative watch state for an episode, movie, season, or series."""
     watched = False
     position_seconds: float | None = None
     last_played_at: float | None = None
@@ -1535,6 +1692,32 @@ def get_watch_state(
             watched = bool(movie.watched)
             position_seconds = movie.resume_position_seconds
             last_played_at = movie.last_played_at
+    elif media_type == "season":
+        season = connection.get(Season, media_identifier)
+        if season is not None:
+            episodes_in_season = connection.scalars(
+                select(Episode).where(Episode.season_id == season.id)
+            ).all()
+            total_count = len(episodes_in_season)
+            watched_count = len(
+                [episode for episode in episodes_in_season if episode.watched]
+            )
+            watched = bool(total_count > 0 and watched_count >= total_count)
+    elif media_type == "series":
+        series = connection.get(Series, media_identifier)
+        if series is not None:
+            total_episodes_count = (
+                connection.scalar(
+                    select(func.count(Episode.id))
+                    .join(Season, Season.id == Episode.season_id)
+                    .where(Season.series_id == series.id)
+                )
+                or 0
+            )
+            watched = bool(
+                total_episodes_count > 0
+                and series.watched_count >= total_episodes_count
+            )
     recent = list_watch_events(connection, media_type, media_identifier, limit=1)
     event_count = (
         connection.scalar(

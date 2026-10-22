@@ -855,3 +855,182 @@ def test_filter_series_with_episodes(engine: MiniRacer) -> None:
         "handlesEmptyInput": 0,
         "handlesNullInput": 0,
     }
+
+
+def test_api_get_watch_state(engine: MiniRacer) -> None:
+    result = _api_test(
+        engine,
+        """
+        __mockResponse = mockResponse(200, {
+            media_type: "series",
+            media_id: 10,
+            watched: true,
+            event_count: 5
+        });
+        __out.state = await api.getWatchState("series", 10);
+        """,
+    )
+    assert result["state"] == {
+        "media_type": "series",
+        "media_id": 10,
+        "watched": True,
+        "event_count": 5,
+    }
+    assert result["fetchLog"] == [
+        {
+            "url": "/api/v1/watch/series/10/state",
+            "config": {"headers": {"Content-Type": "application/json"}},
+        }
+    ]
+
+
+def test_api_mark_watched(engine: MiniRacer) -> None:
+    result = _api_test(
+        engine,
+        """
+        __mockResponse = mockResponse(201, { status: "recorded" });
+        __out.series = await api.markWatched("series", 12, true);
+        __out.movie = await api.markWatched("movie", 4, false);
+        """,
+    )
+    assert len(result["fetchLog"]) == 2
+    entry_series = result["fetchLog"][0]
+    assert entry_series["url"] == "/api/v1/watch/events"
+    assert entry_series["config"]["method"] == "POST"
+    assert json.loads(entry_series["config"]["body"]) == {
+        "media_type": "series",
+        "media_id": 12,
+        "event": "complete",
+        "watched": True,
+    }
+    entry_movie = result["fetchLog"][1]
+    assert entry_movie["url"] == "/api/v1/watch/events"
+    assert entry_movie["config"]["method"] == "POST"
+    assert json.loads(entry_movie["config"]["body"]) == {
+        "media_type": "movie",
+        "media_id": 4,
+        "event": "unwatched",
+        "watched": False,
+    }
+
+
+def test_logic_season_watched_stats(engine: MiniRacer) -> None:
+    result = _logic_test(
+        engine,
+        setup_js="""
+        const seasonAllWatched = {
+            id: 1,
+            season_number: 1,
+            episodes: [{ id: 101, watched: true }, { id: 102, watched: true }]
+        };
+        const seasonPartiallyWatched = {
+            id: 2,
+            season_number: 2,
+            episodes: [{ id: 201, watched: true }, { id: 202, watched: false }]
+        };
+        const seasonEmpty = { id: 3, season_number: 3, episodes: [] };
+        """,
+        probe_js="""
+        allWatched: getSeasonWatchedStats(seasonAllWatched),
+        partial: getSeasonWatchedStats(seasonPartiallyWatched),
+        empty: getSeasonWatchedStats(seasonEmpty),
+        nullInput: getSeasonWatchedStats(null)
+        """,
+    )
+    assert result["allWatched"] == {
+        "totalEpisodes": 2,
+        "watchedEpisodes": 2,
+        "isWatched": True,
+    }
+    assert result["partial"] == {
+        "totalEpisodes": 2,
+        "watchedEpisodes": 1,
+        "isWatched": False,
+    }
+    assert result["empty"] == {
+        "totalEpisodes": 0,
+        "watchedEpisodes": 0,
+        "isWatched": False,
+    }
+    assert result["nullInput"] == {
+        "totalEpisodes": 0,
+        "watchedEpisodes": 0,
+        "isWatched": False,
+    }
+
+
+def test_logic_series_watched_stats(engine: MiniRacer) -> None:
+    result = _logic_test(
+        engine,
+        setup_js="""
+        const seriesAllWatched = {
+            id: 1,
+            seasons: [
+                { id: 1, episodes: [{ id: 1, watched: true }, { id: 2, watched: true }] },
+                { id: 2, episodes: [{ id: 3, watched: true }] }
+            ]
+        };
+        const seriesPartial = {
+            id: 2,
+            seasons: [
+                { id: 3, episodes: [{ id: 4, watched: true }, { id: 5, watched: false }] }
+            ]
+        };
+        """,
+        probe_js="""
+        allWatched: getSeriesWatchedStats(seriesAllWatched),
+        partial: getSeriesWatchedStats(seriesPartial),
+        nullInput: getSeriesWatchedStats(null)
+        """,
+    )
+    assert result["allWatched"] == {
+        "totalEpisodes": 3,
+        "watchedEpisodes": 3,
+        "isWatched": True,
+    }
+    assert result["partial"] == {
+        "totalEpisodes": 2,
+        "watchedEpisodes": 1,
+        "isWatched": False,
+    }
+    assert result["nullInput"] == {
+        "totalEpisodes": 0,
+        "watchedEpisodes": 0,
+        "isWatched": False,
+    }
+
+
+def test_logic_is_media_watched(engine: MiniRacer) -> None:
+    result = _logic_test(
+        engine,
+        setup_js="""
+        const movieWatched = { id: 1, watched: true };
+        const movieUnwatched = { id: 2, watched: false };
+        const episodeWatched = { id: 3, watched: true };
+        const episodeUnwatched = { id: 4, watched: false };
+        const seriesWatched = {
+            id: 5,
+            seasons: [{ id: 1, episodes: [{ id: 10, watched: true }] }]
+        };
+        const seriesUnwatched = {
+            id: 6,
+            seasons: [{ id: 2, episodes: [{ id: 11, watched: false }] }]
+        };
+        """,
+        probe_js="""
+        movieWatched: isMediaWatched(movieWatched, "movie"),
+        movieUnwatched: isMediaWatched(movieUnwatched, "movie"),
+        episodeWatched: isMediaWatched(episodeWatched, "episode"),
+        episodeUnwatched: isMediaWatched(episodeUnwatched, "episode"),
+        seriesWatched: isMediaWatched(seriesWatched, "series"),
+        seriesUnwatched: isMediaWatched(seriesUnwatched, "series"),
+        nullMovie: isMediaWatched(null, "movie")
+        """,
+    )
+    assert result["movieWatched"] is True
+    assert result["movieUnwatched"] is False
+    assert result["episodeWatched"] is True
+    assert result["episodeUnwatched"] is False
+    assert result["seriesWatched"] is True
+    assert result["seriesUnwatched"] is False
+    assert result["nullMovie"] is False
