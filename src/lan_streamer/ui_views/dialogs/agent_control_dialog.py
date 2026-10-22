@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -63,7 +64,11 @@ class AgentDataFetchWorker(QThread):
     def run(self) -> None:
         try:
             configuration = scan_agent_client.fetch_agent_config(self.agent_url)
+            if self.isInterruptionRequested():
+                return
             status_data = scan_agent_client.fetch_scan_status(self.agent_url)
+            if self.isInterruptionRequested():
+                return
             libraries_list = scan_agent_client.fetch_agent_libraries(self.agent_url)
             if not self.isInterruptionRequested():
                 self.fetch_completed.emit(configuration, status_data, libraries_list)
@@ -604,7 +609,7 @@ class AgentControlDialog(QDialog):
         self.connection_status_label.setText("Fetching data...")
         self.connection_status_label.setStyleSheet("color: #e6a23c;")
 
-        worker = AgentDataFetchWorker(self.agent_url, parent=self)
+        worker = AgentDataFetchWorker(self.agent_url)
         worker.fetch_completed.connect(self._on_data_fetch_completed)
         worker.fetch_failed.connect(self._on_data_fetch_failed)
         worker.finished.connect(lambda: self._remove_worker(worker))
@@ -759,7 +764,7 @@ class AgentControlDialog(QDialog):
                 payload["opensubtitles_password"] = password
 
         self.save_configuration_button.setEnabled(False)
-        worker = AgentConfigSaveWorker(self.agent_url, payload, parent=self)
+        worker = AgentConfigSaveWorker(self.agent_url, payload)
         worker.save_completed.connect(self._on_config_save_completed)
         worker.save_failed.connect(self._on_config_save_failed)
         worker.finished.connect(lambda: self._remove_worker(worker))
@@ -796,7 +801,7 @@ class AgentControlDialog(QDialog):
         ):
             return
 
-        worker = AgentStatusFetchWorker(self.agent_url, parent=self)
+        worker = AgentStatusFetchWorker(self.agent_url)
         self._current_status_worker = worker
         worker.status_completed.connect(self._on_status_fetch_completed)
         worker.status_failed.connect(self._on_status_fetch_failed)
@@ -829,7 +834,6 @@ class AgentControlDialog(QDialog):
             target_library_id,
             pass_number,
             force_refresh,
-            parent=self,
         )
         worker.trigger_completed.connect(self._on_scan_trigger_completed)
         worker.trigger_failed.connect(self._on_scan_trigger_failed)
@@ -858,7 +862,7 @@ class AgentControlDialog(QDialog):
     def cancel_scan_on_agent(self) -> None:
         """Request scan cancellation on the agent."""
         self.cancel_scan_button.setEnabled(False)
-        worker = AgentScanCancelWorker(self.agent_url, parent=self)
+        worker = AgentScanCancelWorker(self.agent_url)
         worker.cancel_completed.connect(self._on_scan_cancel_completed)
         worker.cancel_failed.connect(self._on_scan_cancel_failed)
         worker.finished.connect(lambda: self._remove_worker(worker))
@@ -892,7 +896,6 @@ class AgentControlDialog(QDialog):
                 values["name"],
                 values["media_type"],
                 values["root_path"],
-                parent=self,
             )
             worker.create_completed.connect(self._on_library_created)
             worker.create_failed.connect(self._on_library_action_failed)
@@ -934,7 +937,7 @@ class AgentControlDialog(QDialog):
         if confirmation != QMessageBox.StandardButton.Yes:
             return
 
-        worker = AgentLibraryDeleteWorker(self.agent_url, library_id, parent=self)
+        worker = AgentLibraryDeleteWorker(self.agent_url, library_id)
         worker.delete_completed.connect(self._on_library_deleted)
         worker.delete_failed.connect(self._on_library_action_failed)
         worker.finished.connect(lambda: self._remove_worker(worker))
@@ -957,6 +960,7 @@ class AgentControlDialog(QDialog):
     def _remove_worker(self, worker: QThread) -> None:
         if worker in self._active_workers:
             self._active_workers.remove(worker)
+        worker.wait(1000)
         worker.deleteLater()
 
     def showEvent(self, event: Any) -> None:
@@ -998,8 +1002,12 @@ class AgentControlDialog(QDialog):
         self._cleaned_up = True
         self._status_timer.stop()
         for worker in list(self._active_workers):
-            worker.requestInterruption()
-            worker.wait(500)
+            with contextlib.suppress(RuntimeError):
+                worker.requestInterruption()
+                worker.quit()
+                worker.wait(2000)
+                worker.deleteLater()
+        self._active_workers.clear()
         if self._scan_triggered_during_session:
             self._queue_matching_remote_syncs()
 

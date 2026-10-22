@@ -1989,7 +1989,7 @@ class SettingsDialog(QDialog):
         self.scan_agent_status_label.setText(
             f"Status: Connecting to {normalized_agent_url}..."
         )
-        self._probe_worker = AgentProbeWorker(normalized_agent_url, parent=self)
+        self._probe_worker = AgentProbeWorker(normalized_agent_url)
         self._probe_worker.probe_finished.connect(
             lambda agent_url, result: self._on_agent_probe_finished(
                 agent_url, result, from_connect=True
@@ -2413,7 +2413,7 @@ class SettingsDialog(QDialog):
             "Refreshing reachability and libraries for all configured scan agents"
         )
         for agent_url, _agent_data in list(self.staged_scan_agents.items()):
-            worker = AgentProbeWorker(agent_url, parent=self)
+            worker = AgentProbeWorker(agent_url)
             worker.probe_finished.connect(
                 lambda url, result: self._on_agent_probe_finished(
                     url, result, from_connect=False
@@ -3529,6 +3529,20 @@ class SettingsDialog(QDialog):
             except RuntimeError, ImportError, SystemError:
                 pass
             self._logging_connected = False
+        if self._probe_worker is not None:
+            with contextlib.suppress(Exception):
+                self._probe_worker.requestInterruption()
+                self._probe_worker.quit()
+                self._probe_worker.wait(1000)
+                self._probe_worker.deleteLater()
+            self._probe_worker = None
+        for worker in list(self._refresh_agent_workers):
+            with contextlib.suppress(Exception):
+                worker.requestInterruption()
+                worker.quit()
+                worker.wait(1000)
+                worker.deleteLater()
+        self._refresh_agent_workers.clear()
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._disconnect_signals()
