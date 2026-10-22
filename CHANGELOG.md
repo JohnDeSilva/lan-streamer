@@ -1,3 +1,9 @@
+## v0.59.0rc0-1 (2026-10-22)
+
+### Fix
+
+- **ui**: Prevent worker thread crash and double-free on dialog teardown
+
 ## v0.59.0rc0 (2026-10-22)
 
 ### Feat
