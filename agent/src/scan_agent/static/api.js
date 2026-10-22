@@ -128,4 +128,20 @@ export const api = {
             method: "POST",
             body: { episode_mappings: episodeMappings },
         }),
+
+    // Playback Watch State
+    getWatchState: (mediaType, mediaIdentifier) =>
+        request(`/watch/${encodeURIComponent(mediaType)}/${encodeURIComponent(mediaIdentifier)}/state`),
+    recordWatchEvent: (payload) =>
+        request("/watch/events", { method: "POST", body: payload }),
+    markWatched: (mediaType, mediaIdentifier, watched = true) =>
+        request("/watch/events", {
+            method: "POST",
+            body: {
+                media_type: mediaType,
+                media_id: mediaIdentifier,
+                event: watched ? "complete" : "unwatched",
+                watched: Boolean(watched),
+            },
+        }),
 };

@@ -251,3 +251,72 @@ export function isLogLevelVisible(entryLogLevel, selectedFilterLogLevel) {
         : 20;
     return entryThreshold >= filterThreshold;
 }
+
+/**
+ * Calculate watched episode statistics and status for a season.
+ */
+export function getSeasonWatchedStats(season) {
+    if (!season) {
+        return { totalEpisodes: 0, watchedEpisodes: 0, isWatched: false };
+    }
+    const episodes = Array.isArray(season.episodes) ? season.episodes : [];
+    const totalEpisodes = episodes.length > 0 ? episodes.length : Number(season.episode_count || 0);
+    const watchedEpisodes = episodes.length > 0
+        ? episodes.filter((episode) => Boolean(episode && episode.watched)).length
+        : Number(season.watched_episode_count || 0);
+    const isWatched = totalEpisodes > 0 && watchedEpisodes >= totalEpisodes;
+    return {
+        totalEpisodes: totalEpisodes,
+        watchedEpisodes: watchedEpisodes,
+        isWatched: isWatched,
+    };
+}
+
+/**
+ * Calculate watched episode statistics and status across all seasons of a series.
+ */
+export function getSeriesWatchedStats(series) {
+    if (!series) {
+        return { totalEpisodes: 0, watchedEpisodes: 0, isWatched: false };
+    }
+    const seasons = Array.isArray(series.seasons) ? series.seasons : [];
+    let totalEpisodes = 0;
+    let watchedEpisodes = 0;
+
+    if (seasons.length > 0) {
+        for (const season of seasons) {
+            const stats = getSeasonWatchedStats(season);
+            totalEpisodes += stats.totalEpisodes;
+            watchedEpisodes += stats.watchedEpisodes;
+        }
+    } else {
+        totalEpisodes = Number(series.watched_count || 0);
+        watchedEpisodes = Number(series.watched_count || 0);
+    }
+
+    const isWatched = totalEpisodes > 0 && watchedEpisodes >= totalEpisodes;
+    return {
+        totalEpisodes: totalEpisodes,
+        watchedEpisodes: watchedEpisodes,
+        isWatched: isWatched,
+    };
+}
+
+/**
+ * Determine if a media item (series, season, episode, movie) is watched.
+ */
+export function isMediaWatched(item, mediaType = "episode") {
+    if (!item) {
+        return false;
+    }
+    if (mediaType === "movie" || mediaType === "episode") {
+        return Boolean(item.watched);
+    }
+    if (mediaType === "season") {
+        return getSeasonWatchedStats(item).isWatched;
+    }
+    if (mediaType === "series") {
+        return getSeriesWatchedStats(item).isWatched;
+    }
+    return false;
+}
