@@ -1,3 +1,15 @@
+## v0.59.0 (2026-10-22)
+
+### Feat
+
+- **agent**: add watch toggle support for series, seasons, episodes, and movies in web interface
+- **ui**: add watched status feature parity across movies and tv/anime
+- **ui**: eliminate UI hangs by adding targeted scans and async watcher updates
+
+### Fix
+
+- **ui**: prevent worker thread crash and double-free on dialog teardown
+
 ## v0.59.0rc0-1 (2026-10-22)
 
 ### Fix
