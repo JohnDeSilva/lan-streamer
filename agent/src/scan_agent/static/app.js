@@ -2,7 +2,7 @@
  * Main Single Page Application controller for LAN Streamer Scan Agent.
  */
 import { api } from "./api.js";
-import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams, filterLibrariesForBrowseType, matchEpisodesSequentially, buildManualMappingPayload, resolveLogLevel, isLogLevelVisible, filterSeriesWithEpisodes } from "./logic.js";
+import { escapeHtml, getPosterUrl, debounce, parseScanProgressStep, buildBrowseParams, filterLibrariesForBrowseType, matchEpisodesSequentially, buildManualMappingPayload, resolveLogLevel, isLogLevelVisible, filterSeriesWithEpisodes, getSeriesWatchedStats, getSeasonWatchedStats, isMediaWatched } from "./logic.js";
 
 
 // State
@@ -414,8 +414,17 @@ async function loadBrowse() {
                 const card = document.createElement("div");
                 card.className = "media-card";
                 const posterUrl = getPosterUrl(item.poster_path);
+                const seriesStats = getSeriesWatchedStats(item);
+                const badgeHtml = seriesStats.isWatched
+                    ? '<span class="badge badge-success poster-badge">Watched</span>'
+                    : (seriesStats.watchedEpisodes > 0
+                        ? `<span class="badge badge-info poster-badge">${seriesStats.watchedEpisodes}/${seriesStats.totalEpisodes}</span>`
+                        : "");
                 card.innerHTML = `
-                    <div class="media-poster">${posterUrl ? `<img src="${posterUrl}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : "No Poster"}</div>
+                    <div class="media-poster">
+                        ${posterUrl ? `<img src="${posterUrl}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : "No Poster"}
+                        ${badgeHtml}
+                    </div>
                     <div class="media-info">
                         <div class="media-title">${escapeHtml(item.name || item.folder_name)}</div>
                         <div class="media-sub">${item.year ? item.year : ""} • ${item.seasons ? item.seasons.length : 0} Seasons</div>
@@ -436,8 +445,14 @@ async function loadBrowse() {
                 const card = document.createElement("div");
                 card.className = "media-card";
                 const posterUrl = getPosterUrl(item.poster_path);
+                const badgeHtml = item.watched
+                    ? '<span class="badge badge-success poster-badge">Watched</span>'
+                    : "";
                 card.innerHTML = `
-                    <div class="media-poster">${posterUrl ? `<img src="${posterUrl}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : "No Poster"}</div>
+                    <div class="media-poster">
+                        ${posterUrl ? `<img src="${posterUrl}" style="width: 100%; height: 100%; object-fit: cover;" alt="poster">` : "No Poster"}
+                        ${badgeHtml}
+                    </div>
                     <div class="media-info">
                         <div class="media-title">${escapeHtml(item.name || item.folder_name)}</div>
                         <div class="media-sub">${item.year ? item.year : ""} ${item.runtime_seconds ? `• ${Math.round(item.runtime_seconds / 60)}m` : ""}</div>
@@ -458,8 +473,11 @@ async function showSeriesDetail(seriesId) {
         currentDetailItem = { ...item, mediaType: "series" };
         document.getElementById("detailTitle").textContent = item.name || item.folder_name;
 
+        const seriesStats = getSeriesWatchedStats(item);
+
         let seasonsHtml = "";
         (item.seasons || []).forEach((season) => {
+            const seasonStats = getSeasonWatchedStats(season);
             let episodesRows = "";
             (season.episodes || []).forEach((episode) => {
                 const versions = (episode.versions || []).map((v) => `${v.resolution || ""} ${v.codec || ""} (${v.path || ""})`).join("<br>");
@@ -469,7 +487,14 @@ async function showSeriesDetail(seriesId) {
                         <td><strong>${escapeHtml(episode.name || "")}</strong></td>
                         <td>${episode.air_date || "-"}</td>
                         <td>${episode.runtime_seconds ? Math.round(episode.runtime_seconds / 60) + "m" : "-"}</td>
-                        <td>${episode.watched ? "✅ Watched" : "Unwatched"}</td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span>${episode.watched ? "✅ Watched" : "Unwatched"}</span>
+                                <button class="btn btn-secondary btn-xs btn-toggle-episode-watched" data-episode-id="${episode.id}" data-watched="${episode.watched ? 'true' : 'false'}">
+                                    ${episode.watched ? "Mark Unwatched" : "Mark Watched"}
+                                </button>
+                            </div>
+                        </td>
                         <td style="font-size: 0.8rem;">${versions || "<em>No files</em>"}</td>
                     </tr>
                 `;
@@ -477,7 +502,15 @@ async function showSeriesDetail(seriesId) {
 
             seasonsHtml += `
                 <div style="margin-top: 1.5rem;">
-                    <h4>${escapeHtml(season.name || "Season " + season.season_number)}</h4>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                        <h4 style="margin: 0;">${escapeHtml(season.name || "Season " + season.season_number)}</h4>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span class="badge ${seasonStats.isWatched ? 'badge-success' : (seasonStats.watchedEpisodes > 0 ? 'badge-info' : '')}">${seasonStats.watchedEpisodes}/${seasonStats.totalEpisodes} Watched</span>
+                            <button class="btn btn-secondary btn-xs btn-toggle-season-watched" data-season-id="${season.id}" data-watched="${seasonStats.isWatched ? 'true' : 'false'}">
+                                ${seasonStats.isWatched ? "Mark Season as Unwatched" : "Mark Season as Watched"}
+                            </button>
+                        </div>
+                    </div>
                     <div class="table-container" style="margin-top: 0.5rem;">
                         <table>
                             <thead>
@@ -506,9 +539,10 @@ async function showSeriesDetail(seriesId) {
                     <h3>${escapeHtml(item.name || item.folder_name)}</h3>
                     <p style="color: var(--text-secondary); margin: 0.5rem 0;">${escapeHtml(item.overview || "No overview available.")}</p>
                     <div style="font-size: 0.85rem; color: var(--text-muted);">
-                        TMDB ID: <code>${item.tmdb_identifier || "Unmatched"}</code> • Path: <code>${item.path || ""}</code>
+                        TMDB ID: <code>${item.tmdb_identifier || "Unmatched"}</code> • Path: <code>${item.path || ""}</code> • State: <strong>${seriesStats.isWatched ? "Watched" : `${seriesStats.watchedEpisodes}/${seriesStats.totalEpisodes} Watched`}</strong>
                     </div>
-                    <div style="margin-top: 1rem; display: flex; gap: 0.75rem;">
+                    <div style="margin-top: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                        <button id="btnToggleSeriesWatched" class="btn btn-secondary btn-sm">${seriesStats.isWatched ? "Mark Series as Unwatched" : "Mark Series as Watched"}</button>
                         <button id="btnOpenTmdbMatch" class="btn btn-secondary btn-sm">Match TMDB</button>
                         <button id="btnOpenRename" class="btn btn-secondary btn-sm">Rename Files</button>
                         <button id="btnOpenManualMapper" class="btn btn-secondary btn-sm">Manual Map</button>
@@ -517,6 +551,44 @@ async function showSeriesDetail(seriesId) {
             </div>
             ${seasonsHtml}
         `;
+
+        document.getElementById("btnToggleSeriesWatched").onclick = async () => {
+            try {
+                await api.markWatched("series", item.id, !seriesStats.isWatched);
+                showAlert(`Series marked as ${!seriesStats.isWatched ? "watched" : "unwatched"}`);
+                await showSeriesDetail(item.id);
+            } catch (error) {
+                showAlert(`Failed to update series watch status: ${error.message}`, "error");
+            }
+        };
+
+        document.querySelectorAll(".btn-toggle-season-watched").forEach((button) => {
+            button.onclick = async () => {
+                const seasonId = button.getAttribute("data-season-id");
+                const currentWatched = button.getAttribute("data-watched") === "true";
+                try {
+                    await api.markWatched("season", seasonId, !currentWatched);
+                    showAlert(`Season marked as ${!currentWatched ? "watched" : "unwatched"}`);
+                    await showSeriesDetail(item.id);
+                } catch (error) {
+                    showAlert(`Failed to update season watch status: ${error.message}`, "error");
+                }
+            };
+        });
+
+        document.querySelectorAll(".btn-toggle-episode-watched").forEach((button) => {
+            button.onclick = async () => {
+                const episodeId = button.getAttribute("data-episode-id");
+                const currentWatched = button.getAttribute("data-watched") === "true";
+                try {
+                    await api.markWatched("episode", episodeId, !currentWatched);
+                    showAlert(`Episode marked as ${!currentWatched ? "watched" : "unwatched"}`);
+                    await showSeriesDetail(item.id);
+                } catch (error) {
+                    showAlert(`Failed to update episode watch status: ${error.message}`, "error");
+                }
+            };
+        });
 
         document.getElementById("btnOpenTmdbMatch").onclick = () => openTmdbMatchModal("series", item.id, item.name || item.folder_name);
         document.getElementById("btnOpenRename").onclick = () => openRenameModal("series", item.id);
@@ -551,9 +623,10 @@ async function showMovieDetail(movieId) {
                     <h3>${escapeHtml(item.name || item.folder_name)}</h3>
                     <p style="color: var(--text-secondary); margin: 0.5rem 0;">${escapeHtml(item.overview || "No overview available.")}</p>
                     <div style="font-size: 0.85rem; color: var(--text-muted);">
-                        TMDB ID: <code>${item.tmdb_identifier || "Unmatched"}</code> • Runtime: ${item.runtime_seconds ? Math.round(item.runtime_seconds / 60) + "m" : "-"}
+                        TMDB ID: <code>${item.tmdb_identifier || "Unmatched"}</code> • Runtime: ${item.runtime_seconds ? Math.round(item.runtime_seconds / 60) + "m" : "-"} • State: <strong>${item.watched ? "Watched" : "Unwatched"}</strong>
                     </div>
-                    <div style="margin-top: 1rem; display: flex; gap: 0.75rem;">
+                    <div style="margin-top: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                        <button id="btnToggleMovieWatched" class="btn btn-secondary btn-sm">${item.watched ? "Mark as Unwatched" : "Mark as Watched"}</button>
                         <button id="btnOpenTmdbMatch" class="btn btn-secondary btn-sm">Match TMDB</button>
                     </div>
                 </div>
@@ -573,6 +646,16 @@ async function showMovieDetail(movieId) {
                 </table>
             </div>
         `;
+
+        document.getElementById("btnToggleMovieWatched").onclick = async () => {
+            try {
+                await api.markWatched("movie", item.id, !item.watched);
+                showAlert(`Movie marked as ${!item.watched ? "watched" : "unwatched"}`);
+                await showMovieDetail(item.id);
+            } catch (error) {
+                showAlert(`Failed to update movie watch status: ${error.message}`, "error");
+            }
+        };
 
         document.getElementById("btnOpenTmdbMatch").onclick = () => openTmdbMatchModal("movie", item.id, item.name || item.folder_name);
         openModal("mediaDetailModal");

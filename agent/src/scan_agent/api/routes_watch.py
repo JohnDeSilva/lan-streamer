@@ -24,22 +24,22 @@ watch_router = APIRouter(tags=["watch"])
 
 @watch_router.get("/watch/{media_type}/{media_identifier}/state")
 def watch_state(
-    media_type: str = Path(pattern="^(episode|movie)$"),
+    media_type: str = Path(pattern="^(episode|movie|season|series)$"),
     media_identifier: int = Path(ge=1),
     session: Session = Depends(get_database_session),
 ) -> dict[str, Any]:
-    """Return cumulative watch state for an episode or movie."""
+    """Return cumulative watch state for an episode, movie, season, or series."""
     return get_watch_state(session, media_type, media_identifier)
 
 
 @watch_router.get("/watch/{media_type}/{media_identifier}/events")
 def watch_events(
-    media_type: str = Path(pattern="^(episode|movie)$"),
+    media_type: str = Path(pattern="^(episode|movie|season|series)$"),
     media_identifier: int = Path(ge=1),
     session: Session = Depends(get_database_session),
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    """Return recent watch events for an episode or movie."""
+    """Return recent watch events for a media item."""
     return list_watch_events(
         session, media_type, media_identifier, limit=max(1, min(limit, 200))
     )
@@ -63,6 +63,24 @@ def create_watch_event(
         watched=event.watched,
     )
     progress_broker.publish("watch.updated", result)
+    affected_episodes = result.get("affected_episodes")
+    if isinstance(affected_episodes, list):
+        for affected_episode in affected_episodes:
+            if isinstance(affected_episode, dict):
+                progress_broker.publish(
+                    "watch.updated",
+                    {
+                        "media_type": "episode",
+                        "media_id": affected_episode.get("id"),
+                        "path": affected_episode.get("path"),
+                        "watched": affected_episode.get("watched"),
+                        "last_played_at": affected_episode.get("last_played_at"),
+                        "position_seconds": affected_episode.get(
+                            "resume_position_seconds"
+                        ),
+                        "client_id": event.client_id,
+                    },
+                )
     return result
 
 

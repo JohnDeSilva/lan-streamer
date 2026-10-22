@@ -9,7 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 LibraryMediaType = Literal["tv", "anime", "movie"]
 MediaTypeTv = LibraryMediaType
 RenameTarget = Literal["series", "movie"]
-WatchMediaType = Literal["episode", "movie"]
+SubtitleMediaType = Literal["episode", "movie"]
+WatchMediaType = Literal["episode", "movie", "season", "series"]
 WatchEventName = Literal["play", "stop", "complete", "unwatched"]
 
 
@@ -106,7 +107,7 @@ class SubtitleDownload(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    media_type: WatchMediaType
+    media_type: SubtitleMediaType
     media_id: int
     language: str = "en"
     forced: bool = False
