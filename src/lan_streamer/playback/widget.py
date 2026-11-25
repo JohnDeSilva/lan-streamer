@@ -220,6 +220,7 @@ class VideoPlayerWidget(QWidget):
         self.wakelock = WakeLock()
         self.next_episode_popup_shown: bool = False
         self.next_episode_info: dict[str, Any] | None = None
+        self.controller: Any | None = None
         self.is_transitioning_to_next: bool = False
         self.current_aspect_mode: str = (
             getattr(config, "default_video_aspect_mode", "fit") or "fit"
@@ -1534,10 +1535,22 @@ class VideoPlayerWidget(QWidget):
         self.is_watched_marked = False
         self._is_playback_finished = False
         self.next_episode_popup_shown = False
-        self.next_episode_info = db.get_next_episode(self.current_media_path)
+        if hasattr(self, "controller") and self.controller is not None and hasattr(
+            self.controller, "get_next_episode"
+        ):
+            self.next_episode_info = self.controller.get_next_episode(
+                self.current_media_path
+            )
+        else:
+            self.next_episode_info = db.get_next_episode(self.current_media_path)
         self.pending_resume_position = 0
 
-        saved_pos = db.get_episode_playback_position(self.current_media_path)
+        if hasattr(self, "controller") and self.controller is not None and hasattr(
+            self.controller, "get_playback_position"
+        ):
+            saved_pos = self.controller.get_playback_position(self.current_media_path)
+        else:
+            saved_pos = db.get_episode_playback_position(self.current_media_path)
         if saved_pos > 60:
             formatted_time = self._format_time(saved_pos)
             if self._ask_resume_playback(formatted_time):
@@ -2400,7 +2413,20 @@ class VideoPlayerWidget(QWidget):
         try:
             self.stop()
             if next_episode_path:
-                self.play_video(next_episode_path)
+                resolved_next_path = next_episode_path
+                if (
+                    hasattr(self, "controller")
+                    and self.controller is not None
+                    and hasattr(self.controller, "resolve_playback_path")
+                ):
+                    resolved_candidate = self.controller.resolve_playback_path(
+                        next_episode_path
+                    )
+                    if isinstance(resolved_candidate, str):
+                        resolved_next_path = resolved_candidate
+                self.play_video(
+                    resolved_next_path, canonical_media_path=next_episode_path
+                )
         finally:
             self.is_transitioning_to_next = False
 

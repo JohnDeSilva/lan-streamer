@@ -92,6 +92,7 @@ async def main() -> None:
     season_detail_view = SeasonDetailView(controller)
     cast_detail_view = CastDetailView()
     player_view = VideoPlayerWidget()
+    player_view.controller = controller
 
     stacked_layout.addWidget(library_grid_view)  # index 0
     stacked_layout.addWidget(series_detail_view)  # index 1
