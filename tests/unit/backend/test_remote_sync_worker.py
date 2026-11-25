@@ -212,13 +212,11 @@ def test_remote_sync_worker_does_not_resurrect_deleted_series() -> None:
 
         assert result["success"] is True
         assert result["items"] == 1
-        database.save_library.assert_called_once()
-        saved_items = database.save_library.call_args[0][1]
-        assert "Existing Show" in saved_items
-        assert "Deleted Show" not in saved_items
-        database.cleanup_removed_library_items.assert_called_once_with(
-            "Anime", "tv", {"Existing Show"}
-        )
+        assert "Existing Show" in result["items_data"]
+        assert "Deleted Show" not in result["items_data"]
+        database.load_library.assert_not_called()
+        database.save_library.assert_not_called()
+        database.cleanup_removed_library_items.assert_not_called()
 
     _run(run_test())
 
