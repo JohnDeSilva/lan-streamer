@@ -1754,9 +1754,47 @@ class SettingsDialog(QDialog):
                         or source_entry.get("source_id")
                         or "Remote Source"
                     )
-                    item = QListWidgetItem(
-                        f"[Remote Source]  {source_name} ({agent_url})"
+                    resolved_mounts: dict[str, str] = {}
+                    agent_mounts = self.staged_scan_agents.get(agent_url, {}).get(
+                        "mount_mappings", {}
                     )
+                    source_mounts = source_entry.get("mount_mappings") or {}
+                    library_mounts = library_configuration.get("mount_mappings", {})
+                    remote_roots = [
+                        str(root)
+                        for root in (source_entry.get("remote_root_paths") or [])
+                        if root
+                    ]
+                    for root in remote_roots:
+                        local_mount = (
+                            source_mounts.get(root)
+                            or library_mounts.get(root)
+                            or agent_mounts.get(root)
+                        )
+                        if local_mount:
+                            resolved_mounts[root] = str(local_mount)
+                    for root, local_mount in source_mounts.items():
+                        if local_mount and root not in resolved_mounts:
+                            resolved_mounts[str(root)] = str(local_mount)
+                    if not resolved_mounts and not remote_roots:
+                        for root, local_mount in library_mounts.items():
+                            if local_mount:
+                                resolved_mounts[str(root)] = str(local_mount)
+
+                    mapped_paths = list(dict.fromkeys(resolved_mounts.values()))
+                    mounts_suffix = (
+                        f"  \u2192  {', '.join(mapped_paths)}" if mapped_paths else ""
+                    )
+                    item = QListWidgetItem(
+                        f"[Remote Source]  {source_name} ({agent_url}){mounts_suffix}"
+                    )
+                    if resolved_mounts:
+                        item.setToolTip(
+                            "\n".join(
+                                f"{remote_root} \u2192 {local_mount}"
+                                for remote_root, local_mount in resolved_mounts.items()
+                            )
+                        )
                     item.setData(Qt.ItemDataRole.UserRole, source_entry)
                     self.directory_list_widget.addItem(item)
 
@@ -1991,6 +2029,7 @@ class SettingsDialog(QDialog):
         self.library_selector.setCurrentText(new_library_name)
         if new_management_type != "local":
             self._populate_remote_agents_tree()
+        self._refresh_directory_list()
         logger.info(
             "Added %s library '%s' (type: %s) to staged configuration",
             new_management_type,
@@ -2193,6 +2232,7 @@ class SettingsDialog(QDialog):
                         lib_mounts[remote_root] = local_mount
 
         self._populate_remote_agents_tree()
+        self._refresh_directory_list()
         logger.info(
             "Applied %d auto-detected mount mapping(s) for agent %s",
             len(detected_mounts),

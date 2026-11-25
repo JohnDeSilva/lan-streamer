@@ -1010,3 +1010,76 @@ def test_settings_dialog_save_config_starts_agent_event_listeners(qtbot) -> None
 
     mock_controller.start_agent_event_listeners.assert_called_once()
     dialog.reject()
+
+
+def test_settings_dialog_displays_multiple_auto_detected_mounts(qtbot) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    agent_url = "http://127.0.0.1:8800"
+    dialog.staged_libraries = {
+        "TV Shows": {
+            "type": "tv",
+            "management_type": "remote",
+            "paths": [],
+            "archive_paths": [],
+            "show_future_episodes": True,
+            "sources": [
+                {
+                    "type": "agent",
+                    "agent_url": agent_url,
+                    "source_identifier": "tv-1",
+                    "source_id": "tv-1",
+                    "name": "TV Shows",
+                    "remote_root_paths": ["/media/tv", "/archive/tv"],
+                    "mount_mappings": {},
+                }
+            ],
+            "mount_mappings": {},
+        }
+    }
+    dialog.staged_scan_agents = {
+        agent_url: {
+            "name": "Scan Agent",
+            "url": agent_url,
+            "reachable": True,
+            "discovered_libraries": [
+                {
+                    "id": "tv-1",
+                    "name": "TV Shows",
+                    "media_type": "tv",
+                    "root_path": "/media/tv",
+                    "root_paths": ["/media/tv", "/archive/tv"],
+                }
+            ],
+            "mount_mappings": {},
+        }
+    }
+    dialog._refresh_library_selector()
+    dialog.library_selector.setCurrentText("TV Shows")
+
+    dialog._on_mounts_auto_detected(
+        agent_url,
+        {
+            "/media/tv": "/Volumes/nas/tv",
+            "/archive/tv": "/Volumes/archive/tv",
+        },
+    )
+
+    agent_item = dialog.remote_agents_tree_widget.topLevelItem(0)
+    assert agent_item is not None
+    source_item = agent_item.child(0)
+    assert source_item is not None
+    assert source_item.childCount() == 2
+    assert source_item.child(0).text(0) == "📁 /media/tv"
+    assert source_item.child(0).text(1) == "/Volumes/nas/tv"
+    assert source_item.child(1).text(0) == "📁 /archive/tv"
+    assert source_item.child(1).text(1) == "/Volumes/archive/tv"
+
+    assert dialog.directory_list_widget.count() == 1
+    list_item = dialog.directory_list_widget.item(0)
+    assert list_item is not None
+    assert "/Volumes/nas/tv" in list_item.text()
+    assert "/Volumes/archive/tv" in list_item.text()
+
+    dialog.reject()
