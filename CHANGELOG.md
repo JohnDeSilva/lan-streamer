@@ -1,3 +1,9 @@
+## v0.60.0rc1 (2026-11-25)
+
+### Fix
+
+- **dev-dependency**: bump ruff from 0.16.10 to 0.17.0
+
 ## v0.60.0rc0 (2026-11-25)
 
 ### Feat
