@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 from collections import deque
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -205,35 +206,36 @@ def extract_sample_relative_paths(
     return samples
 
 
-def _build_local_base_candidates(
+def _iter_local_base_candidates(
     mount_root: str,
     remote_root: str,
     max_depth: int = _DEFAULT_MAX_SCAN_DEPTH,
     max_directories: int = _DEFAULT_MAX_DIRECTORIES_PER_MOUNT,
-) -> list[str]:
-    """Generate ordered local base directory candidates under *mount_root*.
+) -> Iterator[str]:
+    """Lazily yield local base directory candidates under *mount_root*.
 
-    Checks direct/tail-matched paths first, then performs a bounded
+    Yields direct/tail-matched paths first, then performs a bounded
     breadth-first directory scan up to *max_depth* levels deep so nested SMB
     subpaths (e.g. ``/Volumes/storage/current/video/tv`` for ``/media/tv``)
-    are discovered automatically without scanning deeply into media trees.
+    are discovered and scanning stops as soon as a match is verified.
     """
     normalized_remote = remote_root.replace("\\", "/").strip("/")
     remote_parts = [part for part in normalized_remote.split("/") if part]
     target_leaf_name = remote_parts[-1].lower() if remote_parts else ""
 
-    candidates: list[str] = [mount_root]
     seen: set[str] = {mount_root}
-
-    def _append_if_dir(path_candidate: str) -> None:
-        if path_candidate not in seen and os.path.isdir(path_candidate):
-            seen.add(path_candidate)
-            candidates.append(path_candidate)
+    yield mount_root
 
     if remote_parts:
-        _append_if_dir(os.path.join(mount_root, remote_parts[-1]))
+        leaf_candidate = os.path.join(mount_root, remote_parts[-1])
+        if leaf_candidate not in seen and os.path.isdir(leaf_candidate):
+            seen.add(leaf_candidate)
+            yield leaf_candidate
     if len(remote_parts) >= 2:
-        _append_if_dir(os.path.join(mount_root, remote_parts[-2], remote_parts[-1]))
+        tail_candidate = os.path.join(mount_root, remote_parts[-2], remote_parts[-1])
+        if tail_candidate not in seen and os.path.isdir(tail_candidate):
+            seen.add(tail_candidate)
+            yield tail_candidate
 
     queue: deque[tuple[str, int]] = deque([(mount_root, 0)])
     visited_count = 0
@@ -264,11 +266,9 @@ def _build_local_base_candidates(
             visited_count += 1
             if entry.path not in seen:
                 seen.add(entry.path)
-                candidates.append(entry.path)
+                yield entry.path
             if depth + 1 < max_depth and visited_count < max_directories:
                 queue.append((entry.path, depth + 1))
-
-    return candidates
 
 
 def auto_detect_mount_for_remote_root(
@@ -281,6 +281,14 @@ def auto_detect_mount_for_remote_root(
     if not remote_root or not sample_relative_paths:
         return None
 
+    parsed_samples = [
+        [part for part in relative_path.split("/") if part]
+        for relative_path in sample_relative_paths
+    ]
+    parsed_samples = [parts for parts in parsed_samples if parts]
+    if not parsed_samples:
+        return None
+
     local_mounts = (
         mount_candidates
         if mount_candidates is not None
@@ -289,33 +297,42 @@ def auto_detect_mount_for_remote_root(
     if not local_mounts:
         return None
 
+    # Precompute unique top-level directory names (e.g. show/movie folder names)
+    # to quickly reject non-matching directories before checking all sample files.
+    top_level_names = list(
+        dict.fromkeys(parts[0] for parts in parsed_samples if len(parts) > 1)
+    )
+
     best_base_path: str | None = None
     best_match_count = 0
 
     for mount_root in local_mounts:
         if not os.path.isdir(mount_root):
             continue
-        for candidate_base in _build_local_base_candidates(
+        for candidate_base in _iter_local_base_candidates(
             mount_root, remote_root, max_depth=max_depth
         ):
+            if top_level_names and not any(
+                os.path.isdir(os.path.join(candidate_base, top_name))
+                for top_name in top_level_names
+            ):
+                continue
+
             match_count = 0
-            for relative_path in sample_relative_paths:
-                relative_parts = [part for part in relative_path.split("/") if part]
-                if not relative_parts:
-                    continue
+            for relative_parts in parsed_samples:
                 local_file_candidate = os.path.join(candidate_base, *relative_parts)
                 if os.path.exists(local_file_candidate):
                     match_count += 1
             if match_count > best_match_count:
                 best_match_count = match_count
                 best_base_path = candidate_base
-                if best_match_count == len(sample_relative_paths):
+                if best_match_count == len(parsed_samples):
                     logger.info(
                         "Auto-detected local mount '%s' for remote root '%s' (%d/%d samples matched)",
                         best_base_path,
                         remote_root,
                         best_match_count,
-                        len(sample_relative_paths),
+                        len(parsed_samples),
                     )
                     return best_base_path
 
@@ -325,7 +342,7 @@ def auto_detect_mount_for_remote_root(
             best_base_path,
             remote_root,
             best_match_count,
-            len(sample_relative_paths),
+            len(parsed_samples),
         )
     return best_base_path
 

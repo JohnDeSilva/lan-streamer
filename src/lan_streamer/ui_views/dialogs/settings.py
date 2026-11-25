@@ -2207,10 +2207,28 @@ class SettingsDialog(QDialog):
         self, agent_url: str, libraries: list[dict[str, Any]]
     ) -> None:
         """Launch a background worker to auto-detect local mounts for *agent_url*."""
+        existing_mappings: dict[str, str] = dict(
+            self.staged_scan_agents.get(agent_url, {}).get("mount_mappings", {})
+        )
+        from lan_streamer.system.config import get_library_sources
+
+        for library_config in self.staged_libraries.values():
+            for source in get_library_sources(library_config):
+                if (
+                    source.get("type") == "agent"
+                    and source.get("agent_url") == agent_url
+                ):
+                    for remote_root, local_mount in (
+                        source.get("mount_mappings") or {}
+                    ).items():
+                        if local_mount and remote_root not in existing_mappings:
+                            existing_mappings[remote_root] = local_mount
+
         worker = AutoDetectMountsWorker(
             agent_url,
             libraries,
             max_depth=self.mount_discovery_max_depth_input.value(),
+            existing_mappings=existing_mappings,
         )
         self._mount_detect_workers.append(worker)
         worker.mounts_detected.connect(self._on_mounts_auto_detected)
