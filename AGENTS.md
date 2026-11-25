@@ -62,8 +62,9 @@ Do not abbreviate variable names. Use full, descriptive names:
 - ❌ `tmdb_id` ➔ ✅ `tmdb_identifier`
 
 ### 2. UI Thread Safety (Responsiveness)
-- The main Qt UI thread must never freeze.
-- Run all blocking IO, filesystem crawling, DB writes, and network requests in background workers (`QThread`/`QWorker`) under `src/lan_streamer/backend/`.
+- The main Qt UI thread must **never** freeze or perform blocking work.
+- Never call synchronous HTTP/agent requests (`requests`, `scan_agent_client`, `tmdb_client`, `myanimelist_client`), filesystem crawls, SQLite DB writes, or `config.save_config()` directly on the Qt main thread.
+- Run all blocking IO, filesystem crawling, DB/config writes, and network requests in background workers (`QThread`/`QWorker` under `src/lan_streamer/backend/` or `AsyncTaskManager` + `run_in_executor`), marshalling results back to the UI thread via Qt signals or async task continuations.
 
 ### 3. Detailed Logging
 - Use standard Python `logging`.
