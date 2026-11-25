@@ -945,10 +945,9 @@ def test_controller_sync_remote_library(mock_controller) -> None:
         )
         assert result["success"] is True
         assert result["items"] == 1
+        assert result["items_data"] == remote_data
         mock_fetch.assert_called_once_with("http://127.0.0.1:8800", "remote-tv-1")
-        mock_controller._db.save_library.assert_called_once_with(
-            "Remote TV", remote_data
-        )
+        mock_controller._db.save_library.assert_not_called()
 
 
 def test_controller_sync_remote_library_missing_agent_url(mock_controller) -> None:
@@ -993,12 +992,12 @@ def test_controller_sync_remote_library_downloads_movie_and_season_posters(
 ) -> None:
     mock_controller._config.libraries = {
         "Remote TV": {
-            "management_type": "remote",
+            "management_type": "hybrid",
             "type": "tv",
             "agent_url": "http://127.0.0.1:8800",
         },
         "Remote Movies": {
-            "management_type": "remote",
+            "management_type": "hybrid",
             "type": "movie",
             "agent_url": "http://127.0.0.1:8800",
         },

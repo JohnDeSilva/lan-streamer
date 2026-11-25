@@ -570,9 +570,7 @@ class Config:
             # General settings
             set_app_config("libraries", self.libraries)
             set_app_config("scan_agents", self.scan_agents)
-            set_app_config(
-                "mount_discovery_max_depth", self.mount_discovery_max_depth
-            )
+            set_app_config("mount_discovery_max_depth", self.mount_discovery_max_depth)
             set_app_config("sync_history_on_start", self.sync_history_on_start)
             set_app_config("filter_out_watched", self.filter_out_watched)
             set_app_config("sort_mode", self.sort_mode)

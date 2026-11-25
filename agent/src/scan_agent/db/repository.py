@@ -1643,7 +1643,11 @@ def _collect_mal_watch_updates(
     """Compute MyAnimeList ``{anime_id: watched_episode_count}`` updates for watched items."""
     updates: dict[int, int] = {}
 
-    if target_movie is not None and target_movie.watched and target_movie.myanimelist_anime_id:
+    if (
+        target_movie is not None
+        and target_movie.watched
+        and target_movie.myanimelist_anime_id
+    ):
         updates[int(target_movie.myanimelist_anime_id)] = 1
 
     anime_ids_to_check: set[int] = set()

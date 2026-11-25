@@ -269,12 +269,14 @@ def test_settings_dialog_remote_libraries_tab_flow(qtbot) -> None:
     assert "Storage NAS Agent" in agent_item.text(0)
     assert agent_item.text(1) == "Status: Reachable"
 
-    # Source node assertions - no checkboxes, initially Unattached
+    # Source node assertions - no checkboxes, auto-mirrored to NAS TV on connect
     assert agent_item.childCount() == 1
     source_item = agent_item.child(0)
     assert source_item is not None
     assert "NAS TV" in source_item.text(0)
-    assert source_item.text(1) == "Unattached"
+    assert source_item.text(1) == "Attached to: NAS TV"
+    assert "NAS TV" in dialog.staged_libraries
+    assert dialog.staged_libraries["NAS TV"]["management_type"] == "remote"
     assert not (source_item.flags() & Qt.ItemFlag.ItemIsUserCheckable)
 
     # Root directory node assertions
@@ -314,13 +316,12 @@ def test_settings_dialog_remote_libraries_tab_flow(qtbot) -> None:
     assert agent_item is not None
     source_item = agent_item.child(0)
     assert source_item is not None
-    assert source_item.text(1) == "Attached to: TV Shows"
+    assert source_item.text(1) == "Attached to: NAS TV, TV Shows"
     assert dialog.staged_libraries["TV Shows"]["management_type"] == "hybrid"
     assert dialog.staged_libraries["TV Shows"]["mount_mappings"] == {
         "/storage/tv": "/mnt/nas/tv"
     }
     assert "/local/tv" in dialog.staged_libraries["TV Shows"]["paths"]
-    assert "NAS TV" not in dialog.staged_libraries  # No separate library created!
 
     # Remove remote source from the library
     count = dialog.directory_list_widget.count()
@@ -336,7 +337,7 @@ def test_settings_dialog_remote_libraries_tab_flow(qtbot) -> None:
     assert agent_item is not None
     source_item = agent_item.child(0)
     assert source_item is not None
-    assert source_item.text(1) == "Unattached"
+    assert source_item.text(1) == "Attached to: NAS TV"
 
     # Remove agent
     tree.setCurrentItem(agent_item)
@@ -390,7 +391,7 @@ def test_settings_dialog_attaching_remote_source_to_existing_library(
     source_item = agent_item.child(0)
     assert source_item is not None
     assert "Remote Anime" in source_item.text(0)
-    assert source_item.text(1) == "Unattached"
+    assert source_item.text(1) == "Attached to: Remote Anime"
 
     # Map local mount path on the agent source
     root_item = source_item.child(0)
@@ -418,7 +419,7 @@ def test_settings_dialog_attaching_remote_source_to_existing_library(
     assert agent_item is not None
     source_item = agent_item.child(0)
     assert source_item is not None
-    assert source_item.text(1) == "Attached to: Anime"
+    assert source_item.text(1) == "Attached to: Remote Anime, Anime"
     staged_anime = dialog.staged_libraries["Anime"]
     assert staged_anime["management_type"] == "remote"
     assert "/Volumes/remote_anime" in staged_anime["paths"]
@@ -428,7 +429,8 @@ def test_settings_dialog_attaching_remote_source_to_existing_library(
         for s in staged_anime["sources"]
     )
     # Ensure NO separate library named "Remote Anime" was created!
-    assert "Remote Anime" not in dialog.staged_libraries
+    assert "Remote Anime" in dialog.staged_libraries
+    assert dialog.staged_libraries["Remote Anime"]["management_type"] == "remote"
 
     # Save settings and verify persistence
     with (
@@ -440,7 +442,7 @@ def test_settings_dialog_attaching_remote_source_to_existing_library(
         mock_save.assert_called_once()
         mock_save_db.assert_called_once()
 
-    assert "Remote Anime" not in config.libraries
+    assert "Remote Anime" in config.libraries
     assert "Anime" in config.libraries
     assert "/Volumes/remote_anime" in config.libraries["Anime"]["paths"]
 

@@ -804,9 +804,7 @@ def sync_remote_library_from_agent(
                     items_dictionary=remote_items,
                     library_type=library_type,
                     existing_mappings=existing_mounts,
-                    max_depth=int(
-                        getattr(app_config, "mount_discovery_max_depth", 5)
-                    ),
+                    max_depth=int(getattr(app_config, "mount_discovery_max_depth", 5)),
                 )
                 if auto_mounts:
                     detected_mount_mappings.update(auto_mounts)

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from lan_streamer.services.mount_discovery_service import (
     auto_detect_mount_for_remote_root,
     auto_detect_mount_mappings_for_items,
     extract_sample_relative_paths,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_extract_sample_relative_paths_for_tv_and_movies() -> None:

@@ -20,7 +20,7 @@ def test_controller(qapp: Any) -> Controller:
     mock_config = MagicMock()
     mock_config.libraries = {
         "Remote TV": {
-            "management_type": "remote",
+            "management_type": "hybrid",
             "type": "tv",
             "agent_url": "http://127.0.0.1:8000",
             "mount_mappings": {"/remote/media/tv": "/local/mount/tv"},

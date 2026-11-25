@@ -45,7 +45,8 @@ def test_remote_sync_worker_runs_sync_off_ui_thread() -> None:
 
         assert result["success"] is True
         assert result["items"] == 1
-        database.save_library.assert_called_once()
+        assert result["items_data"] == {"Show A": {"name": "Show A", "seasons": {}}}
+        database.save_library.assert_not_called()
         assert result["library_name"] == "Remote TV"
 
     _run(run_test())
@@ -62,7 +63,7 @@ def test_remote_sync_worker_returns_error_result_on_failure() -> None:
         worker = RemoteSyncWorker(
             library_name="Remote TV",
             library_configuration={
-                "management_type": "remote",
+                "management_type": "hybrid",
                 "type": "tv",
                 "agent_url": "http://127.0.0.1:8800",
             },
@@ -87,7 +88,7 @@ def test_remote_sync_worker_multi_agent_sources() -> None:
 
     async def run_test() -> None:
         library_configuration = {
-            "management_type": "remote",
+            "management_type": "hybrid",
             "type": "tv",
             "sources": [
                 {
@@ -297,7 +298,7 @@ def test_remote_sync_worker_back_syncs_watch_and_metadata() -> None:
 
     async def run_test() -> None:
         library_configuration = {
-            "management_type": "remote",
+            "management_type": "hybrid",
             "type": "tv",
             "agent_url": "http://127.0.0.1:8800",
             "mount_mappings": {"/mnt/share": "/Volumes/share"},
@@ -395,7 +396,7 @@ def test_remote_sync_worker_skips_back_sync_when_already_in_sync() -> None:
 
     async def run_test() -> None:
         library_configuration = {
-            "management_type": "remote",
+            "management_type": "hybrid",
             "type": "tv",
             "agent_url": "http://127.0.0.1:8800",
             "mount_mappings": {"/mnt/share": "/Volumes/share"},
@@ -460,7 +461,7 @@ def test_remote_sync_worker_back_syncs_in_progress_position_delta() -> None:
 
     async def run_test() -> None:
         library_configuration = {
-            "management_type": "remote",
+            "management_type": "hybrid",
             "type": "tv",
             "agent_url": "http://127.0.0.1:8800",
             "mount_mappings": {"/mnt/share": "/Volumes/share"},
@@ -639,7 +640,7 @@ def test_remote_sync_worker_serializes_save_with_database_lock() -> None:
         worker = RemoteSyncWorker(
             library_name="Remote TV",
             library_configuration={
-                "management_type": "remote",
+                "management_type": "hybrid",
                 "type": "tv",
                 "agent_url": "http://127.0.0.1:8800",
             },
@@ -670,7 +671,7 @@ def test_remote_sync_worker_deduplicates_series_across_agent_sources() -> None:
 
     async def run_test() -> None:
         library_configuration = {
-            "management_type": "remote",
+            "management_type": "hybrid",
             "type": "tv",
             "sources": [
                 {
@@ -818,7 +819,7 @@ def test_remote_sync_worker_deduplicates_movies_across_agent_sources() -> None:
 
     async def run_test() -> None:
         library_configuration = {
-            "management_type": "remote",
+            "management_type": "hybrid",
             "type": "movie",
             "sources": [
                 {
@@ -895,7 +896,7 @@ def test_remote_sync_worker_deduplicates_series_by_normalized_title() -> None:
 
     async def run_test() -> None:
         library_configuration = {
-            "management_type": "remote",
+            "management_type": "hybrid",
             "type": "tv",
             "sources": [
                 {

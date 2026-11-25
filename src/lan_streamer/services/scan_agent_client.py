@@ -894,9 +894,7 @@ class ScanAgentClient:
         except ValueError:
             return {"status": "accepted"}
 
-    def get_mal_status(
-        self, agent_url: str, timeout: float = 10.0
-    ) -> dict[str, Any]:
+    def get_mal_status(self, agent_url: str, timeout: float = 10.0) -> dict[str, Any]:
         """Return MyAnimeList configuration and authentication status on an agent."""
         normalized_url = normalize_agent_url(agent_url)
         target_endpoint = f"{normalized_url}/api/v1/services/myanimelist/status"
@@ -961,12 +959,12 @@ class ScanAgentClient:
             )
         return dict(response.json())
 
-    def disconnect_mal(
-        self, agent_url: str, timeout: float = 10.0
-    ) -> dict[str, Any]:
+    def disconnect_mal(self, agent_url: str, timeout: float = 10.0) -> dict[str, Any]:
         """Disconnect MyAnimeList credentials on a remote scan agent."""
         normalized_url = normalize_agent_url(agent_url)
-        target_endpoint = f"{normalized_url}/api/v1/services/myanimelist/auth/disconnect"
+        target_endpoint = (
+            f"{normalized_url}/api/v1/services/myanimelist/auth/disconnect"
+        )
         try:
             response = requests.post(
                 target_endpoint, headers=self._headers, timeout=timeout
@@ -987,8 +985,7 @@ class ScanAgentClient:
         """Search MyAnimeList via a remote scan agent."""
         normalized_url = normalize_agent_url(agent_url)
         target_endpoint = (
-            f"{normalized_url}/api/v1/services/myanimelist/search"
-            f"?query={quote(query)}"
+            f"{normalized_url}/api/v1/services/myanimelist/search?query={quote(query)}"
         )
         try:
             response = requests.get(
