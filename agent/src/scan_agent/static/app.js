@@ -90,6 +90,18 @@ async function loadDashboard() {
         healthEl.textContent = health.status === "ok" ? "Online" : "Degraded";
         healthEl.style.color = health.status === "ok" ? "var(--accent-green)" : "var(--accent-red)";
 
+        const versionEl = document.getElementById("agentVersion");
+        if (versionEl) {
+            if (health.version) {
+                const versionText = String(health.version);
+                versionEl.textContent = versionText.startsWith("v") ? versionText : `v${versionText}`;
+                versionEl.style.display = "inline-block";
+            } else {
+                versionEl.textContent = "";
+                versionEl.style.display = "none";
+            }
+        }
+
         document.getElementById("librariesCount").textContent = libraries.length;
         document.getElementById("seriesCount").textContent = seriesList.length;
         document.getElementById("moviesCount").textContent = moviesList.length;

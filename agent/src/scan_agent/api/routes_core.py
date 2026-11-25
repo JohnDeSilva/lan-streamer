@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from scan_agent import __version__
 from scan_agent.api.deps import get_database_session
 from scan_agent.api.schemas import ConfigUpdate, LibraryPatch, LibraryWrite
 from scan_agent.config import apply_agent_log_level
@@ -79,7 +80,7 @@ def health(request: Request) -> dict[str, Any]:
         tmdb_configured = False
     return {
         "status": "ok",
-        "version": "0.1.0",
+        "version": __version__,
         "tmdb_configured": tmdb_configured,
         "database": config.database_path,
         "sources": len(config.sources),

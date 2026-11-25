@@ -65,6 +65,12 @@ header {
     text-transform: uppercase;
 }
 
+.brand .badge-version {
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    text-transform: none;
+}
+
 nav {
     display: flex;
     gap: 0.5rem;

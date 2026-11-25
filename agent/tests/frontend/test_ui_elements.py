@@ -1070,3 +1070,36 @@ def test_v8_load_browse_excludes_folders_with_no_episode_files(
     assert "Valid Series" in result["cardHtml"]
     assert "Empty Series" not in result["cardHtml"]
     assert "Empty Season Series" not in result["cardHtml"]
+
+
+def test_v8_dashboard_displays_agent_version(engine: MiniRacer) -> None:
+    """Verify loadDashboard updates #agentVersion from health.version."""
+    html_text = _read_static_file("index.html")
+    assert 'id="agentVersion"' in html_text
+
+    result = _load_app_in_v8(
+        engine,
+        """
+        api.getHealth = async function() {
+            return { status: "ok", version: "0.1.0" };
+        };
+        var done = false;
+        loadDashboard().then(function() { done = true; });
+        return { scheduled: true };
+        """,
+    )
+    assert result["scheduled"] is True
+
+    # Flush microtasks by evaluating a follow-up check on the same engine
+    version_state = json.loads(
+        engine.eval(
+            """
+            JSON.stringify({
+                text: getOrCreateElement("agentVersion").textContent,
+                display: getOrCreateElement("agentVersion").style.display
+            });
+            """
+        )
+    )
+    assert version_state["text"] == "v0.1.0"
+    assert version_state["display"] == "inline-block"
