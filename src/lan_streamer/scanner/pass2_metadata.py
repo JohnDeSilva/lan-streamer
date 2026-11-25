@@ -9,7 +9,7 @@ file paths.
 from __future__ import annotations
 
 import concurrent.futures
-import datetime
+import datetime as dt
 import logging
 import re
 from pathlib import Path
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 logger = logging.getLogger("lan_streamer.scanner.pass2_metadata")
-_TODAY_STR: str = datetime.datetime.now(datetime.UTC).date().isoformat()
+_TODAY_STR: str = dt.datetime.now(dt.UTC).date().isoformat()
 
 
 # =============================================================================

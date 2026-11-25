@@ -293,11 +293,11 @@ def test_series_detail_view_rendering(
     sample_library_dictionary: dict[str, Any], qtbot: Any
 ) -> None:
     import copy
-    import datetime
+    import datetime as dt
 
-    today = datetime.datetime.now(datetime.UTC).date()
-    future_date = (today + datetime.timedelta(days=10)).isoformat()
-    past_date = (today - datetime.timedelta(days=10)).isoformat()
+    today = dt.datetime.now(dt.UTC).date()
+    future_date = (today + dt.timedelta(days=10)).isoformat()
+    past_date = (today - dt.timedelta(days=10)).isoformat()
 
     local_dict = copy.deepcopy(sample_library_dictionary)
     local_dict["Cosmos"]["seasons"]["Season 1"]["episodes"].extend(

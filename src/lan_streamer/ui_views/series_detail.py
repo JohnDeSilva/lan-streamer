@@ -1,5 +1,5 @@
 import asyncio
-import datetime
+import datetime as dt
 import logging
 import re
 from pathlib import Path
@@ -760,7 +760,7 @@ class SeriesDetailView(QWidget):
             )
         self.seasons_tab_widget.clear()
 
-        today_str = datetime.datetime.now(datetime.UTC).date().isoformat()
+        today_str = dt.datetime.now(dt.UTC).date().isoformat()
         library_config = config.libraries.get(self.controller.current_library_name, {})
         show_future_episodes = library_config.get("show_future_episodes", True)
         hide_missing_future = config.get_series_preference(
@@ -1149,8 +1149,8 @@ class SeriesDetailView(QWidget):
                 is_missing = False
                 if air_date_string:
                     try:
-                        air_date_obj = datetime.date.fromisoformat(air_date_string)
-                        today_obj = datetime.datetime.now(datetime.UTC).date()
+                        air_date_obj = dt.date.fromisoformat(air_date_string)
+                        today_obj = dt.datetime.now(dt.UTC).date()
                         if air_date_obj < today_obj:
                             is_missing = True
                     except ValueError:

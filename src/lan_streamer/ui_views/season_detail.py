@@ -1,6 +1,6 @@
 """Full-page season detail view with poster, overview, and episode table."""
 
-import datetime
+import datetime as dt
 import logging
 import re
 from pathlib import Path
@@ -435,7 +435,7 @@ class SeasonDetailView(QWidget):
         table = self._episode_table
         table.setRowCount(0)
         table.setRowCount(len(episodes))
-        today_str = datetime.datetime.now(datetime.UTC).date().isoformat()
+        today_str = dt.datetime.now(dt.UTC).date().isoformat()
 
         # Compute which file paths are shared by multiple episodes
         path_counts: dict[str, int] = {}
@@ -538,10 +538,7 @@ class SeasonDetailView(QWidget):
             missing = False
             if air_date:
                 try:
-                    if (
-                        datetime.date.fromisoformat(air_date)
-                        < datetime.datetime.now(datetime.UTC).date()
-                    ):
+                    if dt.date.fromisoformat(air_date) < dt.datetime.now(dt.UTC).date():
                         missing = True
                 except ValueError:
                     if air_date < today_str:

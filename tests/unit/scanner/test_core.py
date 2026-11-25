@@ -2714,7 +2714,7 @@ def test_scanner_queries_tmdb_when_single_item_refresh_true(tmp_path):
 
 
 def test_scan_series_show_future_episodes(tmp_path) -> None:
-    import datetime
+    import datetime as dt
 
     from lan_streamer.scanner import scan_series
 
@@ -2725,9 +2725,9 @@ def test_scan_series_show_future_episodes(tmp_path) -> None:
     episode_file = season_dir / "Future Show S01E01.mkv"
     episode_file.touch()
 
-    today = datetime.datetime.now(datetime.UTC).date()
-    past_date = (today - datetime.timedelta(days=5)).isoformat()
-    future_date = (today + datetime.timedelta(days=5)).isoformat()
+    today = dt.datetime.now(dt.UTC).date()
+    past_date = (today - dt.timedelta(days=5)).isoformat()
+    future_date = (today + dt.timedelta(days=5)).isoformat()
 
     with (
         patch("lan_streamer.services.metadata_series.tmdb_client") as mock_tmdb,
@@ -2794,7 +2794,7 @@ def test_scan_series_show_future_episodes(tmp_path) -> None:
 
 
 def test_scan_series_preserves_only_past_missing_episodes(tmp_path) -> None:
-    import datetime
+    import datetime as dt
 
     from lan_streamer.scanner import scan_series
 
@@ -2804,9 +2804,9 @@ def test_scan_series_preserves_only_past_missing_episodes(tmp_path) -> None:
     season_dir.mkdir()
     (season_dir / "S01E01.mkv").touch()
 
-    today = datetime.datetime.now(datetime.UTC).date()
-    past_date = (today - datetime.timedelta(days=5)).isoformat()
-    future_date = (today + datetime.timedelta(days=5)).isoformat()
+    today = dt.datetime.now(dt.UTC).date()
+    past_date = (today - dt.timedelta(days=5)).isoformat()
+    future_date = (today + dt.timedelta(days=5)).isoformat()
 
     existing_series = {
         "metadata": {
