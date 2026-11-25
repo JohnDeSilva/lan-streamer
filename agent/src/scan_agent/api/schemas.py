@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 LibraryMediaType = Literal["tv", "anime", "movie"]
 MediaTypeTv = LibraryMediaType
@@ -40,14 +40,32 @@ class ConfigUpdate(BaseModel):
 
 
 class LibraryWrite(BaseModel):
-    """Create/replace a library definition."""
+    """Create/replace a library definition (supports single or multiple root paths)."""
 
     model_config = ConfigDict(extra="ignore")
 
     name: str = Field(min_length=1)
     media_type: MediaTypeTv
-    root_path: str = Field(min_length=1)
+    root_path: str | None = None
+    root_paths: list[str] | None = None
     enabled: bool = True
+
+    @model_validator(mode="after")
+    def _normalize_roots(self) -> LibraryWrite:
+        cleaned_roots: list[str] = []
+        for raw_path in self.root_paths or []:
+            stripped = str(raw_path).strip()
+            if stripped and stripped not in cleaned_roots:
+                cleaned_roots.append(stripped)
+        if self.root_path and self.root_path.strip():
+            primary = self.root_path.strip()
+            if primary not in cleaned_roots:
+                cleaned_roots.insert(0, primary)
+        if not cleaned_roots:
+            raise ValueError("At least one root_path or root_paths entry is required")
+        self.root_paths = cleaned_roots
+        self.root_path = cleaned_roots[0]
+        return self
 
 
 class LibraryPatch(BaseModel):
@@ -58,6 +76,7 @@ class LibraryPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1)
     media_type: MediaTypeTv | None = None
     root_path: str | None = Field(default=None, min_length=1)
+    root_paths: list[str] | None = None
     enabled: bool | None = None
 
 

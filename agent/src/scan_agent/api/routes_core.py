@@ -120,6 +120,21 @@ def update_config(request: Request, update: ConfigUpdate) -> dict[str, Any]:
     return _serialize_config(config)
 
 
+def _normalize_source_roots(entry: dict[str, Any]) -> None:
+    """Ensure *entry* has synchronized ``root_path`` and ``root_paths`` fields."""
+    cleaned_roots: list[str] = []
+    for raw_path in entry.get("root_paths") or []:
+        stripped = str(raw_path).strip()
+        if stripped and stripped not in cleaned_roots:
+            cleaned_roots.append(stripped)
+    primary = str(entry.get("root_path") or "").strip()
+    if primary and primary not in cleaned_roots:
+        cleaned_roots.insert(0, primary)
+    if cleaned_roots:
+        entry["root_paths"] = cleaned_roots
+        entry["root_path"] = cleaned_roots[0]
+
+
 def _list_sources(
     request: Request,
     session: Session,
@@ -129,6 +144,7 @@ def _list_sources(
     result: list[dict[str, Any]] = []
     for identifier, definition in config.sources.items():
         entry = dict(definition)
+        _normalize_source_roots(entry)
         entry["id"] = identifier
         entry["counts"] = counts_by_name.get(
             str(definition.get("name", "")),
@@ -167,6 +183,9 @@ def _create_source(
         "name": source.name,
         "media_type": source.media_type,
         "root_path": source.root_path,
+        "root_paths": list(
+            source.root_paths or ([source.root_path] if source.root_path else [])
+        ),
         "enabled": source.enabled,
     }
     config.save()
@@ -208,7 +227,25 @@ def _update_source(
     if identifier not in config.sources:
         raise HTTPException(status_code=404, detail="Unknown source identifier")
     merged = dict(config.sources[identifier])
-    merged.update(patch.model_dump(exclude_unset=True))
+    updates = patch.model_dump(exclude_unset=True)
+    if "root_paths" in updates and updates["root_paths"] is not None:
+        cleaned = [
+            str(raw_path).strip()
+            for raw_path in updates["root_paths"]
+            if str(raw_path).strip()
+        ]
+        if not cleaned:
+            raise HTTPException(
+                status_code=422, detail="root_paths must contain at least one path"
+            )
+        updates["root_paths"] = list(dict.fromkeys(cleaned))
+        if "root_path" not in updates or not updates["root_path"]:
+            updates["root_path"] = updates["root_paths"][0]
+    elif updates.get("root_path"):
+        updates["root_path"] = str(updates["root_path"]).strip()
+        updates["root_paths"] = [updates["root_path"]]
+    merged.update(updates)
+    _normalize_source_roots(merged)
     config.sources[identifier] = merged
     config.save()
     logger.info("API updated media source '%s'", identifier)
