@@ -348,11 +348,9 @@ def test_populate_hides_future_episodes_when_show_future_false(
     config.libraries["TVLib"]["show_future_episodes"] = False
 
     # Add a future episode without a path
-    import datetime
+    import datetime as dt
 
-    future_date = (
-        datetime.datetime.now(datetime.UTC).date() + datetime.timedelta(days=30)
-    ).isoformat()
+    future_date = (dt.datetime.now(dt.UTC).date() + dt.timedelta(days=30)).isoformat()
     ctrl_with_show.cached_library_data["ShowA"]["seasons"]["Season 1"][
         "episodes"
     ].append(

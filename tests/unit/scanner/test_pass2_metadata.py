@@ -8,7 +8,7 @@ mocked; no real network or filesystem metadata is accessed.
 from __future__ import annotations
 
 import concurrent.futures
-import datetime
+import datetime as dt
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -26,7 +26,7 @@ from lan_streamer.scanner.pass2_metadata import (
     scan_series_pass2,
 )
 
-_TODAY: str = datetime.datetime.now(datetime.UTC).date().isoformat()
+_TODAY: str = dt.datetime.now(dt.UTC).date().isoformat()
 
 
 # ===========================================================================
@@ -1771,6 +1771,4 @@ class TestScanMoviePass2:
 
 def _ensure_future() -> str:
     """Return an ISO date string guaranteed to be in the future."""
-    return (
-        datetime.datetime.now(datetime.UTC).date() + datetime.timedelta(days=365 * 10)
-    ).isoformat()
+    return (dt.datetime.now(dt.UTC).date() + dt.timedelta(days=365 * 10)).isoformat()
