@@ -98,3 +98,82 @@ def test_orchestrator_passes_all_root_paths_and_watcher_matches_all(
         match_library_for_path("/archive/tv/Show A/S01E01.mkv", libraries)
         == "combined_tv"
     )
+
+
+def test_upsert_consolidates_split_seasons_across_roots_into_single_series(
+    tmp_path: Path,
+) -> None:
+    from scan_agent.db.connection import get_session
+    from scan_agent.db.repository import list_series, upsert_library
+
+    config = AgentConfig(data_directory=tmp_path)
+    engine = create_engine_for_database(config.database_path)
+    init_database(engine)
+
+    with get_session(engine) as session:
+        stats = upsert_library(
+            session,
+            {
+                "name": "Combined TV",
+                "media_type": "tv",
+                "root_path": "/media/tv",
+                "items": {
+                    "TV Series A": {
+                        "metadata": {
+                            "tmdb_id": 9999,
+                            "name": "TV Series A",
+                            "poster_path": "/poster_a.jpg",
+                        },
+                        "seasons": {
+                            "Season 1": {
+                                "season_number": 1,
+                                "episodes": [
+                                    {
+                                        "episode_number": 1,
+                                        "name": "Ep 1",
+                                        "path": "/media/tv/TV Series A/Season 1/S01E01.mkv",
+                                    }
+                                ],
+                            },
+                            "Season 5": {
+                                "season_number": 5,
+                                "episodes": [
+                                    {
+                                        "episode_number": 1,
+                                        "name": "Ep 1",
+                                        "path": "/media/tv/TV Series A/Season 5/S05E01.mkv",
+                                    }
+                                ],
+                            },
+                        },
+                    },
+                    "TV Series A (2020)": {
+                        "metadata": {
+                            "tmdb_id": 9999,
+                            "name": "TV Series A",
+                            "poster_path": "/poster_a.jpg",
+                        },
+                        "seasons": {
+                            "Season 6": {
+                                "season_number": 6,
+                                "episodes": [
+                                    {
+                                        "episode_number": 1,
+                                        "name": "Ep 1",
+                                        "path": "/archive/tv/TV Series A (2020)/Season 6/S06E01.mkv",
+                                    }
+                                ],
+                            }
+                        },
+                    },
+                },
+            },
+        )
+        assert stats["series"] == 1
+        assert stats["seasons"] == 3
+        assert stats["episodes"] == 3
+
+        series_list = list_series(session)
+        assert len(series_list) == 1
+        assert series_list[0]["name"] == "TV Series A"
+        assert [s["season_number"] for s in series_list[0]["seasons"]] == [1, 5, 6]
