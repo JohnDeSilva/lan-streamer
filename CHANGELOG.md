@@ -1,3 +1,10 @@
+## v0.60.0rc3 (2026-11-25)
+
+### Fix
+
+- **dev-dependency**: bump commitizen from 4.19.0 to 4.19.2
+- **dependency**: bump pyside6 from 6.11.2 to 6.12.0
+
 ## v0.60.0rc2 (2026-11-25)
 
 ### Fix
