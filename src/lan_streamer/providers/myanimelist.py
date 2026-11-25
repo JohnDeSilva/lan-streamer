@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 from typing import Any
 
@@ -17,6 +18,7 @@ class MyAnimeListClient:
 
     def __init__(self, session: requests.Session | None = None) -> None:
         self.session = session or requests.Session()
+        self._token_refresh_lock = threading.Lock()
         self.session.headers.setdefault(
             "User-Agent",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -41,10 +43,14 @@ class MyAnimeListClient:
             # Fallback to Client ID for public endpoints
             return {"X-MAL-CLIENT-ID": config.myanimelist_client_id.strip()}
 
-        # Check for expiry (with 5-minute buffer)
+        # Check for expiry (with 5-minute buffer) under lock to avoid concurrent refresh races
         if time.time() + 300 >= config.myanimelist_token_expires_at:
-            logger.info("MAL Access token expired or close to expiry. Refreshing...")
-            self.refresh_access_token()
+            with self._token_refresh_lock:
+                if time.time() + 300 >= config.myanimelist_token_expires_at:
+                    logger.info(
+                        "MAL Access token expired or close to expiry. Refreshing..."
+                    )
+                    self.refresh_access_token()
 
         return {
             "Authorization": f"Bearer {config.myanimelist_access_token.strip()}",

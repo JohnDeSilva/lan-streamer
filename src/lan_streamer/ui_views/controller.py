@@ -677,7 +677,7 @@ class Controller(QObject):
         """Reconcile watch state and rebuild smart rows off the UI thread."""
 
         def run_blocking_finalization() -> list[str]:
-            self._reapply_recent_remote_watch_events()
+            self._reapply_recent_remote_watch_events(library_name=library_name)
             if self._smart_row_service is None:
                 return []
             return self._smart_row_service.rebuild_for_libraries([library_name])
@@ -1861,10 +1861,45 @@ class Controller(QObject):
             ]
         )
 
-    def _reapply_recent_remote_watch_events(self) -> None:
-        """Re-apply recent watch events after a remote sync wrote its snapshot."""
+    def _reapply_recent_remote_watch_events(
+        self, library_name: str | None = None
+    ) -> None:
+        """Re-apply recent watch events after a remote sync snapshot completes."""
         with self._recent_remote_watch_events_lock:
             recent_events = list(self._recent_remote_watch_events.items())
+        if not recent_events:
+            return
+
+        if library_name and self._is_pure_remote_library(library_name):
+            library_items = self._remote_library_memory_cache.get(library_name)
+            if not isinstance(library_items, dict):
+                return
+            pending_map = {
+                media_path: {
+                    "resolved_local_path": media_path,
+                    "remote_path": media_path,
+                    "watched": event.get("watched"),
+                    "position_seconds": event.get("position_seconds"),
+                    "last_played_at": event.get("timestamp", time.time()),
+                }
+                for media_path, event in recent_events
+            }
+            event_lookup = self._build_remote_watch_event_lookup(pending_map)
+            for item_data in library_items.values():
+                if not isinstance(item_data, dict):
+                    continue
+                if item_data.get("type") == "movie" or "seasons" not in item_data:
+                    self._apply_remote_watch_event_to_cached_item(
+                        item_data, event_lookup
+                    )
+                    continue
+                for season_data in (item_data.get("seasons") or {}).values():
+                    for episode_record in season_data.get("episodes", []):
+                        self._apply_remote_watch_event_to_cached_item(
+                            episode_record, event_lookup
+                        )
+            return
+
         for media_path, event in recent_events:
             self._apply_remote_watch_event_to_database(
                 media_path,
