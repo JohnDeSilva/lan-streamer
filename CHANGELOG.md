@@ -1,3 +1,9 @@
+## v0.60.0rc4 (2026-11-25)
+
+### Fix
+
+- **dev-dependency**: bump pre-commit from 4.6.2 to 4.7.0
+
 ## v0.60.0rc3 (2026-11-25)
 
 ### Fix
