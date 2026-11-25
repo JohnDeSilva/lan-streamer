@@ -438,7 +438,16 @@ class Controller(QObject):
         if updated:
             library_config["sources"] = sources
             if hasattr(self._config, "save_config"):
-                self._config.save_config()
+
+                async def _persist_detected_mounts() -> None:
+                    from lan_streamer.system.async_utils import run_in_executor
+
+                    await run_in_executor(self._config.save_config)
+
+                self.async_task_manager.create_task(
+                    _persist_detected_mounts(),
+                    name=f"save_detected_mounts_{uuid.uuid4().hex}",
+                )
 
     def _load_tab_library_data(
         self, library_names: list[str], trigger_remote_sync: bool = True
