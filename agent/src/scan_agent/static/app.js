@@ -116,11 +116,15 @@ async function loadDashboard() {
         tbody.innerHTML = "";
         libraries.forEach((libraryItem) => {
             const counts = libraryItem.counts || {};
+            const rootPaths = (libraryItem.root_paths && libraryItem.root_paths.length)
+                ? libraryItem.root_paths
+                : [libraryItem.root_path || ""];
+            const rootsHtml = rootPaths.map((pathItem) => `<code>${escapeHtml(pathItem)}</code>`).join("<br>");
             const row = document.createElement("tr");
             row.innerHTML = `
                 <td><strong>${escapeHtml(libraryItem.name)}</strong></td>
                 <td><span class="status-tag status-${libraryItem.media_type === "movie" ? "done" : "running"}">${libraryItem.media_type.toUpperCase()}</span></td>
-                <td><code>${escapeHtml(libraryItem.root_path)}</code></td>
+                <td>${rootsHtml}</td>
                 <td>${libraryItem.media_type === "movie" ? (counts.movies || 0) : (counts.series || 0)}</td>
                 <td>${libraryItem.media_type === "movie" ? (counts.media_files || 0) : (counts.episodes || 0)}</td>
             `;
@@ -141,12 +145,16 @@ async function loadLibraries() {
         tbody.innerHTML = "";
 
         libraries.forEach((libraryItem) => {
+            const rootPaths = (libraryItem.root_paths && libraryItem.root_paths.length)
+                ? libraryItem.root_paths
+                : [libraryItem.root_path || ""];
+            const rootsHtml = rootPaths.map((pathItem) => `<code>${escapeHtml(pathItem)}</code>`).join("<br>");
             const row = document.createElement("tr");
             row.innerHTML = `
                 <td>${libraryItem.id}</td>
                 <td><strong>${escapeHtml(libraryItem.name)}</strong></td>
                 <td>${libraryItem.media_type.toUpperCase()}</td>
-                <td><code>${escapeHtml(libraryItem.root_path)}</code></td>
+                <td>${rootsHtml}</td>
                 <td>${libraryItem.enabled ? "✅" : "❌"}</td>
                 <td>
                     <button class="btn btn-secondary btn-sm" data-action="scan" data-id="${libraryItem.id}">Scan</button>
@@ -1043,8 +1051,22 @@ async function applyManualMappingsFromModal() {
 let currentBrowserDirectory = "";
 let selectedBrowserDirectory = "";
 
+function parseRootPathsInput(rawValue) {
+    const seen = new Set();
+    const result = [];
+    for (const part of String(rawValue || "").split(/[\n,]+/)) {
+        const trimmed = part.trim();
+        if (trimmed && !seen.has(trimmed)) {
+            seen.add(trimmed);
+            result.push(trimmed);
+        }
+    }
+    return result;
+}
+
 async function openFolderBrowser(initialPath) {
-    currentBrowserDirectory = initialPath || document.getElementById("libRootPath").value.trim() || "";
+    const existingRoots = parseRootPathsInput(document.getElementById("libRootPath").value);
+    currentBrowserDirectory = initialPath || existingRoots[0] || "";
     selectedBrowserDirectory = currentBrowserDirectory;
     openModal("folderBrowserModal");
     await loadDirectory(currentBrowserDirectory);
@@ -1441,19 +1463,30 @@ document.addEventListener("DOMContentLoaded", () => {
         const id = document.getElementById("libId").value;
         const name = document.getElementById("libName").value.trim();
         const mediaType = document.getElementById("libMediaType").value;
-        const rootPath = document.getElementById("libRootPath").value.trim();
+        const rootPaths = parseRootPathsInput(document.getElementById("libRootPath").value);
         const enabled = document.getElementById("libEnabled").checked;
 
-        if (!name || !rootPath) {
-            showAlert("Name and root path are required", "error");
+        if (!name || rootPaths.length === 0) {
+            showAlert("Name and at least one root path are required", "error");
             return;
         }
 
         try {
             if (id) {
-                await api.updateLibrary(id, { name, root_path: rootPath, enabled });
+                await api.updateLibrary(id, {
+                    name,
+                    root_path: rootPaths[0],
+                    root_paths: rootPaths,
+                    enabled,
+                });
             } else {
-                await api.createLibrary({ name, media_type: mediaType, root_path: rootPath, enabled });
+                await api.createLibrary({
+                    name,
+                    media_type: mediaType,
+                    root_path: rootPaths[0],
+                    root_paths: rootPaths,
+                    enabled,
+                });
             }
             browseLibrariesCache = null;
             closeModal("libraryModal");
@@ -1493,7 +1526,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnSelectFolder) {
         btnSelectFolder.onclick = () => {
             if (selectedBrowserDirectory) {
-                document.getElementById("libRootPath").value = selectedBrowserDirectory;
+                const input = document.getElementById("libRootPath");
+                const existing = parseRootPathsInput(input.value);
+                if (!existing.includes(selectedBrowserDirectory)) {
+                    existing.push(selectedBrowserDirectory);
+                }
+                input.value = existing.join("\n");
             }
             closeModal("folderBrowserModal");
         };
@@ -1542,7 +1580,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 document.getElementById("libId").value = libraryItem.id;
                 document.getElementById("libName").value = libraryItem.name;
                 document.getElementById("libMediaType").value = libraryItem.media_type;
-                document.getElementById("libRootPath").value = libraryItem.root_path || "";
+                const rootPaths = (libraryItem.root_paths && libraryItem.root_paths.length)
+                    ? libraryItem.root_paths
+                    : [libraryItem.root_path || ""];
+                document.getElementById("libRootPath").value = rootPaths.filter(Boolean).join("\n");
                 document.getElementById("libEnabled").checked = libraryItem.enabled !== false;
                 document.getElementById("libraryModalTitle").textContent = "Edit Media Source";
                 openModal("libraryModal");

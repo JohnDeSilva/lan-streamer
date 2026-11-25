@@ -346,9 +346,9 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="libRootPath">Storage Root Path</label>
-                        <div style="display: flex; gap: 8px;">
-                            <input type="text" id="libRootPath" class="form-control" required placeholder="/media/tv">
+                        <label for="libRootPath">Storage Root Path(s) (one per line)</label>
+                        <div style="display: flex; gap: 8px; align-items: flex-start;">
+                            <textarea id="libRootPath" class="form-control" rows="3" required placeholder="/media/tv&#10;/archive/tv"></textarea>
                             <button type="button" id="btnBrowseFolder" class="btn btn-secondary" style="white-space: nowrap;">📁 Browse...</button>
                         </div>
                     </div>
