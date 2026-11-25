@@ -740,6 +740,8 @@ def sync_remote_library_from_agent(
         "library_name": library_name,
         "success": False,
         "items": 0,
+        "items_data": {},
+        "detected_mount_mappings": {},
         "error": "",
     }
     if not agent_sources:
@@ -754,15 +756,20 @@ def sync_remote_library_from_agent(
         import requests
         from sqlalchemy.exc import SQLAlchemyError
 
+        from lan_streamer.services.mount_discovery_service import (
+            auto_detect_mount_mappings_for_items,
+        )
         from lan_streamer.services.scan_agent_client import (
             ScanAgentConnectionError,
             scan_agent_client,
         )
 
         library_type = library_configuration.get("type", "tv")
+        is_pure_remote = library_configuration.get("management_type") == "remote"
         combined_items: dict[str, Any] = {}
         merge_key_to_name: dict[str, str] = {}
         agent_source_items: dict[str, dict[str, Any]] = {}
+        detected_mount_mappings: dict[str, str] = {}
 
         for agent_source in agent_sources:
             agent_url = agent_source.get("agent_url", "")
@@ -779,10 +786,50 @@ def sync_remote_library_from_agent(
                 agent_source_items[agent_url] = {}
             agent_source_items[agent_url].update(remote_items)
 
+            remote_roots: list[str] = []
+            for root_value in agent_source.get("remote_root_paths", []) or []:
+                if root_value:
+                    remote_roots.append(str(root_value))
+            if not remote_roots and library_configuration.get("remote_root_path"):
+                remote_roots.append(str(library_configuration["remote_root_path"]))
+            existing_mounts = dict(library_configuration.get("mount_mappings", {}))
+            existing_mounts.update(agent_source.get("mount_mappings", {}) or {})
+            if not remote_roots and existing_mounts:
+                remote_roots = list(existing_mounts.keys())
+            if remote_roots:
+                from lan_streamer.system.config import config as app_config
+
+                auto_mounts = auto_detect_mount_mappings_for_items(
+                    remote_roots=remote_roots,
+                    items_dictionary=remote_items,
+                    library_type=library_type,
+                    existing_mappings=existing_mounts,
+                    max_depth=int(
+                        getattr(app_config, "mount_discovery_max_depth", 5)
+                    ),
+                )
+                if auto_mounts:
+                    detected_mount_mappings.update(auto_mounts)
+
             _download_posters_for_items(remote_items, library_type, agent_url)
             _merge_incoming_agent_items(
                 combined_items, remote_items, merge_key_to_name, library_type
             )
+
+        if is_pure_remote:
+            # Pure remote libraries display what the agent knows directly without
+            # persisting media records into the local SQLite database or
+            # overwriting the agent with stale local state.
+            result["success"] = True
+            result["items"] = len(combined_items)
+            result["items_data"] = combined_items
+            result["detected_mount_mappings"] = detected_mount_mappings
+            logger.info(
+                "Fetched live snapshot for remote library '%s' (%d total items)",
+                library_name,
+                len(combined_items),
+            )
+            return result
 
         # Determine whether this library contains local media sources (hybrid library)
         local_sources = [
@@ -843,6 +890,8 @@ def sync_remote_library_from_agent(
 
         result["success"] = True
         result["items"] = len(combined_items)
+        result["items_data"] = combined_items
+        result["detected_mount_mappings"] = detected_mount_mappings
         logger.info(
             "Successfully synchronized remote sources for library '%s' (%d total items)",
             library_name,

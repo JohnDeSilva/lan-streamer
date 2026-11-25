@@ -187,6 +187,7 @@ class Config:
     _DB_DEFAULTS: ClassVar[dict[str, Any]] = {
         "libraries": {},
         "scan_agents": {},
+        "mount_discovery_max_depth": 5,
         "sync_history_on_start": True,
         "filter_out_watched": False,
         "sort_mode": "Alphabetical",
@@ -437,6 +438,9 @@ class Config:
                 )
                 self._reassign_split_libraries(split_records)
             self.scan_agents = config_dict.get("scan_agents", {})
+            self.mount_discovery_max_depth = int(
+                config_dict.get("mount_discovery_max_depth", 5)
+            )
             self.sync_history_on_start = config_dict["sync_history_on_start"]
             self.filter_out_watched = config_dict["filter_out_watched"]
             self.sort_mode = config_dict["sort_mode"]
@@ -566,6 +570,9 @@ class Config:
             # General settings
             set_app_config("libraries", self.libraries)
             set_app_config("scan_agents", self.scan_agents)
+            set_app_config(
+                "mount_discovery_max_depth", self.mount_discovery_max_depth
+            )
             set_app_config("sync_history_on_start", self.sync_history_on_start)
             set_app_config("filter_out_watched", self.filter_out_watched)
             set_app_config("sort_mode", self.sort_mode)
