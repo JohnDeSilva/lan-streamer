@@ -3833,3 +3833,130 @@ class Controller(QObject):
             libraries_configuration=libraries_configuration,
             current_library_name=self.current_library_name,
         )
+
+    def _iter_in_memory_libraries(self) -> list[dict[str, Any]]:
+        """Return active in-memory library dicts (current tab + live remote caches)."""
+        libraries: list[dict[str, Any]] = []
+        if self.cached_library_data:
+            libraries.append(self.cached_library_data)
+        for cached_dict in self._remote_library_memory_cache.values():
+            if isinstance(cached_dict, dict) and cached_dict is not self.cached_library_data:
+                libraries.append(cached_dict)
+        return libraries
+
+    def get_next_episode(self, current_path: str) -> dict[str, Any] | None:
+        """Return metadata for the episode following *current_path*.
+
+        Checks in-memory library snapshots first (for live remote libraries),
+        then falls back to the local SQLite database for local libraries.
+        """
+        from lan_streamer.db.utils import natural_sort_key
+
+        for library_dict in self._iter_in_memory_libraries():
+            for series_data in library_dict.values():
+                if not isinstance(series_data, dict) or "seasons" not in series_data:
+                    continue
+                seasons = series_data.get("seasons", {})
+                ordered_episodes: list[tuple[dict[str, Any], str, int]] = []
+                for season_name in sorted(seasons.keys(), key=natural_sort_key):
+                    season_data = seasons[season_name]
+                    if not isinstance(season_data, dict):
+                        continue
+                    episodes = list(season_data.get("episodes", []) or [])
+                    episodes.sort(
+                        key=lambda ep: (
+                            ep.get("episode_number")
+                            if ep.get("episode_number") is not None
+                            else 999999,
+                            str(ep.get("path") or ""),
+                        )
+                    )
+                    for index, episode_record in enumerate(episodes, start=1):
+                        if not isinstance(episode_record, dict):
+                            continue
+                        episode_number = (
+                            episode_record.get("tmdb_number")
+                            if episode_record.get("tmdb_number") is not None
+                            else (
+                                episode_record.get("episode_number")
+                                if episode_record.get("episode_number") is not None
+                                else index
+                            )
+                        )
+                        ordered_episodes.append(
+                            (episode_record, season_name, int(episode_number))
+                        )
+
+                for position, (episode_record, _season_name, _ep_num) in enumerate(
+                    ordered_episodes
+                ):
+                    episode_path = episode_record.get("path")
+                    version_paths = {
+                        version.get("path")
+                        for version in episode_record.get("versions", []) or []
+                        if isinstance(version, dict) and version.get("path")
+                    }
+                    if self._matches_file_path(
+                        current_path, episode_path, version_paths
+                    ):
+                        for next_ep, next_season, next_num in ordered_episodes[
+                            position + 1 :
+                        ]:
+                            next_path = next_ep.get("path")
+                            if not next_path:
+                                versions = next_ep.get("versions", []) or []
+                                if versions and isinstance(versions[0], dict):
+                                    next_path = versions[0].get("path")
+                            if next_path:
+                                return {
+                                    "path": str(next_path),
+                                    "title": next_ep.get("tmdb_name")
+                                    or next_ep.get("name")
+                                    or "Unknown",
+                                    "season": next_season,
+                                    "episode_number": next_num,
+                                    "poster_path": series_data.get("metadata", {}).get(
+                                        "poster_path", ""
+                                    ),
+                                    "runtime": next_ep.get("runtime") or 0,
+                                }
+                        return None
+
+        return self._db.get_next_episode(current_path)
+
+    def get_playback_position(self, current_path: str) -> int:
+        """Return saved resume position (seconds) from memory or local database."""
+        for library_dict in self._iter_in_memory_libraries():
+            for item_data in library_dict.values():
+                if not isinstance(item_data, dict):
+                    continue
+                if item_data.get("type") == "movie" or "seasons" not in item_data:
+                    movie_path = item_data.get("path")
+                    version_paths = {
+                        version.get("path")
+                        for version in item_data.get("versions", []) or []
+                        if isinstance(version, dict) and version.get("path")
+                    }
+                    if self._matches_file_path(current_path, movie_path, version_paths):
+                        return int(item_data.get("last_played_position") or 0)
+                else:
+                    for season_data in (item_data.get("seasons") or {}).values():
+                        if not isinstance(season_data, dict):
+                            continue
+                        for episode_record in season_data.get("episodes", []) or []:
+                            if not isinstance(episode_record, dict):
+                                continue
+                            ep_path = episode_record.get("path")
+                            version_paths = {
+                                version.get("path")
+                                for version in episode_record.get("versions", []) or []
+                                if isinstance(version, dict) and version.get("path")
+                            }
+                            if self._matches_file_path(
+                                current_path, ep_path, version_paths
+                            ):
+                                return int(
+                                    episode_record.get("last_played_position") or 0
+                                )
+
+        return int(self._db.get_episode_playback_position(current_path) or 0)
