@@ -1,3 +1,28 @@
+## v0.60.0 (2026-11-25)
+
+### Feat
+
+- **agent**: support multi-root libraries in scan agent API, scanner, watcher, and web UI
+- **agent**: add MyAnimeList auth, metadata proxy, and watch sync to scan agent
+- **agent**: serve remote libraries live and auto-detect local network mounts
+
+### Fix
+
+- **agent**: publish scan.finished before clearing running job state
+- **dev-dependency**: bump pre-commit from 4.6.2 to 4.7.0
+- **dev-dependency**: bump commitizen from 4.19.0 to 4.19.2
+- **dependency**: bump pyside6 from 6.11.2 to 6.12.0
+- **dev-dependency**: bump types-requests
+- **dev-dependency**: bump ruff from 0.16.10 to 0.17.0
+- **settings**: keep manual library composition instead of auto-mirroring agent tabs
+- **agent**: coalesce MAL watch syncs and reconcile live remote cache
+- **playback**: resolve next episode and resume position from live remote cache
+
+### Perf
+
+- **ui**: move MAL mapper and mount config saves off the Qt UI thread
+- **agent**: make mount discovery lazy and skip already-mapped roots
+
 ## v0.60.0rc5-2 (2026-11-25)
 
 ### Fix
