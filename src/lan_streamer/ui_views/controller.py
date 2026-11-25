@@ -437,12 +437,13 @@ class Controller(QObject):
 
         if updated:
             library_config["sources"] = sources
-            if hasattr(self._config, "save_config"):
+            save_callback = getattr(self._config, "save_config", None)
+            if callable(save_callback):
 
                 async def _persist_detected_mounts() -> None:
                     from lan_streamer.system.async_utils import run_in_executor
 
-                    await run_in_executor(self._config.save_config)
+                    await run_in_executor(save_callback)
 
                 self.async_task_manager.create_task(
                     _persist_detected_mounts(),
@@ -466,14 +467,8 @@ class Controller(QObject):
                 single_library_data = self._remote_library_memory_cache.get(
                     single_library_name, {}
                 )
-                needs_live_fetch = (
-                    single_library_name not in self._remote_library_memory_cache
-                    or self._should_refresh_remote_library(single_library_name)
-                )
-                if (
-                    trigger_remote_sync
-                    and needs_live_fetch
-                    and self._agent_urls_for_library(single_library_config)
+                if trigger_remote_sync and self._should_refresh_remote_library(
+                    single_library_name
                 ):
                     self._queue_remote_sync(single_library_name, emit_signal=True)
             else:
@@ -2315,9 +2310,7 @@ class Controller(QObject):
                     target_library_name, movie_name, watched
                 )
 
-        is_current_pure_remote = self._is_pure_remote_library(
-            self.current_library_name
-        )
+        is_current_pure_remote = self._is_pure_remote_library(self.current_library_name)
         affected_paths: list[str] = []
         primary_file_path = movie_record.get("path")
         if primary_file_path:
@@ -3884,7 +3877,10 @@ class Controller(QObject):
         if self.cached_library_data:
             libraries.append(self.cached_library_data)
         for cached_dict in self._remote_library_memory_cache.values():
-            if isinstance(cached_dict, dict) and cached_dict is not self.cached_library_data:
+            if (
+                isinstance(cached_dict, dict)
+                and cached_dict is not self.cached_library_data
+            ):
                 libraries.append(cached_dict)
         return libraries
 
@@ -3918,17 +3914,16 @@ class Controller(QObject):
                     for index, episode_record in enumerate(episodes, start=1):
                         if not isinstance(episode_record, dict):
                             continue
-                        episode_number = (
-                            episode_record.get("tmdb_number")
-                            if episode_record.get("tmdb_number") is not None
-                            else (
-                                episode_record.get("episode_number")
-                                if episode_record.get("episode_number") is not None
-                                else index
-                            )
+                        raw_episode_number = episode_record.get("tmdb_number")
+                        if raw_episode_number is None:
+                            raw_episode_number = episode_record.get("episode_number")
+                        resolved_episode_number = (
+                            int(raw_episode_number)
+                            if isinstance(raw_episode_number, (int, float))
+                            else index
                         )
                         ordered_episodes.append(
-                            (episode_record, season_name, int(episode_number))
+                            (episode_record, season_name, resolved_episode_number)
                         )
 
                 for position, (episode_record, _season_name, _ep_num) in enumerate(
@@ -4003,4 +3998,5 @@ class Controller(QObject):
                                     episode_record.get("last_played_position") or 0
                                 )
 
-        return int(self._db.get_episode_playback_position(current_path) or 0)
+        raw_position = self._db.get_episode_playback_position(current_path)
+        return int(raw_position) if isinstance(raw_position, (int, float)) else 0

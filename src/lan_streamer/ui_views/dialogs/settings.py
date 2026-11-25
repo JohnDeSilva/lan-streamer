@@ -1627,6 +1627,11 @@ class SettingsDialog(QDialog):
         self._refresh_library_order_list()
         self.library_order_list_widget.setCurrentRow(row_idx + 1)
 
+    def _apply_staged_remote_agent_libraries(self) -> None:
+        """Apply staged scan agent and mount discovery depth settings to config."""
+        config.scan_agents = self.staged_scan_agents
+        config.mount_discovery_max_depth = self.mount_discovery_max_depth_input.value()
+
     def _refresh_library_selector(self) -> None:
         current_selection: str = self.library_selector.currentText()
         self.library_selector.blockSignals(True)
@@ -2123,7 +2128,8 @@ class SettingsDialog(QDialog):
                 source_entry.get("type") == "agent"
                 and source_entry.get("agent_url") == agent_url
                 and (
-                    str(source_entry.get("source_identifier") or "") == source_identifier
+                    str(source_entry.get("source_identifier") or "")
+                    == source_identifier
                     or str(source_entry.get("source_id") or "") == source_identifier
                     or str(source_entry.get("name") or "") == source_name
                 )
@@ -2139,9 +2145,7 @@ class SettingsDialog(QDialog):
 
             root_paths: list[str] = []
             if source_info.get("root_paths"):
-                root_paths = [
-                    str(path) for path in source_info["root_paths"] if path
-                ]
+                root_paths = [str(path) for path in source_info["root_paths"] if path]
             elif source_info.get("root_path"):
                 root_paths = [str(source_info["root_path"])]
 
@@ -3081,10 +3085,7 @@ class SettingsDialog(QDialog):
 
         normalized_libraries, _ = split_multi_root_libraries(self.staged_libraries)
         config.libraries = normalized_libraries
-        config.scan_agents = self.staged_scan_agents
-        config.mount_discovery_max_depth = (
-            self.mount_discovery_max_depth_input.value()
-        )
+        self._apply_staged_remote_agent_libraries()
         config.enable_combined_view = self.enable_combined_view_checkbox.isChecked()
         config.combined_views = self.staged_combined_views
         config.save()  # Persist startup-critical keys to config file

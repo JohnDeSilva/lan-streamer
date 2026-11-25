@@ -2185,7 +2185,7 @@ def test_sync_remote_library_with_empty_versions_integration(mock_db_file) -> No
         }
     }
     library_configuration = {
-        "management_type": "remote",
+        "management_type": "hybrid",
         "agent_url": "http://127.0.0.1:8800",
         "remote_library_id": "Anime_Current",
         "type": "tv",
@@ -2242,7 +2242,7 @@ def test_sync_remote_library_removes_deleted_series_integration(mock_db_file) ->
         },
     }
     library_configuration = {
-        "management_type": "remote",
+        "management_type": "hybrid",
         "agent_url": "http://127.0.0.1:8800",
         "remote_library_id": "Anime_Current",
         "type": "tv",
@@ -2298,7 +2298,7 @@ def test_sync_remote_library_removes_deleted_movie_integration(mock_db_file) -> 
         },
     }
     library_configuration = {
-        "management_type": "remote",
+        "management_type": "hybrid",
         "agent_url": "http://127.0.0.1:8800",
         "remote_library_id": "Movies_Current",
         "type": "movie",
@@ -2520,7 +2520,7 @@ def test_sync_remote_library_deduplicates_series_across_multiple_remote_sources_
     }
 
     library_configuration = {
-        "management_type": "remote",
+        "management_type": "hybrid",
         "type": "tv",
         "sources": [
             {

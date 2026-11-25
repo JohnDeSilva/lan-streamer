@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -11,6 +11,9 @@ from scan_agent.api.main import create_app
 from scan_agent.config import AgentConfig
 from scan_agent.db.connection import create_engine_for_database, init_database
 from scan_agent.db.models import Episode, Library, Season, Series
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _build_test_client(tmp_path: Path) -> tuple[TestClient, AgentConfig, object]:
@@ -22,7 +25,7 @@ def _build_test_client(tmp_path: Path) -> tuple[TestClient, AgentConfig, object]
 
 
 def test_mal_config_and_auth_routes(tmp_path: Path) -> None:
-    client, config, _ = _build_test_client(tmp_path)
+    client, _config, _ = _build_test_client(tmp_path)
 
     resp = client.get("/api/v1/services/myanimelist/status")
     assert resp.status_code == 200
@@ -31,7 +34,10 @@ def test_mal_config_and_auth_routes(tmp_path: Path) -> None:
 
     update_resp = client.put(
         "/api/v1/config",
-        json={"myanimelist_client_id": "test-client-id", "myanimelist_client_secret": "secret"},
+        json={
+            "myanimelist_client_id": "test-client-id",
+            "myanimelist_client_secret": "secret",
+        },
     )
     assert update_resp.status_code == 200
     assert update_resp.json()["myanimelist_client_id"] == "test-client-id"
@@ -66,10 +72,15 @@ def test_watch_event_triggers_agent_mal_update(tmp_path: Path) -> None:
         lib = Library(name="Anime", media_type="anime", root_path="/media/anime")
         session.add(lib)
         session.flush()
-        series = Series(library_id=lib.id, name="Test Anime")
+        series = Series(library_id=lib.id, name="Test Anime", folder_name="Test Anime")
         session.add(series)
         session.flush()
-        season = Season(series_id=series.id, name="Season 1", myanimelist_id=5555)
+        season = Season(
+            series_id=series.id,
+            season_number=1,
+            name="Season 1",
+            myanimelist_id=5555,
+        )
         session.add(season)
         session.flush()
         episode = Episode(

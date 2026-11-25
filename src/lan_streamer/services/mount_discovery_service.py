@@ -6,9 +6,11 @@ import logging
 import os
 import sys
 from collections import deque
-from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,180 @@ _NETWORK_FILESYSTEM_TYPES: frozenset[str] = frozenset(
 )
 
 
+def _collect_subdirectories(
+    parent_directory: Path, add_candidate: Callable[[str | Path], None]
+) -> None:
+    """Add non-hidden immediate subdirectories of *parent_directory*."""
+    if not parent_directory.is_dir():
+        return
+    try:
+        for entry in sorted(parent_directory.iterdir()):
+            if entry.is_dir() and not entry.name.startswith("."):
+                add_candidate(entry)
+    except OSError:
+        pass
+
+
+def _discover_darwin_mounts(add_candidate: Callable[[str | Path], None]) -> None:
+    """Discover mounted volumes under /Volumes on macOS."""
+    volumes_root = Path("/Volumes")
+    if not volumes_root.is_dir():
+        return
+    try:
+        for entry in sorted(volumes_root.iterdir()):
+            if entry.name.startswith("."):
+                continue
+            try:
+                if entry.is_symlink() and os.path.realpath(entry) == "/":
+                    continue
+            except OSError:
+                pass
+            if entry.is_dir():
+                add_candidate(entry)
+    except OSError as error_instance:
+        logger.debug("Could not enumerate /Volumes: %s", error_instance)
+
+
+def _discover_linux_mounts(add_candidate: Callable[[str | Path], None]) -> None:
+    """Discover network and removable mounts on Linux."""
+    proc_mounts = Path("/proc/mounts")
+    if proc_mounts.is_file():
+        try:
+            for line in proc_mounts.read_text(
+                encoding="utf-8", errors="ignore"
+            ).splitlines():
+                parts = line.split()
+                if len(parts) >= 3 and parts[2].lower() in _NETWORK_FILESYSTEM_TYPES:
+                    add_candidate(parts[1].replace("\\040", " "))
+        except OSError as error_instance:
+            logger.debug("Could not read /proc/mounts: %s", error_instance)
+
+    for parent_directory in (Path("/mnt"), Path("/media")):
+        _collect_subdirectories(parent_directory, add_candidate)
+
+    user_name = os.environ.get("USER", "")
+    if user_name:
+        _collect_subdirectories(Path("/media") / user_name, add_candidate)
+        _collect_subdirectories(Path("/run/media") / user_name, add_candidate)
+
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    if uid is not None:
+        _collect_subdirectories(Path(f"/run/user/{uid}/gvfs"), add_candidate)
+
+
+def _discover_windows_mounts(add_candidate: Callable[[str | Path], None]) -> None:
+    """Discover mapped remote network drives on Windows."""
+    import string
+
+    drive_type_remote = 4
+    kernel32 = None
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    except AttributeError, OSError:
+        kernel32 = None
+
+    for drive_letter in string.ascii_uppercase:
+        drive_root = f"{drive_letter}:\\"
+        if kernel32 is not None:
+            try:
+                if kernel32.GetDriveTypeW(drive_root) == drive_type_remote:
+                    add_candidate(drive_root)
+                    continue
+            except OSError:
+                pass
+        if drive_letter not in ("A", "B", "C") and os.path.isdir(drive_root):
+            add_candidate(drive_root)
+
+
+def _collect_subdirectories(
+    parent_directory: Path, add_candidate: Callable[[str | Path], None]
+) -> None:
+    """Add non-hidden immediate subdirectories of *parent_directory*."""
+    if not parent_directory.is_dir():
+        return
+    try:
+        for entry in sorted(parent_directory.iterdir()):
+            if entry.is_dir() and not entry.name.startswith("."):
+                add_candidate(entry)
+    except OSError:
+        pass
+
+
+def _discover_darwin_mounts(add_candidate: Callable[[str | Path], None]) -> None:
+    """Discover mounted volumes under /Volumes on macOS."""
+    volumes_root = Path("/Volumes")
+    if not volumes_root.is_dir():
+        return
+    try:
+        for entry in sorted(volumes_root.iterdir()):
+            if entry.name.startswith("."):
+                continue
+            try:
+                if entry.is_symlink() and os.path.realpath(entry) == "/":
+                    continue
+            except OSError:
+                pass
+            if entry.is_dir():
+                add_candidate(entry)
+    except OSError as error_instance:
+        logger.debug("Could not enumerate /Volumes: %s", error_instance)
+
+
+def _discover_linux_mounts(add_candidate: Callable[[str | Path], None]) -> None:
+    """Discover network and removable mounts on Linux."""
+    proc_mounts = Path("/proc/mounts")
+    if proc_mounts.is_file():
+        try:
+            for line in proc_mounts.read_text(
+                encoding="utf-8", errors="ignore"
+            ).splitlines():
+                parts = line.split()
+                if len(parts) >= 3 and parts[2].lower() in _NETWORK_FILESYSTEM_TYPES:
+                    add_candidate(parts[1].replace("\\040", " "))
+        except OSError as error_instance:
+            logger.debug("Could not read /proc/mounts: %s", error_instance)
+
+    for parent_directory in (Path("/mnt"), Path("/media")):
+        _collect_subdirectories(parent_directory, add_candidate)
+
+    user_name = os.environ.get("USER", "")
+    if user_name:
+        _collect_subdirectories(Path("/media") / user_name, add_candidate)
+        _collect_subdirectories(Path("/run/media") / user_name, add_candidate)
+
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    if uid is not None:
+        _collect_subdirectories(Path(f"/run/user/{uid}/gvfs"), add_candidate)
+
+
+def _discover_windows_mounts(add_candidate: Callable[[str | Path], None]) -> None:
+    """Discover mapped remote network drives on Windows."""
+    import string
+
+    drive_type_remote = 4
+    kernel32 = None
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    except AttributeError, OSError:
+        kernel32 = None
+
+    for drive_letter in string.ascii_uppercase:
+        drive_root = f"{drive_letter}:\\"
+        if kernel32 is not None:
+            try:
+                if kernel32.GetDriveTypeW(drive_root) == drive_type_remote:
+                    add_candidate(drive_root)
+                    continue
+            except OSError:
+                pass
+        if drive_letter not in ("A", "B", "C") and os.path.isdir(drive_root):
+            add_candidate(drive_root)
+
+
 def discover_local_mount_candidates() -> list[str]:
     """Return candidate local mount point directories for the current OS."""
     candidates: list[str] = []
@@ -50,7 +226,7 @@ def discover_local_mount_candidates() -> list[str]:
     def _add_candidate(path_value: str | Path) -> None:
         try:
             resolved = str(Path(path_value))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return
         if not resolved or resolved in seen:
             return
@@ -59,92 +235,11 @@ def discover_local_mount_candidates() -> list[str]:
             candidates.append(resolved)
 
     if sys.platform == "darwin":
-        volumes_root = Path("/Volumes")
-        if volumes_root.is_dir():
-            try:
-                for entry in sorted(volumes_root.iterdir()):
-                    if entry.name.startswith("."):
-                        continue
-                    # Skip the root volume symlink if it points to '/'
-                    try:
-                        if entry.is_symlink() and os.path.realpath(entry) == "/":
-                            continue
-                    except OSError:
-                        pass
-                    if entry.is_dir():
-                        _add_candidate(entry)
-            except OSError as error_instance:
-                logger.debug("Could not enumerate /Volumes: %s", error_instance)
-
+        _discover_darwin_mounts(_add_candidate)
     elif sys.platform.startswith("linux"):
-        proc_mounts = Path("/proc/mounts")
-        if proc_mounts.is_file():
-            try:
-                for line in proc_mounts.read_text(encoding="utf-8", errors="ignore").splitlines():
-                    parts = line.split()
-                    if len(parts) >= 3 and parts[2].lower() in _NETWORK_FILESYSTEM_TYPES:
-                        mount_point = parts[1].replace("\\040", " ")
-                        _add_candidate(mount_point)
-            except OSError as error_instance:
-                logger.debug("Could not read /proc/mounts: %s", error_instance)
-
-        for parent_directory in (Path("/mnt"), Path("/media")):
-            if parent_directory.is_dir():
-                try:
-                    for entry in sorted(parent_directory.iterdir()):
-                        if entry.is_dir() and not entry.name.startswith("."):
-                            _add_candidate(entry)
-                except OSError:
-                    continue
-
-        user_name = os.environ.get("USER", "")
-        if user_name:
-            for user_parent in (
-                Path("/media") / user_name,
-                Path("/run/media") / user_name,
-            ):
-                if user_parent.is_dir():
-                    try:
-                        for entry in sorted(user_parent.iterdir()):
-                            if entry.is_dir() and not entry.name.startswith("."):
-                                _add_candidate(entry)
-                    except OSError:
-                        continue
-
-        uid = os.getuid() if hasattr(os, "getuid") else None
-        if uid is not None:
-            gvfs_directory = Path(f"/run/user/{uid}/gvfs")
-            if gvfs_directory.is_dir():
-                try:
-                    for entry in sorted(gvfs_directory.iterdir()):
-                        if entry.is_dir():
-                            _add_candidate(entry)
-                except OSError:
-                    pass
-
+        _discover_linux_mounts(_add_candidate)
     elif os.name == "nt":
-        import string
-
-        drive_type_remote = 4
-        kernel32 = None
-        try:
-            import ctypes
-
-            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-        except (AttributeError, OSError):
-            kernel32 = None
-
-        for drive_letter in string.ascii_uppercase:
-            drive_root = f"{drive_letter}:\\"
-            if kernel32 is not None:
-                try:
-                    if kernel32.GetDriveTypeW(drive_root) == drive_type_remote:
-                        _add_candidate(drive_root)
-                        continue
-                except OSError:
-                    pass
-            if drive_letter not in ("A", "B", "C") and os.path.isdir(drive_root):
-                _add_candidate(drive_root)
+        _discover_windows_mounts(_add_candidate)
 
     return candidates
 

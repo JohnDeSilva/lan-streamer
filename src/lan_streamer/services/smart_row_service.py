@@ -18,7 +18,10 @@ def _compute_next_up_from_memory(
     for library_name in target_libraries:
         items_dict = library_items_by_name.get(library_name, {})
         library_config = library_configs.get(library_name, {})
-        if not isinstance(items_dict, dict) or library_config.get("type", "tv") == "movie":
+        if (
+            not isinstance(items_dict, dict)
+            or library_config.get("type", "tv") == "movie"
+        ):
             continue
         for series_name, series_data in items_dict.items():
             if not isinstance(series_data, dict):
@@ -54,7 +57,9 @@ def _compute_next_up_from_memory(
                         "name": series_name,
                         "poster_path": poster_path,
                         "library_name": library_name,
-                        "date_added": int(next_unwatched_episode.get("date_added") or 0),
+                        "date_added": int(
+                            next_unwatched_episode.get("date_added") or 0
+                        ),
                         "air_date": str(next_unwatched_episode.get("air_date") or ""),
                         "watched_count": 0,
                         "total_count": 1,
@@ -135,8 +140,7 @@ def compute_smart_rows_from_memory(
                             max_date_added, int(episode.get("date_added") or 0)
                         )
                         air_value = str(episode.get("air_date") or "")
-                        if air_value > max_air_date:
-                            max_air_date = air_value
+                        max_air_date = max(max_air_date, air_value)
 
                 if total_episodes == 0:
                     continue
@@ -187,9 +191,7 @@ def get_combined_smart_row_with_remote(
 ) -> list[dict[str, Any]]:
     """Combine local cached smart rows with live in-memory remote library items."""
     configs = library_configs if library_configs is not None else app_config.libraries
-    effective_libraries = (
-        list(library_names) if library_names else list(configs.keys())
-    )
+    effective_libraries = list(library_names) if library_names else list(configs.keys())
     remote_libraries = [
         name
         for name in effective_libraries
