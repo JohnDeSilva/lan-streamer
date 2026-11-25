@@ -2068,8 +2068,6 @@ class SettingsDialog(QDialog):
         }
 
         if is_reachable and merged_libraries:
-            if from_connect:
-                self._auto_mirror_agent_libraries(agent_url, merged_libraries)
             self._auto_detect_mounts_for_agent(agent_url, merged_libraries)
 
         self._populate_remote_agents_tree()
@@ -2098,96 +2096,6 @@ class SettingsDialog(QDialog):
                 is_reachable,
                 len(discovered_libraries),
             )
-
-    def _auto_mirror_agent_libraries(
-        self, agent_url: str, discovered_libraries: list[dict[str, Any]]
-    ) -> None:
-        """Automatically register unattached agent libraries in staged_libraries."""
-        from lan_streamer.system.config import (
-            get_library_sources,
-            normalize_library_configuration,
-        )
-
-        agent_mount_mappings: dict[str, str] = dict(
-            self.staged_scan_agents.get(agent_url, {}).get("mount_mappings", {})
-        )
-        added_any = False
-
-        for source_info in discovered_libraries:
-            if not isinstance(source_info, dict):
-                continue
-            source_name = str(source_info.get("name") or "").strip()
-            if not source_name:
-                continue
-            source_identifier = str(source_info.get("id") or source_name)
-            source_type = str(
-                source_info.get("media_type") or source_info.get("type") or "tv"
-            )
-
-            already_attached = any(
-                source_entry.get("type") == "agent"
-                and source_entry.get("agent_url") == agent_url
-                and (
-                    str(source_entry.get("source_identifier") or "")
-                    == source_identifier
-                    or str(source_entry.get("source_id") or "") == source_identifier
-                    or str(source_entry.get("name") or "") == source_name
-                )
-                for library_config in self.staged_libraries.values()
-                for source_entry in get_library_sources(library_config)
-            )
-            if already_attached:
-                continue
-
-            target_library_name = source_name
-            if target_library_name in self.staged_libraries:
-                continue
-
-            root_paths: list[str] = []
-            if source_info.get("root_paths"):
-                root_paths = [str(path) for path in source_info["root_paths"] if path]
-            elif source_info.get("root_path"):
-                root_paths = [str(source_info["root_path"])]
-
-            mount_mappings: dict[str, str] = {
-                root: agent_mount_mappings[root]
-                for root in root_paths
-                if root in agent_mount_mappings
-            }
-            new_source_entry: dict[str, Any] = {
-                "type": "agent",
-                "agent_url": agent_url,
-                "source_identifier": source_identifier,
-                "source_id": source_identifier,
-                "name": source_name,
-                "remote_root_paths": root_paths,
-                "mount_mappings": mount_mappings,
-            }
-            library_configuration: dict[str, Any] = {
-                "type": source_type,
-                "management_type": "remote",
-                "paths": [],
-                "archive_paths": [],
-                "show_future_episodes": True,
-                "agent_url": agent_url,
-                "remote_library_id": source_identifier,
-                "remote_root_path": root_paths[0] if root_paths else "",
-                "mount_mappings": mount_mappings,
-                "sources": [new_source_entry],
-            }
-            library_configuration.update(
-                normalize_library_configuration(library_configuration)
-            )
-            self.staged_libraries[target_library_name] = library_configuration
-            added_any = True
-            logger.info(
-                "Auto-mirrored remote library '%s' from scan agent %s",
-                target_library_name,
-                agent_url,
-            )
-
-        if added_any:
-            self._refresh_library_selector()
 
     @Slot()
     def auto_detect_all_agent_mounts(self) -> None:
