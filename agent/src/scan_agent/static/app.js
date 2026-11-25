@@ -1285,6 +1285,12 @@ async function startMalAuthFlow() {
         showAlert("Please enter a MyAnimeList Client ID first.", "error");
         return;
     }
+    // Open the popup synchronously within the user-click gesture so browsers
+    // do not block it after async config/auth API requests resolve.
+    const authWindow =
+        typeof window !== "undefined" && typeof window.open === "function"
+            ? window.open("", "_blank")
+            : null;
     const configPayload = { myanimelist_client_id: clientId };
     if (cfgMalClientSecret && cfgMalClientSecret.value) {
         configPayload.myanimelist_client_secret = cfgMalClientSecret.value;
@@ -1297,10 +1303,28 @@ async function startMalAuthFlow() {
         if (codeContainer) {
             codeContainer.classList.remove("hidden");
         }
+        const authUrlLink = document.getElementById("malAuthUrlLink");
+        if (authUrlLink && authResult.auth_url) {
+            authUrlLink.href = authResult.auth_url;
+        }
         if (authResult.auth_url) {
-            window.open(authResult.auth_url, "_blank", "noopener");
+            if (authWindow && !authWindow.closed) {
+                authWindow.opener = null;
+                authWindow.location.href = authResult.auth_url;
+            } else {
+                showAlert(
+                    "Popup blocked by browser. Click 'Open MyAnimeList Login' below to sign in.",
+                    "info",
+                    8000,
+                );
+            }
+        } else if (authWindow && !authWindow.closed) {
+            authWindow.close();
         }
     } catch (error) {
+        if (authWindow && !authWindow.closed) {
+            authWindow.close();
+        }
         showAlert(`Failed starting MyAnimeList login: ${error.message}`, "error");
     }
 }
