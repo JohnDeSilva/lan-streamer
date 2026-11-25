@@ -1,3 +1,9 @@
+## v0.60.0rc2 (2026-11-25)
+
+### Fix
+
+- **dev-dependency**: bump types-requests
+
 ## v0.60.0rc1 (2026-11-25)
 
 ### Fix
