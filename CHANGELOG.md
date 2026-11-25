@@ -1,3 +1,14 @@
+## v0.60.1rc0 (2026-11-25)
+
+### Fix
+
+- **scanner**: consolidate split series across roots by TMDB ID
+- **ui**: allow adding remote libraries directly in settings
+- **ui**: display all auto-detected mount paths for remote sources
+- **agent**: support selecting multiple root folders in folder browser
+- **agent**: open MAL login popup synchronously on click
+- **agent**: display version in scan agent UI
+
 ## v0.60.0 (2026-11-25)
 
 ### Feat
