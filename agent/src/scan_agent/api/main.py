@@ -18,6 +18,7 @@ from scan_agent.api.routes_core import (
 )
 from scan_agent.api.routes_filesystem import filesystem_router
 from scan_agent.api.routes_images import images_router
+from scan_agent.api.routes_mal import mal_router
 from scan_agent.api.routes_scan import events_router, scan_router
 from scan_agent.api.routes_services import (
     metadata_router,
@@ -165,6 +166,7 @@ def create_app(
     application.include_router(metadata_router, prefix=_API_PREFIX)
     application.include_router(rename_router, prefix=_API_PREFIX)
     application.include_router(subtitles_router, prefix=_API_PREFIX)
+    application.include_router(mal_router, prefix=_API_PREFIX)
     application.include_router(watch_router, prefix=_API_PREFIX)
     application.include_router(filesystem_router, prefix=_API_PREFIX)
     application.include_router(images_router, prefix=_API_PREFIX)
