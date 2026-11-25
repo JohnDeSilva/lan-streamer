@@ -1076,9 +1076,23 @@ function parseRootPathsInput(rawValue) {
     return result;
 }
 
+function appendSelectedFolderToRootPaths() {
+    if (!selectedBrowserDirectory) {
+        return false;
+    }
+    const input = document.getElementById("libRootPath");
+    const existing = parseRootPathsInput(input.value);
+    if (!existing.includes(selectedBrowserDirectory)) {
+        existing.push(selectedBrowserDirectory);
+    }
+    input.value = existing.join("\n");
+    return true;
+}
+
 async function openFolderBrowser(initialPath) {
     const existingRoots = parseRootPathsInput(document.getElementById("libRootPath").value);
-    currentBrowserDirectory = initialPath || existingRoots[0] || "";
+    const parsedInitial = initialPath ? parseRootPathsInput(initialPath)[0] : "";
+    currentBrowserDirectory = parsedInitial || existingRoots[0] || "";
     selectedBrowserDirectory = currentBrowserDirectory;
     openModal("folderBrowserModal");
     await loadDirectory(currentBrowserDirectory);
@@ -1536,7 +1550,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Folder Finder / Browser
     const btnBrowseFolder = document.getElementById("btnBrowseFolder");
     if (btnBrowseFolder) {
-        btnBrowseFolder.onclick = () => openFolderBrowser(document.getElementById("libRootPath").value.trim());
+        btnBrowseFolder.onclick = () => openFolderBrowser();
     }
     const btnFolderGo = document.getElementById("btnFolderGo");
     if (btnFolderGo) {
@@ -1558,17 +1572,21 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         };
     }
+    const btnAddFolder = document.getElementById("btnAddFolder");
+    if (btnAddFolder) {
+        btnAddFolder.onclick = () => {
+            if (appendSelectedFolderToRootPaths()) {
+                const displaySpan = document.getElementById("selectedFolderDisplay");
+                if (displaySpan) {
+                    displaySpan.textContent = `Added: ${selectedBrowserDirectory}`;
+                }
+            }
+        };
+    }
     const btnSelectFolder = document.getElementById("btnSelectFolder");
     if (btnSelectFolder) {
         btnSelectFolder.onclick = () => {
-            if (selectedBrowserDirectory) {
-                const input = document.getElementById("libRootPath");
-                const existing = parseRootPathsInput(input.value);
-                if (!existing.includes(selectedBrowserDirectory)) {
-                    existing.push(selectedBrowserDirectory);
-                }
-                input.value = existing.join("\n");
-            }
+            appendSelectedFolderToRootPaths();
             closeModal("folderBrowserModal");
         };
     }

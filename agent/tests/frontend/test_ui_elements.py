@@ -1170,3 +1170,46 @@ def test_v8_mal_auth_opens_window_synchronously_and_sets_fallback_link(
         state["linkHref"] == "https://myanimelist.net/v1/oauth2/authorize?client_id=abc"
     )
     assert state["containerHidden"] is False
+
+
+def test_v8_folder_browser_supports_multiple_root_paths(engine: MiniRacer) -> None:
+    """Verify adding multiple folders preserves existing roots and browse handles multi-line inputs."""
+    html_text = _read_static_file("index.html")
+    assert 'id="btnAddFolder"' in html_text
+
+    result = _load_app_in_v8(
+        engine,
+        """
+        const browsedPaths = [];
+        api.browseFilesystem = async function(directoryPath) {
+            browsedPaths.push(directoryPath);
+            return { current_path: directoryPath || "/", directories: [], shortcuts: [] };
+        };
+
+        openModal("folderBrowserModal");
+        selectedBrowserDirectory = "/media/tv";
+        getOrCreateElement("btnAddFolder").onclick();
+        const afterFirstAddOpen = getOrCreateElement("folderBrowserModal").classList.contains("open");
+        const afterFirstDisplay = getOrCreateElement("selectedFolderDisplay").textContent;
+
+        selectedBrowserDirectory = "/archive/tv";
+        getOrCreateElement("btnSelectFolder").onclick();
+        const afterSelectOpen = getOrCreateElement("folderBrowserModal").classList.contains("open");
+        const combinedValue = getOrCreateElement("libRootPath").value;
+
+        getOrCreateElement("btnBrowseFolder").onclick();
+
+        return {
+            afterFirstAddOpen: afterFirstAddOpen,
+            afterFirstDisplay: afterFirstDisplay,
+            afterSelectOpen: afterSelectOpen,
+            combinedValue: combinedValue,
+            browsedPaths: browsedPaths
+        };
+        """,
+    )
+    assert result["afterFirstAddOpen"] is True
+    assert result["afterFirstDisplay"] == "Added: /media/tv"
+    assert result["afterSelectOpen"] is False
+    assert result["combinedValue"] == "/media/tv\n/archive/tv"
+    assert result["browsedPaths"] == ["/media/tv"]
