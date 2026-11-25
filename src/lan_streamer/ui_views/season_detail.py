@@ -1507,6 +1507,65 @@ class SeasonDetailView(QWidget):
         self._mal_apply_button.clicked.connect(self._on_apply_mal_mappings)
         layout.addWidget(self._mal_apply_button)
 
+    def _get_remote_agent_url(self) -> str | None:
+        """Return the scan agent URL for the current library if configured."""
+        library_name = getattr(self.controller, "current_library_name", "")
+        if not library_name:
+            return None
+        library_config = config.libraries.get(library_name, {})
+        if not isinstance(library_config, dict):
+            return None
+        if library_config.get("agent_url"):
+            return str(library_config["agent_url"])
+        for source in library_config.get("sources", []) or []:
+            if (
+                isinstance(source, dict)
+                and source.get("type") == "agent"
+                and source.get("agent_url")
+            ):
+                return str(source["agent_url"])
+        return None
+
+    def _is_mal_configured(self) -> bool:
+        """Check whether MyAnimeList is configured on the agent (for remote) or locally."""
+        agent_url = self._get_remote_agent_url()
+        if agent_url:
+            try:
+                from lan_streamer.services.scan_agent_client import scan_agent_client
+
+                status_data = scan_agent_client.get_mal_status(agent_url)
+                if status_data.get("configured"):
+                    return True
+            except Exception:
+                logger.debug("Could not check MAL status on agent '%s'", agent_url)
+        return bool(myanimelist_client.is_configured())
+
+    def _search_mal_anime(self, query: str) -> list[dict[str, Any]]:
+        """Search MyAnimeList via the remote agent when available, else locally."""
+        agent_url = self._get_remote_agent_url()
+        if agent_url:
+            try:
+                from lan_streamer.services.scan_agent_client import scan_agent_client
+
+                return scan_agent_client.search_mal_anime(agent_url, query)
+            except Exception:
+                if not myanimelist_client.is_configured():
+                    raise
+        return list(myanimelist_client.search_anime(query))
+
+    def _get_mal_anime_details(self, anime_id: int) -> dict[str, Any] | None:
+        """Fetch MyAnimeList details via the remote agent when available, else locally."""
+        agent_url = self._get_remote_agent_url()
+        if agent_url:
+            try:
+                from lan_streamer.services.scan_agent_client import scan_agent_client
+
+                return scan_agent_client.get_mal_anime_details(agent_url, anime_id)
+            except Exception:
+                if not myanimelist_client.is_configured():
+                    raise
+        return myanimelist_client.get_anime_details(anime_id)
+
     def _load_mal_mapper_data(self) -> None:
         season_name = self._current_season_name or ""
         self._mal_local_episodes = []
@@ -1534,13 +1593,13 @@ class SeasonDetailView(QWidget):
         self._mal_row_episodes = []
         self._mal_selected_label.setText("No MAL entries loaded")
 
-        if not myanimelist_client.is_configured():
+        if not self._is_mal_configured():
             logger.info(
                 "MAL mapper: client not configured for season '%s', skipping",
                 season_name,
             )
             self._mal_selected_label.setText(
-                "MyAnimeList API Client ID not configured in settings"
+                "MyAnimeList API Client ID not configured in settings or on remote agent"
             )
             return
 
@@ -1563,7 +1622,7 @@ class SeasonDetailView(QWidget):
                     aid,
                     len(aid_paths),
                 )
-                details = myanimelist_client.get_anime_details(aid)
+                details = self._get_mal_anime_details(aid)
                 if details:
                     title = details.get("title") or f"ID: {aid}"
                     self._mal_entries.append({"id": aid, "title": title})
@@ -1596,7 +1655,7 @@ class SeasonDetailView(QWidget):
             saved_mal_id,
         )
         if saved_mal_id:
-            details = myanimelist_client.get_anime_details(saved_mal_id)
+            details = self._get_mal_anime_details(saved_mal_id)
             if details:
                 title = details.get("title") or f"ID: {saved_mal_id}"
                 self._mal_selected_anime_id = saved_mal_id
@@ -1622,7 +1681,7 @@ class SeasonDetailView(QWidget):
         )
         if search_text and not season_has_no_number:
             try:
-                results = myanimelist_client.search_anime(search_text)
+                results = self._search_mal_anime(search_text)
             except Exception:
                 logger.exception("MAL mapper: auto-search failed")
                 results = []
@@ -1645,7 +1704,7 @@ class SeasonDetailView(QWidget):
             return
 
         try:
-            results = myanimelist_client.search_anime(query)
+            results = self._search_mal_anime(query)
         except Exception as exc:
             logger.exception("Failed to search MyAnimeList")
             QMessageBox.warning(
@@ -1688,7 +1747,7 @@ class SeasonDetailView(QWidget):
             return
 
         try:
-            results = myanimelist_client.search_anime(query)
+            results = self._search_mal_anime(query)
         except Exception as exc:
             logger.exception("Failed to search MyAnimeList")
             QMessageBox.warning(
@@ -1729,7 +1788,7 @@ class SeasonDetailView(QWidget):
             return
 
         try:
-            details = myanimelist_client.get_anime_details(anime_id)
+            details = self._get_mal_anime_details(anime_id)
         except Exception as exc:
             logger.exception("Failed to fetch MAL details for ID %s", anime_id)
             QMessageBox.warning(
@@ -1746,7 +1805,7 @@ class SeasonDetailView(QWidget):
         """Append a new MAL entry's episodes to the existing mapper table."""
         logger.info("Appending MAL entry ID: %s (%s)", anime_id, title)
         try:
-            details = myanimelist_client.get_anime_details(anime_id)
+            details = self._get_mal_anime_details(anime_id)
         except Exception as exc:
             logger.exception("Failed to fetch MAL details for ID %s", anime_id)
             QMessageBox.warning(

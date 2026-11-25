@@ -22,6 +22,20 @@ if TYPE_CHECKING:
 watch_router = APIRouter(tags=["watch"])
 
 
+def _dispatch_mal_updates(result: dict[str, Any]) -> None:
+    """Trigger background MyAnimeList status updates for watched items if configured."""
+    mal_updates = result.pop("mal_updates", None)
+    if not isinstance(mal_updates, dict) or not mal_updates:
+        return
+    try:
+        from lan_streamer.providers.myanimelist import trigger_mal_push_async
+
+        for anime_id, watched_episodes in mal_updates.items():
+            trigger_mal_push_async(int(anime_id), int(watched_episodes))
+    except ImportError, RuntimeError, ValueError, TypeError:
+        return
+
+
 @watch_router.get("/watch/{media_type}/{media_identifier}/state")
 def watch_state(
     media_type: str = Path(pattern="^(episode|movie|season|series)$"),
@@ -62,6 +76,7 @@ def create_watch_event(
         path=event.path,
         watched=event.watched,
     )
+    _dispatch_mal_updates(result)
     progress_broker.publish("watch.updated", result)
     affected_episodes = result.get("affected_episodes")
     if isinstance(affected_episodes, list):
@@ -103,6 +118,7 @@ def sync_watch_events(
             path=event_item.path,
             watched=event_item.watched,
         )
+        _dispatch_mal_updates(result)
         progress_broker.publish("watch.updated", result)
         updated_count += 1
     return {"status": "synced", "updated_count": updated_count}

@@ -894,5 +894,141 @@ class ScanAgentClient:
         except ValueError:
             return {"status": "accepted"}
 
+    def get_mal_status(
+        self, agent_url: str, timeout: float = 10.0
+    ) -> dict[str, Any]:
+        """Return MyAnimeList configuration and authentication status on an agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/services/myanimelist/status"
+        try:
+            response = requests.get(
+                target_endpoint, headers=self._headers, timeout=timeout
+            )
+        except requests.RequestException as error:
+            raise ScanAgentConnectionError(
+                f"Could not fetch MyAnimeList status from '{agent_url}': {error}"
+            ) from error
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+        return dict(response.json())
+
+    def generate_mal_auth_url(
+        self, agent_url: str, timeout: float = 10.0
+    ) -> dict[str, Any]:
+        """Generate a MyAnimeList OAuth2 authorization URL on a remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/services/myanimelist/auth/url"
+        try:
+            response = requests.post(
+                target_endpoint, headers=self._headers, timeout=timeout
+            )
+        except requests.RequestException as error:
+            raise ScanAgentConnectionError(
+                f"Could not generate MyAnimeList auth URL on '{agent_url}': {error}"
+            ) from error
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+        return dict(response.json())
+
+    def exchange_mal_auth_code(
+        self,
+        agent_url: str,
+        code: str,
+        code_verifier: str | None = None,
+        timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        """Exchange a MyAnimeList OAuth2 authorization code on a remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/services/myanimelist/auth/exchange"
+        payload: dict[str, Any] = {"code": code}
+        if code_verifier:
+            payload["code_verifier"] = code_verifier
+        try:
+            response = requests.post(
+                target_endpoint, json=payload, headers=self._headers, timeout=timeout
+            )
+        except requests.RequestException as error:
+            raise ScanAgentConnectionError(
+                f"Could not exchange MyAnimeList auth code on '{agent_url}': {error}"
+            ) from error
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+        return dict(response.json())
+
+    def disconnect_mal(
+        self, agent_url: str, timeout: float = 10.0
+    ) -> dict[str, Any]:
+        """Disconnect MyAnimeList credentials on a remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/services/myanimelist/auth/disconnect"
+        try:
+            response = requests.post(
+                target_endpoint, headers=self._headers, timeout=timeout
+            )
+        except requests.RequestException as error:
+            raise ScanAgentConnectionError(
+                f"Could not disconnect MyAnimeList on '{agent_url}': {error}"
+            ) from error
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+        return dict(response.json())
+
+    def search_mal_anime(
+        self, agent_url: str, query: str, timeout: float = 15.0
+    ) -> list[dict[str, Any]]:
+        """Search MyAnimeList via a remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = (
+            f"{normalized_url}/api/v1/services/myanimelist/search"
+            f"?query={quote(query)}"
+        )
+        try:
+            response = requests.get(
+                target_endpoint, headers=self._headers, timeout=timeout
+            )
+        except requests.RequestException as error:
+            raise ScanAgentConnectionError(
+                f"Could not search MyAnimeList via '{agent_url}': {error}"
+            ) from error
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+        payload = response.json()
+        return list(payload.get("results", [])) if isinstance(payload, dict) else []
+
+    def get_mal_anime_details(
+        self, agent_url: str, anime_id: int, timeout: float = 15.0
+    ) -> dict[str, Any] | None:
+        """Fetch MyAnimeList anime details via a remote scan agent."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = (
+            f"{normalized_url}/api/v1/services/myanimelist/anime/{int(anime_id)}"
+        )
+        try:
+            response = requests.get(
+                target_endpoint, headers=self._headers, timeout=timeout
+            )
+        except requests.RequestException as error:
+            raise ScanAgentConnectionError(
+                f"Could not fetch MyAnimeList details via '{agent_url}': {error}"
+            ) from error
+        if response.status_code == 404:
+            return None
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+        payload = response.json()
+        return dict(payload) if isinstance(payload, dict) else None
+
 
 scan_agent_client = ScanAgentClient()

@@ -25,6 +25,9 @@ class ConfigUpdate(BaseModel):
     opensubtitles_username: str | None = None
     opensubtitles_password: str | None = None
     clear_opensubtitles_password: bool | None = None
+    myanimelist_client_id: str | None = None
+    myanimelist_client_secret: str | None = None
+    clear_myanimelist_client_secret: bool | None = None
     cache_directory: str | None = None
     log_directory: str | None = None
     log_level: str | None = None

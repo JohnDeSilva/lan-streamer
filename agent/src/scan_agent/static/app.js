@@ -1165,6 +1165,11 @@ async function loadConfig() {
         }
         document.getElementById("cfgOpenSubtitlesUsername").value = configuration.opensubtitles_username || "";
         document.getElementById("cfgOpenSubtitlesApiKey").value = configuration.opensubtitles_api_key || "";
+        const cfgMalClientId = document.getElementById("cfgMalClientId");
+        if (cfgMalClientId) {
+            cfgMalClientId.value = configuration.myanimelist_client_id || "";
+        }
+        updateMalStatusDisplay(Boolean(configuration.myanimelist_authenticated));
         document.getElementById("cfgCacheDirectory").value = configuration.cache_directory || "";
         const configurationLogLevel = document.getElementById("cfgLogLevel");
         if (configurationLogLevel) {
@@ -1208,6 +1213,14 @@ async function saveConfig(event) {
     if (password) {
         payload.opensubtitles_password = password;
     }
+    const cfgMalClientId = document.getElementById("cfgMalClientId");
+    if (cfgMalClientId) {
+        payload.myanimelist_client_id = cfgMalClientId.value.trim();
+    }
+    const cfgMalClientSecret = document.getElementById("cfgMalClientSecret");
+    if (cfgMalClientSecret && cfgMalClientSecret.value) {
+        payload.myanimelist_client_secret = cfgMalClientSecret.value;
+    }
 
     try {
         await api.updateConfig(payload);
@@ -1217,10 +1230,97 @@ async function saveConfig(event) {
     }
 }
 
+let pendingMalCodeVerifier = null;
+
+function updateMalStatusDisplay(authenticated) {
+    const statusText = document.getElementById("malAuthStatusText");
+    const disconnectBtn = document.getElementById("btnMalDisconnect");
+    if (statusText) {
+        statusText.textContent = authenticated ? "Connected to MyAnimeList" : "Not connected";
+    }
+    if (disconnectBtn) {
+        disconnectBtn.classList.toggle("hidden", !authenticated);
+    }
+}
+
+async function startMalAuthFlow() {
+    const cfgMalClientId = document.getElementById("cfgMalClientId");
+    const cfgMalClientSecret = document.getElementById("cfgMalClientSecret");
+    const clientId = cfgMalClientId ? cfgMalClientId.value.trim() : "";
+    if (!clientId) {
+        showAlert("Please enter a MyAnimeList Client ID first.", "error");
+        return;
+    }
+    const configPayload = { myanimelist_client_id: clientId };
+    if (cfgMalClientSecret && cfgMalClientSecret.value) {
+        configPayload.myanimelist_client_secret = cfgMalClientSecret.value;
+    }
+    try {
+        await api.updateConfig(configPayload);
+        const authResult = await api.generateMalAuthUrl();
+        pendingMalCodeVerifier = authResult.code_verifier || null;
+        const codeContainer = document.getElementById("malAuthCodeContainer");
+        if (codeContainer) {
+            codeContainer.classList.remove("hidden");
+        }
+        if (authResult.auth_url) {
+            window.open(authResult.auth_url, "_blank", "noopener");
+        }
+    } catch (error) {
+        showAlert(`Failed starting MyAnimeList login: ${error.message}`, "error");
+    }
+}
+
+async function submitMalAuthCode() {
+    const codeInput = document.getElementById("cfgMalAuthCode");
+    const rawCode = codeInput ? codeInput.value.trim() : "";
+    if (!rawCode) {
+        showAlert("Please paste the redirect URL or authorization code.", "error");
+        return;
+    }
+    try {
+        await api.exchangeMalAuthCode(rawCode, pendingMalCodeVerifier);
+        pendingMalCodeVerifier = null;
+        if (codeInput) {
+            codeInput.value = "";
+        }
+        const codeContainer = document.getElementById("malAuthCodeContainer");
+        if (codeContainer) {
+            codeContainer.classList.add("hidden");
+        }
+        updateMalStatusDisplay(true);
+        showAlert("Connected to MyAnimeList!", "success");
+    } catch (error) {
+        showAlert(`MyAnimeList login failed: ${error.message}`, "error");
+    }
+}
+
+async function disconnectMalAccount() {
+    try {
+        await api.disconnectMal();
+        updateMalStatusDisplay(false);
+        showAlert("Disconnected from MyAnimeList.", "success");
+    } catch (error) {
+        showAlert(`Failed disconnecting MyAnimeList: ${error.message}`, "error");
+    }
+}
+
 // -------------------------------------------------------------
 // Initialization & Global Event Listeners
 // -------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
+    const btnMalConnect = document.getElementById("btnMalConnect");
+    if (btnMalConnect) {
+        btnMalConnect.addEventListener("click", startMalAuthFlow);
+    }
+    const btnMalSubmitCode = document.getElementById("btnMalSubmitCode");
+    if (btnMalSubmitCode) {
+        btnMalSubmitCode.addEventListener("click", submitMalAuthCode);
+    }
+    const btnMalDisconnect = document.getElementById("btnMalDisconnect");
+    if (btnMalDisconnect) {
+        btnMalDisconnect.addEventListener("click", disconnectMalAccount);
+    }
     // Navigation
     document.querySelectorAll(".nav-tab").forEach((btn) => {
         btn.onclick = () => switchTab(btn.dataset.tab);
