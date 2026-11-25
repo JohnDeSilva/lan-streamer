@@ -1,3 +1,9 @@
+## v0.60.0rc5-2 (2026-11-25)
+
+### Fix
+
+- **agent**: Publish scan.finished before clearing running job state
+
 ## v0.60.0rc5-1 (2026-11-25)
 
 ## v0.60.0rc5 (2026-11-25)
