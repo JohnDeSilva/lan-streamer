@@ -468,6 +468,13 @@ class SettingsDialog(QDialog):
         add_library_button: QPushButton = QPushButton("Create Library")
         add_library_button.clicked.connect(self.add_staged_library)
         create_layout.addWidget(add_library_button)
+
+        add_remote_library_button: QPushButton = QPushButton("Add Remote Library...")
+        add_remote_library_button.setToolTip(
+            "Directly add a library from a configured remote Scan Agent."
+        )
+        add_remote_library_button.clicked.connect(self.add_staged_remote_library)
+        create_layout.addWidget(add_remote_library_button)
         libraries_layout.addLayout(create_layout)
 
         # Divider
@@ -1848,6 +1855,154 @@ class SettingsDialog(QDialog):
         if 0 <= current_row < self.directory_list_widget.count():
             self.directory_list_widget.setCurrentRow(current_row)
 
+    def _collect_available_remote_sources(
+        self,
+    ) -> list[tuple[str, str, dict[str, Any]]]:
+        """Collect discovered media sources across all staged scan agents."""
+        available_sources: list[tuple[str, str, dict[str, Any]]] = []
+        for agent_url, agent_data in self.staged_scan_agents.items():
+            agent_name = agent_data.get("name") or agent_url
+            discovered = agent_data.get("discovered_libraries", [])
+            for source_info in discovered:
+                if not isinstance(source_info, dict):
+                    continue
+                source_name = source_info.get("name") or "Unnamed Source"
+                source_type = (
+                    source_info.get("media_type") or source_info.get("type") or "tv"
+                )
+                display_label = f"{agent_name} : {source_name} [{source_type.upper()}] ({agent_url})"
+                available_sources.append((display_label, agent_url, source_info))
+        return available_sources
+
+    def _build_agent_source_entry(
+        self, agent_url: str, source_info: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Build a normalized agent source config dict from discovered metadata."""
+        source_identifier = str(source_info.get("id") or source_info.get("name") or "")
+        source_name = str(source_info.get("name") or "Remote Source")
+        root_paths: list[str] = []
+        if source_info.get("root_paths"):
+            root_paths = [str(path) for path in source_info["root_paths"] if path]
+        elif source_info.get("root_path"):
+            root_paths = [str(source_info["root_path"])]
+
+        agent_mount_mappings: dict[str, str] = dict(
+            self.staged_scan_agents.get(agent_url, {}).get("mount_mappings", {})
+        )
+        mount_mappings: dict[str, str] = {
+            root: agent_mount_mappings[root]
+            for root in root_paths
+            if root in agent_mount_mappings
+        }
+        return {
+            "type": "agent",
+            "agent_url": agent_url,
+            "source_identifier": source_identifier,
+            "source_id": source_identifier,
+            "name": source_name,
+            "remote_root_paths": root_paths,
+            "mount_mappings": mount_mappings,
+        }
+
+    @Slot()
+    def add_staged_remote_library(self) -> None:
+        """Directly create a new remote library from a discovered scan agent source."""
+        available_sources = self._collect_available_remote_sources()
+        if not available_sources:
+            QMessageBox.information(
+                self,
+                "No Remote Libraries",
+                "No media sources discovered from configured scan agents.\n"
+                "Please connect to a scan agent in the Remote Sources tab first.",
+            )
+            return
+
+        items = [source_tuple[0] for source_tuple in available_sources]
+        chosen_label, confirmed = QInputDialog.getItem(
+            self,
+            "Add Remote Library",
+            "Select a remote library to add:",
+            items,
+            0,
+            False,
+        )
+        if not confirmed or not chosen_label:
+            return
+
+        selected_tuple = next(
+            (
+                source_tuple
+                for source_tuple in available_sources
+                if source_tuple[0] == chosen_label
+            ),
+            None,
+        )
+        if selected_tuple is None:
+            return
+
+        _, chosen_agent_url, chosen_source_info = selected_tuple
+        source_name = str(chosen_source_info.get("name") or "Remote Library")
+        raw_type = str(
+            chosen_source_info.get("media_type")
+            or chosen_source_info.get("type")
+            or "tv"
+        ).lower()
+        library_type = raw_type if raw_type in ("tv", "movie", "anime") else "tv"
+
+        library_name = source_name
+        if library_name in self.staged_libraries:
+            agent_name = str(
+                self.staged_scan_agents.get(chosen_agent_url, {}).get("name")
+                or chosen_agent_url
+            )
+            custom_name, name_ok = QInputDialog.getText(
+                self,
+                "Library Name Already Exists",
+                f"A library named '{library_name}' already exists.\n"
+                "Enter a unique name for this remote library:",
+                text=f"{source_name} ({agent_name})",
+            )
+            if not name_ok or not custom_name.strip():
+                return
+            library_name = custom_name.strip()
+            if library_name in self.staged_libraries:
+                QMessageBox.warning(
+                    self,
+                    "Duplicate Library",
+                    f"Library '{library_name}' already exists.",
+                )
+                return
+
+        from lan_streamer.system.config import normalize_library_configuration
+
+        new_source_entry = self._build_agent_source_entry(
+            chosen_agent_url, chosen_source_info
+        )
+        mount_mappings: dict[str, str] = dict(new_source_entry["mount_mappings"])
+        library_configuration: dict[str, Any] = {
+            "type": library_type,
+            "management_type": "remote",
+            "paths": list(dict.fromkeys(mount_mappings.values())),
+            "archive_paths": [],
+            "show_future_episodes": True,
+            "mount_mappings": mount_mappings,
+            "sources": [new_source_entry],
+        }
+        library_configuration.update(
+            normalize_library_configuration(library_configuration)
+        )
+        self.staged_libraries[library_name] = library_configuration
+        self._refresh_library_selector()
+        self.library_selector.setCurrentText(library_name)
+        self._populate_remote_agents_tree()
+        self._refresh_directory_list()
+        logger.info(
+            "Added remote library '%s' (type: %s) from agent %s",
+            library_name,
+            library_type,
+            chosen_agent_url,
+        )
+
     @Slot()
     def add_staged_remote_source(self) -> None:
         """Add a discovered media source from a configured scan agent to the selected library."""
@@ -1860,18 +2015,7 @@ class SettingsDialog(QDialog):
             )
             return
 
-        available_sources: list[tuple[str, str, dict[str, Any]]] = []
-        for agent_url, agent_data in self.staged_scan_agents.items():
-            agent_name = agent_data.get("name") or agent_url
-            discovered = agent_data.get("discovered_libraries", [])
-            for source_info in discovered:
-                source_name = source_info.get("name") or "Unnamed Source"
-                source_type = (
-                    source_info.get("media_type") or source_info.get("type") or "tv"
-                )
-                display_label = f"{agent_name} : {source_name} [{source_type.upper()}] ({agent_url})"
-                available_sources.append((display_label, agent_url, source_info))
-
+        available_sources = self._collect_available_remote_sources()
         if not available_sources:
             QMessageBox.information(
                 self,
@@ -1936,32 +2080,10 @@ class SettingsDialog(QDialog):
             )
             return
 
-        root_paths: list[str] = []
-        if chosen_source_info.get("root_paths"):
-            root_paths = [
-                str(path) for path in chosen_source_info["root_paths"] if path
-            ]
-        elif chosen_source_info.get("root_path"):
-            root_paths = [str(chosen_source_info["root_path"])]
-
-        agent_mount_mappings: dict[str, str] = dict(
-            self.staged_scan_agents.get(chosen_agent_url, {}).get("mount_mappings", {})
+        new_source_entry = self._build_agent_source_entry(
+            chosen_agent_url, chosen_source_info
         )
-        mount_mappings: dict[str, str] = {
-            root: agent_mount_mappings[root]
-            for root in root_paths
-            if root in agent_mount_mappings
-        }
-
-        new_source_entry: dict[str, Any] = {
-            "type": "agent",
-            "agent_url": chosen_agent_url,
-            "source_identifier": source_identifier,
-            "source_id": source_identifier,
-            "name": source_name,
-            "remote_root_paths": root_paths,
-            "mount_mappings": mount_mappings,
-        }
+        mount_mappings: dict[str, str] = dict(new_source_entry["mount_mappings"])
         current_sources.append(new_source_entry)
         library_configuration["sources"] = current_sources
         if mount_mappings:
