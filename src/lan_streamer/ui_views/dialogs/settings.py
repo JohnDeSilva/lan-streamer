@@ -37,7 +37,10 @@ from PySide6.QtWidgets import (
 from lan_streamer import __version__
 from lan_streamer.system.config import config, split_multi_root_libraries
 from lan_streamer.system.updater import UpdateCheckWorker
-from lan_streamer.ui_views.dialogs.agent_probe_worker import AgentProbeWorker
+from lan_streamer.ui_views.dialogs.agent_probe_worker import (
+    AgentProbeWorker,
+    AutoDetectMountsWorker,
+)
 from lan_streamer.ui_views.dialogs.update_dialog import UpdateDialog
 from lan_streamer.ui_views.progress_widgets import (
     ScanProgressTree,
@@ -169,6 +172,13 @@ class SettingsDialog(QDialog):
         self.connect_agent_button: QPushButton = QPushButton("Connect to Agent")
         self.remote_agents_tree_widget: QTreeWidget = QTreeWidget()
         self.map_local_mount_button: QPushButton = QPushButton("Map Local Mount...")
+        self.auto_detect_mounts_button: QPushButton = QPushButton("Auto-Detect Mounts")
+        self.mount_discovery_max_depth_input: QSpinBox = QSpinBox()
+        self.mount_discovery_max_depth_input.setRange(1, 15)
+        self.mount_discovery_max_depth_input.setValue(5)
+        self.mount_discovery_max_depth_input.setToolTip(
+            "Maximum directory depth under each local mount point when auto-detecting remote library roots."
+        )
         self.manage_remote_agent_button: QPushButton = QPushButton("Manage Agent...")
         self.remove_remote_agent_button: QPushButton = QPushButton("Remove Agent")
         self.refresh_remote_agents_button: QPushButton = QPushButton("Refresh Agents")
@@ -188,6 +198,7 @@ class SettingsDialog(QDialog):
         # Background probe workers for agent connectivity checks
         self._probe_worker: AgentProbeWorker | None = None
         self._refresh_agent_workers: list[AgentProbeWorker] = []
+        self._mount_detect_workers: list[AutoDetectMountsWorker] = []
 
     def _init_playback_widgets(self) -> None:
         self.use_embedded_checkbox: QCheckBox = QCheckBox(
@@ -623,6 +634,17 @@ class SettingsDialog(QDialog):
             self.map_local_mount_for_selected_item
         )
         actions_layout.addWidget(self.map_local_mount_button)
+
+        self.auto_detect_mounts_button.setText("Auto-Detect Mounts")
+        self.auto_detect_mounts_button.setToolTip(
+            "Automatically match remote root directories to mounted local network shares."
+        )
+        self.auto_detect_mounts_button.clicked.connect(
+            self.auto_detect_all_agent_mounts
+        )
+        actions_layout.addWidget(self.auto_detect_mounts_button)
+        actions_layout.addWidget(QLabel("Depth:"))
+        actions_layout.addWidget(self.mount_discovery_max_depth_input)
 
         self.manage_remote_agent_button.setText("Manage Agent...")
         self.manage_remote_agent_button.setToolTip(
@@ -1345,6 +1367,9 @@ class SettingsDialog(QDialog):
                 ]
             self.staged_libraries[library_name] = staged_entry
         self.staged_scan_agents = copy.deepcopy(getattr(config, "scan_agents", {}))
+        self.mount_discovery_max_depth_input.setValue(
+            int(getattr(config, "mount_discovery_max_depth", 5))
+        )
         self._populate_remote_agents_tree()
         self._refresh_scan_agent_selectors()
         self._refresh_library_selector()
@@ -2034,7 +2059,13 @@ class SettingsDialog(QDialog):
             "api_key": existing_agent_data.get("api_key", ""),
             "reachable": is_reachable,
             "discovered_libraries": merged_libraries,
+            "mount_mappings": dict(existing_agent_data.get("mount_mappings", {})),
         }
+
+        if is_reachable and merged_libraries:
+            if from_connect:
+                self._auto_mirror_agent_libraries(agent_url, merged_libraries)
+            self._auto_detect_mounts_for_agent(agent_url, merged_libraries)
 
         self._populate_remote_agents_tree()
         self._refresh_scan_agent_selectors()
@@ -2062,6 +2093,181 @@ class SettingsDialog(QDialog):
                 is_reachable,
                 len(discovered_libraries),
             )
+
+    def _auto_mirror_agent_libraries(
+        self, agent_url: str, discovered_libraries: list[dict[str, Any]]
+    ) -> None:
+        """Automatically register unattached agent libraries in staged_libraries."""
+        from lan_streamer.system.config import (
+            get_library_sources,
+            normalize_library_configuration,
+        )
+
+        agent_mount_mappings: dict[str, str] = dict(
+            self.staged_scan_agents.get(agent_url, {}).get("mount_mappings", {})
+        )
+        added_any = False
+
+        for source_info in discovered_libraries:
+            if not isinstance(source_info, dict):
+                continue
+            source_name = str(source_info.get("name") or "").strip()
+            if not source_name:
+                continue
+            source_identifier = str(source_info.get("id") or source_name)
+            source_type = str(
+                source_info.get("media_type") or source_info.get("type") or "tv"
+            )
+
+            already_attached = any(
+                source_entry.get("type") == "agent"
+                and source_entry.get("agent_url") == agent_url
+                and (
+                    str(source_entry.get("source_identifier") or "") == source_identifier
+                    or str(source_entry.get("source_id") or "") == source_identifier
+                    or str(source_entry.get("name") or "") == source_name
+                )
+                for library_config in self.staged_libraries.values()
+                for source_entry in get_library_sources(library_config)
+            )
+            if already_attached:
+                continue
+
+            target_library_name = source_name
+            if target_library_name in self.staged_libraries:
+                continue
+
+            root_paths: list[str] = []
+            if source_info.get("root_paths"):
+                root_paths = [
+                    str(path) for path in source_info["root_paths"] if path
+                ]
+            elif source_info.get("root_path"):
+                root_paths = [str(source_info["root_path"])]
+
+            mount_mappings: dict[str, str] = {
+                root: agent_mount_mappings[root]
+                for root in root_paths
+                if root in agent_mount_mappings
+            }
+            new_source_entry: dict[str, Any] = {
+                "type": "agent",
+                "agent_url": agent_url,
+                "source_identifier": source_identifier,
+                "source_id": source_identifier,
+                "name": source_name,
+                "remote_root_paths": root_paths,
+                "mount_mappings": mount_mappings,
+            }
+            library_configuration: dict[str, Any] = {
+                "type": source_type,
+                "management_type": "remote",
+                "paths": [],
+                "archive_paths": [],
+                "show_future_episodes": True,
+                "agent_url": agent_url,
+                "remote_library_id": source_identifier,
+                "remote_root_path": root_paths[0] if root_paths else "",
+                "mount_mappings": mount_mappings,
+                "sources": [new_source_entry],
+            }
+            library_configuration.update(
+                normalize_library_configuration(library_configuration)
+            )
+            self.staged_libraries[target_library_name] = library_configuration
+            added_any = True
+            logger.info(
+                "Auto-mirrored remote library '%s' from scan agent %s",
+                target_library_name,
+                agent_url,
+            )
+
+        if added_any:
+            self._refresh_library_selector()
+
+    @Slot()
+    def auto_detect_all_agent_mounts(self) -> None:
+        """Trigger background auto-detection of local mounts for all configured agents."""
+        if not self.staged_scan_agents:
+            QMessageBox.information(
+                self,
+                "No Scan Agents",
+                "Please connect to a scan agent first before detecting mounts.",
+            )
+            return
+        self.scan_agent_status_label.setText(
+            "Status: Auto-detecting local network mounts..."
+        )
+        for agent_url, agent_data in self.staged_scan_agents.items():
+            libraries = list(agent_data.get("discovered_libraries", []))
+            if libraries:
+                self._auto_detect_mounts_for_agent(agent_url, libraries)
+
+    def _auto_detect_mounts_for_agent(
+        self, agent_url: str, libraries: list[dict[str, Any]]
+    ) -> None:
+        """Launch a background worker to auto-detect local mounts for *agent_url*."""
+        worker = AutoDetectMountsWorker(
+            agent_url,
+            libraries,
+            max_depth=self.mount_discovery_max_depth_input.value(),
+        )
+        self._mount_detect_workers.append(worker)
+        worker.mounts_detected.connect(self._on_mounts_auto_detected)
+        worker.finished.connect(
+            lambda w=worker: (
+                self._mount_detect_workers.remove(w)
+                if w in self._mount_detect_workers
+                else None
+            )
+        )
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _on_mounts_auto_detected(
+        self, agent_url: str, detected_mounts: dict[str, str]
+    ) -> None:
+        """Apply auto-detected local mount mappings to staged agents and libraries."""
+        self.scan_agent_status_label.setText("Status: Ready")
+        if not detected_mounts:
+            return
+
+        from lan_streamer.system.config import get_library_sources
+
+        if agent_url in self.staged_scan_agents:
+            agent_mounts = self.staged_scan_agents[agent_url].setdefault(
+                "mount_mappings", {}
+            )
+            for remote_root, local_mount in detected_mounts.items():
+                if not agent_mounts.get(remote_root):
+                    agent_mounts[remote_root] = local_mount
+
+        for _library_name, library_config in self.staged_libraries.items():
+            sources = get_library_sources(library_config)
+            matched = False
+            for source in sources:
+                if (
+                    source.get("type") == "agent"
+                    and source.get("agent_url") == agent_url
+                ):
+                    source_mounts = source.setdefault("mount_mappings", {})
+                    for remote_root, local_mount in detected_mounts.items():
+                        if not source_mounts.get(remote_root):
+                            source_mounts[remote_root] = local_mount
+                            matched = True
+            if matched:
+                library_config["sources"] = sources
+                lib_mounts = library_config.setdefault("mount_mappings", {})
+                for remote_root, local_mount in detected_mounts.items():
+                    if not lib_mounts.get(remote_root):
+                        lib_mounts[remote_root] = local_mount
+
+        self._populate_remote_agents_tree()
+        logger.info(
+            "Applied %d auto-detected mount mapping(s) for agent %s",
+            len(detected_mounts),
+            agent_url,
+        )
 
     def _populate_remote_agents_tree(self) -> None:
         """Populates the tree widget with configured agents, their media sources, and root directory mappings."""
@@ -2858,6 +3064,9 @@ class SettingsDialog(QDialog):
         normalized_libraries, _ = split_multi_root_libraries(self.staged_libraries)
         config.libraries = normalized_libraries
         config.scan_agents = self.staged_scan_agents
+        config.mount_discovery_max_depth = (
+            self.mount_discovery_max_depth_input.value()
+        )
         config.enable_combined_view = self.enable_combined_view_checkbox.isChecked()
         config.combined_views = self.staged_combined_views
         config.save()  # Persist startup-critical keys to config file
