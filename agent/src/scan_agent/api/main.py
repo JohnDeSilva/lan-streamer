@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 
+from scan_agent import __version__
 from scan_agent.api.routes_browse import browse_router
 from scan_agent.api.routes_core import (
     config_router,
@@ -143,7 +144,7 @@ def create_app(
 
     application = FastAPI(
         title="LAN Streamer Scan Agent",
-        version="0.1.0",
+        version=__version__,
         description="Remote scanning, metadata resolution, and library database "
         "for LAN Streamer.",
         lifespan=lifespan,
