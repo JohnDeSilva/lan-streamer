@@ -280,6 +280,16 @@ def pytest_xdist_auto_num_workers(config) -> int:
     return max(1, num_cores // 2)
 
 
+@pytest.fixture(autouse=True)
+def mock_network_mount_discovery():
+    """Prevent tests from scanning real OS network mount points."""
+    with patch(
+        "lan_streamer.services.mount_discovery_service.discover_local_mount_candidates",
+        return_value=[],
+    ):
+        yield
+
+
 @pytest.fixture
 def mock_session() -> MagicMock:
     """Shared fixture for simulating a requests.Session with clean dictionaries."""
