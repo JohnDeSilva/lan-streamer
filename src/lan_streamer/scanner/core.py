@@ -505,7 +505,34 @@ def _scan_pass2(
         if old_name not in library:
             library[old_name] = old_data
 
+    # Consolidate series entries that resolved to the same TMDB identifier
+    # (e.g. a series split across multiple root directories with slightly
+    # different folder names).
+    if library_type != "movie":
+        _consolidate_series_by_tmdb(library)
+
     return library
+
+
+def _consolidate_series_by_tmdb(library: LibraryDict) -> None:
+    """Merge series entries in *library* that share the same non-empty ``tmdb_id``."""
+    tmdb_primary_keys: dict[Any, str] = {}
+    consolidated_names: list[str] = []
+    for entry_name in list(library.keys()):
+        entry_data = library[entry_name]
+        if not isinstance(entry_data, dict):
+            continue
+        tmdb_identifier = (entry_data.get("metadata") or {}).get("tmdb_id")
+        if not tmdb_identifier:
+            continue
+        primary_name = tmdb_primary_keys.get(tmdb_identifier)
+        if primary_name is None:
+            tmdb_primary_keys[tmdb_identifier] = entry_name
+        elif primary_name != entry_name:
+            library[primary_name] = merge_series_data(library[primary_name], entry_data)
+            consolidated_names.append(entry_name)
+    for duplicate_name in consolidated_names:
+        del library[duplicate_name]
 
 
 # =============================================================================

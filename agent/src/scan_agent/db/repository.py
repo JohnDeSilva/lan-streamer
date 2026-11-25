@@ -623,19 +623,89 @@ def _series_has_episode_files(series_data: dict[str, Any]) -> bool:
     return False
 
 
+def _consolidate_series_items_by_tmdb(
+    items: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge series entries in *items* that share the same non-empty ``tmdb_id``."""
+    consolidated: dict[str, Any] = {}
+    primary_by_tmdb: dict[Any, str] = {}
+
+    for folder_name, series_data in items.items():
+        if not isinstance(series_data, dict) or not _series_has_episode_files(
+            series_data
+        ):
+            consolidated[folder_name] = series_data
+            continue
+
+        tmdb_identifier = (series_data.get("metadata") or {}).get("tmdb_id")
+        if not tmdb_identifier or tmdb_identifier not in primary_by_tmdb:
+            if tmdb_identifier:
+                primary_by_tmdb[tmdb_identifier] = folder_name
+            copied_seasons = {
+                season_name: (
+                    {
+                        **season_dict,
+                        "episodes": list(season_dict.get("episodes", [])),
+                    }
+                    if isinstance(season_dict, dict)
+                    else season_dict
+                )
+                for season_name, season_dict in (
+                    series_data.get("seasons") or {}
+                ).items()
+            }
+            consolidated[folder_name] = {**series_data, "seasons": copied_seasons}
+            continue
+
+        primary_folder = primary_by_tmdb[tmdb_identifier]
+        target_series = consolidated[primary_folder]
+        target_seasons = target_series.setdefault("seasons", {})
+        for season_name, incoming_season in (series_data.get("seasons") or {}).items():
+            if not isinstance(incoming_season, dict):
+                continue
+            if season_name not in target_seasons or not isinstance(
+                target_seasons[season_name], dict
+            ):
+                target_seasons[season_name] = {
+                    **incoming_season,
+                    "episodes": list(incoming_season.get("episodes", [])),
+                }
+            else:
+                target_episodes = list(target_seasons[season_name].get("episodes", []))
+                seen_paths = {
+                    episode.get("path")
+                    for episode in target_episodes
+                    if isinstance(episode, dict) and episode.get("path")
+                }
+                for episode in incoming_season.get("episodes", []):
+                    if (
+                        isinstance(episode, dict)
+                        and episode.get("path")
+                        and episode.get("path") in seen_paths
+                    ):
+                        continue
+                    target_episodes.append(episode)
+                    if isinstance(episode, dict) and episode.get("path"):
+                        seen_paths.add(episode["path"])
+                target_seasons[season_name]["episodes"] = target_episodes
+
+    return consolidated
+
+
 def _upsert_series(
     connection: Session,
     library: Library,
     items: dict[str, Any],
 ) -> tuple[int, int, int, int]:
     """Upsert all series in *items* for *library*; returns aggregate counts."""
+    consolidated_items = _consolidate_series_items_by_tmdb(items)
     existing_series = {series.folder_name: series for series in library.series}
     processed_folders: set[str] = set()
     series_count = 0
     season_count = 0
     episode_count = 0
     media_file_count = 0
-    for folder_name, series_data in items.items():
+    for folder_name, series_data in consolidated_items.items():
         if not _series_has_episode_files(series_data):
             series = existing_series.get(folder_name)
             if series is not None:
