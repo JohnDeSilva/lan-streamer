@@ -1566,6 +1566,47 @@ class SeasonDetailView(QWidget):
                     raise
         return myanimelist_client.get_anime_details(anime_id)
 
+    def _run_mal_async(
+        self,
+        work_callable: Any,
+        on_success: Any,
+        on_error: Any | None = None,
+    ) -> None:
+        """Run blocking MAL/agent network work off the Qt UI thread."""
+        next_generation = getattr(self, "_mal_request_generation", 0) + 1
+        self._mal_request_generation = next_generation
+        task_manager = getattr(self.controller, "async_task_manager", None)
+
+        if task_manager is None or not hasattr(task_manager, "create_task"):
+            try:
+                result = work_callable()
+            except Exception as error_instance:
+                if on_error is not None:
+                    on_error(error_instance)
+                return
+            if getattr(self, "_mal_request_generation", 0) == next_generation:
+                on_success(result)
+            return
+
+        async def _execute() -> None:
+            from lan_streamer.system.async_utils import run_in_executor
+
+            try:
+                result = await run_in_executor(work_callable)
+            except Exception as error_instance:
+                if (
+                    getattr(self, "_mal_request_generation", 0) == next_generation
+                    and on_error is not None
+                ):
+                    on_error(error_instance)
+                return
+            if getattr(self, "_mal_request_generation", 0) == next_generation:
+                on_success(result)
+
+        import uuid
+
+        task_manager.create_task(_execute(), name=f"mal_mapper_{uuid.uuid4().hex}")
+
     def _load_mal_mapper_data(self) -> None:
         season_name = self._current_season_name or ""
         self._mal_local_episodes = []
@@ -1591,152 +1632,147 @@ class SeasonDetailView(QWidget):
         self._mal_mapper_table.setRowCount(0)
         self._mal_selected_anime_id = None
         self._mal_row_episodes = []
-        self._mal_selected_label.setText("No MAL entries loaded")
+        self._mal_selected_label.setText("Loading MyAnimeList data...")
 
-        if not self._is_mal_configured():
-            logger.info(
-                "MAL mapper: client not configured for season '%s', skipping",
-                season_name,
-            )
-            self._mal_selected_label.setText(
-                "MyAnimeList API Client ID not configured in settings or on remote agent"
-            )
-            return
-
-        # Collect unique MAL anime IDs from per-episode saved data
         episode_mal_ids: dict[int, list[str]] = {}
         for ep in self._mal_local_episodes:
             aid = ep.get("myanimelist_anime_id")
             if aid is not None:
                 episode_mal_ids.setdefault(aid, []).append(ep.get("path", ""))
 
-        if episode_mal_ids:
-            logger.info(
-                "MAL mapper: found per-episode MAL IDs: %s",
-                {k: len(v) for k, v in episode_mal_ids.items()},
-            )
-            loaded_count = 0
-            for aid, aid_paths in episode_mal_ids.items():
-                logger.info(
-                    "MAL mapper: fetching details for anime ID %s (%d paths)",
-                    aid,
-                    len(aid_paths),
-                )
-                details = self._get_mal_anime_details(aid)
-                if details:
-                    title = details.get("title") or f"ID: {aid}"
-                    self._mal_entries.append({"id": aid, "title": title})
-                    self._populate_mal_episodes(details, append=loaded_count > 0)
-                    loaded_count += 1
-                else:
-                    logger.warning(
-                        "MAL mapper: no details returned for anime ID %s", aid
-                    )
-            if loaded_count > 0:
-                if loaded_count == 1:
-                    self._mal_selected_label.setText(
-                        f"1 MAL entry loaded ({self._mal_entries[0]['title']})"
-                    )
-                else:
-                    self._mal_selected_label.setText(
-                        f"{loaded_count} MAL entries loaded"
-                    )
-                logger.info(
-                    "MAL mapper: restored %d entries from per-episode IDs",
-                    loaded_count,
-                )
-                return
-            logger.info("MAL mapper: per-episode IDs exist but no details loaded")
-
-        # Fall back to season-level myanimelist_id
         saved_mal_id = season_data.get("metadata", {}).get("myanimelist_id")
-        logger.info(
-            "MAL mapper: no per-episode IDs, fallback season-level myanimelist_id=%s",
-            saved_mal_id,
-        )
-        if saved_mal_id:
-            details = self._get_mal_anime_details(saved_mal_id)
-            if details:
-                title = details.get("title") or f"ID: {saved_mal_id}"
-                self._mal_selected_anime_id = saved_mal_id
-                self._mal_entries.append({"id": saved_mal_id, "title": title})
-                self._mal_selected_label.setText(f"1 MAL entry loaded ({title})")
-                self._populate_mal_episodes(details, append=False)
-                logger.info(
-                    "MAL mapper: restored from season-level myanimelist_id=%s ('%s')",
-                    saved_mal_id,
-                    title,
-                )
-                return
-
-        # Auto-search when no saved MAL entry exists.
-        # Skip for non-numeric season names — we cannot determine which MAL
-        # entry matches, so show an empty table for manual search.
         search_text = self._current_series_name or ""
         season_has_no_number = self._parse_season_number(season_name) is None
-        logger.info(
-            "MAL mapper: no saved data, auto-search for '%s' (season_has_no_number=%s)",
-            search_text,
-            season_has_no_number,
-        )
-        if search_text and not season_has_no_number:
-            try:
-                results = self._search_mal_anime(search_text)
-            except Exception:
-                logger.exception("MAL mapper: auto-search failed")
-                results = []
-            if results:
-                logger.info(
-                    "MAL mapper: auto-search found %d results, using first",
-                    len(results),
+
+        def _fetch_initial_mal_data() -> dict[str, Any]:
+            if not self._is_mal_configured():
+                return {"configured": False}
+
+            loaded_details: list[tuple[int, dict[str, Any]]] = []
+            if episode_mal_ids:
+                for aid in episode_mal_ids:
+                    details = self._get_mal_anime_details(aid)
+                    if details:
+                        loaded_details.append((aid, details))
+                if loaded_details:
+                    return {
+                        "configured": True,
+                        "mode": "episode_ids",
+                        "entries": loaded_details,
+                    }
+
+            if saved_mal_id:
+                details = self._get_mal_anime_details(saved_mal_id)
+                if details:
+                    return {
+                        "configured": True,
+                        "mode": "season_id",
+                        "entries": [(saved_mal_id, details)],
+                    }
+
+            if search_text and not season_has_no_number:
+                try:
+                    results = self._search_mal_anime(search_text)
+                except Exception:
+                    logger.exception("MAL mapper: auto-search failed")
+                    results = []
+                if results:
+                    anime_id = results[0].get("id")
+                    if anime_id:
+                        details = self._get_mal_anime_details(anime_id)
+                        if details:
+                            return {
+                                "configured": True,
+                                "mode": "auto_search",
+                                "entries": [(anime_id, details)],
+                            }
+
+            return {"configured": True, "mode": "empty", "entries": []}
+
+        def _apply_initial_mal_data(payload: dict[str, Any]) -> None:
+            if not payload.get("configured"):
+                self._mal_selected_label.setText(
+                    "MyAnimeList API Client ID not configured in settings or on remote agent"
                 )
-                anime_id = results[0].get("id")
-                if anime_id:
-                    self._on_mal_entry_selected(anime_id)
-                    return
-        self._mal_search_input.setText(search_text)
+                return
+
+            mode = payload.get("mode")
+            entries = payload.get("entries", [])
+            if mode == "empty" or not entries:
+                self._mal_selected_label.setText("No MAL entries loaded")
+                self._mal_search_input.setText(search_text)
+                return
+
+            if mode in ("season_id", "auto_search"):
+                self._mal_selected_anime_id = entries[0][0]
+
+            for index, (aid, details) in enumerate(entries):
+                title = details.get("title") or f"ID: {aid}"
+                self._mal_entries.append({"id": aid, "title": title})
+                self._populate_mal_episodes(details, append=index > 0)
+
+            if len(self._mal_entries) == 1:
+                self._mal_selected_label.setText(
+                    f"1 MAL entry loaded ({self._mal_entries[0]['title']})"
+                )
+            else:
+                self._mal_selected_label.setText(
+                    f"{len(self._mal_entries)} MAL entries loaded"
+                )
+
+        self._run_mal_async(_fetch_initial_mal_data, _apply_initial_mal_data)
 
     def _on_search_mal(self) -> None:
-        """Search MAL and replace the mapper table with the chosen entry."""
+        """Search MAL off the UI thread and replace the mapper table with the chosen entry."""
         query = self._mal_search_input.text().strip()
         logger.info("Search MyAnimeList: '%s'", query)
         if not query:
             return
 
-        try:
-            results = self._search_mal_anime(query)
-        except Exception as exc:
+        self._mal_selected_label.setText(f"Searching MyAnimeList for '{query}'...")
+
+        def _handle_results(results: list[dict[str, Any]]) -> None:
+            if not results:
+                self._mal_selected_label.setText("No MAL entries found")
+                QMessageBox.information(
+                    self,
+                    "No Results",
+                    "No MyAnimeList entries found for your query.",
+                )
+                return
+
+            from lan_streamer.ui_views.dialogs.mal_search_results import (
+                MalSearchResultsDialog,
+            )
+
+            existing_ids = (
+                {entry["id"] for entry in self._mal_entries}
+                if self._mal_entries
+                else None
+            )
+            dialog = MalSearchResultsDialog(
+                results, self, existing_mapped_ids=existing_ids
+            )
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                anime_id = dialog.selected_id()
+                if anime_id:
+                    self._on_mal_entry_selected(anime_id)
+
+        def _handle_error(exc: Exception) -> None:
             logger.exception("Failed to search MyAnimeList")
+            self._mal_selected_label.setText("MyAnimeList search failed")
             QMessageBox.warning(
                 self,
                 "Search Failed",
                 f"Could not search MyAnimeList: {exc}",
             )
-            return
 
-        if not results:
-            QMessageBox.information(
-                self,
-                "No Results",
-                "No MyAnimeList entries found for your query.",
-            )
-            return
-
-        from lan_streamer.ui_views.dialogs.mal_search_results import (
-            MalSearchResultsDialog,
+        self._run_mal_async(
+            lambda: self._search_mal_anime(query), _handle_results, _handle_error
         )
-
-        existing_ids = (
-            {entry["id"] for entry in self._mal_entries} if self._mal_entries else None
-        )
-        dialog = MalSearchResultsDialog(results, self, existing_mapped_ids=existing_ids)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            anime_id = dialog.selected_id()
-            if anime_id:
-                self._on_mal_entry_selected(anime_id)
 
     def _on_add_mal_entry(self) -> None:
-        """Open MAL search and append the chosen entry to the existing table."""
+        """Search MAL off the UI thread and append the chosen entry to the existing table."""
         query = self._mal_search_input.text().strip()
         if not query:
             QMessageBox.information(
@@ -1746,39 +1782,49 @@ class SeasonDetailView(QWidget):
             )
             return
 
-        try:
-            results = self._search_mal_anime(query)
-        except Exception as exc:
+        self._mal_selected_label.setText(f"Searching MyAnimeList for '{query}'...")
+
+        def _handle_results(results: list[dict[str, Any]]) -> None:
+            if not results:
+                self._mal_selected_label.setText("No MAL entries found")
+                QMessageBox.information(
+                    self,
+                    "No Results",
+                    "No MyAnimeList entries found for your query.",
+                )
+                return
+
+            from lan_streamer.ui_views.dialogs.mal_search_results import (
+                MalSearchResultsDialog,
+            )
+
+            existing_ids = (
+                {entry["id"] for entry in self._mal_entries}
+                if self._mal_entries
+                else None
+            )
+            dialog = MalSearchResultsDialog(
+                results, self, existing_mapped_ids=existing_ids
+            )
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                anime_id = dialog.selected_id()
+                title = dialog.selected_title()
+                if anime_id:
+                    self._append_mal_entry(anime_id, title or f"ID: {anime_id}")
+
+        def _handle_error(exc: Exception) -> None:
             logger.exception("Failed to search MyAnimeList")
+            self._mal_selected_label.setText("MyAnimeList search failed")
             QMessageBox.warning(
                 self, "Search Failed", f"Could not search MyAnimeList: {exc}"
             )
-            return
 
-        if not results:
-            QMessageBox.information(
-                self,
-                "No Results",
-                "No MyAnimeList entries found for your query.",
-            )
-            return
-
-        from lan_streamer.ui_views.dialogs.mal_search_results import (
-            MalSearchResultsDialog,
+        self._run_mal_async(
+            lambda: self._search_mal_anime(query), _handle_results, _handle_error
         )
-
-        existing_ids = (
-            {entry["id"] for entry in self._mal_entries} if self._mal_entries else None
-        )
-        dialog = MalSearchResultsDialog(results, self, existing_mapped_ids=existing_ids)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            anime_id = dialog.selected_id()
-            title = dialog.selected_title()
-            if anime_id:
-                self._append_mal_entry(anime_id, title or f"ID: {anime_id}")
 
     def _on_mal_entry_selected(self, anime_id: int) -> None:
-        """Replace the entire mapper table with a single MAL entry."""
+        """Replace the entire mapper table with a single MAL entry asynchronously."""
         self._mal_selected_anime_id = anime_id
         self._mal_entries = []
         self._mal_mapper_table.setRowCount(0)
@@ -1787,37 +1833,51 @@ class SeasonDetailView(QWidget):
         if not anime_id:
             return
 
-        try:
-            details = self._get_mal_anime_details(anime_id)
-        except Exception as exc:
+        self._mal_selected_label.setText("Loading MyAnimeList details...")
+
+        def _apply_details(details: dict[str, Any] | None) -> None:
+            if details:
+                title = details.get("title") or f"ID: {anime_id}"
+                self._mal_entries.append({"id": anime_id, "title": title})
+                self._mal_selected_label.setText(f"1 MAL entry loaded ({title})")
+                self._populate_mal_episodes(details, append=False)
+
+        def _handle_error(exc: Exception) -> None:
             logger.exception("Failed to fetch MAL details for ID %s", anime_id)
+            self._mal_selected_label.setText("Failed loading MAL details")
             QMessageBox.warning(
                 self, "Fetch Failed", f"Could not fetch MyAnimeList details: {exc}"
             )
-            return
-        if details:
-            title = details.get("title") or f"ID: {anime_id}"
-            self._mal_entries.append({"id": anime_id, "title": title})
-            self._mal_selected_label.setText(f"1 MAL entry loaded ({title})")
-            self._populate_mal_episodes(details, append=False)
+
+        self._run_mal_async(
+            lambda: self._get_mal_anime_details(anime_id), _apply_details, _handle_error
+        )
 
     def _append_mal_entry(self, anime_id: int, title: str) -> None:
-        """Append a new MAL entry's episodes to the existing mapper table."""
+        """Append a new MAL entry's episodes to the existing mapper table asynchronously."""
         logger.info("Appending MAL entry ID: %s (%s)", anime_id, title)
-        try:
-            details = self._get_mal_anime_details(anime_id)
-        except Exception as exc:
+        self._mal_selected_label.setText("Loading MyAnimeList details...")
+
+        def _apply_details(details: dict[str, Any] | None) -> None:
+            if details:
+                self._mal_entries.append({"id": anime_id, "title": title})
+                self._mal_selected_label.setText(
+                    f"{len(self._mal_entries)} MAL entries loaded"
+                )
+                self._populate_mal_episodes(
+                    details, append=True, filter_used_paths=True
+                )
+
+        def _handle_error(exc: Exception) -> None:
             logger.exception("Failed to fetch MAL details for ID %s", anime_id)
+            self._mal_selected_label.setText("Failed loading MAL details")
             QMessageBox.warning(
                 self, "Fetch Failed", f"Could not fetch MyAnimeList details: {exc}"
             )
-            return
-        if details:
-            self._mal_entries.append({"id": anime_id, "title": title})
-            self._mal_selected_label.setText(
-                f"{len(self._mal_entries)} MAL entries loaded"
-            )
-            self._populate_mal_episodes(details, append=True, filter_used_paths=True)
+
+        self._run_mal_async(
+            lambda: self._get_mal_anime_details(anime_id), _apply_details, _handle_error
+        )
 
     def _populate_mal_episodes(
         self,
