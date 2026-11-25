@@ -1310,15 +1310,15 @@ async function disconnectMalAccount() {
 // -------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
     const btnMalConnect = document.getElementById("btnMalConnect");
-    if (btnMalConnect) {
+    if (btnMalConnect && typeof btnMalConnect.addEventListener === "function") {
         btnMalConnect.addEventListener("click", startMalAuthFlow);
     }
     const btnMalSubmitCode = document.getElementById("btnMalSubmitCode");
-    if (btnMalSubmitCode) {
+    if (btnMalSubmitCode && typeof btnMalSubmitCode.addEventListener === "function") {
         btnMalSubmitCode.addEventListener("click", submitMalAuthCode);
     }
     const btnMalDisconnect = document.getElementById("btnMalDisconnect");
-    if (btnMalDisconnect) {
+    if (btnMalDisconnect && typeof btnMalDisconnect.addEventListener === "function") {
         btnMalDisconnect.addEventListener("click", disconnectMalAccount);
     }
     // Navigation

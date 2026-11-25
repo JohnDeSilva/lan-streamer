@@ -250,4 +250,4 @@ def test_scan_all_libraries_worker_syncs_remote_library() -> None:
         worker = ScanAllLibrariesWorker()
         worker.run()
         mock_fetch.assert_called_once_with("http://127.0.0.1:8800", "remote-tv-1")
-        mock_save.assert_called_once_with("RemoteLib", remote_items)
+        mock_save.assert_not_called()

@@ -1419,9 +1419,9 @@ class SeasonDetailView(QWidget):
                     modified_count += 1
 
         library_name = self.controller.current_library_name
-        is_pure_remote = bool(
+        is_pure_remote = (
             hasattr(self.controller, "_is_pure_remote_library")
-            and self.controller._is_pure_remote_library(library_name)
+            and self.controller._is_pure_remote_library(library_name) is True
         )
         if not is_pure_remote:
             db.save_library(library_name, self.controller.cached_library_data)
@@ -1531,12 +1531,21 @@ class SeasonDetailView(QWidget):
         agent_url = self._get_remote_agent_url()
         if agent_url:
             try:
-                from lan_streamer.services.scan_agent_client import scan_agent_client
+                from lan_streamer.services.scan_agent_client import (
+                    ScanAgentConnectionError,
+                    scan_agent_client,
+                )
 
                 status_data = scan_agent_client.get_mal_status(agent_url)
                 if status_data.get("configured"):
                     return True
-            except Exception:
+            except (
+                ScanAgentConnectionError,
+                requests.RequestException,
+                ValueError,
+                TypeError,
+                OSError,
+            ):
                 logger.debug("Could not check MAL status on agent '%s'", agent_url)
         return bool(myanimelist_client.is_configured())
 
@@ -1581,6 +1590,7 @@ class SeasonDetailView(QWidget):
             try:
                 result = work_callable()
             except Exception as error_instance:
+                logger.exception("MAL mapper background operation failed")
                 if on_error is not None:
                     on_error(error_instance)
                 return
@@ -1594,6 +1604,7 @@ class SeasonDetailView(QWidget):
             try:
                 result = await run_in_executor(work_callable)
             except Exception as error_instance:
+                logger.exception("MAL mapper async operation failed")
                 if (
                     getattr(self, "_mal_request_generation", 0) == next_generation
                     and on_error is not None
@@ -1759,7 +1770,7 @@ class SeasonDetailView(QWidget):
                     self._on_mal_entry_selected(anime_id)
 
         def _handle_error(exc: Exception) -> None:
-            logger.exception("Failed to search MyAnimeList")
+            logger.error("Failed to search MyAnimeList: %s", exc)
             self._mal_selected_label.setText("MyAnimeList search failed")
             QMessageBox.warning(
                 self,
@@ -1813,7 +1824,7 @@ class SeasonDetailView(QWidget):
                     self._append_mal_entry(anime_id, title or f"ID: {anime_id}")
 
         def _handle_error(exc: Exception) -> None:
-            logger.exception("Failed to search MyAnimeList")
+            logger.error("Failed to search MyAnimeList: %s", exc)
             self._mal_selected_label.setText("MyAnimeList search failed")
             QMessageBox.warning(
                 self, "Search Failed", f"Could not search MyAnimeList: {exc}"
@@ -1843,7 +1854,7 @@ class SeasonDetailView(QWidget):
                 self._populate_mal_episodes(details, append=False)
 
         def _handle_error(exc: Exception) -> None:
-            logger.exception("Failed to fetch MAL details for ID %s", anime_id)
+            logger.error("Failed to fetch MAL details for ID %s: %s", anime_id, exc)
             self._mal_selected_label.setText("Failed loading MAL details")
             QMessageBox.warning(
                 self, "Fetch Failed", f"Could not fetch MyAnimeList details: {exc}"
@@ -1869,7 +1880,7 @@ class SeasonDetailView(QWidget):
                 )
 
         def _handle_error(exc: Exception) -> None:
-            logger.exception("Failed to fetch MAL details for ID %s", anime_id)
+            logger.error("Failed to fetch MAL details for ID %s: %s", anime_id, exc)
             self._mal_selected_label.setText("Failed loading MAL details")
             QMessageBox.warning(
                 self, "Fetch Failed", f"Could not fetch MyAnimeList details: {exc}"

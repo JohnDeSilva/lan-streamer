@@ -15,7 +15,10 @@ def test_compute_smart_rows_from_memory_tv_and_movies() -> None:
     remote_data: dict[str, dict[str, Any]] = {
         "Remote TV": {
             "Alpha Show": {
-                "metadata": {"poster_path": "/posters/alpha.jpg", "first_air_date": "2020-01-01"},
+                "metadata": {
+                    "poster_path": "/posters/alpha.jpg",
+                    "first_air_date": "2020-01-01",
+                },
                 "seasons": {
                     "Season 01": {
                         "episodes": [
@@ -38,7 +41,10 @@ def test_compute_smart_rows_from_memory_tv_and_movies() -> None:
                 },
             },
             "Beta Show": {
-                "metadata": {"poster_path": "/posters/beta.jpg", "first_air_date": "2021-01-01"},
+                "metadata": {
+                    "poster_path": "/posters/beta.jpg",
+                    "first_air_date": "2021-01-01",
+                },
                 "seasons": {
                     "Season 01": {
                         "episodes": [
@@ -65,7 +71,11 @@ def test_compute_smart_rows_from_memory_tv_and_movies() -> None:
     }
 
     all_alpha = compute_smart_rows_from_memory(
-        remote_data, library_configs, ["Remote TV", "Remote Movies"], "Alphabetical", "All"
+        remote_data,
+        library_configs,
+        ["Remote TV", "Remote Movies"],
+        "Alphabetical",
+        "All",
     )
     assert [item["name"] for item in all_alpha] == [
         "Alpha Show",
@@ -74,12 +84,20 @@ def test_compute_smart_rows_from_memory_tv_and_movies() -> None:
     ]
 
     watched_only = compute_smart_rows_from_memory(
-        remote_data, library_configs, ["Remote TV", "Remote Movies"], "Alphabetical", "Watched"
+        remote_data,
+        library_configs,
+        ["Remote TV", "Remote Movies"],
+        "Alphabetical",
+        "Watched",
     )
     assert [item["name"] for item in watched_only] == ["Beta Show"]
 
     unwatched_recent = compute_smart_rows_from_memory(
-        remote_data, library_configs, ["Remote TV", "Remote Movies"], "Recently Added", "Unwatched"
+        remote_data,
+        library_configs,
+        ["Remote TV", "Remote Movies"],
+        "Recently Added",
+        "Unwatched",
     )
     assert [item["name"] for item in unwatched_recent] == ["Zeta Movie", "Alpha Show"]
 

@@ -1535,8 +1535,10 @@ class VideoPlayerWidget(QWidget):
         self.is_watched_marked = False
         self._is_playback_finished = False
         self.next_episode_popup_shown = False
-        if hasattr(self, "controller") and self.controller is not None and hasattr(
-            self.controller, "get_next_episode"
+        if (
+            hasattr(self, "controller")
+            and self.controller is not None
+            and hasattr(self.controller, "get_next_episode")
         ):
             self.next_episode_info = self.controller.get_next_episode(
                 self.current_media_path
@@ -1545,8 +1547,10 @@ class VideoPlayerWidget(QWidget):
             self.next_episode_info = db.get_next_episode(self.current_media_path)
         self.pending_resume_position = 0
 
-        if hasattr(self, "controller") and self.controller is not None and hasattr(
-            self.controller, "get_playback_position"
+        if (
+            hasattr(self, "controller")
+            and self.controller is not None
+            and hasattr(self.controller, "get_playback_position")
         ):
             saved_pos = self.controller.get_playback_position(self.current_media_path)
         else:
@@ -2424,9 +2428,12 @@ class VideoPlayerWidget(QWidget):
                     )
                     if isinstance(resolved_candidate, str):
                         resolved_next_path = resolved_candidate
-                self.play_video(
-                    resolved_next_path, canonical_media_path=next_episode_path
-                )
+                if resolved_next_path != next_episode_path:
+                    self.play_video(
+                        resolved_next_path, canonical_media_path=next_episode_path
+                    )
+                else:
+                    self.play_video(resolved_next_path)
         finally:
             self.is_transitioning_to_next = False
 
