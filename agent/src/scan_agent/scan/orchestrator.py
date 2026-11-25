@@ -84,6 +84,19 @@ def _movie_has_media_files(movie_data: dict[str, Any]) -> bool:
     return False
 
 
+def _extract_root_paths(library_definition: dict[str, Any]) -> list[str]:
+    """Return deduplicated root paths for a library definition."""
+    roots: list[str] = []
+    for raw_path in library_definition.get("root_paths") or []:
+        stripped = str(raw_path).strip()
+        if stripped and stripped not in roots:
+            roots.append(stripped)
+    primary = str(library_definition.get("root_path") or "").strip()
+    if primary and primary not in roots:
+        roots.insert(0, primary)
+    return roots
+
+
 class ScanOrchestrator:
     """Runs the reused ``lan_streamer.scanner.scan_directories`` pipeline.
 
@@ -392,7 +405,8 @@ class ScanOrchestrator:
         """Scan one library root and persist the results."""
         library_name = str(library_definition["name"])
         media_type = str(library_definition["media_type"])
-        root_path = str(library_definition["root_path"])
+        root_paths = _extract_root_paths(library_definition)
+        root_path = root_paths[0]
         with get_session(self._engine) as session:
             library_row = get_or_create_library(
                 session, library_name, media_type, root_path
@@ -409,13 +423,14 @@ class ScanOrchestrator:
                 "source": library_name,
                 "library": library_name,
                 "root": root_path,
+                "roots": root_paths,
             },
         )
         self._progress_broker.publish_log(
-            f"Scanning media source '{library_name}' ({media_type}) at {root_path}..."
+            f"Scanning media source '{library_name}' ({media_type}) at {', '.join(root_paths)}..."
         )
         result = scan_directories(
-            root_directories=[root_path],
+            root_directories=root_paths,
             library_type=media_type,
             existing_library=existing_library,
             force_refresh=force_refresh,
@@ -425,7 +440,7 @@ class ScanOrchestrator:
             season_callback=self._season_callback,
             is_interrupted=self._is_interrupted.is_set,
         )
-        if root_path not in result.unavailable_directories:
+        if all(root not in result.unavailable_directories for root in root_paths):
             empty_folders = [
                 folder_name
                 for folder_name, item_data in result.items()

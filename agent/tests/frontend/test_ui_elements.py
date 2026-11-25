@@ -348,7 +348,7 @@ def test_html_library_modal_controls() -> None:
         ("libId", "input"),
         ("libName", "input"),
         ("libMediaType", "select"),
-        ("libRootPath", "input"),
+        ("libRootPath", "textarea"),
         ("btnBrowseFolder", "button"),
         ("libEnabled", "input"),
         ("btnSaveLibrary", "button"),

@@ -78,6 +78,19 @@ def is_relevant_filesystem_path(path_string: str) -> bool:
     return bool(not suffix)
 
 
+def _extract_library_roots(library_data: dict[str, Any]) -> list[str]:
+    """Return all configured root paths for *library_data*."""
+    roots: list[str] = []
+    for raw_path in library_data.get("root_paths") or []:
+        stripped = str(raw_path).strip()
+        if stripped and stripped not in roots:
+            roots.append(stripped)
+    primary = str(library_data.get("root_path") or "").strip()
+    if primary and primary not in roots:
+        roots.insert(0, primary)
+    return roots
+
+
 def match_library_for_path(
     path_string: str, libraries: dict[str, dict[str, Any]]
 ) -> str | None:
@@ -86,14 +99,12 @@ def match_library_for_path(
     for library_identifier, library_data in libraries.items():
         if not library_data.get("enabled", True):
             continue
-        library_root = library_data.get("root_path")
-        if not library_root:
-            continue
-        library_root_path = os.path.abspath(library_root)
-        if target_path == library_root_path or target_path.startswith(
-            library_root_path + os.sep
-        ):
-            return library_identifier
+        for library_root in _extract_library_roots(library_data):
+            library_root_path = os.path.abspath(library_root)
+            if target_path == library_root_path or target_path.startswith(
+                library_root_path + os.sep
+            ):
+                return library_identifier
     return None
 
 
@@ -270,11 +281,11 @@ class FilesystemWatcher:
                 continue
 
             valid_paths: list[str] = [
-                os.path.abspath(library_data["root_path"])
+                os.path.abspath(root_path)
                 for library_data in self._agent_config.libraries.values()
                 if library_data.get("enabled", True)
-                and library_data.get("root_path")
-                and os.path.exists(library_data["root_path"])
+                for root_path in _extract_library_roots(library_data)
+                if os.path.exists(root_path)
             ]
 
             if not valid_paths:
@@ -298,11 +309,11 @@ class FilesystemWatcher:
                     self._process_pending_scans()
 
                     current_valid_paths = [
-                        os.path.abspath(library_data["root_path"])
+                        os.path.abspath(root_path)
                         for library_data in self._agent_config.libraries.values()
                         if library_data.get("enabled", True)
-                        and library_data.get("root_path")
-                        and os.path.exists(library_data["root_path"])
+                        for root_path in _extract_library_roots(library_data)
+                        if os.path.exists(root_path)
                     ]
                     if (
                         set(current_valid_paths) != set(valid_paths)
