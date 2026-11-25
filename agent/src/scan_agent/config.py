@@ -71,6 +71,11 @@ class AgentConfig:
         self.opensubtitles_api_key: str = ""
         self.opensubtitles_username: str = ""
         self.opensubtitles_password: str = ""
+        self.myanimelist_client_id: str = ""
+        self.myanimelist_client_secret: str = ""
+        self.myanimelist_access_token: str = ""
+        self.myanimelist_refresh_token: str = ""
+        self.myanimelist_token_expires_at: float = 0.0
         self.database_path: str = str(self.data_directory / "library.db")
         self.log_directory: str = str(self.data_directory / "logs")
         self.cache_directory: str = str(self.data_directory / "cache")
@@ -94,6 +99,11 @@ class AgentConfig:
             "opensubtitles_api_key": "",
             "opensubtitles_username": "",
             "opensubtitles_password": "",
+            "myanimelist_client_id": "",
+            "myanimelist_client_secret": "",
+            "myanimelist_access_token": "",
+            "myanimelist_refresh_token": "",
+            "myanimelist_token_expires_at": 0.0,
             "database_path": str(self.data_directory / "library.db"),
             "log_directory": str(self.data_directory / "logs"),
             "cache_directory": str(self.data_directory / "cache"),
@@ -130,6 +140,10 @@ class AgentConfig:
             raw_sources = persisted.get("libraries", {})
         self._sources = dict(raw_sources) if isinstance(raw_sources, dict) else {}
 
+    def save_to_db(self) -> None:
+        """Compatibility alias for reused desktop providers (e.g. MyAnimeListClient)."""
+        self.save()
+
     def save(self) -> None:
         """Persist all top-level keys to the JSON file atomically."""
         self.data_directory.mkdir(parents=True, exist_ok=True)
@@ -143,6 +157,11 @@ class AgentConfig:
             "opensubtitles_api_key": self.opensubtitles_api_key,
             "opensubtitles_username": self.opensubtitles_username,
             "opensubtitles_password": self.opensubtitles_password,
+            "myanimelist_client_id": self.myanimelist_client_id,
+            "myanimelist_client_secret": self.myanimelist_client_secret,
+            "myanimelist_access_token": self.myanimelist_access_token,
+            "myanimelist_refresh_token": self.myanimelist_refresh_token,
+            "myanimelist_token_expires_at": self.myanimelist_token_expires_at,
             "database_path": self.database_path,
             "log_directory": self.log_directory,
             "cache_directory": self.cache_directory,
@@ -369,6 +388,8 @@ def install_into_lan_streamer(config: AgentConfig) -> None:
         "lan_streamer.providers.tmdb_async",
         "lan_streamer.providers.opensubtitles",
         "lan_streamer.providers.opensubtitles_async",
+        "lan_streamer.providers.myanimelist",
+        "lan_streamer.providers.myanimelist_async",
         "lan_streamer.scanner.core",
     ]:
         loaded_module = sys.modules.get(module_name)

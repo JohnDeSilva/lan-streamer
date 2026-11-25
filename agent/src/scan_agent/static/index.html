@@ -279,6 +279,29 @@
                         <label for="cfgOpenSubtitlesApiKey">OpenSubtitles API Key (Optional)</label>
                         <input type="text" id="cfgOpenSubtitlesApiKey" class="form-control">
                     </div>
+
+                    <hr style="border-color: var(--border); margin: 1.5rem 0;">
+                    <h3>MyAnimeList Integration</h3>
+                    <div class="form-group">
+                        <label for="cfgMalClientId">MyAnimeList Client ID</label>
+                        <input type="text" id="cfgMalClientId" class="form-control" placeholder="Enter MAL API Client ID">
+                    </div>
+                    <div class="form-group">
+                        <label for="cfgMalClientSecret">MyAnimeList Client Secret (Optional)</label>
+                        <input type="password" id="cfgMalClientSecret" class="form-control" placeholder="Leave blank to keep current">
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                        <span id="malAuthStatusText" class="text-muted">Not connected</span>
+                        <button type="button" id="btnMalConnect" class="btn btn-secondary">Connect to MyAnimeList</button>
+                        <button type="button" id="btnMalDisconnect" class="btn btn-danger hidden">Disconnect</button>
+                    </div>
+                    <div id="malAuthCodeContainer" class="form-group hidden" style="margin-top: 0.75rem;">
+                        <label for="cfgMalAuthCode">Paste Redirect URL or Authorization Code</label>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="text" id="cfgMalAuthCode" class="form-control" placeholder="http://localhost/?code=... or code">
+                            <button type="button" id="btnMalSubmitCode" class="btn btn-primary">Verify &amp; Login</button>
+                        </div>
+                    </div>
                     <div class="form-group">
                         <label for="cfgCacheDirectory">Image Cache Directory</label>
                         <input type="text" id="cfgCacheDirectory" class="form-control">

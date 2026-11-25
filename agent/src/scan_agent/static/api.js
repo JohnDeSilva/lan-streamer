@@ -144,4 +144,16 @@ export const api = {
                 watched: Boolean(watched),
             },
         }),
+
+    // MyAnimeList
+    getMalStatus: () => request("/services/myanimelist/status"),
+    generateMalAuthUrl: () =>
+        request("/services/myanimelist/auth/url", { method: "POST" }),
+    exchangeMalAuthCode: (code, codeVerifier = null) =>
+        request("/services/myanimelist/auth/exchange", {
+            method: "POST",
+            body: { code, code_verifier: codeVerifier },
+        }),
+    disconnectMal: () =>
+        request("/services/myanimelist/auth/disconnect", { method: "POST" }),
 };

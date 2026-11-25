@@ -1623,7 +1623,72 @@ def record_watch_event(
         result_dictionary["affected_episodes"] = [
             episode_to_dict(episode) for episode in affected_episodes
         ]
+    mal_updates = _collect_mal_watch_updates(
+        connection,
+        target_episode=target_episode,
+        target_movie=target_movie,
+        affected_episodes=affected_episodes,
+    )
+    if mal_updates:
+        result_dictionary["mal_updates"] = mal_updates
     return result_dictionary
+
+
+def _collect_mal_watch_updates(
+    connection: Session,
+    target_episode: Episode | None = None,
+    target_movie: Movie | None = None,
+    affected_episodes: list[Episode] | None = None,
+) -> dict[int, int]:
+    """Compute MyAnimeList ``{anime_id: watched_episode_count}`` updates for watched items."""
+    updates: dict[int, int] = {}
+
+    if target_movie is not None and target_movie.watched and target_movie.myanimelist_anime_id:
+        updates[int(target_movie.myanimelist_anime_id)] = 1
+
+    anime_ids_to_check: set[int] = set()
+    if target_episode is not None and target_episode.watched:
+        anime_id = target_episode.myanimelist_anime_id or (
+            target_episode.season.myanimelist_id if target_episode.season else None
+        )
+        if anime_id:
+            anime_ids_to_check.add(int(anime_id))
+
+    for episode in affected_episodes or []:
+        if not episode.watched:
+            continue
+        anime_id = episode.myanimelist_anime_id or (
+            episode.season.myanimelist_id if episode.season else None
+        )
+        if anime_id:
+            anime_ids_to_check.add(int(anime_id))
+
+    for anime_id in anime_ids_to_check:
+        watched_episodes = connection.scalars(
+            select(Episode)
+            .join(Season, Season.id == Episode.season_id)
+            .where(
+                Episode.watched.is_(True),
+                (Episode.myanimelist_anime_id == anime_id)
+                | (
+                    Episode.myanimelist_anime_id.is_(None)
+                    & (Season.myanimelist_id == anime_id)
+                ),
+            )
+        ).all()
+        max_episode_number = 0
+        for watched_episode in watched_episodes:
+            episode_number = (
+                watched_episode.myanimelist_episode_number
+                or watched_episode.episode_number
+                or 0
+            )
+            if episode_number > max_episode_number:
+                max_episode_number = int(episode_number)
+        if max_episode_number > 0:
+            updates[anime_id] = max_episode_number
+
+    return updates
 
 
 def _recount_episode_watched(connection: Session, episode: Episode) -> None:

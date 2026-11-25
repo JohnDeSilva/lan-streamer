@@ -48,6 +48,11 @@ def _serialize_config(config: AgentConfig) -> dict[str, Any]:
         "opensubtitles_password": (
             _MASKED_PASSWORD if config.opensubtitles_password else ""
         ),
+        "myanimelist_client_id": config.myanimelist_client_id,
+        "myanimelist_client_secret": (
+            _MASKED_PASSWORD if config.myanimelist_client_secret else ""
+        ),
+        "myanimelist_authenticated": bool(config.myanimelist_access_token.strip()),
         "database_path": config.database_path,
         "log_directory": config.log_directory,
         "cache_directory": config.cache_directory,
@@ -100,6 +105,13 @@ def update_config(request: Request, update: ConfigUpdate) -> dict[str, Any]:
     password = changes.get("opensubtitles_password")
     if password in (None, "", _MASKED_PASSWORD):
         changes.pop("opensubtitles_password", None)
+    if changes.get("clear_myanimelist_client_secret"):
+        config.set("myanimelist_client_secret", "")
+        changes.pop("clear_myanimelist_client_secret", None)
+        logger.info("MyAnimeList client secret cleared via API")
+    mal_secret = changes.get("myanimelist_client_secret")
+    if mal_secret in (None, "", _MASKED_PASSWORD):
+        changes.pop("myanimelist_client_secret", None)
     for key, value in changes.items():
         config.set(key, value)
         if key == "log_level" and isinstance(value, str):
