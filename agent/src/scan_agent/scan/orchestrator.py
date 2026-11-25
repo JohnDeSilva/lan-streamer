@@ -322,27 +322,31 @@ class ScanOrchestrator:
             if temporary_log_handler is not None:
                 logging.getLogger("lan_streamer").removeHandler(temporary_log_handler)
                 logging.getLogger("scan_agent").removeHandler(temporary_log_handler)
-            with self._state_lock:
-                self._running_job_id = None
-                self._last_job_id = job_id
-            target_library_names = [
-                str(library_definition.get("name", ""))
-                for library_definition in target_libraries
-            ]
-            target_library_ids = self._resolve_target_library_ids(target_libraries)
-            self._progress_broker.publish(
-                "scan.finished",
-                {
-                    "job_id": job_id,
-                    "status": self._load_job_status(job_id),
-                    "sources": target_library_names,
-                    "source_names": list(target_library_names),
-                    "source_ids": target_library_ids,
-                    "libraries": target_library_names,
-                    "library_names": list(target_library_names),
-                    "library_ids": target_library_ids,
-                },
-            )
+            try:
+                target_library_names = [
+                    str(library_definition.get("name", ""))
+                    for library_definition in target_libraries
+                ]
+                target_library_ids = self._resolve_target_library_ids(target_libraries)
+                # Publish scan.finished before clearing _running_job_id so callers
+                # polling status() for idle always observe the finished event.
+                self._progress_broker.publish(
+                    "scan.finished",
+                    {
+                        "job_id": job_id,
+                        "status": self._load_job_status(job_id),
+                        "sources": target_library_names,
+                        "source_names": list(target_library_names),
+                        "source_ids": target_library_ids,
+                        "libraries": target_library_names,
+                        "library_names": list(target_library_names),
+                        "library_ids": target_library_ids,
+                    },
+                )
+            finally:
+                with self._state_lock:
+                    self._running_job_id = None
+                    self._last_job_id = job_id
 
     def _resolve_target_library_ids(
         self, target_libraries: list[dict[str, Any]]
