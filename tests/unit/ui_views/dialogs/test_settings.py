@@ -1083,3 +1083,55 @@ def test_settings_dialog_displays_multiple_auto_detected_mounts(qtbot) -> None:
     assert "/Volumes/archive/tv" in list_item.text()
 
     dialog.reject()
+
+
+def test_settings_dialog_add_staged_remote_library_directly(qtbot) -> None:
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    agent_url = "http://127.0.0.1:8800"
+    dialog.staged_libraries = {}
+    dialog.staged_scan_agents = {
+        agent_url: {
+            "name": "Scan Agent",
+            "url": agent_url,
+            "reachable": True,
+            "discovered_libraries": [
+                {
+                    "id": "anime-1",
+                    "name": "Remote Anime",
+                    "media_type": "anime",
+                    "root_path": "/media/anime",
+                    "root_paths": ["/media/anime", "/archive/anime"],
+                }
+            ],
+            "mount_mappings": {
+                "/media/anime": "/Volumes/nas/anime",
+                "/archive/anime": "/Volumes/archive/anime",
+            },
+        }
+    }
+
+    with patch(
+        "lan_streamer.ui_views.dialogs.settings.QInputDialog.getItem",
+        return_value=(
+            "Scan Agent : Remote Anime [ANIME] (http://127.0.0.1:8800)",
+            True,
+        ),
+    ):
+        dialog.add_staged_remote_library()
+
+    assert "Remote Anime" in dialog.staged_libraries
+    created = dialog.staged_libraries["Remote Anime"]
+    assert created["type"] == "anime"
+    assert created["management_type"] == "remote"
+    assert created["mount_mappings"] == {
+        "/media/anime": "/Volumes/nas/anime",
+        "/archive/anime": "/Volumes/archive/anime",
+    }
+    assert dialog.library_selector.currentText() == "Remote Anime"
+    assert dialog.directory_list_widget.count() == 1
+    assert "/Volumes/nas/anime" in dialog.directory_list_widget.item(0).text()
+    assert "/Volumes/archive/anime" in dialog.directory_list_widget.item(0).text()
+
+    dialog.reject()
