@@ -1419,7 +1419,12 @@ class SeasonDetailView(QWidget):
                     modified_count += 1
 
         library_name = self.controller.current_library_name
-        db.save_library(library_name, self.controller.cached_library_data)
+        is_pure_remote = bool(
+            hasattr(self.controller, "_is_pure_remote_library")
+            and self.controller._is_pure_remote_library(library_name)
+        )
+        if not is_pure_remote:
+            db.save_library(library_name, self.controller.cached_library_data)
         self.controller.library_loaded.emit()
 
         # Synchronize manual mappings to remote scan agents

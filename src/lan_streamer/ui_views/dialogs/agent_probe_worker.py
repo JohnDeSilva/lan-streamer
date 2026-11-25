@@ -76,6 +76,101 @@ def probe_scan_agent(
     return {"health": health, "libraries": libraries}
 
 
+def auto_detect_agent_mounts(
+    agent_url: str,
+    libraries: list[dict[str, Any]],
+    max_depth: int = 5,
+) -> dict[str, str]:
+    """Auto-detect local mount points for all root paths reported by *agent_url*."""
+    from lan_streamer.services.mount_discovery_service import (
+        auto_detect_mount_mappings_for_items,
+    )
+    from lan_streamer.services.scan_agent_client import (
+        ScanAgentConnectionError,
+        scan_agent_client,
+    )
+
+    detected_mounts: dict[str, str] = {}
+    for library_entry in libraries:
+        if not isinstance(library_entry, dict):
+            continue
+        source_identifier = str(
+            library_entry.get("id") or library_entry.get("name") or ""
+        )
+        if not source_identifier:
+            continue
+        root_paths: list[str] = []
+        if library_entry.get("root_paths"):
+            root_paths = [str(path) for path in library_entry["root_paths"] if path]
+        elif library_entry.get("root_path"):
+            root_paths = [str(library_entry["root_path"])]
+        if not root_paths:
+            continue
+
+        library_type = str(
+            library_entry.get("media_type") or library_entry.get("type") or "tv"
+        )
+        try:
+            items_dictionary = scan_agent_client.fetch_source_items(
+                agent_url, source_identifier, timeout=15.0
+            )
+        except (
+            ScanAgentConnectionError,
+            requests.RequestException,
+            ValueError,
+            TypeError,
+            OSError,
+        ) as error_instance:
+            logger.debug(
+                "Could not fetch items from %s (%s) for mount detection: %s",
+                agent_url,
+                source_identifier,
+                error_instance,
+            )
+            continue
+
+        detected_for_source = auto_detect_mount_mappings_for_items(
+            remote_roots=root_paths,
+            items_dictionary=items_dictionary,
+            library_type=library_type,
+            max_depth=max_depth,
+        )
+        detected_mounts.update(detected_for_source)
+
+    return detected_mounts
+
+
+class AutoDetectMountsWorker(QThread):
+    """Non-blocking QThread that auto-detects local network mounts for an agent.
+
+    Signals
+    -------
+    mounts_detected : Signal(str, dict)
+        Emitted with ``(agent_url, detected_mounts)`` when detection completes.
+    """
+
+    mounts_detected = Signal(str, dict)
+
+    def __init__(
+        self,
+        agent_url: str,
+        libraries: list[dict[str, Any]],
+        max_depth: int = 5,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.agent_url: str = agent_url
+        self.libraries: list[dict[str, Any]] = list(libraries)
+        self.max_depth: int = max_depth
+
+    def run(self) -> None:
+        detected = auto_detect_agent_mounts(
+            self.agent_url, self.libraries, max_depth=self.max_depth
+        )
+        if not self.isInterruptionRequested():
+            self.mounts_detected.emit(self.agent_url, detected)
+
+
 class AgentProbeWorker(QThread):
     """Non-blocking QThread that probes a scan agent.
 

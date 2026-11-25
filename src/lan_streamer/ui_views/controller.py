@@ -162,6 +162,8 @@ class Controller(QObject):
         self._remote_sync_status_messages: dict[str, tuple[str, str]] = {}
         self._remote_library_last_synced: dict[str, float] = {}
         self._remote_library_last_sync_attempt: dict[str, float] = {}
+        self._remote_library_memory_cache: dict[str, dict[str, Any]] = {}
+        self._remote_db_cleanup_done: bool = False
         self._pending_position_sync_tasks: dict[str, Any] = {}
         # Serializes playback-state writes with RemoteSyncWorker's library save
         # so a sync started before a watch event cannot clobber it afterwards.
@@ -221,8 +223,50 @@ class Controller(QObject):
         if self._config.auto_scan_enabled:
             self.scheduled_scan_service.start()
 
+    def purge_stale_remote_database_records(self) -> None:
+        """Remove leftover SQLite media records for pure remote libraries in the background."""
+        if not hasattr(self._db, "delete_library_records"):
+            return
+        remote_library_names = [
+            library_name
+            for library_name, library_config in self._config.libraries.items()
+            if isinstance(library_config, dict)
+            and library_config.get("management_type") == "remote"
+        ]
+        if not remote_library_names:
+            return
+
+        def _run_cleanup() -> None:
+            for library_name in remote_library_names:
+                try:
+                    stats = self._db.delete_library_records(library_name)
+                    if isinstance(stats, dict) and any(stats.values()):
+                        logger.info(
+                            "Purged leftover local database records for remote library '%s': %s",
+                            library_name,
+                            stats,
+                        )
+                except Exception:
+                    logger.exception(
+                        "Failed purging leftover local database records for remote library '%s'",
+                        library_name,
+                    )
+
+        async def _cleanup_task() -> None:
+            from lan_streamer.system.async_utils import run_in_executor
+
+            await run_in_executor(_run_cleanup)
+
+        self.async_task_manager.create_task(
+            _cleanup_task(),
+            name=f"remote_db_cleanup_{uuid.uuid4().hex}",
+        )
+
     def start_agent_event_listeners(self) -> None:
         """Discover configured scan agents and launch background SSE event listeners."""
+        if not self._remote_db_cleanup_done:
+            self._remote_db_cleanup_done = True
+            self.purge_stale_remote_database_records()
         from lan_streamer.services.scan_agent_client import normalize_agent_url
         from lan_streamer.system.config import get_library_sources
 
@@ -334,28 +378,107 @@ class Controller(QObject):
         self.status_changed.emit("Library loaded successfully.")
         self.library_loaded.emit()
 
+    def _is_pure_remote_library(self, library_name: str | None) -> bool:
+        """Return True when *library_name* is a pure remote scan-agent library."""
+        if not library_name:
+            return False
+        library_config = self._config.libraries.get(library_name, {})
+        return library_config.get("management_type") == "remote"
+
+    def get_smart_row_items(
+        self, library_names: list[str], sort_by: str, filter_mode: str
+    ) -> list[dict[str, Any]]:
+        """Return smart row items, serving remote libraries live from memory."""
+        from lan_streamer.services.smart_row_service import (
+            get_combined_smart_row_with_remote,
+        )
+
+        return get_combined_smart_row_with_remote(
+            library_names=library_names,
+            sort_by=sort_by,
+            filter_mode=filter_mode,
+            remote_library_data=self._remote_library_memory_cache,
+            library_configs=self._config.libraries,
+        )
+
+    def _apply_detected_mount_mappings(
+        self, library_name: str, detected_mounts: dict[str, str]
+    ) -> None:
+        """Persist newly auto-detected mount mappings into library and agent config."""
+        if not detected_mounts or library_name not in self._config.libraries:
+            return
+        from lan_streamer.system.config import get_library_sources
+
+        library_config = self._config.libraries[library_name]
+        updated = False
+        lib_mounts = library_config.setdefault("mount_mappings", {})
+        for remote_root, local_mount in detected_mounts.items():
+            if lib_mounts.get(remote_root) != local_mount:
+                lib_mounts[remote_root] = local_mount
+                updated = True
+
+        sources = get_library_sources(library_config)
+        for source_entry in sources:
+            if source_entry.get("type") == "agent":
+                source_mounts = source_entry.setdefault("mount_mappings", {})
+                for remote_root, local_mount in detected_mounts.items():
+                    if source_mounts.get(remote_root) != local_mount:
+                        source_mounts[remote_root] = local_mount
+                        updated = True
+                agent_url = str(source_entry.get("agent_url") or "")
+                if agent_url and agent_url in getattr(self._config, "scan_agents", {}):
+                    agent_mounts = self._config.scan_agents[agent_url].setdefault(
+                        "mount_mappings", {}
+                    )
+                    for remote_root, local_mount in detected_mounts.items():
+                        if agent_mounts.get(remote_root) != local_mount:
+                            agent_mounts[remote_root] = local_mount
+                            updated = True
+
+        if updated:
+            library_config["sources"] = sources
+            if hasattr(self._config, "save_config"):
+                self._config.save_config()
+
     def _load_tab_library_data(
         self, library_names: list[str], trigger_remote_sync: bool = True
     ) -> dict[str, Any]:
         """Load and consolidate the libraries backing the current tab.
 
-        Remote libraries still empty in the local database are queued for a
-        background synchronization when *trigger_remote_sync* is True.  The
-        refresh path that runs after a finished sync passes ``False`` so a
-        failed sync never re-queues itself in an infinite loop.
+        Pure remote libraries are served live from the agent API (via
+        ``_remote_library_memory_cache``) without reading or writing the local
+        SQLite database.  Local and hybrid libraries continue to read from the
+        local database.
         """
         loaded_libraries: list[tuple[str, dict[str, Any]]] = []
         for single_library_name in library_names:
             single_library_config = self._config.libraries.get(single_library_name, {})
-            if single_library_config.get("type", "tv") == "movie":
-                single_library_data = self._db.load_movie_library(single_library_name)
+            if single_library_config.get("management_type") == "remote":
+                single_library_data = self._remote_library_memory_cache.get(
+                    single_library_name, {}
+                )
+                needs_live_fetch = (
+                    single_library_name not in self._remote_library_memory_cache
+                    or self._should_refresh_remote_library(single_library_name)
+                )
+                if (
+                    trigger_remote_sync
+                    and needs_live_fetch
+                    and self._agent_urls_for_library(single_library_config)
+                ):
+                    self._queue_remote_sync(single_library_name, emit_signal=True)
             else:
-                single_library_data = self._db.load_library(single_library_name)
+                if single_library_config.get("type", "tv") == "movie":
+                    single_library_data = self._db.load_movie_library(
+                        single_library_name
+                    )
+                else:
+                    single_library_data = self._db.load_library(single_library_name)
 
-            if trigger_remote_sync and self._should_refresh_remote_library(
-                single_library_name
-            ):
-                self._queue_remote_sync(single_library_name, emit_signal=True)
+                if trigger_remote_sync and self._should_refresh_remote_library(
+                    single_library_name
+                ):
+                    self._queue_remote_sync(single_library_name, emit_signal=True)
 
             loaded_libraries.append((single_library_name, single_library_data))
 
@@ -518,6 +641,14 @@ class Controller(QObject):
                     library_name,
                     result.get("items", 0),
                 )
+                if isinstance(result.get("items_data"), dict):
+                    self._remote_library_memory_cache[library_name] = result[
+                        "items_data"
+                    ]
+                if isinstance(result.get("detected_mount_mappings"), dict):
+                    self._apply_detected_mount_mappings(
+                        library_name, result["detected_mount_mappings"]
+                    )
                 self._remote_library_last_synced[library_name] = time.time()
                 if success_message:
                     self.status_changed.emit(success_message)
@@ -857,7 +988,8 @@ class Controller(QObject):
         logger.info(
             f"Controller marking episode watched={watched} for path: {absolute_path}"
         )
-        self._db.update_episode_watched_status(absolute_path, watched)
+        if not self._is_pure_remote_library(self.current_library_name):
+            self._db.update_episode_watched_status(absolute_path, watched)
 
         media_type = "episode"
         current_time_epoch = int(time.time())
@@ -1525,7 +1657,7 @@ class Controller(QObject):
     def _apply_remote_watch_events_to_cached_library(
         self, event_lookup: dict[str, dict[str, Any]]
     ) -> bool:
-        """Apply matching events to ``cached_library_data`` in a single pass."""
+        """Apply matching events to ``cached_library_data`` and ``_remote_library_memory_cache``."""
         updated_in_memory = False
         for series_data in self.cached_library_data.values():
             is_movie_record = (
@@ -1544,6 +1676,26 @@ class Controller(QObject):
                         episode_record, event_lookup
                     ):
                         updated_in_memory = True
+
+        for library_items in self._remote_library_memory_cache.values():
+            if not isinstance(library_items, dict):
+                continue
+            for item_data in library_items.values():
+                if not isinstance(item_data, dict):
+                    continue
+                is_movie_record = (
+                    item_data.get("type") == "movie" or "seasons" not in item_data
+                )
+                if is_movie_record:
+                    self._apply_remote_watch_event_to_cached_item(
+                        item_data, event_lookup
+                    )
+                    continue
+                for season_data in item_data.get("seasons", {}).values():
+                    for episode_record in season_data.get("episodes", []):
+                        self._apply_remote_watch_event_to_cached_item(
+                            episode_record, event_lookup
+                        )
         return updated_in_memory
 
     @staticmethod
@@ -1595,7 +1747,13 @@ class Controller(QObject):
     def _apply_remote_watch_events_batch_to_database(
         self, events: list[dict[str, Any]]
     ) -> None:
-        """Persist a batch of watch events while holding the sync write lock once."""
+        """Persist a batch of watch events to SQLite only when local/hybrid libraries exist."""
+        has_local_or_hybrid = any(
+            library_config.get("management_type", "local") != "remote"
+            for library_config in getattr(self._config, "libraries", {}).values()
+        )
+        if not has_local_or_hybrid:
+            return
         with self._watch_state_write_lock:
             processed_paths: set[str] = set()
             for event in events:
@@ -1648,6 +1806,22 @@ class Controller(QObject):
                 if config_hash not in seen_hashes:
                     seen_hashes.add(config_hash)
                     changed_hashes.append(config_hash)
+
+        if self._remote_library_memory_cache:
+            affected_remote_libraries = [
+                library_name
+                for library_name in self._remote_library_memory_cache
+                if self._is_pure_remote_library(library_name)
+            ]
+            if affected_remote_libraries:
+                from lan_streamer import db
+
+                for config_hash in db.get_affected_config_hashes_for_libraries(
+                    affected_remote_libraries
+                ):
+                    if config_hash not in seen_hashes:
+                        seen_hashes.add(config_hash)
+                        changed_hashes.append(config_hash)
         return changed_hashes
 
     def _record_recent_remote_watch_event(
@@ -2014,9 +2188,10 @@ class Controller(QObject):
             [self.current_library_name] if self.current_library_name else []
         )
         for target_library_name in target_libraries:
-            self._db.update_season_watched_status(
-                target_library_name, series_name, season_name, watched
-            )
+            if not self._is_pure_remote_library(target_library_name):
+                self._db.update_season_watched_status(
+                    target_library_name, series_name, season_name, watched
+                )
 
         season_data: dict[str, Any] = series_data.get("seasons", {}).get(
             season_name, {}
@@ -2054,9 +2229,10 @@ class Controller(QObject):
             [self.current_library_name] if self.current_library_name else []
         )
         for target_library_name in target_libraries:
-            self._db.update_series_watched_status(
-                target_library_name, series_name, watched
-            )
+            if not self._is_pure_remote_library(target_library_name):
+                self._db.update_series_watched_status(
+                    target_library_name, series_name, watched
+                )
 
         affected_paths: list[str] = []
         for season_data in series_data.get("seasons", {}).values():
@@ -2090,15 +2266,20 @@ class Controller(QObject):
             [self.current_library_name] if self.current_library_name else []
         )
         for target_library_name in target_libraries:
-            self._db.update_movie_watched_status(
-                target_library_name, movie_name, watched
-            )
+            if not self._is_pure_remote_library(target_library_name):
+                self._db.update_movie_watched_status(
+                    target_library_name, movie_name, watched
+                )
 
+        is_current_pure_remote = self._is_pure_remote_library(
+            self.current_library_name
+        )
         affected_paths: list[str] = []
         primary_file_path = movie_record.get("path")
         if primary_file_path:
             affected_paths.append(primary_file_path)
-            self._db.update_episode_watched_status(primary_file_path, watched)
+            if not is_current_pure_remote:
+                self._db.update_episode_watched_status(primary_file_path, watched)
 
         versions_list = movie_record.get("versions", [])
         for version_entry in versions_list:
@@ -2106,7 +2287,8 @@ class Controller(QObject):
                 version_path = version_entry["path"]
                 if version_path not in affected_paths:
                     affected_paths.append(version_path)
-                    self._db.update_episode_watched_status(version_path, watched)
+                    if not is_current_pure_remote:
+                        self._db.update_episode_watched_status(version_path, watched)
 
         movie_record["watched"] = watched
         current_time_epoch = int(time.time())
@@ -3108,7 +3290,9 @@ class Controller(QObject):
         library_config = self._config.libraries.get(self.current_library_name, {})
         is_movie = library_config.get("type", "tv") == "movie"
 
-        if self.current_library_name:
+        if self.current_library_name and not self._is_pure_remote_library(
+            self.current_library_name
+        ):
             if is_movie:
                 self._db.save_movie_library(
                     self.current_library_name, self.cached_library_data
@@ -3148,7 +3332,9 @@ class Controller(QObject):
         target_identifier: str = match_dictionary.get("id", "")
         target_dict["jellyfin_id"] = target_identifier
 
-        if self.current_library_name:
+        if self.current_library_name and not self._is_pure_remote_library(
+            self.current_library_name
+        ):
             if is_movie:
                 self._db.save_movie_library(
                     self.current_library_name, self.cached_library_data

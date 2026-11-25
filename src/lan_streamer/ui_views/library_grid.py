@@ -789,7 +789,12 @@ class LibraryGridView(QWidget):
         logger.debug(
             f"Building smart row widget for '{row_name}' (config_hash={config_hash})"
         )
-        items = db.get_cached_smart_rows(libraries, sort_by, filter_mode)
+        if self.controller is not None and hasattr(
+            self.controller, "get_smart_row_items"
+        ):
+            items = self.controller.get_smart_row_items(libraries, sort_by, filter_mode)
+        else:
+            items = db.get_cached_smart_rows(libraries, sort_by, filter_mode)
         max_items = row_config.get("max_items", 20)
         items = items[:max_items]
 
