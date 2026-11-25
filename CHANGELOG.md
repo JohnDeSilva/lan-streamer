@@ -1,3 +1,22 @@
+## v0.60.0rc0 (2026-11-25)
+
+### Feat
+
+- **agent**: support multi-root libraries in scan agent API, scanner, watcher, and web UI
+- **agent**: add MyAnimeList auth, metadata proxy, and watch sync to scan agent
+- **agent**: serve remote libraries live and auto-detect local network mounts
+
+### Fix
+
+- **settings**: keep manual library composition instead of auto-mirroring agent tabs
+- **agent**: coalesce MAL watch syncs and reconcile live remote cache
+- **playback**: resolve next episode and resume position from live remote cache
+
+### Perf
+
+- **ui**: move MAL mapper and mount config saves off the Qt UI thread
+- **agent**: make mount discovery lazy and skip already-mapped roots
+
 ## v0.59.0 (2026-10-22)
 
 ### Feat
