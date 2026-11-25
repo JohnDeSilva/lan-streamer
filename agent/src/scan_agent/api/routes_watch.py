@@ -107,6 +107,7 @@ def sync_watch_events(
 ) -> dict[str, Any]:
     """Bulk update or sync watch events from a desktop client."""
     updated_count = 0
+    coalesced_mal_updates: dict[int, int] = {}
     for event_item in events:
         result = record_watch_event(
             session,
@@ -118,7 +119,15 @@ def sync_watch_events(
             path=event_item.path,
             watched=event_item.watched,
         )
-        _dispatch_mal_updates(result)
+        mal_updates = result.pop("mal_updates", None)
+        if isinstance(mal_updates, dict):
+            for anime_id, watched_episodes in mal_updates.items():
+                parsed_id = int(anime_id)
+                parsed_count = int(watched_episodes)
+                if parsed_count > coalesced_mal_updates.get(parsed_id, 0):
+                    coalesced_mal_updates[parsed_id] = parsed_count
         progress_broker.publish("watch.updated", result)
         updated_count += 1
+    if coalesced_mal_updates:
+        _dispatch_mal_updates({"mal_updates": coalesced_mal_updates})
     return {"status": "synced", "updated_count": updated_count}
