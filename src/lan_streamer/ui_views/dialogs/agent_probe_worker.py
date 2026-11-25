@@ -80,8 +80,11 @@ def auto_detect_agent_mounts(
     agent_url: str,
     libraries: list[dict[str, Any]],
     max_depth: int = 5,
+    existing_mappings: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """Auto-detect local mount points for all root paths reported by *agent_url*."""
+    """Auto-detect local mount points for unmapped root paths reported by *agent_url*."""
+    import os
+
     from lan_streamer.services.mount_discovery_service import (
         auto_detect_mount_mappings_for_items,
     )
@@ -90,6 +93,7 @@ def auto_detect_agent_mounts(
         scan_agent_client,
     )
 
+    existing = existing_mappings or {}
     detected_mounts: dict[str, str] = {}
     for library_entry in libraries:
         if not isinstance(library_entry, dict):
@@ -105,6 +109,14 @@ def auto_detect_agent_mounts(
         elif library_entry.get("root_path"):
             root_paths = [str(library_entry["root_path"])]
         if not root_paths:
+            continue
+
+        unmapped_roots = [
+            root
+            for root in root_paths
+            if not (existing.get(root) and os.path.isdir(existing[root]))
+        ]
+        if not unmapped_roots:
             continue
 
         library_type = str(
@@ -130,9 +142,10 @@ def auto_detect_agent_mounts(
             continue
 
         detected_for_source = auto_detect_mount_mappings_for_items(
-            remote_roots=root_paths,
+            remote_roots=unmapped_roots,
             items_dictionary=items_dictionary,
             library_type=library_type,
+            existing_mappings=existing,
             max_depth=max_depth,
         )
         detected_mounts.update(detected_for_source)
@@ -156,16 +169,21 @@ class AutoDetectMountsWorker(QThread):
         agent_url: str,
         libraries: list[dict[str, Any]],
         max_depth: int = 5,
+        existing_mappings: dict[str, str] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.agent_url: str = agent_url
         self.libraries: list[dict[str, Any]] = list(libraries)
         self.max_depth: int = max_depth
+        self.existing_mappings: dict[str, str] = dict(existing_mappings or {})
 
     def run(self) -> None:
         detected = auto_detect_agent_mounts(
-            self.agent_url, self.libraries, max_depth=self.max_depth
+            self.agent_url,
+            self.libraries,
+            max_depth=self.max_depth,
+            existing_mappings=self.existing_mappings,
         )
         if not self.isInterruptionRequested():
             self.mounts_detected.emit(self.agent_url, detected)
