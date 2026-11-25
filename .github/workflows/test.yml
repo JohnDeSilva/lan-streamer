@@ -5,7 +5,7 @@ on:
 
 jobs:
   check-source-branch:
-    name: Enforce Merge from rc to main
+    name: Enforce Merge from rc or dependabot to main
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     steps:
@@ -16,8 +16,8 @@ jobs:
         run: |
           echo "PR target branch: $PR_TARGET_BRANCH"
           echo "PR source branch: $PR_SOURCE_BRANCH"
-          if [[ "$PR_SOURCE_BRANCH" != rc* ]] && [[ "$PR_SOURCE_BRANCH" != "dependabot-base" ]]; then
-            echo "ERROR: Only pull requests from an 'rc*' branch or 'dependabot-base' are allowed to target 'main'!"
+          if [[ "$PR_SOURCE_BRANCH" != rc* ]] && [[ "$PR_SOURCE_BRANCH" != dependabot/* ]]; then
+            echo "ERROR: Only pull requests from an 'rc*' branch or 'dependabot/*' are allowed to target 'main'!"
             exit 1
           fi
 
