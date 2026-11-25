@@ -1103,3 +1103,70 @@ def test_v8_dashboard_displays_agent_version(engine: MiniRacer) -> None:
     )
     assert version_state["text"] == "v0.1.0"
     assert version_state["display"] == "inline-block"
+
+
+def test_v8_mal_auth_opens_window_synchronously_and_sets_fallback_link(
+    engine: MiniRacer,
+) -> None:
+    """Verify startMalAuthFlow opens a popup synchronously before awaiting API calls."""
+    html_text = _read_static_file("index.html")
+    assert 'id="malAuthUrlLink"' in html_text
+
+    _load_app_in_v8(
+        engine,
+        """
+        const events = [];
+        const popupStub = {
+            closed: false,
+            opener: "parent",
+            location: { href: "" },
+            close: function() { this.closed = true; }
+        };
+        globalThis.window = {
+            open: function(url, target) {
+                events.push({ event: "window.open", url: url, target: target });
+                return popupStub;
+            }
+        };
+        api.updateConfig = async function() {
+            events.push({ event: "updateConfig" });
+            return {};
+        };
+        api.generateMalAuthUrl = async function() {
+            events.push({ event: "generateMalAuthUrl" });
+            return {
+                auth_url: "https://myanimelist.net/v1/oauth2/authorize?client_id=abc",
+                code_verifier: "verifier-123"
+            };
+        };
+        getOrCreateElement("cfgMalClientId").value = "abc";
+        globalThis.__malTest = { events: events, popup: popupStub };
+        startMalAuthFlow();
+        return { started: true };
+        """,
+    )
+
+    state = json.loads(
+        engine.eval(
+            """
+            JSON.stringify({
+                events: globalThis.__malTest.events,
+                popupHref: globalThis.__malTest.popup.location.href,
+                popupOpener: globalThis.__malTest.popup.opener,
+                linkHref: getOrCreateElement("malAuthUrlLink").href,
+                containerHidden: getOrCreateElement("malAuthCodeContainer").classList.contains("hidden")
+            });
+            """
+        )
+    )
+    assert state["events"][0]["event"] == "window.open"
+    assert state["events"][0]["url"] == ""
+    assert (
+        state["popupHref"]
+        == "https://myanimelist.net/v1/oauth2/authorize?client_id=abc"
+    )
+    assert state["popupOpener"] is None
+    assert (
+        state["linkHref"] == "https://myanimelist.net/v1/oauth2/authorize?client_id=abc"
+    )
+    assert state["containerHidden"] is False
