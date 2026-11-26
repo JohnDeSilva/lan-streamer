@@ -1,3 +1,14 @@
+## v0.61.0rc0 (2026-11-26)
+
+### Feat
+
+- **playback**: add SDR BT.709 video re-encode option in file details
+- **agent**: display agent version card on dashboard
+
+### Fix
+
+- **agent**: support multi-checkbox folder selection and in-memory root paths
+
 ## v0.60.2 (2026-11-26)
 
 ### Fix
