@@ -1462,13 +1462,21 @@ async function startMalAuthFlow() {
             codeContainer.classList.remove("hidden");
         }
         const authUrlLink = document.getElementById("malAuthUrlLink");
-        if (authUrlLink && authResult.auth_url) {
-            authUrlLink.href = authResult.auth_url;
-        }
-        if (authResult.auth_url) {
+        const authLinkContainer = document.getElementById("malAuthLinkContainer");
+        if (authResult && authResult.auth_url) {
+            if (authUrlLink) {
+                authUrlLink.href = authResult.auth_url;
+            }
+            if (authLinkContainer) {
+                authLinkContainer.classList.remove("hidden");
+            }
             if (authWindow && !authWindow.closed) {
-                authWindow.opener = null;
                 authWindow.location.href = authResult.auth_url;
+                try {
+                    authWindow.opener = null;
+                } catch (_err) {
+                    // Ignore cross-origin opener assignment errors.
+                }
             } else {
                 showAlert(
                     "Popup blocked by browser. Click 'Open MyAnimeList Login' below to sign in.",
@@ -1476,8 +1484,11 @@ async function startMalAuthFlow() {
                     8000,
                 );
             }
-        } else if (authWindow && !authWindow.closed) {
-            authWindow.close();
+        } else {
+            if (authWindow && !authWindow.closed) {
+                authWindow.close();
+            }
+            showAlert("Failed generating MyAnimeList login URL.", "error");
         }
     } catch (error) {
         if (authWindow && !authWindow.closed) {
