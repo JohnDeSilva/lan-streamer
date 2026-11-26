@@ -206,6 +206,7 @@ class WorkerManager(QObject):
         self.jellyfin_push: WorkerSlot = WorkerSlot(self)
         self.file_property: WorkerSlot = WorkerSlot(self)
         self.subtitle_merge: WorkerSlot = WorkerSlot(self)
+        self.video_reencode: WorkerSlot = WorkerSlot(self)
         self.metadata_embed: WorkerSlot = WorkerSlot(self)
         self.metadata_apply: WorkerSlot = WorkerSlot(self)
         self.refresh: WorkerSlot = WorkerSlot(self)
@@ -222,6 +223,7 @@ class WorkerManager(QObject):
             self.jellyfin_push,
             self.file_property,
             self.subtitle_merge,
+            self.video_reencode,
             self.metadata_embed,
             self.metadata_apply,
             self.refresh,
