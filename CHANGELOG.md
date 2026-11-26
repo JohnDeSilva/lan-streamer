@@ -1,3 +1,9 @@
+## v0.60.2rc0-1 (2026-11-26)
+
+### Fix
+
+- **updater**: Close windows and cancel background tasks promptly on update
+
 ## v0.60.2rc0 (2026-11-26)
 
 ### Fix
