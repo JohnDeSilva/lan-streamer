@@ -1,3 +1,14 @@
+## v0.62.0 (2026-11-26)
+
+### Feat
+
+- **agent**: show live added root paths list in folder browser
+
+### Fix
+
+- **ui**: upgrade in-flight remote sync emit_signal on tab selection
+- **agent**: derive scan_agent.__version__ from lan_streamer.__version__
+
 ## v0.62.0rc0 (2026-11-26)
 
 ### Feat
