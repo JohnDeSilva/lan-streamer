@@ -1485,3 +1485,16 @@ def test_agent_scan_finished_triggers_sync_and_removes_deleted_series(
 
     assert "Old Series" not in test_controller.cached_library_data
     assert "Surviving Series" in test_controller.cached_library_data
+
+
+def test_select_tab_upgrades_in_flight_remote_sync_emit_signal(
+    test_controller: Controller,
+) -> None:
+    """Selecting a remote tab while a background sync is in flight upgrades emit_signal."""
+    test_controller._config.libraries["Remote TV"]["management_type"] = "remote"
+    test_controller._remote_sync_scheduled.add("Remote TV")
+    test_controller._remote_sync_emit_signal["Remote TV"] = False
+
+    test_controller.select_tab("Remote TV")
+
+    assert test_controller._remote_sync_emit_signal["Remote TV"] is True
