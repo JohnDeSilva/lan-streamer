@@ -1,3 +1,9 @@
+## v0.60.1rc0-1 (2026-11-26)
+
+### Fix
+
+- **agent**: Include media_files count and refresh dashboard on scan finish
+
 ## v0.60.1rc0 (2026-11-25)
 
 ### Fix
