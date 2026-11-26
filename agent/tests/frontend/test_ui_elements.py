@@ -1272,10 +1272,12 @@ def test_v8_folder_browser_multi_checkbox_selection(engine: MiniRacer) -> None:
         return {
             libRootPath: getOrCreateElement("libRootPath").value,
             libraryRootPaths: [...libraryRootPaths],
-            listCount: getOrCreateElement("libRootPathsList").children.length
+            listCount: getOrCreateElement("libRootPathsList").children.length,
+            browserListCount: getOrCreateElement("browserAddedPathsList").children.length
         };
         """,
     )
     assert result["libRootPath"] == "/media/tv\n/archive/tv"
     assert result["libraryRootPaths"] == ["/media/tv", "/archive/tv"]
     assert result["listCount"] == 2
+    assert result["browserListCount"] == 2
