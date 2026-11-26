@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -188,6 +189,11 @@ class SettingsDialog(QDialog):
         self.scan_agent_url_input: QLineEdit = self.remote_agent_url_input
         self.scan_agent_selector: QComboBox = QComboBox()
         self.scan_agent_status_label: QLabel = QLabel("Status: Ready")
+        self.mount_detect_progress_bar: QProgressBar = QProgressBar()
+        self.mount_detect_progress_bar.setRange(0, 0)
+        self.mount_detect_progress_bar.setMaximumHeight(12)
+        self.mount_detect_progress_bar.setVisible(False)
+        self._mount_detect_found_count: int = 0
 
         # Remote library legacy mapping widgets
         self.remote_agent_selector: QComboBox = QComboBox()
@@ -689,6 +695,11 @@ class SettingsDialog(QDialog):
 
         actions_layout.addStretch()
         tree_layout.addLayout(actions_layout)
+
+        mount_status_layout = QHBoxLayout()
+        mount_status_layout.addWidget(self.scan_agent_status_label)
+        mount_status_layout.addWidget(self.mount_detect_progress_bar, 1)
+        tree_layout.addLayout(mount_status_layout)
 
         remote_main_layout.addWidget(tree_group, 1)
         return remote_tab
@@ -2268,13 +2279,41 @@ class SettingsDialog(QDialog):
                 "Please connect to a scan agent first before detecting mounts.",
             )
             return
+        self._mount_detect_found_count = 0
         self.scan_agent_status_label.setText(
             "Status: Auto-detecting local network mounts..."
         )
+        self.mount_detect_progress_bar.setRange(0, 0)
+        self.mount_detect_progress_bar.setVisible(True)
+        self.auto_detect_mounts_button.setEnabled(False)
+        launched = False
         for agent_url, agent_data in self.staged_scan_agents.items():
             libraries = list(agent_data.get("discovered_libraries", []))
             if libraries:
+                launched = True
                 self._auto_detect_mounts_for_agent(agent_url, libraries)
+        if not launched:
+            self.mount_detect_progress_bar.setVisible(False)
+            self.auto_detect_mounts_button.setEnabled(True)
+            self.scan_agent_status_label.setText(
+                "Status: No discovered remote libraries to check."
+            )
+
+    def _on_mount_detect_worker_finished(self, worker: AutoDetectMountsWorker) -> None:
+        """Clean up a finished mount-detection worker and update UI state."""
+        if worker in self._mount_detect_workers:
+            self._mount_detect_workers.remove(worker)
+        if not self._mount_detect_workers:
+            self.mount_detect_progress_bar.setVisible(False)
+            self.auto_detect_mounts_button.setEnabled(True)
+            if self._mount_detect_found_count > 0:
+                self.scan_agent_status_label.setText(
+                    f"Status: Auto-detected {self._mount_detect_found_count} mount point(s)."
+                )
+            else:
+                self.scan_agent_status_label.setText(
+                    "Status: Auto-detection complete (no new mounts found)."
+                )
 
     def _auto_detect_mounts_for_agent(
         self, agent_url: str, libraries: list[dict[str, Any]]
@@ -2297,6 +2336,13 @@ class SettingsDialog(QDialog):
                         if local_mount and remote_root not in existing_mappings:
                             existing_mappings[remote_root] = local_mount
 
+        self.mount_detect_progress_bar.setRange(0, 0)
+        self.mount_detect_progress_bar.setVisible(True)
+        self.auto_detect_mounts_button.setEnabled(False)
+        self.scan_agent_status_label.setText(
+            "Status: Auto-detecting local network mounts..."
+        )
+
         worker = AutoDetectMountsWorker(
             agent_url,
             libraries,
@@ -2306,11 +2352,7 @@ class SettingsDialog(QDialog):
         self._mount_detect_workers.append(worker)
         worker.mounts_detected.connect(self._on_mounts_auto_detected)
         worker.finished.connect(
-            lambda w=worker: (
-                self._mount_detect_workers.remove(w)
-                if w in self._mount_detect_workers
-                else None
-            )
+            lambda w=worker: self._on_mount_detect_worker_finished(w)
         )
         worker.finished.connect(worker.deleteLater)
         worker.start()
@@ -2319,9 +2361,10 @@ class SettingsDialog(QDialog):
         self, agent_url: str, detected_mounts: dict[str, str]
     ) -> None:
         """Apply auto-detected local mount mappings to staged agents and libraries."""
-        self.scan_agent_status_label.setText("Status: Ready")
         if not detected_mounts:
             return
+
+        self._mount_detect_found_count += len(detected_mounts)
 
         from lan_streamer.system.config import get_library_sources
 
@@ -2330,7 +2373,8 @@ class SettingsDialog(QDialog):
                 "mount_mappings", {}
             )
             for remote_root, local_mount in detected_mounts.items():
-                if not agent_mounts.get(remote_root):
+                existing_local = agent_mounts.get(remote_root, "")
+                if not existing_local or not Path(existing_local).is_dir():
                     agent_mounts[remote_root] = local_mount
 
         for _library_name, library_config in self.staged_libraries.items():
@@ -2343,15 +2387,20 @@ class SettingsDialog(QDialog):
                 ):
                     source_mounts = source.setdefault("mount_mappings", {})
                     for remote_root, local_mount in detected_mounts.items():
-                        if not source_mounts.get(remote_root):
+                        existing_local = source_mounts.get(remote_root, "")
+                        if not existing_local or not Path(existing_local).is_dir():
                             source_mounts[remote_root] = local_mount
                             matched = True
             if matched:
                 library_config["sources"] = sources
                 lib_mounts = library_config.setdefault("mount_mappings", {})
+                lib_paths = library_config.setdefault("paths", [])
                 for remote_root, local_mount in detected_mounts.items():
-                    if not lib_mounts.get(remote_root):
+                    existing_local = lib_mounts.get(remote_root, "")
+                    if not existing_local or not Path(existing_local).is_dir():
                         lib_mounts[remote_root] = local_mount
+                    if local_mount not in lib_paths:
+                        lib_paths.append(local_mount)
 
         self._populate_remote_agents_tree()
         self._refresh_directory_list()

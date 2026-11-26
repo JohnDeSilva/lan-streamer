@@ -656,8 +656,10 @@ class Controller(QObject):
                 self._remote_library_last_synced[library_name] = time.time()
                 if success_message:
                     self.status_changed.emit(success_message)
+                if emit_signal:
+                    self._reload_current_tab_data()
                 self._finalize_remote_sync_in_background(
-                    library_name, emit_signal, emit_scan_completed
+                    library_name, False, emit_scan_completed
                 )
             else:
                 error_message = result.get("error") or "Unknown error"
@@ -2932,16 +2934,19 @@ class Controller(QObject):
                         library_config = self._config.libraries.get(
                             self.current_library_name, {}
                         )
-                        if library_config.get("type", "tv") == "movie":
-                            self.cached_library_data = self._db.load_movie_library(
-                                self.current_library_name
-                            )
+                        if library_config.get("management_type") == "remote":
+                            self._reload_current_tab_data()
                         else:
-                            self.cached_library_data = self._db.load_library(
-                                self.current_library_name
-                            )
-                        self._cache_series_metrics()
-                        self.library_loaded.emit()
+                            if library_config.get("type", "tv") == "movie":
+                                self.cached_library_data = self._db.load_movie_library(
+                                    self.current_library_name
+                                )
+                            else:
+                                self.cached_library_data = self._db.load_library(
+                                    self.current_library_name
+                                )
+                            self._cache_series_metrics()
+                            self.library_loaded.emit()
 
     def _on_scan_all_finished(self) -> None:
         scan_all_worker = self.worker_manager.scan_all.instance

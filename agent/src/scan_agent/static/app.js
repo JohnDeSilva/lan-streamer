@@ -1065,6 +1065,7 @@ async function applyManualMappingsFromModal() {
 // -------------------------------------------------------------
 let currentBrowserDirectory = "";
 let selectedBrowserDirectory = "";
+let selectedLibraryRootPath = "";
 
 function parseRootPathsInput(rawValue) {
     const seen = new Set();
@@ -1079,16 +1080,98 @@ function parseRootPathsInput(rawValue) {
     return result;
 }
 
+function renderLibraryRootPathsList(pathsOverride = null) {
+    const input = document.getElementById("libRootPath");
+    const listEl = document.getElementById("libRootPathsList");
+    const removeBtn = document.getElementById("btnRemoveRootPath");
+    const paths = pathsOverride !== null
+        ? pathsOverride
+        : parseRootPathsInput(input ? input.value : "");
+    if (input) {
+        input.value = paths.join("\n");
+    }
+    if (!paths.includes(selectedLibraryRootPath)) {
+        selectedLibraryRootPath = "";
+    }
+    if (removeBtn) {
+        removeBtn.disabled = !selectedLibraryRootPath;
+    }
+    if (!listEl) {
+        return;
+    }
+    listEl.innerHTML = "";
+    if (paths.length === 0) {
+        const emptyItem = document.createElement("li");
+        emptyItem.style.padding = "0.6rem 0.75rem";
+        emptyItem.style.color = "var(--text-muted)";
+        emptyItem.style.fontSize = "0.85rem";
+        emptyItem.textContent = "No folders added yet. Click \"Add Folder...\" to browse.";
+        listEl.appendChild(emptyItem);
+        return;
+    }
+    paths.forEach((pathValue) => {
+        const row = document.createElement("li");
+        row.style.display = "flex";
+        row.style.alignItems = "center";
+        row.style.justifyContent = "space-between";
+        row.style.gap = "8px";
+        row.style.padding = "0.45rem 0.75rem";
+        row.style.borderBottom = "1px solid var(--border-color)";
+        row.style.cursor = "pointer";
+        if (selectedLibraryRootPath === pathValue) {
+            row.style.backgroundColor = "rgba(59, 130, 246, 0.2)";
+        }
+
+        const pathLabel = document.createElement("span");
+        pathLabel.style.fontFamily = "monospace";
+        pathLabel.style.fontSize = "0.85rem";
+        pathLabel.style.wordBreak = "break-all";
+        pathLabel.textContent = pathValue;
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.className = "btn btn-secondary btn-sm";
+        deleteBtn.style.padding = "0.15rem 0.45rem";
+        deleteBtn.textContent = "×";
+        deleteBtn.title = "Remove path";
+        deleteBtn.onclick = (event) => {
+            if (event && typeof event.stopPropagation === "function") {
+                event.stopPropagation();
+            }
+            removeLibraryRootPath(pathValue);
+        };
+
+        row.onclick = () => {
+            selectedLibraryRootPath = pathValue;
+            renderLibraryRootPathsList(paths);
+        };
+
+        row.appendChild(pathLabel);
+        row.appendChild(deleteBtn);
+        listEl.appendChild(row);
+    });
+}
+
+function removeLibraryRootPath(pathToRemove) {
+    const input = document.getElementById("libRootPath");
+    const existing = parseRootPathsInput(input ? input.value : "");
+    const updated = existing.filter((p) => p !== pathToRemove);
+    if (selectedLibraryRootPath === pathToRemove) {
+        selectedLibraryRootPath = "";
+    }
+    renderLibraryRootPathsList(updated);
+}
+
 function appendSelectedFolderToRootPaths() {
     if (!selectedBrowserDirectory) {
         return false;
     }
     const input = document.getElementById("libRootPath");
-    const existing = parseRootPathsInput(input.value);
+    const existing = parseRootPathsInput(input ? input.value : "");
     if (!existing.includes(selectedBrowserDirectory)) {
         existing.push(selectedBrowserDirectory);
     }
-    input.value = existing.join("\n");
+    renderLibraryRootPathsList(existing);
     return true;
 }
 
@@ -1508,6 +1591,9 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("btnOpenAddLibrary").onclick = () => {
         document.getElementById("libraryForm").reset();
         document.getElementById("libId").value = "";
+        document.getElementById("libRootPath").value = "";
+        selectedLibraryRootPath = "";
+        renderLibraryRootPathsList([]);
         document.getElementById("libraryModalTitle").textContent = "Add Media Source";
         openModal("libraryModal");
     };
@@ -1554,6 +1640,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnBrowseFolder = document.getElementById("btnBrowseFolder");
     if (btnBrowseFolder) {
         btnBrowseFolder.onclick = () => openFolderBrowser();
+    }
+    const btnRemoveRootPath = document.getElementById("btnRemoveRootPath");
+    if (btnRemoveRootPath) {
+        btnRemoveRootPath.onclick = () => {
+            if (selectedLibraryRootPath) {
+                removeLibraryRootPath(selectedLibraryRootPath);
+            }
+        };
     }
     const btnFolderGo = document.getElementById("btnFolderGo");
     if (btnFolderGo) {
@@ -1640,7 +1734,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 const rootPaths = (libraryItem.root_paths && libraryItem.root_paths.length)
                     ? libraryItem.root_paths
                     : [libraryItem.root_path || ""];
-                document.getElementById("libRootPath").value = rootPaths.filter(Boolean).join("\n");
+                selectedLibraryRootPath = "";
+                renderLibraryRootPathsList(rootPaths.filter(Boolean));
                 document.getElementById("libEnabled").checked = libraryItem.enabled !== false;
                 document.getElementById("libraryModalTitle").textContent = "Edit Media Source";
                 openModal("libraryModal");

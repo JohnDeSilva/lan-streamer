@@ -775,6 +775,7 @@ def sync_remote_library_from_agent(
             agent_url = agent_source.get("agent_url", "")
             source_identifier = (
                 agent_source.get("source_id")
+                or agent_source.get("source_identifier")
                 or agent_source.get("remote_library_id")
                 or library_name
             )
