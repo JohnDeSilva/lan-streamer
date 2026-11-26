@@ -473,21 +473,76 @@ class ScanAgentClient:
                 f"Invalid response from scan agent at '{agent_url}': {error}"
             ) from error
 
+    def browse_filesystem(
+        self,
+        agent_url: str,
+        directory_path: str | None = None,
+        timeout: float = 10.0,
+    ) -> dict[str, Any]:
+        """List subdirectories on the remote scan agent for folder selection."""
+        normalized_url = normalize_agent_url(agent_url)
+        target_endpoint = f"{normalized_url}/api/v1/filesystem/browse"
+        if directory_path and directory_path.strip():
+            target_endpoint = (
+                f"{target_endpoint}?path={quote(directory_path.strip())}"
+            )
+
+        try:
+            response = requests.get(
+                target_endpoint,
+                headers=self._headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as error:
+            logger.warning(
+                "Failed browsing filesystem on agent '%s': %s",
+                agent_url,
+                error,
+            )
+            raise ScanAgentConnectionError(
+                f"Could not browse filesystem on scan agent at '{agent_url}': {error}"
+            ) from error
+
+        if response.status_code != 200:
+            raise ScanAgentConnectionError(
+                f"Scan agent at '{agent_url}' returned HTTP {response.status_code}: {response.text}"
+            )
+
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                return payload
+            raise ValueError("Expected dictionary response from filesystem browse")
+        except ValueError as error:
+            raise ScanAgentConnectionError(
+                f"Invalid filesystem browse response from scan agent at '{agent_url}': {error}"
+            ) from error
+
     def create_agent_source(
         self,
         agent_url: str,
         name: str,
         media_type: str,
-        root_path: str,
+        root_path: str = "",
         timeout: float = 10.0,
+        root_paths: list[str] | None = None,
     ) -> dict[str, Any]:
         """Register a new media source on the remote scan agent."""
         normalized_url = normalize_agent_url(agent_url)
         target_endpoint = f"{normalized_url}/api/v1/sources"
-        payload = {
+        normalized_root_paths = [
+            path.strip() for path in (root_paths or []) if path and path.strip()
+        ]
+        if not normalized_root_paths and root_path.strip():
+            normalized_root_paths = [root_path.strip()]
+        primary_root_path = (
+            normalized_root_paths[0] if normalized_root_paths else root_path.strip()
+        )
+        payload: dict[str, Any] = {
             "name": name,
             "media_type": media_type,
-            "root_path": root_path,
+            "root_path": primary_root_path,
+            "root_paths": normalized_root_paths,
         }
 
         try:
@@ -536,16 +591,26 @@ class ScanAgentClient:
         agent_url: str,
         name: str,
         media_type: str,
-        root_path: str,
+        root_path: str = "",
         timeout: float = 10.0,
+        root_paths: list[str] | None = None,
     ) -> dict[str, Any]:
         """Register a new library on the remote scan agent (legacy alias)."""
         normalized_url = normalize_agent_url(agent_url)
         target_endpoint = f"{normalized_url}/api/v1/libraries"
-        payload = {
+        normalized_root_paths = [
+            path.strip() for path in (root_paths or []) if path and path.strip()
+        ]
+        if not normalized_root_paths and root_path.strip():
+            normalized_root_paths = [root_path.strip()]
+        primary_root_path = (
+            normalized_root_paths[0] if normalized_root_paths else root_path.strip()
+        )
+        payload: dict[str, Any] = {
             "name": name,
             "media_type": media_type,
-            "root_path": root_path,
+            "root_path": primary_root_path,
+            "root_paths": normalized_root_paths,
         }
 
         try:
