@@ -350,10 +350,12 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="libRootPath">Storage Root Path(s) (one per line)</label>
-                        <div style="display: flex; gap: 8px; align-items: flex-start;">
-                            <textarea id="libRootPath" class="form-control" rows="3" required placeholder="/media/tv&#10;/archive/tv"></textarea>
-                            <button type="button" id="btnBrowseFolder" class="btn btn-secondary" style="white-space: nowrap;">📁 Browse...</button>
+                        <label>Storage Root Path(s)</label>
+                        <input type="hidden" id="libRootPath">
+                        <ul id="libRootPathsList" class="root-paths-list" style="list-style: none; padding: 0; margin: 0 0 0.5rem 0; border: 1px solid var(--border-color); border-radius: var(--radius-sm); max-height: 150px; overflow-y: auto; background: var(--bg-primary);"></ul>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button type="button" id="btnBrowseFolder" class="btn btn-secondary btn-sm">📁 Add Folder...</button>
+                            <button type="button" id="btnRemoveRootPath" class="btn btn-danger btn-sm" disabled>Remove Selected</button>
                         </div>
                     </div>
                     <div class="form-group">
