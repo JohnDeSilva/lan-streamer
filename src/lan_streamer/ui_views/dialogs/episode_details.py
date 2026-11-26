@@ -73,6 +73,9 @@ class EpisodeDetailsDialog(QDialog):
         self.merge_button: QPushButton = QPushButton(
             "Combine Subtitles into Video File"
         )
+        self.reencode_colorspace_button: QPushButton = QPushButton(
+            "Re-encode Video to SDR (Fix Purple/HDR Colors)..."
+        )
 
         self.setWindowTitle(f"Episode Details: {Path(episode_path).name}")
         self.resize(700, 600)
@@ -204,6 +207,16 @@ class EpisodeDetailsDialog(QDialog):
         self.merge_button.setObjectName("accentButton")
         self.merge_button.clicked.connect(self._on_merge_clicked)
         layout.addWidget(self.merge_button)
+
+        self.reencode_colorspace_button.setToolTip(
+            "Re-encode the video stream to standard BT.709 SDR using ffmpeg "
+            "(fixes purple/green tint on Dolby Vision Profile 5 or HDR files). "
+            "Audio and subtitle tracks are copied without re-encoding."
+        )
+        self.reencode_colorspace_button.clicked.connect(
+            self._on_reencode_colorspace_clicked
+        )
+        layout.addWidget(self.reencode_colorspace_button)
 
         osub_btn = QPushButton("Search OpenSubtitles.com for Subtitles...")
         osub_btn.clicked.connect(self._on_search_osub_clicked)
@@ -520,6 +533,28 @@ class EpisodeDetailsDialog(QDialog):
                 f"User requested subtitle merge for episode '{self.episode_path}' (Subtitles count: {len(self._ext_subs)})"
             )
             self.controller.merge_subtitles(self.episode_path, self._ext_subs)
+            self.accept()
+
+    @Slot()
+    def _on_reencode_colorspace_clicked(self) -> None:
+        target_path = self.default_file_combo.currentData() or self.episode_path
+        if not target_path:
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Video Re-encode",
+            f"This will re-encode '{Path(target_path).name}' to standard BT.709 SDR "
+            "color space using ffmpeg (audio and subtitles will be copied).\n\n"
+            "This may take a while and will replace the original video file. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            logger.info(
+                "User requested color-space re-encode for episode '%s'",
+                target_path,
+            )
+            self.controller.reencode_video_colorspace(target_path)
             self.accept()
 
     @Slot()
