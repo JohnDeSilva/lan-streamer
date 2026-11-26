@@ -1078,6 +1078,7 @@ def test_v8_dashboard_displays_agent_version(engine: MiniRacer) -> None:
     """Verify loadDashboard updates #agentVersion from health.version."""
     html_text = _read_static_file("index.html")
     assert 'id="agentVersion"' in html_text
+    assert 'id="dashboardVersion"' in html_text
 
     result = _load_app_in_v8(
         engine,
@@ -1098,13 +1099,15 @@ def test_v8_dashboard_displays_agent_version(engine: MiniRacer) -> None:
             """
             JSON.stringify({
                 text: getOrCreateElement("agentVersion").textContent,
-                display: getOrCreateElement("agentVersion").style.display
+                display: getOrCreateElement("agentVersion").style.display,
+                dashboardText: getOrCreateElement("dashboardVersion").textContent
             });
             """
         )
     )
     assert version_state["text"] == "v0.1.0"
     assert version_state["display"] == "inline-block"
+    assert version_state["dashboardText"] == "v0.1.0"
 
 
 def test_v8_mal_auth_opens_window_synchronously_and_sets_fallback_link(
