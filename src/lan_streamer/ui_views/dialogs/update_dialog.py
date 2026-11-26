@@ -247,8 +247,9 @@ class UpdateDialog(QDialog):
                     logger.info(f"UpdateDialog: launching update: {program_path}")
                     self._launch_detached_clean_env(str(program_path))
 
-                # Close the current running application
+                # Close all windows and quit the current running application
                 self.accept()
+                QApplication.closeAllWindows()
                 QApplication.quit()
         else:
             logger.error(f"UpdateDialog: download failed: {error_message_or_path}")
@@ -280,6 +281,7 @@ class UpdateDialog(QDialog):
             self._launch_detached_clean_env(sys.executable)
 
             self.accept()
+            QApplication.closeAllWindows()
             QApplication.quit()
         else:
             logger.error(f"UpdateDialog: in-place installation failed: {error_message}")
