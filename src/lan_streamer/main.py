@@ -695,13 +695,17 @@ async def _run_qt_event_loop(
                 "(expected during update-triggered shutdown)."
             )
 
-        # Await any pending background tasks to ensure they shut down cleanly before loop closes
+        # Cancel and await any pending background tasks to ensure they shut down
+        # promptly (especially during update-triggered shutdowns where the OS
+        # installer/DMG needs the old app process to exit immediately).
         pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
         if pending:
             logger.info(f"Awaiting shutdown of {len(pending)} pending tasks...")
+            for pending_task in pending:
+                pending_task.cancel()
             try:
                 await asyncio.wait_for(
-                    asyncio.gather(*pending, return_exceptions=True), timeout=5.0
+                    asyncio.gather(*pending, return_exceptions=True), timeout=1.0
                 )
             except TimeoutError:
                 logger.warning("Timeout waiting for pending tasks to shut down.")
