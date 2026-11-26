@@ -1,3 +1,9 @@
+## v0.60.2rc0 (2026-11-26)
+
+### Fix
+
+- improve multi-root path UI, mount auto-detect feedback, and remote library display
+
 ## v0.60.1 (2026-11-26)
 
 ### Fix
