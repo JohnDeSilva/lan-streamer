@@ -201,46 +201,27 @@ def test_add_remote_library_dialog(qtbot) -> None:
     dialog.name_input.setText("Anime Series")
     dialog.media_type_combobox.setCurrentText("anime")
 
-    listings = [
-        {
-            "current_path": "/media",
-            "parent_path": "/",
-            "shortcuts": ["/media", "/archive"],
-            "directories": [
-                {"name": "anime", "path": "/media/anime"},
-                {"name": "tv", "path": "/media/tv"},
-            ],
-        },
-        {
-            "current_path": "/media/anime",
-            "parent_path": "/media",
-            "shortcuts": ["/media", "/archive"],
-            "directories": [
-                {"name": "season1", "path": "/media/anime/season1"},
-            ],
-        },
-    ]
-
-    with patch(
-        "lan_streamer.services.scan_agent_client.scan_agent_client.browse_filesystem",
-        side_effect=listings,
-    ):
-        with patch(
+    with (
+        patch(
+            "lan_streamer.ui_views.dialogs.agent_control_dialog.RemoteFolderBrowserDialog._load_directory",
+        ),
+        patch(
             "lan_streamer.ui_views.dialogs.agent_control_dialog.RemoteFolderBrowserDialog.exec",
             return_value=1,
-        ):
-            with patch(
-                "lan_streamer.ui_views.dialogs.agent_control_dialog.RemoteFolderBrowserDialog.get_selected_path",
-                side_effect=["/media/anime", "/archive/anime"],
-            ):
-                dialog.add_folder_button.click()
-                assert dialog.root_paths_list.count() == 1
-                assert dialog.root_paths_list.item(0).text() == "/media/anime"
+        ),
+        patch(
+            "lan_streamer.ui_views.dialogs.agent_control_dialog.RemoteFolderBrowserDialog.get_selected_path",
+            side_effect=["/media/anime", "/archive/anime"],
+        ),
+    ):
+        dialog.add_folder_button.click()
+        assert dialog.root_paths_list.count() == 1
+        assert dialog.root_paths_list.item(0).text() == "/media/anime"
 
-                dialog.add_folder_button.click()
-                assert dialog.root_paths_list.count() == 2
-                assert dialog.root_paths_list.item(0).text() == "/media/anime"
-                assert dialog.root_paths_list.item(1).text() == "/archive/anime"
+        dialog.add_folder_button.click()
+        assert dialog.root_paths_list.count() == 2
+        assert dialog.root_paths_list.item(0).text() == "/media/anime"
+        assert dialog.root_paths_list.item(1).text() == "/archive/anime"
 
     values = dialog.get_library_values()
     assert values == {

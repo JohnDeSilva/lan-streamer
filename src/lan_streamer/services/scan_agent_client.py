@@ -483,9 +483,7 @@ class ScanAgentClient:
         normalized_url = normalize_agent_url(agent_url)
         target_endpoint = f"{normalized_url}/api/v1/filesystem/browse"
         if directory_path and directory_path.strip():
-            target_endpoint = (
-                f"{target_endpoint}?path={quote(directory_path.strip())}"
-            )
+            target_endpoint = f"{target_endpoint}?path={quote(directory_path.strip())}"
 
         try:
             response = requests.get(
