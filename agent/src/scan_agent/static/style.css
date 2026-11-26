@@ -510,3 +510,7 @@ tr:hover td {
     border: 1px solid var(--accent-red);
     color: var(--accent-red);
 }
+
+.hidden {
+    display: none !important;
+}
