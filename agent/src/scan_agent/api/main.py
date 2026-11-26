@@ -174,17 +174,28 @@ def create_app(
 
     from pathlib import Path
 
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, Response
     from fastapi.staticfiles import StaticFiles
+
+    class NoCacheStaticFiles(StaticFiles):
+        """Serve static assets with Cache-Control: no-cache to prevent stale SPA files."""
+
+        async def get_response(self, path: str, scope: Scope) -> Response:
+            response = await super().get_response(path, scope)
+            response.headers["Cache-Control"] = "no-cache"
+            return response
 
     static_directory = Path(__file__).resolve().parent.parent / "static"
     if static_directory.exists():
         application.mount(
-            "/static", StaticFiles(directory=static_directory), name="static"
+            "/static", NoCacheStaticFiles(directory=static_directory), name="static"
         )
 
         @application.get("/", include_in_schema=False)
         def index_page() -> FileResponse:
-            return FileResponse(static_directory / "index.html")
+            return FileResponse(
+                static_directory / "index.html",
+                headers={"Cache-Control": "no-cache"},
+            )
 
     return application

@@ -1,11 +1,16 @@
 FROM python:3.14-slim
 
+ARG AGENT_VERSION=""
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HOME=/root \
     UV_CACHE_DIR=/tmp/.cache/uv \
     SCAN_AGENT_CONFIG=/data/config.json \
+    SCAN_AGENT_VERSION=${AGENT_VERSION} \
     PYTHONPATH=/app/src:/app/agent/src
+
+LABEL org.opencontainers.image.version="${AGENT_VERSION}"
 
 # Install system dependencies: ffmpeg provides ffprobe for Pass 3 technical scanning
 RUN apt-get update && apt-get install -y --no-install-recommends \
