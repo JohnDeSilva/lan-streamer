@@ -326,6 +326,22 @@ class TestPopulateGrid:
         view.populate_grid()
         assert view.series_list_widget.count() == 1
 
+    def test_populate_grid_handles_none_metadata_fields(self, grid_view) -> None:
+        """Remote agent payloads may set first_air_date/poster_path/year to None."""
+        view, controller = grid_view
+        series_library = _make_tv_library("Remote Show", watched=0, total=2)
+        series_library["Remote Show"]["metadata"]["first_air_date"] = None
+        series_library["Remote Show"]["metadata"]["poster_path"] = None
+        movie_library = _make_movie_library("Remote Movie")
+        movie_library["Remote Movie"]["year"] = None
+        movie_library["Remote Movie"]["poster_path"] = None
+        controller.cached_library_data = {**series_library, **movie_library}
+        controller._cache_series_metrics()
+        controller.sort_mode = "Alphabetical"
+
+        view.populate_grid()
+        assert view.series_list_widget.count() == 2
+
     def test_populate_grid_video_playing_returns_early(self, grid_view) -> None:
         view, controller = grid_view
         controller.is_video_playing = True
