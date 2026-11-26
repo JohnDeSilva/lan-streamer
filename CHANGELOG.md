@@ -1,3 +1,9 @@
+## v0.63.1rc0 (2026-11-26)
+
+### Fix
+
+- **ui**: handle None metadata fields when building library grid
+
 ## v0.63.0 (2026-11-26)
 
 ### Feat
