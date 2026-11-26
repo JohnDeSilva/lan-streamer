@@ -83,6 +83,16 @@ def test_health_reports_providers(api_client: TestClient) -> None:
     assert isinstance(body["libraries"], int)
 
 
+def test_static_assets_send_no_cache_headers(api_client: TestClient) -> None:
+    index_response = api_client.get("/")
+    assert index_response.status_code == 200
+    assert index_response.headers.get("cache-control") == "no-cache"
+
+    script_response = api_client.get("/static/app.js")
+    assert script_response.status_code == 200
+    assert script_response.headers.get("cache-control") == "no-cache"
+
+
 def test_config_get_masks_password(api_app: FastAPI, api_client: TestClient) -> None:
     api_app.state.agent_config.opensubtitles_password = "hunter2"
     body = api_client.get("/api/v1/config").json()
