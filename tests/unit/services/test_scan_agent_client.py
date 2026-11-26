@@ -425,6 +425,7 @@ def test_create_and_delete_agent_library() -> None:
                 "name": "Anime",
                 "media_type": "anime",
                 "root_path": "/media/anime",
+                "root_paths": ["/media/anime"],
             },
             timeout=10.0,
             headers={
@@ -442,6 +443,65 @@ def test_create_and_delete_agent_library() -> None:
         assert delete_result["status"] == "deleted"
         mock_delete.assert_called_once_with(
             "http://127.0.0.1:8800/api/v1/libraries/anime",
+            timeout=10.0,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+        )
+
+
+def test_browse_filesystem_and_multi_root_create() -> None:
+    client = ScanAgentClient()
+    browse_response = MagicMock()
+    browse_response.status_code = 200
+    browse_response.json.return_value = {
+        "current_path": "/media/tv",
+        "parent_path": "/media",
+        "directories": [{"name": "Season 1", "path": "/media/tv/Season 1"}],
+        "shortcuts": ["/media", "/data"],
+    }
+
+    with patch("requests.get", return_value=browse_response) as mock_get:
+        listing = client.browse_filesystem(
+            "http://127.0.0.1:8800", directory_path="/media/tv"
+        )
+        assert listing["current_path"] == "/media/tv"
+        mock_get.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/filesystem/browse?path=/media/tv",
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LanStreamer-Desktop/1.0",
+            },
+            timeout=10.0,
+        )
+
+    post_response = MagicMock()
+    post_response.status_code = 201
+    post_response.json.return_value = {
+        "id": "tv-shows",
+        "name": "TV Shows",
+        "media_type": "tv",
+        "root_path": "/media/tv",
+        "root_paths": ["/media/tv", "/archive/tv"],
+    }
+    with patch("requests.post", return_value=post_response) as mock_post:
+        created = client.create_agent_library(
+            "http://127.0.0.1:8800",
+            name="TV Shows",
+            media_type="tv",
+            root_path="/media/tv",
+            root_paths=["/media/tv", "/archive/tv"],
+        )
+        assert created["root_paths"] == ["/media/tv", "/archive/tv"]
+        mock_post.assert_called_once_with(
+            "http://127.0.0.1:8800/api/v1/libraries",
+            json={
+                "name": "TV Shows",
+                "media_type": "tv",
+                "root_path": "/media/tv",
+                "root_paths": ["/media/tv", "/archive/tv"],
+            },
             timeout=10.0,
             headers={
                 "Accept": "application/json",
@@ -475,6 +535,7 @@ def test_create_and_delete_agent_source() -> None:
                 "name": "Anime",
                 "media_type": "anime",
                 "root_path": "/media/anime",
+                "root_paths": ["/media/anime"],
             },
             timeout=10.0,
             headers={
