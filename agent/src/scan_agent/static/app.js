@@ -1091,6 +1091,7 @@ function parseRootPathsInput(rawValue) {
 function renderLibraryRootPathsList(pathsOverride = null) {
     const input = document.getElementById("libRootPath");
     const listEl = document.getElementById("libRootPathsList");
+    const browserListEl = document.getElementById("browserAddedPathsList");
     const removeBtn = document.getElementById("btnRemoveRootPath");
     if (pathsOverride !== null) {
         libraryRootPaths = parseRootPathsInput(
@@ -1109,16 +1110,22 @@ function renderLibraryRootPathsList(pathsOverride = null) {
     if (removeBtn) {
         removeBtn.disabled = !selectedLibraryRootPath;
     }
-    if (!listEl) {
-        return;
+    if (listEl) {
+        _populateRootPathsListElement(listEl, paths, true);
     }
+    if (browserListEl) {
+        _populateRootPathsListElement(browserListEl, paths, false);
+    }
+}
+
+function _populateRootPathsListElement(listEl, paths, allowSelect) {
     listEl.innerHTML = "";
     if (paths.length === 0) {
         const emptyItem = document.createElement("li");
         emptyItem.style.padding = "0.6rem 0.75rem";
         emptyItem.style.color = "var(--text-muted)";
         emptyItem.style.fontSize = "0.85rem";
-        emptyItem.textContent = "No folders added yet. Click \"Add Folder...\" to browse.";
+        emptyItem.textContent = "No folders added yet.";
         listEl.appendChild(emptyItem);
         return;
     }
@@ -1131,9 +1138,11 @@ function renderLibraryRootPathsList(pathsOverride = null) {
         row.style.padding = "0.45rem 0.75rem";
         row.style.borderBottom = "1px solid var(--border-color)";
         row.style.color = "var(--text-primary)";
-        row.style.cursor = "pointer";
-        if (selectedLibraryRootPath === pathValue) {
-            row.style.backgroundColor = "rgba(59, 130, 246, 0.2)";
+        if (allowSelect) {
+            row.style.cursor = "pointer";
+            if (selectedLibraryRootPath === pathValue) {
+                row.style.backgroundColor = "rgba(59, 130, 246, 0.2)";
+            }
         }
 
         const pathLabel = document.createElement("span");
@@ -1156,10 +1165,12 @@ function renderLibraryRootPathsList(pathsOverride = null) {
             removeLibraryRootPath(pathValue);
         };
 
-        row.onclick = () => {
-            selectedLibraryRootPath = pathValue;
-            renderLibraryRootPathsList(paths);
-        };
+        if (allowSelect) {
+            row.onclick = () => {
+                selectedLibraryRootPath = pathValue;
+                renderLibraryRootPathsList(paths);
+            };
+        }
 
         row.appendChild(pathLabel);
         row.appendChild(deleteBtn);
@@ -1199,6 +1210,7 @@ async function openFolderBrowser(initialPath) {
     currentBrowserDirectory = parsedInitial || existingRoots[0] || "";
     selectedBrowserDirectory = currentBrowserDirectory;
     selectedBrowserDirectories.clear();
+    renderLibraryRootPathsList();
     openModal("folderBrowserModal");
     await loadDirectory(currentBrowserDirectory);
 }

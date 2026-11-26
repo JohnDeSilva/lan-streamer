@@ -479,10 +479,14 @@
                     <input type="text" id="folderCurrentPath" class="form-control" style="flex: 1;" placeholder="/">
                     <button type="button" id="btnFolderGo" class="btn btn-secondary btn-sm" style="padding: 0.4rem 0.75rem;">Go</button>
                 </div>
-                <div id="folderListContainer" style="max-height: 320px; min-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-surface);">
+                <div id="folderListContainer" style="max-height: 280px; min-height: 180px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-surface);">
                     <ul id="folderList" style="list-style: none; padding: 0; margin: 0;">
                         <!-- Dynamically populated folder items -->
                     </ul>
+                </div>
+                <div style="margin-top: 0.75rem;">
+                    <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.35rem;">Added Root Path(s)</div>
+                    <ul id="browserAddedPathsList" style="list-style: none; padding: 0; margin: 0; border: 1px solid var(--border-color); border-radius: var(--radius-sm); max-height: 120px; overflow-y: auto; background: var(--bg-primary);"></ul>
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
