@@ -1,3 +1,9 @@
+## v0.63.0rc0-1 (2026-11-26)
+
+### Fix
+
+- Clean up remote folder browser workers and satisfy lint checks
+
 ## v0.63.0rc0 (2026-11-26)
 
 ### Feat
