@@ -490,8 +490,8 @@ class LibraryGridView(QWidget):
 
             total_episodes: int = metrics_dictionary.get("total_episodes", 0)
             watched_episodes: int = metrics_dictionary.get("watched_episodes", 0)
-            max_date_added: int = metrics_dictionary.get("max_date_added", 0)
-            max_air_date: str = metrics_dictionary.get("max_air_date", "")
+            max_date_added: int = int(metrics_dictionary.get("max_date_added") or 0)
+            max_air_date: str = str(metrics_dictionary.get("max_air_date") or "")
 
             is_fully_watched: bool = (
                 total_episodes > 0 and watched_episodes == total_episodes
@@ -503,14 +503,14 @@ class LibraryGridView(QWidget):
                 continue
 
             first_air_date: str = (
-                str(metadata_dictionary.get("year", ""))
+                str(metadata_dictionary.get("year") or "")
                 if is_movie
-                else metadata_dictionary.get("first_air_date", "")
+                else str(metadata_dictionary.get("first_air_date") or "")
             )
             effective_air_date: str = max(max_air_date, first_air_date)
-            poster_path_string: str = metadata_dictionary.get("poster_path", "")
+            poster_path_string: str = str(metadata_dictionary.get("poster_path") or "")
 
-            last_played_at = metrics_dictionary.get("last_played_at", 0)
+            last_played_at = int(metrics_dictionary.get("last_played_at") or 0)
             is_next_up_candidate = False
             if (
                 total_episodes > 0
