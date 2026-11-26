@@ -467,10 +467,14 @@ class Controller(QObject):
                 single_library_data = self._remote_library_memory_cache.get(
                     single_library_name, {}
                 )
-                if trigger_remote_sync and self._should_refresh_remote_library(
-                    single_library_name
-                ):
-                    self._queue_remote_sync(single_library_name, emit_signal=True)
+                if trigger_remote_sync:
+                    if single_library_name in self._remote_sync_scheduled:
+                        # A sync is already in flight (e.g. started with
+                        # emit_signal=False by Combined View); upgrade it so
+                        # the active tab reloads as soon as it finishes.
+                        self._remote_sync_emit_signal[single_library_name] = True
+                    elif self._should_refresh_remote_library(single_library_name):
+                        self._queue_remote_sync(single_library_name, emit_signal=True)
             else:
                 if single_library_config.get("type", "tv") == "movie":
                     single_library_data = self._db.load_movie_library(
@@ -479,10 +483,11 @@ class Controller(QObject):
                 else:
                     single_library_data = self._db.load_library(single_library_name)
 
-                if trigger_remote_sync and self._should_refresh_remote_library(
-                    single_library_name
-                ):
-                    self._queue_remote_sync(single_library_name, emit_signal=True)
+                if trigger_remote_sync:
+                    if single_library_name in self._remote_sync_scheduled:
+                        self._remote_sync_emit_signal[single_library_name] = True
+                    elif self._should_refresh_remote_library(single_library_name):
+                        self._queue_remote_sync(single_library_name, emit_signal=True)
 
             loaded_libraries.append((single_library_name, single_library_data))
 
