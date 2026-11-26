@@ -1175,6 +1175,8 @@ def test_v8_mal_auth_opens_window_synchronously_and_sets_fallback_link(
         state["linkHref"] == "https://myanimelist.net/v1/oauth2/authorize?client_id=abc"
     )
     assert state["containerHidden"] is False
+    assert ".hidden" in _read_static_file("style.css")
+    assert 'id="malAuthUrlLink" href="#"' not in _read_static_file("index.html")
 
 
 def test_v8_folder_browser_supports_multiple_root_paths(engine: MiniRacer) -> None:
