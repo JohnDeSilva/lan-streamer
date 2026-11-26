@@ -20,3 +20,4 @@ from lan_streamer.backend.scan_worker_base import (
     discover_single_library_tree_impl as discover_single_library_tree,
 )
 from lan_streamer.backend.scan_worker_cleanup import CleanupWorker
+from lan_streamer.backend.video_colorspace_worker import VideoColorSpaceWorker

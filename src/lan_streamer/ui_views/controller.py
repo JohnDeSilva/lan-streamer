@@ -3728,6 +3728,31 @@ class Controller(QObject):
         # Trigger scan to update metadata/details if needed
         self.trigger_scan(force_refresh=False)
 
+    def reencode_video_colorspace(self, video_path: str) -> None:
+        """Trigger background ffmpeg worker to re-encode video to BT.709 SDR."""
+        if self.worker_manager.video_reencode.is_running:
+            self.status_changed.emit("Video color-space re-encode already in progress.")
+            return
+
+        from lan_streamer.backend import VideoColorSpaceWorker
+
+        self.status_changed.emit(
+            "Re-encoding video to standard BT.709 SDR color space..."
+        )
+        self.worker_manager.video_reencode.start(
+            lambda: VideoColorSpaceWorker(
+                video_path, async_task_manager=self.async_task_manager
+            ),
+            finished=self._on_video_colorspace_reencode_finished,
+            error=self._on_worker_error,
+        )
+
+    def _on_video_colorspace_reencode_finished(self, final_path: str) -> None:
+        self.status_changed.emit(
+            f"Video color space re-encoded successfully: {Path(final_path).name}"
+        )
+        self.trigger_scan(force_refresh=False)
+
     def embed_metadata(self, video_path: str, metadata: dict[str, str]) -> None:
         """Triggers background ffmpeg worker to embed metadata into video file."""
         if self.worker_manager.metadata_embed.is_running:
