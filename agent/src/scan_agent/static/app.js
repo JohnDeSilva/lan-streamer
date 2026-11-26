@@ -91,15 +91,21 @@ async function loadDashboard() {
         healthEl.style.color = health.status === "ok" ? "var(--accent-green)" : "var(--accent-red)";
 
         const versionEl = document.getElementById("agentVersion");
+        const dashboardVersionEl = document.getElementById("dashboardVersion");
+        const formattedVersion = health.version
+            ? (String(health.version).startsWith("v") ? String(health.version) : `v${health.version}`)
+            : "";
         if (versionEl) {
-            if (health.version) {
-                const versionText = String(health.version);
-                versionEl.textContent = versionText.startsWith("v") ? versionText : `v${versionText}`;
+            if (formattedVersion) {
+                versionEl.textContent = formattedVersion;
                 versionEl.style.display = "inline-block";
             } else {
                 versionEl.textContent = "";
                 versionEl.style.display = "none";
             }
+        }
+        if (dashboardVersionEl) {
+            dashboardVersionEl.textContent = formattedVersion || "—";
         }
 
         document.getElementById("librariesCount").textContent = libraries.length;
