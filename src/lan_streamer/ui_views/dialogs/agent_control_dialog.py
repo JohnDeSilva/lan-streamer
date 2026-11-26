@@ -218,9 +218,7 @@ class AgentLibraryCreateWorker(QThread):
         self.media_type = media_type
         self.root_path = root_path
         self.root_paths = (
-            list(root_paths)
-            if root_paths
-            else ([root_path] if root_path else [])
+            list(root_paths) if root_paths else ([root_path] if root_path else [])
         )
 
     def run(self) -> None:
@@ -380,7 +378,9 @@ class RemoteFolderBrowserDialog(QDialog):
     def _load_directory(self, directory_path: str | None = None) -> None:
         self.folder_list.clear()
         self.selected_path_label.setText("Loading folders...")
-        worker = AgentFilesystemBrowseWorker(self.agent_url, directory_path, parent=self)
+        worker = AgentFilesystemBrowseWorker(
+            self.agent_url, directory_path, parent=self
+        )
         worker.browse_completed.connect(self._on_browse_completed)
         worker.browse_failed.connect(self._on_browse_failed)
         worker.finished.connect(lambda: self._remove_worker(worker))
@@ -434,7 +434,9 @@ class RemoteFolderBrowserDialog(QDialog):
             shortcut_path = str(shortcut)
             button = QPushButton(shortcut_path)
             button.clicked.connect(
-                lambda _checked=False, target=shortcut_path: self._load_directory(target)
+                lambda _checked=False, target=shortcut_path: self._load_directory(
+                    target
+                )
             )
             self.shortcuts_layout.addWidget(button)
         self.shortcuts_layout.addStretch()
@@ -570,9 +572,12 @@ class AddRemoteLibraryDialog(QDialog):
             initial_path=initial_path,
             parent=self,
         )
-        if browser_dialog.exec() == QDialog.DialogCode.Accepted:
-            selected_path = browser_dialog.get_selected_path()
-            self.add_root_path(selected_path)
+        try:
+            if browser_dialog.exec() == QDialog.DialogCode.Accepted:
+                selected_path = browser_dialog.get_selected_path()
+                self.add_root_path(selected_path)
+        finally:
+            browser_dialog._cleanup_workers()
 
     @Slot()
     def _on_remove_folder_clicked(self) -> None:
