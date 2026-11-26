@@ -1382,7 +1382,7 @@ def count_library_items(connection: Session) -> dict[str, int]:
 
 
 def count_items_per_library(connection: Session) -> dict[str, dict[str, int]]:
-    """Return series/movie/episode counts grouped by library name."""
+    """Return series/movie/episode/media_file counts grouped by library name."""
     series_rows = connection.execute(
         select(Library.name, func.count(Series.id))
         .outerjoin(Series, Series.library_id == Library.id)
@@ -1401,15 +1401,47 @@ def count_items_per_library(connection: Session) -> dict[str, dict[str, int]]:
         .outerjoin(Episode, Episode.season_id == Season.id)
         .group_by(Library.id)
     )
+    movie_file_rows = connection.execute(
+        select(Library.name, func.count(MediaFile.id))
+        .select_from(Library)
+        .outerjoin(Movie, Movie.library_id == Library.id)
+        .outerjoin(
+            MediaFile,
+            and_(MediaFile.media_type == "movie", MediaFile.media_id == Movie.id),
+        )
+        .group_by(Library.id)
+    )
+    episode_file_rows = connection.execute(
+        select(Library.name, func.count(MediaFile.id))
+        .select_from(Library)
+        .outerjoin(Series, Series.library_id == Library.id)
+        .outerjoin(Season, Season.series_id == Series.id)
+        .outerjoin(Episode, Episode.season_id == Season.id)
+        .outerjoin(
+            MediaFile,
+            and_(MediaFile.media_type == "episode", MediaFile.media_id == Episode.id),
+        )
+        .group_by(Library.id)
+    )
     series_counts = {name: int(count) for name, count in series_rows}
     movie_counts = {name: int(count) for name, count in movie_rows}
     episode_counts = {name: int(count) for name, count in episode_rows}
-    library_names = set(series_counts) | set(movie_counts) | set(episode_counts)
+    movie_file_counts = {name: int(count) for name, count in movie_file_rows}
+    episode_file_counts = {name: int(count) for name, count in episode_file_rows}
+    library_names = (
+        set(series_counts)
+        | set(movie_counts)
+        | set(episode_counts)
+        | set(movie_file_counts)
+        | set(episode_file_counts)
+    )
     return {
         name: {
             "series": int(series_counts.get(name, 0)),
             "movies": int(movie_counts.get(name, 0)),
             "episodes": int(episode_counts.get(name, 0)),
+            "media_files": int(movie_file_counts.get(name, 0))
+            + int(episode_file_counts.get(name, 0)),
         }
         for name in sorted(library_names)
     }

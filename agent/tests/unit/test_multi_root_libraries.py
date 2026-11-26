@@ -177,3 +177,37 @@ def test_upsert_consolidates_split_seasons_across_roots_into_single_series(
         assert len(series_list) == 1
         assert series_list[0]["name"] == "TV Series A"
         assert [s["season_number"] for s in series_list[0]["seasons"]] == [1, 5, 6]
+
+
+def test_count_items_per_library_includes_media_files_for_movies_and_series(
+    tmp_path: Path,
+) -> None:
+    from scan_agent.db.connection import get_session
+    from scan_agent.db.repository import count_items_per_library, upsert_library
+
+    config = AgentConfig(data_directory=tmp_path)
+    engine = create_engine_for_database(config.database_path)
+    init_database(engine)
+
+    with get_session(engine) as session:
+        upsert_library(
+            session,
+            {
+                "name": "Combined Movies",
+                "media_type": "movie",
+                "root_path": "/media/movies",
+                "items": {
+                    "Movie One": {
+                        "metadata": {"tmdb_id": 101, "title": "Movie One"},
+                        "path": "/media/movies/Movie One/Movie One.mkv",
+                        "versions": [
+                            {"path": "/media/movies/Movie One/Movie One.mkv"},
+                            {"path": "/archive/movies/Movie One/Movie One.mp4"},
+                        ],
+                    }
+                },
+            },
+        )
+        counts = count_items_per_library(session)
+        assert counts["Combined Movies"]["movies"] == 1
+        assert counts["Combined Movies"]["media_files"] == 2

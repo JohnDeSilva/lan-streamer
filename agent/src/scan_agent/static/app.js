@@ -349,6 +349,9 @@ function initSSE() {
     activeEventSource.addEventListener("scan.finished", () => {
         renderScanStatus({ running: null });
         api.getScanJobs(15).then(renderScanJobs);
+        if (currentTab === "dashboard") {
+            loadDashboard();
+        }
         showAlert("Scan job finished successfully!", "success");
     });
 
