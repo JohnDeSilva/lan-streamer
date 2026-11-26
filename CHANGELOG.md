@@ -1,3 +1,9 @@
+## v0.61.0 (2026-11-26)
+
+### Feat
+
+- **playback**: add SDR BT.709 video re-encode option in file details
+
 ## v0.61.0rc0 (2026-11-26)
 
 ### Feat
