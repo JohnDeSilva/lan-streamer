@@ -1,3 +1,10 @@
+## v0.60.2 (2026-11-26)
+
+### Fix
+
+- **updater**: close windows and cancel background tasks promptly on update
+- improve multi-root path UI, mount auto-detect feedback, and remote library display
+
 ## v0.60.2rc0-1 (2026-11-26)
 
 ### Fix
