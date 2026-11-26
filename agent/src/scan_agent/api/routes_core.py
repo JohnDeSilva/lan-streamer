@@ -149,7 +149,7 @@ def _list_sources(
         entry["id"] = identifier
         entry["counts"] = counts_by_name.get(
             str(definition.get("name", "")),
-            {"series": 0, "movies": 0, "episodes": 0},
+            {"series": 0, "movies": 0, "episodes": 0, "media_files": 0},
         )
         result.append(entry)
     return result
@@ -194,7 +194,7 @@ def _create_source(
     entry = dict(config.sources[identifier])
     entry["id"] = identifier
     entry["counts"] = count_items_per_library(session).get(
-        source.name, {"series": 0, "movies": 0, "episodes": 0}
+        source.name, {"series": 0, "movies": 0, "episodes": 0, "media_files": 0}
     )
     return entry
 
