@@ -1065,6 +1065,8 @@ async function applyManualMappingsFromModal() {
 // -------------------------------------------------------------
 let currentBrowserDirectory = "";
 let selectedBrowserDirectory = "";
+let selectedBrowserDirectories = new Set();
+let libraryRootPaths = [];
 let selectedLibraryRootPath = "";
 
 function parseRootPathsInput(rawValue) {
@@ -1084,9 +1086,14 @@ function renderLibraryRootPathsList(pathsOverride = null) {
     const input = document.getElementById("libRootPath");
     const listEl = document.getElementById("libRootPathsList");
     const removeBtn = document.getElementById("btnRemoveRootPath");
-    const paths = pathsOverride !== null
-        ? pathsOverride
-        : parseRootPathsInput(input ? input.value : "");
+    if (pathsOverride !== null) {
+        libraryRootPaths = parseRootPathsInput(
+            Array.isArray(pathsOverride) ? pathsOverride.join("\n") : pathsOverride
+        );
+    } else if (libraryRootPaths.length === 0 && input && input.value) {
+        libraryRootPaths = parseRootPathsInput(input.value);
+    }
+    const paths = [...libraryRootPaths];
     if (input) {
         input.value = paths.join("\n");
     }
@@ -1117,6 +1124,7 @@ function renderLibraryRootPathsList(pathsOverride = null) {
         row.style.gap = "8px";
         row.style.padding = "0.45rem 0.75rem";
         row.style.borderBottom = "1px solid var(--border-color)";
+        row.style.color = "var(--text-primary)";
         row.style.cursor = "pointer";
         if (selectedLibraryRootPath === pathValue) {
             row.style.backgroundColor = "rgba(59, 130, 246, 0.2)";
@@ -1125,6 +1133,7 @@ function renderLibraryRootPathsList(pathsOverride = null) {
         const pathLabel = document.createElement("span");
         pathLabel.style.fontFamily = "monospace";
         pathLabel.style.fontSize = "0.85rem";
+        pathLabel.style.color = "var(--text-primary)";
         pathLabel.style.wordBreak = "break-all";
         pathLabel.textContent = pathValue;
 
@@ -1153,9 +1162,7 @@ function renderLibraryRootPathsList(pathsOverride = null) {
 }
 
 function removeLibraryRootPath(pathToRemove) {
-    const input = document.getElementById("libRootPath");
-    const existing = parseRootPathsInput(input ? input.value : "");
-    const updated = existing.filter((p) => p !== pathToRemove);
+    const updated = libraryRootPaths.filter((p) => p !== pathToRemove);
     if (selectedLibraryRootPath === pathToRemove) {
         selectedLibraryRootPath = "";
     }
@@ -1163,23 +1170,29 @@ function removeLibraryRootPath(pathToRemove) {
 }
 
 function appendSelectedFolderToRootPaths() {
-    if (!selectedBrowserDirectory) {
+    const candidates = selectedBrowserDirectories.size > 0
+        ? Array.from(selectedBrowserDirectories)
+        : (selectedBrowserDirectory ? [selectedBrowserDirectory] : []);
+    if (candidates.length === 0) {
         return false;
     }
-    const input = document.getElementById("libRootPath");
-    const existing = parseRootPathsInput(input ? input.value : "");
-    if (!existing.includes(selectedBrowserDirectory)) {
-        existing.push(selectedBrowserDirectory);
+    const existing = [...libraryRootPaths];
+    for (const candidate of candidates) {
+        if (candidate && !existing.includes(candidate)) {
+            existing.push(candidate);
+        }
     }
+    selectedBrowserDirectories.clear();
     renderLibraryRootPathsList(existing);
     return true;
 }
 
 async function openFolderBrowser(initialPath) {
-    const existingRoots = parseRootPathsInput(document.getElementById("libRootPath").value);
+    const existingRoots = [...libraryRootPaths];
     const parsedInitial = initialPath ? parseRootPathsInput(initialPath)[0] : "";
     currentBrowserDirectory = parsedInitial || existingRoots[0] || "";
     selectedBrowserDirectory = currentBrowserDirectory;
+    selectedBrowserDirectories.clear();
     openModal("folderBrowserModal");
     await loadDirectory(currentBrowserDirectory);
 }
@@ -1238,7 +1251,34 @@ async function loadDirectory(directoryPath) {
             item.style.cursor = "pointer";
             item.style.borderBottom = "1px solid var(--border-color)";
             item.style.transition = "background-color 0.15s ease";
-            item.innerHTML = `<span>📁</span> <span style="flex: 1; font-weight: 500;">${escapeHtml(dir.name)}</span>`;
+
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.checked = selectedBrowserDirectories.has(dir.path);
+            checkbox.onclick = (event) => {
+                if (event && typeof event.stopPropagation === "function") {
+                    event.stopPropagation();
+                }
+                if (checkbox.checked) {
+                    selectedBrowserDirectories.add(dir.path);
+                } else {
+                    selectedBrowserDirectories.delete(dir.path);
+                }
+                displaySpan.textContent = selectedBrowserDirectories.size > 0
+                    ? `Selected (${selectedBrowserDirectories.size}): ${Array.from(selectedBrowserDirectories).join(", ")}`
+                    : `Selected: ${selectedBrowserDirectory}`;
+            };
+
+            const iconSpan = document.createElement("span");
+            iconSpan.textContent = "📁";
+            const nameSpan = document.createElement("span");
+            nameSpan.style.flex = "1";
+            nameSpan.style.fontWeight = "500";
+            nameSpan.textContent = dir.name;
+
+            item.appendChild(checkbox);
+            item.appendChild(iconSpan);
+            item.appendChild(nameSpan);
 
             item.onmouseover = () => {
                 if (selectedBrowserDirectory !== dir.path) {
@@ -1602,7 +1642,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const id = document.getElementById("libId").value;
         const name = document.getElementById("libName").value.trim();
         const mediaType = document.getElementById("libMediaType").value;
-        const rootPaths = parseRootPathsInput(document.getElementById("libRootPath").value);
+        const rootPaths = libraryRootPaths.length > 0
+            ? [...libraryRootPaths]
+            : parseRootPathsInput(document.getElementById("libRootPath").value);
         const enabled = document.getElementById("libEnabled").checked;
 
         if (!name || rootPaths.length === 0) {

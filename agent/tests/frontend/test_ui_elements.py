@@ -1254,3 +1254,25 @@ def test_v8_library_root_paths_list_select_and_delete(engine: MiniRacer) -> None
     assert result["removeDisabledAfter"] is False
     assert result["remainingValue"] == "/archive/tv"
     assert result["remainingCount"] == 1
+
+
+def test_v8_folder_browser_multi_checkbox_selection(engine: MiniRacer) -> None:
+    """Verify multiple folders checked in folder browser are all appended at once."""
+    result = _load_app_in_v8(
+        engine,
+        """
+        renderLibraryRootPathsList([]);
+        selectedBrowserDirectories.add("/media/tv");
+        selectedBrowserDirectories.add("/archive/tv");
+        getOrCreateElement("btnSelectFolder").onclick();
+
+        return {
+            libRootPath: getOrCreateElement("libRootPath").value,
+            libraryRootPaths: [...libraryRootPaths],
+            listCount: getOrCreateElement("libRootPathsList").children.length
+        };
+        """,
+    )
+    assert result["libRootPath"] == "/media/tv\n/archive/tv"
+    assert result["libraryRootPaths"] == ["/media/tv", "/archive/tv"]
+    assert result["listCount"] == 2
