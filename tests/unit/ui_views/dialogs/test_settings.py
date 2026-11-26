@@ -1135,3 +1135,57 @@ def test_settings_dialog_add_staged_remote_library_directly(qtbot) -> None:
     assert "/Volumes/archive/anime" in dialog.directory_list_widget.item(0).text()
 
     dialog.reject()
+
+
+def test_settings_dialog_mount_detect_progress_bar_and_broken_path_update(
+    qtbot, tmp_path
+) -> None:
+    from unittest.mock import MagicMock
+
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    assert dialog.mount_detect_progress_bar.isVisible() is False
+
+    agent_url = "http://127.0.0.1:8800"
+    dialog.staged_scan_agents = {
+        agent_url: {
+            "name": "Scan Agent",
+            "url": agent_url,
+            "reachable": True,
+            "discovered_libraries": [
+                {
+                    "id": "tv-1",
+                    "name": "TV Shows",
+                    "media_type": "tv",
+                    "root_paths": ["/media/tv", "/archive/tv"],
+                }
+            ],
+            "mount_mappings": {
+                "/media/tv": "/nonexistent/stale/mount",
+            },
+        }
+    }
+    dialog._on_mounts_auto_detected(
+        agent_url,
+        {
+            "/media/tv": str(tmp_path / "tv1"),
+            "/archive/tv": str(tmp_path / "tv2"),
+        },
+    )
+    mock_worker = MagicMock()
+    dialog._mount_detect_workers.append(mock_worker)
+    dialog.auto_detect_mounts_button.setEnabled(False)
+    dialog.mount_detect_progress_bar.setVisible(True)
+
+    dialog._on_mount_detect_worker_finished(mock_worker)
+
+    assert dialog.mount_detect_progress_bar.isVisible() is False
+    assert dialog.auto_detect_mounts_button.isEnabled() is True
+    assert "2 mount point(s)" in dialog.scan_agent_status_label.text()
+    assert dialog.staged_scan_agents[agent_url]["mount_mappings"] == {
+        "/media/tv": str(tmp_path / "tv1"),
+        "/archive/tv": str(tmp_path / "tv2"),
+    }
+
+    dialog.reject()

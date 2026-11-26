@@ -348,8 +348,10 @@ def test_html_library_modal_controls() -> None:
         ("libId", "input"),
         ("libName", "input"),
         ("libMediaType", "select"),
-        ("libRootPath", "textarea"),
+        ("libRootPath", "input"),
+        ("libRootPathsList", "ul"),
         ("btnBrowseFolder", "button"),
+        ("btnRemoveRootPath", "button"),
         ("libEnabled", "input"),
         ("btnSaveLibrary", "button"),
     ]
@@ -1213,3 +1215,42 @@ def test_v8_folder_browser_supports_multiple_root_paths(engine: MiniRacer) -> No
     assert result["afterSelectOpen"] is False
     assert result["combinedValue"] == "/media/tv\n/archive/tv"
     assert result["browsedPaths"] == ["/media/tv"]
+
+
+def test_v8_library_root_paths_list_select_and_delete(engine: MiniRacer) -> None:
+    """Verify root paths render in list and can be selected and deleted without a textarea."""
+    html_text = _read_static_file("index.html")
+    assert (
+        "<textarea" not in html_text
+        or 'id="libRootPath"' not in html_text.split("<textarea")[1].split(">")[0]
+    )
+
+    result = _load_app_in_v8(
+        engine,
+        """
+        renderLibraryRootPathsList(["/media/tv", "/archive/tv"]);
+        const initialCount = getOrCreateElement("libRootPathsList").children.length;
+        const removeDisabledBefore = getOrCreateElement("btnRemoveRootPath").disabled;
+
+        selectedLibraryRootPath = "/media/tv";
+        renderLibraryRootPathsList();
+        const removeDisabledAfter = getOrCreateElement("btnRemoveRootPath").disabled;
+
+        getOrCreateElement("btnRemoveRootPath").onclick();
+        const remainingValue = getOrCreateElement("libRootPath").value;
+        const remainingCount = getOrCreateElement("libRootPathsList").children.length;
+
+        return {
+            initialCount: initialCount,
+            removeDisabledBefore: removeDisabledBefore,
+            removeDisabledAfter: removeDisabledAfter,
+            remainingValue: remainingValue,
+            remainingCount: remainingCount
+        };
+        """,
+    )
+    assert result["initialCount"] == 2
+    assert result["removeDisabledBefore"] is True
+    assert result["removeDisabledAfter"] is False
+    assert result["remainingValue"] == "/archive/tv"
+    assert result["remainingCount"] == 1
