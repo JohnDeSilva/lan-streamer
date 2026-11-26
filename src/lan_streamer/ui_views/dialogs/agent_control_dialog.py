@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 import requests
-from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -207,6 +209,7 @@ class AgentLibraryCreateWorker(QThread):
         name: str,
         media_type: str,
         root_path: str,
+        root_paths: list[str] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -214,11 +217,20 @@ class AgentLibraryCreateWorker(QThread):
         self.name = name
         self.media_type = media_type
         self.root_path = root_path
+        self.root_paths = (
+            list(root_paths)
+            if root_paths
+            else ([root_path] if root_path else [])
+        )
 
     def run(self) -> None:
         try:
             result = scan_agent_client.create_agent_library(
-                self.agent_url, self.name, self.media_type, self.root_path
+                self.agent_url,
+                self.name,
+                self.media_type,
+                self.root_path,
+                root_paths=self.root_paths,
             )
             if not self.isInterruptionRequested():
                 self.create_completed.emit(result)
@@ -228,6 +240,37 @@ class AgentLibraryCreateWorker(QThread):
             )
             if not self.isInterruptionRequested():
                 self.create_failed.emit(str(error))
+
+
+class AgentFilesystemBrowseWorker(QThread):
+    """Fetches remote directory listings from the scan agent off-thread."""
+
+    browse_completed = Signal(dict)
+    browse_failed = Signal(str)
+
+    def __init__(
+        self,
+        agent_url: str,
+        directory_path: str | None = None,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.agent_url = agent_url
+        self.directory_path = directory_path
+
+    def run(self) -> None:
+        try:
+            listing = scan_agent_client.browse_filesystem(
+                self.agent_url, self.directory_path
+            )
+            if not self.isInterruptionRequested():
+                self.browse_completed.emit(listing)
+        except AGENT_CLIENT_EXCEPTIONS as error:
+            logger.warning(
+                "Failed browsing filesystem on agent %s: %s", self.agent_url, error
+            )
+            if not self.isInterruptionRequested():
+                self.browse_failed.emit(str(error))
 
 
 class AgentLibraryDeleteWorker(QThread):
@@ -266,13 +309,192 @@ class AgentLibraryDeleteWorker(QThread):
 # ----------------------------------------------------------------------
 
 
+class RemoteFolderBrowserDialog(QDialog):
+    """Modal dialog for browsing and selecting a directory on a remote scan agent."""
+
+    def __init__(
+        self,
+        agent_url: str,
+        initial_path: str | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.agent_url = agent_url.rstrip("/")
+        self._current_path: str = ""
+        self._parent_path: str | None = None
+        self._selected_path: str = ""
+        self._active_workers: list[QThread] = []
+
+        self.setWindowTitle("Select Remote Folder")
+        self.resize(560, 420)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(8)
+
+        shortcuts_label = QLabel("Quick Locations:")
+        main_layout.addWidget(shortcuts_label)
+
+        self.shortcuts_container = QWidget()
+        self.shortcuts_layout = QHBoxLayout(self.shortcuts_container)
+        self.shortcuts_layout.setContentsMargins(0, 0, 0, 0)
+        self.shortcuts_layout.setSpacing(6)
+        self.shortcuts_layout.addStretch()
+        main_layout.addWidget(self.shortcuts_container)
+
+        navigation_layout = QHBoxLayout()
+        self.up_button = QPushButton("Up")
+        self.up_button.setEnabled(False)
+        self.up_button.clicked.connect(self._on_up_clicked)
+        navigation_layout.addWidget(self.up_button)
+
+        self.path_input = QLineEdit()
+        self.path_input.setPlaceholderText("/")
+        self.path_input.returnPressed.connect(self._on_go_clicked)
+        navigation_layout.addWidget(self.path_input, 1)
+
+        self.go_button = QPushButton("Go")
+        self.go_button.clicked.connect(self._on_go_clicked)
+        navigation_layout.addWidget(self.go_button)
+        main_layout.addLayout(navigation_layout)
+
+        self.folder_list = QListWidget()
+        self.folder_list.itemClicked.connect(self._on_folder_clicked)
+        self.folder_list.itemDoubleClicked.connect(self._on_folder_double_clicked)
+        main_layout.addWidget(self.folder_list, 1)
+
+        self.selected_path_label = QLabel("Loading folders...")
+        main_layout.addWidget(self.selected_path_label)
+
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        ok_button = button_box.button(QDialogButtonBox.StandardButton.Ok)
+        if ok_button is not None:
+            ok_button.setText("Select Folder")
+        button_box.accepted.connect(self._validate_and_accept)
+        button_box.rejected.connect(self.reject)
+        main_layout.addWidget(button_box)
+
+        self._load_directory(initial_path)
+
+    def _load_directory(self, directory_path: str | None = None) -> None:
+        self.folder_list.clear()
+        self.selected_path_label.setText("Loading folders...")
+        worker = AgentFilesystemBrowseWorker(self.agent_url, directory_path, parent=self)
+        worker.browse_completed.connect(self._on_browse_completed)
+        worker.browse_failed.connect(self._on_browse_failed)
+        worker.finished.connect(lambda: self._remove_worker(worker))
+        self._active_workers.append(worker)
+        worker.start()
+
+    def _remove_worker(self, worker: QThread) -> None:
+        if worker in self._active_workers:
+            self._active_workers.remove(worker)
+        worker.deleteLater()
+
+    def _on_browse_completed(self, listing: dict[str, Any]) -> None:
+        self._current_path = str(listing.get("current_path") or "")
+        parent_value = listing.get("parent_path")
+        self._parent_path = str(parent_value) if parent_value else None
+        self._selected_path = self._current_path
+
+        self.path_input.setText(self._current_path)
+        self.up_button.setEnabled(bool(self._parent_path))
+        self.selected_path_label.setText(f"Selected: {self._selected_path}")
+
+        self._populate_shortcuts(listing.get("shortcuts") or [])
+
+        self.folder_list.clear()
+        for entry in listing.get("directories") or []:
+            directory_name = str(entry.get("name") or "")
+            directory_path = str(entry.get("path") or "")
+            if not directory_path:
+                continue
+            item = QListWidgetItem(directory_name or directory_path)
+            item.setData(Qt.ItemDataRole.UserRole, directory_path)
+            self.folder_list.addItem(item)
+
+    def _on_browse_failed(self, error_message: str) -> None:
+        self.selected_path_label.setText(f"Error: {error_message}")
+        QMessageBox.warning(
+            self,
+            "Browse Failed",
+            f"Could not browse remote folders:\n{error_message}",
+        )
+
+    def _populate_shortcuts(self, shortcuts: list[Any]) -> None:
+        while self.shortcuts_layout.count() > 0:
+            layout_item = self.shortcuts_layout.takeAt(0)
+            if layout_item is not None and layout_item.widget() is not None:
+                widget = layout_item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+
+        for shortcut in shortcuts:
+            shortcut_path = str(shortcut)
+            button = QPushButton(shortcut_path)
+            button.clicked.connect(
+                lambda _checked=False, target=shortcut_path: self._load_directory(target)
+            )
+            self.shortcuts_layout.addWidget(button)
+        self.shortcuts_layout.addStretch()
+
+    def _on_up_clicked(self) -> None:
+        if self._parent_path:
+            self._load_directory(self._parent_path)
+
+    def _on_go_clicked(self) -> None:
+        entered_path = self.path_input.text().strip()
+        if entered_path:
+            self._load_directory(entered_path)
+
+    def _on_folder_clicked(self, item: QListWidgetItem) -> None:
+        selected_path = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        if selected_path:
+            self._selected_path = selected_path
+            self.selected_path_label.setText(f"Selected: {self._selected_path}")
+
+    def _on_folder_double_clicked(self, item: QListWidgetItem) -> None:
+        target_path = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        if target_path:
+            self._load_directory(target_path)
+
+    def _validate_and_accept(self) -> None:
+        if not self._selected_path.strip():
+            QMessageBox.warning(
+                self, "Validation Error", "Please select a remote folder."
+            )
+            return
+        self.accept()
+
+    def get_selected_path(self) -> str:
+        """Return the currently selected remote directory path."""
+        return self._selected_path.strip()
+
+    def _cleanup_workers(self) -> None:
+        for worker in list(self._active_workers):
+            worker.requestInterruption()
+            if worker.isRunning():
+                worker.wait(1000)
+        self._active_workers.clear()
+
+    def done(self, result: int) -> None:
+        self._cleanup_workers()
+        super().done(result)
+
+
 class AddRemoteLibraryDialog(QDialog):
     """Sub-dialog to define a new media source directly on the remote agent."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        agent_url: str = "",
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
+        self.agent_url = agent_url.rstrip("/")
         self.setWindowTitle("Add Media Source on Remote Agent")
-        self.resize(440, 200)
+        self.resize(520, 360)
 
         main_layout = QVBoxLayout(self)
         form_layout = QFormLayout()
@@ -285,11 +507,30 @@ class AddRemoteLibraryDialog(QDialog):
         self.media_type_combobox.addItems(["tv", "movie", "anime"])
         form_layout.addRow("Media Type:", self.media_type_combobox)
 
-        self.root_path_input = QLineEdit()
-        self.root_path_input.setPlaceholderText("e.g. /media/tv or /data/movies")
-        form_layout.addRow("Remote Root Path:", self.root_path_input)
-
         main_layout.addLayout(form_layout)
+
+        folders_group = QGroupBox("Search Folders (Media Source Root Paths)")
+        folders_layout = QVBoxLayout(folders_group)
+
+        self.root_paths_list = QListWidget()
+        self.root_paths_list.itemSelectionChanged.connect(
+            self._update_remove_button_state
+        )
+        folders_layout.addWidget(self.root_paths_list, 1)
+
+        folder_buttons_layout = QHBoxLayout()
+        self.add_folder_button = QPushButton("Add Folder...")
+        self.add_folder_button.clicked.connect(self._on_add_folder_clicked)
+        folder_buttons_layout.addWidget(self.add_folder_button)
+
+        self.remove_folder_button = QPushButton("Remove Selected")
+        self.remove_folder_button.setEnabled(False)
+        self.remove_folder_button.clicked.connect(self._on_remove_folder_clicked)
+        folder_buttons_layout.addWidget(self.remove_folder_button)
+
+        folder_buttons_layout.addStretch()
+        folders_layout.addLayout(folder_buttons_layout)
+        main_layout.addWidget(folders_group, 1)
 
         button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -298,27 +539,73 @@ class AddRemoteLibraryDialog(QDialog):
         button_box.rejected.connect(self.reject)
         main_layout.addWidget(button_box)
 
+    def _update_remove_button_state(self) -> None:
+        self.remove_folder_button.setEnabled(
+            len(self.root_paths_list.selectedItems()) > 0
+        )
+
+    def add_root_path(self, folder_path: str) -> bool:
+        """Append *folder_path* to the search folders list if non-empty and unique."""
+        cleaned_path = folder_path.strip()
+        if not cleaned_path:
+            return False
+        if cleaned_path in self.get_root_paths():
+            return False
+        self.root_paths_list.addItem(QListWidgetItem(cleaned_path))
+        return True
+
+    def get_root_paths(self) -> list[str]:
+        """Return all configured search folders in display order."""
+        return [
+            self.root_paths_list.item(index).text()
+            for index in range(self.root_paths_list.count())
+        ]
+
+    @Slot()
+    def _on_add_folder_clicked(self) -> None:
+        existing_paths = self.get_root_paths()
+        initial_path = existing_paths[-1] if existing_paths else None
+        browser_dialog = RemoteFolderBrowserDialog(
+            self.agent_url,
+            initial_path=initial_path,
+            parent=self,
+        )
+        if browser_dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_path = browser_dialog.get_selected_path()
+            self.add_root_path(selected_path)
+
+    @Slot()
+    def _on_remove_folder_clicked(self) -> None:
+        for item in self.root_paths_list.selectedItems():
+            row = self.root_paths_list.row(item)
+            self.root_paths_list.takeItem(row)
+        self._update_remove_button_state()
+
     def _validate_and_accept(self) -> None:
         if not self.name_input.text().strip():
             QMessageBox.warning(
                 self, "Validation Error", "Media source name cannot be empty."
             )
             return
-        if not self.root_path_input.text().strip():
+        if not self.get_root_paths():
             QMessageBox.warning(
-                self, "Validation Error", "Remote root path cannot be empty."
+                self,
+                "Validation Error",
+                "Please add at least one search folder.",
             )
             return
         self.accept()
 
-    def get_source_values(self) -> dict[str, str]:
+    def get_source_values(self) -> dict[str, Any]:
+        root_paths = self.get_root_paths()
         return {
             "name": self.name_input.text().strip(),
             "media_type": self.media_type_combobox.currentText().strip(),
-            "root_path": self.root_path_input.text().strip(),
+            "root_path": root_paths[0] if root_paths else "",
+            "root_paths": root_paths,
         }
 
-    def get_library_values(self) -> dict[str, str]:
+    def get_library_values(self) -> dict[str, Any]:
         return self.get_source_values()
 
 
@@ -706,12 +993,20 @@ class AgentControlDialog(QDialog):
             library_id = str(library_entry.get("id") or "")
             name = str(library_entry.get("name") or "")
             media_type = str(library_entry.get("media_type") or "")
-            root_path = str(library_entry.get("root_path") or "")
+            raw_root_paths = library_entry.get("root_paths")
+            if isinstance(raw_root_paths, list) and raw_root_paths:
+                root_paths_display = ", ".join(
+                    str(path) for path in raw_root_paths if str(path).strip()
+                )
+            else:
+                root_paths_display = str(library_entry.get("root_path") or "")
 
             self.libraries_table.setItem(row_index, 0, QTableWidgetItem(library_id))
             self.libraries_table.setItem(row_index, 1, QTableWidgetItem(name))
             self.libraries_table.setItem(row_index, 2, QTableWidgetItem(media_type))
-            self.libraries_table.setItem(row_index, 3, QTableWidgetItem(root_path))
+            self.libraries_table.setItem(
+                row_index, 3, QTableWidgetItem(root_paths_display)
+            )
 
     def _populate_target_library_combobox(
         self, libraries_list: list[dict[str, Any]]
@@ -888,14 +1183,15 @@ class AgentControlDialog(QDialog):
 
     @Slot()
     def prompt_add_library(self) -> None:
-        dialog = AddRemoteLibraryDialog(parent=self)
+        dialog = AddRemoteLibraryDialog(agent_url=self.agent_url, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             values = dialog.get_library_values()
             worker = AgentLibraryCreateWorker(
                 self.agent_url,
-                values["name"],
-                values["media_type"],
-                values["root_path"],
+                str(values["name"]),
+                str(values["media_type"]),
+                str(values["root_path"]),
+                root_paths=list(values["root_paths"]),
             )
             worker.create_completed.connect(self._on_library_created)
             worker.create_failed.connect(self._on_library_action_failed)

@@ -196,18 +196,108 @@ def test_agent_control_dialog_trigger_and_cancel_scan(qtbot, mock_agent_data) ->
 
 
 def test_add_remote_library_dialog(qtbot) -> None:
-    dialog = AddRemoteLibraryDialog()
+    dialog = AddRemoteLibraryDialog(agent_url="http://127.0.0.1:8800")
     qtbot.addWidget(dialog)
     dialog.name_input.setText("Anime Series")
     dialog.media_type_combobox.setCurrentText("anime")
-    dialog.root_path_input.setText("/media/anime")
+
+    listings = [
+        {
+            "current_path": "/media",
+            "parent_path": "/",
+            "shortcuts": ["/media", "/archive"],
+            "directories": [
+                {"name": "anime", "path": "/media/anime"},
+                {"name": "tv", "path": "/media/tv"},
+            ],
+        },
+        {
+            "current_path": "/media/anime",
+            "parent_path": "/media",
+            "shortcuts": ["/media", "/archive"],
+            "directories": [
+                {"name": "season1", "path": "/media/anime/season1"},
+            ],
+        },
+    ]
+
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.browse_filesystem",
+        side_effect=listings,
+    ):
+        with patch(
+            "lan_streamer.ui_views.dialogs.agent_control_dialog.RemoteFolderBrowserDialog.exec",
+            return_value=1,
+        ):
+            with patch(
+                "lan_streamer.ui_views.dialogs.agent_control_dialog.RemoteFolderBrowserDialog.get_selected_path",
+                side_effect=["/media/anime", "/archive/anime"],
+            ):
+                dialog.add_folder_button.click()
+                assert dialog.root_paths_list.count() == 1
+                assert dialog.root_paths_list.item(0).text() == "/media/anime"
+
+                dialog.add_folder_button.click()
+                assert dialog.root_paths_list.count() == 2
+                assert dialog.root_paths_list.item(0).text() == "/media/anime"
+                assert dialog.root_paths_list.item(1).text() == "/archive/anime"
 
     values = dialog.get_library_values()
     assert values == {
         "name": "Anime Series",
         "media_type": "anime",
         "root_path": "/media/anime",
+        "root_paths": ["/media/anime", "/archive/anime"],
     }
+
+
+def test_add_remote_library_dialog_remove_selected_folder(qtbot) -> None:
+    dialog = AddRemoteLibraryDialog(agent_url="http://127.0.0.1:8800")
+    qtbot.addWidget(dialog)
+    dialog.add_root_path("/media/tv")
+    dialog.add_root_path("/archive/tv")
+    assert dialog.remove_folder_button.isEnabled() is False
+
+    dialog.root_paths_list.setCurrentRow(0)
+    assert dialog.remove_folder_button.isEnabled() is True
+
+    dialog.remove_folder_button.click()
+    assert dialog.get_root_paths() == ["/archive/tv"]
+
+    dialog.root_paths_list.clearSelection()
+    assert dialog.remove_folder_button.isEnabled() is False
+
+
+def test_remote_folder_browser_dialog_browses_and_selects(qtbot) -> None:
+    from lan_streamer.ui_views.dialogs.agent_control_dialog import (
+        RemoteFolderBrowserDialog,
+    )
+
+    initial_listing = {
+        "current_path": "/media",
+        "parent_path": "/",
+        "shortcuts": ["/media", "/data"],
+        "directories": [
+            {"name": "tv", "path": "/media/tv"},
+            {"name": "movies", "path": "/media/movies"},
+        ],
+    }
+
+    with patch(
+        "lan_streamer.services.scan_agent_client.scan_agent_client.browse_filesystem",
+        return_value=initial_listing,
+    ):
+        browser = RemoteFolderBrowserDialog(agent_url="http://127.0.0.1:8800")
+        qtbot.addWidget(browser)
+        qtbot.waitUntil(lambda: browser.folder_list.count() == 2, timeout=10000)
+
+        assert browser.path_input.text() == "/media"
+        assert browser.get_selected_path() == "/media"
+
+        first_item = browser.folder_list.item(0)
+        browser._on_folder_clicked(first_item)
+        assert browser.get_selected_path() == "/media/tv"
+        browser.close()
 
 
 def test_agent_control_dialog_button_states_reflect_running_job(
