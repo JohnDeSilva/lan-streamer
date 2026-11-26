@@ -1,3 +1,15 @@
+## v0.63.0 (2026-11-26)
+
+### Feat
+
+- **ui**: support remote folder browsing and multi-folder media sources
+
+### Fix
+
+- clean up remote folder browser workers and satisfy lint checks
+- **agent**: bake version into Docker image and disable static asset caching
+- **agent**: define .hidden CSS and fix MyAnimeList auth link and popup navigation
+
 ## v0.63.0rc0-1 (2026-11-26)
 
 ### Fix
