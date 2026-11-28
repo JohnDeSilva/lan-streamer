@@ -2,6 +2,7 @@ import contextlib
 import copy
 import html
 import logging
+import shlex
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -222,6 +223,10 @@ class SettingsDialog(QDialog):
         self.watched_threshold_input: QLineEdit = QLineEdit()
         self.max_cache_size_input: QLineEdit = QLineEdit()
         self.vlc_buffer_input: QLineEdit = QLineEdit()
+        self.vlc_deinterlace_selector: QComboBox = QComboBox()
+        self.vlc_swscale_selector: QComboBox = QComboBox()
+        self.vlc_skip_loop_filter_selector: QComboBox = QComboBox()
+        self.vlc_extra_args_input: QLineEdit = QLineEdit()
         self.fullscreen_control_bar_position_selector: QComboBox = QComboBox()
         self.subtitle_position_selector: QComboBox = QComboBox()
         self.default_aspect_mode_selector: QComboBox = QComboBox()
@@ -862,14 +867,50 @@ class SettingsDialog(QDialog):
         )
         return combined_tab
 
+    @staticmethod
+    def _create_setting_description_label(text: str) -> QLabel:
+        description_label = QLabel(text)
+        description_label.setWordWrap(True)
+        description_label.setStyleSheet(
+            "font-size: 11px; color: #94a3b8; border: none; padding-left: 20px; padding-bottom: 4px;"
+        )
+        return description_label
+
     def _build_player_tab(self) -> QWidget:
+        scroll_area: QScrollArea = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+
         player_tab: QWidget = QWidget()
         player_layout: QVBoxLayout = QVBoxLayout(player_tab)
-        player_layout.setSpacing(15)
+        player_layout.setSpacing(10)
 
         player_layout.addWidget(self.use_embedded_checkbox)
+        player_layout.addWidget(
+            self._create_setting_description_label(
+                "Enable for integrated playback, overlays, and resume tracking inside the app. "
+                "Disable to launch standalone VLC if 4K/HDR playback stutters in the embedded window "
+                "(notably on macOS)."
+            )
+        )
+
         player_layout.addWidget(self.enable_caching_checkbox)
+        player_layout.addWidget(
+            self._create_setting_description_label(
+                "Enable when streaming high-bitrate 4K files over Wi-Fi or slow NAS/SMB mounts to "
+                "eliminate network stalls. Disable for fast local drives or Gigabit Ethernet to start "
+                "playback immediately."
+            )
+        )
+
         player_layout.addWidget(self.enable_hw_accel_checkbox)
+        player_layout.addWidget(
+            self._create_setting_description_label(
+                "Enable (recommended) to offload 4K/HEVC decoding to your GPU. Disable only if "
+                "hardware decoding causes visual artifacts, green frames, or crashes."
+            )
+        )
+
         player_layout.addWidget(self.enable_next_episode_popup_checkbox)
 
         threshold_layout: QHBoxLayout = QHBoxLayout()
@@ -892,6 +933,14 @@ class SettingsDialog(QDialog):
         vlc_buffer_layout.addWidget(self.vlc_buffer_input)
         vlc_buffer_layout.addStretch()
         player_layout.addLayout(vlc_buffer_layout)
+        player_layout.addWidget(
+            self._create_setting_description_label(
+                "Increase (e.g. 5000-10000 ms) for high-bitrate 4K streams over a network share. "
+                "Keep lower (1000-3000 ms) on local disks for faster seeking."
+            )
+        )
+
+        self._build_vlc_performance_section(player_layout)
 
         self.fullscreen_control_bar_position_selector.addItems(
             ["Bottom", "Top", "Left", "Right"]
@@ -930,7 +979,87 @@ class SettingsDialog(QDialog):
         player_layout.addLayout(aspect_mode_layout)
 
         player_layout.addStretch()
-        return player_tab
+        scroll_area.setWidget(player_tab)
+        return scroll_area
+
+    def _build_vlc_performance_section(self, player_layout: QVBoxLayout) -> None:
+        """Build VLC decoding/filtering controls and their usage explanations."""
+        self.vlc_deinterlace_selector.clear()
+        self.vlc_deinterlace_selector.addItem(
+            "Off (Recommended for 4K / Progressive)", "off"
+        )
+        self.vlc_deinterlace_selector.addItem("Auto (Interlaced Streams Only)", "auto")
+        self.vlc_deinterlace_selector.addItem("Always On (Yadif Software Filter)", "on")
+        deinterlace_layout: QHBoxLayout = QHBoxLayout()
+        deinterlace_layout.addWidget(QLabel("Deinterlacing Mode:"))
+        self.vlc_deinterlace_selector.setFixedWidth(280)
+        deinterlace_layout.addWidget(self.vlc_deinterlace_selector)
+        deinterlace_layout.addStretch()
+        player_layout.addLayout(deinterlace_layout)
+        player_layout.addWidget(
+            self._create_setting_description_label(
+                "Keep Off for 4K UHD and modern progressive video - forcing Yadif runs a heavy CPU "
+                "filter that can cause 4K frame drops even with hardware acceleration enabled. "
+                "Use Auto or Always On only for interlaced DVDs, TV broadcasts, or 1080i captures "
+                "showing horizontal combing artifacts."
+            )
+        )
+
+        self.vlc_swscale_selector.clear()
+        self.vlc_swscale_selector.addItem(
+            "Fast Bilinear (Low CPU - Recommended for 4K)", "fast_bilinear"
+        )
+        self.vlc_swscale_selector.addItem("Bilinear (Balanced)", "bilinear")
+        self.vlc_swscale_selector.addItem("Lanczos (High Quality, High CPU)", "lanczos")
+        swscale_layout: QHBoxLayout = QHBoxLayout()
+        swscale_layout.addWidget(QLabel("Software Scaling Quality:"))
+        self.vlc_swscale_selector.setFixedWidth(280)
+        swscale_layout.addWidget(self.vlc_swscale_selector)
+        swscale_layout.addStretch()
+        player_layout.addLayout(swscale_layout)
+        player_layout.addWidget(
+            self._create_setting_description_label(
+                "Controls CPU scaling when VLC resizes video in software. Use Fast Bilinear to "
+                "avoid 4K stutter when downscaling or using high-DPI displays; choose Lanczos only "
+                "for lower-resolution (480p/720p) video where extra sharpness is desired."
+            )
+        )
+
+        self.vlc_skip_loop_filter_selector.clear()
+        self.vlc_skip_loop_filter_selector.addItem("None - Full Quality (Default)", 0)
+        self.vlc_skip_loop_filter_selector.addItem("Skip Non-Reference Frames", 1)
+        self.vlc_skip_loop_filter_selector.addItem("Skip Bidirectional Frames", 2)
+        self.vlc_skip_loop_filter_selector.addItem("Skip Non-Key Frames", 3)
+        self.vlc_skip_loop_filter_selector.addItem(
+            "Skip All Frames (Fastest / Lowest Quality)", 4
+        )
+        loop_filter_layout: QHBoxLayout = QHBoxLayout()
+        loop_filter_layout.addWidget(QLabel("Deblocking Loop Filter Skip:"))
+        self.vlc_skip_loop_filter_selector.setFixedWidth(280)
+        loop_filter_layout.addWidget(self.vlc_skip_loop_filter_selector)
+        loop_filter_layout.addStretch()
+        player_layout.addLayout(loop_filter_layout)
+        player_layout.addWidget(
+            self._create_setting_description_label(
+                "Keep at None for full H.264/HEVC image quality. Enable frame skipping only if "
+                "software decoding still stutters on high-bitrate 4K files without hardware "
+                "acceleration (trades slight blocking artifacts for smoother playback)."
+            )
+        )
+
+        extra_args_layout: QHBoxLayout = QHBoxLayout()
+        extra_args_layout.addWidget(QLabel("Extra VLC Arguments:"))
+        self.vlc_extra_args_input.setPlaceholderText(
+            "e.g. --drop-late-frames --skip-frames"
+        )
+        extra_args_layout.addWidget(self.vlc_extra_args_input)
+        player_layout.addLayout(extra_args_layout)
+        player_layout.addWidget(
+            self._create_setting_description_label(
+                "Optional space-separated VLC CLI flags appended at player startup. Leave empty "
+                "unless troubleshooting specific VLC output or decoding issues."
+            )
+        )
 
     def _build_advanced_tab(self) -> QWidget:
         advanced_tab: QWidget = QWidget()
@@ -1327,6 +1456,28 @@ class SettingsDialog(QDialog):
         self.watched_threshold_input.setText(str(int(config.watched_threshold * 100)))
         self.max_cache_size_input.setText(str(config.max_cache_size_gb))
         self.vlc_buffer_input.setText(str(config.vlc_buffer_ms))
+        deinterlace_index = self.vlc_deinterlace_selector.findData(
+            getattr(config, "vlc_deinterlace_mode", "off")
+        )
+        if deinterlace_index >= 0:
+            self.vlc_deinterlace_selector.setCurrentIndex(deinterlace_index)
+        swscale_index = self.vlc_swscale_selector.findData(
+            getattr(config, "vlc_swscale_mode", "fast_bilinear")
+        )
+        if swscale_index >= 0:
+            self.vlc_swscale_selector.setCurrentIndex(swscale_index)
+        skip_loop_index = self.vlc_skip_loop_filter_selector.findData(
+            int(getattr(config, "vlc_skip_loop_filter", 0))
+        )
+        if skip_loop_index >= 0:
+            self.vlc_skip_loop_filter_selector.setCurrentIndex(skip_loop_index)
+        extra_args = getattr(config, "vlc_extra_args", [])
+        if isinstance(extra_args, list):
+            self.vlc_extra_args_input.setText(
+                shlex.join(str(arg) for arg in extra_args)
+            )
+        else:
+            self.vlc_extra_args_input.setText(str(extra_args or ""))
         self.fullscreen_control_bar_position_selector.setCurrentText(
             config.fullscreen_control_bar_position
         )
@@ -3068,6 +3219,54 @@ class SettingsDialog(QDialog):
         if chosen_dir:
             self.log_dir_input.setText(chosen_dir)
 
+    def _save_player_config(self) -> None:
+        """Persist Player tab widgets into the global config object."""
+        config.use_embedded_player = self.use_embedded_checkbox.isChecked()
+        config.enable_caching = self.enable_caching_checkbox.isChecked()
+        config.enable_hw_accel = self.enable_hw_accel_checkbox.isChecked()
+        config.enable_next_episode_popup = (
+            self.enable_next_episode_popup_checkbox.isChecked()
+        )
+        try:
+            parsed_threshold = float(self.watched_threshold_input.text().strip())
+            if parsed_threshold > 1.0:
+                config.watched_threshold = parsed_threshold / 100.0
+            else:
+                config.watched_threshold = parsed_threshold
+        except ValueError:
+            pass
+
+        with contextlib.suppress(ValueError):
+            config.max_cache_size_gb = float(self.max_cache_size_input.text().strip())
+
+        with contextlib.suppress(ValueError):
+            config.vlc_buffer_ms = int(self.vlc_buffer_input.text().strip())
+        config.vlc_deinterlace_mode = str(
+            self.vlc_deinterlace_selector.currentData() or "off"
+        )
+        config.vlc_swscale_mode = str(
+            self.vlc_swscale_selector.currentData() or "fast_bilinear"
+        )
+        skip_loop_data = self.vlc_skip_loop_filter_selector.currentData()
+        config.vlc_skip_loop_filter = (
+            int(skip_loop_data) if skip_loop_data is not None else 0
+        )
+        raw_extra_args = self.vlc_extra_args_input.text().strip()
+        if raw_extra_args:
+            try:
+                config.vlc_extra_args = shlex.split(raw_extra_args)
+            except ValueError:
+                config.vlc_extra_args = raw_extra_args.split()
+        else:
+            config.vlc_extra_args = []
+        config.fullscreen_control_bar_position = (
+            self.fullscreen_control_bar_position_selector.currentText()
+        )
+        config.subtitle_position = self.subtitle_position_selector.currentText()
+        config.default_video_aspect_mode = (
+            self.default_aspect_mode_selector.currentData() or "fit"
+        )
+
     @Slot()
     def save_config(self) -> None:
         logger.info(
@@ -3134,33 +3333,7 @@ class SettingsDialog(QDialog):
             else "stable"
         )
 
-        config.use_embedded_player = self.use_embedded_checkbox.isChecked()
-        config.enable_caching = self.enable_caching_checkbox.isChecked()
-        config.enable_hw_accel = self.enable_hw_accel_checkbox.isChecked()
-        config.enable_next_episode_popup = (
-            self.enable_next_episode_popup_checkbox.isChecked()
-        )
-        try:
-            parsed_threshold = float(self.watched_threshold_input.text().strip())
-            if parsed_threshold > 1.0:
-                config.watched_threshold = parsed_threshold / 100.0
-            else:
-                config.watched_threshold = parsed_threshold
-        except ValueError:
-            pass
-
-        with contextlib.suppress(ValueError):
-            config.max_cache_size_gb = float(self.max_cache_size_input.text().strip())
-
-        with contextlib.suppress(ValueError):
-            config.vlc_buffer_ms = int(self.vlc_buffer_input.text().strip())
-        config.fullscreen_control_bar_position = (
-            self.fullscreen_control_bar_position_selector.currentText()
-        )
-        config.subtitle_position = self.subtitle_position_selector.currentText()
-        config.default_video_aspect_mode = (
-            self.default_aspect_mode_selector.currentData() or "fit"
-        )
+        self._save_player_config()
 
         if self.db_path_input.text().strip():
             config.database_path = self.db_path_input.text().strip()

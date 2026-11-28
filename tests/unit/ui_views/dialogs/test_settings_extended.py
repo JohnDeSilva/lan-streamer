@@ -105,6 +105,16 @@ def test_save_config_persists_player_settings(qtbot) -> None:
     dialog.use_embedded_checkbox.setChecked(True)
     dialog.enable_caching_checkbox.setChecked(False)
     dialog.watched_threshold_input.setText("85")
+    dialog.vlc_deinterlace_selector.setCurrentIndex(
+        dialog.vlc_deinterlace_selector.findData("auto")
+    )
+    dialog.vlc_swscale_selector.setCurrentIndex(
+        dialog.vlc_swscale_selector.findData("bilinear")
+    )
+    dialog.vlc_skip_loop_filter_selector.setCurrentIndex(
+        dialog.vlc_skip_loop_filter_selector.findData(2)
+    )
+    dialog.vlc_extra_args_input.setText("--drop-late-frames --skip-frames")
 
     with patch.object(config, "save"):
         dialog.save_config()
@@ -112,6 +122,16 @@ def test_save_config_persists_player_settings(qtbot) -> None:
     assert config.use_embedded_player is True
     assert config.enable_caching is False
     assert abs(config.watched_threshold - 0.85) < 0.001
+    assert config.vlc_deinterlace_mode == "auto"
+    assert config.vlc_swscale_mode == "bilinear"
+    assert config.vlc_skip_loop_filter == 2
+    assert config.vlc_extra_args == ["--drop-late-frames", "--skip-frames"]
+
+    # Reset defaults so subsequent tests see clean state
+    config.vlc_deinterlace_mode = "off"
+    config.vlc_swscale_mode = "fast_bilinear"
+    config.vlc_skip_loop_filter = 0
+    config.vlc_extra_args = []
 
 
 # ---------------------------------------------------------------------------
