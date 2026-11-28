@@ -509,7 +509,12 @@ async function showSeriesDetail(seriesId) {
             const seasonStats = getSeasonWatchedStats(season);
             let episodesRows = "";
             (season.episodes || []).forEach((episode) => {
-                const versions = (episode.versions || []).map((v) => `${v.resolution || ""} ${v.codec || ""} (${v.path || ""})`).join("<br>");
+                const versionEntries = Array.isArray(episode.versions) ? episode.versions : [];
+                const versions = versionEntries.length > 0
+                    ? versionEntries
+                        .map((v) => `${escapeHtml(v.resolution || "")} ${escapeHtml(v.codec || "")} (${escapeHtml(v.path || "")})`.trim())
+                        .join("<br>")
+                    : (episode.path ? escapeHtml(episode.path) : "");
                 episodesRows += `
                     <tr>
                         <td>E${episode.episode_number}</td>

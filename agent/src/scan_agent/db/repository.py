@@ -212,13 +212,13 @@ def _apply_episode_fields(
         episode.resume_position_seconds = episode_data.get("last_played_position")
 
     versions = episode_data.get("versions")
-    if versions is None:
+    if not versions:
         if not episode.media_files and episode_path:
             versions = [{"path": episode_path}]
-        else:
-            # Multiple video files may map to this episode. Without an explicit
+        elif versions is None or episode_path:
+            # Multiple video files may map to this episode. Without a non-empty
             # versions list, preserve the existing media files rather than
-            # collapsing the episode back to a single synthesized version.
+            # collapsing or clearing them when the episode still has a path.
             return len(episode.media_files)
     return _sync_media_files(connection, "episode", episode.id, versions)
 
@@ -504,12 +504,12 @@ def _apply_movie_fields(
     movie.last_played_at = movie_data.get("last_played_at")
     movie.resume_position_seconds = movie_data.get("last_played_position")
     versions = movie_data.get("versions")
-    if versions is None:
+    if not versions:
         if not movie.media_files and movie_path:
             versions = [{"path": movie_path}]
-        else:
-            # Preserve existing media files when the scan did not provide an
-            # explicit versions list (multiple files can map to one movie).
+        elif versions is None or movie_path:
+            # Preserve existing media files when the scan did not provide a
+            # non-empty versions list (multiple files can map to one movie).
             return len(movie.media_files)
     return _sync_media_files(connection, "movie", movie.id, versions)
 
@@ -1102,7 +1102,8 @@ def record_missing_files(
         ).first()
         if series is None:
             continue
-        for season_data in series_data.get("seasons", {}).values():
+        for season_name, season_data in series_data.get("seasons", {}).items():
+            season_number = _derive_season_number(season_name)
             for episode_data in season_data.get("episodes", []):
                 episode_number = episode_data.get("episode_number") or episode_data.get(
                     "tmdb_number"
@@ -1114,6 +1115,7 @@ def record_missing_files(
                     .join(Season)
                     .where(
                         Season.series_id == series.id,
+                        Season.season_number == season_number,
                         Episode.episode_number == episode_number,
                     )
                 ).first()
