@@ -2305,3 +2305,46 @@ class TestProcessEpisodeFile:
             metadata_only=True,
         )
         assert result["air_date"] == ""
+
+    def test_stand_in_air_date_updated_when_tmdb_air_date_found(
+        self, tmp_path: Path
+    ) -> None:
+        """When an episode's air_date is the date_added stand-in, a TMDB air_date replaces it even without force_refresh."""
+        from lan_streamer.services.metadata_episode import _process_episode_file
+
+        episode_file = self._make_episode_file(tmp_path, episode_name="S01E05.mkv")
+        series_directory = episode_file.parent.parent
+        episode_path = str(episode_file.absolute())
+
+        existing_episode = {
+            "path": episode_path,
+            "tmdb_episode_identifier": "ep_5",
+            "tmdb_name": "Episode 5",
+            "tmdb_number": 5,
+            "air_date": "2023-11-14",  # stand-in from date_added=1700000000.0
+            "runtime": 30,
+            "date_added": 1700000000.0,
+        }
+
+        result = _process_episode_file(
+            episode_file=episode_file,
+            season_name="Season 1",
+            series_directory=series_directory,
+            series_data={"metadata": {}, "_tmdb_series_id": ""},
+            season_metadata={},
+            tmdb_episodes=[
+                {
+                    "id": "ep_5",
+                    "episode_number": 5,
+                    "name": "Episode 5",
+                    "air_date": "2021-08-15",
+                    "runtime": 30,
+                }
+            ],
+            tmdb_series=None,
+            jellyfin_data=None,
+            existing_episodes_by_path={episode_path: existing_episode},
+            metadata_only=True,
+            force_refresh=False,
+        )
+        assert result["air_date"] == "2021-08-15"
