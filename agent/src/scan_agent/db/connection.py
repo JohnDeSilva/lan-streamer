@@ -130,6 +130,13 @@ def _migrate_columns_if_missing(engine: Engine) -> None:
                     "ALTER TABLE movies ADD COLUMN myanimelist_anime_id INTEGER"
                 )
                 logger.info("Migrated movies table: added myanimelist_anime_id column")
+            if existing_movies_columns:
+                connection_instance.exec_driver_sql(
+                    "UPDATE movies "
+                    "SET year = CAST(strftime('%Y', date_added, 'unixepoch') AS INTEGER) "
+                    "WHERE (year IS NULL OR year = 0) "
+                    "AND date_added IS NOT NULL AND date_added > 0"
+                )
     except (SQLAlchemyError, OSError) as migration_error:
         logger.warning(
             "Failed executing column auto-migration on agent database: %s",

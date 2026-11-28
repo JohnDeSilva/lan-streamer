@@ -2157,3 +2157,151 @@ class TestProcessEpisodeFile:
         assert "/nonexistent/stale.mp4" not in version_paths, (
             "Stale version path must be filtered out"
         )
+
+    def test_fresh_episode_uses_date_added_when_air_date_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """Fresh episode with no TMDB air_date falls back to date_added ISO date."""
+        import datetime as dt
+
+        from lan_streamer.services.metadata_episode import _process_episode_file
+
+        episode_file = self._make_episode_file(tmp_path, episode_name="S01E01.mkv")
+        series_directory = episode_file.parent.parent
+
+        result = _process_episode_file(
+            episode_file=episode_file,
+            season_name="Season 1",
+            series_directory=series_directory,
+            series_data={"metadata": {}, "_tmdb_series_id": ""},
+            season_metadata={},
+            tmdb_episodes=[
+                {
+                    "id": "ep_1",
+                    "episode_number": 1,
+                    "name": "Episode 1",
+                    "air_date": "",
+                    "runtime": 30,
+                }
+            ],
+            tmdb_series=None,
+            jellyfin_data=None,
+            existing_episodes_by_path={},
+            metadata_only=False,
+        )
+        expected_date = (
+            dt.datetime.fromtimestamp(float(result["date_added"]), tz=dt.UTC)
+            .date()
+            .isoformat()
+        )
+        assert result["date_added"] > 0
+        assert result["air_date"] == expected_date
+
+    def test_existing_episode_metadata_only_uses_date_added_when_air_date_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """Pass 2 (metadata_only=True) uses existing date_added when TMDB air_date is missing."""
+        from lan_streamer.services.metadata_episode import _process_episode_file
+
+        episode_file = self._make_episode_file(tmp_path, episode_name="S01E02.mkv")
+        series_directory = episode_file.parent.parent
+        episode_path = str(episode_file.absolute())
+
+        existing_episode = {
+            "path": episode_path,
+            "tmdb_episode_identifier": None,
+            "tmdb_name": None,
+            "tmdb_number": 2,
+            "air_date": "",
+            "runtime": 0,
+            "date_added": 1700000000.0,  # 2023-11-14T22:13:20Z
+        }
+
+        result = _process_episode_file(
+            episode_file=episode_file,
+            season_name="Season 1",
+            series_directory=series_directory,
+            series_data={"metadata": {}, "_tmdb_series_id": ""},
+            season_metadata={},
+            tmdb_episodes=[],
+            tmdb_series=None,
+            jellyfin_data=None,
+            existing_episodes_by_path={episode_path: existing_episode},
+            metadata_only=True,
+        )
+        assert result["air_date"] == "2023-11-14"
+
+    def test_episode_keeps_tmdb_air_date_over_date_added(self, tmp_path: Path) -> None:
+        """TMDB air_date takes precedence over date_added."""
+        from lan_streamer.services.metadata_episode import _process_episode_file
+
+        episode_file = self._make_episode_file(tmp_path, episode_name="S01E03.mkv")
+        series_directory = episode_file.parent.parent
+        episode_path = str(episode_file.absolute())
+
+        existing_episode = {
+            "path": episode_path,
+            "tmdb_episode_identifier": "ep_3",
+            "tmdb_name": "Episode 3",
+            "tmdb_number": 3,
+            "air_date": "",
+            "runtime": 30,
+            "date_added": 1700000000.0,
+        }
+
+        result = _process_episode_file(
+            episode_file=episode_file,
+            season_name="Season 1",
+            series_directory=series_directory,
+            series_data={"metadata": {}, "_tmdb_series_id": ""},
+            season_metadata={},
+            tmdb_episodes=[
+                {
+                    "id": "ep_3",
+                    "episode_number": 3,
+                    "name": "Episode 3",
+                    "air_date": "2020-05-01",
+                    "runtime": 30,
+                }
+            ],
+            tmdb_series=None,
+            jellyfin_data=None,
+            existing_episodes_by_path={episode_path: existing_episode},
+            metadata_only=True,
+            force_refresh=True,
+        )
+        assert result["air_date"] == "2020-05-01"
+
+    def test_episode_with_zero_date_added_keeps_empty_air_date(
+        self, tmp_path: Path
+    ) -> None:
+        """When date_added is 0 and TMDB air_date is missing, air_date stays empty."""
+        from lan_streamer.services.metadata_episode import _process_episode_file
+
+        episode_file = self._make_episode_file(tmp_path, episode_name="S01E04.mkv")
+        series_directory = episode_file.parent.parent
+        episode_path = str(episode_file.absolute())
+
+        existing_episode = {
+            "path": episode_path,
+            "tmdb_episode_identifier": None,
+            "tmdb_name": None,
+            "tmdb_number": 4,
+            "air_date": "",
+            "runtime": 0,
+            "date_added": 0,
+        }
+
+        result = _process_episode_file(
+            episode_file=episode_file,
+            season_name="Season 1",
+            series_directory=series_directory,
+            series_data={"metadata": {}, "_tmdb_series_id": ""},
+            season_metadata={},
+            tmdb_episodes=[],
+            tmdb_series=None,
+            jellyfin_data=None,
+            existing_episodes_by_path={episode_path: existing_episode},
+            metadata_only=True,
+        )
+        assert result["air_date"] == ""

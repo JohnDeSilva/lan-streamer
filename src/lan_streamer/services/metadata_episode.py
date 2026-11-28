@@ -6,6 +6,7 @@ Jellyfin IDs.
 """
 
 import contextlib
+import datetime as dt
 import logging
 import os
 import re
@@ -316,6 +317,9 @@ def _process_episode_file(
         except OSError as error_instance:
             logger.debug(f"Could not read ctime for {episode_path}: {error_instance}")
             ctime = 0
+
+    if not air_date and ctime and float(ctime) > 0:
+        air_date = dt.datetime.fromtimestamp(float(ctime), tz=dt.UTC).date().isoformat()
 
     jellyfin_id = ""
     new_series_jf_id = ""

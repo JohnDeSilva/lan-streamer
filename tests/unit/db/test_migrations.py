@@ -499,3 +499,159 @@ def test_scanned_directories_migration(tmp_path) -> None:
         assert series_name == "Fake Series"
 
     engine.dispose()
+
+
+def test_backfill_missing_air_date_migration(tmp_path) -> None:
+    """Test Alembic migration c4d5e6f7a8b9 -> 75eb11852329 backfills missing dates from date_added."""
+    import uuid
+
+    db_path = tmp_path / "test_migration_backfill_air_date.db"
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    command.upgrade(alembic_cfg, "c4d5e6f7a8b9")
+
+    series_id = uuid.uuid4().bytes
+    season_id = uuid.uuid4().bytes
+    ep_null_id = uuid.uuid4().bytes
+    ep_empty_id = uuid.uuid4().bytes
+    ep_set_id = uuid.uuid4().bytes
+    ep_placeholder_id = uuid.uuid4().bytes
+    movie_zero_id = uuid.uuid4().bytes
+    movie_set_id = uuid.uuid4().bytes
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text("INSERT INTO series (id, name) VALUES (:id, 'Backfill Show')"),
+            {"id": series_id},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO seasons (id, series_id, name) VALUES (:id, :series_id, 'Season 1')"
+            ),
+            {"id": season_id, "series_id": series_id},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO episodes (id, season_id, name, air_date, date_added) "
+                "VALUES (:id, :season_id, 'Ep Null', NULL, 1700000000)"
+            ),
+            {"id": ep_null_id, "season_id": season_id},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO episodes (id, season_id, name, air_date, date_added) "
+                "VALUES (:id, :season_id, 'Ep Empty', '', 1700000000)"
+            ),
+            {"id": ep_empty_id, "season_id": season_id},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO episodes (id, season_id, name, air_date, date_added) "
+                "VALUES (:id, :season_id, 'Ep Set', '2020-05-01', 1700000000)"
+            ),
+            {"id": ep_set_id, "season_id": season_id},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO episodes (id, season_id, name, air_date, date_added) "
+                "VALUES (:id, :season_id, 'Ep Placeholder', NULL, 0)"
+            ),
+            {"id": ep_placeholder_id, "season_id": season_id},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO movies (id, name, year, date_added) "
+                "VALUES (:id, 'Movie Zero', 0, 1700000000)"
+            ),
+            {"id": movie_zero_id},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO movies (id, name, year, date_added) "
+                "VALUES (:id, 'Movie Set', 1999, 1700000000)"
+            ),
+            {"id": movie_set_id},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO smart_row_cache "
+                "(id, config_hash, sort_order, item_type, series_id, date_added, air_date, watched_count, total_count, last_played_at, updated_at) "
+                "VALUES (:id, 'h1', 0, 'series', :series_id, 1700000000, NULL, 0, 1, 0, 0)"
+            ),
+            {"id": uuid.uuid4().bytes, "series_id": series_id},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO smart_row_cache "
+                "(id, config_hash, sort_order, item_type, movie_id, date_added, air_date, watched_count, total_count, last_played_at, updated_at) "
+                "VALUES (:id, 'h1', 1, 'movie', :movie_id, 1700000000, '', 0, 1, 0, 0)"
+            ),
+            {"id": uuid.uuid4().bytes, "movie_id": movie_zero_id},
+        )
+
+    command.upgrade(alembic_cfg, "75eb11852329")
+
+    with engine.connect() as conn:
+        assert (
+            conn.execute(
+                sa.text("SELECT air_date FROM episodes WHERE id = :id"),
+                {"id": ep_null_id},
+            ).scalar()
+            == "2023-11-14"
+        )
+        assert (
+            conn.execute(
+                sa.text("SELECT air_date FROM episodes WHERE id = :id"),
+                {"id": ep_empty_id},
+            ).scalar()
+            == "2023-11-14"
+        )
+        assert (
+            conn.execute(
+                sa.text("SELECT air_date FROM episodes WHERE id = :id"),
+                {"id": ep_set_id},
+            ).scalar()
+            == "2020-05-01"
+        )
+        assert (
+            conn.execute(
+                sa.text("SELECT air_date FROM episodes WHERE id = :id"),
+                {"id": ep_placeholder_id},
+            ).scalar()
+            is None
+        )
+        assert (
+            conn.execute(
+                sa.text("SELECT year FROM movies WHERE id = :id"),
+                {"id": movie_zero_id},
+            ).scalar()
+            == 2023
+        )
+        assert (
+            conn.execute(
+                sa.text("SELECT year FROM movies WHERE id = :id"),
+                {"id": movie_set_id},
+            ).scalar()
+            == 1999
+        )
+        assert (
+            conn.execute(
+                sa.text(
+                    "SELECT air_date FROM smart_row_cache WHERE series_id = :id"
+                ),
+                {"id": series_id},
+            ).scalar()
+            == "2023-11-14"
+        )
+        assert (
+            conn.execute(
+                sa.text("SELECT air_date FROM smart_row_cache WHERE movie_id = :id"),
+                {"id": movie_zero_id},
+            ).scalar()
+            == "2023"
+        )
+
+    command.downgrade(alembic_cfg, "c4d5e6f7a8b9")
+    engine.dispose()
