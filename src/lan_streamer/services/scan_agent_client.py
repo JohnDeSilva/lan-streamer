@@ -232,6 +232,13 @@ class ScanAgentClient:
         destination_folder.mkdir(parents=True, exist_ok=True)
         filename = local_candidate.name or "poster.jpg"
         local_target_file = destination_folder / filename
+        if local_target_file.is_file() and local_target_file.stat().st_size > 0:
+            logger.debug(
+                "Reusing cached remote poster at '%s' for '%s'",
+                local_target_file,
+                cleaned_remote_path,
+            )
+            return str(local_target_file)
 
         normalized_url = normalize_agent_url(agent_url)
         target_endpoint = (

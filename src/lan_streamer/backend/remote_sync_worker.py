@@ -10,6 +10,7 @@ executor.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -24,37 +25,73 @@ def _download_posters_for_items(
 ) -> None:
     from lan_streamer.services.scan_agent_client import scan_agent_client
 
+    targets_by_remote_path: dict[str, list[tuple[dict[str, Any], str]]] = {}
+
+    def _register_target(
+        target_dict: dict[str, Any], key: str, remote_path: Any
+    ) -> None:
+        if (
+            isinstance(remote_path, str)
+            and remote_path
+            and not Path(remote_path).is_file()
+        ):
+            targets_by_remote_path.setdefault(remote_path, []).append(
+                (target_dict, key)
+            )
+
     for item_dictionary in items_dict.values():
         if not isinstance(item_dictionary, dict):
             continue
         if library_type == "movie":
-            remote_poster_path = item_dictionary.get("poster_path")
-            if remote_poster_path and not Path(remote_poster_path).is_file():
-                local_poster_path = scan_agent_client.download_poster(
-                    agent_url, remote_poster_path
-                )
-                if local_poster_path:
-                    item_dictionary["poster_path"] = local_poster_path
+            _register_target(
+                item_dictionary, "poster_path", item_dictionary.get("poster_path")
+            )
         else:
             series_metadata_dict = item_dictionary.get("metadata", {})
-            remote_poster_path = series_metadata_dict.get("poster_path")
-            if remote_poster_path and not Path(remote_poster_path).is_file():
-                local_poster_path = scan_agent_client.download_poster(
-                    agent_url, remote_poster_path
+            if isinstance(series_metadata_dict, dict):
+                _register_target(
+                    series_metadata_dict,
+                    "poster_path",
+                    series_metadata_dict.get("poster_path"),
                 )
-                if local_poster_path:
-                    series_metadata_dict["poster_path"] = local_poster_path
             for season_dictionary in item_dictionary.get("seasons", {}).values():
                 if not isinstance(season_dictionary, dict):
                     continue
                 season_metadata_dict = season_dictionary.get("metadata", {})
-                remote_season_poster = season_metadata_dict.get("poster_path")
-                if remote_season_poster and not Path(remote_season_poster).is_file():
-                    local_season_poster = scan_agent_client.download_poster(
-                        agent_url, remote_season_poster
+                if isinstance(season_metadata_dict, dict):
+                    _register_target(
+                        season_metadata_dict,
+                        "poster_path",
+                        season_metadata_dict.get("poster_path"),
                     )
-                    if local_season_poster:
-                        season_metadata_dict["poster_path"] = local_season_poster
+
+    if not targets_by_remote_path:
+        return
+
+    unique_remote_paths = list(targets_by_remote_path.keys())
+    resolved_paths: dict[str, str] = {}
+    worker_count = min(8, len(unique_remote_paths))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = {
+            executor.submit(
+                scan_agent_client.download_poster, agent_url, remote_path
+            ): remote_path
+            for remote_path in unique_remote_paths
+        }
+        for future, remote_path in futures.items():
+            try:
+                local_path = future.result()
+            except Exception:
+                logger.debug(
+                    "Poster download failed for '%s'", remote_path, exc_info=True
+                )
+                local_path = ""
+            if local_path:
+                resolved_paths[remote_path] = local_path
+
+    for remote_path, local_path in resolved_paths.items():
+        for target_dict, key in targets_by_remote_path[remote_path]:
+            target_dict[key] = local_path
 
 
 def _collect_movie_deltas_for_agent(

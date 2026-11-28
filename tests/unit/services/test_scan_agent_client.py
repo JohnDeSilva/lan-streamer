@@ -252,6 +252,23 @@ def test_download_poster_success(tmp_path) -> None:
         assert mock_get.called
 
 
+def test_download_poster_reuses_cached_file_without_network(tmp_path) -> None:
+    client = ScanAgentClient()
+    destination_dir = tmp_path / "cache_images"
+    destination_dir.mkdir()
+    cached_file = destination_dir / "tmdb_series_42.jpg"
+    cached_file.write_bytes(b"already_cached_bytes")
+
+    with patch("requests.get") as mock_get:
+        result_path = client.download_poster(
+            "http://127.0.0.1:8800",
+            "/agent/cache/images/tmdb_series_42.jpg",
+            local_destination_directory=str(destination_dir),
+        )
+        assert result_path == str(cached_file)
+        mock_get.assert_not_called()
+
+
 def test_download_poster_failure(tmp_path) -> None:
     client = ScanAgentClient()
     destination_dir = tmp_path / "cache_images"
