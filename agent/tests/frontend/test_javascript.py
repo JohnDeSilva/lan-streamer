@@ -1034,3 +1034,29 @@ def test_logic_is_media_watched(engine: MiniRacer) -> None:
     assert result["seriesWatched"] is True
     assert result["seriesUnwatched"] is False
     assert result["nullMovie"] is False
+
+
+def test_logic_season_watched_stats_excludes_unaired_episodes(
+    engine: MiniRacer,
+) -> None:
+    result = _logic_test(
+        engine,
+        setup_js="""
+        const seasonWithUnaired = {
+            id: 10,
+            season_number: 1,
+            episodes: [
+                { id: 1, watched: true, air_date: "2020-01-01" },
+                { id: 2, watched: false, air_date: "2099-12-31" }
+            ]
+        };
+        """,
+        probe_js="""
+        stats: getSeasonWatchedStats(seasonWithUnaired)
+        """,
+    )
+    assert result["stats"] == {
+        "totalEpisodes": 1,
+        "watchedEpisodes": 1,
+        "isWatched": True,
+    }
