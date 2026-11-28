@@ -637,12 +637,21 @@ def scan_movie_pass2(
         video_path,
         jellyfin_data,
     )
+    movie_date_added = existing_movie_data.get("date_added") or 0
+    if (
+        not movie_metadata.get("year")
+        and movie_date_added
+        and float(movie_date_added) > 0
+    ):
+        movie_metadata["year"] = dt.datetime.fromtimestamp(
+            float(movie_date_added), tz=dt.UTC
+        ).year
     movie_data = _build_movie_data(
         folder_name=folder_name,
         video_path=video_path,
         movie_metadata=movie_metadata,
         existing_movie_data=existing_movie_data,
-        ctime=existing_movie_data.get("date_added") or 0,
+        ctime=movie_date_added,
         active_version=active_version,
         versions=versions,
         default_path=default_path,

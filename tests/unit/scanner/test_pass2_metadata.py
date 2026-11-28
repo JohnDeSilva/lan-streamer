@@ -1763,6 +1763,37 @@ class TestScanMoviePass2:
         assert result is not None
         mock_tmdb.get_movie_by_id.assert_called_once_with("tmdb_changed")
 
+    def test_movie_year_falls_back_to_date_added(self, tmp_path: Path) -> None:
+        """Movie with no TMDB release date or folder year falls back to date_added year."""
+        movie_dir = tmp_path / "Unknown Movie"
+        movie_dir.mkdir(parents=True)
+        movie_file = movie_dir / "Unknown Movie.mkv"
+        movie_file.write_bytes(b"video")
+
+        existing: dict[str, Any] = {
+            "name": "Unknown Movie",
+            "path": str(movie_file.absolute()),
+            "date_added": 1700000000.0,  # 2023
+            "versions": [{"path": str(movie_file.absolute())}],
+        }
+
+        with (
+            patch(
+                "lan_streamer.scanner.pass2_metadata._resolve_tmdb_movie_data",
+            ),
+            patch(
+                "lan_streamer.scanner.pass2_metadata.tmdb_client",
+            ) as mock_tmdb,
+        ):
+            mock_tmdb.is_configured.return_value = False
+            result = scan_movie_pass2(
+                movie_directory=movie_dir,
+                existing_movie_data=existing,
+            )
+
+        assert result is not None
+        assert result["year"] == 2023
+
 
 # ===========================================================================
 #  Helper to generate a future date string
