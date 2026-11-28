@@ -1023,3 +1023,77 @@ def test_episode_to_dict_falls_back_to_episode_path_when_media_files_empty(
         ep_dict = detail["seasons"][0]["episodes"][0]
         assert len(ep_dict["versions"]) == 1
         assert ep_dict["versions"][0]["path"] == "/media/tv/Fallback Show/S01E01.mkv"
+
+
+def test_mark_season_and_series_watched_skips_unaired_episodes(
+    database_engine, agent_config
+) -> None:
+    """Marking a season or series watched must leave unaired episodes unwatched."""
+    from datetime import UTC, datetime, timedelta
+
+    from scan_agent.db.models import Episode, Library, Season, Series
+    from scan_agent.db.repository import get_watch_state, record_watch_event
+
+    future_date = (datetime.now(UTC).date() + timedelta(days=30)).isoformat()
+    past_date = (datetime.now(UTC).date() - timedelta(days=30)).isoformat()
+
+    with get_session(database_engine) as session:
+        library = Library(name="TV", media_type="tv", root_path="/media/tv")
+        session.add(library)
+        session.flush()
+        series = Series(library_id=library.id, folder_name="Ongoing", name="Ongoing")
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, season_number=1, name="Season 01")
+        session.add(season)
+        session.flush()
+        aired_episode = Episode(
+            season_id=season.id,
+            episode_number=1,
+            name="Aired Ep",
+            air_date=past_date,
+            path="/media/tv/Ongoing/S01E01.mkv",
+        )
+        future_episode = Episode(
+            season_id=season.id,
+            episode_number=2,
+            name="Future Ep",
+            air_date=future_date,
+            path=None,
+        )
+        tba_episode = Episode(
+            season_id=season.id,
+            episode_number=3,
+            name="TBA Ep",
+            air_date="",
+            path=None,
+        )
+        session.add_all([aired_episode, future_episode, tba_episode])
+        session.flush()
+
+        # Mark season watched
+        record_watch_event(
+            session, media_type="season", media_identifier=season.id, watched=True
+        )
+        session.refresh(aired_episode)
+        session.refresh(future_episode)
+        session.refresh(tba_episode)
+        assert aired_episode.watched is True
+        assert future_episode.watched is False
+        assert tba_episode.watched is False
+        assert get_watch_state(session, "season", season.id)["watched"] is True
+
+        # Reset and mark entire series watched
+        record_watch_event(
+            session, media_type="series", media_identifier=series.id, watched=False
+        )
+        record_watch_event(
+            session, media_type="series", media_identifier=series.id, watched=True
+        )
+        session.refresh(aired_episode)
+        session.refresh(future_episode)
+        session.refresh(tba_episode)
+        assert aired_episode.watched is True
+        assert future_episode.watched is False
+        assert tba_episode.watched is False
+        assert get_watch_state(session, "series", series.id)["watched"] is True

@@ -253,17 +253,32 @@ export function isLogLevelVisible(entryLogLevel, selectedFilterLogLevel) {
 }
 
 /**
+ * Return true when an episode has an explicit future air date (unaired).
+ */
+export function isEpisodeUnaired(episode, todayIso = new Date().toISOString().slice(0, 10)) {
+    if (!episode || !episode.air_date) {
+        return false;
+    }
+    const airDate = String(episode.air_date).trim();
+    return Boolean(airDate && airDate > todayIso);
+}
+
+/**
  * Calculate watched episode statistics and status for a season.
  */
 export function getSeasonWatchedStats(season) {
     if (!season) {
         return { totalEpisodes: 0, watchedEpisodes: 0, isWatched: false };
     }
-    const episodes = Array.isArray(season.episodes) ? season.episodes : [];
-    const totalEpisodes = episodes.length > 0 ? episodes.length : Number(season.episode_count || 0);
+    const rawEpisodes = Array.isArray(season.episodes) ? season.episodes : [];
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const episodes = rawEpisodes.filter((episode) => !isEpisodeUnaired(episode, todayIso));
+    const totalEpisodes = episodes.length > 0
+        ? episodes.length
+        : (rawEpisodes.length > 0 ? 0 : Number(season.episode_count || 0));
     const watchedEpisodes = episodes.length > 0
         ? episodes.filter((episode) => Boolean(episode && episode.watched)).length
-        : Number(season.watched_episode_count || 0);
+        : (rawEpisodes.length > 0 ? 0 : Number(season.watched_episode_count || 0));
     const isWatched = totalEpisodes > 0 && watchedEpisodes >= totalEpisodes;
     return {
         totalEpisodes: totalEpisodes,
