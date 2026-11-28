@@ -86,11 +86,19 @@ def test_health_reports_providers(api_client: TestClient) -> None:
 def test_static_assets_send_no_cache_headers(api_client: TestClient) -> None:
     index_response = api_client.get("/")
     assert index_response.status_code == 200
-    assert index_response.headers.get("cache-control") == "no-cache"
+    assert (
+        index_response.headers.get("cache-control")
+        == "no-store, no-cache, must-revalidate"
+    )
+    assert index_response.headers.get("pragma") == "no-cache"
 
     script_response = api_client.get("/static/app.js")
     assert script_response.status_code == 200
-    assert script_response.headers.get("cache-control") == "no-cache"
+    assert (
+        script_response.headers.get("cache-control")
+        == "no-store, no-cache, must-revalidate"
+    )
+    assert script_response.headers.get("pragma") == "no-cache"
 
 
 def test_config_get_masks_password(api_app: FastAPI, api_client: TestClient) -> None:

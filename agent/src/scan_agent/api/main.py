@@ -177,12 +177,19 @@ def create_app(
     from fastapi.responses import FileResponse, Response
     from fastapi.staticfiles import StaticFiles
 
+    _no_store_headers = {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+
     class NoCacheStaticFiles(StaticFiles):
-        """Serve static assets with Cache-Control: no-cache to prevent stale SPA files."""
+        """Serve static assets with no-store headers to prevent stale SPA files."""
 
         async def get_response(self, path: str, scope: Scope) -> Response:
             response = await super().get_response(path, scope)
-            response.headers["Cache-Control"] = "no-cache"
+            for header_name, header_value in _no_store_headers.items():
+                response.headers[header_name] = header_value
             return response
 
     static_directory = Path(__file__).resolve().parent.parent / "static"
@@ -195,7 +202,7 @@ def create_app(
         def index_page() -> FileResponse:
             return FileResponse(
                 static_directory / "index.html",
-                headers={"Cache-Control": "no-cache"},
+                headers=_no_store_headers,
             )
 
     return application
