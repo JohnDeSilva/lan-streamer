@@ -435,11 +435,42 @@ def _date_added_to_iso_date(date_added: Any) -> str:
         return ""
     try:
         timestamp = float(date_added)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return ""
     if timestamp <= 0:
         return ""
     return dt.datetime.fromtimestamp(timestamp, tz=dt.UTC).date().isoformat()
+
+
+def _fill_missing_episode_fields(
+    tmdb_ep: dict[str, Any],
+    tmdb_episode_identifier: Any,
+    tmdb_name: Any,
+    tmdb_number: Any,
+    air_date: Any,
+    runtime: Any,
+    can_replace_air_date: bool,
+) -> tuple[Any, Any, Any, Any, Any, bool]:
+    """Fill missing cached episode fields from a matched TMDB episode dict."""
+    if not tmdb_episode_identifier:
+        tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
+    if not tmdb_name:
+        tmdb_name = tmdb_ep.get("name")
+    if tmdb_number is None:
+        tmdb_number = tmdb_ep.get("episode_number")
+    if can_replace_air_date and tmdb_ep.get("air_date"):
+        air_date = tmdb_ep.get("air_date", "")
+        can_replace_air_date = False
+    if not runtime:
+        runtime = tmdb_ep.get("runtime", 0)
+    return (
+        tmdb_episode_identifier,
+        tmdb_name,
+        tmdb_number,
+        air_date,
+        runtime,
+        can_replace_air_date,
+    )
 
 
 def _match_existing_episode_metadata(
@@ -478,72 +509,15 @@ def _match_existing_episode_metadata(
         stand_in_air_date != "" and air_date == stand_in_air_date
     )
     logger.debug(f"Reusing existing metadata for '{episode_name}'")
-    # Fill in missing tmdb_name from TMDB episode list when we have
-    # a tmdb_number but no cached name.
-    if tmdb_name is None and tmdb_number is not None and tmdb_episodes:
-        for tmdb_ep in tmdb_episodes:
-            if tmdb_ep.get("episode_number") == tmdb_number:
-                tmdb_name = tmdb_ep.get("name")
-                if not tmdb_episode_identifier:
-                    tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
-                if can_replace_air_date and tmdb_ep.get("air_date"):
-                    air_date = tmdb_ep.get("air_date", "")
-                    can_replace_air_date = False
-                if not runtime:
-                    runtime = tmdb_ep.get("runtime", 0)
-                break
     if tmdb_number is None:
-        if cached_tmdb_episode_identifier and tmdb_episodes:
-            for tmdb_ep in tmdb_episodes:
-                if str(tmdb_ep.get("id")) == str(cached_tmdb_episode_identifier):
-                    tmdb_number = tmdb_ep.get("episode_number")
-                    if not tmdb_name:
-                        tmdb_name = tmdb_ep.get("name")
-                    if can_replace_air_date and tmdb_ep.get("air_date"):
-                        air_date = tmdb_ep.get("air_date", "")
-                        can_replace_air_date = False
-                    if not runtime:
-                        runtime = tmdb_ep.get("runtime", 0)
-                    break
-        if tmdb_number is None:
-            if hint_episode_number is not None and hint_episode_number > 0:
-                tmdb_number = hint_episode_number
-            else:
-                parsed = _parse_episode_number(episode_name)
-                if parsed:
-                    _, parsed_num = parsed
-                    tmdb_number = parsed_num
-            if tmdb_number is not None and tmdb_episodes:
-                for tmdb_ep in tmdb_episodes:
-                    if tmdb_ep.get("episode_number") == tmdb_number:
-                        if not tmdb_episode_identifier:
-                            tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
-                        if not tmdb_name:
-                            tmdb_name = tmdb_ep.get("name")
-                        if can_replace_air_date and tmdb_ep.get("air_date"):
-                            air_date = tmdb_ep.get("air_date", "")
-                            can_replace_air_date = False
-                        if not runtime:
-                            runtime = tmdb_ep.get("runtime", 0)
-                        break
-            else:
-                lookup_name = episode_file.stem.lower()
-                for tmdb_ep in tmdb_episodes:
-                    tmdb_episode_name = str(tmdb_ep.get("name") or "").lower()
-                    if tmdb_episode_name and tmdb_episode_name in lookup_name:
-                        tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
-                        tmdb_name = tmdb_ep.get("name")
-                        tmdb_number = tmdb_ep.get("episode_number")
-                        if can_replace_air_date and tmdb_ep.get("air_date"):
-                            air_date = tmdb_ep.get("air_date", "")
-                            can_replace_air_date = False
-                        runtime = tmdb_ep.get("runtime", 0)
-                        logger.debug(
-                            f"Matched '{episode_name}' by parsed substring: "
-                            f"'{tmdb_episode_name}' -> TMDB Name: '{tmdb_name}'"
-                        )
-                        break
-    if can_replace_air_date and tmdb_episodes:
+        if hint_episode_number is not None and hint_episode_number > 0:
+            tmdb_number = hint_episode_number
+        elif parsed := _parse_episode_number(episode_name):
+            _, tmdb_number = parsed
+
+    if tmdb_episodes and (
+        tmdb_name is None or tmdb_number is None or can_replace_air_date
+    ):
         matched = _find_matching_tmdb_episode(
             existing_episode,
             episode_name,
@@ -552,8 +526,23 @@ def _match_existing_episode_metadata(
             hint_episode_number,
             cached_tmdb_episode_identifier,
         )
-        if matched is not None and matched.get("air_date"):
-            air_date = matched["air_date"]
+        if matched is not None:
+            (
+                tmdb_episode_identifier,
+                tmdb_name,
+                tmdb_number,
+                air_date,
+                runtime,
+                can_replace_air_date,
+            ) = _fill_missing_episode_fields(
+                matched,
+                tmdb_episode_identifier,
+                tmdb_name,
+                tmdb_number,
+                air_date,
+                runtime,
+                can_replace_air_date,
+            )
     return (
         tmdb_episode_identifier,
         tmdb_name,
