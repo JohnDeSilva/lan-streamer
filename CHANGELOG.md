@@ -1,3 +1,14 @@
+## v0.64.0 (2026-11-28)
+
+### Feat
+
+- **scanner**: fall back to date_added for missing air_date and backfill existing records
+
+### Fix
+
+- **scanner**: replace stand-in air_date when TMDB air_date becomes available
+- **playback**: make VLC deinterlace, scaling, and loop-filter settings configurable
+
 ## v0.63.2rc0-1 (2026-11-28)
 
 ### Feat
