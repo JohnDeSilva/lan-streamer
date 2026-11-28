@@ -377,14 +377,68 @@ def test_vlc_instance_args(qtbot) -> None:
     with patch("vlc.Instance") as mock_vlc:
         config.enable_hw_accel = True
         config.vlc_extra_args = ["--test-arg"]
+        config.vlc_deinterlace_mode = "off"
+        config.vlc_swscale_mode = "fast_bilinear"
+        config.vlc_skip_loop_filter = 0
 
         VideoPlayerWidget()
 
         args = mock_vlc.call_args[0][0]
         assert "--avcodec-hw=auto" in args
         assert "--test-arg" in args
-        assert "--deinterlace=1" in args
+        assert "--deinterlace=0" in args
+        assert "--video-filter=deinterlace" not in args
+        assert "--swscale-mode=0" in args
+        assert "--avcodec-skiploopfilter=0" in args
         assert "--file-caching=3000" in args
+
+
+def test_vlc_instance_args_deinterlace_and_scaling_modes(qtbot) -> None:
+    with patch("vlc.Instance") as mock_vlc:
+        config.vlc_deinterlace_mode = "auto"
+        config.vlc_swscale_mode = "bilinear"
+        config.vlc_skip_loop_filter = 2
+
+        VideoPlayerWidget()
+
+        args = mock_vlc.call_args[0][0]
+        assert "--video-filter=deinterlace" in args
+        assert "--deinterlace=-1" in args
+        assert "--deinterlace-mode=yadif" in args
+        assert "--swscale-mode=1" in args
+        assert "--avcodec-skiploopfilter=2" in args
+
+    with patch("vlc.Instance") as mock_vlc:
+        config.vlc_deinterlace_mode = "on"
+        config.vlc_swscale_mode = "lanczos"
+        config.vlc_skip_loop_filter = 0
+
+        VideoPlayerWidget()
+
+        args = mock_vlc.call_args[0][0]
+        assert "--video-filter=deinterlace" in args
+        assert "--deinterlace=1" in args
+        assert "--swscale-mode=2" in args
+        assert "--avcodec-skiploopfilter=0" in args
+
+
+def test_vlc_reinitializes_on_load_when_config_changes(qtbot) -> None:
+    with patch("vlc.Instance") as mock_vlc:
+        config.vlc_deinterlace_mode = "off"
+        widget = VideoPlayerWidget()
+        qtbot.addWidget(widget)
+        assert mock_vlc.call_count == 1
+
+        try:
+            config.vlc_deinterlace_mode = "on"
+            with patch.object(widget.timer, "start"):
+                widget._load_and_play("/tmp/sample.mkv")
+            assert mock_vlc.call_count == 2
+            reinit_args = mock_vlc.call_args[0][0]
+            assert "--deinterlace=1" in reinit_args
+        finally:
+            widget.timer.stop()
+            config.vlc_deinterlace_mode = "off"
 
 
 def test_vlc_instance_args_no_hw(qtbot) -> None:
@@ -1088,25 +1142,30 @@ def test_vlc_instance_fallback_swscale_mode(qtbot) -> None:
 
     # We will mock vlc.Instance so that it returns None the FIRST time it's called with --swscale-mode=2
     # And returns a valid mock instance the second time (when the flag is removed).
+    previous_swscale_mode = config.vlc_swscale_mode
+    config.vlc_swscale_mode = "lanczos"
+    try:
+        with patch("lan_streamer.playback.vlc") as mock_vlc_module:
+            mock_vlc_module.Instance.side_effect = lambda args: (
+                None if "--swscale-mode=2" in args else MagicMock()
+            )
+            mock_vlc_module.EventType = MagicMock()
 
-    with patch("lan_streamer.playback.vlc") as mock_vlc_module:
-        mock_vlc_module.Instance.side_effect = lambda args: (
-            None if "--swscale-mode=2" in args else MagicMock()
-        )
-        mock_vlc_module.EventType = MagicMock()
+            # Instantiate the widget
+            widget = VideoPlayerWidget()
+            qtbot.addWidget(widget)
 
-        # Instantiate the widget
-        widget = VideoPlayerWidget()
+            # Verify Instance was called twice
+            assert mock_vlc_module.Instance.call_count == 2
 
-        # Verify Instance was called twice
-        assert mock_vlc_module.Instance.call_count == 2
+            # The second call should not have the flag
+            second_call_args = mock_vlc_module.Instance.call_args_list[1][0][0]
+            assert "--swscale-mode=2" not in second_call_args
 
-        # The second call should not have the flag
-        second_call_args = mock_vlc_module.Instance.call_args_list[1][0][0]
-        assert "--swscale-mode=2" not in second_call_args
-
-        # The mediaplayer should have been successfully created from the fallback instance
-        assert widget.mediaplayer is not None
+            # The mediaplayer should have been successfully created from the fallback instance
+            assert widget.mediaplayer is not None
+    finally:
+        config.vlc_swscale_mode = previous_swscale_mode
 
 
 def test_vlc_instance_complete_failure(qtbot) -> None:

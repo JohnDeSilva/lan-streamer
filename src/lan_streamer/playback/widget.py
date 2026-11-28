@@ -203,10 +203,17 @@ class VideoPlayerWidget(QWidget):
         (2.0, "200% (2.0x)"),
     ]
 
+    VLC_SWSCALE_MODE_MAP: ClassVar[dict[str, int]] = {
+        "fast_bilinear": 0,
+        "bilinear": 1,
+        "lanczos": 2,
+    }
+
     def __init__(self, parent: Any = None) -> None:
         super().__init__(parent)
         self.instance: Any = None
         self.mediaplayer: Any = None
+        self._active_vlc_args: list[str] = []
         self._initialize_vlc()
         self.async_task_manager = AsyncTaskManager(parent=self)
         self.current_media_path: str | None = None
@@ -250,19 +257,45 @@ class VideoPlayerWidget(QWidget):
             "--no-video-title-show",
             "--no-xlib",
             "--disable-screensaver",
-            "--video-filter=deinterlace",
-            "--deinterlace=1",
-            "--deinterlace-mode=yadif",
-            # Caching to ensure smooth delivery
-            f"--file-caching={config.vlc_buffer_ms}",
-            f"--network-caching={config.vlc_buffer_ms}",
-            f"--live-caching={config.vlc_buffer_ms}",
-            # High quality scaling and decoding
-            "--swscale-mode=2",  # Lanczos
-            "--avcodec-skiploopfilter=0",
-            # Enable multi-threaded decoding
-            "--avcodec-threads=0",  # Auto-detect cores
         ]
+
+        deinterlace_mode = getattr(config, "vlc_deinterlace_mode", "off")
+        if deinterlace_mode == "on":
+            args.extend(
+                [
+                    "--video-filter=deinterlace",
+                    "--deinterlace=1",
+                    "--deinterlace-mode=yadif",
+                ]
+            )
+        elif deinterlace_mode == "auto":
+            args.extend(
+                [
+                    "--video-filter=deinterlace",
+                    "--deinterlace=-1",
+                    "--deinterlace-mode=yadif",
+                ]
+            )
+        else:
+            args.append("--deinterlace=0")
+
+        swscale_mode_key = getattr(config, "vlc_swscale_mode", "fast_bilinear")
+        swscale_mode_value = self.VLC_SWSCALE_MODE_MAP.get(swscale_mode_key, 0)
+        skip_loop_filter = int(getattr(config, "vlc_skip_loop_filter", 0))
+
+        args.extend(
+            [
+                # Caching to ensure smooth delivery
+                f"--file-caching={config.vlc_buffer_ms}",
+                f"--network-caching={config.vlc_buffer_ms}",
+                f"--live-caching={config.vlc_buffer_ms}",
+                # Software scaling and decoding quality
+                f"--swscale-mode={swscale_mode_value}",
+                f"--avcodec-skiploopfilter={skip_loop_filter}",
+                # Enable multi-threaded decoding
+                "--avcodec-threads=0",  # Auto-detect cores
+            ]
+        )
 
         if config.enable_hw_accel:
             # 'auto' or 'any' lets VLC choose the best hardware decoder
@@ -291,18 +324,23 @@ class VideoPlayerWidget(QWidget):
         if not vlc:
             self.instance = None
             self.mediaplayer = None
+            self._active_vlc_args = []
             return
 
         args = self._build_vlc_args()
+        self._active_vlc_args = list(args)
         logger.info(f"Initializing VLC Instance with args: {args}")
         self.instance = vlc.Instance(args)
 
         # Fallback for environments missing swscale plugin (e.g. PyInstaller executables)
-        if self.instance is None and "--swscale-mode=2" in args:
+        swscale_args = [arg for arg in args if arg.startswith("--swscale-mode=")]
+        if self.instance is None and swscale_args:
             logger.warning(
-                "VLC initialization failed. Retrying without --swscale-mode=2"
+                f"VLC initialization failed. Retrying without {swscale_args[0]}"
             )
-            args.remove("--swscale-mode=2")
+            for swscale_arg in swscale_args:
+                args.remove(swscale_arg)
+            self._active_vlc_args = list(args)
             self.instance = vlc.Instance(args)
 
         if self.instance is not None:
@@ -1642,6 +1680,10 @@ class VideoPlayerWidget(QWidget):
             self._load_and_play(self.current_media_path)
 
     def _load_and_play(self, file_path: str) -> None:
+        if vlc and self._build_vlc_args() != self._active_vlc_args:
+            logger.info("VLC configuration changed; reinitializing VLC instance.")
+            self._initialize_vlc()
+
         if not vlc or not self.instance:
             error_msg = "VLC library could not be loaded."
             if sys.platform == "darwin":

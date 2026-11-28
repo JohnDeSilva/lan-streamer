@@ -202,6 +202,9 @@ class Config:
         "enable_hw_accel": True,
         "vlc_extra_args": [],
         "vlc_buffer_ms": 3000,
+        "vlc_deinterlace_mode": "off",
+        "vlc_swscale_mode": "fast_bilinear",
+        "vlc_skip_loop_filter": 0,
         "player_overlay_opacity": 0.4,
         "player_overlay_color": "white",
         "max_cache_size_gb": 15.0,
@@ -457,6 +460,13 @@ class Config:
             self.enable_hw_accel = config_dict["enable_hw_accel"]
             self.vlc_extra_args = config_dict["vlc_extra_args"]
             self.vlc_buffer_ms = config_dict["vlc_buffer_ms"]
+            self.vlc_deinterlace_mode = str(
+                config_dict.get("vlc_deinterlace_mode", "off")
+            )
+            self.vlc_swscale_mode = str(
+                config_dict.get("vlc_swscale_mode", "fast_bilinear")
+            )
+            self.vlc_skip_loop_filter = int(config_dict.get("vlc_skip_loop_filter", 0))
             self.player_overlay_opacity = config_dict["player_overlay_opacity"]
             self.player_overlay_color = config_dict["player_overlay_color"]
             self.max_cache_size_gb = config_dict["max_cache_size_gb"]
@@ -587,6 +597,9 @@ class Config:
             set_app_config("enable_hw_accel", self.enable_hw_accel)
             set_app_config("vlc_extra_args", self.vlc_extra_args)
             set_app_config("vlc_buffer_ms", self.vlc_buffer_ms)
+            set_app_config("vlc_deinterlace_mode", self.vlc_deinterlace_mode)
+            set_app_config("vlc_swscale_mode", self.vlc_swscale_mode)
+            set_app_config("vlc_skip_loop_filter", self.vlc_skip_loop_filter)
             set_app_config("player_overlay_opacity", self.player_overlay_opacity)
             set_app_config("player_overlay_color", self.player_overlay_color)
             set_app_config("max_cache_size_gb", self.max_cache_size_gb)
