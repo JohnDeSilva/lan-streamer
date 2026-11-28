@@ -1,3 +1,15 @@
+## v0.64.1rc0 (2026-11-28)
+
+### Fix
+
+- **agent**: skip unaired episodes when marking season or series watched
+- **agent**: prevent browser caching of static SPA assets
+- **agent**: preserve and display episode files in series detail popup
+
+### Perf
+
+- **desktop**: cache and reuse remote agent posters across syncs
+
 ## v0.64.0 (2026-11-28)
 
 ### Feat

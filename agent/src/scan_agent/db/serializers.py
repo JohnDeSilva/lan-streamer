@@ -36,6 +36,22 @@ def media_file_to_dict(media_file: MediaFile) -> dict[str, Any]:
 
 def episode_to_dict(episode: Episode) -> dict[str, Any]:
     """Serialize an :class:`Episode` row including its media file versions."""
+    versions = [media_file_to_dict(mf) for mf in episode.media_files]
+    if not versions and episode.path:
+        versions = [
+            {
+                "id": None,
+                "media_type": "episode",
+                "media_id": episode.id,
+                "path": episode.path,
+                "size_bytes": None,
+                "duration_seconds": episode.runtime_seconds,
+                "codec": None,
+                "resolution": None,
+                "container": None,
+                "active": True,
+            }
+        ]
     return {
         "id": episode.id,
         "season_id": episode.season_id,
@@ -54,7 +70,7 @@ def episode_to_dict(episode: Episode) -> dict[str, Any]:
         "last_played_at": episode.last_played_at,
         "resume_position_seconds": episode.resume_position_seconds,
         "last_played_position": episode.resume_position_seconds,
-        "versions": [media_file_to_dict(mf) for mf in episode.media_files],
+        "versions": versions,
     }
 
 

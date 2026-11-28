@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -212,13 +213,13 @@ def _apply_episode_fields(
         episode.resume_position_seconds = episode_data.get("last_played_position")
 
     versions = episode_data.get("versions")
-    if versions is None:
+    if not versions:
         if not episode.media_files and episode_path:
             versions = [{"path": episode_path}]
-        else:
-            # Multiple video files may map to this episode. Without an explicit
+        elif versions is None or episode_path:
+            # Multiple video files may map to this episode. Without a non-empty
             # versions list, preserve the existing media files rather than
-            # collapsing the episode back to a single synthesized version.
+            # collapsing or clearing them when the episode still has a path.
             return len(episode.media_files)
     return _sync_media_files(connection, "episode", episode.id, versions)
 
@@ -504,12 +505,12 @@ def _apply_movie_fields(
     movie.last_played_at = movie_data.get("last_played_at")
     movie.resume_position_seconds = movie_data.get("last_played_position")
     versions = movie_data.get("versions")
-    if versions is None:
+    if not versions:
         if not movie.media_files and movie_path:
             versions = [{"path": movie_path}]
-        else:
-            # Preserve existing media files when the scan did not provide an
-            # explicit versions list (multiple files can map to one movie).
+        elif versions is None or movie_path:
+            # Preserve existing media files when the scan did not provide a
+            # non-empty versions list (multiple files can map to one movie).
             return len(movie.media_files)
     return _sync_media_files(connection, "movie", movie.id, versions)
 
@@ -1102,7 +1103,8 @@ def record_missing_files(
         ).first()
         if series is None:
             continue
-        for season_data in series_data.get("seasons", {}).values():
+        for season_name, season_data in series_data.get("seasons", {}).items():
+            season_number = _derive_season_number(season_name)
             for episode_data in season_data.get("episodes", []):
                 episode_number = episode_data.get("episode_number") or episode_data.get(
                     "tmdb_number"
@@ -1114,6 +1116,7 @@ def record_missing_files(
                     .join(Season)
                     .where(
                         Season.series_id == series.id,
+                        Season.season_number == season_number,
                         Episode.episode_number == episode_number,
                     )
                 ).first()
@@ -1528,6 +1531,15 @@ def _apply_movie_watch_event(
     return media_identifier, target_movie
 
 
+def _is_episode_unaired(episode: Episode, today_iso: str | None = None) -> bool:
+    """Return True when an episode has a future air date or is an undated placeholder."""
+    resolved_today = today_iso or datetime.now(UTC).date().isoformat()
+    air_date = (episode.air_date or "").strip()
+    if air_date and air_date > resolved_today:
+        return True
+    return not air_date and not episode.path and not episode.media_files
+
+
 def _apply_season_watch_event(
     connection: Session,
     media_identifier: int | None,
@@ -1543,10 +1555,15 @@ def _apply_season_watch_event(
     if target_season is not None:
         media_identifier = target_season.id
         season_watched = watched if watched is not None else (event == "complete")
+        today_iso = datetime.now(UTC).date().isoformat()
         episodes_in_season = connection.scalars(
-            select(Episode).where(Episode.season_id == target_season.id)
+            select(Episode)
+            .where(Episode.season_id == target_season.id)
+            .options(selectinload(Episode.media_files))
         ).all()
         for episode_item in episodes_in_season:
+            if season_watched and _is_episode_unaired(episode_item, today_iso):
+                continue
             episode_item.watched = season_watched
             episode_item.last_played_at = timestamp
             if season_watched and position_seconds is not None:
@@ -1591,14 +1608,21 @@ def _apply_series_watch_event(
     if target_series is not None:
         media_identifier = target_series.id
         series_watched = watched if watched is not None else (event == "complete")
+        today_iso = datetime.now(UTC).date().isoformat()
         seasons_in_series = connection.scalars(
             select(Season).where(Season.series_id == target_series.id)
         ).all()
+        all_series_episodes: list[Episode] = []
         for season_item in seasons_in_series:
             season_episodes = connection.scalars(
-                select(Episode).where(Episode.season_id == season_item.id)
+                select(Episode)
+                .where(Episode.season_id == season_item.id)
+                .options(selectinload(Episode.media_files))
             ).all()
+            all_series_episodes.extend(season_episodes)
             for episode_item in season_episodes:
+                if series_watched and _is_episode_unaired(episode_item, today_iso):
+                    continue
                 episode_item.watched = series_watched
                 episode_item.last_played_at = timestamp
                 if series_watched and position_seconds is not None:
@@ -1610,7 +1634,7 @@ def _apply_series_watch_event(
                 [episode for episode in season_episodes if episode.watched]
             )
         target_series.watched_count = len(
-            [episode for episode in affected_episodes if episode.watched]
+            [episode for episode in all_series_episodes if episode.watched]
         )
     return media_identifier, target_series, affected_episodes
 
@@ -1866,28 +1890,43 @@ def get_watch_state(
     elif media_type == "season":
         season = connection.get(Season, media_identifier)
         if season is not None:
+            today_iso = datetime.now(UTC).date().isoformat()
             episodes_in_season = connection.scalars(
-                select(Episode).where(Episode.season_id == season.id)
+                select(Episode)
+                .where(Episode.season_id == season.id)
+                .options(selectinload(Episode.media_files))
             ).all()
-            total_count = len(episodes_in_season)
+            aired_episodes = [
+                episode
+                for episode in episodes_in_season
+                if not _is_episode_unaired(episode, today_iso)
+            ]
+            total_count = len(aired_episodes)
             watched_count = len(
-                [episode for episode in episodes_in_season if episode.watched]
+                [episode for episode in aired_episodes if episode.watched]
             )
             watched = bool(total_count > 0 and watched_count >= total_count)
     elif media_type == "series":
         series = connection.get(Series, media_identifier)
         if series is not None:
-            total_episodes_count = (
-                connection.scalar(
-                    select(func.count(Episode.id))
-                    .join(Season, Season.id == Episode.season_id)
-                    .where(Season.series_id == series.id)
-                )
-                or 0
+            today_iso = datetime.now(UTC).date().isoformat()
+            series_episodes = connection.scalars(
+                select(Episode)
+                .join(Season, Season.id == Episode.season_id)
+                .where(Season.series_id == series.id)
+                .options(selectinload(Episode.media_files))
+            ).all()
+            aired_episodes = [
+                episode
+                for episode in series_episodes
+                if not _is_episode_unaired(episode, today_iso)
+            ]
+            total_episodes_count = len(aired_episodes)
+            watched_count = len(
+                [episode for episode in aired_episodes if episode.watched]
             )
             watched = bool(
-                total_episodes_count > 0
-                and series.watched_count >= total_episodes_count
+                total_episodes_count > 0 and watched_count >= total_episodes_count
             )
     recent = list_watch_events(connection, media_type, media_identifier, limit=1)
     event_count = (
