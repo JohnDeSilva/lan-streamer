@@ -615,7 +615,7 @@ wheels = [
 
 [[package]]
 name = "lan-streamer"
-version = "0.63.1"
+version = "0.63.2rc0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiohttp" },
