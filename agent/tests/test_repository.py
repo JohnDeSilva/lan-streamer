@@ -911,3 +911,115 @@ def test_upsert_series_scan_deletes_series_when_files_removed(
     with get_session(database_engine) as session:
         series_results = list_series(session)
         assert len(series_results) == 0
+
+
+def test_empty_versions_list_with_path_preserves_media_files(
+    database_engine, agent_config, scanned_series_data
+) -> None:
+    """An empty versions list must not wipe media_files when episode path is still set."""
+    import copy
+
+    payload = _tv_library_payload(agent_config, scanned_series_data)
+    with get_session(database_engine) as session:
+        stats = upsert_library(session, payload)
+        assert stats["media_files"] == 3
+
+    rescan_payload = copy.deepcopy(payload)
+    for season_data in rescan_payload["items"]["Test Show"]["seasons"].values():
+        for episode in season_data["episodes"]:
+            episode["versions"] = []
+
+    with get_session(database_engine) as session:
+        stats = upsert_library(session, rescan_payload)
+        assert stats["media_files"] == 3
+        series_id = list_series(session)[0]["id"]
+        detail = get_series(session, series_id)
+        assert detail is not None
+        first_episode = detail["seasons"][0]["episodes"][0]
+        assert len(first_episode["versions"]) == 2
+
+
+def test_record_missing_files_scopes_by_season_number(
+    database_engine, agent_config, tmp_path
+) -> None:
+    """Missing placeholder in Season 2 must not clear path on Season 1 Episode 1."""
+    from scan_agent.db.repository import record_missing_files
+
+    season_one_file = tmp_path / "Show" / "Season 01" / "S01E01.mkv"
+    season_one_file.parent.mkdir(parents=True)
+    season_one_file.write_text("video")
+
+    series_data = {
+        "name": "Show",
+        "metadata": {"name": "Show"},
+        "seasons": {
+            "Season 01": {
+                "metadata": {},
+                "episodes": [
+                    {
+                        "name": "S01E01",
+                        "episode_number": 1,
+                        "path": str(season_one_file),
+                        "versions": [{"path": str(season_one_file)}],
+                    }
+                ],
+            },
+            "Season 02": {
+                "metadata": {},
+                "episodes": [
+                    {
+                        "name": "S02E01",
+                        "episode_number": 1,
+                        "path": None,
+                    }
+                ],
+            },
+        },
+    }
+    payload = _tv_library_payload(agent_config, {"Show": series_data})
+    with get_session(database_engine) as session:
+        upsert_library(session, payload)
+        tv_library = get_library(session, agent_config.libraries["tv"]["name"])
+        assert tv_library is not None
+        record_missing_files(session, tv_library.id, {"Show": series_data})
+        series_id = list_series(session)[0]["id"]
+        detail = get_series(session, series_id)
+        assert detail is not None
+        season_one = next(s for s in detail["seasons"] if s["season_number"] == 1)
+        assert season_one["episodes"][0]["path"] == str(season_one_file)
+        assert season_one["episodes"][0]["is_missing"] is False
+        assert len(season_one["episodes"][0]["versions"]) == 1
+
+
+def test_episode_to_dict_falls_back_to_episode_path_when_media_files_empty(
+    database_engine, agent_config
+) -> None:
+    """episode_to_dict synthesizes a version from episode.path if media_files is empty."""
+    from scan_agent.db.models import Episode, Library, Season, Series
+
+    with get_session(database_engine) as session:
+        library = Library(name="TV", media_type="tv", root_path="/media/tv")
+        session.add(library)
+        session.flush()
+        series = Series(
+            library_id=library.id, folder_name="Fallback Show", name="Fallback Show"
+        )
+        session.add(series)
+        session.flush()
+        season = Season(series_id=series.id, season_number=1, name="Season 01")
+        session.add(season)
+        session.flush()
+        episode = Episode(
+            season_id=season.id,
+            episode_number=1,
+            name="Episode 1",
+            path="/media/tv/Fallback Show/S01E01.mkv",
+        )
+        session.add(episode)
+        session.flush()
+
+        detail = get_series(session, series.id)
+        assert detail is not None
+        ep_dict = detail["seasons"][0]["episodes"][0]
+        assert len(ep_dict["versions"]) == 1
+        assert ep_dict["versions"][0]["path"] == "/media/tv/Fallback Show/S01E01.mkv"
