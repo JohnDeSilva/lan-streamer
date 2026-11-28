@@ -1,3 +1,13 @@
+## v0.63.2rc0-1 (2026-11-28)
+
+### Feat
+
+- **scanner**: Fall back to date_added for missing air_date and backfill existing records
+
+### Fix
+
+- **scanner**: Replace stand-in air_date when TMDB air_date becomes available
+
 ## v0.63.2rc0 (2026-11-28)
 
 ### Fix
