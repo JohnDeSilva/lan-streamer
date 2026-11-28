@@ -1,3 +1,10 @@
+## v0.63.2rc0 (2026-11-28)
+
+### Fix
+
+- **playback**: make VLC deinterlace, scaling, and loop-filter settings configurable
+- **dev-dependency**: bump mypy from 2.4.0 to 2.4.1
+
 ## v0.63.1 (2026-11-26)
 
 ### Fix
