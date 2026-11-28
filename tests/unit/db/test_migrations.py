@@ -638,9 +638,7 @@ def test_backfill_missing_air_date_migration(tmp_path) -> None:
         )
         assert (
             conn.execute(
-                sa.text(
-                    "SELECT air_date FROM smart_row_cache WHERE series_id = :id"
-                ),
+                sa.text("SELECT air_date FROM smart_row_cache WHERE series_id = :id"),
                 {"id": series_id},
             ).scalar()
             == "2023-11-14"
