@@ -318,8 +318,8 @@ def _process_episode_file(
             logger.debug(f"Could not read ctime for {episode_path}: {error_instance}")
             ctime = 0
 
-    if not air_date and ctime and float(ctime) > 0:
-        air_date = dt.datetime.fromtimestamp(float(ctime), tz=dt.UTC).date().isoformat()
+    if not air_date:
+        air_date = _date_added_to_iso_date(ctime)
 
     jellyfin_id = ""
     new_series_jf_id = ""
@@ -429,6 +429,19 @@ def _process_episode_file(
     return res
 
 
+def _date_added_to_iso_date(date_added: Any) -> str:
+    """Convert a positive Unix timestamp to a UTC ``YYYY-MM-DD`` string, or ``""``."""
+    if not date_added:
+        return ""
+    try:
+        timestamp = float(date_added)
+    except (TypeError, ValueError):
+        return ""
+    if timestamp <= 0:
+        return ""
+    return dt.datetime.fromtimestamp(timestamp, tz=dt.UTC).date().isoformat()
+
+
 def _match_existing_episode_metadata(
     existing_episode: dict[str, Any],
     episode_name: str,
@@ -460,6 +473,10 @@ def _match_existing_episode_metadata(
     tmdb_number = existing_episode.get("tmdb_number")
     air_date = existing_episode.get("air_date", "")
     runtime = existing_episode.get("runtime", 0)
+    stand_in_air_date = _date_added_to_iso_date(existing_episode.get("date_added"))
+    can_replace_air_date = not air_date or (
+        stand_in_air_date != "" and air_date == stand_in_air_date
+    )
     logger.debug(f"Reusing existing metadata for '{episode_name}'")
     # Fill in missing tmdb_name from TMDB episode list when we have
     # a tmdb_number but no cached name.
@@ -469,8 +486,9 @@ def _match_existing_episode_metadata(
                 tmdb_name = tmdb_ep.get("name")
                 if not tmdb_episode_identifier:
                     tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
-                if not air_date:
+                if can_replace_air_date and tmdb_ep.get("air_date"):
                     air_date = tmdb_ep.get("air_date", "")
+                    can_replace_air_date = False
                 if not runtime:
                     runtime = tmdb_ep.get("runtime", 0)
                 break
@@ -481,8 +499,9 @@ def _match_existing_episode_metadata(
                     tmdb_number = tmdb_ep.get("episode_number")
                     if not tmdb_name:
                         tmdb_name = tmdb_ep.get("name")
-                    if not air_date:
+                    if can_replace_air_date and tmdb_ep.get("air_date"):
                         air_date = tmdb_ep.get("air_date", "")
+                        can_replace_air_date = False
                     if not runtime:
                         runtime = tmdb_ep.get("runtime", 0)
                     break
@@ -501,8 +520,9 @@ def _match_existing_episode_metadata(
                             tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
                         if not tmdb_name:
                             tmdb_name = tmdb_ep.get("name")
-                        if not air_date:
+                        if can_replace_air_date and tmdb_ep.get("air_date"):
                             air_date = tmdb_ep.get("air_date", "")
+                            can_replace_air_date = False
                         if not runtime:
                             runtime = tmdb_ep.get("runtime", 0)
                         break
@@ -514,13 +534,26 @@ def _match_existing_episode_metadata(
                         tmdb_episode_identifier = str(tmdb_ep.get("id", ""))
                         tmdb_name = tmdb_ep.get("name")
                         tmdb_number = tmdb_ep.get("episode_number")
-                        air_date = tmdb_ep.get("air_date", "")
+                        if can_replace_air_date and tmdb_ep.get("air_date"):
+                            air_date = tmdb_ep.get("air_date", "")
+                            can_replace_air_date = False
                         runtime = tmdb_ep.get("runtime", 0)
                         logger.debug(
                             f"Matched '{episode_name}' by parsed substring: "
                             f"'{tmdb_episode_name}' -> TMDB Name: '{tmdb_name}'"
                         )
                         break
+    if can_replace_air_date and tmdb_episodes:
+        matched = _find_matching_tmdb_episode(
+            existing_episode,
+            episode_name,
+            episode_file,
+            tmdb_episodes,
+            hint_episode_number,
+            cached_tmdb_episode_identifier,
+        )
+        if matched is not None and matched.get("air_date"):
+            air_date = matched["air_date"]
     return (
         tmdb_episode_identifier,
         tmdb_name,
